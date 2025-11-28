@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import init_db, async_session
 from backend.app.core.websocket import ws_manager
-from backend.app.api.routes import printers, archives, websocket, filaments, cloud
+from backend.app.api.routes import printers, archives, websocket, filaments, cloud, smart_plugs
 from backend.app.api.routes import settings as settings_routes
 from backend.app.services.printer_manager import (
     printer_manager,
@@ -20,6 +20,7 @@ from backend.app.services.printer_manager import (
 from backend.app.services.bambu_mqtt import PrinterState
 from backend.app.services.archive import ArchiveService
 from backend.app.services.bambu_ftp import download_file_async
+from backend.app.services.smart_plug_manager import smart_plug_manager
 
 
 # Track active prints: {(printer_id, filename): archive_id}
@@ -177,6 +178,14 @@ async def on_print_start(printer_id: int, data: dict):
             if temp_path and temp_path.exists():
                 temp_path.unlink()
 
+    # Smart plug automation: turn on plug when print starts
+    try:
+        async with async_session() as db:
+            await smart_plug_manager.on_print_start(printer_id, db)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Smart plug on_print_start failed: {e}")
+
 
 async def on_print_complete(printer_id: int, data: dict):
     """Handle print completion - update the archive status."""
@@ -251,6 +260,15 @@ async def on_print_complete(printer_id: int, data: dict):
             "status": status,
         })
 
+    # Smart plug automation: schedule turn off when print completes
+    try:
+        async with async_session() as db:
+            status = data.get("status", "completed")
+            await smart_plug_manager.on_print_complete(printer_id, status, db)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Smart plug on_print_complete failed: {e}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -287,6 +305,7 @@ app.include_router(archives.router, prefix=app_settings.api_prefix)
 app.include_router(filaments.router, prefix=app_settings.api_prefix)
 app.include_router(settings_routes.router, prefix=app_settings.api_prefix)
 app.include_router(cloud.router, prefix=app_settings.api_prefix)
+app.include_router(smart_plugs.router, prefix=app_settings.api_prefix)
 app.include_router(websocket.router, prefix=app_settings.api_prefix)
 
 

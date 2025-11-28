@@ -27,6 +27,10 @@ class Printer(Base):
     archives: Mapped[list["PrintArchive"]] = relationship(
         back_populates="printer", cascade="all, delete-orphan"
     )
+    smart_plug: Mapped["SmartPlug | None"] = relationship(
+        back_populates="printer", uselist=False
+    )
 
 
 from backend.app.models.archive import PrintArchive  # noqa: E402
+from backend.app.models.smart_plug import SmartPlug  # noqa: E402

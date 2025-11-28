@@ -161,6 +161,66 @@ export interface CloudDevice {
   online: boolean;
 }
 
+// Smart Plug types
+export interface SmartPlug {
+  id: number;
+  name: string;
+  ip_address: string;
+  printer_id: number | null;
+  enabled: boolean;
+  auto_on: boolean;
+  auto_off: boolean;
+  off_delay_mode: 'time' | 'temperature';
+  off_delay_minutes: number;
+  off_temp_threshold: number;
+  username: string | null;
+  password: string | null;
+  last_state: string | null;
+  last_checked: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SmartPlugCreate {
+  name: string;
+  ip_address: string;
+  printer_id?: number | null;
+  enabled?: boolean;
+  auto_on?: boolean;
+  auto_off?: boolean;
+  off_delay_mode?: 'time' | 'temperature';
+  off_delay_minutes?: number;
+  off_temp_threshold?: number;
+  username?: string | null;
+  password?: string | null;
+}
+
+export interface SmartPlugUpdate {
+  name?: string;
+  ip_address?: string;
+  printer_id?: number | null;
+  enabled?: boolean;
+  auto_on?: boolean;
+  auto_off?: boolean;
+  off_delay_mode?: 'time' | 'temperature';
+  off_delay_minutes?: number;
+  off_temp_threshold?: number;
+  username?: string | null;
+  password?: string | null;
+}
+
+export interface SmartPlugStatus {
+  state: string | null;
+  reachable: boolean;
+  device_name: string | null;
+}
+
+export interface SmartPlugTestResult {
+  success: boolean;
+  state: string | null;
+  device_name: string | null;
+}
+
 // API functions
 export const api = {
   // Printers
@@ -399,4 +459,32 @@ export const api = {
   getCloudSettingDetail: (settingId: string) =>
     request<Record<string, unknown>>(`/cloud/settings/${settingId}`),
   getCloudDevices: () => request<CloudDevice[]>('/cloud/devices'),
+
+  // Smart Plugs
+  getSmartPlugs: () => request<SmartPlug[]>('/smart-plugs/'),
+  getSmartPlug: (id: number) => request<SmartPlug>(`/smart-plugs/${id}`),
+  createSmartPlug: (data: SmartPlugCreate) =>
+    request<SmartPlug>('/smart-plugs/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateSmartPlug: (id: number, data: SmartPlugUpdate) =>
+    request<SmartPlug>(`/smart-plugs/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteSmartPlug: (id: number) =>
+    request<void>(`/smart-plugs/${id}`, { method: 'DELETE' }),
+  controlSmartPlug: (id: number, action: 'on' | 'off' | 'toggle') =>
+    request<{ success: boolean; action: string }>(`/smart-plugs/${id}/control`, {
+      method: 'POST',
+      body: JSON.stringify({ action }),
+    }),
+  getSmartPlugStatus: (id: number) =>
+    request<SmartPlugStatus>(`/smart-plugs/${id}/status`),
+  testSmartPlugConnection: (ip_address: string, username?: string | null, password?: string | null) =>
+    request<SmartPlugTestResult>('/smart-plugs/test-connection', {
+      method: 'POST',
+      body: JSON.stringify({ ip_address, username, password }),
+    }),
 };

@@ -25,6 +25,11 @@
 - **Automatic Print Archiving** - Automatically saves 3MF files when prints complete
 - **3D Model Preview** - Interactive Three.js viewer for archived prints
 - **Real-time Monitoring** - Live printer status via WebSocket with print progress, temperatures, and more
+- **Smart Plug Integration** - Control Tasmota-based smart plugs with automation:
+  - Auto power-on when print starts
+  - Auto power-off when print completes
+  - Time-based delay (1-60 minutes)
+  - Temperature-based delay (waits for nozzle to cool down)
 - **Print Statistics Dashboard** - Customizable dashboard with drag-and-drop widgets
   - Print success rates
   - Filament usage trends
@@ -319,6 +324,52 @@ Prints are automatically archived when they complete. You can also:
 4. Click "Edit" to modify the project page metadata
 5. Changes are saved directly to the 3MF file
 
+### Smart Plug Integration
+
+Bambusy supports Tasmota-based smart plugs for automated power control. This is useful for:
+- Automatically turning on your printer when a print starts
+- Safely turning off the printer after it cools down
+- Energy savings by powering off idle printers
+
+#### Supported Devices
+
+Any smart plug running [Tasmota](https://tasmota.github.io/docs/) firmware with HTTP API enabled. Popular compatible devices include:
+- Sonoff S31 / S26
+- Gosund / Teckin / Treatlife smart plugs
+- Any ESP8266/ESP32-based plug with Tasmota
+
+#### Setting Up a Smart Plug
+
+1. Go to **Settings** > **Smart Plugs**
+2. Click **Add Plug**
+3. Enter the plug's IP address and click **Test** to verify connection
+4. Give it a name (auto-filled from device if available)
+5. Optionally add username/password if your Tasmota requires authentication
+6. Link it to a printer for automation
+7. Click **Add**
+
+#### Automation Options
+
+Once linked to a printer, you can configure:
+
+| Setting | Description |
+|---------|-------------|
+| **Enabled** | Master toggle for all automation |
+| **Auto On** | Turn on plug when a print starts |
+| **Auto Off** | Turn off plug when print completes |
+| **Delay Mode** | Choose how to delay the power-off |
+
+**Delay Modes:**
+- **Time-based**: Wait a fixed number of minutes (1-60) after print completes
+- **Temperature-based**: Wait until nozzle temperature drops below threshold (default 70°C)
+
+#### Manual Control
+
+Each plug card shows:
+- Current status (ON/OFF/Offline)
+- On/Off buttons for manual control
+- Expandable settings panel
+
 ## Tech Stack
 
 - **Backend**: Python / FastAPI
@@ -408,6 +459,20 @@ uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --log-level debug
 sudo journalctl -u bambusy -f
 ```
 
+### Smart plug not responding
+
+1. **Check the IP address** - Make sure the plug is on the same network and the IP hasn't changed
+2. **Test via browser** - Visit `http://<plug-ip>/cm?cmnd=Power` to test directly
+3. **Check Tasmota web interface** - Access `http://<plug-ip>` to verify Tasmota is running
+4. **Authentication** - If Tasmota has a password set, configure it in the plug settings
+5. **Firewall** - Ensure port 80 is accessible between Bambusy server and the plug
+
+### Auto power-off not working
+
+1. **Check plug is linked** - The plug must be linked to a printer for automation
+2. **Verify automation is enabled** - Check the Enabled, Auto On, and Auto Off toggles
+3. **Temperature mode issues** - If using temperature mode, ensure the printer is still connected so Bambusy can read the nozzle temperature
+
 ## Known Issues / Roadmap
 
 ### Beta Limitations
@@ -422,6 +487,7 @@ sudo journalctl -u bambusy -f
 - [ ] Timelapse video integration
 - [ ] Mobile-responsive improvements
 - [ ] Printer groups/organization
+- [x] Smart plug integration (Tasmota)
 
 ## License
 

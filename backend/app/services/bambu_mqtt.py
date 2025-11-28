@@ -121,6 +121,11 @@ class BambuMQTTClient:
             temps["nozzle"] = float(data["nozzle_temper"])
         if "nozzle_target_temper" in data:
             temps["nozzle_target"] = float(data["nozzle_target_temper"])
+        # Second nozzle for dual-extruder printers (H2 series)
+        if "nozzle_temper_2" in data:
+            temps["nozzle_2"] = float(data["nozzle_temper_2"])
+        if "nozzle_target_temper_2" in data:
+            temps["nozzle_2_target"] = float(data["nozzle_target_temper_2"])
         if "chamber_temper" in data:
             temps["chamber"] = float(data["chamber_temper"])
         if temps:

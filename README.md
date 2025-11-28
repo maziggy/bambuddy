@@ -75,6 +75,7 @@
 - Ports used: 8883 (MQTT/TLS), 990 (FTPS)
 
 ### Supported Printers
+- Bambu Lab H2C / H2D / H2S
 - Bambu Lab X1 / X1 Carbon
 - Bambu Lab P1P / P1S
 - Bambu Lab A1 / A1 Mini

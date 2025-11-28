@@ -1,0 +1,43 @@
+# Claude
+.claude/
+CLAUDE.md
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+.venv/
+env/
+.env
+*.egg-info/
+dist/
+build/
+
+# Node
+frontend/node_modules/
+npm-debug.log*
+
+# Database
+*.db
+*.db-journal
+
+# Archive files (user data)
+archive/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Screenshots (development - root folder only)
+/screenshots/
+
+# Logs
+*.log

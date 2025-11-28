@@ -1,0 +1,28 @@
+# Web Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# Database
+sqlalchemy>=2.0.0
+aiosqlite>=0.19.0
+greenlet>=3.0.0
+
+# Pydantic
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# Bambu Lab Printer Communication
+paho-mqtt>=2.0.0
+aioftp>=0.22.0
+
+# 3MF Processing (standard zipfile is sufficient for Bambu 3MF files)
+
+# Utilities
+python-multipart>=0.0.6
+aiofiles>=23.0.0
+
+# Development
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+httpx>=0.26.0
+ruff>=0.2.0

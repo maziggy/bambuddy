@@ -45,6 +45,15 @@
   - Purple badge indicator on archive cards
   - "Duplicates" collection filter to find all duplicates
   - View duplicate history when viewing archive details
+- **HMS Error Monitoring** - Real-time Health Management System status
+  - Always-visible status indicator on printer cards
+  - Green "OK" when healthy, orange/red when errors detected
+  - Severity-based coloring (fatal, serious, common, info)
+- **MQTT Debug Logging** - Built-in debugging tool for printer communication
+  - Start/stop logging with one click
+  - Real-time message capture with auto-refresh
+  - View incoming and outgoing MQTT messages
+  - Expandable JSON payloads for detailed inspection
 - **Filament Cost Tracking** - Track costs per print with customizable filament database
 - **Photo Attachments** - Attach photos to archived prints for documentation
 - **Failure Analysis** - Document failed prints with notes and photos
@@ -500,6 +509,8 @@ sudo journalctl -u bambusy -f
 - [x] Smart plug integration (Tasmota)
 - [x] Print time accuracy tracking
 - [x] Duplicate detection
+- [x] HMS error monitoring
+- [x] MQTT debug logging
 
 ## License
 

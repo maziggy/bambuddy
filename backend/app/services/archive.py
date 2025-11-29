@@ -12,6 +12,7 @@ from sqlalchemy import select, and_, or_
 from backend.app.core.config import settings
 from backend.app.models.archive import PrintArchive
 from backend.app.models.printer import Printer
+from backend.app.models.filament import Filament
 
 
 class ThreeMFParser:
@@ -618,6 +619,25 @@ class ArchiveService:
         started_at = datetime.now() if status == "printing" else None
         completed_at = datetime.now() if status in ("completed", "failed", "archived") else None
 
+        # Calculate cost based on filament usage and type
+        cost = None
+        filament_grams = metadata.get("filament_used_grams")
+        filament_type = metadata.get("filament_type")
+        if filament_grams and filament_type:
+            # For multi-material prints, use the first filament type for cost calculation
+            primary_type = filament_type.split(",")[0].strip()
+            # Look up filament cost_per_kg from database
+            filament_result = await self.db.execute(
+                select(Filament).where(Filament.type == primary_type).limit(1)
+            )
+            filament = filament_result.scalar_one_or_none()
+            if filament:
+                cost = round((filament_grams / 1000) * filament.cost_per_kg, 2)
+            else:
+                # Default cost_per_kg if filament type not found
+                default_cost_per_kg = 25.0
+                cost = round((filament_grams / 1000) * default_cost_per_kg, 2)
+
         # Create archive record
         archive = PrintArchive(
             printer_id=printer_id,
@@ -640,6 +660,7 @@ class ArchiveService:
             status=status,
             started_at=started_at,
             completed_at=completed_at,
+            cost=cost,
             extra_data=metadata,
         )
 

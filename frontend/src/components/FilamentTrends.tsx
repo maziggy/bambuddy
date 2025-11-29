@@ -254,35 +254,51 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
         <div className="bg-bambu-dark rounded-lg p-4">
           <h4 className="text-sm font-medium text-bambu-gray mb-4">By Filament Type</h4>
           {filamentTypeData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie
-                  data={filamentTypeData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={50}
-                  outerRadius={80}
-                  paddingAngle={2}
-                  dataKey="value"
-                  label={({ name, percent }) => `${name} ${((percent || 0) * 100).toFixed(0)}%`}
-                  labelLine={false}
-                >
-                  {filamentTypeData.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#2d2d2d',
-                    border: '1px solid #3d3d3d',
-                    borderRadius: '8px',
-                  }}
-                  formatter={(value: number) => [`${value}g`, 'Usage']}
-                />
-              </PieChart>
-            </ResponsiveContainer>
+            <div className="flex items-center gap-4">
+              <ResponsiveContainer width={160} height={160}>
+                <PieChart>
+                  <Pie
+                    data={filamentTypeData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={40}
+                    outerRadius={70}
+                    paddingAngle={2}
+                    dataKey="value"
+                  >
+                    {filamentTypeData.map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#2d2d2d',
+                      border: '1px solid #3d3d3d',
+                      borderRadius: '8px',
+                    }}
+                    formatter={(value: number) => [`${value}g`, 'Usage']}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="flex-1 space-y-2 overflow-hidden">
+                {filamentTypeData.map((entry, index) => {
+                  const total = filamentTypeData.reduce((sum, e) => sum + e.value, 0);
+                  const percent = total > 0 ? ((entry.value / total) * 100).toFixed(0) : 0;
+                  return (
+                    <div key={entry.name} className="flex items-center gap-2 text-sm">
+                      <div
+                        className="w-3 h-3 rounded-sm flex-shrink-0"
+                        style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                      />
+                      <span className="text-white truncate flex-1">{entry.name}</span>
+                      <span className="text-bambu-gray flex-shrink-0">{percent}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           ) : (
-            <div className="h-[200px] flex items-center justify-center text-bambu-gray">
+            <div className="h-[160px] flex items-center justify-center text-bambu-gray">
               No filament data
             </div>
           )}

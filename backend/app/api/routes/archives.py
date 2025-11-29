@@ -13,6 +13,7 @@ from sqlalchemy import select, func
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.models.archive import PrintArchive
+from backend.app.models.filament import Filament
 from backend.app.schemas.archive import ArchiveResponse, ArchiveUpdate, ArchiveStats
 from backend.app.services.archive import ArchiveService
 
@@ -323,9 +324,46 @@ async def rescan_archive(archive_id: int, db: AsyncSession = Depends(get_db)):
     if metadata.get("designer"):
         archive.designer = metadata["designer"]
 
+    # Calculate cost based on filament usage and type
+    if archive.filament_used_grams and archive.filament_type:
+        primary_type = archive.filament_type.split(",")[0].strip()
+        filament_result = await db.execute(
+            select(Filament).where(Filament.type == primary_type).limit(1)
+        )
+        filament = filament_result.scalar_one_or_none()
+        if filament:
+            archive.cost = round((archive.filament_used_grams / 1000) * filament.cost_per_kg, 2)
+        else:
+            archive.cost = round((archive.filament_used_grams / 1000) * 25.0, 2)
+
     await db.commit()
     await db.refresh(archive)
     return archive
+
+
+@router.post("/recalculate-costs")
+async def recalculate_all_costs(db: AsyncSession = Depends(get_db)):
+    """Recalculate costs for all archives based on filament usage and prices."""
+    result = await db.execute(select(PrintArchive))
+    archives = list(result.scalars().all())
+
+    # Load all filaments for lookup
+    filament_result = await db.execute(select(Filament))
+    filaments = {f.type: f.cost_per_kg for f in filament_result.scalars().all()}
+    default_cost_per_kg = 25.0
+
+    updated = 0
+    for archive in archives:
+        if archive.filament_used_grams and archive.filament_type:
+            primary_type = archive.filament_type.split(",")[0].strip()
+            cost_per_kg = filaments.get(primary_type, default_cost_per_kg)
+            new_cost = round((archive.filament_used_grams / 1000) * cost_per_kg, 2)
+            if archive.cost != new_cost:
+                archive.cost = new_cost
+                updated += 1
+
+    await db.commit()
+    return {"message": f"Recalculated costs for {updated} archives", "updated": updated}
 
 
 @router.post("/rescan-all")

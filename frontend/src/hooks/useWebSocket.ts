@@ -23,18 +23,17 @@ export function useWebSocket() {
 
     const ws = new WebSocket(wsUrl);
 
+    let pingInterval: number | null = null;
+
     ws.onopen = () => {
+      console.log('[WebSocket] Connected');
       setIsConnected(true);
       // Start ping interval
-      const pingInterval = setInterval(() => {
+      pingInterval = window.setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: 'ping' }));
         }
       }, 30000);
-
-      ws.onclose = () => {
-        clearInterval(pingInterval);
-      };
     };
 
     ws.onmessage = (event) => {
@@ -46,7 +45,12 @@ export function useWebSocket() {
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      console.log('[WebSocket] Closed', event.code, event.reason);
+      if (pingInterval) {
+        clearInterval(pingInterval);
+        pingInterval = null;
+      }
       setIsConnected(false);
       wsRef.current = null;
 
@@ -56,7 +60,8 @@ export function useWebSocket() {
       }, 3000);
     };
 
-    ws.onerror = () => {
+    ws.onerror = (error) => {
+      console.error('[WebSocket] Error', error);
       ws.close();
     };
 

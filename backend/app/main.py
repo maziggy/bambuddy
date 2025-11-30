@@ -81,8 +81,16 @@ def register_expected_print(printer_id: int, filename: str, archive_id: int):
     )
 
 
+_last_status_broadcast: dict[int, str] = {}
+
 async def on_printer_status_change(printer_id: int, state: PrinterState):
     """Handle printer status changes - broadcast via WebSocket."""
+    # Only broadcast if something meaningful changed (reduce WebSocket spam)
+    status_key = f"{state.connected}:{state.state}:{state.progress}:{state.layer_num}"
+    if _last_status_broadcast.get(printer_id) == status_key:
+        return  # No change, skip broadcast
+    _last_status_broadcast[printer_id] = status_key
+
     await ws_manager.send_printer_status(
         printer_id,
         printer_state_to_dict(state, printer_id),

@@ -1,5 +1,6 @@
 """API routes for K-profile (pressure advance) management."""
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -77,10 +78,22 @@ async def set_kprofile(
 ):
     """Create or update a K-profile on the printer.
 
+    For H2D edits (slot_id > 0), this performs an in-place edit using cali_idx.
+    For other printers or new profiles, this adds a new profile.
+
     Args:
         printer_id: ID of the printer
         profile: K-profile data to set
     """
+    is_edit = profile.slot_id > 0
+    operation = "edit" if is_edit else "add"
+
+    logger.info(
+        f"[API] set_kprofile ({operation}): printer={printer_id}, slot_id={profile.slot_id}, "
+        f"extruder_id={profile.extruder_id}, nozzle_id={profile.nozzle_id}, "
+        f"name={profile.name}, filament_id={profile.filament_id}, k_value={profile.k_value}"
+    )
+
     # Check printer exists
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
@@ -92,22 +105,69 @@ async def set_kprofile(
     if not client or not client.state.connected:
         raise HTTPException(400, "Printer not connected")
 
-    # Send the K-profile to printer
-    success = client.set_kprofile(
-        filament_id=profile.filament_id,
-        name=profile.name,
-        k_value=profile.k_value,
-        nozzle_diameter=profile.nozzle_diameter,
-        nozzle_id=profile.nozzle_id,
-        extruder_id=profile.extruder_id,
-        setting_id=profile.setting_id,
-        slot_id=profile.slot_id,
-    )
+    # Detect H2D by serial number prefix
+    is_h2d = printer.serial_number.startswith("094")
+
+    if is_edit and is_h2d:
+        # H2D in-place edit: use cali_idx with slot_id=0 and empty setting_id
+        logger.info(f"[API] H2D in-place edit: cali_idx={profile.slot_id}")
+        success = client.set_kprofile(
+            filament_id=profile.filament_id,
+            name=profile.name,
+            k_value=profile.k_value,
+            nozzle_diameter=profile.nozzle_diameter,
+            nozzle_id=profile.nozzle_id,
+            extruder_id=profile.extruder_id,
+            setting_id=None,
+            slot_id=0,
+            cali_idx=profile.slot_id,  # Pass the original slot for in-place edit
+        )
+    elif is_edit:
+        # Non-H2D edit: use delete + add approach
+        logger.info(f"[API] Edit: deleting existing profile slot_id={profile.slot_id}")
+        delete_success = client.delete_kprofile(
+            cali_idx=profile.slot_id,
+            filament_id=profile.filament_id,
+            nozzle_id=profile.nozzle_id,
+            nozzle_diameter=profile.nozzle_diameter,
+            extruder_id=profile.extruder_id,
+            setting_id=profile.setting_id,
+        )
+        if not delete_success:
+            raise HTTPException(500, "Failed to delete existing K-profile for edit")
+
+        # Wait for printer to process the delete before adding
+        await asyncio.sleep(0.5)
+        logger.info("[API] Edit: delete complete, now adding updated profile")
+
+        success = client.set_kprofile(
+            filament_id=profile.filament_id,
+            name=profile.name,
+            k_value=profile.k_value,
+            nozzle_diameter=profile.nozzle_diameter,
+            nozzle_id=profile.nozzle_id,
+            extruder_id=profile.extruder_id,
+            setting_id=None,  # Generate new setting_id for add
+            slot_id=0,  # Always 0 for add (new profile)
+        )
+    else:
+        # New profile: add with slot_id=0
+        success = client.set_kprofile(
+            filament_id=profile.filament_id,
+            name=profile.name,
+            k_value=profile.k_value,
+            nozzle_diameter=profile.nozzle_diameter,
+            nozzle_id=profile.nozzle_id,
+            extruder_id=profile.extruder_id,
+            setting_id=None,  # Generate new setting_id for add
+            slot_id=0,  # Always 0 for add (new profile)
+        )
 
     if not success:
         raise HTTPException(500, "Failed to send K-profile command")
 
-    return {"success": True, "message": "K-profile set successfully"}
+    message = "K-profile updated successfully" if is_edit else "K-profile added successfully"
+    return {"success": True, "message": message}
 
 
 @router.delete("/", response_model=dict)
@@ -140,6 +200,7 @@ async def delete_kprofile(
         nozzle_id=profile.nozzle_id,
         nozzle_diameter=profile.nozzle_diameter,
         extruder_id=profile.extruder_id,
+        setting_id=profile.setting_id,
     )
 
     if not success:

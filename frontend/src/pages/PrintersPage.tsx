@@ -87,6 +87,7 @@ function CoverImage({ url, printName }: { url: string | null; printName?: string
 interface PrinterMaintenanceInfo {
   due_count: number;
   warning_count: number;
+  total_print_hours: number;
 }
 
 function PrinterCard({
@@ -175,7 +176,15 @@ function PrinterCard({
         <div className="flex items-start justify-between mb-4">
           <div>
             <h3 className="text-lg font-semibold text-white">{printer.name}</h3>
-            <p className="text-sm text-bambu-gray">{printer.model || 'Unknown Model'}</p>
+            <p className="text-sm text-bambu-gray">
+              {printer.model || 'Unknown Model'}
+              {maintenanceInfo && maintenanceInfo.total_print_hours > 0 && (
+                <span className="ml-2 text-bambu-gray">
+                  <Clock className="w-3 h-3 inline-block mr-1" />
+                  {Math.round(maintenanceInfo.total_print_hours)}h
+                </span>
+              )}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <span
@@ -726,6 +735,7 @@ export function PrintersPage() {
       acc[overview.printer_id] = {
         due_count: overview.due_count,
         warning_count: overview.warning_count,
+        total_print_hours: overview.total_print_hours,
       };
       return acc;
     },

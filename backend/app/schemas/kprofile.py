@@ -50,3 +50,4 @@ class KProfileDelete(BaseModel):
     nozzle_id: str  # e.g., "HH00-0.4"
     nozzle_diameter: str  # e.g., "0.4"
     filament_id: str  # Bambu filament identifier
+    setting_id: str | None = None  # Setting ID (for X1C series)

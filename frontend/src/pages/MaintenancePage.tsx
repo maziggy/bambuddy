@@ -8,10 +8,8 @@ import {
   Clock,
   Plus,
   Trash2,
-  Settings2,
   ChevronDown,
   ChevronUp,
-  RotateCcw,
   Droplet,
   Flame,
   Ruler,
@@ -19,6 +17,7 @@ import {
   Square,
   Cable,
   Edit3,
+  RotateCcw,
 } from 'lucide-react';
 import { api } from '../api/client';
 import type { MaintenanceStatus, PrinterMaintenanceOverview } from '../api/client';
@@ -334,134 +333,266 @@ function PrinterSection({
   );
 }
 
-// Settings modal for managing custom types
-function SettingsModal({
-  onClose,
+// Settings section component - maintenance types and per-printer interval overrides
+function SettingsSection({
+  overview,
   types,
+  onUpdateInterval,
   onAddType,
   onDeleteType,
 }: {
-  onClose: () => void;
+  overview: PrinterMaintenanceOverview[] | undefined;
   types: Array<{ id: number; name: string; default_interval_hours: number; icon: string | null; is_system: boolean }>;
+  onUpdateInterval: (id: number, customInterval: number | null) => void;
   onAddType: (data: { name: string; description?: string; default_interval_hours: number; icon?: string }) => void;
   onDeleteType: (id: number) => void;
 }) {
-  const [name, setName] = useState('');
-  const [interval, setInterval] = useState('100');
-  const [icon, setIcon] = useState('Wrench');
+  const [editingInterval, setEditingInterval] = useState<number | null>(null);
+  const [intervalInput, setIntervalInput] = useState('');
+  const [showAddType, setShowAddType] = useState(false);
+  const [newTypeName, setNewTypeName] = useState('');
+  const [newTypeInterval, setNewTypeInterval] = useState('100');
+  const [newTypeIcon, setNewTypeIcon] = useState('Wrench');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSaveInterval = (itemId: number, defaultInterval: number) => {
+    const newInterval = parseFloat(intervalInput);
+    if (!isNaN(newInterval) && newInterval > 0) {
+      const customInterval = Math.abs(newInterval - defaultInterval) < 0.01 ? null : newInterval;
+      onUpdateInterval(itemId, customInterval);
+    }
+    setEditingInterval(null);
+  };
+
+  const handleAddType = (e: React.FormEvent) => {
     e.preventDefault();
-    if (name.trim() && parseFloat(interval) > 0) {
+    if (newTypeName.trim() && parseFloat(newTypeInterval) > 0) {
       onAddType({
-        name: name.trim(),
-        default_interval_hours: parseFloat(interval),
-        icon,
+        name: newTypeName.trim(),
+        default_interval_hours: parseFloat(newTypeInterval),
+        icon: newTypeIcon,
       });
-      setName('');
-      setInterval('100');
+      setNewTypeName('');
+      setNewTypeInterval('100');
+      setShowAddType(false);
     }
   };
 
+  const printerItems = overview?.map(p => ({
+    printerId: p.printer_id,
+    printerName: p.printer_name,
+    items: p.maintenance_items.sort((a, b) => a.maintenance_type_id - b.maintenance_type_id),
+  })).sort((a, b) => a.printerName.localeCompare(b.printerName)) || [];
+
+  const systemTypes = types.filter(t => t.is_system);
   const customTypes = types.filter(t => !t.is_system);
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-bambu-dark-secondary rounded-lg p-6 w-full max-w-lg" onClick={e => e.stopPropagation()}>
-        <h3 className="text-lg font-semibold text-white mb-4">Maintenance Settings</h3>
-
-        {/* Existing custom types */}
-        {customTypes.length > 0 && (
-          <div className="mb-6">
-            <h4 className="text-sm text-bambu-gray mb-2">Custom Maintenance Types</h4>
-            <div className="space-y-2">
-              {customTypes.map((type) => {
-                const Icon = getIcon(type.icon);
-                return (
-                  <div key={type.id} className="flex items-center justify-between p-2 bg-bambu-dark rounded">
-                    <div className="flex items-center gap-2">
-                      <Icon className="w-4 h-4 text-bambu-gray" />
-                      <span className="text-white text-sm">{type.name}</span>
-                      <span className="text-bambu-gray text-xs">({type.default_interval_hours}h)</span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        if (confirm(`Delete "${type.name}"?`)) {
-                          onDeleteType(type.id);
-                        }
-                      }}
-                      className="p-1 rounded hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-red-400"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Add new type */}
-        <form onSubmit={handleSubmit}>
-          <h4 className="text-sm text-bambu-gray mb-2">Add Custom Type</h4>
-          <div className="flex gap-2 mb-3">
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="flex-1 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm"
-              placeholder="Name (e.g., Replace HEPA Filter)"
-            />
-            <input
-              type="number"
-              value={interval}
-              onChange={(e) => setInterval(e.target.value)}
-              className="w-20 px-2 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm"
-              placeholder="Hours"
-              min="1"
-            />
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="flex gap-1">
-              {Object.keys(iconMap).map((iconName) => {
-                const IconComp = iconMap[iconName];
-                return (
-                  <button
-                    key={iconName}
-                    type="button"
-                    onClick={() => setIcon(iconName)}
-                    className={`p-1.5 rounded ${
-                      icon === iconName
-                        ? 'bg-bambu-green text-white'
-                        : 'bg-bambu-dark text-bambu-gray hover:text-white'
-                    }`}
-                  >
-                    <IconComp className="w-4 h-4" />
-                  </button>
-                );
-              })}
-            </div>
-            <Button type="submit" size="sm" disabled={!name.trim()}>
-              <Plus className="w-4 h-4" />
-              Add
-            </Button>
-          </div>
-        </form>
-
-        <div className="mt-6 pt-4 border-t border-bambu-dark-tertiary flex justify-end">
-          <Button variant="secondary" onClick={onClose}>
-            Close
+    <div className="space-y-8">
+      {/* Maintenance Types */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white">Maintenance Types</h2>
+          <Button size="sm" variant="secondary" onClick={() => setShowAddType(!showAddType)}>
+            <Plus className="w-4 h-4" />
+            Add Custom Type
           </Button>
         </div>
+
+        {/* Add custom type form */}
+        {showAddType && (
+          <Card className="mb-4">
+            <div className="p-4">
+              <form onSubmit={handleAddType}>
+                <div className="flex gap-3 items-end">
+                  <div className="flex-1">
+                    <label className="block text-xs text-bambu-gray mb-1">Name</label>
+                    <input
+                      type="text"
+                      value={newTypeName}
+                      onChange={(e) => setNewTypeName(e.target.value)}
+                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm"
+                      placeholder="e.g., Replace HEPA Filter"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="w-28">
+                    <label className="block text-xs text-bambu-gray mb-1">Interval (hours)</label>
+                    <input
+                      type="number"
+                      value={newTypeInterval}
+                      onChange={(e) => setNewTypeInterval(e.target.value)}
+                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm"
+                      min="1"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-bambu-gray mb-1">Icon</label>
+                    <div className="flex gap-1">
+                      {Object.keys(iconMap).map((iconName) => {
+                        const IconComp = iconMap[iconName];
+                        return (
+                          <button
+                            key={iconName}
+                            type="button"
+                            onClick={() => setNewTypeIcon(iconName)}
+                            className={`p-2 rounded ${
+                              newTypeIcon === iconName
+                                ? 'bg-bambu-green text-white'
+                                : 'bg-bambu-dark-tertiary text-bambu-gray hover:text-white'
+                            }`}
+                          >
+                            <IconComp className="w-4 h-4" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button type="submit" size="sm" disabled={!newTypeName.trim()}>Add</Button>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => setShowAddType(false)}>Cancel</Button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </Card>
+        )}
+
+        {/* Types grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {/* System types */}
+          {systemTypes.map((type) => {
+            const Icon = getIcon(type.icon);
+            return (
+              <div key={type.id} className="bg-bambu-dark-secondary rounded-lg p-4 border border-bambu-dark-tertiary">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-bambu-dark rounded-lg">
+                    <Icon className="w-5 h-5 text-bambu-gray" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-white truncate">{type.name}</div>
+                    <div className="text-xs text-bambu-gray mt-0.5">{type.default_interval_hours}h interval</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {/* Custom types */}
+          {customTypes.map((type) => {
+            const Icon = getIcon(type.icon);
+            return (
+              <div key={type.id} className="bg-bambu-dark-secondary rounded-lg p-4 border border-bambu-green/30">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-bambu-green/20 rounded-lg">
+                    <Icon className="w-5 h-5 text-bambu-green" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-white truncate">{type.name}</span>
+                      <span className="px-1.5 py-0.5 bg-bambu-green/20 text-bambu-green text-[10px] font-medium rounded">Custom</span>
+                    </div>
+                    <div className="text-xs text-bambu-gray mt-0.5">{type.default_interval_hours}h interval</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (confirm(`Delete "${type.name}"?`)) {
+                        onDeleteType(type.id);
+                      }
+                    }}
+                    className="p-1.5 rounded hover:bg-bambu-dark text-bambu-gray hover:text-red-400 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
+
+      {/* Per-printer interval overrides */}
+      {printerItems.length > 0 && (
+        <div>
+          <h2 className="text-lg font-semibold text-white mb-2">Interval Overrides</h2>
+          <p className="text-sm text-bambu-gray mb-4">
+            Set custom intervals per printer.
+          </p>
+          <div className="space-y-3">
+            {printerItems.map((printer) => (
+              <Card key={printer.printerId}>
+                <div className="p-4">
+                  <h3 className="text-sm font-medium text-white mb-3">{printer.printerName}</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {printer.items.map((item) => {
+                      const Icon = getIcon(item.maintenance_type_icon);
+                      const typeInfo = types.find(t => t.id === item.maintenance_type_id);
+                      const defaultInterval = typeInfo?.default_interval_hours || item.interval_hours;
+                      const isEditing = editingInterval === item.id;
+
+                      return (
+                        <div key={item.id} className="flex items-center gap-2 p-2 bg-bambu-dark rounded-lg">
+                          <Icon className="w-4 h-4 text-bambu-gray shrink-0" />
+                          <span className="text-xs text-bambu-gray flex-1 truncate">{item.maintenance_type_name}</span>
+
+                          {isEditing ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                value={intervalInput}
+                                onChange={(e) => setIntervalInput(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleSaveInterval(item.id, defaultInterval);
+                                  if (e.key === 'Escape') setEditingInterval(null);
+                                }}
+                                className="w-16 px-2 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-xs"
+                                min="1"
+                                autoFocus
+                              />
+                              <Button size="sm" onClick={() => handleSaveInterval(item.id, defaultInterval)}>OK</Button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setEditingInterval(item.id);
+                                setIntervalInput(item.interval_hours.toString());
+                              }}
+                              className="px-2 py-1 bg-bambu-dark-tertiary hover:bg-bambu-dark-secondary border border-bambu-dark-tertiary hover:border-bambu-green rounded text-xs font-medium text-white transition-colors"
+                            >
+                              {item.interval_hours}h
+                              <Edit3 className="w-3 h-3 inline ml-1.5 text-bambu-gray" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {printerItems.length === 0 && (
+        <Card>
+          <CardContent className="text-center py-12">
+            <Clock className="w-12 h-12 mx-auto mb-4 text-bambu-gray/30" />
+            <p className="text-bambu-gray">No printers configured</p>
+            <p className="text-sm text-bambu-gray/70 mt-1">
+              Add printers to configure maintenance intervals
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
 
+type TabType = 'status' | 'settings';
+
 export function MaintenancePage() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const [showSettings, setShowSettings] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabType>('status');
 
   const { data: overview, isLoading } = useQuery({
     queryKey: ['maintenanceOverview'],
@@ -561,52 +692,78 @@ export function MaintenancePage() {
   return (
     <div className="p-8">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Maintenance</h1>
-          <p className="text-bambu-gray text-sm">
-            {totalDue > 0 && <span className="text-red-400">{totalDue} tasks overdue</span>}
-            {totalDue > 0 && totalWarning > 0 && ' · '}
-            {totalWarning > 0 && <span className="text-yellow-400">{totalWarning} due soon</span>}
-            {totalDue === 0 && totalWarning === 0 && 'All maintenance up to date'}
-          </p>
-        </div>
-        <Button variant="secondary" onClick={() => setShowSettings(true)}>
-          <Settings2 className="w-4 h-4" />
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-white">Maintenance</h1>
+        <p className="text-bambu-gray text-sm">
+          {activeTab === 'status' ? (
+            <>
+              {totalDue > 0 && <span className="text-red-400">{totalDue} tasks overdue</span>}
+              {totalDue > 0 && totalWarning > 0 && ' · '}
+              {totalWarning > 0 && <span className="text-yellow-400">{totalWarning} due soon</span>}
+              {totalDue === 0 && totalWarning === 0 && 'All maintenance up to date'}
+            </>
+          ) : (
+            'Configure maintenance types and intervals'
+          )}
+        </p>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 mb-6 border-b border-bambu-dark-tertiary">
+        <button
+          onClick={() => setActiveTab('status')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            activeTab === 'status'
+              ? 'text-bambu-green border-bambu-green'
+              : 'text-bambu-gray border-transparent hover:text-white'
+          }`}
+        >
+          Status
+        </button>
+        <button
+          onClick={() => setActiveTab('settings')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            activeTab === 'settings'
+              ? 'text-bambu-green border-bambu-green'
+              : 'text-bambu-gray border-transparent hover:text-white'
+          }`}
+        >
           Settings
-        </Button>
+        </button>
       </div>
 
-      {/* Printers - sorted alphabetically */}
-      <div className="space-y-4">
-        {overview && overview.length > 0 ? (
-          [...overview].sort((a, b) => a.printer_name.localeCompare(b.printer_name)).map((printerOverview) => (
-            <PrinterSection
-              key={printerOverview.printer_id}
-              overview={printerOverview}
-              onPerform={handlePerform}
-              onToggle={handleToggle}
-              onSetHours={handleSetHours}
-            />
-          ))
-        ) : (
-          <Card>
-            <CardContent className="text-center py-12">
-              <Wrench className="w-12 h-12 mx-auto mb-4 text-bambu-gray/30" />
-              <p className="text-bambu-gray">No printers configured</p>
-              <p className="text-sm text-bambu-gray/70 mt-1">
-                Add printers to start tracking maintenance
-              </p>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-
-      {/* Settings modal */}
-      {showSettings && types && (
-        <SettingsModal
-          onClose={() => setShowSettings(false)}
-          types={types}
+      {/* Tab content */}
+      {activeTab === 'status' ? (
+        <div className="space-y-4">
+          {overview && overview.length > 0 ? (
+            [...overview].sort((a, b) => a.printer_name.localeCompare(b.printer_name)).map((printerOverview) => (
+              <PrinterSection
+                key={printerOverview.printer_id}
+                overview={printerOverview}
+                onPerform={handlePerform}
+                onToggle={handleToggle}
+                onSetHours={handleSetHours}
+              />
+            ))
+          ) : (
+            <Card>
+              <CardContent className="text-center py-12">
+                <Wrench className="w-12 h-12 mx-auto mb-4 text-bambu-gray/30" />
+                <p className="text-bambu-gray">No printers configured</p>
+                <p className="text-sm text-bambu-gray/70 mt-1">
+                  Add printers to start tracking maintenance
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      ) : (
+        <SettingsSection
+          overview={overview}
+          types={types || []}
+          onUpdateInterval={(id, customInterval) =>
+            updateMutation.mutate({ id, data: { custom_interval_hours: customInterval } })
+          }
           onAddType={(data) => addTypeMutation.mutate(data)}
           onDeleteType={(id) => deleteTypeMutation.mutate(id)}
         />

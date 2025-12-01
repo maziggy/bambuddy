@@ -351,6 +351,7 @@ export interface KProfileDelete {
   nozzle_id: string;  // e.g., "HH00-0.4"
   nozzle_diameter: string;  // e.g., "0.4"
   filament_id: string;  // Bambu filament identifier
+  setting_id?: string | null;  // Setting ID (for X1C series)
 }
 
 export interface KProfilesResponse {

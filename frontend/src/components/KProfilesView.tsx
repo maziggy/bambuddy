@@ -128,7 +128,13 @@ function KProfileModal({
   const [modalDiameter, setModalDiameter] = useState(
     profile?.nozzle_diameter || nozzleDiameter
   );
-  const [extruderId, setExtruderId] = useState(profile?.extruder_id || 0);
+  // For new profiles on dual-nozzle: allow selecting multiple extruders
+  // For editing: use single extruder from the profile
+  const [selectedExtruders, setSelectedExtruders] = useState<number[]>(
+    profile ? [profile.extruder_id] : isDualNozzle ? [0, 1] : [0]  // Default: both extruders for new dual-nozzle profiles
+  );
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [savingProgress, setSavingProgress] = useState({ current: 0, total: 0 });
 
   // Extract unique filaments from existing K-profiles on the printer
   // These have valid filament_ids that the printer recognizes
@@ -156,12 +162,20 @@ function KProfileModal({
     onSuccess: (result) => {
       console.log('[KProfile] Save success:', result);
       showToast('K-profile saved');
-      queryClient.invalidateQueries({ queryKey: ['kprofiles', printerId] });
-      onSave();
+      // Show syncing indicator while printer processes the command
+      setIsSyncing(true);
+      // Add delay before refreshing to give printer time to process the save
+      // Bambu printers can be slow to apply K-profile changes
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['kprofiles', printerId] });
+        setIsSyncing(false);
+        onSave();
+      }, 2500);
     },
     onError: (error: Error) => {
       console.error('[KProfile] Save error:', error);
       showToast(error.message, 'error');
+      setIsSyncing(false);
     },
   });
 
@@ -173,12 +187,20 @@ function KProfileModal({
     onSuccess: (result) => {
       console.log('[KProfile] Delete success:', result);
       showToast('K-profile deleted');
-      queryClient.invalidateQueries({ queryKey: ['kprofiles', printerId] });
-      onClose();
+      // Show syncing indicator while printer processes the command
+      setIsSyncing(true);
+      // Add delay before refreshing to give printer time to process the delete
+      // Bambu printers can be slow to apply K-profile changes
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['kprofiles', printerId] });
+        setIsSyncing(false);
+        onClose();
+      }, 2500);
     },
     onError: (error: Error) => {
       console.error('[KProfile] Delete error:', error);
       showToast(error.message, 'error');
+      setIsSyncing(false);
     },
   });
 
@@ -192,35 +214,101 @@ function KProfileModal({
       nozzle_id: profile.nozzle_id,
       nozzle_diameter: profile.nozzle_diameter,
       filament_id: profile.filament_id,
+      setting_id: profile.setting_id,
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validate at least one extruder is selected for dual-nozzle
+    if (isDualNozzle && !profile && selectedExtruders.length === 0) {
+      showToast('Please select at least one extruder', 'error');
+      return;
+    }
+
     // Format k_value to 6 decimal places for Bambu protocol
     const formattedKValue = parseFloat(kValue).toFixed(6);
     // Combine nozzle type and diameter into nozzle_id (e.g., "HH00-0.4")
     const nozzleId = `${nozzleType}-${modalDiameter}`;
 
-    // Use the name from the form - it's auto-populated when filament is selected
-    // but can be edited by the user
-    const payload = {
-      name: name,
-      k_value: formattedKValue,
-      filament_id: filamentId,
-      nozzle_id: nozzleId,
-      nozzle_diameter: modalDiameter,
-      extruder_id: extruderId,
-      setting_id: profile?.setting_id,
-      slot_id: profile?.slot_id ?? 0,
-    };
-    console.log('[KProfile] Saving profile:', payload);
-    saveMutation.mutate(payload);
+    // For editing or single extruder: just save one profile
+    if (profile || selectedExtruders.length === 1) {
+      const payload = {
+        name: name,
+        k_value: formattedKValue,
+        filament_id: filamentId,
+        nozzle_id: nozzleId,
+        nozzle_diameter: modalDiameter,
+        extruder_id: profile ? profile.extruder_id : selectedExtruders[0],
+        setting_id: profile?.setting_id,
+        slot_id: profile?.slot_id ?? 0,
+      };
+      console.log('[KProfile] Saving profile:', payload);
+      saveMutation.mutate(payload);
+      return;
+    }
+
+    // For new profiles with multiple extruders: save sequentially
+    setIsSyncing(true);
+    setSavingProgress({ current: 0, total: selectedExtruders.length });
+
+    for (let i = 0; i < selectedExtruders.length; i++) {
+      const extruderId = selectedExtruders[i];
+      const payload = {
+        name: name,
+        k_value: formattedKValue,
+        filament_id: filamentId,
+        nozzle_id: nozzleId,
+        nozzle_diameter: modalDiameter,
+        extruder_id: extruderId,
+        setting_id: undefined,
+        slot_id: 0,
+      };
+
+      setSavingProgress({ current: i + 1, total: selectedExtruders.length });
+      console.log(`[KProfile] Saving profile ${i + 1}/${selectedExtruders.length} for extruder ${extruderId}:`, payload);
+
+      try {
+        await api.setKProfile(printerId, payload);
+        // Wait between saves to let printer process
+        if (i < selectedExtruders.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1500));
+        }
+      } catch (error) {
+        console.error(`[KProfile] Failed to save for extruder ${extruderId}:`, error);
+        showToast(`Failed to save for ${extruderId === 1 ? 'Left' : 'Right'} extruder`, 'error');
+        setIsSyncing(false);
+        setSavingProgress({ current: 0, total: 0 });
+        return;
+      }
+    }
+
+    showToast(`K-profile saved to ${selectedExtruders.length} extruders`);
+    // Wait for final sync before closing
+    setTimeout(() => {
+      queryClient.invalidateQueries({ queryKey: ['kprofiles', printerId] });
+      setIsSyncing(false);
+      setSavingProgress({ current: 0, total: 0 });
+      onSave();
+    }, 2500);
   };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-md">
+      <Card className="w-full max-w-md relative">
+        {/* Syncing overlay */}
+        {isSyncing && (
+          <div className="absolute inset-0 bg-bambu-dark-secondary/90 flex flex-col items-center justify-center z-10 rounded-lg">
+            <Loader2 className="w-8 h-8 text-bambu-green animate-spin mb-3" />
+            <p className="text-white font-medium">
+              {savingProgress.total > 1
+                ? `Saving to extruder ${savingProgress.current}/${savingProgress.total}...`
+                : 'Syncing with printer...'}
+            </p>
+            <p className="text-bambu-gray text-sm mt-1">Please wait</p>
+          </div>
+        )}
         <CardContent className="p-0">
           <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
             <h2 className="text-xl font-semibold text-white">
@@ -229,6 +317,7 @@ function KProfileModal({
             <button
               onClick={onClose}
               className="text-bambu-gray hover:text-white transition-colors"
+              disabled={isSyncing}
             >
               <X className="w-5 h-5" />
             </button>
@@ -245,7 +334,7 @@ function KProfileModal({
                 disabled={!!profile}
                 className={`w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none ${profile ? 'opacity-60 cursor-not-allowed' : ''}`}
                 placeholder="My PLA Profile"
-                required
+                required={!profile}
               />
             </div>
 
@@ -299,13 +388,13 @@ function KProfileModal({
                 }}
                 disabled={!!profile}
                 className={`w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none ${profile ? 'opacity-60 cursor-not-allowed' : ''}`}
-                required
+                required={!profile}
               >
                 <option value="">Select filament...</option>
-                {/* Show current filament when editing */}
+                {/* Show current filament when editing - look up from knownFilaments */}
                 {profile?.filament_id && (
                   <option key={profile.filament_id} value={profile.filament_id}>
-                    {extractFilamentName(profile.name || profile.filament_id)}
+                    {knownFilaments.find(f => f.id === profile.filament_id)?.name || profile.filament_id}
                   </option>
                 )}
                 {/* Show known filaments from existing K-profiles (for new profiles) */}
@@ -364,19 +453,52 @@ function KProfileModal({
               </div>
             </div>
 
-            {/* Extruder - only show for dual-nozzle printers, read-only when editing */}
+            {/* Extruder - only show for dual-nozzle printers */}
             {isDualNozzle && (
               <div>
-                <label className="block text-sm text-bambu-gray mb-1">Extruder</label>
-                <select
-                  value={extruderId}
-                  onChange={(e) => setExtruderId(parseInt(e.target.value))}
-                  disabled={!!profile}
-                  className={`w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none ${profile ? 'opacity-60 cursor-not-allowed' : ''}`}
-                >
-                  <option value={1}>Left</option>
-                  <option value={0}>Right</option>
-                </select>
+                <label className="block text-sm text-bambu-gray mb-1">
+                  {profile ? 'Extruder' : 'Extruders'}
+                </label>
+                {profile ? (
+                  // Read-only display for editing
+                  <div className="px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white opacity-60">
+                    {profile.extruder_id === 1 ? 'Left' : 'Right'}
+                  </div>
+                ) : (
+                  // Checkboxes for new profile - can select both
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedExtruders.includes(1)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedExtruders([...selectedExtruders, 1]);
+                          } else {
+                            setSelectedExtruders(selectedExtruders.filter(id => id !== 1));
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green focus:ring-offset-0 accent-bambu-green"
+                      />
+                      <span className="text-white">Left</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedExtruders.includes(0)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedExtruders([...selectedExtruders, 0]);
+                          } else {
+                            setSelectedExtruders(selectedExtruders.filter(id => id !== 0));
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green focus:ring-offset-0 accent-bambu-green"
+                      />
+                      <span className="text-white">Right</span>
+                    </label>
+                  </div>
+                )}
               </div>
             )}
 
@@ -386,7 +508,7 @@ function KProfileModal({
                   type="button"
                   variant="secondary"
                   onClick={() => setShowDeleteConfirm(true)}
-                  disabled={deleteMutation.isPending}
+                  disabled={deleteMutation.isPending || isSyncing}
                   className="text-red-500 hover:bg-red-500/10"
                 >
                   {deleteMutation.isPending ? (
@@ -400,13 +522,14 @@ function KProfileModal({
                 type="button"
                 variant="secondary"
                 onClick={onClose}
+                disabled={isSyncing}
                 className="flex-1"
               >
                 Cancel
               </Button>
               <Button
                 type="submit"
-                disabled={saveMutation.isPending}
+                disabled={saveMutation.isPending || isSyncing}
                 className="flex-1"
               >
                 {saveMutation.isPending ? (

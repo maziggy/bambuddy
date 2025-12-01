@@ -21,7 +21,7 @@ v∆v
 
 ## Features
 
-- **Multi-Printer Support** - Connect and monitor multiple Bambu Lab printers (H2C, H2D, H2S, X1, X1C, P1P, P1S, A1, A1 Mini)
+- **Multi-Printer Support** - Connect and monitor multiple Bambu Lab printers (H2D and X1C testet. H2C, H2S, X1, X1C, P1P, P1S, A1 and A1 Mini needs to be testet)
 - **Automatic Print Archiving** - Automatically saves 3MF files with full metadata extraction
 - **3D Model Preview** - Interactive Three.js viewer for archived prints
 - **Real-time Monitoring** - Live printer status via WebSocket with print progress, temperatures, layer count, and more

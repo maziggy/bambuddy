@@ -31,7 +31,7 @@ export function ExtruderControls({ status, nozzleCount }: ExtruderControlsProps)
   const isDisabled = !isConnected || isPrinting || extrudeMutation.isPending;
 
   return (
-    <div className="flex flex-col items-center gap-1.5 flex-1 justify-center">
+    <div className="flex flex-col items-center gap-1.5 justify-center">
       {/* Left/Right Toggle - only for dual nozzle */}
       {isDualNozzle && (
         <div className="flex rounded-md overflow-hidden border border-bambu-dark-tertiary mb-1 flex-shrink-0">

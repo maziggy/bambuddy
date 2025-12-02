@@ -1039,6 +1039,12 @@ if app_settings.static_dir.exists() and any(app_settings.static_dir.iterdir()):
             StaticFiles(directory=app_settings.static_dir / "img"),
             name="img",
         )
+    if (app_settings.static_dir / "icons").exists():
+        app.mount(
+            "/icons",
+            StaticFiles(directory=app_settings.static_dir / "icons"),
+            name="icons",
+        )
 
 
 @app.get("/")

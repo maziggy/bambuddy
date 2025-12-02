@@ -10,7 +10,7 @@ import { JogPad } from '../components/control/JogPad';
 import { BedControls } from '../components/control/BedControls';
 import { ExtruderControls } from '../components/control/ExtruderControls';
 import { AMSSectionDual } from '../components/control/AMSSectionDual';
-import { Loader2, WifiOff, Video, Webcam, HardDrive, Settings } from 'lucide-react';
+import { Loader2, WifiOff, Video, Webcam, Settings } from 'lucide-react';
 
 export function ControlPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -131,7 +131,7 @@ export function ControlPage() {
             {/* Camera Header Icons - same height as Control header */}
             <div className="flex items-center justify-end gap-2 px-3 py-2.5 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary min-h-[44px]">
               <button className="p-1.5 rounded hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white">
-                <HardDrive className="w-4 h-4" />
+                <img src="/icons/micro-sd.svg" alt="SD Card" className="w-4 h-4 icon-theme" />
               </button>
               <button className="p-1.5 rounded hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white">
                 <Video className="w-4 h-4" />
@@ -165,7 +165,7 @@ export function ControlPage() {
           </div>
 
           {/* Right Panel - Control */}
-          <div className="w-[620px] flex flex-col bg-bambu-dark-secondary border-l border-bambu-dark-tertiary overflow-y-auto">
+          <div className="w-[680px] flex flex-col bg-bambu-dark-secondary border-l border-bambu-dark-tertiary overflow-y-auto">
             {/* Control Header - same height as Camera header */}
             <div className="flex items-center justify-between px-3 py-2.5 border-b border-bambu-dark-tertiary min-h-[44px]">
               <span className="text-sm text-bambu-gray">Control</span>
@@ -195,9 +195,10 @@ export function ControlPage() {
             {/* Control Body */}
             <div className="flex-1 p-4 bg-bambu-dark">
               {/* Top Section: Temp + Movement + Extruder */}
-              <div className="flex gap-6 mb-4" style={{ minHeight: '300px' }}>
-                {/* Temperature Column */}
-                <TemperatureColumn
+              <div className="mb-4 bg-bambu-dark-tertiary rounded-[10px] p-3">
+                <div className="flex gap-4 bg-bambu-dark-secondary rounded-[8px] p-4 overflow-hidden" style={{ minHeight: '300px' }}>
+                  {/* Temperature Column */}
+                  <TemperatureColumn
                   printerId={selectedPrinter.id}
                   status={selectedStatus}
                   nozzleCount={selectedPrinter.nozzle_count}
@@ -223,6 +224,7 @@ export function ControlPage() {
                     status={selectedStatus}
                     nozzleCount={selectedPrinter.nozzle_count}
                   />
+                </div>
                 </div>
               </div>
 

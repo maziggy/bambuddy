@@ -2627,6 +2627,60 @@ class BambuMQTTClient:
         logger.info(f"[{self.serial_number}] Triggering RFID re-read: AMS {ams_id}, slot {tray_id}")
         return True, f"Refreshing AMS {ams_id} tray {tray_id}"
 
+    def ams_set_filament_setting(
+        self,
+        ams_id: int,
+        tray_id: int,
+        tray_info_idx: str,
+        tray_type: str,
+        tray_sub_brands: str,
+        tray_color: str,
+        nozzle_temp_min: int,
+        nozzle_temp_max: int,
+        k: float,
+    ) -> bool:
+        """Set AMS tray filament settings including K (pressure advance) value.
+
+        Args:
+            ams_id: AMS unit ID (0-3)
+            tray_id: Tray ID within the AMS (0-3)
+            tray_info_idx: Filament preset ID (e.g., "GFA00")
+            tray_type: Filament type (e.g., "PLA", "PETG")
+            tray_sub_brands: Sub-brand name (e.g., "PLA Basic", "PETG HF")
+            tray_color: Color in RRGGBBAA hex format (e.g., "FFFF00FF")
+            nozzle_temp_min: Minimum nozzle temperature
+            nozzle_temp_max: Maximum nozzle temperature
+            k: Pressure advance (K) value (e.g., 0.020)
+
+        Returns:
+            True if command was sent, False otherwise
+        """
+        if not self._client or not self.state.connected:
+            logger.warning(f"[{self.serial_number}] Cannot set AMS filament setting: not connected")
+            return False
+
+        command = {
+            "print": {
+                "command": "ams_filament_setting",
+                "ams_id": ams_id,
+                "tray_id": tray_id,
+                "tray_info_idx": tray_info_idx,
+                "tray_type": tray_type,
+                "tray_sub_brands": tray_sub_brands,
+                "tray_color": tray_color,
+                "nozzle_temp_min": nozzle_temp_min,
+                "nozzle_temp_max": nozzle_temp_max,
+                "k": k,
+                "sequence_id": "0"
+            }
+        }
+
+        command_json = json.dumps(command)
+        logger.info(f"[{self.serial_number}] Publishing ams_filament_setting: AMS {ams_id}, tray {tray_id}, k={k}")
+        logger.debug(f"[{self.serial_number}] ams_filament_setting command: {command_json}")
+        self._client.publish(self.topic_publish, command_json)
+        return True
+
     def set_timelapse(self, enable: bool) -> bool:
         """Enable or disable timelapse recording.
 

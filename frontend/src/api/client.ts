@@ -1281,6 +1281,21 @@ export const api = {
     }),
   amsUnloadFilament: (printerId: number) =>
     request<ControlResponse>(`/printers/${printerId}/control/ams/unload`, { method: 'POST' }),
+  amsSetFilamentSetting: (printerId: number, data: {
+    ams_id: number;
+    tray_id: number;
+    tray_info_idx: string;
+    tray_type: string;
+    tray_sub_brands: string;
+    tray_color: string;
+    nozzle_temp_min: number;
+    nozzle_temp_max: number;
+    k: number;
+  }) =>
+    request<ControlResponse>(`/printers/${printerId}/control/ams/filament-setting`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   sendGcode: (printerId: number, command: string, confirmToken?: string) =>
     request<ControlResult>(`/printers/${printerId}/control/gcode`, {
       method: 'POST',

@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import type { PrinterStatus, AMSUnit, AMSTray, KProfile } from '../../api/client';
 import { Loader2, ChevronDown, ChevronUp, RotateCw } from 'lucide-react';
 import { AMSHumidityModal } from './AMSHumidityModal';
 import { AMSMaterialsModal } from './AMSMaterialsModal';
 import { useToast } from '../../contexts/ToastContext';
+import { useAmsOperations } from './useAmsOperations';
 
 
 interface AMSSectionDualProps {
@@ -519,7 +520,10 @@ function AMSPanelContent({
               return (
                 <button
                   key={tray.id}
-                  onClick={() => onSlotRefresh(selectedUnit.id, tray.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSlotRefresh(selectedUnit.id, tray.id);
+                  }}
                   disabled={isRefreshing}
                   className={`w-14 flex items-center justify-center gap-0.5 text-[10px] text-bambu-gray px-1.5 py-[3px] bg-bambu-dark rounded-full border border-bambu-dark-tertiary transition-colors ${
                     isRefreshing ? 'opacity-70 cursor-wait' : 'hover:bg-bambu-dark-tertiary'
@@ -927,19 +931,21 @@ export function AMSSectionDual({ printerId, printerModel, status, nozzleCount }:
   const [humidityModal, setHumidityModal] = useState<{ humidity: number; temp: number } | null>(null);
   const [materialsModal, setMaterialsModal] = useState<{ tray: AMSTray; slotLabel: string; amsId: number } | null>(null);
 
-  // Track refreshing slot - cleared when tray data updates from MQTT
-  const [refreshingSlotState, setRefreshingSlotState] = useState<{ amsId: number; trayId: number; startTime: number } | null>(null);
+  // Get ams_status values from printer status
+  const amsStatusMain = status?.ams_status_main ?? 0;
+  const trayNow = status?.tray_now ?? 255;
 
-  // Track user-initiated filament change operations (for showing progress card immediately)
-  // Store both the operation type (load/unload) and the target tray ID for load operations
-  const [userFilamentChange, setUserFilamentChange] = useState<{ isLoading: boolean; targetTrayId: number | null } | null>(null);
+  // AMS Operations hook - manages state machine for refresh/load/unload
+  const amsOps = useAmsOperations({
+    printerId,
+    amsUnits,
+    amsStatusMain,
+    trayNow,
+    onToast: showToast,
+  });
 
   // Track if we've done initial sync from tray_now
   const initialSyncDone = useRef(false);
-
-  // Track intended operation type synchronously (refs update immediately, unlike state)
-  // This prevents race conditions where MQTT updates arrive before React state updates
-  const intendedOperationRef = useRef<'load' | 'unload' | null>(null);
 
   // Sync selectedTray from status.tray_now on initial load
   // tray_now: 255 = no filament loaded, 0-253 = valid tray ID, 254 = external spool

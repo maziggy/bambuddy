@@ -141,6 +141,18 @@ class AMSRefreshTrayRequest(BaseModel):
     tray_id: int = Field(..., ge=0, le=3, description="Tray ID within the AMS (0-3)")
 
 
+class AMSFilamentSettingRequest(BaseModel):
+    ams_id: int = Field(..., ge=0, le=128, description="AMS unit ID (0-3, or 128 for H2D external)")
+    tray_id: int = Field(..., ge=0, le=3, description="Tray ID within the AMS (0-3)")
+    tray_info_idx: str = Field(..., description="Filament preset ID (e.g., 'GFA00')")
+    tray_type: str = Field(..., description="Filament type (e.g., 'PLA', 'PETG')")
+    tray_sub_brands: str = Field(default="", description="Sub-brand name (e.g., 'PLA Basic')")
+    tray_color: str = Field(..., description="Color in RRGGBBAA hex format")
+    nozzle_temp_min: int = Field(..., ge=150, le=350, description="Minimum nozzle temperature")
+    nozzle_temp_max: int = Field(..., ge=150, le=350, description="Maximum nozzle temperature")
+    k: float = Field(..., ge=0, le=1, description="Pressure advance (K) value")
+
+
 class GcodeRequest(ConfirmableRequest):
     command: str = Field(..., min_length=1, max_length=500, description="G-code command(s)")
 
@@ -633,6 +645,33 @@ async def ams_refresh_tray(
 
     success, message = client.ams_refresh_tray(request.ams_id, request.tray_id)
     return ControlResponse(success=success, message=message)
+
+
+@router.post("/{printer_id}/control/ams/filament-setting", response_model=ControlResponse)
+async def ams_set_filament_setting(
+    printer_id: int,
+    request: AMSFilamentSettingRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Set filament settings for an AMS tray including K (pressure advance) value."""
+    await get_printer_or_404(printer_id, db)
+    client = get_mqtt_client_or_503(printer_id)
+
+    success = client.ams_set_filament_setting(
+        ams_id=request.ams_id,
+        tray_id=request.tray_id,
+        tray_info_idx=request.tray_info_idx,
+        tray_type=request.tray_type,
+        tray_sub_brands=request.tray_sub_brands,
+        tray_color=request.tray_color,
+        nozzle_temp_min=request.nozzle_temp_min,
+        nozzle_temp_max=request.nozzle_temp_max,
+        k=request.k,
+    )
+    return ControlResponse(
+        success=success,
+        message=f"Updated AMS {request.ams_id} tray {request.tray_id} with K={request.k}" if success else "Failed to update filament setting"
+    )
 
 
 # =============================================================================

@@ -74,6 +74,12 @@ function trayColorToHex(trayColor: string | null): string {
   return `#${cleanHex}`;
 }
 
+function hexToTrayColor(hex: string): string {
+  // Convert #RRGGBB to RRGGBBFF (with full opacity)
+  const cleanHex = hex.replace('#', '').toUpperCase();
+  return cleanHex.length === 6 ? `${cleanHex}FF` : `${cleanHex.substring(0, 6)}FF`;
+}
+
 // Check if tray has valid Bambu Lab UUID (32-char hex)
 function isBambuLabSpool(trayUuid: string | null): boolean {
   if (!trayUuid) return false;
@@ -210,16 +216,40 @@ export function AMSMaterialsModal({
     },
   });
 
+  // Mutation for saving filament settings to printer (including K value)
+  const saveFilamentSettingMutation = useMutation({
+    mutationFn: (data: {
+      ams_id: number;
+      tray_id: number;
+      tray_info_idx: string;
+      tray_type: string;
+      tray_sub_brands: string;
+      tray_color: string;
+      nozzle_temp_min: number;
+      nozzle_temp_max: number;
+      k: number;
+    }) => api.amsSetFilamentSetting(printerId, data),
+    onSuccess: (result) => {
+      console.log('[AMSMaterialsModal] saveFilamentSettingMutation SUCCESS:', result);
+    },
+    onError: (error) => {
+      console.error('[AMSMaterialsModal] saveFilamentSettingMutation ERROR:', error);
+    },
+  });
+
   // Get filament presets from cloud settings:
-  // 1. Show ALL filament presets (like Bambu Studio does in cloud profiles)
+  // 1. Filter out presets starting with "#" (experimental/special presets)
   // 2. Prioritize current printer model, then deduplicate by base name
   // 3. Sort alphabetically
   const filamentPresets = (() => {
     const allPresets = cloudSettings?.filament || [];
 
+    // Filter out presets starting with "#" (experimental/special presets)
+    const filteredPresets = allPresets.filter(p => !p.name.startsWith('# '));
+
     // Sort presets: current printer model first, then others
     const modelPattern = new RegExp(`@.*\\b${printerModel}\\b`, 'i');
-    const sortedByModel = [...allPresets].sort((a, b) => {
+    const sortedByModel = [...filteredPresets].sort((a, b) => {
       const aMatches = modelPattern.test(a.name);
       const bMatches = modelPattern.test(b.name);
       if (aMatches && !bMatches) return -1;
@@ -323,6 +353,22 @@ export function AMSMaterialsModal({
   const bambuColorName = getColorNameFromTrayId(tray.tray_id_name);
 
   useEffect(() => {
+    // First, try to find a profile matching the tray's current K value (from printer)
+    // This preserves the user's selection when reopening the modal
+    const currentK = tray.k;
+    if (currentK && currentK > 0) {
+      const matchingKProfile = matchingProfiles.find(p => {
+        const profileK = parseFloat(p.k_value);
+        return Math.abs(profileK - currentK) < 0.0001; // Allow small floating point tolerance
+      });
+      if (matchingKProfile) {
+        setSelectedKProfile(matchingKProfile.name);
+        setKValue(currentK);
+        return;
+      }
+    }
+
+    // Fall back to name-based matching if no K-value match found
     // For Bambu spools, use tray_sub_brands (e.g., "PLA Basic") and color name
     // For non-Bambu, use clean name from preset (e.g., "Bambu PLA Basic" without #) for K-profile matching
     const subBrands = isBambuSpool
@@ -340,7 +386,7 @@ export function AMSMaterialsModal({
       setSelectedKProfile('Default');
       setKValue(0);
     }
-  }, [profiles, selectedFilamentType, selectedPresetName, tray.tray_type, tray.tray_sub_brands, tray.tray_id_name, isBambuSpool, bambuColorName]);
+  }, [profiles, matchingProfiles, selectedFilamentType, selectedPresetName, tray.tray_type, tray.tray_sub_brands, tray.tray_id_name, tray.k, isBambuSpool, bambuColorName]);
 
   // Close on Escape key
   useEffect(() => {
@@ -360,13 +406,43 @@ export function AMSMaterialsModal({
   };
 
   const handleConfirm = () => {
+    console.log('[AMSMaterialsModal] handleConfirm called');
+    console.log('[AMSMaterialsModal] amsId:', amsId, 'tray.id:', tray.id, 'kValue:', kValue);
+
     // Save preset mapping for non-Bambu slots
     if (isEditable && selectedPresetId && selectedPresetName) {
+      console.log('[AMSMaterialsModal] Saving preset mapping');
       savePresetMutation.mutate({
         presetId: selectedPresetId,
         presetName: selectedPresetName,
       });
     }
+
+    // Send filament settings to printer (including K value)
+    // Use current tray data for Bambu spools, or edited values for non-Bambu
+    const trayColor = isBambuSpool
+      ? (tray.tray_color || '808080FF')
+      : hexToTrayColor(selectedColor);
+    const trayType = isBambuSpool
+      ? (tray.tray_type || 'PLA')
+      : (selectedFilamentType || 'PLA');
+    const traySubBrands = isBambuSpool
+      ? (tray.tray_sub_brands || '')
+      : (selectedPresetName ? getCleanFilamentName(selectedPresetName) : '');
+
+    const payload = {
+      ams_id: amsId,
+      tray_id: tray.id,
+      tray_info_idx: tray.tray_info_idx || '',
+      tray_type: trayType,
+      tray_sub_brands: traySubBrands,
+      tray_color: trayColor,
+      nozzle_temp_min: nozzleTempMin,
+      nozzle_temp_max: nozzleTempMax,
+      k: kValue,
+    };
+    console.log('[AMSMaterialsModal] Calling saveFilamentSettingMutation with payload:', payload);
+    saveFilamentSettingMutation.mutate(payload);
 
     onConfirm?.({
       filamentType: selectedFilamentType,

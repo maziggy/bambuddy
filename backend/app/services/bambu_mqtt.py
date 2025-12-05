@@ -130,6 +130,8 @@ class PrinterState:
     ams_mapping: list = field(default_factory=list)
     # Per-AMS extruder map: {ams_id: extruder_id} where 0=right, 1=left
     ams_extruder_map: dict = field(default_factory=dict)
+    # Timestamp of last AMS data update (for RFID refresh detection)
+    last_ams_update: float = 0.0
 
 
 # Stage name mapping from BambuStudio DeviceManager.cpp
@@ -796,6 +798,8 @@ class BambuMQTTClient:
 
         # Store AMS data in raw_data so it's accessible via API
         self.state.raw_data["ams"] = ams_list
+        # Update timestamp for RFID refresh detection (frontend can detect "new data arrived")
+        self.state.last_ams_update = time.time()
         logger.debug(f"[{self.serial_number}] Stored AMS data with {len(ams_list)} units")
 
         # Extract ams_extruder_map from each AMS unit's info field

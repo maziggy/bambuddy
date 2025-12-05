@@ -43,6 +43,7 @@ interface UseAmsOperationsProps {
   amsUnits: AMSUnit[];
   amsStatusMain: number;
   trayNow: number;
+  lastAmsUpdate: number;  // Backend timestamp for detecting AMS data updates
   onToast: (message: string, type: 'success' | 'error') => void;
 }
 
@@ -82,6 +83,7 @@ export function useAmsOperations({
   amsUnits,
   amsStatusMain,
   trayNow,
+  lastAmsUpdate,
   onToast,
 }: UseAmsOperationsProps): UseAmsOperationsReturn {
   const [state, setState] = useState<OperationState>('IDLE');
@@ -89,7 +91,10 @@ export function useAmsOperations({
 
   // Track previous values for transition detection
   const prevAmsStatusMainRef = useRef(amsStatusMain);
-  const prevTrayDataRef = useRef<string>('');
+  // Track initial tray data signature for detecting changes during refresh
+  const refreshInitialDataRef = useRef<string>('');
+  // Track initial lastAmsUpdate value at start of refresh (to detect when new data arrives)
+  const refreshInitialAmsUpdateRef = useRef<number>(0);
 
   // Timeout ref for cleanup
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -107,18 +112,9 @@ export function useAmsOperations({
     clearOperationTimeout();
     setState('IDLE');
     setContext(null);
-    prevTrayDataRef.current = '';
+    refreshInitialDataRef.current = '';
+    refreshInitialAmsUpdateRef.current = 0;
   }, [clearOperationTimeout]);
-
-  // Set up timeout for current operation
-  const startOperationTimeout = useCallback((timeoutMs: number) => {
-    clearOperationTimeout();
-    const startTime = context?.startTime ?? Date.now();
-    timeoutRef.current = setTimeout(() => {
-      console.log(`[useAmsOperations] Operation timed out after ${timeoutMs}ms`);
-      reset();
-    }, timeoutMs);
-  }, [clearOperationTimeout, reset, context?.startTime]);
 
   // === Mutations ===
 
@@ -173,22 +169,24 @@ export function useAmsOperations({
       return;
     }
 
-    console.log(`[useAmsOperations] Starting refresh: AMS ${amsId}, Tray ${trayId}`);
-
-    // Capture current tray data signature for change detection
+    // Capture current tray data to detect changes
     const unit = amsUnits.find(u => u.id === amsId);
     const tray = unit?.tray?.find(t => t.id === trayId);
     if (tray) {
-      prevTrayDataRef.current = JSON.stringify({
+      refreshInitialDataRef.current = JSON.stringify({
         tag_uid: tray.tag_uid,
         tray_uuid: tray.tray_uuid,
-        tray_id_name: tray.tray_id_name,
         tray_type: tray.tray_type,
         tray_color: tray.tray_color,
       });
     }
 
+    // Capture initial lastAmsUpdate to detect when NEW data arrives
+    refreshInitialAmsUpdateRef.current = lastAmsUpdate;
+
     const startTime = Date.now();
+    console.log(`[useAmsOperations] Starting refresh: AMS ${amsId}, Tray ${trayId}, startTime=${startTime}, initialAmsUpdate=${lastAmsUpdate}`);
+
     setState('REFRESHING');
     setContext({ refreshTarget: { amsId, trayId }, startTime });
 
@@ -199,7 +197,7 @@ export function useAmsOperations({
     }, REFRESH_TIMEOUT_MS);
 
     refreshMutation.mutate({ amsId, trayId });
-  }, [state, amsUnits, reset, refreshMutation]);
+  }, [state, amsUnits, lastAmsUpdate, reset, refreshMutation]);
 
   const startLoad = useCallback((trayId: number, extruderId?: number) => {
     if (state !== 'IDLE') {
@@ -245,31 +243,49 @@ export function useAmsOperations({
 
   // === Completion Detection ===
 
-  // Detect REFRESH completion via tray data change
+  // Detect REFRESH completion by waiting for new AMS data to arrive
+  // RFID read takes 5-10 seconds. We detect completion when:
+  // 1. Data changed (new/different spool detected) - complete after minimum 1s
+  // 2. lastAmsUpdate timestamp changed from initial AND elapsed > 5 seconds
+  //    This means a new AMS data packet arrived after the RFID read should be done
   useEffect(() => {
     if (state !== 'REFRESHING' || !context?.refreshTarget) return;
 
     const { amsId, trayId } = context.refreshTarget;
+    const elapsed = Date.now() - context.startTime;
+
+    // Get current tray data
     const unit = amsUnits.find(u => u.id === amsId);
     const tray = unit?.tray?.find(t => t.id === trayId);
-
     if (!tray) return;
 
-    const currentSignature = JSON.stringify({
+    const currentData = JSON.stringify({
       tag_uid: tray.tag_uid,
       tray_uuid: tray.tray_uuid,
-      tray_id_name: tray.tray_id_name,
       tray_type: tray.tray_type,
       tray_color: tray.tray_color,
     });
 
-    // Require minimum 500ms to avoid false positives from initial render
-    const elapsed = Date.now() - context.startTime;
-    if (prevTrayDataRef.current && prevTrayDataRef.current !== currentSignature && elapsed > 500) {
+    // Check if data changed (new spool detected)
+    const dataChanged = refreshInitialDataRef.current && currentData !== refreshInitialDataRef.current;
+
+    // Check if lastAmsUpdate changed from when we started
+    const amsUpdateChanged = lastAmsUpdate !== refreshInitialAmsUpdateRef.current;
+
+    // Primary completion: data changed (new spool detected) - complete quickly
+    if (dataChanged && elapsed > 1000) {
       console.log(`[useAmsOperations] Refresh complete: data changed for AMS ${amsId} tray ${trayId} (took ${elapsed}ms)`);
       reset();
+      return;
     }
-  }, [state, context, amsUnits, reset]);
+
+    // Secondary completion: new AMS update received after minimum wait time
+    // Wait 8 seconds to ensure RFID read has time to complete before considering updates
+    if (amsUpdateChanged && elapsed > 8000) {
+      console.log(`[useAmsOperations] Refresh complete: new AMS update after ${elapsed}ms for AMS ${amsId} tray ${trayId}`);
+      reset();
+    }
+  }, [state, context, amsUnits, lastAmsUpdate, reset]);
 
   // Detect LOAD/UNLOAD completion via ams_status_main transition 1 → 0
   useEffect(() => {

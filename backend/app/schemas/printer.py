@@ -143,3 +143,5 @@ class PrinterStatus(BaseModel):
     ams_status_sub: int = 0
     # mc_print_sub_stage - filament change step indicator used by OrcaSlicer/BambuStudio
     mc_print_sub_stage: int = 0
+    # Timestamp of last AMS data update (for RFID refresh detection)
+    last_ams_update: float = 0.0

@@ -310,6 +310,7 @@ async def get_printer_status(printer_id: int, db: AsyncSession = Depends(get_db)
         ams_status_main=state.ams_status_main,
         ams_status_sub=state.ams_status_sub,
         mc_print_sub_stage=state.mc_print_sub_stage,
+        last_ams_update=state.last_ams_update,
     )
 
 

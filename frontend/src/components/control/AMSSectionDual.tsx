@@ -934,6 +934,7 @@ export function AMSSectionDual({ printerId, printerModel, status, nozzleCount }:
   // Get ams_status values from printer status
   const amsStatusMain = status?.ams_status_main ?? 0;
   const trayNow = status?.tray_now ?? 255;
+  const lastAmsUpdate = status?.last_ams_update ?? 0;
 
   // AMS Operations hook - manages state machine for refresh/load/unload
   const amsOps = useAmsOperations({
@@ -941,6 +942,7 @@ export function AMSSectionDual({ printerId, printerModel, status, nozzleCount }:
     amsUnits,
     amsStatusMain,
     trayNow,
+    lastAmsUpdate,
     onToast: showToast,
   });
 
@@ -967,60 +969,7 @@ export function AMSSectionDual({ printerId, printerModel, status, nozzleCount }:
     }
   }, [status?.tray_now]);
 
-  // Watch for AMS data updates to clear the refresh spinner
-  // When the printer reports updated tray data after RFID read, clear the spinner
-  const prevAmsDataRef = useRef<string>('');
-  useEffect(() => {
-    if (!refreshingSlotState) return;
 
-    // Find the refreshing slot's current data
-    const { amsId, trayId, startTime } = refreshingSlotState;
-    const unit = amsUnits.find(u => u.id === amsId);
-    const tray = unit?.tray?.find(t => t.id === trayId);
-
-    if (!tray) return;
-
-    // Create a signature of the tray data to detect changes
-    const traySignature = JSON.stringify({
-      tag_uid: tray.tag_uid,
-      tray_uuid: tray.tray_uuid,
-      tray_id_name: tray.tray_id_name,
-      tray_type: tray.tray_type,
-      tray_color: tray.tray_color,
-    });
-
-    // If we have previous data and it changed, the refresh is complete
-    // Also require at least 500ms to have passed (to avoid false positives from initial render)
-    const elapsed = Date.now() - startTime;
-    if (prevAmsDataRef.current && prevAmsDataRef.current !== traySignature && elapsed > 500) {
-      console.log(`[AMSSectionDual] RFID refresh complete for AMS ${amsId} tray ${trayId} (took ${elapsed}ms)`);
-      setRefreshingSlotState(null);
-    }
-
-    // Update the ref for next comparison
-    prevAmsDataRef.current = traySignature;
-  }, [refreshingSlotState, amsUnits]);
-
-  const loadMutation = useMutation({
-    mutationFn: ({ trayId, extruderId }: { trayId: number; extruderId?: number }) =>
-      api.amsLoadFilament(printerId, trayId, extruderId),
-    onSuccess: (data, { trayId, extruderId }) => {
-      console.log(`[AMSSectionDual] Load filament success (tray ${trayId}, extruder ${extruderId}):`, data);
-    },
-    onError: (error, { trayId, extruderId }) => {
-      console.error(`[AMSSectionDual] Load filament error (tray ${trayId}, extruder ${extruderId}):`, error);
-    },
-  });
-
-  const unloadMutation = useMutation({
-    mutationFn: () => api.amsUnloadFilament(printerId),
-    onSuccess: (data) => {
-      console.log(`[AMSSectionDual] Unload filament success:`, data);
-    },
-    onError: (error) => {
-      console.error(`[AMSSectionDual] Unload filament error:`, error);
-    },
-  });
 
   // Handle tray selection
   const handleTraySelect = (trayId: number | null) => {
@@ -1053,132 +1002,43 @@ export function AMSSectionDual({ printerId, printerModel, status, nozzleCount }:
     console.log(`[AMSSectionDual] handleLoad called, selectedTray: ${selectedTray}`);
     if (selectedTray !== null) {
       const extruderId = getExtruderIdForTray(selectedTray);
-      console.log(`[AMSSectionDual] Calling loadMutation.mutate(tray: ${selectedTray}, extruder: ${extruderId})`);
-      // Set ref synchronously FIRST (refs update immediately, before MQTT can respond)
-      intendedOperationRef.current = 'load';
-      // Show filament change card immediately
-      setUserFilamentChange({ isLoading: true, targetTrayId: selectedTray });
-      loadMutation.mutate({ trayId: selectedTray, extruderId });
+      console.log(`[AMSSectionDual] Starting load via hook: tray ${selectedTray}, extruder ${extruderId}`);
+      amsOps.startLoad(selectedTray, extruderId);
     }
   };
 
   const handleUnload = () => {
-    console.log(`[AMSSectionDual] handleUnload called, printerId: ${printerId}, trayNow: ${status?.tray_now}`);
-    // Set ref synchronously FIRST (refs update immediately, before MQTT can respond)
-    intendedOperationRef.current = 'unload';
-    // Show filament change card immediately (no target tray for unload)
-    setUserFilamentChange({ isLoading: false, targetTrayId: null });
-    console.log(`[AMSSectionDual] Calling unloadMutation.mutate()`);
-    unloadMutation.mutate();
+    console.log(`[AMSSectionDual] handleUnload called, printerId: ${printerId}, trayNow: ${trayNow}`);
+    amsOps.startUnload();
   };
 
   // Callback for FilamentChangeCard to close itself
   const handleFilamentChangeComplete = () => {
-    console.log(`[AMSSectionDual] FilamentChangeCard completed, closing card`);
-    intendedOperationRef.current = null; // Clear the synchronous ref
-    setUserFilamentChange(null);
+    console.log(`[AMSSectionDual] FilamentChangeCard completed, resetting operation`);
+    amsOps.reset();
   };
-
-  const isLoading = loadMutation.isPending || unloadMutation.isPending;
 
   // Handlers for modals and actions
   const handleHumidityClick = (humidity: number, temp: number) => {
     setHumidityModal({ humidity, temp });
   };
 
-  const refreshMutation = useMutation({
-    mutationFn: ({ amsId, trayId }: { amsId: number; trayId: number }) =>
-      api.refreshAmsTray(printerId, amsId, trayId),
-    onSuccess: (data, variables) => {
-      console.log(`[AMSSectionDual] Tray refresh response (AMS ${variables.amsId}, Tray ${variables.trayId}):`, data);
-      if (data.success) {
-        showToast(data.message || 'RFID refresh started', 'success');
-      } else {
-        showToast(data.message || 'Failed to refresh tray', 'error');
-      }
-    },
-    onError: (error, variables) => {
-      console.error(`[AMSSectionDual] Tray refresh error (AMS ${variables.amsId}, Tray ${variables.trayId}):`, error);
-      showToast('Failed to refresh tray', 'error');
-    },
-  });
-
   const handleSlotRefresh = (amsId: number, slotId: number) => {
-    // Trigger RFID re-read for the specific tray
-    console.log(`[AMSSectionDual] Slot refresh triggered: AMS ${amsId}, Slot ${slotId}, printerId: ${printerId}`);
-    // Reset the previous data ref so we can detect the next change
-    prevAmsDataRef.current = '';
-    // Show spinner immediately - will be cleared when AMS data updates from MQTT
-    const startTime = Date.now();
-    setRefreshingSlotState({ amsId, trayId: slotId, startTime });
-    refreshMutation.mutate({ amsId, trayId: slotId });
-    // Fallback timeout (15s) in case data doesn't change (e.g., same spool re-read)
-    setTimeout(() => {
-      setRefreshingSlotState(prev => {
-        if (prev && prev.startTime === startTime) {
-          console.log(`[AMSSectionDual] RFID refresh timeout for AMS ${amsId} tray ${slotId}`);
-          return null;
-        }
-        return prev;
-      });
-    }, 15000);
+    console.log(`[AMSSectionDual] Slot refresh triggered: AMS ${amsId}, Slot ${slotId}`);
+    amsOps.startRefresh(amsId, slotId);
   };
 
   const handleEyeClick = (tray: AMSTray, slotLabel: string, amsId: number) => {
     setMaterialsModal({ tray, slotLabel, amsId });
   };
 
-  // Determine if we're in a filament change state (from MQTT ams_status)
-  // ams_status_main: 0=idle, 1=filament_change, 2=rfid_identifying, 3=assist, 4=calibration
-  // mc_print_sub_stage: step indicator used by BambuStudio/OrcaSlicer for filament change progress
-  const amsStatusMain = status?.ams_status_main ?? 0;
+  // Show FilamentChangeCard when operation is in progress (LOADING or UNLOADING state)
   const isMqttFilamentChangeActive = amsStatusMain === 1;
-
-  // Auto-close card when operation completes
-  // Track when we transition from filament change active to idle (ams_status_main 1 -> 0)
-  const prevAmsStatusMainRef = useRef(amsStatusMain);
-  // Track if we've seen ams_status_main = 1 since the user clicked load/unload
-  // This prevents premature card closure on brief status glitches
-  const operationStartedRef = useRef(false);
-  useEffect(() => {
-    const wasActive = prevAmsStatusMainRef.current === 1;
-
-    if (isMqttFilamentChangeActive) {
-      // MQTT is now reporting filament change - operation has started
-      operationStartedRef.current = true;
-      // Clear user-triggered state, card will continue showing because isMqttFilamentChangeActive is true
-      setUserFilamentChange(null);
-    } else if (wasActive && !isMqttFilamentChangeActive && operationStartedRef.current) {
-      // Transition from active (1) to idle (0), AND we've confirmed operation started
-      // Close the card by clearing user state and the synchronous ref
-      console.log(`[AMSSectionDual] ams_status_main transitioned 1->0, operation was started, closing card`);
-      intendedOperationRef.current = null;
-      operationStartedRef.current = false;
-      setUserFilamentChange(null);
-    }
-
-    // Update previous status for next comparison
-    prevAmsStatusMainRef.current = amsStatusMain;
-  }, [isMqttFilamentChangeActive, amsStatusMain]);
-
-  // Show FilamentChangeCard when either MQTT reports active ams_status OR user just clicked load/unload
-  const showFilamentChangeCard = isMqttFilamentChangeActive || userFilamentChange !== null;
+  const showFilamentChangeCard = amsOps.state === 'LOADING' || amsOps.state === 'UNLOADING' || isMqttFilamentChangeActive;
 
   // Get the loaded tray info for wire coloring
   // Wire coloring should show the path from the currently loaded filament to the extruder
   // But ONLY if the currently displayed AMS panel is the one with the loaded filament
-  const trayNow = status?.tray_now ?? 255;
-
-  // Determine if loading or unloading for the card display
-  // Priority: 1) Synchronous ref (set immediately on click), 2) React state, 3) MQTT signals
-  // The ref prevents race conditions where MQTT updates arrive before React state updates
-  const amsStatusSub = status?.ams_status_sub ?? 0;
-  const SUB_RETRACT = 4; // Only happens during unload
-  const isFilamentLoading =
-    intendedOperationRef.current === 'load' ? true :
-    intendedOperationRef.current === 'unload' ? false :
-    userFilamentChange !== null ? userFilamentChange.isLoading :
-    !(amsStatusSub === SUB_RETRACT || trayNow === 255); // Unload if retracting or tray_now is 255
   const getLoadedTrayInfo = (): {
     leftActiveSlot: number | null;
     rightActiveSlot: number | null;
@@ -1235,8 +1095,10 @@ export function AMSSectionDual({ printerId, printerModel, status, nozzleCount }:
 
   const { leftActiveSlot, rightActiveSlot, leftFilamentColor, rightFilamentColor } = getLoadedTrayInfo();
 
-  // Use state-based refreshing slot for spinner visibility (minimum 1.5s display time)
-  const refreshingSlot = refreshingSlotState;
+  // Create refreshingSlot object from hook state for spinner visibility
+  const refreshingSlot = amsOps.state === 'REFRESHING' && amsOps.context?.refreshTarget
+    ? { amsId: amsOps.context.refreshTarget.amsId, trayId: amsOps.context.refreshTarget.trayId }
+    : null;
 
   return (
     <div className="bg-bambu-dark-tertiary rounded-[10px] p-3">
@@ -1304,33 +1166,33 @@ export function AMSSectionDual({ printerId, printerModel, status, nozzleCount }:
         <div className="flex-1" />
 
         <div className="flex items-center gap-2">
-          {/* Unload button: disabled if not connected, printing, mutation pending, or no filament loaded */}
+          {/* Unload button: disabled if not connected, printing, operation in progress, or no filament loaded */}
           <button
             onClick={handleUnload}
-            disabled={!isConnected || isPrinting || isLoading || trayNow === 255}
+            disabled={!isConnected || isPrinting || amsOps.isOperationInProgress || trayNow === 255}
             className={`px-7 py-2.5 rounded-lg text-sm transition-colors border ${
-              !isConnected || isPrinting || isLoading || trayNow === 255
+              !isConnected || isPrinting || amsOps.isOperationInProgress || trayNow === 255
                 ? 'bg-bambu-gray-dark text-gray-500 border-bambu-gray-dark cursor-not-allowed'
                 : 'bg-bambu-dark-secondary text-white border-bambu-dark-tertiary hover:bg-bambu-dark'
             }`}
           >
-            {unloadMutation.isPending ? (
+            {amsOps.state === 'UNLOADING' ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               'Unload'
             )}
           </button>
-          {/* Load button: disabled if not connected, printing, mutation pending, no tray selected, or selected tray is already loaded */}
+          {/* Load button: disabled if not connected, printing, operation in progress, no tray selected, or selected tray is already loaded */}
           <button
             onClick={handleLoad}
-            disabled={!isConnected || isPrinting || selectedTray === null || isLoading || selectedTray === trayNow}
+            disabled={!isConnected || isPrinting || selectedTray === null || amsOps.isOperationInProgress || selectedTray === trayNow}
             className={`px-7 py-2.5 rounded-lg text-sm transition-colors border ${
-              !isConnected || isPrinting || selectedTray === null || isLoading || selectedTray === trayNow
+              !isConnected || isPrinting || selectedTray === null || amsOps.isOperationInProgress || selectedTray === trayNow
                 ? 'bg-bambu-gray-dark text-gray-500 border-bambu-gray-dark cursor-not-allowed'
                 : 'bg-bambu-dark-secondary text-white border-bambu-dark-tertiary hover:bg-bambu-dark'
             }`}
           >
-            {loadMutation.isPending ? (
+            {amsOps.state === 'LOADING' ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               'Load'
@@ -1340,20 +1202,20 @@ export function AMSSectionDual({ printerId, printerModel, status, nozzleCount }:
       </div>
 
       {/* Error messages */}
-      {(loadMutation.error || unloadMutation.error) && (
+      {(amsOps.loadError || amsOps.unloadError) && (
         <p className="mt-2 text-sm text-red-500 text-center">
-          {(loadMutation.error || unloadMutation.error)?.message}
+          {(amsOps.loadError || amsOps.unloadError)?.message}
         </p>
       )}
 
       {/* Filament Change Progress Card - appears during load/unload operations */}
       {showFilamentChangeCard && (
         <FilamentChangeCard
-          isLoading={isFilamentLoading}
+          isLoading={amsOps.isLoadOperation}
           amsStatusMain={amsStatusMain}
           amsStatusSub={status?.ams_status_sub ?? 0}
           trayNow={trayNow}
-          targetTrayId={userFilamentChange?.targetTrayId ?? null}
+          targetTrayId={amsOps.loadTargetTrayId}
           onComplete={handleFilamentChangeComplete}
         />
       )}

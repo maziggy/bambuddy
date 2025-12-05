@@ -147,6 +147,8 @@ export interface PrinterStatus {
   ams_status_sub: number;
   // mc_print_sub_stage - filament change step indicator used by OrcaSlicer/BambuStudio
   mc_print_sub_stage: number;
+  // Timestamp of last AMS data update (for RFID refresh detection)
+  last_ams_update: number;
 }
 
 export interface PrinterCreate {

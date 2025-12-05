@@ -1007,18 +1007,23 @@ export function AMSSectionDual({ printerId, printerModel, status, nozzleCount }:
   // Auto-close card when operation completes
   // Track when we transition from filament change active to idle (ams_status_main 1 -> 0)
   const prevAmsStatusMainRef = useRef(amsStatusMain);
+  // Track if we've seen ams_status_main = 1 since the user clicked load/unload
+  // This prevents premature card closure on brief status glitches
+  const operationStartedRef = useRef(false);
   useEffect(() => {
     const wasActive = prevAmsStatusMainRef.current === 1;
 
     if (isMqttFilamentChangeActive) {
-      // MQTT is now reporting filament change, clear user-triggered state
-      // Card will continue showing because isMqttFilamentChangeActive is true
+      // MQTT is now reporting filament change - operation has started
+      operationStartedRef.current = true;
+      // Clear user-triggered state, card will continue showing because isMqttFilamentChangeActive is true
       setUserFilamentChange(null);
-    } else if (wasActive && !isMqttFilamentChangeActive) {
-      // Transition from active (1) to idle (0)
+    } else if (wasActive && !isMqttFilamentChangeActive && operationStartedRef.current) {
+      // Transition from active (1) to idle (0), AND we've confirmed operation started
       // Close the card by clearing user state and the synchronous ref
-      console.log(`[AMSSectionDual] ams_status_main transitioned 1->0, closing card`);
+      console.log(`[AMSSectionDual] ams_status_main transitioned 1->0, operation was started, closing card`);
       intendedOperationRef.current = null;
+      operationStartedRef.current = false;
       setUserFilamentChange(null);
     }
 

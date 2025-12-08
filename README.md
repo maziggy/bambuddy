@@ -1,4 +1,5 @@
-v∆v
+TESTERS NEEDED!!!
+Since I only have X1C and H2D devices, I'm not able to test the application with other Bambu Lab models. Collaborate today and help the project to support the whole Bambu Lab printer family!
 
 <p align="center">
   <img src="static/img/bambusy_logo_dark.png" alt="Bambusy Logo" width="300">
@@ -21,15 +22,7 @@ v∆v
 
 ## Features
 
-- **Multi-Printer Support** - Connect and monitor multiple Bambu Lab printers (H2C, H2D, H2S, X1, X1C, P1P, P1S, A1, A1 Mini)
-- **AMS Humidity & Temperature Monitoring** - Visual indicators for AMS dryness conditions:
-  - BambuStudio-style AMS device icons with colored spool slots
-  - Empty slots displayed with white background and diagonal strike
-  - Dynamic water drop icons (empty/half/full) based on humidity level
-  - Dynamic thermometer icons showing temperature status
-  - Color-coded values: green (good), gold (fair), red (bad)
-  - Configurable thresholds in Settings
-  - Dual-nozzle support with L/R indicators for H2 series
+- **Multi-Printer Support** - Connect and monitor multiple Bambu Lab printers (H2D and X1C testet. H2C, H2S, X1, X1C, P1P, P1S, A1 and A1 Mini needs to be testet)
 - **Automatic Print Archiving** - Automatically saves 3MF files with full metadata extraction
 - **3D Model Preview** - Interactive Three.js viewer for archived prints
 - **Real-time Monitoring** - Live printer status via WebSocket with print progress, temperatures, layer count, and more

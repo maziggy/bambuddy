@@ -9,6 +9,8 @@ class MaintenanceTypeBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: str | None = None
     default_interval_hours: float = Field(default=100.0, ge=1.0)
+    # "hours" = print hours, "days" = calendar days
+    interval_type: str = Field(default="hours", pattern="^(hours|days)$")
     icon: str | None = None
 
 
@@ -20,6 +22,7 @@ class MaintenanceTypeUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     default_interval_hours: float | None = Field(default=None, ge=1.0)
+    interval_type: str | None = Field(default=None, pattern="^(hours|days)$")
     icon: str | None = None
 
 
@@ -46,6 +49,7 @@ class PrinterMaintenanceCreate(PrinterMaintenanceBase):
 
 class PrinterMaintenanceUpdate(BaseModel):
     custom_interval_hours: float | None = None
+    custom_interval_type: str | None = Field(default=None, pattern="^(hours|days)$")
     enabled: bool | None = None
 
 
@@ -94,12 +98,19 @@ class MaintenanceStatus(BaseModel):
     maintenance_type_name: str
     maintenance_type_icon: str | None
     enabled: bool
-    interval_hours: float  # custom or default
+    # Interval configuration
+    interval_hours: float  # custom or default (hours for print-based, days for time-based)
+    interval_type: str  # "hours" or "days"
+    # For print-hour based maintenance
     current_hours: float  # total print hours for printer
     hours_since_maintenance: float  # current - last_performed
-    hours_until_due: float  # interval - hours_since
-    is_due: bool  # hours_until_due <= 0
-    is_warning: bool  # hours_until_due <= 10% of interval
+    hours_until_due: float  # interval - hours_since (for hours type)
+    # For time-based maintenance
+    days_since_maintenance: float | None  # days since last performed
+    days_until_due: float | None  # for days type
+    # Status flags
+    is_due: bool  # hours_until_due <= 0 OR days_until_due <= 0
+    is_warning: bool  # within 10% of interval
     last_performed_at: datetime | None
 
 

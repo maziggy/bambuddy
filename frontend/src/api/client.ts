@@ -721,6 +721,7 @@ export interface MaintenanceType {
   name: string;
   description: string | null;
   default_interval_hours: number;
+  interval_type: 'hours' | 'days';  // "hours" = print hours, "days" = calendar days
   icon: string | null;
   is_system: boolean;
   created_at: string;
@@ -730,6 +731,7 @@ export interface MaintenanceTypeCreate {
   name: string;
   description?: string | null;
   default_interval_hours?: number;
+  interval_type?: 'hours' | 'days';
   icon?: string | null;
 }
 
@@ -741,10 +743,13 @@ export interface MaintenanceStatus {
   maintenance_type_name: string;
   maintenance_type_icon: string | null;
   enabled: boolean;
-  interval_hours: number;
+  interval_hours: number;  // For hours type: print hours; for days type: number of days
+  interval_type: 'hours' | 'days';
   current_hours: number;
   hours_since_maintenance: number;
   hours_until_due: number;
+  days_since_maintenance: number | null;  // For days type
+  days_until_due: number | null;  // For days type
   is_due: boolean;
   is_warning: boolean;
   last_performed_at: string | null;
@@ -1274,7 +1279,7 @@ export const api = {
   getMaintenanceOverview: () => request<PrinterMaintenanceOverview[]>('/maintenance/overview'),
   getPrinterMaintenance: (printerId: number) =>
     request<PrinterMaintenanceOverview>(`/maintenance/printers/${printerId}`),
-  updateMaintenanceItem: (itemId: number, data: { custom_interval_hours?: number | null; enabled?: boolean }) =>
+  updateMaintenanceItem: (itemId: number, data: { custom_interval_hours?: number | null; custom_interval_type?: 'hours' | 'days' | null; enabled?: boolean }) =>
     request<MaintenanceStatus>(`/maintenance/items/${itemId}`, {
       method: 'PATCH',
       body: JSON.stringify(data),

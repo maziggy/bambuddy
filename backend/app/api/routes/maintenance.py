@@ -136,6 +136,7 @@ async def create_maintenance_type(
         name=data.name,
         description=data.description,
         default_interval_hours=data.default_interval_hours,
+        interval_type=data.interval_type,
         icon=data.icon,
         is_system=False,
     )
@@ -225,11 +226,16 @@ async def _get_printer_maintenance_internal(
     due_count = 0
     warning_count = 0
 
+    now = datetime.utcnow()
+
     for maint_type in all_types:
         item = existing_items.get(maint_type.id)
+        default_interval_type = getattr(maint_type, 'interval_type', 'hours') or 'hours'
 
         if item:
             interval = item.custom_interval_hours or maint_type.default_interval_hours
+            # Use custom interval type if set, otherwise use type's default
+            interval_type = getattr(item, 'custom_interval_type', None) or default_interval_type
             enabled = item.enabled
             last_performed_hours = item.last_performed_hours
             last_performed_at = item.last_performed_at
@@ -246,15 +252,41 @@ async def _get_printer_maintenance_internal(
             await db.flush()
 
             interval = maint_type.default_interval_hours
+            interval_type = default_interval_type
             enabled = True
             last_performed_hours = 0.0
             last_performed_at = None
             item_id = item.id
 
-        hours_since = total_hours - last_performed_hours
-        hours_until = interval - hours_since
-        is_due = hours_until <= 0
-        is_warning = hours_until <= (interval * 0.1) and not is_due
+        # Calculate status based on interval type
+        if interval_type == "days":
+            # Time-based: calculate days since last performed
+            if last_performed_at:
+                days_since = (now - last_performed_at).total_seconds() / 86400.0
+            else:
+                # Never performed - consider it due
+                days_since = interval + 1
+
+            days_until = interval - days_since
+            is_due = days_until <= 0
+            is_warning = days_until <= (interval * 0.1) and not is_due
+
+            # For compatibility, also set hours values (but they won't be primary)
+            hours_since = total_hours - last_performed_hours
+            hours_until = 0  # Not applicable for time-based
+        else:
+            # Print-hours based (default)
+            hours_since = total_hours - last_performed_hours
+            hours_until = interval - hours_since
+            is_due = hours_until <= 0
+            is_warning = hours_until <= (interval * 0.1) and not is_due
+
+            # Calculate days for reference
+            if last_performed_at:
+                days_since = (now - last_performed_at).total_seconds() / 86400.0
+            else:
+                days_since = None
+            days_until = None
 
         if enabled:
             if is_due:
@@ -271,9 +303,12 @@ async def _get_printer_maintenance_internal(
             maintenance_type_icon=maint_type.icon,
             enabled=enabled,
             interval_hours=interval,
+            interval_type=interval_type,
             current_hours=total_hours,
             hours_since_maintenance=hours_since,
             hours_until_due=hours_until,
+            days_since_maintenance=days_since if interval_type == "days" else None,
+            days_until_due=days_until if interval_type == "days" else None,
             is_due=is_due,
             is_warning=is_warning,
             last_performed_at=last_performed_at,
@@ -389,6 +424,7 @@ async def perform_maintenance(
 
     # Calculate status
     interval = item.custom_interval_hours or item.maintenance_type.default_interval_hours
+    interval_type = getattr(item.maintenance_type, 'interval_type', 'hours') or 'hours'
     hours_since = current_hours - item.last_performed_hours
     hours_until = interval - hours_since
 
@@ -401,9 +437,12 @@ async def perform_maintenance(
         maintenance_type_icon=item.maintenance_type.icon,
         enabled=item.enabled,
         interval_hours=interval,
+        interval_type=interval_type,
         current_hours=current_hours,
         hours_since_maintenance=hours_since,
-        hours_until_due=hours_until,
+        hours_until_due=hours_until if interval_type == "hours" else 0,
+        days_since_maintenance=0 if interval_type == "days" else None,
+        days_until_due=interval if interval_type == "days" else None,
         is_due=False,
         is_warning=False,
         last_performed_at=item.last_performed_at,

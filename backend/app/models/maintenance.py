@@ -15,6 +15,8 @@ class MaintenanceType(Base):
     name: Mapped[str] = mapped_column(String(100))
     description: Mapped[str | None] = mapped_column(Text)
     default_interval_hours: Mapped[float] = mapped_column(Float, default=100.0)
+    # Interval type: "hours" (print hours) or "days" (calendar days)
+    interval_type: Mapped[str] = mapped_column(String(20), default="hours")
     icon: Mapped[str | None] = mapped_column(String(50))  # Icon name for UI
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)  # Pre-defined vs custom
     created_at: Mapped[datetime] = mapped_column(
@@ -37,6 +39,8 @@ class PrinterMaintenance(Base):
 
     # Custom interval for this printer (overrides default if set)
     custom_interval_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Custom interval type for this printer (overrides default if set)
+    custom_interval_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # Tracking
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)

@@ -109,3 +109,21 @@ async def run_migrations(conn):
     except Exception:
         # Column already exists
         pass
+
+    # Migration: Add interval_type column to maintenance_types
+    try:
+        await conn.execute(text(
+            "ALTER TABLE maintenance_types ADD COLUMN interval_type VARCHAR(20) DEFAULT 'hours'"
+        ))
+    except Exception:
+        # Column already exists
+        pass
+
+    # Migration: Add custom_interval_type column to printer_maintenance
+    try:
+        await conn.execute(text(
+            "ALTER TABLE printer_maintenance ADD COLUMN custom_interval_type VARCHAR(20)"
+        ))
+    except Exception:
+        # Column already exists
+        pass

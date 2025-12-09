@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Printer, Archive, Calendar, BarChart3, Cloud, Settings, Sun, Moon, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, X, type LucideIcon } from 'lucide-react';
+import { Printer, Archive, Calendar, BarChart3, Cloud, Settings, Sun, Moon, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, X, Menu, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { getIconByName } from './IconPicker';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 interface NavItem {
   id: string;
@@ -63,10 +64,12 @@ export function Layout() {
   const location = useLocation();
   const { theme, toggleTheme } = useTheme();
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [sidebarExpanded, setSidebarExpanded] = useState(() => {
     const stored = localStorage.getItem('sidebarExpanded');
     return stored !== 'false';
   });
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [sidebarOrder, setSidebarOrder] = useState<string[]>(getSidebarOrder);
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -219,6 +222,13 @@ export function Layout() {
     localStorage.setItem('sidebarExpanded', String(sidebarExpanded));
   }, [sidebarExpanded]);
 
+  // Close mobile drawer on navigation
+  useEffect(() => {
+    if (isMobile) {
+      setMobileDrawerOpen(false);
+    }
+  }, [location.pathname, isMobile]);
+
   // Global keyboard shortcuts for navigation
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     const target = e.target as HTMLElement;
@@ -259,16 +269,46 @@ export function Layout() {
 
   return (
     <div className="flex min-h-screen">
-      {/* Sidebar */}
-      <aside
-        className={`${sidebarExpanded ? 'w-64' : 'w-16'} bg-bambu-dark-secondary border-r border-bambu-dark-tertiary flex flex-col fixed inset-y-0 left-0 z-30 transition-all duration-300`}
-      >
-        {/* Logo */}
-        <div className={`border-b border-bambu-dark-tertiary flex items-center justify-center ${sidebarExpanded ? 'p-4' : 'p-2'}`}>
+      {/* Mobile Header */}
+      {isMobile && (
+        <header className="fixed top-0 left-0 right-0 z-40 h-14 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary flex items-center px-4">
+          <button
+            onClick={() => setMobileDrawerOpen(true)}
+            className="p-2 -ml-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
+            aria-label="Open menu"
+          >
+            <Menu className="w-6 h-6 text-white" />
+          </button>
           <img
             src={theme === 'dark' ? '/img/bambuddy_logo_dark.png' : '/img/bambuddy_logo_light.png'}
             alt="Bambuddy"
-            className={sidebarExpanded ? 'h-16 w-auto' : 'h-8 w-8 object-cover object-left'}
+            className="h-8 ml-3"
+          />
+        </header>
+      )}
+
+      {/* Mobile Drawer Backdrop */}
+      {isMobile && mobileDrawerOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 z-40 transition-opacity"
+          onClick={() => setMobileDrawerOpen(false)}
+        />
+      )}
+
+      {/* Sidebar / Mobile Drawer */}
+      <aside
+        className={`bg-bambu-dark-secondary border-r border-bambu-dark-tertiary flex flex-col transition-all duration-300 ${
+          isMobile
+            ? `fixed inset-y-0 left-0 z-50 w-72 transform ${mobileDrawerOpen ? 'translate-x-0' : '-translate-x-full'}`
+            : `fixed inset-y-0 left-0 z-30 ${sidebarExpanded ? 'w-64' : 'w-16'}`
+        }`}
+      >
+        {/* Logo */}
+        <div className={`border-b border-bambu-dark-tertiary flex items-center justify-center ${isMobile || sidebarExpanded ? 'p-4' : 'p-2'}`}>
+          <img
+            src={theme === 'dark' ? '/img/bambuddy_logo_dark.png' : '/img/bambuddy_logo_light.png'}
+            alt="Bambuddy"
+            className={isMobile || sidebarExpanded ? 'h-16 w-auto' : 'h-8 w-8 object-cover object-left'}
           />
         </div>
 
@@ -304,15 +344,15 @@ export function Layout() {
                     <NavLink
                       to={`/external/${link.id}`}
                       className={({ isActive }) =>
-                        `flex items-center ${sidebarExpanded ? 'gap-3 px-4' : 'justify-center px-2'} py-3 rounded-lg transition-colors group ${
+                        `flex items-center ${isMobile || sidebarExpanded ? 'gap-3 px-4' : 'justify-center px-2'} py-3 rounded-lg transition-colors group ${
                           isActive
                             ? 'bg-bambu-green text-white'
                             : 'text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white'
                         }`
                       }
-                      title={!sidebarExpanded ? link.name : undefined}
+                      title={!isMobile && !sidebarExpanded ? link.name : undefined}
                     >
-                      {sidebarExpanded && (
+                      {sidebarExpanded && !isMobile && (
                         <GripVertical className="w-4 h-4 flex-shrink-0 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing -ml-1" />
                       )}
                       {link.custom_icon ? (
@@ -324,7 +364,7 @@ export function Layout() {
                       ) : (
                         LinkIcon && <LinkIcon className="w-5 h-5 flex-shrink-0" />
                       )}
-                      {sidebarExpanded && <span>{link.name}</span>}
+                      {(isMobile || sidebarExpanded) && <span>{link.name}</span>}
                     </NavLink>
                   </li>
                 );
@@ -354,19 +394,19 @@ export function Layout() {
                     <NavLink
                       to={to}
                       className={({ isActive }) =>
-                        `flex items-center ${sidebarExpanded ? 'gap-3 px-4' : 'justify-center px-2'} py-3 rounded-lg transition-colors group ${
+                        `flex items-center ${isMobile || sidebarExpanded ? 'gap-3 px-4' : 'justify-center px-2'} py-3 rounded-lg transition-colors group ${
                           isActive
                             ? 'bg-bambu-green text-white'
                             : 'text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white'
                         }`
                       }
-                      title={!sidebarExpanded ? t(labelKey) : undefined}
+                      title={!isMobile && !sidebarExpanded ? t(labelKey) : undefined}
                     >
-                      {sidebarExpanded && (
+                      {sidebarExpanded && !isMobile && (
                         <GripVertical className="w-4 h-4 flex-shrink-0 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing -ml-1" />
                       )}
                       <Icon className="w-5 h-5 flex-shrink-0" />
-                      {sidebarExpanded && <span>{t(labelKey)}</span>}
+                      {(isMobile || sidebarExpanded) && <span>{t(labelKey)}</span>}
                     </NavLink>
                   </li>
                 );
@@ -375,22 +415,24 @@ export function Layout() {
           </ul>
         </nav>
 
-        {/* Collapse toggle */}
-        <button
-          onClick={() => setSidebarExpanded(!sidebarExpanded)}
-          className="p-2 mx-2 mb-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white flex items-center justify-center"
-          title={sidebarExpanded ? t('nav.collapseSidebar') : t('nav.expandSidebar')}
-        >
-          {sidebarExpanded ? (
-            <ChevronLeft className="w-5 h-5" />
-          ) : (
-            <ChevronRight className="w-5 h-5" />
-          )}
-        </button>
+        {/* Collapse toggle - hide on mobile */}
+        {!isMobile && (
+          <button
+            onClick={() => setSidebarExpanded(!sidebarExpanded)}
+            className="p-2 mx-2 mb-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white flex items-center justify-center"
+            title={sidebarExpanded ? t('nav.collapseSidebar') : t('nav.expandSidebar')}
+          >
+            {sidebarExpanded ? (
+              <ChevronLeft className="w-5 h-5" />
+            ) : (
+              <ChevronRight className="w-5 h-5" />
+            )}
+          </button>
+        )}
 
         {/* Footer */}
         <div className="p-2 border-t border-bambu-dark-tertiary">
-          {sidebarExpanded ? (
+          {isMobile || sidebarExpanded ? (
             <div className="flex items-center justify-between px-2">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-bambu-gray">v{versionInfo?.version || '...'}</span>
@@ -471,7 +513,9 @@ export function Layout() {
       </aside>
 
       {/* Main content */}
-      <main className={`flex-1 bg-bambu-dark overflow-auto ${sidebarExpanded ? 'ml-64' : 'ml-16'} transition-all duration-300`}>
+      <main className={`flex-1 bg-bambu-dark overflow-auto transition-all duration-300 ${
+        isMobile ? 'mt-14' : sidebarExpanded ? 'ml-64' : 'ml-16'
+      }`}>
         {/* Persistent update banner */}
         {showUpdateBanner && (
           <div className="bg-bambu-green/20 border-b border-bambu-green/30 px-4 py-2 flex items-center justify-between">

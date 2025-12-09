@@ -35,8 +35,10 @@ import {
   Camera,
   FileText,
   FileCode,
+  MoreVertical,
 } from 'lucide-react';
 import { api } from '../api/client';
+import { useIsMobile } from '../hooks/useIsMobile';
 import type { Archive } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
@@ -93,6 +95,7 @@ function ArchiveCard({
 }) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const isMobile = useIsMobile();
   const [showViewer, setShowViewer] = useState(false);
   const [showReprint, setShowReprint] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -354,6 +357,20 @@ function ArchiveCard({
           <div className="w-full h-full flex items-center justify-center">
             <Image className="w-12 h-12 text-bambu-dark-tertiary" />
           </div>
+        )}
+        {/* Mobile menu button */}
+        {isMobile && (
+          <button
+            className="absolute top-2 right-10 p-1.5 rounded bg-black/50 hover:bg-black/70 transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              const rect = e.currentTarget.getBoundingClientRect();
+              setContextMenu({ x: rect.left, y: rect.bottom + 4 });
+            }}
+            title="Menu"
+          >
+            <MoreVertical className="w-5 h-5 text-white" />
+          </button>
         )}
         {/* Favorite star */}
         <button
@@ -1069,7 +1086,7 @@ export function ArchivesPage() {
 
   return (
     <div
-      className="p-8 relative min-h-full"
+      className="p-4 md:p-8 relative min-h-full"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -1175,20 +1192,23 @@ export function ArchivesPage() {
       {/* Filters */}
       <Card className="mb-6">
         <CardContent className="py-4">
-          <div className="flex gap-4 items-center flex-wrap">
-            <div className="flex-1 relative min-w-[200px]">
+          <div className="flex flex-col md:flex-row gap-3 md:gap-4 md:items-center md:flex-wrap">
+            {/* Search - full width on mobile */}
+            <div className="w-full md:flex-1 relative md:min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray" />
               <input
                 ref={searchInputRef}
                 type="text"
-                placeholder="Search archives... (press /)"
-                className="w-full pl-10 pr-4 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                placeholder="Search archives..."
+                className="w-full pl-10 pr-4 py-3 md:py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-bambu-gray" />
+            {/* Filters - horizontal scroll on mobile */}
+            <div className="flex gap-2 md:gap-4 overflow-x-auto pb-1 md:pb-0 -mx-4 px-4 md:mx-0 md:px-0 md:flex-wrap scrollbar-hide">
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <Filter className="w-4 h-4 text-bambu-gray hidden md:block" />
               <select
                 className="px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 value={filterPrinter || ''}
@@ -1204,8 +1224,8 @@ export function ArchivesPage() {
                 ))}
               </select>
             </div>
-            <div className="flex items-center gap-2">
-              <Package className="w-4 h-4 text-bambu-gray" />
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <Package className="w-4 h-4 text-bambu-gray hidden md:block" />
               <select
                 className="px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 value={filterMaterial || ''}
@@ -1223,7 +1243,7 @@ export function ArchivesPage() {
             </div>
             <button
               onClick={() => setFilterFavorites(!filterFavorites)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors flex-shrink-0 ${
                 filterFavorites
                   ? 'bg-yellow-500/20 border-yellow-500 text-yellow-400'
                   : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:text-white'
@@ -1231,11 +1251,11 @@ export function ArchivesPage() {
               title={filterFavorites ? 'Show all' : 'Show favorites only'}
             >
               <Star className={`w-4 h-4 ${filterFavorites ? 'fill-yellow-400' : ''}`} />
-              <span className="text-sm">Favorites</span>
+              <span className="text-sm hidden md:inline">Favorites</span>
             </button>
             {uniqueTags.length > 0 && (
-              <div className="flex items-center gap-2">
-                <Tag className="w-4 h-4 text-bambu-gray" />
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Tag className="w-4 h-4 text-bambu-gray hidden md:block" />
                 <select
                   className="px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                   value={filterTag || ''}
@@ -1250,8 +1270,8 @@ export function ArchivesPage() {
                 </select>
               </div>
             )}
-            <div className="flex items-center gap-2">
-              <ArrowUpDown className="w-4 h-4 text-bambu-gray" />
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <ArrowUpDown className="w-4 h-4 text-bambu-gray hidden md:block" />
               <select
                 className="px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 value={sortBy}
@@ -1265,7 +1285,7 @@ export function ArchivesPage() {
                 <option value="size-asc">Smallest first</option>
               </select>
             </div>
-            <div className="flex items-center border border-bambu-dark-tertiary rounded-lg overflow-hidden">
+            <div className="flex items-center border border-bambu-dark-tertiary rounded-lg overflow-hidden flex-shrink-0">
               <button
                 className={`p-2 ${viewMode === 'grid' ? 'bg-bambu-green text-white' : 'bg-bambu-dark text-bambu-gray hover:text-white'}`}
                 onClick={() => setViewMode('grid')}
@@ -1287,6 +1307,7 @@ export function ArchivesPage() {
               >
                 <CalendarDays className="w-4 h-4" />
               </button>
+            </div>
             </div>
             {hasTopFilters && (
               <Button

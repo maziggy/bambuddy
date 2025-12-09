@@ -914,7 +914,7 @@ export function MaintenancePage() {
 
   if (isLoading) {
     return (
-      <div className="p-8 flex justify-center">
+      <div className="p-4 md:p-8 flex justify-center">
         <Loader2 className="w-8 h-8 text-bambu-green animate-spin" />
       </div>
     );
@@ -924,7 +924,7 @@ export function MaintenancePage() {
   const totalWarning = overview?.reduce((sum, p) => sum + p.warning_count, 0) || 0;
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Maintenance</h1>

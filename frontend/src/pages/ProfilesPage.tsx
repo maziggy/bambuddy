@@ -2788,7 +2788,7 @@ export function ProfilesPage() {
 
   if (statusLoading) {
     return (
-      <div className="p-8 flex items-center justify-center min-h-[400px]">
+      <div className="p-4 md:p-8 flex items-center justify-center min-h-[400px]">
         <Loader2 className="w-8 h-8 text-bambu-green animate-spin" />
       </div>
     );

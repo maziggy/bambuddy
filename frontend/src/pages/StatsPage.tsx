@@ -338,7 +338,7 @@ export function StatsPage() {
 
   if (isLoading) {
     return (
-      <div className="p-8">
+      <div className="p-4 md:p-8">
         <div className="text-center py-12 text-bambu-gray">Loading statistics...</div>
       </div>
     );
@@ -392,7 +392,7 @@ export function StatsPage() {
   ];
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Dashboard</h1>
         <p className="text-bambu-gray">Drag widgets to rearrange. Click the eye icon to hide.</p>

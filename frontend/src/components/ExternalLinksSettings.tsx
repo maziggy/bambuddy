@@ -117,7 +117,7 @@ export function ExternalLinksSettings() {
                       draggedId === link.id ? 'opacity-50' : ''
                     }`}
                   >
-                    <GripVertical className="w-4 h-4 text-bambu-gray cursor-grab flex-shrink-0" />
+                    <GripVertical className="w-6 h-6 md:w-4 md:h-4 text-bambu-gray cursor-grab flex-shrink-0" />
                     <div className="p-2 rounded-lg bg-bambu-dark-tertiary text-bambu-gray">
                       <Icon className="w-4 h-4" />
                     </div>

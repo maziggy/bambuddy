@@ -144,9 +144,9 @@ function SortableQueueItem({
           <div
             {...attributes}
             {...listeners}
-            className="flex items-center justify-center w-8 h-8 rounded-lg bg-bambu-dark cursor-grab active:cursor-grabbing hover:bg-bambu-dark-tertiary transition-colors"
+            className="flex items-center justify-center w-10 h-10 md:w-8 md:h-8 rounded-lg bg-bambu-dark cursor-grab active:cursor-grabbing hover:bg-bambu-dark-tertiary transition-colors touch-manipulation"
           >
-            <GripVertical className="w-4 h-4 text-bambu-gray" />
+            <GripVertical className="w-6 h-6 md:w-4 md:h-4 text-bambu-gray" />
           </div>
         ) : position !== undefined ? (
           <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-bambu-dark text-bambu-gray text-sm font-medium">
@@ -505,7 +505,7 @@ export function QueuePage() {
   };
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>

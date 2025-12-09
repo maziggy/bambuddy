@@ -305,14 +305,14 @@ export function SettingsPage() {
 
   if (isLoading || !localSettings) {
     return (
-      <div className="p-8 flex justify-center">
+      <div className="p-4 md:p-8 flex justify-center">
         <Loader2 className="w-8 h-8 text-bambu-green animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white">Settings</h1>
         <p className="text-bambu-gray">Configure Bambuddy</p>
@@ -366,9 +366,9 @@ export function SettingsPage() {
 
       {/* General Tab */}
       {activeTab === 'general' && (
-      <div className="flex gap-8">
+      <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
         {/* Left Column - General Settings */}
-        <div className="space-y-6 flex-1 max-w-xl">
+        <div className="space-y-6 flex-1 lg:max-w-xl">
           <Card>
             <CardHeader>
               <h2 className="text-lg font-semibold text-white">{t('settings.general')}</h2>
@@ -630,7 +630,7 @@ export function SettingsPage() {
         </div>
 
         {/* Second Column - AMS & Spoolman */}
-        <div className="space-y-6 flex-1 max-w-md">
+        <div className="space-y-6 flex-1 lg:max-w-md">
           <Card>
             <CardHeader>
               <h2 className="text-lg font-semibold text-white">AMS Display Thresholds</h2>
@@ -740,7 +740,7 @@ export function SettingsPage() {
         </div>
 
         {/* Third Column - Updates */}
-        <div className="space-y-6 flex-1 max-w-sm">
+        <div className="space-y-6 flex-1 lg:max-w-sm">
           <Card>
             <CardHeader>
               <h2 className="text-lg font-semibold text-white">Updates</h2>

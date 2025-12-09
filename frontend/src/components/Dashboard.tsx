@@ -93,7 +93,7 @@ function SortableWidget({
             className="cursor-grab active:cursor-grabbing p-1 hover:bg-bambu-dark-tertiary rounded transition-colors"
             title="Drag to reorder"
           >
-            <GripVertical className="w-4 h-4 text-bambu-gray" />
+            <GripVertical className="w-6 h-6 md:w-4 md:h-4 text-bambu-gray" />
           </button>
           <h3 className="text-sm font-medium text-white">{title}</h3>
         </div>

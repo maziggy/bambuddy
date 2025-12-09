@@ -12,6 +12,7 @@ import { AddNotificationModal } from '../components/AddNotificationModal';
 import { NotificationTemplateEditor } from '../components/NotificationTemplateEditor';
 import { NotificationLogViewer } from '../components/NotificationLogViewer';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { BackupModal } from '../components/BackupModal';
 import { SpoolmanSettings } from '../components/SpoolmanSettings';
 import { defaultNavItems, getDefaultView, setDefaultView } from '../components/Layout';
 import { availableLanguages } from '../i18n';
@@ -37,6 +38,7 @@ export function SettingsPage() {
   const [showClearLogsConfirm, setShowClearLogsConfirm] = useState(false);
   const [showClearStorageConfirm, setShowClearStorageConfirm] = useState(false);
   const [showBulkPlugConfirm, setShowBulkPlugConfirm] = useState<'on' | 'off' | null>(null);
+  const [showBackupModal, setShowBackupModal] = useState(false);
 
   const handleDefaultViewChange = (path: string) => {
     setDefaultViewState(path);
@@ -866,29 +868,15 @@ export function SettingsPage() {
               {/* Backup/Restore */}
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-white">Backup Settings</p>
+                  <p className="text-white">Backup Data</p>
                   <p className="text-sm text-bambu-gray">
-                    Export settings, providers, and plugs to JSON
+                    Export settings, providers, printers, and more
                   </p>
                 </div>
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={async () => {
-                    try {
-                      const backup = await api.exportBackup();
-                      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `bambutrack-backup-${new Date().toISOString().slice(0, 10)}.json`;
-                      a.click();
-                      URL.revokeObjectURL(url);
-                      showToast('Backup downloaded', 'success');
-                    } catch (err) {
-                      showToast('Failed to create backup', 'error');
-                    }
-                  }}
+                  onClick={() => setShowBackupModal(true)}
                 >
                   <Download className="w-4 h-4" />
                   Export
@@ -905,7 +893,7 @@ export function SettingsPage() {
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".json"
+                    accept=".json,.zip"
                     className="hidden"
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
@@ -1462,6 +1450,28 @@ export function SettingsPage() {
             bulkPlugActionMutation.mutate(action);
           }}
           onCancel={() => setShowBulkPlugConfirm(null)}
+        />
+      )}
+
+      {/* Backup Modal */}
+      {showBackupModal && (
+        <BackupModal
+          onClose={() => setShowBackupModal(false)}
+          onExport={async (categories) => {
+            setShowBackupModal(false);
+            try {
+              const { blob, filename } = await api.exportBackup(categories);
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = filename;
+              a.click();
+              URL.revokeObjectURL(url);
+              showToast('Backup downloaded', 'success');
+            } catch (err) {
+              showToast('Failed to create backup', 'error');
+            }
+          }}
         />
       )}
     </div>

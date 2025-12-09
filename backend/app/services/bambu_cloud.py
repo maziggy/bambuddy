@@ -50,7 +50,7 @@ class BambuCloudService:
         """Get headers for authenticated requests."""
         headers = {
             "Content-Type": "application/json",
-            "User-Agent": "BambuTrack/1.0",
+            "User-Agent": "Bambuddy/1.0",
         }
         if self.access_token:
             headers["Authorization"] = f"Bearer {self.access_token}"

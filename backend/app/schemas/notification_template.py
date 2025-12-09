@@ -42,7 +42,7 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "filename": "Benchy.3mf",
         "estimated_time": "1h 23m",
         "timestamp": "2024-01-15 14:30",
-        "app_name": "BambuTrack",
+        "app_name": "Bambuddy",
     },
     "print_complete": {
         "printer": "Bambu X1C",
@@ -50,7 +50,7 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "duration": "1h 18m",
         "filament_grams": "15.2",
         "timestamp": "2024-01-15 15:48",
-        "app_name": "BambuTrack",
+        "app_name": "Bambuddy",
     },
     "print_failed": {
         "printer": "Bambu X1C",
@@ -58,14 +58,14 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "duration": "0h 45m",
         "reason": "Filament runout",
         "timestamp": "2024-01-15 15:15",
-        "app_name": "BambuTrack",
+        "app_name": "Bambuddy",
     },
     "print_stopped": {
         "printer": "Bambu X1C",
         "filename": "Benchy.3mf",
         "duration": "0h 30m",
         "timestamp": "2024-01-15 15:00",
-        "app_name": "BambuTrack",
+        "app_name": "Bambuddy",
     },
     "print_progress": {
         "printer": "Bambu X1C",
@@ -73,19 +73,19 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "progress": "50",
         "remaining_time": "0h 41m",
         "timestamp": "2024-01-15 15:00",
-        "app_name": "BambuTrack",
+        "app_name": "Bambuddy",
     },
     "printer_offline": {
         "printer": "Bambu X1C",
         "timestamp": "2024-01-15 14:30",
-        "app_name": "BambuTrack",
+        "app_name": "Bambuddy",
     },
     "printer_error": {
         "printer": "Bambu X1C",
         "error_type": "AMS Error",
         "error_detail": "Filament slot 1 jammed",
         "timestamp": "2024-01-15 14:30",
-        "app_name": "BambuTrack",
+        "app_name": "Bambuddy",
     },
     "filament_low": {
         "printer": "Bambu X1C",
@@ -93,16 +93,16 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "remaining_percent": "15",
         "color": "Black PLA",
         "timestamp": "2024-01-15 14:30",
-        "app_name": "BambuTrack",
+        "app_name": "Bambuddy",
     },
     "maintenance_due": {
         "printer": "Bambu X1C",
         "items": "• Nozzle cleaning (OVERDUE)\n• Carbon rod lubrication (Soon)",
         "timestamp": "2024-01-15 14:30",
-        "app_name": "BambuTrack",
+        "app_name": "Bambuddy",
     },
     "test": {
-        "app_name": "BambuTrack",
+        "app_name": "Bambuddy",
         "timestamp": "2024-01-15 14:30",
     },
 }

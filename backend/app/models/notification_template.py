@@ -84,7 +84,7 @@ DEFAULT_TEMPLATES = [
     {
         "event_type": "test",
         "name": "Test Notification",
-        "title_template": "BambuTrack Test",
+        "title_template": "Bambuddy Test",
         "body_template": "This is a test notification. If you see this, notifications are working!",
     },
 ]

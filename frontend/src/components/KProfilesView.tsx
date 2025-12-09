@@ -580,7 +580,7 @@ function KProfileModal({
                 className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none resize-none"
               />
               <p className="text-xs text-bambu-gray mt-1">
-                Notes are saved in Bambusy, not on the printer
+                Notes are saved in Bambuddy, not on the printer
               </p>
             </div>
 

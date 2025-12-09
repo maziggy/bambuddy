@@ -33,8 +33,8 @@ EN = {
         "soon": "Soon",
 
         # Test notification
-        "test_title": "BambuTrack Test",
-        "test_message": "This is a test notification from BambuTrack. If you see this, notifications are working correctly!",
+        "test_title": "Bambuddy Test",
+        "test_message": "This is a test notification from Bambuddy. If you see this, notifications are working correctly!",
     }
 }
 
@@ -69,8 +69,8 @@ DE = {
         "soon": "Bald",
 
         # Test notification
-        "test_title": "BambuTrack Test",
-        "test_message": "Dies ist eine Testbenachrichtigung von BambuTrack. Wenn Sie dies sehen, funktionieren die Benachrichtigungen!",
+        "test_title": "Bambuddy Test",
+        "test_message": "Dies ist eine Testbenachrichtigung von Bambuddy. Wenn Sie dies sehen, funktionieren die Benachrichtigungen!",
     }
 }
 

@@ -2,7 +2,7 @@ TESTERS NEEDED!!!
 Since I only have X1C and H2D devices, I'm not able to test the application with other Bambu Lab models. Collaborate today and help the project to support the whole Bambu Lab printer family!
 
 <p align="center">
-  <img src="static/img/bambusy_logo_dark.png" alt="Bambusy Logo" width="300">
+  <img src="static/img/bambuddy_logo_dark.png" alt="Bambuddy Logo" width="300">
 </p>
 
 <p align="center">
@@ -188,7 +188,7 @@ Since I only have X1C and H2D devices, I'm not able to test the application with
 
 ### Network Requirements
 - Bambu Lab printer with **LAN Mode** enabled
-- Printer and Bambusy server must be on the same local network
+- Printer and Bambuddy server must be on the same local network
 - Ports used: 8883 (MQTT/TLS), 990 (FTPS)
 
 ### Supported Printers
@@ -203,8 +203,8 @@ Since I only have X1C and H2D devices, I'm not able to test the application with
 
 ```bash
 # Clone the repository
-git clone https://github.com/maziggy/bambusy.git
-cd bambusy
+git clone https://github.com/maziggy/bambuddy.git
+cd bambuddy
 
 # Create and activate virtual environment
 python3 -m venv venv
@@ -246,8 +246,8 @@ sudo apt install python3 python3-venv python3-pip nodejs npm git
 #### Step 2: Clone the Repository
 
 ```bash
-git clone https://github.com/maziggy/bambusy.git
-cd bambusy
+git clone https://github.com/maziggy/bambuddy.git
+cd bambuddy
 ```
 
 #### Step 3: Set Up Python Environment
@@ -300,22 +300,22 @@ Open http://localhost:8000 in your browser.
 Create a systemd service for automatic startup:
 
 ```bash
-sudo nano /etc/systemd/system/bambusy.service
+sudo nano /etc/systemd/system/bambuddy.service
 ```
 
 Add the following content (adjust paths as needed):
 
 ```ini
 [Unit]
-Description=Bambusy Print Archive
+Description=Bambuddy Print Archive
 After=network.target
 
 [Service]
 Type=simple
 User=YOUR_USERNAME
-WorkingDirectory=/home/YOUR_USERNAME/bambusy
-Environment="PATH=/home/YOUR_USERNAME/bambusy/venv/bin"
-ExecStart=/home/YOUR_USERNAME/bambusy/venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+WorkingDirectory=/home/YOUR_USERNAME/bambuddy
+Environment="PATH=/home/YOUR_USERNAME/bambuddy/venv/bin"
+ExecStart=/home/YOUR_USERNAME/bambuddy/venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=10
 
@@ -327,31 +327,31 @@ Enable and start the service:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable bambusy
-sudo systemctl start bambusy
+sudo systemctl enable bambuddy
+sudo systemctl start bambuddy
 
 # Check status
-sudo systemctl status bambusy
+sudo systemctl status bambuddy
 
 # View logs
-sudo journalctl -u bambusy -f
+sudo journalctl -u bambuddy -f
 ```
 
 ### Running with Docker (Coming Soon)
 
 ```bash
 docker run -d \
-  --name bambusy \
+  --name bambuddy \
   -p 8000:8000 \
-  -v bambusy_data:/app/data \
-  -v bambusy_archive:/app/archive \
-  maziggy/bambusy:latest
+  -v bambuddy_data:/app/data \
+  -v bambuddy_archive:/app/archive \
+  maziggy/bambuddy:latest
 ```
 
-### Updating Bambusy
+### Updating Bambuddy
 
 ```bash
-cd bambusy
+cd bambuddy
 git pull origin main
 
 # Activate virtual environment
@@ -374,7 +374,7 @@ cd ..
 
 ### Enabling LAN Mode on Your Printer
 
-To connect Bambusy to your printer, you need to enable LAN Mode:
+To connect Bambuddy to your printer, you need to enable LAN Mode:
 
 1. On your printer, go to **Settings** > **Network** > **LAN Mode**
 2. Enable **LAN Mode** (this requires Developer Mode to be enabled first)
@@ -382,7 +382,7 @@ To connect Bambusy to your printer, you need to enable LAN Mode:
 4. Find your printer's **IP Address** in network settings
 5. Find your printer's **Serial Number** in device info
 
-### Adding a Printer in Bambusy
+### Adding a Printer in Bambuddy
 
 1. Go to the **Printers** page
 2. Click **Add Printer**
@@ -397,7 +397,7 @@ The printer should connect automatically and show real-time status.
 
 ### Environment Variables
 
-Bambusy can be configured using environment variables or a `.env` file in the project root. Copy `.env.example` to `.env` and adjust as needed:
+Bambuddy can be configured using environment variables or a `.env` file in the project root. Copy `.env.example` to `.env` and adjust as needed:
 
 ```bash
 cp .env.example .env
@@ -407,12 +407,12 @@ cp .env.example .env
 |----------|---------|-------------|
 | `DEBUG` | `false` | Enable debug mode (verbose logging, SQL queries) |
 | `LOG_LEVEL` | `INFO` | Log level when DEBUG=false (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
-| `LOG_TO_FILE` | `true` | Write logs to `logs/bambutrack.log` |
+| `LOG_TO_FILE` | `true` | Write logs to `logs/bambuddy.log` |
 
 **Production (default):**
 - INFO level logging
 - SQLAlchemy and HTTP library noise suppressed
-- Logs written to `logs/bambutrack.log` (5MB rotating, 3 backups)
+- Logs written to `logs/bambuddy.log` (5MB rotating, 3 backups)
 
 **Development (`DEBUG=true`):**
 - DEBUG level logging (verbose)
@@ -499,7 +499,7 @@ When a scheduled print is ready to start:
 
 ### K-Profiles (Pressure Advance)
 
-K-profiles store pressure advance (Linear Advance) settings for different filament and nozzle combinations. Bambusy lets you view and manage these settings directly on your printers.
+K-profiles store pressure advance (Linear Advance) settings for different filament and nozzle combinations. Bambuddy lets you view and manage these settings directly on your printers.
 
 #### Viewing K-Profiles
 
@@ -513,7 +513,7 @@ K-profiles store pressure advance (Linear Advance) settings for different filame
 
 #### Dual-Nozzle Printers (H2 Series)
 
-For dual-nozzle printers (H2D, H2C, H2S), Bambusy automatically detects the nozzle configuration and displays:
+For dual-nozzle printers (H2D, H2C, H2S), Bambuddy automatically detects the nozzle configuration and displays:
 - **Left/Right columns** showing profiles for each extruder
 - **Extruder filter** to show profiles for one extruder only
 - **Extruder selector** when adding new profiles
@@ -535,7 +535,7 @@ The nozzle count is auto-detected from MQTT temperature data when the printer co
 4. For dual-nozzle printers, select Left or Right extruder
 5. Enter the K-value and click **Save**
 
-**Note:** Filaments must first be calibrated in Bambu Studio to appear in the dropdown. Bambusy reads the filament list from existing K-profiles on the printer.
+**Note:** Filaments must first be calibrated in Bambu Studio to appear in the dropdown. Bambuddy reads the filament list from existing K-profiles on the printer.
 
 #### Filtering and Search
 
@@ -545,7 +545,7 @@ The nozzle count is auto-detected from MQTT temperature data when the printer co
 
 ### Smart Plug Integration
 
-Bambusy supports Tasmota-based smart plugs for automated power control. This is useful for:
+Bambuddy supports Tasmota-based smart plugs for automated power control. This is useful for:
 - Automatically turning on your printer when a print starts
 - Safely turning off the printer after it cools down
 - Energy savings by powering off idle printers
@@ -597,7 +597,7 @@ Use cases:
 
 #### Power Monitoring & Alerts
 
-For Tasmota plugs with energy monitoring (e.g., Sonoff S31), Bambusy can alert you when power consumption exceeds a threshold:
+For Tasmota plugs with energy monitoring (e.g., Sonoff S31), Bambuddy can alert you when power consumption exceeds a threshold:
 
 1. Enable **Power Alert** in the plug settings
 2. Set the **Power Threshold** in watts (e.g., 200W)
@@ -618,7 +618,7 @@ Each plug card shows:
 
 ### Push Notifications
 
-Bambusy can send push notifications when print events occur. Notifications are useful for monitoring prints remotely without checking the app constantly.
+Bambuddy can send push notifications when print events occur. Notifications are useful for monitoring prints remotely without checking the app constantly.
 
 #### Supported Providers
 
@@ -713,7 +713,7 @@ Common variables available for all events: `{timestamp}`, `{app_name}`
 
 ### Spoolman Integration
 
-Bambusy integrates with [Spoolman](https://github.com/Donkie/Spoolman) for filament inventory management. When enabled, AMS filament data syncs with your Spoolman server, allowing you to track remaining filament across all your spools.
+Bambuddy integrates with [Spoolman](https://github.com/Donkie/Spoolman) for filament inventory management. When enabled, AMS filament data syncs with your Spoolman server, allowing you to track remaining filament across all your spools.
 
 #### Prerequisites
 
@@ -745,7 +745,7 @@ When connected:
 
 #### How Syncing Works
 
-Bambusy matches AMS spools to Spoolman spools using the **tray UUID** - a unique 32-character identifier that Bambu Lab assigns to each original spool. This ensures consistent matching across different printer models.
+Bambuddy matches AMS spools to Spoolman spools using the **tray UUID** - a unique 32-character identifier that Bambu Lab assigns to each original spool. This ensures consistent matching across different printer models.
 
 **What gets synced:**
 - Remaining filament weight (from AMS sensor)
@@ -768,7 +768,7 @@ Bambusy matches AMS spools to Spoolman spools using the **tray UUID** - a unique
 - This is normal behavior - they don't have Bambu Lab tray UUIDs
 
 **Connection issues:**
-- Verify the Spoolman URL is accessible from your Bambusy server
+- Verify the Spoolman URL is accessible from your Bambuddy server
 - Check that no firewall is blocking port 7912 (or your custom port)
 - Ensure Spoolman is running and healthy
 
@@ -778,22 +778,22 @@ Bambusy matches AMS spools to Spoolman spools using the **tray UUID** - a unique
 1. Add CallMeBot to your contacts: +34 644 51 95 23
 2. Send "I allow callmebot to send me messages" via WhatsApp
 3. You'll receive an API key
-4. Enter your phone number (with country code) and API key in Bambusy
+4. Enter your phone number (with country code) and API key in Bambuddy
 
 **ntfy:**
 1. Choose a unique topic name (e.g., `my-printer-alerts-xyz123`)
 2. Subscribe to it on your phone using the ntfy app or web interface
-3. Enter the topic name in Bambusy (server defaults to ntfy.sh)
+3. Enter the topic name in Bambuddy (server defaults to ntfy.sh)
 
 **Pushover:**
 1. Create an account at [pushover.net](https://pushover.net/)
 2. Create an application to get an API token
-3. Enter your user key and app token in Bambusy
+3. Enter your user key and app token in Bambuddy
 
 **Telegram:**
 1. Message @BotFather on Telegram to create a bot
 2. Get your chat ID by messaging @userinfobot
-3. Enter the bot token and chat ID in Bambusy
+3. Enter the bot token and chat ID in Bambuddy
 
 **Email:**
 1. Configure your SMTP server settings
@@ -805,12 +805,12 @@ Bambusy matches AMS spools to Spoolman spools using the **tray UUID** - a unique
 1. In your Discord server, go to channel settings > Integrations > Webhooks
 2. Click "New Webhook" and customize the name/avatar if desired
 3. Copy the webhook URL
-4. Paste the webhook URL in Bambusy
+4. Paste the webhook URL in Bambuddy
 
 **Webhook (Generic):**
 1. Enter any URL that accepts POST requests
 2. Optionally add custom headers (e.g., Authorization tokens)
-3. Bambusy sends JSON payloads with event details
+3. Bambuddy sends JSON payloads with event details
 4. Useful for integrating with custom systems, Home Assistant, IFTTT, etc.
 
 ## Tech Stack
@@ -824,7 +824,7 @@ Bambusy matches AMS spools to Spoolman spools using the **tray UUID** - a unique
 ## Project Structure
 
 ```
-bambusy/
+bambuddy/
 ├── backend/
 │   └── app/
 │       ├── api/routes/      # API endpoints
@@ -835,7 +835,7 @@ bambusy/
 ├── frontend/                # React application
 ├── static/                  # Built frontend + images
 ├── archive/                 # Stored 3MF files
-└── bambusy.db              # SQLite database
+└── bambuddy.db              # SQLite database
 ```
 
 ## API Documentation
@@ -884,27 +884,27 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ### Database errors
 
-The SQLite database (`bambusy.db`) is created automatically. If you encounter issues:
+The SQLite database (`bambuddy.db`) is created automatically. If you encounter issues:
 
 ```bash
 # Backup and reset database
-mv bambusy.db bambusy.db.backup
+mv bambuddy.db bambuddy.db.backup
 # Restart the application - a new database will be created
 ```
 
 ### View server logs
 
-Bambusy writes logs to `bambutrack.log` in the application directory (rotating, max 5MB × 3 files).
+Bambuddy writes logs to `bambuddy.log` in the application directory (rotating, max 5MB × 3 files).
 
 ```bash
 # View live log file
-tail -f bambutrack.log
+tail -f bambuddy.log
 
 # If running directly with verbose output
 uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --log-level debug
 
 # If running as systemd service
-sudo journalctl -u bambusy -f
+sudo journalctl -u bambuddy -f
 ```
 
 ### Smart plug not responding
@@ -913,13 +913,13 @@ sudo journalctl -u bambusy -f
 2. **Test via browser** - Visit `http://<plug-ip>/cm?cmnd=Power` to test directly
 3. **Check Tasmota web interface** - Access `http://<plug-ip>` to verify Tasmota is running
 4. **Authentication** - If Tasmota has a password set, configure it in the plug settings
-5. **Firewall** - Ensure port 80 is accessible between Bambusy server and the plug
+5. **Firewall** - Ensure port 80 is accessible between Bambuddy server and the plug
 
 ### Auto power-off not working
 
 1. **Check plug is linked** - The plug must be linked to a printer for automation
 2. **Verify automation is enabled** - Check the Enabled, Auto On, and Auto Off toggles
-3. **Temperature mode issues** - If using temperature mode, ensure the printer is still connected so Bambusy can read the nozzle temperature
+3. **Temperature mode issues** - If using temperature mode, ensure the printer is still connected so Bambuddy can read the nozzle temperature
 
 ### Scheduled print not starting
 
@@ -927,7 +927,7 @@ sudo journalctl -u bambusy -f
 2. **Verify smart plug** - If using auto power-on, ensure the smart plug is configured and working
 3. **Check queue status** - Look at the queue page for error messages
 4. **Time zone issues** - Scheduled times are in your local time zone; ensure your system clock is correct
-5. **View logs** - Check `bambutrack.log` for detailed error messages
+5. **View logs** - Check `bambuddy.log` for detailed error messages
 
 ### Print queue shows "Failed to start"
 
@@ -939,7 +939,7 @@ Common causes:
 ### Timelapse not attaching automatically
 
 **The Problem:**
-When printers run in **LAN-only mode** (disconnected from Bambu Cloud), they cannot sync time via NTP. This causes the printer's internal clock to drift significantly (sometimes days or weeks off). Bambusy matches timelapses by comparing the print completion time with the timelapse file's modification time - when the printer's clock is wrong, this matching fails.
+When printers run in **LAN-only mode** (disconnected from Bambu Cloud), they cannot sync time via NTP. This causes the printer's internal clock to drift significantly (sometimes days or weeks off). Bambuddy matches timelapses by comparing the print completion time with the timelapse file's modification time - when the printer's clock is wrong, this matching fails.
 
 **Symptoms:**
 - "Scan for Timelapse" shows "No matching timelapse found"
@@ -947,7 +947,7 @@ When printers run in **LAN-only mode** (disconnected from Bambu Cloud), they can
 - Printer shows incorrect date/time in its settings
 
 **Workaround - Manual Selection:**
-When automatic matching fails, Bambusy now offers manual timelapse selection:
+When automatic matching fails, Bambuddy now offers manual timelapse selection:
 
 1. Right-click the archive and select **"Scan for Timelapse"**
 2. If no match is found, a dialog appears showing all available timelapse files on the printer

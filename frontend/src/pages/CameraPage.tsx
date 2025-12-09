@@ -30,7 +30,7 @@ export function CameraPage() {
       document.title = `${printer.name} - Camera`;
     }
     return () => {
-      document.title = 'Bambusy';
+      document.title = 'Bambuddy';
     };
   }, [printer]);
 

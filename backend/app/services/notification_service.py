@@ -119,7 +119,7 @@ class NotificationService:
         """Build notification title and body from template."""
         # Add common variables
         variables["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-        variables["app_name"] = "BambuTrack"
+        variables["app_name"] = "Bambuddy"
 
         template = await self._get_template(db, event_type)
         if not template:
@@ -139,7 +139,7 @@ class NotificationService:
         if db:
             title, message = await self._build_message_from_template(db, "test", {})
         else:
-            title = "BambuTrack Test"
+            title = "Bambuddy Test"
             message = "This is a test notification. If you see this, notifications are working!"
 
         try:
@@ -287,7 +287,7 @@ class NotificationService:
             msg = MIMEMultipart()
             msg["From"] = from_email
             msg["To"] = to_email
-            msg["Subject"] = f"[BambuTrack] {subject}"
+            msg["Subject"] = f"[Bambuddy] {subject}"
             msg.attach(MIMEText(body, "plain"))
 
             if security == "ssl":
@@ -357,7 +357,7 @@ class NotificationService:
             custom_field_title: title,
             custom_field_message: message,
             "timestamp": datetime.now().isoformat(),
-            "source": "BambuTrack",
+            "source": "Bambuddy",
         }
 
         headers = {"Content-Type": "application/json"}

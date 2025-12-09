@@ -58,7 +58,7 @@ Variables use `{variable_name}` syntax (Python format strings).
 
 ### Common Variables (all events):
 - `{timestamp}` - Current date/time
-- `{app_name}` - "BambuTrack"
+- `{app_name}` - "Bambuddy"
 
 ---
 
@@ -104,7 +104,7 @@ maintenance_due:
   body: "{printer}:\n{items}"
 
 test:
-  title: "BambuTrack Test"
+  title: "Bambuddy Test"
   body: "This is a test notification. If you see this, notifications are working!"
 ```
 

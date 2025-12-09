@@ -215,8 +215,8 @@ export function Layout() {
         {/* Logo */}
         <div className={`border-b border-bambu-dark-tertiary flex items-center justify-center ${sidebarExpanded ? 'p-4' : 'p-2'}`}>
           <img
-            src={theme === 'dark' ? '/img/bambusy_logo_dark.png' : '/img/bambusy_logo_light.png'}
-            alt="Bambusy"
+            src={theme === 'dark' ? '/img/bambuddy_logo_dark.png' : '/img/bambuddy_logo_light.png'}
+            alt="Bambuddy"
             className={sidebarExpanded ? 'h-16 w-auto' : 'h-8 w-8 object-cover object-left'}
           />
         </div>
@@ -295,7 +295,7 @@ export function Layout() {
               </div>
               <div className="flex items-center gap-1">
                 <a
-                  href="https://github.com/maziggy/bambusy"
+                  href="https://github.com/maziggy/bambuddy"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
@@ -331,7 +331,7 @@ export function Layout() {
                 </button>
               )}
               <a
-                href="https://github.com/maziggy/bambusy"
+                href="https://github.com/maziggy/bambuddy"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"

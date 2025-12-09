@@ -408,7 +408,7 @@ async def export_backup(
                         pass  # Skip files that can't be read
 
         zip_buffer.seek(0)
-        filename = f"bambusy-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
+        filename = f"bambuddy-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
         return StreamingResponse(
             zip_buffer,
             media_type="application/zip",
@@ -419,7 +419,7 @@ async def export_backup(
     return JSONResponse(
         content=backup,
         headers={
-            "Content-Disposition": f"attachment; filename=bambusy-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
+            "Content-Disposition": f"attachment; filename=bambuddy-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
         }
     )
 

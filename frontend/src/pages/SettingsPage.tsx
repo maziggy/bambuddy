@@ -313,7 +313,7 @@ export function SettingsPage() {
     <div className="p-8">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white">Settings</h1>
-        <p className="text-bambu-gray">Configure Bambusy</p>
+        <p className="text-bambu-gray">Configure Bambuddy</p>
       </div>
 
       {/* Tab Navigation */}
@@ -1424,7 +1424,7 @@ export function SettingsPage() {
       {showClearStorageConfirm && (
         <ConfirmModal
           title="Clear All Local Storage"
-          message="WARNING: This will clear ALL browser data for Bambusy including your sidebar order, preferences, and cached data. The page will reload after clearing. This action cannot be undone!"
+          message="WARNING: This will clear ALL browser data for Bambuddy including your sidebar order, preferences, and cached data. The page will reload after clearing. This action cannot be undone!"
           confirmText="Clear Everything"
           variant="danger"
           onConfirm={() => {

@@ -1502,7 +1502,7 @@ class BambuMQTTClient:
         self._loop = loop
         self._client = mqtt.Client(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-            client_id=f"bambutrack_{self.serial_number}",
+            client_id=f"bambuddy_{self.serial_number}",
             protocol=mqtt.MQTTv311,
         )
 

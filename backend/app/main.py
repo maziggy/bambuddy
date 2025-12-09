@@ -29,7 +29,7 @@ root_logger.addHandler(console_handler)
 
 # File handler - only in production or if explicitly enabled
 if app_settings.log_to_file:
-    log_file = app_settings.log_dir / "bambutrack.log"
+    log_file = app_settings.log_dir / "bambuddy.log"
     file_handler = RotatingFileHandler(
         log_file,
         maxBytes=5*1024*1024,  # 5MB
@@ -47,7 +47,7 @@ if not app_settings.debug:
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
-logging.info(f"BambuTrack starting - debug={app_settings.debug}, log_level={log_level_str}")
+logging.info(f"Bambuddy starting - debug={app_settings.debug}, log_level={log_level_str}")
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
@@ -1062,7 +1062,7 @@ async def serve_frontend():
     if index_file.exists():
         return FileResponse(index_file)
     return {
-        "message": "BambuTrack API",
+        "message": "Bambuddy API",
         "docs": "/docs",
         "frontend": "Build and place React app in /static directory",
     }

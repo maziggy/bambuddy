@@ -1166,7 +1166,7 @@ export const api = {
 
     // Get filename from Content-Disposition header
     const contentDisposition = response.headers.get('Content-Disposition');
-    let filename = 'bambusy-backup.json';
+    let filename = 'bambuddy-backup.json';
     if (contentDisposition) {
       const match = contentDisposition.match(/filename=([^;]+)/);
       if (match) filename = match[1].trim();

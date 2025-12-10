@@ -487,12 +487,17 @@ class NotificationService:
         event_type: str = "unknown",
         printer_id: int | None = None,
         printer_name: str | None = None,
+        force_immediate: bool = False,
     ):
-        """Send notification to multiple providers and log the results."""
+        """Send notification to multiple providers and log the results.
+
+        Args:
+            force_immediate: If True, bypass digest mode and send immediately (for alarms)
+        """
         for provider in providers:
             try:
-                # Check if provider wants digest mode
-                if provider.daily_digest_enabled and provider.daily_digest_time:
+                # Check if provider wants digest mode (unless force_immediate is set)
+                if not force_immediate and provider.daily_digest_enabled and provider.daily_digest_time:
                     await self._queue_for_digest(
                         provider=provider,
                         event_type=event_type,
@@ -728,6 +733,56 @@ class NotificationService:
         logger.info(f"Found {len(providers)} providers for maintenance_due: {[p.name for p in providers]}")
         title, message = await self._build_message_from_template(db, "maintenance_due", variables)
         await self._send_to_providers(providers, title, message, db, "maintenance_due", printer_id, printer_name)
+
+    async def on_ams_humidity_high(
+        self,
+        printer_id: int,
+        printer_name: str,
+        ams_label: str,
+        humidity: float,
+        threshold: float,
+        db: AsyncSession,
+    ):
+        """Handle AMS high humidity alarm event. Always sends immediately (bypasses digest)."""
+        providers = await self._get_providers_for_event(db, "on_ams_humidity_high", printer_id)
+        if not providers:
+            return
+
+        variables = {
+            "printer": printer_name,
+            "ams_label": ams_label,
+            "humidity": f"{humidity:.0f}",
+            "threshold": f"{threshold:.0f}",
+        }
+
+        title, message = await self._build_message_from_template(db, "ams_humidity_high", variables)
+        # Alarms always send immediately, bypassing digest mode
+        await self._send_to_providers(providers, title, message, db, "ams_humidity_high", printer_id, printer_name, force_immediate=True)
+
+    async def on_ams_temperature_high(
+        self,
+        printer_id: int,
+        printer_name: str,
+        ams_label: str,
+        temperature: float,
+        threshold: float,
+        db: AsyncSession,
+    ):
+        """Handle AMS high temperature alarm event. Always sends immediately (bypasses digest)."""
+        providers = await self._get_providers_for_event(db, "on_ams_temperature_high", printer_id)
+        if not providers:
+            return
+
+        variables = {
+            "printer": printer_name,
+            "ams_label": ams_label,
+            "temperature": f"{temperature:.1f}",
+            "threshold": f"{threshold:.1f}",
+        }
+
+        title, message = await self._build_message_from_template(db, "ams_temperature_high", variables)
+        # Alarms always send immediately, bypassing digest mode
+        await self._send_to_providers(providers, title, message, db, "ams_temperature_high", printer_id, printer_name, force_immediate=True)
 
     def clear_template_cache(self):
         """Clear the template cache. Call this when templates are updated."""

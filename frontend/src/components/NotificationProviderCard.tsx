@@ -147,6 +147,12 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
             {provider.on_maintenance_due && (
               <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 text-xs rounded">Maintenance</span>
             )}
+            {provider.on_ams_humidity_high && (
+              <span className="px-2 py-0.5 bg-blue-600/20 text-blue-300 text-xs rounded">Humidity</span>
+            )}
+            {provider.on_ams_temperature_high && (
+              <span className="px-2 py-0.5 bg-orange-600/20 text-orange-300 text-xs rounded">Temperature</span>
+            )}
             {provider.quiet_hours_enabled && (
               <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-400 text-xs rounded flex items-center gap-1">
                 <Moon className="w-3 h-3" />
@@ -313,6 +319,33 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                   <Toggle
                     checked={provider.on_maintenance_due ?? false}
                     onChange={(checked) => updateMutation.mutate({ on_maintenance_due: checked })}
+                  />
+                </div>
+              </div>
+
+              {/* AMS Environmental Alarms */}
+              <div className="space-y-2">
+                <p className="text-xs text-bambu-gray uppercase tracking-wide">AMS Alarms</p>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white">Humidity High</p>
+                    <p className="text-xs text-bambu-gray">Notify when humidity exceeds threshold</p>
+                  </div>
+                  <Toggle
+                    checked={provider.on_ams_humidity_high ?? false}
+                    onChange={(checked) => updateMutation.mutate({ on_ams_humidity_high: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white">Temperature High</p>
+                    <p className="text-xs text-bambu-gray">Notify when temperature exceeds threshold</p>
+                  </div>
+                  <Toggle
+                    checked={provider.on_ams_temperature_high ?? false}
+                    onChange={(checked) => updateMutation.mutate({ on_ams_temperature_high: checked })}
                   />
                 </div>
               </div>

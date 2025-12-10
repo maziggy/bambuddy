@@ -82,6 +82,18 @@ DEFAULT_TEMPLATES = [
         "body_template": "{printer}:\n{items}",
     },
     {
+        "event_type": "ams_humidity_high",
+        "name": "AMS Humidity High",
+        "title_template": "AMS Humidity Alert",
+        "body_template": "{printer} {ams_label}: Humidity {humidity}% exceeds {threshold}% threshold",
+    },
+    {
+        "event_type": "ams_temperature_high",
+        "name": "AMS Temperature High",
+        "title_template": "AMS Temperature Alert",
+        "body_template": "{printer} {ams_label}: Temperature {temperature}°C exceeds {threshold}°C threshold",
+    },
+    {
         "event_type": "test",
         "name": "Test Notification",
         "title_template": "Bambuddy Test",

@@ -45,6 +45,9 @@ def _provider_to_dict(provider: NotificationProvider) -> dict:
         "on_printer_error": provider.on_printer_error,
         "on_filament_low": provider.on_filament_low,
         "on_maintenance_due": provider.on_maintenance_due,
+        # AMS environmental alarms
+        "on_ams_humidity_high": provider.on_ams_humidity_high,
+        "on_ams_temperature_high": provider.on_ams_temperature_high,
         # Quiet hours
         "quiet_hours_enabled": provider.quiet_hours_enabled,
         "quiet_hours_start": provider.quiet_hours_start,
@@ -101,6 +104,9 @@ async def create_notification_provider(
         on_printer_error=provider_data.on_printer_error,
         on_filament_low=provider_data.on_filament_low,
         on_maintenance_due=provider_data.on_maintenance_due,
+        # AMS environmental alarms
+        on_ams_humidity_high=provider_data.on_ams_humidity_high,
+        on_ams_temperature_high=provider_data.on_ams_temperature_high,
         # Quiet hours
         quiet_hours_enabled=provider_data.quiet_hours_enabled,
         quiet_hours_start=provider_data.quiet_hours_start,

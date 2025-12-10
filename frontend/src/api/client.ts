@@ -783,6 +783,9 @@ export interface NotificationProvider {
   on_printer_error: boolean;
   on_filament_low: boolean;
   on_maintenance_due: boolean;
+  // AMS environmental alarms
+  on_ams_humidity_high: boolean;
+  on_ams_temperature_high: boolean;
   // Quiet hours
   quiet_hours_enabled: boolean;
   quiet_hours_start: string | null;
@@ -817,6 +820,9 @@ export interface NotificationProviderCreate {
   on_printer_error?: boolean;
   on_filament_low?: boolean;
   on_maintenance_due?: boolean;
+  // AMS environmental alarms
+  on_ams_humidity_high?: boolean;
+  on_ams_temperature_high?: boolean;
   // Quiet hours
   quiet_hours_enabled?: boolean;
   quiet_hours_start?: string | null;
@@ -844,6 +850,9 @@ export interface NotificationProviderUpdate {
   on_printer_error?: boolean;
   on_filament_low?: boolean;
   on_maintenance_due?: boolean;
+  // AMS environmental alarms
+  on_ams_humidity_high?: boolean;
+  on_ams_temperature_high?: boolean;
   // Quiet hours
   quiet_hours_enabled?: boolean;
   quiet_hours_start?: string | null;

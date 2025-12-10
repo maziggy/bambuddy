@@ -18,6 +18,8 @@ class EventType(str, Enum):
     PRINTER_ERROR = "printer_error"
     FILAMENT_LOW = "filament_low"
     MAINTENANCE_DUE = "maintenance_due"
+    AMS_HUMIDITY_HIGH = "ams_humidity_high"
+    AMS_TEMPERATURE_HIGH = "ams_temperature_high"
     TEST = "test"
 
 
@@ -32,6 +34,8 @@ EVENT_VARIABLES: dict[str, list[str]] = {
     "printer_error": ["printer", "error_type", "error_detail", "timestamp", "app_name"],
     "filament_low": ["printer", "slot", "remaining_percent", "color", "timestamp", "app_name"],
     "maintenance_due": ["printer", "items", "timestamp", "app_name"],
+    "ams_humidity_high": ["printer", "ams_label", "humidity", "threshold", "timestamp", "app_name"],
+    "ams_temperature_high": ["printer", "ams_label", "temperature", "threshold", "timestamp", "app_name"],
     "test": ["app_name", "timestamp"],
 }
 
@@ -98,6 +102,22 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
     "maintenance_due": {
         "printer": "Bambu X1C",
         "items": "• Nozzle cleaning (OVERDUE)\n• Carbon rod lubrication (Soon)",
+        "timestamp": "2024-01-15 14:30",
+        "app_name": "Bambuddy",
+    },
+    "ams_humidity_high": {
+        "printer": "Bambu X1C",
+        "ams_label": "AMS-A",
+        "humidity": "75",
+        "threshold": "60",
+        "timestamp": "2024-01-15 14:30",
+        "app_name": "Bambuddy",
+    },
+    "ams_temperature_high": {
+        "printer": "Bambu X1C",
+        "ams_label": "AMS-A",
+        "temperature": "42",
+        "threshold": "35",
         "timestamp": "2024-01-15 14:30",
         "app_name": "Bambuddy",
     },

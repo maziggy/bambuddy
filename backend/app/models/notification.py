@@ -72,6 +72,10 @@ class NotificationProvider(Base):
     on_filament_low = Column(Boolean, default=False)
     on_maintenance_due = Column(Boolean, default=False)  # Maintenance reminder
 
+    # Event triggers - AMS environmental alarms
+    on_ams_humidity_high = Column(Boolean, default=False)  # Humidity above threshold
+    on_ams_temperature_high = Column(Boolean, default=False)  # Temperature above threshold
+
     # Quiet hours (do not disturb)
     quiet_hours_enabled = Column(Boolean, default=False)
     quiet_hours_start = Column(String(5), nullable=True)  # HH:MM format, e.g., "22:00"

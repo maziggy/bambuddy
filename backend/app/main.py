@@ -954,6 +954,8 @@ _ams_history_task: asyncio.Task | None = None
 AMS_HISTORY_INTERVAL = 300  # Record every 5 minutes
 AMS_HISTORY_RETENTION_DAYS = 30  # Keep data for 30 days
 _ams_cleanup_counter = 0  # Track recordings to trigger periodic cleanup
+_ams_alarm_cooldown: dict[str, datetime] = {}  # Track alarm cooldowns (printer_id:ams_id:type -> last_alarm_time)
+AMS_ALARM_COOLDOWN_MINUTES = 60  # Don't send same alarm more than once per hour
 
 
 async def record_ams_history():
@@ -968,6 +970,7 @@ async def record_ams_history():
         try:
             from backend.app.models.ams_history import AMSSensorHistory
             from backend.app.models.printer import Printer
+            from backend.app.models.settings import Settings
 
             async with async_session() as db:
                 # Get all active printers
@@ -975,6 +978,24 @@ async def record_ams_history():
                     select(Printer).where(Printer.is_active == True)
                 )
                 printers = result.scalars().all()
+
+                # Get alarm thresholds from settings
+                humidity_threshold = 60.0  # Default: fair threshold
+                temp_threshold = 35.0  # Default: fair threshold
+                result = await db.execute(select(Settings).where(Settings.key == "ams_humidity_fair"))
+                setting = result.scalar_one_or_none()
+                if setting:
+                    try:
+                        humidity_threshold = float(setting.value)
+                    except (ValueError, TypeError):
+                        pass
+                result = await db.execute(select(Settings).where(Settings.key == "ams_temp_fair"))
+                setting = result.scalar_one_or_none()
+                if setting:
+                    try:
+                        temp_threshold = float(setting.value)
+                    except (ValueError, TypeError):
+                        pass
 
                 recorded_count = 0
                 for printer in printers:
@@ -1029,6 +1050,42 @@ async def record_ams_history():
                         )
                         db.add(history)
                         recorded_count += 1
+
+                        # Generate AMS label (A, B, C, D or HT-A for AMS-Lite/Hub)
+                        if ams_id >= 128:
+                            ams_label = f"HT-{chr(65 + (ams_id - 128))}"
+                        else:
+                            ams_label = f"AMS-{chr(65 + ams_id)}"
+
+                        # Check humidity alarm (only if above threshold)
+                        if humidity is not None and humidity > humidity_threshold:
+                            cooldown_key = f"{printer.id}:{ams_id}:humidity"
+                            last_alarm = _ams_alarm_cooldown.get(cooldown_key)
+                            now = datetime.now()
+                            if last_alarm is None or (now - last_alarm).total_seconds() >= AMS_ALARM_COOLDOWN_MINUTES * 60:
+                                _ams_alarm_cooldown[cooldown_key] = now
+                                logger.info(f"Sending humidity alarm for {printer.name} {ams_label}: {humidity}% > {humidity_threshold}%")
+                                try:
+                                    await notification_service.on_ams_humidity_high(
+                                        printer.id, printer.name, ams_label, humidity, humidity_threshold, db
+                                    )
+                                except Exception as e:
+                                    logger.warning(f"Failed to send humidity alarm: {e}")
+
+                        # Check temperature alarm (only if above threshold)
+                        if temperature is not None and temperature > temp_threshold:
+                            cooldown_key = f"{printer.id}:{ams_id}:temperature"
+                            last_alarm = _ams_alarm_cooldown.get(cooldown_key)
+                            now = datetime.now()
+                            if last_alarm is None or (now - last_alarm).total_seconds() >= AMS_ALARM_COOLDOWN_MINUTES * 60:
+                                _ams_alarm_cooldown[cooldown_key] = now
+                                logger.info(f"Sending temperature alarm for {printer.name} {ams_label}: {temperature}°C > {temp_threshold}°C")
+                                try:
+                                    await notification_service.on_ams_temperature_high(
+                                        printer.id, printer.name, ams_label, temperature, temp_threshold, db
+                                    )
+                                except Exception as e:
+                                    logger.warning(f"Failed to send temperature alarm: {e}")
 
                 await db.commit()
                 if recorded_count > 0:

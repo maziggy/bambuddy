@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 import zipfile
 import shutil
 from datetime import datetime
@@ -18,8 +19,9 @@ from backend.app.models.filament import Filament
 class ThreeMFParser:
     """Parser for Bambu Lab 3MF files."""
 
-    def __init__(self, file_path: Path):
+    def __init__(self, file_path: Path, plate_number: int | None = None):
         self.file_path = file_path
+        self.plate_number = plate_number  # Which plate was printed (1, 2, 3, etc.)
         self.metadata: dict = {}
 
     def parse(self) -> dict:
@@ -285,12 +287,23 @@ class ThreeMFParser:
             pass
 
     def _extract_thumbnail(self, zf: zipfile.ZipFile):
-        """Extract thumbnail image from 3MF."""
-        thumbnail_paths = [
+        """Extract thumbnail image from 3MF.
+
+        If a plate_number was specified, try to use that plate's thumbnail first.
+        """
+        thumbnail_paths = []
+
+        # If a specific plate was printed, try that thumbnail first
+        if self.plate_number:
+            thumbnail_paths.append(f"Metadata/plate_{self.plate_number}.png")
+
+        # Fallback to default paths
+        thumbnail_paths.extend([
             "Metadata/plate_1.png",
             "Metadata/thumbnail.png",
             "Metadata/model_thumbnail.png",
-        ]
+        ])
+
         for thumb_path in thumbnail_paths:
             if thumb_path in zf.namelist():
                 self.metadata["_thumbnail_data"] = zf.read(thumb_path)
@@ -631,8 +644,16 @@ class ArchiveService:
         # Compute content hash for duplicate detection
         content_hash = self.compute_file_hash(dest_file)
 
+        # Extract plate number from filename (e.g., "plate_5" from "/data/Metadata/plate_5.gcode")
+        plate_number = None
+        if print_data:
+            filename = print_data.get("filename", "")
+            match = re.search(r'plate_(\d+)', filename)
+            if match:
+                plate_number = int(match.group(1))
+
         # Parse 3MF metadata
-        parser = ThreeMFParser(dest_file)
+        parser = ThreeMFParser(dest_file, plate_number=plate_number)
         metadata = parser.parse()
 
         # Save thumbnail if present

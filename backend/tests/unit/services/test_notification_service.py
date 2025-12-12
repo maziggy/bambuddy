@@ -863,6 +863,124 @@ class TestNotificationVariableFallbacks:
             # Filename should default to something (either "Unknown" or cleaned empty)
             assert "filename" in captured_variables
 
+    @pytest.mark.asyncio
+    async def test_print_start_uses_archive_print_time_seconds(self, service):
+        """Verify print_time_seconds from archive_data is used for estimated_time."""
+        mock_db = AsyncMock()
+        mock_provider = MagicMock()
+        mock_provider.id = 1
+
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with patch.object(
+            service, '_get_providers_for_event', new_callable=AsyncMock
+        ) as mock_get, \
+             patch.object(
+            service, '_send_to_providers', new_callable=AsyncMock
+        ), \
+             patch.object(
+            service, '_build_message_from_template', side_effect=capture_build
+        ):
+
+            mock_get.return_value = [mock_provider]
+
+            # Pass archive_data with print_time_seconds (7200 seconds = 2 hours)
+            await service.on_print_start(
+                printer_id=1,
+                printer_name="Test",
+                data={"subtask_name": "test"},
+                db=mock_db,
+                archive_data={"print_time_seconds": 7200},
+            )
+
+            # Should use archive's print_time_seconds: 7200 seconds = 2h 0m
+            assert captured_variables.get("estimated_time") == "2h 0m"
+
+    @pytest.mark.asyncio
+    async def test_print_start_archive_data_overrides_mqtt(self, service):
+        """Verify archive_data takes priority over MQTT remaining_time."""
+        mock_db = AsyncMock()
+        mock_provider = MagicMock()
+        mock_provider.id = 1
+
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with patch.object(
+            service, '_get_providers_for_event', new_callable=AsyncMock
+        ) as mock_get, \
+             patch.object(
+            service, '_send_to_providers', new_callable=AsyncMock
+        ), \
+             patch.object(
+            service, '_build_message_from_template', side_effect=capture_build
+        ):
+
+            mock_get.return_value = [mock_provider]
+
+            # Both archive_data and MQTT remaining_time provided
+            # Archive says 2 hours, MQTT says 30 minutes (wrong at start)
+            await service.on_print_start(
+                printer_id=1,
+                printer_name="Test",
+                data={
+                    "subtask_name": "test",
+                    "remaining_time": 1800,  # 30 minutes from MQTT
+                },
+                db=mock_db,
+                archive_data={"print_time_seconds": 7200},  # 2 hours from 3MF
+            )
+
+            # Should use archive's print_time_seconds (more reliable)
+            assert captured_variables.get("estimated_time") == "2h 0m"
+
+    @pytest.mark.asyncio
+    async def test_print_start_falls_back_to_mqtt_when_no_archive(self, service):
+        """Verify MQTT remaining_time is used when archive_data not provided."""
+        mock_db = AsyncMock()
+        mock_provider = MagicMock()
+        mock_provider.id = 1
+
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with patch.object(
+            service, '_get_providers_for_event', new_callable=AsyncMock
+        ) as mock_get, \
+             patch.object(
+            service, '_send_to_providers', new_callable=AsyncMock
+        ), \
+             patch.object(
+            service, '_build_message_from_template', side_effect=capture_build
+        ):
+
+            mock_get.return_value = [mock_provider]
+
+            # Only MQTT remaining_time provided (1800 seconds = 30 minutes)
+            await service.on_print_start(
+                printer_id=1,
+                printer_name="Test",
+                data={
+                    "subtask_name": "test",
+                    "remaining_time": 1800,
+                },
+                db=mock_db,
+                # No archive_data
+            )
+
+            # Should use MQTT remaining_time
+            assert captured_variables.get("estimated_time") == "30m"
+
 
 class TestNotificationTemplates:
     """Tests for notification message template rendering."""

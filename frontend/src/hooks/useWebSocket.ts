@@ -102,6 +102,11 @@ export function useWebSocket() {
         queryClient.invalidateQueries({ queryKey: ['archiveStats'] });
         break;
 
+      case 'archive_updated':
+        // Invalidate archives to refresh (e.g., timelapse attached)
+        queryClient.invalidateQueries({ queryKey: ['archives'] });
+        break;
+
       case 'pong':
         // Keepalive response, ignore
         break;

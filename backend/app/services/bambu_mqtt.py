@@ -250,6 +250,7 @@ class BambuMQTTClient:
         self._previous_gcode_file: str | None = None
         self._was_running: bool = False  # Track if we've seen RUNNING state for current print
         self._completion_triggered: bool = False  # Prevent duplicate completion triggers
+        self._timelapse_during_print: bool = False  # Track if timelapse was active during this print
         self._message_log: deque[MQTTLogEntry] = deque(maxlen=100)
         self._logging_enabled: bool = False
         self._last_message_time: float = 0.0  # Track when we last received a message
@@ -624,6 +625,9 @@ class BambuMQTTClient:
             self.state.ipcam = xcam_data.get("ipcam_record") == "enable"
         if "timelapse" in xcam_data:
             self.state.timelapse = xcam_data.get("timelapse") == "enable"
+            # Track if timelapse was ever active during this print
+            if self.state.timelapse and self._was_running:
+                self._timelapse_during_print = True
 
         # Skip spaghetti_detector boolean field - we read from cfg bitmask above
         if "print_halt" in xcam_data:
@@ -1247,6 +1251,9 @@ class BambuMQTTClient:
         if "timelapse" in data:
             logger.debug(f"[{self.serial_number}] timelapse field: {data['timelapse']}")
             self.state.timelapse = data["timelapse"] is True
+            # Track if timelapse was ever active during this print
+            if self.state.timelapse and self._was_running:
+                self._timelapse_during_print = True
 
         # Parse ipcam/live view status
         if "ipcam" in data:
@@ -1377,6 +1384,8 @@ class BambuMQTTClient:
             # Reset completion tracking for new print
             self._was_running = True
             self._completion_triggered = False
+            # Reset timelapse tracking - will be set to True if timelapse is detected during print
+            self._timelapse_during_print = False
 
         if (is_new_print or is_file_change) and self.on_print_start:
             logger.info(
@@ -1421,15 +1430,19 @@ class BambuMQTTClient:
             logger.info(
                 f"[{self.serial_number}] PRINT COMPLETE detected - state: {self.state.state}, "
                 f"status: {status}, file: {self._previous_gcode_file or current_file}, "
-                f"subtask: {self.state.subtask_name}, was_running: {self._was_running}"
+                f"subtask: {self.state.subtask_name}, was_running: {self._was_running}, "
+                f"timelapse_during_print: {self._timelapse_during_print}"
             )
+            timelapse_was_active = self._timelapse_during_print
             self._completion_triggered = True
             self._was_running = False
+            self._timelapse_during_print = False  # Reset for next print
             self.on_print_complete({
                 "status": status,
                 "filename": self._previous_gcode_file or current_file,
                 "subtask_name": self.state.subtask_name,
                 "raw_data": data,
+                "timelapse_was_active": timelapse_was_active,
             })
 
         self._previous_gcode_state = self.state.state

@@ -298,14 +298,17 @@ async def on_ams_change(printer_id: int, ams_data: list):
         logging.getLogger(__name__).warning(f"Spoolman AMS sync failed: {e}")
 
 
-async def on_print_start(printer_id: int, data: dict):
-    """Handle print start - archive the 3MF file immediately."""
-    import logging
-    logger = logging.getLogger(__name__)
+async def _send_print_start_notification(
+    printer_id: int,
+    data: dict,
+    archive_data: dict | None = None,
+    logger=None,
+):
+    """Helper to send print start notification with optional archive data."""
+    if logger is None:
+        import logging
+        logger = logging.getLogger(__name__)
 
-    await ws_manager.send_print_start(printer_id, data)
-
-    # Send print start notifications FIRST (before any early returns)
     try:
         async with async_session() as db:
             from backend.app.models.printer import Printer
@@ -314,9 +317,22 @@ async def on_print_start(printer_id: int, data: dict):
             )
             printer = result.scalar_one_or_none()
             printer_name = printer.name if printer else f"Printer {printer_id}"
-            await notification_service.on_print_start(printer_id, printer_name, data, db)
+            await notification_service.on_print_start(
+                printer_id, printer_name, data, db, archive_data=archive_data
+            )
     except Exception as e:
         logger.warning(f"Notification on_print_start failed: {e}")
+
+
+async def on_print_start(printer_id: int, data: dict):
+    """Handle print start - archive the 3MF file immediately."""
+    import logging
+    logger = logging.getLogger(__name__)
+
+    await ws_manager.send_print_start(printer_id, data)
+
+    # Track if notification was sent (to avoid sending twice)
+    notification_sent = False
 
     # Smart plug automation: turn on plug when print starts
     try:
@@ -335,6 +351,9 @@ async def on_print_start(printer_id: int, data: dict):
         printer = result.scalar_one_or_none()
 
         if not printer or not printer.auto_archive:
+            # Send notification without archive data (auto-archive disabled)
+            if not notification_sent:
+                await _send_print_start_notification(printer_id, data, logger=logger)
             return
 
         # Get the filename and subtask_name
@@ -344,6 +363,9 @@ async def on_print_start(printer_id: int, data: dict):
         logger.info(f"Print start detected - filename: {filename}, subtask: {subtask_name}")
 
         if not filename and not subtask_name:
+            # Send notification without archive data (no filename)
+            if not notification_sent:
+                await _send_print_start_notification(printer_id, data, logger=logger)
             return
 
         # Check if this is an expected print from reprint/scheduled
@@ -417,6 +439,11 @@ async def on_print_start(printer_id: int, data: dict):
                     "status": "printing",
                 })
 
+                # Send notification with archive data (reprint/scheduled)
+                if not notification_sent:
+                    archive_data = {"print_time_seconds": archive.print_time_seconds}
+                    await _send_print_start_notification(printer_id, data, archive_data, logger)
+
             return  # Skip creating a new archive
 
         # Check if there's already a "printing" archive for this printer/file
@@ -450,6 +477,10 @@ async def on_print_start(printer_id: int, data: dict):
                             logger.info(f"Recorded starting energy for existing archive {existing_archive.id}: {energy['total']} kWh")
                 except Exception as e:
                     logger.warning(f"Failed to record starting energy for existing archive: {e}")
+            # Send notification with archive data (existing archive)
+            if not notification_sent:
+                archive_data = {"print_time_seconds": existing_archive.print_time_seconds}
+                await _send_print_start_notification(printer_id, data, archive_data, logger)
             return
 
         # Build list of possible 3MF filenames to try
@@ -543,6 +574,9 @@ async def on_print_start(printer_id: int, data: dict):
 
         if not downloaded_filename or not temp_path:
             logger.warning(f"Could not find 3MF file for print: {filename or subtask_name}")
+            # Send notification without archive data (file not found)
+            if not notification_sent:
+                await _send_print_start_notification(printer_id, data, logger=logger)
             return
 
         try:
@@ -591,6 +625,12 @@ async def on_print_start(printer_id: int, data: dict):
                     "print_name": archive.print_name,
                     "status": archive.status,
                 })
+
+                # Send notification with archive data (new archive created)
+                if not notification_sent:
+                    archive_data = {"print_time_seconds": archive.print_time_seconds}
+                    await _send_print_start_notification(printer_id, data, archive_data, logger)
+                    notification_sent = True
         finally:
             if temp_path and temp_path.exists():
                 temp_path.unlink()
@@ -912,6 +952,96 @@ async def on_print_complete(printer_id: int, data: dict):
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(f"Maintenance notification check failed: {e}")
+
+    # Auto-scan for timelapse if recording was active during the print
+    if archive_id and data.get("timelapse_was_active") and data.get("status") == "completed":
+        logger.info(f"[TIMELAPSE] Timelapse was active during print, auto-scanning for archive {archive_id}")
+        try:
+            # Small delay to allow timelapse file to be finalized
+            await asyncio.sleep(5)
+
+            async with async_session() as db:
+                from backend.app.models.printer import Printer
+                from backend.app.models.archive import PrintArchive
+                from backend.app.services.archive import ArchiveService
+                from backend.app.services.bambu_ftp import list_files_async, download_file_bytes_async
+                from pathlib import Path
+                import re
+                from datetime import timedelta
+
+                # Get archive
+                service = ArchiveService(db)
+                archive = await service.get_archive(archive_id)
+                if not archive:
+                    logger.warning(f"[TIMELAPSE] Archive {archive_id} not found")
+                elif archive.timelapse_path:
+                    logger.info(f"[TIMELAPSE] Archive {archive_id} already has timelapse attached")
+                elif not archive.printer_id:
+                    logger.warning(f"[TIMELAPSE] Archive {archive_id} has no printer")
+                else:
+                    # Get printer
+                    result = await db.execute(select(Printer).where(Printer.id == archive.printer_id))
+                    printer = result.scalar_one_or_none()
+
+                    if printer:
+                        # Scan timelapse directory on printer
+                        files = []
+                        for timelapse_path in ["/timelapse", "/timelapse/video"]:
+                            try:
+                                files = await list_files_async(printer.ip_address, printer.access_code, timelapse_path)
+                                if files:
+                                    break
+                            except Exception:
+                                continue
+
+                        if files:
+                            mp4_files = [f for f in files if not f.get("is_directory") and f.get("name", "").endswith(".mp4")]
+
+                            # Strategy: Find most recent timelapse by mtime
+                            # Since we know timelapse was active during this print, use the most recent file
+                            if mp4_files:
+                                # Sort by mtime descending
+                                mp4_files_with_mtime = [f for f in mp4_files if f.get("mtime")]
+                                if mp4_files_with_mtime:
+                                    mp4_files_with_mtime.sort(key=lambda x: x.get("mtime"), reverse=True)
+                                    most_recent = mp4_files_with_mtime[0]
+
+                                    # Verify the file was modified within reasonable time of print completion
+                                    file_mtime = most_recent.get("mtime")
+                                    archive_completed = archive.completed_at or datetime.now()
+                                    if file_mtime and abs(file_mtime - archive_completed) < timedelta(minutes=30):
+                                        # Download and attach
+                                        logger.info(f"[TIMELAPSE] Downloading timelapse {most_recent['name']} for archive {archive_id}")
+                                        remote_path = most_recent.get('path') or f"/timelapse/{most_recent['name']}"
+                                        timelapse_data = await download_file_bytes_async(
+                                            printer.ip_address, printer.access_code, remote_path
+                                        )
+
+                                        if timelapse_data:
+                                            success = await service.attach_timelapse(
+                                                archive_id, timelapse_data, most_recent["name"]
+                                            )
+                                            if success:
+                                                logger.info(f"[TIMELAPSE] Successfully attached timelapse to archive {archive_id}")
+                                                await ws_manager.send_archive_updated({
+                                                    "id": archive_id,
+                                                    "timelapse_attached": True,
+                                                })
+                                            else:
+                                                logger.warning(f"[TIMELAPSE] Failed to attach timelapse to archive {archive_id}")
+                                        else:
+                                            logger.warning(f"[TIMELAPSE] Failed to download timelapse file")
+                                    else:
+                                        logger.info(f"[TIMELAPSE] Most recent timelapse mtime too far from print completion")
+                                else:
+                                    logger.info(f"[TIMELAPSE] No timelapse files with mtime found")
+                        else:
+                            logger.info(f"[TIMELAPSE] No timelapse files found on printer")
+                    else:
+                        logger.warning(f"[TIMELAPSE] Printer not found for archive {archive_id}")
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Timelapse auto-scan failed: {e}")
 
     # Update queue item if this was a scheduled print
     try:

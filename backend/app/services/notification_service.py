@@ -549,9 +549,22 @@ class NotificationService:
                 )
 
     async def on_print_start(
-        self, printer_id: int, printer_name: str, data: dict, db: AsyncSession
+        self,
+        printer_id: int,
+        printer_name: str,
+        data: dict,
+        db: AsyncSession,
+        archive_data: dict | None = None,
     ):
-        """Handle print start event - send notifications to relevant providers."""
+        """Handle print start event - send notifications to relevant providers.
+
+        Args:
+            printer_id: The printer ID
+            printer_name: The printer name
+            data: MQTT event data with filename, subtask_name, remaining_time, raw_data
+            db: Database session
+            archive_data: Optional archive data with print_time_seconds from 3MF parsing
+        """
         logger.info(f"on_print_start called for printer {printer_id} ({printer_name})")
         providers = await self._get_providers_for_event(db, "on_print_start", printer_id)
         if not providers:
@@ -566,12 +579,30 @@ class NotificationService:
         else:
             filename = self._clean_filename(data.get("filename", "Unknown"))
 
-        # remaining_time can be passed directly, or look in raw_data at top level
-        # mc_remaining_time is in minutes in MQTT data
-        estimated_time = data.get("remaining_time")
+        # Priority for estimated_time:
+        # 1. Archive's print_time_seconds from 3MF parsing (most reliable)
+        # 2. MQTT remaining_time (may be 0 at print start)
+        # 3. raw_data mc_remaining_time
+        estimated_time = None
+
+        # Try archive data first (from 3MF parsing - most reliable)
+        if archive_data and archive_data.get("print_time_seconds"):
+            estimated_time = archive_data["print_time_seconds"]
+            logger.debug(f"Using print_time_seconds from archive: {estimated_time}")
+
+        # Fall back to MQTT remaining_time
+        if estimated_time is None:
+            estimated_time = data.get("remaining_time")
+            if estimated_time:
+                logger.debug(f"Using remaining_time from MQTT: {estimated_time}")
+
+        # Last resort: raw_data mc_remaining_time (in minutes, convert to seconds)
         if estimated_time is None:
             raw_time = data.get("raw_data", {}).get("mc_remaining_time")
-            estimated_time = raw_time * 60 if raw_time else None
+            if raw_time:
+                estimated_time = raw_time * 60
+                logger.debug(f"Using mc_remaining_time from raw_data: {estimated_time}")
+
         time_str = self._format_duration(estimated_time)
 
         variables = {

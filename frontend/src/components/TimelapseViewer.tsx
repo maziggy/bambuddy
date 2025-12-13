@@ -14,7 +14,7 @@ const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4];
 export function TimelapseViewer({ src, title, downloadFilename, onClose }: TimelapseViewerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(true);
-  const [playbackRate, setPlaybackRate] = useState(0.5); // Default to 0.5x for timelapse
+  const [playbackRate, setPlaybackRate] = useState(2); // Default to 2x for timelapse
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
 

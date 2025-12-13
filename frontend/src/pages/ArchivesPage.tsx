@@ -932,6 +932,7 @@ export function ArchivesPage() {
   const [filterColors, setFilterColors] = useState<Set<string>>(new Set());
   const [colorFilterMode, setColorFilterMode] = useState<'or' | 'and'>('or');
   const [filterFavorites, setFilterFavorites] = useState(false);
+  const [hideFailed, setHideFailed] = useState(() => localStorage.getItem('archiveHideFailed') === 'true');
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
@@ -976,6 +977,11 @@ export function ArchivesPage() {
       showToast('Failed to delete archives', 'error');
     },
   });
+
+  // Persist hideFailed filter to localStorage
+  useEffect(() => {
+    localStorage.setItem('archiveHideFailed', hideFailed.toString());
+  }, [hideFailed]);
 
   const printerMap = new Map(printers?.map((p) => [p.id, p.name]) || []);
 
@@ -1037,11 +1043,14 @@ export function ArchivesPage() {
       // Favorites filter (only apply if not using favorites collection)
       const matchesFavorites = collection === 'favorites' || !filterFavorites || a.is_favorite;
 
+      // Hide failed filter (don't apply when viewing failed collection)
+      const matchesHideFailed = collection === 'failed' || !hideFailed || a.status !== 'failed';
+
       // Tag filter
       const archiveTags = a.tags?.split(',').map(t => t.trim()) || [];
       const matchesTag = !filterTag || archiveTags.includes(filterTag);
 
-      return matchesCollection && matchesSearch && matchesMaterial && matchesColor && matchesFavorites && matchesTag;
+      return matchesCollection && matchesSearch && matchesMaterial && matchesColor && matchesFavorites && matchesHideFailed && matchesTag;
     })
     .sort((a, b) => {
       switch (sortBy) {
@@ -1108,10 +1117,11 @@ export function ArchivesPage() {
     setFilterPrinter(null);
     setFilterMaterial(null);
     setFilterFavorites(false);
+    setHideFailed(false);
     setFilterTag(null);
   };
 
-  const hasTopFilters = search || filterPrinter || filterMaterial || filterFavorites || filterTag;
+  const hasTopFilters = search || filterPrinter || filterMaterial || filterFavorites || hideFailed || filterTag;
 
   // Drag & drop handlers for page-wide upload
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -1433,6 +1443,18 @@ export function ArchivesPage() {
             >
               <Star className={`w-4 h-4 ${filterFavorites ? 'fill-yellow-400' : ''}`} />
               <span className="text-sm hidden md:inline">Favorites</span>
+            </button>
+            <button
+              onClick={() => setHideFailed(!hideFailed)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors flex-shrink-0 ${
+                hideFailed
+                  ? 'bg-red-500/20 border-red-500 text-red-400'
+                  : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:text-white'
+              }`}
+              title={hideFailed ? 'Show failed prints' : 'Hide failed prints'}
+            >
+              <AlertCircle className={`w-4 h-4 ${hideFailed ? '' : ''}`} />
+              <span className="text-sm hidden md:inline">Hide Failed</span>
             </button>
             {uniqueTags.length > 0 && (
               <div className="flex items-center gap-2 flex-shrink-0">

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import os
 import sys
 import pytest
@@ -378,3 +379,81 @@ def sample_printer_status():
         "remaining_time": 0,
         "filename": None,
     }
+
+
+# ============================================================================
+# Log Capture Fixtures for Error Detection
+# ============================================================================
+
+class LogCapture(logging.Handler):
+    """Handler that captures log records for testing."""
+
+    def __init__(self):
+        super().__init__()
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord):
+        self.records.append(record)
+
+    def clear(self):
+        self.records.clear()
+
+    def get_errors(self) -> list[logging.LogRecord]:
+        """Get all ERROR and CRITICAL level records."""
+        return [r for r in self.records if r.levelno >= logging.ERROR]
+
+    def get_warnings(self) -> list[logging.LogRecord]:
+        """Get all WARNING level records."""
+        return [r for r in self.records if r.levelno == logging.WARNING]
+
+    def has_errors(self) -> bool:
+        """Check if any errors were logged."""
+        return len(self.get_errors()) > 0
+
+    def format_errors(self) -> str:
+        """Format all errors as a string for assertion messages."""
+        errors = self.get_errors()
+        if not errors:
+            return "No errors"
+        formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
+        return "\n".join(formatter.format(r) for r in errors)
+
+
+@pytest.fixture
+def capture_logs():
+    """Fixture that captures log output during a test.
+
+    Usage:
+        def test_something(capture_logs):
+            # Do something that might log errors
+            some_function()
+
+            # Check no errors were logged
+            assert not capture_logs.has_errors(), capture_logs.format_errors()
+    """
+    handler = LogCapture()
+    handler.setLevel(logging.DEBUG)
+
+    # Attach to root logger to capture all logs
+    root_logger = logging.getLogger()
+    root_logger.addHandler(handler)
+
+    yield handler
+
+    root_logger.removeHandler(handler)
+
+
+@pytest.fixture
+def assert_no_log_errors(capture_logs):
+    """Fixture that automatically asserts no errors were logged.
+
+    Usage:
+        def test_something(assert_no_log_errors):
+            # If any ERROR logs occur during this test, it will fail
+            some_function()
+    """
+    yield capture_logs
+
+    errors = capture_logs.get_errors()
+    if errors:
+        pytest.fail(f"Unexpected log errors:\n{capture_logs.format_errors()}")

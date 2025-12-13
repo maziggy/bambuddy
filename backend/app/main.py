@@ -329,6 +329,8 @@ async def on_print_start(printer_id: int, data: dict):
     import logging
     logger = logging.getLogger(__name__)
 
+    logger.info(f"[CALLBACK] on_print_start called for printer {printer_id}, data keys: {list(data.keys())}")
+
     await ws_manager.send_print_start(printer_id, data)
 
     # Track if notification was sent (to avoid sending twice)
@@ -352,6 +354,7 @@ async def on_print_start(printer_id: int, data: dict):
 
         if not printer or not printer.auto_archive:
             # Send notification without archive data (auto-archive disabled)
+            logger.info(f"[CALLBACK] Skipping archive - printer: {printer is not None}, auto_archive: {printer.auto_archive if printer else 'N/A'}")
             if not notification_sent:
                 await _send_print_start_notification(printer_id, data, logger=logger)
             return
@@ -360,10 +363,11 @@ async def on_print_start(printer_id: int, data: dict):
         filename = data.get("filename", "")
         subtask_name = data.get("subtask_name", "")
 
-        logger.info(f"Print start detected - filename: {filename}, subtask: {subtask_name}")
+        logger.info(f"[CALLBACK] Print start detected - filename: {filename}, subtask: {subtask_name}")
 
         if not filename and not subtask_name:
             # Send notification without archive data (no filename)
+            logger.info(f"[CALLBACK] Skipping archive - no filename or subtask_name")
             if not notification_sent:
                 await _send_print_start_notification(printer_id, data, logger=logger)
             return
@@ -975,13 +979,15 @@ async def on_print_complete(printer_id: int, data: dict):
             async with async_session() as db:
                 from backend.app.models.printer import Printer
                 from backend.app.models.archive import PrintArchive
-                from backend.app.services.archive import ArchiveService
+                # NOTE: ArchiveService is imported at module level (line 67)
+                # Do NOT import it here - it causes a Python scoping issue that breaks
+                # the earlier usage of ArchiveService in this function
                 from backend.app.services.bambu_ftp import list_files_async, download_file_bytes_async
                 from pathlib import Path
                 import re
                 from datetime import timedelta
 
-                # Get archive
+                # Get archive (ArchiveService from module-level import)
                 service = ArchiveService(db)
                 archive = await service.get_archive(archive_id)
                 if not archive:

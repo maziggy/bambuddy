@@ -1325,6 +1325,7 @@ async def get_qrcode(
 async def get_archive_capabilities(archive_id: int, db: AsyncSession = Depends(get_db)):
     """Check what viewing capabilities are available for this 3MF file."""
     import json
+    import xml.etree.ElementTree as ET
 
     service = ArchiveService(db)
     archive = await service.get_archive(archive_id)
@@ -1338,6 +1339,7 @@ async def get_archive_capabilities(archive_id: int, db: AsyncSession = Depends(g
     has_model = False
     has_gcode = False
     build_volume = {"x": 256, "y": 256, "z": 256}  # Default to X1/P1 size
+    filament_colors: list[str] = []
 
     try:
         with zipfile.ZipFile(file_path, "r") as zf:
@@ -1357,6 +1359,45 @@ async def get_archive_capabilities(archive_id: int, db: AsyncSession = Depends(g
                             break
                     except Exception:
                         pass
+
+            # Extract filament colors from slice_info.config
+            # These are the actual filaments used in the print, indexed by tool/extruder
+            if "Metadata/slice_info.config" in names:
+                try:
+                    slice_content = zf.read("Metadata/slice_info.config").decode("utf-8")
+                    root = ET.fromstring(slice_content)
+
+                    # Get all filaments with their IDs and colors
+                    # <filament id="1" type="PLA" color="#FFFFFF" used_g="100" />
+                    # ID corresponds to the tool number in G-code (T0, T1, etc.)
+                    filaments = root.findall(".//filament")
+                    filament_map: dict[int, str] = {}
+                    for f in filaments:
+                        fid = f.get("id")
+                        fcolor = f.get("color")
+                        used_g = f.get("used_g", "0")
+                        try:
+                            used_amount = float(used_g)
+                        except (ValueError, TypeError):
+                            used_amount = 0
+
+                        # Include all filaments, but mark unused ones
+                        if fid is not None and fcolor:
+                            try:
+                                # IDs are 1-based in slice_info, tools are 0-based
+                                tool_id = int(fid) - 1
+                                if tool_id >= 0 and used_amount > 0:
+                                    filament_map[tool_id] = fcolor
+                            except ValueError:
+                                pass
+
+                    # Convert to ordered list (tool 0, tool 1, etc.)
+                    if filament_map:
+                        max_tool = max(filament_map.keys())
+                        for i in range(max_tool + 1):
+                            filament_colors.append(filament_map.get(i, "#00AE42"))
+                except Exception:
+                    pass
 
             # Extract build volume from project settings
             if "Metadata/project_settings.config" in names:
@@ -1401,6 +1442,7 @@ async def get_archive_capabilities(archive_id: int, db: AsyncSession = Depends(g
         "has_model": has_model,
         "has_gcode": has_gcode,
         "build_volume": build_volume,
+        "filament_colors": filament_colors,
     }
 
 

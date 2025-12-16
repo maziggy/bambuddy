@@ -11,10 +11,11 @@ interface BuildVolume {
 interface GcodeViewerProps {
   gcodeUrl: string;
   buildVolume?: BuildVolume;
+  filamentColors?: string[];
   className?: string;
 }
 
-export function GcodeViewer({ gcodeUrl, buildVolume = { x: 256, y: 256, z: 256 }, className = '' }: GcodeViewerProps) {
+export function GcodeViewer({ gcodeUrl, buildVolume = { x: 256, y: 256, z: 256 }, filamentColors, className = '' }: GcodeViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewRef = useRef<WebGLPreview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -28,14 +29,26 @@ export function GcodeViewer({ gcodeUrl, buildVolume = { x: 256, y: 256, z: 256 }
 
     const canvas = canvasRef.current;
 
+    const hasColors = filamentColors && filamentColors.length > 0;
+    const hasMultipleColors = filamentColors && filamentColors.length > 1;
+
+    // First color or default bambu green
+    const primaryColor = hasColors ? filamentColors[0] : '#00ae42';
+
     // Initialize the preview
+    // For multi-color: pass array of CSS color strings to extrusionColor
+    // The library uses index to match tool number (T0, T1, T2...)
     const preview = init({
       canvas,
       buildVolume: buildVolume,
       backgroundColor: 0x1a1a1a,
       travelColor: 0x444444,
-      extrusionColor: 0x00ae42,
-      topLayerColor: 0x00ff5a,
+      // Pass array for multi-color, single value for single color
+      extrusionColor: hasMultipleColors ? filamentColors : primaryColor,
+      // Disable topLayerColor for multi-color (it overrides per-tool colors)
+      ...(hasMultipleColors ? {} : { topLayerColor: primaryColor }),
+      // Disable gradient for multi-color to preserve actual filament colors
+      ...(hasMultipleColors ? { disableGradient: true } : {}),
       lastSegmentColor: 0xffffff,
       lineWidth: 2,
       renderTravel: false,
@@ -64,8 +77,33 @@ export function GcodeViewer({ gcodeUrl, buildVolume = { x: 256, y: 256, z: 256 }
         return response.text();
       })
       .then(gcode => {
+        let processedGcode = gcode;
+
+        if (hasMultipleColors) {
+          // Bambu G-code uses special T commands that confuse the parser:
+          // T255, T1000, T1001, T65535, T65279 etc. are not real tool changes
+          // Filter these out and keep only valid tool numbers (T0-T15)
+          processedGcode = gcode
+            .split('\n')
+            .map(line => {
+              const match = line.match(/^(\s*)T(\d+)(\s*;.*)?$/i);
+              if (match) {
+                const toolNum = parseInt(match[2], 10);
+                // Keep only valid tool numbers (0-15), comment out others
+                if (toolNum > 15) {
+                  return `${match[1]}; FILTERED: T${toolNum}${match[3] || ''}`;
+                }
+              }
+              return line;
+            })
+            .join('\n');
+
+          // Prepend T0 to ensure initial tool is set
+          processedGcode = `T0\n${processedGcode}`;
+        }
+
         // Parse G-code
-        preview.processGCode(gcode);
+        preview.processGCode(processedGcode);
 
         // Get layer count
         const layers = preview.layers?.length || 0;
@@ -98,7 +136,7 @@ export function GcodeViewer({ gcodeUrl, buildVolume = { x: 256, y: 256, z: 256 }
       window.removeEventListener('resize', handleResize);
       preview.dispose();
     };
-  }, [gcodeUrl, buildVolume]);
+  }, [gcodeUrl, buildVolume, filamentColors]);
 
   const handleLayerChange = (layer: number) => {
     if (!previewRef.current) return;

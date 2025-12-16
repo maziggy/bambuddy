@@ -17,6 +17,7 @@ interface Capabilities {
   has_model: boolean;
   has_gcode: boolean;
   build_volume: { x: number; y: number; z: number };
+  filament_colors: string[];
 }
 
 export function ModelViewerModal({ archiveId, title, onClose }: ModelViewerModalProps) {
@@ -47,7 +48,7 @@ export function ModelViewerModal({ archiveId, title, onClose }: ModelViewerModal
       })
       .catch(() => {
         // Fallback to 3D model tab if capabilities check fails
-        setCapabilities({ has_model: true, has_gcode: false, build_volume: { x: 256, y: 256, z: 256 } });
+        setCapabilities({ has_model: true, has_gcode: false, build_volume: { x: 256, y: 256, z: 256 }, filament_colors: [] });
         setActiveTab('3d');
         setLoading(false);
       });
@@ -136,6 +137,7 @@ export function ModelViewerModal({ archiveId, title, onClose }: ModelViewerModal
             <GcodeViewer
               gcodeUrl={api.getArchiveGcode(archiveId)}
               buildVolume={capabilities.build_volume}
+              filamentColors={capabilities.filament_colors}
               className="w-full h-full"
             />
           ) : (

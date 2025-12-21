@@ -111,6 +111,7 @@ export interface PrinterStatus {
     nozzle_2?: number;  // Second nozzle for H2 series (dual nozzle)
     nozzle_2_target?: number;
     chamber?: number;
+    chamber_target?: number;
   } | null;
   cover_url: string | null;
   hms_errors: HMSError[];

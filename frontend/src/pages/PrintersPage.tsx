@@ -6,7 +6,6 @@ import {
   Link,
   Unlink,
   Signal,
-  Thermometer,
   Clock,
   MoreVertical,
   Trash2,
@@ -194,6 +193,47 @@ function ThermometerFull({ className }: { className?: string }) {
       <rect x="4.5" y="3" width="3" height="9.5" fill="#c62828" rx="0.5"/>
       <circle cx="6" cy="15" r="2" fill="#c62828"/>
       <path d="M6 0.5C4.6 0.5 3.5 1.6 3.5 3V12.1C2.6 12.8 2 13.9 2 15C2 17.2 3.8 19 6 19C8.2 19 10 17.2 10 15C10 13.9 9.4 12.8 8.5 12.1V3C8.5 1.6 7.4 0.5 6 0.5Z" stroke="#C3C2C1" strokeWidth="1" fill="none"/>
+    </svg>
+  );
+}
+
+// Heater thermometer icon - filled when heating, outline when off
+interface HeaterThermometerProps {
+  className?: string;
+  color: string;  // The color class (e.g., "text-orange-400")
+  isHeating: boolean;
+}
+
+function HeaterThermometer({ className, color, isHeating }: HeaterThermometerProps) {
+  // Extract the actual color from Tailwind class for SVG fill
+  const colorMap: Record<string, string> = {
+    'text-orange-400': '#fb923c',
+    'text-blue-400': '#60a5fa',
+    'text-green-400': '#4ade80',
+  };
+  const fillColor = colorMap[color] || '#888';
+
+  // Glow style when heating
+  const glowStyle = isHeating ? {
+    filter: `drop-shadow(0 0 4px ${fillColor}) drop-shadow(0 0 8px ${fillColor})`,
+  } : {};
+
+  if (isHeating) {
+    // Filled thermometer with glow - heater is ON
+    return (
+      <svg className={className} style={glowStyle} viewBox="0 0 12 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="4.5" y="3" width="3" height="9.5" fill={fillColor} rx="0.5"/>
+        <circle cx="6" cy="15" r="2" fill={fillColor}/>
+        <path d="M6 0.5C4.6 0.5 3.5 1.6 3.5 3V12.1C2.6 12.8 2 13.9 2 15C2 17.2 3.8 19 6 19C8.2 19 10 17.2 10 15C10 13.9 9.4 12.8 8.5 12.1V3C8.5 1.6 7.4 0.5 6 0.5Z" stroke={fillColor} strokeWidth="1" fill="none"/>
+      </svg>
+    );
+  }
+
+  // Empty thermometer - heater is OFF
+  return (
+    <svg className={className} viewBox="0 0 12 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M6 0.5C4.6 0.5 3.5 1.6 3.5 3V12.1C2.6 12.8 2 13.9 2 15C2 17.2 3.8 19 6 19C8.2 19 10 17.2 10 15C10 13.9 9.4 12.8 8.5 12.1V3C8.5 1.6 7.4 0.5 6 0.5Z" stroke={fillColor} strokeWidth="1" fill="none"/>
+      <circle cx="6" cy="15" r="2.5" stroke={fillColor} strokeWidth="1" fill="none"/>
     </svg>
   );
 }
@@ -996,45 +1036,53 @@ function PrinterCard({
             )}
 
             {/* Temperatures */}
-            {status.temperatures && viewMode === 'expanded' && (
-              <div className="grid grid-cols-3 gap-3">
-                {/* Nozzle temp - combined for dual nozzle */}
-                <div className="text-center p-2 bg-bambu-dark rounded-lg">
-                  <Thermometer className="w-4 h-4 mx-auto mb-1 text-orange-400" />
-                  {status.temperatures.nozzle_2 !== undefined ? (
-                    <>
-                      <p className="text-xs text-bambu-gray">Left / Right</p>
-                      <p className="text-sm text-white">
-                        {Math.round(status.temperatures.nozzle || 0)}°C / {Math.round(status.temperatures.nozzle_2 || 0)}°C
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-xs text-bambu-gray">Nozzle</p>
-                      <p className="text-sm text-white">
-                        {Math.round(status.temperatures.nozzle || 0)}°C
-                      </p>
-                    </>
-                  )}
-                </div>
-                <div className="text-center p-2 bg-bambu-dark rounded-lg">
-                  <Thermometer className="w-4 h-4 mx-auto mb-1 text-blue-400" />
-                  <p className="text-xs text-bambu-gray">Bed</p>
-                  <p className="text-sm text-white">
-                    {Math.round(status.temperatures.bed || 0)}°C
-                  </p>
-                </div>
-                {status.temperatures.chamber !== undefined && (
+            {status.temperatures && viewMode === 'expanded' && (() => {
+              // Determine heater states (target > 30°C means heater is actively set)
+              const nozzleHeating = (status.temperatures.nozzle_target || 0) > 30 ||
+                                    (status.temperatures.nozzle_2_target || 0) > 30;
+              const bedHeating = (status.temperatures.bed_target || 0) > 30;
+              const chamberHeating = (status.temperatures.chamber_target || 0) > 30;
+
+              return (
+                <div className="grid grid-cols-3 gap-3">
+                  {/* Nozzle temp - combined for dual nozzle */}
                   <div className="text-center p-2 bg-bambu-dark rounded-lg">
-                    <Thermometer className="w-4 h-4 mx-auto mb-1 text-green-400" />
-                    <p className="text-xs text-bambu-gray">Chamber</p>
+                    <HeaterThermometer className="w-4 h-4 mx-auto mb-1" color="text-orange-400" isHeating={nozzleHeating} />
+                    {status.temperatures.nozzle_2 !== undefined ? (
+                      <>
+                        <p className="text-xs text-bambu-gray">Left / Right</p>
+                        <p className="text-sm text-white">
+                          {Math.round(status.temperatures.nozzle || 0)}°C / {Math.round(status.temperatures.nozzle_2 || 0)}°C
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs text-bambu-gray">Nozzle</p>
+                        <p className="text-sm text-white">
+                          {Math.round(status.temperatures.nozzle || 0)}°C
+                        </p>
+                      </>
+                    )}
+                  </div>
+                  <div className="text-center p-2 bg-bambu-dark rounded-lg">
+                    <HeaterThermometer className="w-4 h-4 mx-auto mb-1" color="text-blue-400" isHeating={bedHeating} />
+                    <p className="text-xs text-bambu-gray">Bed</p>
                     <p className="text-sm text-white">
-                      {Math.round(status.temperatures.chamber || 0)}°C
+                      {Math.round(status.temperatures.bed || 0)}°C
                     </p>
                   </div>
-                )}
-              </div>
-            )}
+                  {status.temperatures.chamber !== undefined && (
+                    <div className="text-center p-2 bg-bambu-dark rounded-lg">
+                      <HeaterThermometer className="w-4 h-4 mx-auto mb-1" color="text-green-400" isHeating={chamberHeating} />
+                      <p className="text-xs text-bambu-gray">Chamber</p>
+                      <p className="text-sm text-white">
+                        {Math.round(status.temperatures.chamber || 0)}°C
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* AMS Units with Device Icons, Humidity & Temperature */}
             {amsData && amsData.length > 0 && viewMode === 'expanded' && (

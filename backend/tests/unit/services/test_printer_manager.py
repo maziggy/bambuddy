@@ -576,6 +576,7 @@ class TestPrinterStateToDict:
         state.tray_now = "1"
         state.wifi_signal = -50
         state.raw_data = {}
+        state.stg_cur = -1  # No calibration stage active
         return state
 
     def test_basic_conversion(self, mock_state):

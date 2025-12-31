@@ -1,0 +1,72 @@
+{
+  "name": "Bambuddy",
+  "short_name": "Bambuddy",
+  "description": "Monitor and manage your Bambu Lab 3D printers",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1a1a",
+  "theme_color": "#00ae42",
+  "orientation": "any",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/img/favicon-16x16.png",
+      "sizes": "16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "/img/favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/img/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/img/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/img/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["utilities", "productivity"],
+  "shortcuts": [
+    {
+      "name": "Printers",
+      "short_name": "Printers",
+      "description": "View your printers",
+      "url": "/",
+      "icons": [{ "src": "/img/android-chrome-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Archives",
+      "short_name": "Archives",
+      "description": "View print archives",
+      "url": "/archives",
+      "icons": [{ "src": "/img/android-chrome-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Queue",
+      "short_name": "Queue",
+      "description": "View print queue",
+      "url": "/queue",
+      "icons": [{ "src": "/img/android-chrome-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Projects",
+      "short_name": "Projects",
+      "description": "View print projects",
+      "url": "/projects",
+      "icons": [{ "src": "/img/android-chrome-192x192.png", "sizes": "192x192" }]
+    }
+  ]
+}

@@ -1275,6 +1275,27 @@ export const api = {
       method: 'POST',
     }),
 
+  // Print Control
+  stopPrint: (printerId: number) =>
+    request<{ success: boolean; message: string }>(`/printers/${printerId}/print/stop`, {
+      method: 'POST',
+    }),
+  pausePrint: (printerId: number) =>
+    request<{ success: boolean; message: string }>(`/printers/${printerId}/print/pause`, {
+      method: 'POST',
+    }),
+  resumePrint: (printerId: number) =>
+    request<{ success: boolean; message: string }>(`/printers/${printerId}/print/resume`, {
+      method: 'POST',
+    }),
+
+  // AMS Control
+  refreshAmsSlot: (printerId: number, amsId: number, slotId: number) =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/ams/${amsId}/slot/${slotId}/refresh`,
+      { method: 'POST' }
+    ),
+
   // MQTT Debug Logging
   enableMQTTLogging: (printerId: number) =>
     request<{ logging_enabled: boolean }>(`/printers/${printerId}/logging/enable`, {

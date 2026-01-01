@@ -28,6 +28,9 @@ import {
   Video,
   Search,
   Loader2,
+  Square,
+  Pause,
+  Play,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api, discoveryApi } from '../api/client';
@@ -41,6 +44,7 @@ import { HMSErrorModal, filterKnownHMSErrors } from '../components/HMSErrorModal
 import { PrinterQueueWidget } from '../components/PrinterQueueWidget';
 import { AMSHistoryModal } from '../components/AMSHistoryModal';
 import { FilamentHoverCard, EmptySlotHoverCard } from '../components/FilamentHoverCard';
+import { useToast } from '../contexts/ToastContext';
 
 // Bambu Lab color code mapping (color suffix from tray_id_name -> color name)
 // tray_id_name format: "A00-Y2" where Y2 is the color code
@@ -663,6 +667,7 @@ function PrinterCard({
 }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteArchives, setDeleteArchives] = useState(true);
@@ -672,6 +677,9 @@ function PrinterCard({
   const [showPowerOnConfirm, setShowPowerOnConfirm] = useState(false);
   const [showPowerOffConfirm, setShowPowerOffConfirm] = useState(false);
   const [showHMSModal, setShowHMSModal] = useState(false);
+  const [showStopConfirm, setShowStopConfirm] = useState(false);
+  const [showPauseConfirm, setShowPauseConfirm] = useState(false);
+  const [showResumeConfirm, setShowResumeConfirm] = useState(false);
   const [amsHistoryModal, setAmsHistoryModal] = useState<{
     amsId: number;
     amsLabel: string;
@@ -827,6 +835,127 @@ function PrinterCard({
       queryClient.invalidateQueries({ queryKey: ['smart-plugs'] });
     },
   });
+
+  // Print control mutations
+  const stopPrintMutation = useMutation({
+    mutationFn: () => api.stopPrint(printer.id),
+    onSuccess: () => {
+      showToast('Print stopped');
+      queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
+    },
+    onError: (error: Error) => showToast(error.message || 'Failed to stop print', 'error'),
+  });
+
+  const pausePrintMutation = useMutation({
+    mutationFn: () => api.pausePrint(printer.id),
+    onSuccess: () => {
+      showToast('Print paused');
+      queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
+    },
+    onError: (error: Error) => showToast(error.message || 'Failed to pause print', 'error'),
+  });
+
+  const resumePrintMutation = useMutation({
+    mutationFn: () => api.resumePrint(printer.id),
+    onSuccess: () => {
+      showToast('Print resumed');
+      queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
+    },
+    onError: (error: Error) => showToast(error.message || 'Failed to resume print', 'error'),
+  });
+
+  // State for tracking which AMS slot is being refreshed
+  const [refreshingSlot, setRefreshingSlot] = useState<{ amsId: number; slotId: number } | null>(null);
+  // Track if we've seen the printer enter "busy" state (ams_status_main !== 0)
+  const seenBusyStateRef = useRef<boolean>(false);
+  // Fallback timeout ref
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Minimum display time passed
+  const minTimePassedRef = useRef<boolean>(false);
+
+  // AMS slot refresh mutation
+  const refreshAmsSlotMutation = useMutation({
+    mutationFn: ({ amsId, slotId }: { amsId: number; slotId: number }) =>
+      api.refreshAmsSlot(printer.id, amsId, slotId),
+    onMutate: ({ amsId, slotId }) => {
+      // Clear any existing timeout
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+      // Reset state
+      seenBusyStateRef.current = false;
+      minTimePassedRef.current = false;
+      setRefreshingSlot({ amsId, slotId });
+      // Minimum display time (2 seconds)
+      setTimeout(() => {
+        minTimePassedRef.current = true;
+      }, 2000);
+      // Fallback timeout (30 seconds max)
+      refreshTimeoutRef.current = setTimeout(() => {
+        setRefreshingSlot(null);
+      }, 30000);
+    },
+    onSuccess: (data) => {
+      showToast(data.message || 'RFID re-read initiated');
+    },
+    onError: (error: Error) => {
+      showToast(error.message || 'Failed to re-read RFID', 'error');
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+      setRefreshingSlot(null);
+    },
+  });
+
+  // Watch ams_status_main to detect when RFID read completes
+  // ams_status_main: 0=idle, 2=rfid_identifying
+  const deferredClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!refreshingSlot) return;
+
+    const amsStatus = status?.ams_status_main ?? 0;
+
+    // Track when we see non-idle state (printer is working)
+    if (amsStatus !== 0) {
+      seenBusyStateRef.current = true;
+      // Cancel any deferred clear since we're back to busy
+      if (deferredClearRef.current) {
+        clearTimeout(deferredClearRef.current);
+        deferredClearRef.current = null;
+      }
+    }
+
+    // When we've seen busy and now idle, clear (with min time check)
+    if (seenBusyStateRef.current && amsStatus === 0) {
+      if (minTimePassedRef.current) {
+        // Min time passed - clear now
+        if (refreshTimeoutRef.current) {
+          clearTimeout(refreshTimeoutRef.current);
+        }
+        setRefreshingSlot(null);
+      } else {
+        // Schedule clear after min time (2 seconds from start)
+        if (!deferredClearRef.current) {
+          deferredClearRef.current = setTimeout(() => {
+            if (refreshTimeoutRef.current) {
+              clearTimeout(refreshTimeoutRef.current);
+            }
+            setRefreshingSlot(null);
+          }, 2000);
+        }
+      }
+    }
+
+    return () => {
+      if (deferredClearRef.current) {
+        clearTimeout(deferredClearRef.current);
+      }
+    };
+  }, [status?.ams_status_main, refreshingSlot]);
+
+  // State for AMS slot menu
+  const [amsSlotMenu, setAmsSlotMenu] = useState<{ amsId: number; slotId: number } | null>(null);
 
   if (shouldHide) {
     return null;
@@ -1195,50 +1324,102 @@ function PrinterCard({
               </>
             )}
 
-            {/* Temperatures */}
+            {/* Temperatures + Print Controls */}
             {status.temperatures && viewMode === 'expanded' && (() => {
               // Use actual heater states from MQTT stream
               const nozzleHeating = status.temperatures.nozzle_heating || status.temperatures.nozzle_2_heating || false;
               const bedHeating = status.temperatures.bed_heating || false;
               const chamberHeating = status.temperatures.chamber_heating || false;
 
+              // Determine print state for control buttons
+              const isRunning = status.state === 'RUNNING';
+              const isPaused = status.state === 'PAUSED' || status.state === 'PAUSE';
+              const isPrinting = isRunning || isPaused;
+              const isControlBusy = stopPrintMutation.isPending || pausePrintMutation.isPending || resumePrintMutation.isPending;
+
               return (
-                <div className="grid grid-cols-3 gap-3">
-                  {/* Nozzle temp - combined for dual nozzle */}
-                  <div className="text-center p-2 bg-bambu-dark rounded-lg">
-                    <HeaterThermometer className="w-4 h-4 mx-auto mb-1" color="text-orange-400" isHeating={nozzleHeating} />
-                    {status.temperatures.nozzle_2 !== undefined ? (
-                      <>
-                        <p className="text-xs text-bambu-gray">Left / Right</p>
-                        <p className="text-sm text-white">
-                          {Math.round(status.temperatures.nozzle || 0)}°C / {Math.round(status.temperatures.nozzle_2 || 0)}°C
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-xs text-bambu-gray">Nozzle</p>
-                        <p className="text-sm text-white">
-                          {Math.round(status.temperatures.nozzle || 0)}°C
-                        </p>
-                      </>
-                    )}
-                  </div>
-                  <div className="text-center p-2 bg-bambu-dark rounded-lg">
-                    <HeaterThermometer className="w-4 h-4 mx-auto mb-1" color="text-blue-400" isHeating={bedHeating} />
-                    <p className="text-xs text-bambu-gray">Bed</p>
-                    <p className="text-sm text-white">
-                      {Math.round(status.temperatures.bed || 0)}°C
-                    </p>
-                  </div>
-                  {status.temperatures.chamber !== undefined && (
+                <div className="flex gap-3">
+                  {/* Temperature cards */}
+                  <div className="flex-1 grid grid-cols-3 gap-2">
+                    {/* Nozzle temp - combined for dual nozzle */}
                     <div className="text-center p-2 bg-bambu-dark rounded-lg">
-                      <HeaterThermometer className="w-4 h-4 mx-auto mb-1" color="text-green-400" isHeating={chamberHeating} />
-                      <p className="text-xs text-bambu-gray">Chamber</p>
-                      <p className="text-sm text-white">
-                        {Math.round(status.temperatures.chamber || 0)}°C
+                      <HeaterThermometer className="w-4 h-4 mx-auto mb-1" color="text-orange-400" isHeating={nozzleHeating} />
+                      {status.temperatures.nozzle_2 !== undefined ? (
+                        <>
+                          <p className="text-[10px] text-bambu-gray">L / R</p>
+                          <p className="text-xs text-white">
+                            {Math.round(status.temperatures.nozzle || 0)}° / {Math.round(status.temperatures.nozzle_2 || 0)}°
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-[10px] text-bambu-gray">Nozzle</p>
+                          <p className="text-xs text-white">
+                            {Math.round(status.temperatures.nozzle || 0)}°C
+                          </p>
+                        </>
+                      )}
+                    </div>
+                    <div className="text-center p-2 bg-bambu-dark rounded-lg">
+                      <HeaterThermometer className="w-4 h-4 mx-auto mb-1" color="text-blue-400" isHeating={bedHeating} />
+                      <p className="text-[10px] text-bambu-gray">Bed</p>
+                      <p className="text-xs text-white">
+                        {Math.round(status.temperatures.bed || 0)}°C
                       </p>
                     </div>
-                  )}
+                    {status.temperatures.chamber !== undefined ? (
+                      <div className="text-center p-2 bg-bambu-dark rounded-lg">
+                        <HeaterThermometer className="w-4 h-4 mx-auto mb-1" color="text-green-400" isHeating={chamberHeating} />
+                        <p className="text-[10px] text-bambu-gray">Chamber</p>
+                        <p className="text-xs text-white">
+                          {Math.round(status.temperatures.chamber || 0)}°C
+                        </p>
+                      </div>
+                    ) : (
+                      <div /> /* Empty placeholder to maintain grid */
+                    )}
+                  </div>
+
+                  {/* Print control buttons */}
+                  <div className="flex flex-col justify-center gap-1.5 w-20">
+                    {/* Stop button - visible when printing/paused */}
+                    <button
+                      onClick={() => setShowStopConfirm(true)}
+                      disabled={!isPrinting || isControlBusy}
+                      className={`
+                        flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium
+                        transition-colors
+                        ${isPrinting
+                          ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                          : 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
+                        }
+                      `}
+                      title="Stop print"
+                    >
+                      <Square className="w-3 h-3" />
+                      Stop
+                    </button>
+
+                    {/* Pause/Resume button */}
+                    <button
+                      onClick={() => isPaused ? setShowResumeConfirm(true) : setShowPauseConfirm(true)}
+                      disabled={!isPrinting || isControlBusy}
+                      className={`
+                        flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium
+                        transition-colors
+                        ${isPrinting
+                          ? isPaused
+                            ? 'bg-bambu-green/20 text-bambu-green hover:bg-bambu-green/30'
+                            : 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30'
+                          : 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
+                        }
+                      `}
+                      title={isPaused ? 'Resume print' : 'Pause print'}
+                    >
+                      {isPaused ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
+                      {isPaused ? 'Resume' : 'Pause'}
+                    </button>
+                  </div>
                 </div>
               );
             })()}
@@ -1340,9 +1521,14 @@ function PrinterCard({
                                   fillLevel: hasFillLevel ? tray.remain : null,
                                 } : null;
 
-                                const slotContent = (
+                                // Check if this specific slot is being refreshed
+                                const isRefreshing = refreshingSlot?.amsId === ams.id &&
+                                  refreshingSlot?.slotId === slotIdx;
+
+                                // Slot visual content (goes inside hover card)
+                                const slotVisual = (
                                   <div
-                                    className={`bg-bambu-dark-tertiary rounded p-1 text-center cursor-default ${isEmpty ? 'opacity-50' : ''} ${isActive ? 'ring-2 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}
+                                    className={`bg-bambu-dark-tertiary rounded p-1 text-center ${isEmpty ? 'opacity-50' : ''} ${isActive ? 'ring-2 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}
                                   >
                                     <div
                                       className="w-3.5 h-3.5 rounded-full mx-auto mb-0.5 border-2"
@@ -1372,14 +1558,60 @@ function PrinterCard({
                                   </div>
                                 );
 
-                                return filamentData ? (
-                                  <FilamentHoverCard key={slotIdx} data={filamentData}>
-                                    {slotContent}
-                                  </FilamentHoverCard>
-                                ) : (
-                                  <EmptySlotHoverCard key={slotIdx}>
-                                    {slotContent}
-                                  </EmptySlotHoverCard>
+                                // Wrapper with menu button, dropdown, and loading overlay (outside hover card)
+                                return (
+                                  <div key={slotIdx} className="relative group">
+                                    {/* Loading overlay during RFID re-read */}
+                                    {isRefreshing && (
+                                      <div className="absolute inset-0 bg-bambu-dark-tertiary/80 rounded flex items-center justify-center z-20">
+                                        <RefreshCw className="w-4 h-4 text-bambu-green animate-spin" />
+                                      </div>
+                                    )}
+                                    {/* Menu button - appears on hover, hidden when printer busy */}
+                                    {status?.state !== 'RUNNING' && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setAmsSlotMenu(
+                                            amsSlotMenu?.amsId === ams.id && amsSlotMenu?.slotId === slotIdx
+                                              ? null
+                                              : { amsId: ams.id, slotId: slotIdx }
+                                          );
+                                        }}
+                                        className="absolute -top-1 -right-1 w-4 h-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-bambu-dark-tertiary"
+                                        title="Slot options"
+                                      >
+                                        <MoreVertical className="w-2.5 h-2.5 text-bambu-gray" />
+                                      </button>
+                                    )}
+                                    {/* Dropdown menu */}
+                                    {status?.state !== 'RUNNING' && amsSlotMenu?.amsId === ams.id && amsSlotMenu?.slotId === slotIdx && (
+                                      <div className="absolute top-full left-0 mt-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1 min-w-[120px]">
+                                        <button
+                                          className="w-full px-3 py-1.5 text-left text-xs text-white hover:bg-bambu-dark-tertiary flex items-center gap-2"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            refreshAmsSlotMutation.mutate({ amsId: ams.id, slotId: slotIdx });
+                                            setAmsSlotMenu(null);
+                                          }}
+                                          disabled={isRefreshing}
+                                        >
+                                          <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+                                          Re-read RFID
+                                        </button>
+                                      </div>
+                                    )}
+                                    {/* Hover card wraps only the visual content */}
+                                    {filamentData ? (
+                                      <FilamentHoverCard data={filamentData}>
+                                        {slotVisual}
+                                      </FilamentHoverCard>
+                                    ) : (
+                                      <EmptySlotHoverCard>
+                                        {slotVisual}
+                                      </EmptySlotHoverCard>
+                                    )}
+                                  </div>
                                 );
                               })}
                             </div>
@@ -1419,9 +1651,15 @@ function PrinterCard({
                           fillLevel: hasFillLevel ? tray.remain : null,
                         } : null;
 
-                        const slotContent = (
+                        const htSlotId = tray?.id ?? 0;
+                        // Check if this specific slot is being refreshed
+                        const isHtRefreshing = refreshingSlot?.amsId === ams.id &&
+                          refreshingSlot?.slotId === htSlotId;
+
+                        // Slot visual content (goes inside hover card)
+                        const slotVisual = (
                           <div
-                            className={`bg-bambu-dark-tertiary rounded p-1 text-center cursor-default ${isEmpty ? 'opacity-50' : ''} ${isActive ? 'ring-2 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}
+                            className={`bg-bambu-dark-tertiary rounded p-1 text-center ${isEmpty ? 'opacity-50' : ''} ${isActive ? 'ring-2 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}
                           >
                             <div
                               className="w-3.5 h-3.5 rounded-full mx-auto mb-0.5 border-2"
@@ -1464,16 +1702,59 @@ function PrinterCard({
                             </div>
                             {/* Row 2: Slot (left) + Stats (right stacked) */}
                             <div className="flex gap-1.5">
-                              {/* Slot - takes remaining width */}
-                              {filamentData ? (
-                                <FilamentHoverCard data={filamentData} className="flex-1">
-                                  {slotContent}
-                                </FilamentHoverCard>
-                              ) : (
-                                <EmptySlotHoverCard className="flex-1">
-                                  {slotContent}
-                                </EmptySlotHoverCard>
-                              )}
+                              {/* Slot wrapper with menu button, dropdown, and loading overlay */}
+                              <div className="relative group flex-1">
+                                {/* Loading overlay during RFID re-read */}
+                                {isHtRefreshing && (
+                                  <div className="absolute inset-0 bg-bambu-dark-tertiary/80 rounded flex items-center justify-center z-20">
+                                    <RefreshCw className="w-4 h-4 text-bambu-green animate-spin" />
+                                  </div>
+                                )}
+                                {/* Menu button - appears on hover, hidden when printer busy */}
+                                {status?.state !== 'RUNNING' && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setAmsSlotMenu(
+                                        amsSlotMenu?.amsId === ams.id && amsSlotMenu?.slotId === htSlotId
+                                          ? null
+                                          : { amsId: ams.id, slotId: htSlotId }
+                                      );
+                                    }}
+                                    className="absolute -top-1 -right-1 w-4 h-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-bambu-dark-tertiary"
+                                    title="Slot options"
+                                  >
+                                    <MoreVertical className="w-2.5 h-2.5 text-bambu-gray" />
+                                  </button>
+                                )}
+                                {/* Dropdown menu */}
+                                {status?.state !== 'RUNNING' && amsSlotMenu?.amsId === ams.id && amsSlotMenu?.slotId === htSlotId && (
+                                  <div className="absolute top-full left-0 mt-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1 min-w-[120px]">
+                                    <button
+                                      className="w-full px-3 py-1.5 text-left text-xs text-white hover:bg-bambu-dark-tertiary flex items-center gap-2"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        refreshAmsSlotMutation.mutate({ amsId: ams.id, slotId: htSlotId });
+                                        setAmsSlotMenu(null);
+                                      }}
+                                      disabled={isHtRefreshing}
+                                    >
+                                      <RefreshCw className={`w-3 h-3 ${isHtRefreshing ? 'animate-spin' : ''}`} />
+                                      Re-read RFID
+                                    </button>
+                                  </div>
+                                )}
+                                {/* Hover card wraps only the visual content */}
+                                {filamentData ? (
+                                  <FilamentHoverCard data={filamentData}>
+                                    {slotVisual}
+                                  </FilamentHoverCard>
+                                ) : (
+                                  <EmptySlotHoverCard>
+                                    {slotVisual}
+                                  </EmptySlotHoverCard>
+                                )}
+                              </div>
                               {/* Stats stacked vertically: Temp on top, Humidity below */}
                               {(ams.humidity != null || ams.temp != null) && (
                                 <div className="flex flex-col justify-center gap-1 shrink-0">
@@ -1749,6 +2030,51 @@ function PrinterCard({
         />
       )}
 
+      {/* Stop Print Confirmation */}
+      {showStopConfirm && (
+        <ConfirmModal
+          title="Stop Print"
+          message={`Are you sure you want to stop the current print on "${printer.name}"? This will cancel the print job.`}
+          confirmText="Stop Print"
+          variant="danger"
+          onConfirm={() => {
+            stopPrintMutation.mutate();
+            setShowStopConfirm(false);
+          }}
+          onCancel={() => setShowStopConfirm(false)}
+        />
+      )}
+
+      {/* Pause Print Confirmation */}
+      {showPauseConfirm && (
+        <ConfirmModal
+          title="Pause Print"
+          message={`Are you sure you want to pause the current print on "${printer.name}"?`}
+          confirmText="Pause Print"
+          variant="default"
+          onConfirm={() => {
+            pausePrintMutation.mutate();
+            setShowPauseConfirm(false);
+          }}
+          onCancel={() => setShowPauseConfirm(false)}
+        />
+      )}
+
+      {/* Resume Print Confirmation */}
+      {showResumeConfirm && (
+        <ConfirmModal
+          title="Resume Print"
+          message={`Are you sure you want to resume the print on "${printer.name}"?`}
+          confirmText="Resume Print"
+          variant="default"
+          onConfirm={() => {
+            resumePrintMutation.mutate();
+            setShowResumeConfirm(false);
+          }}
+          onCancel={() => setShowResumeConfirm(false)}
+        />
+      )}
+
       {/* HMS Error Modal */}
       {showHMSModal && (
         <HMSErrorModal
@@ -1777,6 +2103,14 @@ function PrinterCard({
         <EditPrinterModal
           printer={printer}
           onClose={() => setShowEditModal(false)}
+        />
+      )}
+
+      {/* AMS Slot Menu Backdrop - closes menu when clicking outside */}
+      {amsSlotMenu && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setAmsSlotMenu(null)}
         />
       )}
     </Card>

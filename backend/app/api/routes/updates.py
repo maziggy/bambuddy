@@ -27,6 +27,20 @@ _update_status = {
 }
 
 
+def _is_docker_environment() -> bool:
+    """Detect if running inside a Docker container."""
+    if os.path.exists("/.dockerenv"):
+        return True
+    try:
+        with open("/proc/1/cgroup") as f:
+            if "docker" in f.read():
+                return True
+    except (FileNotFoundError, PermissionError):
+        pass
+    git_dir = settings.base_dir / ".git"
+    return not git_dir.exists()
+
+
 def _find_executable(name: str) -> str | None:
     """Find an executable in PATH or common locations."""
     # Try standard PATH first
@@ -199,6 +213,7 @@ async def check_for_updates(db: AsyncSession = Depends(get_db)):
                 "error": None,
             }
 
+            is_docker = _is_docker_environment()
             return {
                 "update_available": update_available,
                 "current_version": APP_VERSION,
@@ -207,6 +222,8 @@ async def check_for_updates(db: AsyncSession = Depends(get_db)):
                 "release_notes": release_notes,
                 "release_url": release_url,
                 "published_at": published_at,
+                "is_docker": is_docker,
+                "update_method": "docker" if is_docker else "git",
             }
 
     except httpx.HTTPError as e:
@@ -424,6 +441,18 @@ async def apply_update(background_tasks: BackgroundTasks):
             "success": False,
             "message": "Update already in progress",
             "status": _update_status,
+        }
+
+    # Check if running in Docker
+    if _is_docker_environment():
+        return {
+            "success": False,
+            "is_docker": True,
+            "message": (
+                "Docker installations cannot be updated in-app. "
+                "Please update via Docker Compose: "
+                "git pull && docker compose build --pull && docker compose up -d"
+            ),
         }
 
     # Start update in background

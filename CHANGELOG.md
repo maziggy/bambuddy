@@ -5,6 +5,7 @@ All notable changes to Bambuddy will be documented in this file.
 ## [0.1.6b4] - 2026-01-01
 
 ### Added
+- **Docker update detection** - Automatically detects Docker installations and shows appropriate update instructions instead of failing with git errors
 - **Camera popup window improvements**
   - Auto-resize to fit video resolution on first open
   - Persist window size and position to localStorage

@@ -152,9 +152,9 @@ async def get_printer_status(printer_id: int, db: AsyncSession = Depends(get_db)
             connected=False,
         )
 
-    # Determine cover URL if there's an active print
+    # Determine cover URL if there's an active print (including paused)
     cover_url = None
-    if state.state == "RUNNING" and state.gcode_file:
+    if state.state in ("RUNNING", "PAUSE", "PAUSED") and state.gcode_file:
         cover_url = f"/api/v1/printers/{printer_id}/cover"
 
     # Convert HMS errors to response format
@@ -417,13 +417,22 @@ async def test_printer_connection(
     return result
 
 
-# Cache for cover images (printer_id -> (gcode_file, image_bytes))
-_cover_cache: dict[int, tuple[str, bytes]] = {}
+# Cache for cover images (printer_id -> {(gcode_file, view) -> image_bytes})
+_cover_cache: dict[int, dict[tuple[str, str], bytes]] = {}
 
 
 @router.get("/{printer_id}/cover")
-async def get_printer_cover(printer_id: int, db: AsyncSession = Depends(get_db)):
-    """Get the cover image for the current print job."""
+async def get_printer_cover(
+    printer_id: int,
+    view: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the cover image for the current print job.
+
+    Args:
+        view: Optional view type. Use "top" for top-down build plate view (useful for skip objects).
+              Default returns angled 3D perspective view.
+    """
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
     if not printer:
@@ -438,11 +447,14 @@ async def get_printer_cover(printer_id: int, db: AsyncSession = Depends(get_db))
     if not subtask_name:
         raise HTTPException(404, f"No subtask_name in printer state (state={state.state})")
 
+    # Normalize view parameter
+    view_key = view or "default"
+
     # Check cache
     if printer_id in _cover_cache:
-        cached_file, cached_image = _cover_cache[printer_id]
-        if cached_file == subtask_name:
-            return Response(content=cached_image, media_type="image/png")
+        cache_key = (subtask_name, view_key)
+        if cache_key in _cover_cache[printer_id]:
+            return Response(content=_cover_cache[printer_id][cache_key], media_type="image/png")
 
     # Build 3MF filename from subtask_name
     # Bambu printers store files as "name.gcode.3mf"
@@ -501,19 +513,33 @@ async def get_printer_cover(printer_id: int, db: AsyncSession = Depends(get_db))
 
         try:
             # Try common thumbnail paths in 3MF files
-            thumbnail_paths = [
-                "Metadata/plate_1.png",
-                "Metadata/thumbnail.png",
-                "Metadata/plate_1_small.png",
-                "Thumbnails/thumbnail.png",
-                "thumbnail.png",
-            ]
+            # Use top-down view if requested (better for skip objects modal)
+            if view == "top":
+                thumbnail_paths = [
+                    "Metadata/top_1.png",
+                    "Metadata/top_2.png",
+                    "Metadata/top_3.png",
+                    "Metadata/top_4.png",
+                    # Fall back to regular views if no top view
+                    "Metadata/plate_1.png",
+                    "Metadata/thumbnail.png",
+                ]
+            else:
+                thumbnail_paths = [
+                    "Metadata/plate_1.png",
+                    "Metadata/thumbnail.png",
+                    "Metadata/plate_1_small.png",
+                    "Thumbnails/thumbnail.png",
+                    "thumbnail.png",
+                ]
 
             for thumb_path in thumbnail_paths:
                 try:
                     image_data = zf.read(thumb_path)
                     # Cache the result
-                    _cover_cache[printer_id] = (subtask_name, image_data)
+                    if printer_id not in _cover_cache:
+                        _cover_cache[printer_id] = {}
+                    _cover_cache[printer_id][(subtask_name, view_key)] = image_data
                     return Response(content=image_data, media_type="image/png")
                 except KeyError:
                     continue
@@ -522,7 +548,9 @@ async def get_printer_cover(printer_id: int, db: AsyncSession = Depends(get_db))
             for name in zf.namelist():
                 if name.startswith("Metadata/") and name.endswith(".png"):
                     image_data = zf.read(name)
-                    _cover_cache[printer_id] = (subtask_name, image_data)
+                    if printer_id not in _cover_cache:
+                        _cover_cache[printer_id] = {}
+                    _cover_cache[printer_id][(subtask_name, view_key)] = image_data
                     return Response(content=image_data, media_type="image/png")
 
             raise HTTPException(404, "No thumbnail found in 3MF file")
@@ -1077,11 +1105,18 @@ async def resume_print(printer_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{printer_id}/print/objects")
-async def get_printable_objects(printer_id: int, db: AsyncSession = Depends(get_db)):
+async def get_printable_objects(
+    printer_id: int,
+    reload: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
     """Get the list of printable objects for the current print.
 
     Returns a list of objects with id, name, position (if available), and skip status.
     Objects that have already been skipped are marked in the skipped_objects list.
+
+    Args:
+        reload: If True, reload objects from the archive file (useful after restart)
     """
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
@@ -1091,6 +1126,41 @@ async def get_printable_objects(printer_id: int, db: AsyncSession = Depends(get_
     client = printer_manager.get_client(printer_id)
     if not client:
         raise HTTPException(400, "Printer not connected")
+
+    # Reload objects from 3MF if requested or no objects loaded
+    if reload or not client.state.printable_objects:
+        subtask_name = client.state.subtask_name
+        if subtask_name:
+            from backend.app.services.archive import extract_printable_objects_from_3mf
+            from backend.app.services.bambu_ftp import download_file_try_paths_async
+
+            # Build 3MF filename
+            filename = subtask_name
+            if not filename.endswith(".3mf"):
+                filename = filename + ".gcode.3mf"
+
+            # Download 3MF from printer
+            temp_path = settings.archive_dir / "temp" / f"objects_{printer_id}_{filename}"
+            temp_path.parent.mkdir(parents=True, exist_ok=True)
+
+            remote_paths = [f"/{filename}", f"/cache/{filename}", f"/model/{filename}"]
+
+            try:
+                downloaded = await download_file_try_paths_async(
+                    printer.ip_address, printer.access_code, remote_paths, temp_path
+                )
+                if downloaded and temp_path.exists():
+                    with open(temp_path, "rb") as f:
+                        data = f.read()
+                    objects = extract_printable_objects_from_3mf(data, include_positions=True)
+                    if objects:
+                        client.state.printable_objects = objects
+                        logger.info(f"Reloaded {len(objects)} objects for printer {printer_id}")
+            except Exception as e:
+                logger.debug(f"Failed to reload objects from printer: {e}")
+            finally:
+                if temp_path.exists():
+                    temp_path.unlink()
 
     # Return objects with their skip status and position data
     objects = []

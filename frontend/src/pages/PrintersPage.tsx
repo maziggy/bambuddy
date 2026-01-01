@@ -2209,9 +2209,9 @@ function PrinterCard({
                   <div className="relative">
                     {status?.cover_url ? (
                       <img
-                        src={status.cover_url}
+                        src={`${status.cover_url}?view=top`}
                         alt="Print preview"
-                        className="w-full aspect-square object-contain rounded-lg bg-gray-100 dark:bg-bambu-dark"
+                        className="w-full aspect-square object-contain rounded-lg bg-gray-900 dark:bg-gray-900 border border-gray-300 dark:border-gray-600"
                       />
                     ) : (
                       <div className="w-full aspect-square rounded-lg bg-gray-100 dark:bg-bambu-dark flex items-center justify-center">
@@ -2230,8 +2230,9 @@ function PrinterCard({
                           if (obj.x != null && obj.y != null) {
                             // Convert mm position to percentage (0-100)
                             // Clamp to valid range and add padding
+                            // Y axis is inverted: 3D printing Y goes back, image Y goes down
                             x = Math.max(10, Math.min(90, (obj.x / buildPlateSize) * 100));
-                            y = Math.max(10, Math.min(90, (obj.y / buildPlateSize) * 100));
+                            y = Math.max(10, Math.min(90, 100 - (obj.y / buildPlateSize) * 100));
                           } else {
                             // Fallback: arrange in a grid pattern over the build plate area
                             const cols = Math.ceil(Math.sqrt(objectsData.objects.length));

@@ -138,7 +138,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/edit_timelapse.png" alt="Timelapse Editor" width="800">
+  <img src="docs/screenshots/edit-timelapse.png" alt="Timelapse Editor" width="800">
   <br><em>Built-in timelapse editor with trim, speed, and music</em>
 </p>
 
@@ -148,13 +148,23 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/project_detail.png" alt="Project Detail" width="800">
+  <img src="docs/screenshots/project-detail-1.png" alt="Project Detail" width="800">
   <br><em>Project detail view with assigned archives</em>
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/queue.png" alt="Queue" width="800">
+  <img src="docs/screenshots/project-detail-2.png" alt="Project Detail Timeline" width="800">
+  <br><em>Project timeline and print history</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/print-queue.png" alt="Queue" width="800">
   <br><em>Print scheduling and queue management</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/schedule-print.png" alt="Schedule Print" width="800">
+  <br><em>Schedule prints for specific date and time</em>
 </p>
 
 <p align="center">
@@ -193,12 +203,12 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/settings_general.png" alt="Settings" width="800">
+  <img src="docs/screenshots/settings-general.png" alt="Settings" width="800">
   <br><em>General configuration and integrations</em>
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/settings_smart_plugs.png" alt="Smart Plugs" width="800">
+  <img src="docs/screenshots/settings-powerplugs.png" alt="Smart Plugs" width="800">
   <br><em>Smart plug control and energy monitoring</em>
 </p>
 
@@ -213,8 +223,18 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/virtual_printer.png" alt="Virtual Printer" width="800">
-  <br><em>Virtual printer for direct slicer integration</em>
+  <img src="docs/screenshots/settings-virtual-printer.png" alt="Virtual Printer Settings" width="800">
+  <br><em>Virtual printer configuration</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/slicer-virtual-printer.png" alt="Slicer Virtual Printer" width="800">
+  <br><em>Virtual printer appears in Bambu Studio/Orca Slicer</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/mqtt-debug-log.png" alt="MQTT Debug Log" width="800">
+  <br><em>MQTT debug logging for troubleshooting</em>
 </p>
 
 <p align="center">

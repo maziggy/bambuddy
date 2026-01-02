@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Check, X, RefreshCw, Link2, Link2Off, Database, ChevronDown } from 'lucide-react';
+import { Loader2, Check, X, RefreshCw, Link2, Link2Off, Database, ChevronDown, Info, AlertTriangle } from 'lucide-react';
 import { api } from '../api/client';
 import type { SpoolmanSyncResult, Printer } from '../api/client';
 import { Card, CardContent, CardHeader } from './Card';
@@ -40,6 +40,7 @@ export function SpoolmanSettings() {
   const [showSaved, setShowSaved] = useState(false);
   const [selectedPrinterId, setSelectedPrinterId] = useState<number | 'all'>('all');
   const [isInitialized, setIsInitialized] = useState(false);
+  const [showAllSkipped, setShowAllSkipped] = useState(false);
 
   // Fetch Spoolman settings
   const { data: settings, isLoading: settingsLoading } = useQuery({
@@ -191,6 +192,25 @@ export function SpoolmanSettings() {
         <p className="text-sm text-bambu-gray">
           Connect to Spoolman for filament inventory tracking. AMS data will sync automatically.
         </p>
+
+        {/* Info banner about sync requirements */}
+        <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+          <div className="flex gap-2">
+            <Info className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+            <div className="text-xs text-blue-300">
+              <p className="font-medium mb-1">How Sync Works</p>
+              <ul className="list-disc list-inside space-y-0.5 text-blue-300/80">
+                <li>Only official Bambu Lab spools with RFID are synced</li>
+                <li>New spools are auto-created in Spoolman on first sync</li>
+                <li>Non-Bambu Lab spools (third-party, refilled) are skipped</li>
+              </ul>
+              <p className="font-medium mt-2 mb-1">Linking Existing Spools</p>
+              <p className="text-blue-300/80">
+                To link existing Spoolman spools to your AMS, hover over an AMS slot and click "Link to Spoolman".
+              </p>
+            </div>
+          </div>
+        </div>
 
         {/* Enable toggle */}
         <div className="flex items-center justify-between">
@@ -355,16 +375,72 @@ export function SpoolmanSettings() {
 
             {/* Sync result */}
             {syncSuccess && syncResult && (
-              <div
-                className={`mt-2 p-2 rounded text-sm ${
-                  syncResult.success
-                    ? 'bg-green-500/20 border border-green-500/50 text-green-400'
-                    : 'bg-yellow-500/20 border border-yellow-500/50 text-yellow-400'
-                }`}
-              >
-                {syncResult.success
-                  ? `Synced ${syncResult.synced_count} trays successfully`
-                  : `Synced ${syncResult.synced_count} trays with ${syncResult.errors.length} errors`}
+              <div className="mt-3 space-y-2">
+                {/* Main result */}
+                <div
+                  className={`p-2 rounded text-sm ${
+                    syncResult.success
+                      ? 'bg-green-500/20 border border-green-500/50 text-green-400'
+                      : 'bg-yellow-500/20 border border-yellow-500/50 text-yellow-400'
+                  }`}
+                >
+                  {syncResult.success
+                    ? `Synced ${syncResult.synced_count} spool${syncResult.synced_count !== 1 ? 's' : ''} successfully`
+                    : `Synced ${syncResult.synced_count} spool${syncResult.synced_count !== 1 ? 's' : ''} with ${syncResult.errors.length} error${syncResult.errors.length !== 1 ? 's' : ''}`}
+                </div>
+
+                {/* Skipped spools */}
+                {syncResult.skipped_count > 0 && (
+                  <div className="p-2 bg-amber-500/10 border border-amber-500/30 rounded text-sm">
+                    <div className="flex items-center justify-between text-amber-400 mb-1">
+                      <div className="flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        <span className="font-medium">
+                          {syncResult.skipped_count} spool{syncResult.skipped_count !== 1 ? 's' : ''} skipped
+                        </span>
+                      </div>
+                      {syncResult.skipped_count > 5 && (
+                        <button
+                          onClick={() => setShowAllSkipped(!showAllSkipped)}
+                          className="text-xs text-amber-400 hover:text-amber-300 underline"
+                        >
+                          {showAllSkipped ? 'Show less' : 'Show all'}
+                        </button>
+                      )}
+                    </div>
+                    <ul className="text-xs text-amber-300/80 space-y-0.5">
+                      {(showAllSkipped ? syncResult.skipped : syncResult.skipped.slice(0, 5)).map((s, i) => (
+                        <li key={i} className="flex items-center gap-2">
+                          {s.color && (
+                            <span
+                              className="w-3 h-3 rounded-full border border-white/20"
+                              style={{ backgroundColor: `#${s.color}` }}
+                            />
+                          )}
+                          <span>{s.location}</span>
+                          <span className="text-amber-300/60">- {s.reason}</span>
+                        </li>
+                      ))}
+                      {!showAllSkipped && syncResult.skipped_count > 5 && (
+                        <li className="text-amber-300/60 italic">
+                          ...and {syncResult.skipped_count - 5} more
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Errors */}
+                {syncResult.errors.length > 0 && (
+                  <div className="p-2 bg-red-500/10 border border-red-500/30 rounded text-sm">
+                    <div className="text-red-400 font-medium mb-1">Errors:</div>
+                    <ul className="text-xs text-red-300/80 space-y-0.5">
+                      {syncResult.errors.map((err, i) => (
+                        <li key={i}>{err}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -5,6 +5,20 @@ All notable changes to Bambuddy will be documented in this file.
 ## [0.1.6b5] - 2026-01-01
 
 ### Added
+- **Spoolman Link Spool feature** - Manually link existing Spoolman spools to AMS trays:
+  - Hover over any AMS slot to see "Link to Spoolman" button (when Spoolman enabled)
+  - Select from list of unlinked Spoolman spools
+  - Automatically sets the `extra.tag` field in Spoolman for proper sync
+  - Useful for connecting existing Spoolman inventory to physical spools
+- **Spool UUID display** - View and copy Bambu Lab spool UUID in AMS hover card:
+  - Shows first 8 chars of UUID with copy button
+  - Full UUID copied to clipboard (with fallback for HTTP contexts)
+  - Only visible when Spoolman integration is enabled
+- **Spoolman sync feedback** - Improved sync result display:
+  - Shows count of successfully synced spools
+  - Lists skipped spools with reasons (e.g., "Non-Bambu Lab spool")
+  - Expandable list when more than 5 spools skipped
+  - Color swatches for easy identification
 - **Printer control buttons** - Stop and Pause/Resume buttons on printer cards when printing:
   - Stop button cancels the current print job
   - Pause/Resume toggle for pausing and resuming prints
@@ -32,6 +46,13 @@ All notable changes to Bambuddy will be documented in this file.
 ### Changed
 - **Temperature cards layout** - Refactored printer card layout with slimmer temperature displays to make room for control buttons
 - **Cover image availability** - Print cover image now shown in PAUSE/PAUSED states (not just RUNNING) for skip objects modal
+- **Spoolman info banner** - Updated settings UI with clearer sync documentation
+
+### Fixed
+- **Spoolman spool creation** - Fixed 400 Bad Request error when creating new spools:
+  - Spoolman `extra` field values must be valid JSON
+  - Now properly JSON-encodes the `tag` value
+  - Affects both auto-sync and manual link operations
 
 ### Tests
 - Added integration tests for printer control endpoints (stop, pause, resume)

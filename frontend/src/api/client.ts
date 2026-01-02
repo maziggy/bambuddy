@@ -1119,10 +1119,28 @@ export interface SpoolmanStatus {
   url: string | null;
 }
 
+export interface SkippedSpool {
+  location: string;
+  reason: string;
+  filament_type: string | null;
+  color: string | null;
+}
+
 export interface SpoolmanSyncResult {
   success: boolean;
   synced_count: number;
+  skipped_count: number;
+  skipped: SkippedSpool[];
   errors: string[];
+}
+
+export interface UnlinkedSpool {
+  id: number;
+  filament_name: string | null;
+  filament_material: string | null;
+  filament_color_hex: string | null;
+  remaining_weight: number | null;
+  location: string | null;
 }
 
 // Update types
@@ -2037,6 +2055,13 @@ export const api = {
     request<{ spools: unknown[] }>('/spoolman/spools'),
   getSpoolmanFilaments: () =>
     request<{ filaments: unknown[] }>('/spoolman/filaments'),
+  getUnlinkedSpools: () =>
+    request<UnlinkedSpool[]>('/spoolman/spools/unlinked'),
+  linkSpool: (spoolId: number, trayUuid: string) =>
+    request<{ success: boolean; message: string }>(`/spoolman/spools/${spoolId}/link`, {
+      method: 'POST',
+      body: JSON.stringify({ tray_uuid: trayUuid }),
+    }),
 
   // Updates
   getVersion: () => request<VersionInfo>('/updates/version'),

@@ -1,21 +1,21 @@
 """Spoolman integration API routes."""
 
 import logging
+
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import get_db
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
+from backend.app.services.printer_manager import printer_manager
 from backend.app.services.spoolman import (
-    SpoolmanClient,
+    close_spoolman_client,
     get_spoolman_client,
     init_spoolman_client,
-    close_spoolman_client,
 )
-from backend.app.services.printer_manager import printer_manager
 
 logger = logging.getLogger(__name__)
 
@@ -30,11 +30,22 @@ class SpoolmanStatus(BaseModel):
     url: str | None
 
 
+class SkippedSpool(BaseModel):
+    """Information about a skipped spool during sync."""
+
+    location: str  # e.g., "AMS A1" or "External Spool"
+    reason: str  # e.g., "Not a Bambu Lab spool", "Empty tray"
+    filament_type: str | None = None  # e.g., "PLA", "PETG"
+    color: str | None = None  # Hex color
+
+
 class SyncResult(BaseModel):
     """Result of a Spoolman sync operation."""
 
     success: bool
     synced_count: int
+    skipped_count: int = 0
+    skipped: list[SkippedSpool] = []
     errors: list[str]
 
 
@@ -156,6 +167,7 @@ async def sync_printer_ams(
 
     # Sync each AMS tray to Spoolman
     synced = 0
+    skipped: list[SkippedSpool] = []
     errors = []
 
     # Handle different AMS data structures
@@ -193,19 +205,28 @@ async def sync_printer_ams(
 
             tray = client.parse_ams_tray(ams_id, tray_data)
             if not tray:
-                continue  # Empty tray
+                continue  # Empty tray - nothing to sync
 
-            # Skip non-Bambu Lab spools (SpoolEase/third-party) - this is not an error
+            # Build location string for reporting
+            location = client.convert_ams_slot_to_location(ams_id, tray.tray_id)
+
+            # Skip non-Bambu Lab spools (SpoolEase/third-party) - track as skipped
             if not client.is_bambu_lab_spool(tray.tray_uuid):
+                skipped.append(
+                    SkippedSpool(
+                        location=location,
+                        reason="Non-Bambu Lab spool (no RFID tag)",
+                        filament_type=tray.tray_type if tray.tray_type else None,
+                        color=tray.tray_color[:6] if tray.tray_color else None,
+                    )
+                )
                 continue
 
             try:
                 sync_result = await client.sync_ams_tray(tray, printer.name)
                 if sync_result:
                     synced += 1
-                    logger.info(
-                        f"Synced {tray.tray_sub_brands} from {printer.name} AMS {ams_id} tray {tray.tray_id}"
-                    )
+                    logger.info(f"Synced {tray.tray_sub_brands} from {printer.name} AMS {ams_id} tray {tray.tray_id}")
                 else:
                     # Bambu Lab spool that wasn't synced (not found in Spoolman)
                     errors.append(f"Spool not found in Spoolman: AMS {ams_id}:{tray.tray_id}")
@@ -217,6 +238,8 @@ async def sync_printer_ams(
     return SyncResult(
         success=len(errors) == 0,
         synced_count=synced,
+        skipped_count=len(skipped),
+        skipped=skipped,
         errors=errors,
     )
 
@@ -240,10 +263,11 @@ async def sync_all_printers(db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=503, detail="Spoolman is not reachable")
 
     # Get all active printers
-    result = await db.execute(select(Printer).where(Printer.is_active == True))
+    result = await db.execute(select(Printer).where(Printer.is_active.is_(True)))
     printers = result.scalars().all()
 
     total_synced = 0
+    all_skipped: list[SkippedSpool] = []
     all_errors = []
 
     for printer in printers:
@@ -291,8 +315,19 @@ async def sync_all_printers(db: AsyncSession = Depends(get_db)):
                 if not tray:
                     continue
 
-                # Skip non-Bambu Lab spools (SpoolEase/third-party) - this is not an error
+                # Build location string for reporting
+                location = f"{printer.name} - {client.convert_ams_slot_to_location(ams_id, tray.tray_id)}"
+
+                # Skip non-Bambu Lab spools (SpoolEase/third-party) - track as skipped
                 if not client.is_bambu_lab_spool(tray.tray_uuid):
+                    all_skipped.append(
+                        SkippedSpool(
+                            location=location,
+                            reason="Non-Bambu Lab spool (no RFID tag)",
+                            filament_type=tray.tray_type if tray.tray_type else None,
+                            color=tray.tray_color[:6] if tray.tray_color else None,
+                        )
+                    )
                     continue
 
                 try:
@@ -305,6 +340,8 @@ async def sync_all_printers(db: AsyncSession = Depends(get_db)):
     return SyncResult(
         success=len(all_errors) == 0,
         synced_count=total_synced,
+        skipped_count=len(all_skipped),
+        skipped=all_skipped,
         errors=all_errors,
     )
 
@@ -349,3 +386,106 @@ async def get_filaments(db: AsyncSession = Depends(get_db)):
 
     filaments = await client.get_filaments()
     return {"filaments": filaments}
+
+
+class UnlinkedSpool(BaseModel):
+    """A Spoolman spool that is not linked to any AMS tray."""
+
+    id: int
+    filament_name: str | None
+    filament_material: str | None
+    filament_color_hex: str | None
+    remaining_weight: float | None
+    location: str | None
+
+
+@router.get("/spools/unlinked", response_model=list[UnlinkedSpool])
+async def get_unlinked_spools(db: AsyncSession = Depends(get_db)):
+    """Get all Spoolman spools that don't have a tag (not linked to AMS)."""
+    enabled, url, _ = await get_spoolman_settings(db)
+    if not enabled:
+        raise HTTPException(status_code=400, detail="Spoolman integration is not enabled")
+
+    client = await get_spoolman_client()
+    if not client:
+        if url:
+            client = await init_spoolman_client(url)
+        else:
+            raise HTTPException(status_code=400, detail="Spoolman URL is not configured")
+
+    if not await client.health_check():
+        raise HTTPException(status_code=503, detail="Spoolman is not reachable")
+
+    spools = await client.get_spools()
+    unlinked = []
+
+    for spool in spools:
+        # Check if spool has a tag in extra field
+        extra = spool.get("extra", {}) or {}
+        tag = extra.get("tag", "")
+        if not tag:
+            filament = spool.get("filament", {}) or {}
+            unlinked.append(
+                UnlinkedSpool(
+                    id=spool["id"],
+                    filament_name=filament.get("name"),
+                    filament_material=filament.get("material"),
+                    filament_color_hex=filament.get("color_hex"),
+                    remaining_weight=spool.get("remaining_weight"),
+                    location=spool.get("location"),
+                )
+            )
+
+    return unlinked
+
+
+class LinkSpoolRequest(BaseModel):
+    """Request to link a Spoolman spool to an AMS tray."""
+
+    tray_uuid: str
+
+
+@router.post("/spools/{spool_id}/link")
+async def link_spool(
+    spool_id: int,
+    request: LinkSpoolRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Link a Spoolman spool to an AMS tray by setting the tag to tray_uuid."""
+    enabled, url, _ = await get_spoolman_settings(db)
+    if not enabled:
+        raise HTTPException(status_code=400, detail="Spoolman integration is not enabled")
+
+    client = await get_spoolman_client()
+    if not client:
+        if url:
+            client = await init_spoolman_client(url)
+        else:
+            raise HTTPException(status_code=400, detail="Spoolman URL is not configured")
+
+    if not await client.health_check():
+        raise HTTPException(status_code=503, detail="Spoolman is not reachable")
+
+    # Validate tray_uuid format (32 hex characters)
+    tray_uuid = request.tray_uuid.strip()
+    if len(tray_uuid) != 32:
+        raise HTTPException(status_code=400, detail="Invalid tray_uuid format (must be 32 hex characters)")
+    try:
+        int(tray_uuid, 16)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid tray_uuid format (must be hex)")
+
+    # Update spool with tag
+    # Note: Spoolman extra field values must be valid JSON, so we encode the string
+    import json
+
+    result = await client.update_spool(
+        spool_id=spool_id,
+        extra={"tag": json.dumps(tray_uuid)},
+    )
+
+    if result:
+        logger.info(f"Linked Spoolman spool {spool_id} to tray_uuid {tray_uuid}")
+        return {"success": True, "message": f"Spool {spool_id} linked to AMS tray"}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to update spool")

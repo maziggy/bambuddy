@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 
@@ -170,9 +170,7 @@ class SpoolmanClient:
         """
         try:
             client = await self._get_client()
-            response = await client.post(
-                f"{self.api_url}/vendor", json={"name": name}
-            )
+            response = await client.post(f"{self.api_url}/vendor", json={"name": name})
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -314,7 +312,9 @@ class SpoolmanClient:
             client = await self._get_client()
             response = await client.post(f"{self.api_url}/spool", json=data)
             response.raise_for_status()
-            return response.json()
+            result = response.json()
+            logger.info(f"Created spool {result.get('id')} in Spoolman")
+            return result
         except httpx.HTTPStatusError as e:
             logger.error(f"Failed to create spool in Spoolman: {e}, response: {e.response.text}")
             return None
@@ -350,12 +350,10 @@ class SpoolmanClient:
                 data["extra"] = extra
 
             # Always update last_used
-            data["last_used"] = datetime.now(timezone.utc).isoformat()
+            data["last_used"] = datetime.now(UTC).isoformat()
 
             client = await self._get_client()
-            response = await client.patch(
-                f"{self.api_url}/spool/{spool_id}", json=data
-            )
+            response = await client.patch(f"{self.api_url}/spool/{spool_id}", json=data)
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -519,9 +517,7 @@ class SpoolmanClient:
         except ValueError:
             return False
 
-    def calculate_remaining_weight(
-        self, remain_percent: int, spool_weight: int
-    ) -> float:
+    def calculate_remaining_weight(self, remain_percent: int, spool_weight: int) -> float:
         """Calculate remaining weight from percentage.
 
         Args:
@@ -533,9 +529,7 @@ class SpoolmanClient:
         """
         return (remain_percent / 100.0) * spool_weight
 
-    async def sync_ams_tray(
-        self, tray: AMSTray, printer_name: str
-    ) -> dict | None:
+    async def sync_ams_tray(self, tray: AMSTray, printer_name: str) -> dict | None:
         """Sync a single AMS tray to Spoolman.
 
         Only syncs trays with valid Bambu Lab tray_uuid (32 hex characters).
@@ -564,9 +558,7 @@ class SpoolmanClient:
                     f"(tray_uuid={tray.tray_uuid}, tag_uid={tray.tag_uid})"
                 )
             else:
-                logger.debug(
-                    f"Skipping tray without RFID tag: AMS {tray.ams_id} tray {tray.tray_id}"
-                )
+                logger.debug(f"Skipping tray without RFID tag: AMS {tray.ams_id} tray {tray.tray_id}")
             return None
 
         # Calculate remaining weight
@@ -577,9 +569,7 @@ class SpoolmanClient:
         existing = await self.find_spool_by_tag(tray.tray_uuid)
         if existing:
             # Update existing spool
-            logger.info(
-                f"Updating existing spool {existing['id']} for tray_uuid {tray.tray_uuid}"
-            )
+            logger.info(f"Updating existing spool {existing['id']} for tray_uuid {tray.tray_uuid}")
             return await self.update_spool(
                 spool_id=existing["id"],
                 remaining_weight=remaining,
@@ -588,8 +578,7 @@ class SpoolmanClient:
 
         # Spool not found - auto-create it
         logger.info(
-            f"Creating new spool in Spoolman for {tray.tray_sub_brands} "
-            f"(tray_uuid: {tray.tray_uuid[:16]}...)"
+            f"Creating new spool in Spoolman for {tray.tray_sub_brands} " f"(tray_uuid: {tray.tray_uuid[:16]}...)"
         )
 
         # First find or create the filament type
@@ -599,12 +588,15 @@ class SpoolmanClient:
             return None
 
         # Create the spool with tray_uuid stored as "tag" in extra field
+        # Note: Spoolman extra field values must be valid JSON, so we encode the string
+        import json
+
         return await self.create_spool(
             filament_id=filament["id"],
             remaining_weight=remaining,
             location=location,
             comment=f"Auto-created from {printer_name} AMS",
-            extra={"tag": tray.tray_uuid},
+            extra={"tag": json.dumps(tray.tray_uuid)},
         )
 
     async def _find_or_create_filament(self, tray: AMSTray) -> dict | None:
@@ -624,10 +616,7 @@ class SpoolmanClient:
             # Match by material and color (handle None values)
             fil_material = filament.get("material") or ""
             fil_color = filament.get("color_hex") or ""
-            if (
-                fil_material.upper() == tray.tray_type.upper()
-                and fil_color.upper() == color_hex.upper()
-            ):
+            if fil_material.upper() == tray.tray_type.upper() and fil_color.upper() == color_hex.upper():
                 return filament
 
         # Search external filaments (Bambu library)
@@ -635,10 +624,7 @@ class SpoolmanClient:
         for filament in external:
             fil_material = filament.get("material") or ""
             fil_color = filament.get("color_hex") or ""
-            if (
-                fil_material.upper() == tray.tray_type.upper()
-                and fil_color.upper() == color_hex.upper()
-            ):
+            if fil_material.upper() == tray.tray_type.upper() and fil_color.upper() == color_hex.upper():
                 # Found in external library - need to create internal copy
                 return await self._create_filament_from_external(filament, tray)
 
@@ -652,9 +638,7 @@ class SpoolmanClient:
             weight=tray.tray_weight,
         )
 
-    async def _create_filament_from_external(
-        self, external: dict, tray: AMSTray
-    ) -> dict | None:
+    async def _create_filament_from_external(self, external: dict, tray: AMSTray) -> dict | None:
         """Create internal filament from external library entry.
 
         Args:

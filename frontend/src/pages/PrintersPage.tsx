@@ -60,6 +60,7 @@ import { HMSErrorModal, filterKnownHMSErrors } from '../components/HMSErrorModal
 import { PrinterQueueWidget } from '../components/PrinterQueueWidget';
 import { AMSHistoryModal } from '../components/AMSHistoryModal';
 import { FilamentHoverCard, EmptySlotHoverCard } from '../components/FilamentHoverCard';
+import { LinkSpoolModal } from '../components/LinkSpoolModal';
 import { useToast } from '../contexts/ToastContext';
 
 // Bambu Lab color code mapping (color suffix from tray_id_name -> color name)
@@ -669,6 +670,7 @@ function PrinterCard({
   maintenanceInfo,
   viewMode = 'expanded',
   amsThresholds,
+  spoolmanEnabled = false,
 }: {
   printer: Printer;
   hideIfDisconnected?: boolean;
@@ -680,6 +682,7 @@ function PrinterCard({
     tempGood: number;
     tempFair: number;
   };
+  spoolmanEnabled?: boolean;
 }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -701,6 +704,10 @@ function PrinterCard({
     amsId: number;
     amsLabel: string;
     mode: 'humidity' | 'temperature';
+  } | null>(null);
+  const [linkSpoolModal, setLinkSpoolModal] = useState<{
+    trayUuid: string;
+    trayInfo: { type: string; color: string; location: string };
   } | null>(null);
 
   const { data: status } = useQuery({
@@ -1581,6 +1588,7 @@ function PrinterCard({
                                   colorHex: tray.tray_color || null,
                                   kFactor: formatKValue(tray.k),
                                   fillLevel: hasFillLevel ? tray.remain : null,
+                                  trayUuid: tray.tray_uuid || null,
                                 } : null;
 
                                 // Check if this specific slot is being refreshed
@@ -1665,7 +1673,22 @@ function PrinterCard({
                                     )}
                                     {/* Hover card wraps only the visual content */}
                                     {filamentData ? (
-                                      <FilamentHoverCard data={filamentData}>
+                                      <FilamentHoverCard
+                                        data={filamentData}
+                                        spoolman={{
+                                          enabled: spoolmanEnabled,
+                                          onLinkSpool: spoolmanEnabled && filamentData.trayUuid ? (uuid) => {
+                                            setLinkSpoolModal({
+                                              trayUuid: uuid,
+                                              trayInfo: {
+                                                type: filamentData.profile,
+                                                color: filamentData.colorHex || '',
+                                                location: `${getAmsLabel(ams.id, ams.tray.length)} Slot ${slotIdx + 1}`,
+                                              },
+                                            });
+                                          } : undefined,
+                                        }}
+                                      >
                                         {slotVisual}
                                       </FilamentHoverCard>
                                     ) : (
@@ -1711,6 +1734,7 @@ function PrinterCard({
                           colorHex: tray.tray_color || null,
                           kFactor: formatKValue(tray.k),
                           fillLevel: hasFillLevel ? tray.remain : null,
+                          trayUuid: tray.tray_uuid || null,
                         } : null;
 
                         const htSlotId = tray?.id ?? 0;
@@ -1808,7 +1832,22 @@ function PrinterCard({
                                 )}
                                 {/* Hover card wraps only the visual content */}
                                 {filamentData ? (
-                                  <FilamentHoverCard data={filamentData}>
+                                  <FilamentHoverCard
+                                    data={filamentData}
+                                    spoolman={{
+                                      enabled: spoolmanEnabled,
+                                      onLinkSpool: spoolmanEnabled && filamentData.trayUuid ? (uuid) => {
+                                        setLinkSpoolModal({
+                                          trayUuid: uuid,
+                                          trayInfo: {
+                                            type: filamentData.profile,
+                                            color: filamentData.colorHex || '',
+                                            location: getAmsLabel(ams.id, ams.tray.length),
+                                          },
+                                        });
+                                      } : undefined,
+                                    }}
+                                  >
                                     {slotVisual}
                                   </FilamentHoverCard>
                                 ) : (
@@ -1868,6 +1907,7 @@ function PrinterCard({
                           colorHex: extTray.tray_color || null,
                           kFactor: formatKValue(extTray.k),
                           fillLevel: null, // External spool has unknown fill level
+                          trayUuid: extTray.tray_uuid || null,
                         };
 
                         const extSlotContent = (
@@ -1896,7 +1936,22 @@ function PrinterCard({
                               <span className="text-[10px] text-white font-medium">External</span>
                             </div>
                             {/* Row 2: Slot (full width since no stats) */}
-                            <FilamentHoverCard data={extFilamentData}>
+                            <FilamentHoverCard
+                              data={extFilamentData}
+                              spoolman={{
+                                enabled: spoolmanEnabled,
+                                onLinkSpool: spoolmanEnabled && extFilamentData.trayUuid ? (uuid) => {
+                                  setLinkSpoolModal({
+                                    trayUuid: uuid,
+                                    trayInfo: {
+                                      type: extFilamentData.profile,
+                                      color: extFilamentData.colorHex || '',
+                                      location: 'External Spool',
+                                    },
+                                  });
+                                } : undefined,
+                              }}
+                            >
                               {extSlotContent}
                             </FilamentHoverCard>
                           </div>
@@ -2355,6 +2410,16 @@ function PrinterCard({
           amsLabel={amsHistoryModal.amsLabel}
           initialMode={amsHistoryModal.mode}
           thresholds={amsThresholds}
+        />
+      )}
+
+      {/* Link Spool Modal */}
+      {linkSpoolModal && (
+        <LinkSpoolModal
+          isOpen={!!linkSpoolModal}
+          onClose={() => setLinkSpoolModal(null)}
+          trayUuid={linkSpoolModal.trayUuid}
+          trayInfo={linkSpoolModal.trayInfo}
         />
       )}
 
@@ -3036,6 +3101,14 @@ export function PrintersPage() {
     staleTime: 60 * 1000, // 1 minute
   });
 
+  // Fetch Spoolman status to enable link spool feature
+  const { data: spoolmanStatus } = useQuery({
+    queryKey: ['spoolman-status'],
+    queryFn: api.getSpoolmanStatus,
+    staleTime: 60 * 1000, // 1 minute
+  });
+  const spoolmanEnabled = spoolmanStatus?.enabled && spoolmanStatus?.connected;
+
   // Create a map of printer_id -> maintenance info for quick lookup
   const maintenanceByPrinter = maintenanceOverview?.reduce(
     (acc, overview) => {
@@ -3310,6 +3383,7 @@ export function PrintersPage() {
                       tempGood: Number(settings.ams_temp_good) || 28,
                       tempFair: Number(settings.ams_temp_fair) || 35,
                     } : undefined}
+                    spoolmanEnabled={spoolmanEnabled}
                   />
                 ))}
               </div>
@@ -3330,6 +3404,7 @@ export function PrintersPage() {
               hideIfDisconnected={hideDisconnected}
               maintenanceInfo={maintenanceByPrinter[printer.id]}
               viewMode={viewMode}
+              spoolmanEnabled={spoolmanEnabled}
               amsThresholds={settings ? {
                 humidityGood: Number(settings.ams_humidity_good) || 40,
                 humidityFair: Number(settings.ams_humidity_fair) || 60,

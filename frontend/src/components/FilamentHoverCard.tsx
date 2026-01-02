@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react';
-import { Droplets } from 'lucide-react';
+import { Droplets, Link2, Copy, Check } from 'lucide-react';
 
 interface FilamentData {
   vendor: 'Bambu Lab' | 'Generic';
@@ -8,6 +8,12 @@ interface FilamentData {
   colorHex: string | null;
   kFactor: string;
   fillLevel: number | null; // null = unknown
+  trayUuid?: string | null; // Bambu Lab spool UUID for Spoolman linking
+}
+
+interface SpoolmanConfig {
+  enabled: boolean;
+  onLinkSpool?: (trayUuid: string) => void;
 }
 
 interface FilamentHoverCardProps {
@@ -15,18 +21,55 @@ interface FilamentHoverCardProps {
   children: ReactNode;
   disabled?: boolean;
   className?: string;
+  spoolman?: SpoolmanConfig;
 }
 
 /**
  * A hover card that displays filament details when hovering over AMS slots.
  * Replaces the basic browser tooltip with a styled popover.
  */
-export function FilamentHoverCard({ data, children, disabled, className = '' }: FilamentHoverCardProps) {
+export function FilamentHoverCard({ data, children, disabled, className = '', spoolman }: FilamentHoverCardProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState<'top' | 'bottom'>('top');
+  const [copied, setCopied] = useState(false);
   const triggerRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleCopyUuid = () => {
+    const uuid = data.trayUuid;
+    if (!uuid) return;
+
+    // Try modern clipboard API first, fallback to execCommand
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(uuid).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }).catch(() => {
+        // Fallback on error
+        fallbackCopy(uuid);
+      });
+    } else {
+      fallbackCopy(uuid);
+    }
+  };
+
+  const fallbackCopy = (text: string) => {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand('copy');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      console.error('Failed to copy to clipboard');
+    }
+    document.body.removeChild(textarea);
+  };
 
   // Calculate position when showing
   useEffect(() => {
@@ -192,6 +235,49 @@ export function FilamentHoverCard({ data, children, disabled, className = '' }: 
                   )}
                 </div>
               </div>
+
+              {/* Spoolman section - only show if enabled */}
+              {spoolman?.enabled && data.trayUuid && (
+                <div className="pt-2 mt-2 border-t border-bambu-dark-tertiary space-y-2">
+                  {/* Tray UUID with copy button */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase tracking-wider text-bambu-gray font-medium">
+                      Spool ID
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCopyUuid();
+                      }}
+                      className="flex items-center gap-1 text-xs text-bambu-gray hover:text-white transition-colors"
+                      title="Copy spool UUID"
+                    >
+                      <span className="font-mono text-[10px] truncate max-w-[80px]">
+                        {data.trayUuid.slice(0, 8)}...
+                      </span>
+                      {copied ? (
+                        <Check className="w-3 h-3 text-bambu-green" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Link Spool button */}
+                  {spoolman.onLinkSpool && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        spoolman.onLinkSpool?.(data.trayUuid!);
+                      }}
+                      className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 bg-bambu-green/20 hover:bg-bambu-green/30 text-bambu-green text-xs font-medium rounded transition-colors"
+                    >
+                      <Link2 className="w-3.5 h-3.5" />
+                      Link to Spoolman
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

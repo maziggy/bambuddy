@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
-import { Plug, Power, PowerOff, Loader2, Trash2, Settings2, Thermometer, Clock, Wifi, WifiOff, Edit2, Bell, Calendar, LayoutGrid } from 'lucide-react';
+import { Plug, Power, PowerOff, Loader2, Trash2, Settings2, Thermometer, Clock, Wifi, WifiOff, Edit2, Bell, Calendar, LayoutGrid, ExternalLink } from 'lucide-react';
 import { api } from '../api/client';
 import type { SmartPlug, SmartPlugUpdate } from '../api/client';
 import { Card, CardContent } from './Card';
@@ -66,6 +66,16 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
   const isReachable = status?.reachable ?? false;
   const isPending = controlMutation.isPending;
 
+  // Generate admin URL with auto-login credentials
+  const getAdminUrl = () => {
+    const ip = plug.ip_address;
+    if (plug.username && plug.password) {
+      // Use HTTP Basic Auth in URL for auto-login
+      return `http://${encodeURIComponent(plug.username)}:${encodeURIComponent(plug.password)}@${ip}/`;
+    }
+    return `http://${ip}/`;
+  };
+
   return (
     <>
       <Card className="relative">
@@ -83,7 +93,7 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
             </div>
 
             {/* Status indicator */}
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col items-end gap-1">
               {statusLoading ? (
                 <Loader2 className="w-4 h-4 text-bambu-gray animate-spin" />
               ) : isReachable ? (
@@ -97,6 +107,17 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
                   <span>Offline</span>
                 </div>
               )}
+              {/* Admin page link */}
+              <a
+                href={getAdminUrl()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 px-2 py-0.5 bg-bambu-dark hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white text-xs rounded-full transition-colors"
+                title="Open plug admin page"
+              >
+                <ExternalLink className="w-3 h-3" />
+                Admin
+              </a>
             </div>
           </div>
 

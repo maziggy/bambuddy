@@ -1,11 +1,10 @@
 """API routes for external sidebar links."""
 
 import logging
-import os
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,9 +14,9 @@ from backend.app.core.database import get_db
 from backend.app.models.external_link import ExternalLink
 from backend.app.schemas.external_link import (
     ExternalLinkCreate,
-    ExternalLinkUpdate,
-    ExternalLinkResponse,
     ExternalLinkReorder,
+    ExternalLinkResponse,
+    ExternalLinkUpdate,
 )
 
 # Directory for storing custom icons
@@ -32,9 +31,7 @@ router = APIRouter(prefix="/external-links", tags=["external-links"])
 @router.get("/", response_model=list[ExternalLinkResponse])
 async def list_external_links(db: AsyncSession = Depends(get_db)):
     """List all external links ordered by sort_order."""
-    result = await db.execute(
-        select(ExternalLink).order_by(ExternalLink.sort_order, ExternalLink.id)
-    )
+    result = await db.execute(select(ExternalLink).order_by(ExternalLink.sort_order, ExternalLink.id))
     links = result.scalars().all()
     return links
 
@@ -46,9 +43,7 @@ async def create_external_link(
 ):
     """Create a new external link."""
     # Get the highest sort_order to place new link at end
-    result = await db.execute(
-        select(ExternalLink).order_by(ExternalLink.sort_order.desc()).limit(1)
-    )
+    result = await db.execute(select(ExternalLink).order_by(ExternalLink.sort_order.desc()).limit(1))
     last_link = result.scalar_one_or_none()
     next_order = (last_link.sort_order + 1) if last_link else 0
 
@@ -74,9 +69,7 @@ async def get_external_link(
     db: AsyncSession = Depends(get_db),
 ):
     """Get a specific external link."""
-    result = await db.execute(
-        select(ExternalLink).where(ExternalLink.id == link_id)
-    )
+    result = await db.execute(select(ExternalLink).where(ExternalLink.id == link_id))
     link = result.scalar_one_or_none()
 
     if not link:
@@ -92,9 +85,7 @@ async def update_external_link(
     db: AsyncSession = Depends(get_db),
 ):
     """Update an external link."""
-    result = await db.execute(
-        select(ExternalLink).where(ExternalLink.id == link_id)
-    )
+    result = await db.execute(select(ExternalLink).where(ExternalLink.id == link_id))
     link = result.scalar_one_or_none()
 
     if not link:
@@ -119,9 +110,7 @@ async def delete_external_link(
     db: AsyncSession = Depends(get_db),
 ):
     """Delete an external link."""
-    result = await db.execute(
-        select(ExternalLink).where(ExternalLink.id == link_id)
-    )
+    result = await db.execute(select(ExternalLink).where(ExternalLink.id == link_id))
     link = result.scalar_one_or_none()
 
     if not link:
@@ -144,9 +133,7 @@ async def reorder_external_links(
     """Update the sort order of external links."""
     # Update sort_order for each link based on position in the list
     for index, link_id in enumerate(reorder_data.ids):
-        result = await db.execute(
-            select(ExternalLink).where(ExternalLink.id == link_id)
-        )
+        result = await db.execute(select(ExternalLink).where(ExternalLink.id == link_id))
         link = result.scalar_one_or_none()
         if link:
             link.sort_order = index
@@ -154,9 +141,7 @@ async def reorder_external_links(
     await db.commit()
 
     # Return updated list
-    result = await db.execute(
-        select(ExternalLink).order_by(ExternalLink.sort_order, ExternalLink.id)
-    )
+    result = await db.execute(select(ExternalLink).order_by(ExternalLink.sort_order, ExternalLink.id))
     links = result.scalars().all()
 
     logger.info(f"Reordered {len(reorder_data.ids)} external links")
@@ -171,9 +156,7 @@ async def upload_icon(
     db: AsyncSession = Depends(get_db),
 ):
     """Upload a custom icon for an external link."""
-    result = await db.execute(
-        select(ExternalLink).where(ExternalLink.id == link_id)
-    )
+    result = await db.execute(select(ExternalLink).where(ExternalLink.id == link_id))
     link = result.scalar_one_or_none()
 
     if not link:
@@ -185,10 +168,7 @@ async def upload_icon(
 
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File type not allowed. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
-        )
+        raise HTTPException(status_code=400, detail=f"File type not allowed. Allowed: {', '.join(ALLOWED_EXTENSIONS)}")
 
     # Create icons directory if it doesn't exist
     ICONS_DIR.mkdir(parents=True, exist_ok=True)
@@ -224,9 +204,7 @@ async def delete_icon(
     db: AsyncSession = Depends(get_db),
 ):
     """Delete the custom icon for an external link."""
-    result = await db.execute(
-        select(ExternalLink).where(ExternalLink.id == link_id)
-    )
+    result = await db.execute(select(ExternalLink).where(ExternalLink.id == link_id))
     link = result.scalar_one_or_none()
 
     if not link:
@@ -250,9 +228,7 @@ async def get_icon(
     db: AsyncSession = Depends(get_db),
 ):
     """Get the custom icon for an external link."""
-    result = await db.execute(
-        select(ExternalLink).where(ExternalLink.id == link_id)
-    )
+    result = await db.execute(select(ExternalLink).where(ExternalLink.id == link_id))
     link = result.scalar_one_or_none()
 
     if not link:

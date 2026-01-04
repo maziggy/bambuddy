@@ -1,9 +1,11 @@
 from datetime import datetime
+
 from pydantic import BaseModel
 
 
 class APIKeyCreate(BaseModel):
     """Schema for creating a new API key."""
+
     name: str
     can_queue: bool = True
     can_control_printer: bool = False
@@ -14,6 +16,7 @@ class APIKeyCreate(BaseModel):
 
 class APIKeyUpdate(BaseModel):
     """Schema for updating an API key."""
+
     name: str | None = None
     can_queue: bool | None = None
     can_control_printer: bool | None = None
@@ -25,6 +28,7 @@ class APIKeyUpdate(BaseModel):
 
 class APIKeyResponse(BaseModel):
     """Schema for API key response (without full key)."""
+
     id: int
     name: str
     key_prefix: str  # First 8 chars for identification
@@ -43,4 +47,5 @@ class APIKeyResponse(BaseModel):
 
 class APIKeyCreateResponse(APIKeyResponse):
     """Response when creating a key - includes full key (shown only once)."""
+
     key: str  # Full API key, only shown on creation

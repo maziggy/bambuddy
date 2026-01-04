@@ -50,6 +50,7 @@ function PendingUploadItem({
   const [tags, setTags] = useState(upload.tags || '');
   const [notes, setNotes] = useState(upload.notes || '');
   const [projectId, setProjectId] = useState<number | null>(upload.project_id);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
   return (
     <Card>
@@ -100,7 +101,7 @@ function PendingUploadItem({
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => onDiscard(upload.id)}
+              onClick={() => setShowDiscardConfirm(true)}
               disabled={isDiscarding}
             >
               {isDiscarding ? (
@@ -111,6 +112,21 @@ function PendingUploadItem({
             </Button>
           </div>
         </div>
+
+        {/* Discard Confirmation Modal */}
+        {showDiscardConfirm && (
+          <ConfirmModal
+            title="Discard Upload"
+            message={`Are you sure you want to discard "${upload.filename}"? This cannot be undone.`}
+            confirmText="Discard"
+            variant="danger"
+            onConfirm={() => {
+              onDiscard(upload.id);
+              setShowDiscardConfirm(false);
+            }}
+            onCancel={() => setShowDiscardConfirm(false)}
+          />
+        )}
 
         {/* Expanded details for adding tags/notes/project */}
         {expanded && (

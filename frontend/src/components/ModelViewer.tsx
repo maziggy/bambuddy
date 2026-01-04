@@ -15,22 +15,26 @@ interface BuildVolume {
 interface ModelViewerProps {
   url: string;
   buildVolume?: BuildVolume;
+  filamentColors?: string[];
   className?: string;
 }
 
 interface MeshData {
   vertices: number[];
   triangles: number[];
+  extruder: number; // Per-mesh extruder index for coloring
 }
 
 interface ObjectData {
   id: string;
   meshes: MeshData[];
+  defaultExtruder: number; // Default extruder for object (used if mesh doesn't have specific one)
 }
 
 interface BuildItem {
   objectId: string;
   transform: THREE.Matrix4;
+  extruder?: number; // Can override object's extruder
 }
 
 // Parse 3MF transform - keep in 3MF coordinate space (Z-up)
@@ -61,7 +65,7 @@ function parseTransform3MF(transformStr: string | null): THREE.Matrix4 {
 // Alias for backwards compatibility
 const parseTransform = parseTransform3MF;
 
-async function parseMeshFromDoc(doc: Document): Promise<MeshData[]> {
+async function parseMeshFromDoc(doc: Document, defaultExtruder: number = 0): Promise<MeshData[]> {
   const meshes: MeshData[] = [];
   const meshElements = doc.getElementsByTagName('mesh');
 
@@ -91,7 +95,7 @@ async function parseMeshFromDoc(doc: Document): Promise<MeshData[]> {
     }
 
     if (vertices.length > 0 && triangles.length > 0) {
-      meshes.push({ vertices, triangles });
+      meshes.push({ vertices, triangles, extruder: defaultExtruder });
     }
   }
   return meshes;
@@ -113,6 +117,56 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<{ objects: Map<string
     return parser.parseFromString(content, 'application/xml');
   }
 
+  // Parse model_settings.config to get extruder assignments
+  // Maps: object ID -> default extruder, and (object ID, part ID) -> part-specific extruder
+  const extruderMapById = new Map<string, number>();
+  const partExtruderMap = new Map<string, number>(); // Key: "objectId:partId"
+  const modelSettingsFile = zip.files['Metadata/model_settings.config'];
+  if (modelSettingsFile) {
+    try {
+      const content = await modelSettingsFile.async('string');
+      const doc = parser.parseFromString(content, 'application/xml');
+      const objectElements = doc.getElementsByTagName('object');
+      for (let i = 0; i < objectElements.length; i++) {
+        const objEl = objectElements[i];
+        const objectId = objEl.getAttribute('id');
+        if (!objectId) continue;
+
+        // Find object-level extruder
+        const directMetadata = Array.from(objEl.children).filter(
+          (el) => el.tagName === 'metadata' && el.getAttribute('key') === 'extruder'
+        );
+        if (directMetadata.length > 0) {
+          const extruderVal = directMetadata[0].getAttribute('value');
+          if (extruderVal) {
+            extruderMapById.set(objectId, Math.max(0, parseInt(extruderVal, 10) - 1));
+          }
+        }
+
+        // Find part-level extruders
+        const partElements = objEl.getElementsByTagName('part');
+        for (let j = 0; j < partElements.length; j++) {
+          const partEl = partElements[j];
+          const partId = partEl.getAttribute('id');
+          if (!partId) continue;
+
+          // Look for extruder in part's direct children
+          const partMetadata = Array.from(partEl.children).filter(
+            (el) => el.tagName === 'metadata' && el.getAttribute('key') === 'extruder'
+          );
+          if (partMetadata.length > 0) {
+            const extruderVal = partMetadata[0].getAttribute('value');
+            if (extruderVal) {
+              partExtruderMap.set(`${objectId}:${partId}`, Math.max(0, parseInt(extruderVal, 10) - 1));
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // Silently ignore model_settings.config parsing errors
+    }
+  }
+
   // Find the main 3D model file
   const mainModelPath = Object.keys(zip.files).find(
     (name) => name === '3D/3dmodel.model' || name.endsWith('/3dmodel.model')
@@ -124,9 +178,9 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<{ objects: Map<string
     if (anyModelPath) {
       const doc = await loadModelFile(anyModelPath);
       if (doc) {
-        const meshes = await parseMeshFromDoc(doc);
+        const meshes = await parseMeshFromDoc(doc, 0);
         if (meshes.length > 0) {
-          objects.set('1', { id: '1', meshes });
+          objects.set('1', { id: '1', meshes, defaultExtruder: 0 });
         }
       }
     }
@@ -142,6 +196,13 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<{ objects: Map<string
     const objEl = objectElements[i];
     const objectId = objEl.getAttribute('id');
     if (!objectId) continue;
+
+    // Get default extruder from model_settings.config map, falling back to attribute or default
+    let defaultExtruder = extruderMapById.get(objectId) ?? -1;
+    if (defaultExtruder < 0) {
+      const extruderAttr = objEl.getAttribute('p:extruder') || objEl.getAttributeNS('http://schemas.microsoft.com/3dmanufacturing/production/2015/06', 'extruder') || '1';
+      defaultExtruder = Math.max(0, parseInt(extruderAttr, 10) - 1);
+    }
 
     const meshes: MeshData[] = [];
 
@@ -173,7 +234,7 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<{ objects: Map<string
       }
 
       if (vertices.length > 0 && triangles.length > 0) {
-        meshes.push({ vertices, triangles });
+        meshes.push({ vertices, triangles, extruder: defaultExtruder });
       }
     }
 
@@ -183,11 +244,17 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<{ objects: Map<string
       const compEl = componentElements[j];
       // p:path attribute contains the external file reference
       const extPath = compEl.getAttribute('p:path') || compEl.getAttributeNS('http://schemas.microsoft.com/3dmanufacturing/production/2015/06', 'path');
+      // objectid in component corresponds to part id in model_settings
+      const compObjectId = compEl.getAttribute('objectid');
 
       if (extPath) {
         const extDoc = await loadModelFile(extPath);
         if (extDoc) {
-          const extMeshes = await parseMeshFromDoc(extDoc);
+          // Look up per-part extruder, falling back to object's default
+          const partKey = compObjectId ? `${objectId}:${compObjectId}` : null;
+          const compExtruder = partKey ? (partExtruderMap.get(partKey) ?? defaultExtruder) : defaultExtruder;
+
+          const extMeshes = await parseMeshFromDoc(extDoc, compExtruder);
 
           // Apply component transform if present
           const compTransformStr = compEl.getAttribute('transform');
@@ -202,7 +269,7 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<{ objects: Map<string
                 v.applyMatrix4(compTransform);
                 transformedVertices.push(v.x, v.y, v.z);
               }
-              meshes.push({ vertices: transformedVertices, triangles: mesh.triangles });
+              meshes.push({ vertices: transformedVertices, triangles: mesh.triangles, extruder: mesh.extruder });
             } else {
               meshes.push(mesh);
             }
@@ -212,7 +279,7 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<{ objects: Map<string
     }
 
     if (meshes.length > 0) {
-      objects.set(objectId, { id: objectId, meshes });
+      objects.set(objectId, { id: objectId, meshes, defaultExtruder });
     }
   }
 
@@ -254,7 +321,7 @@ function createGeometryFromMesh(mesh: MeshData): THREE.BufferGeometry {
   return geometry;
 }
 
-export function ModelViewer({ url, buildVolume = { x: 256, y: 256, z: 256 }, className = '' }: ModelViewerProps) {
+export function ModelViewer({ url, buildVolume = { x: 256, y: 256, z: 256 }, filamentColors, className = '' }: ModelViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -345,14 +412,22 @@ export function ModelViewer({ url, buildVolume = { x: 256, y: 256, z: 256 }, cla
           throw new Error('No meshes found in 3MF file');
         }
 
-        const material = new THREE.MeshPhongMaterial({
-          color: 0x00ae42,
-          shininess: 30,
-          flatShading: false,
-        });
+        // Create materials for each extruder color
+        const getMaterial = (extruder: number): THREE.MeshPhongMaterial => {
+          const defaultColor = '#00ae42';
+          const colorStr = filamentColors?.[extruder] || defaultColor;
+          // Convert hex color string to THREE.js color
+          const color = new THREE.Color(colorStr);
+          return new THREE.MeshPhongMaterial({
+            color,
+            shininess: 30,
+            flatShading: false,
+          });
+        };
 
         const group = new THREE.Group();
-        const allGeometries: THREE.BufferGeometry[] = [];
+        // Group geometries by extruder index (using per-mesh extruder)
+        const geometriesByExtruder = new Map<number, THREE.BufferGeometry[]>();
 
         // If we have build items, use them for positioning
         if (buildItems.length > 0) {
@@ -361,6 +436,9 @@ export function ModelViewer({ url, buildVolume = { x: 256, y: 256, z: 256 }, cla
             if (!objectData) continue;
 
             for (const meshData of objectData.meshes) {
+              // Use mesh's extruder, or item override, or object default
+              const extruder = item.extruder ?? meshData.extruder;
+
               // Apply build transform to vertices in 3MF space BEFORE coordinate conversion
               const transformedVertices: number[] = [];
               for (let k = 0; k < meshData.vertices.length; k += 3) {
@@ -376,34 +454,47 @@ export function ModelViewer({ url, buildVolume = { x: 256, y: 256, z: 256 }, cla
               const geometry = createGeometryFromMesh({
                 vertices: transformedVertices,
                 triangles: meshData.triangles,
+                extruder: extruder,
               });
-              allGeometries.push(geometry);
+
+              if (!geometriesByExtruder.has(extruder)) {
+                geometriesByExtruder.set(extruder, []);
+              }
+              geometriesByExtruder.get(extruder)!.push(geometry);
             }
           }
         } else {
           // Fallback: just add all objects without transforms
           for (const objectData of objects.values()) {
             for (const meshData of objectData.meshes) {
+              // Use per-mesh extruder
+              const extruder = meshData.extruder;
               const geometry = createGeometryFromMesh(meshData);
-              allGeometries.push(geometry);
+              if (!geometriesByExtruder.has(extruder)) {
+                geometriesByExtruder.set(extruder, []);
+              }
+              geometriesByExtruder.get(extruder)!.push(geometry);
             }
           }
         }
 
-        // Merge all geometries into one for better performance
-        if (allGeometries.length > 0) {
-          const mergedGeometry = allGeometries.length === 1
-            ? allGeometries[0]
-            : mergeGeometries(allGeometries, false);
+        // Create meshes for each extruder group
+        for (const [extruder, geometries] of geometriesByExtruder) {
+          if (geometries.length === 0) continue;
+
+          const mergedGeometry = geometries.length === 1
+            ? geometries[0]
+            : mergeGeometries(geometries, false);
 
           if (mergedGeometry) {
+            const material = getMaterial(extruder);
             const mesh = new THREE.Mesh(mergedGeometry, material);
             group.add(mesh);
           }
 
           // Dispose individual geometries if merged
-          if (allGeometries.length > 1) {
-            for (const geom of allGeometries) {
+          if (geometries.length > 1) {
+            for (const geom of geometries) {
               geom.dispose();
             }
           }
@@ -465,7 +556,7 @@ export function ModelViewer({ url, buildVolume = { x: 256, y: 256, z: 256 }, cla
       renderer.dispose();
       container.removeChild(renderer.domElement);
     };
-  }, [url, buildVolume]);
+  }, [url, buildVolume, filamentColors]);
 
   const resetView = () => {
     if (cameraRef.current && controlsRef.current) {

@@ -196,6 +196,40 @@ class FTPSession:
         else:
             await self.send(504, "Type not supported")
 
+    async def cmd_EPSV(self, arg: str) -> None:
+        """Handle EPSV command - Extended Passive Mode (IPv6 compatible)."""
+        if not self.authenticated:
+            await self.send(530, "Not logged in")
+            return
+
+        # Close any existing data connection/server
+        await self._close_data_connection()
+
+        # Reset connection state
+        self._data_connected.clear()
+        self._data_reader = None
+        self._data_writer = None
+
+        # Find a free port for passive data connection
+        self.data_port = random.randint(50000, 60000)
+
+        try:
+            # Create data server with TLS - use same context for session reuse
+            self.data_server = await asyncio.start_server(
+                self._handle_data_connection,
+                "0.0.0.0",
+                self.data_port,
+                ssl=self.ssl_context,
+            )
+
+            # EPSV response format: 229 Entering Extended Passive Mode (|||port|)
+            await self.send(229, f"Entering Extended Passive Mode (|||{self.data_port}|)")
+            logger.info(f"FTP EPSV listening on port {self.data_port}")
+
+        except Exception as e:
+            logger.error(f"Failed to create EPSV data connection: {e}")
+            await self.send(425, "Cannot open data connection")
+
     async def cmd_PASV(self, arg: str) -> None:
         """Handle PASV command - set up passive data connection."""
         if not self.authenticated:
@@ -244,6 +278,16 @@ class FTPSession:
 
     async def _handle_data_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """Handle incoming data connection (used by PASV)."""
+        # Log TLS details for debugging
+        ssl_obj = writer.get_extra_info("ssl_object")
+        if ssl_obj:
+            logger.info(
+                f"FTP data TLS from {self.remote_ip}: cipher={ssl_obj.cipher()}, "
+                f"version={ssl_obj.version()}, session_reused={ssl_obj.session_reused}"
+            )
+        else:
+            logger.warning(f"FTP data connection from {self.remote_ip} has no SSL!")
+
         logger.info(f"FTP data connection established from {self.remote_ip}")
         self._data_reader = reader
         self._data_writer = writer
@@ -252,6 +296,8 @@ class FTPSession:
 
     async def _close_data_connection(self) -> None:
         """Close the data connection and server."""
+        had_connection = self._data_writer is not None or self.data_server is not None
+
         if self._data_writer:
             try:
                 self._data_writer.close()
@@ -268,6 +314,10 @@ class FTPSession:
             except Exception:
                 pass
             self.data_server = None
+
+        # Only delay if we actually closed something
+        if had_connection:
+            await asyncio.sleep(0.1)
 
     async def cmd_STOR(self, arg: str) -> None:
         """Handle STOR command - receive file upload."""
@@ -436,6 +486,7 @@ class VirtualPrinterFTPServer:
         self._server: asyncio.Server | None = None
         self._running = False
         self._ssl_context: ssl.SSLContext | None = None
+        self._active_sessions: list[asyncio.Task] = []
 
     async def start(self) -> None:
         """Start the implicit FTPS server."""
@@ -453,6 +504,11 @@ class VirtualPrinterFTPServer:
         self._ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         self._ssl_context.load_cert_chain(str(self.cert_path), str(self.key_path))
         self._ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
+
+        # Use standard TLS settings for compatibility
+        self._ssl_context.set_ciphers("HIGH:!aNULL:!MD5:!RC4")
+
+        logger.info("FTP SSL context created with standard settings")
 
         try:
             # Create server with SSL - TLS handshake happens before any FTP data
@@ -495,12 +551,30 @@ class VirtualPrinterFTPServer:
             on_file_received=self.on_file_received,
         )
 
-        await session.handle()
+        # Track the session task so we can cancel it on stop
+        task = asyncio.current_task()
+        if task:
+            self._active_sessions.append(task)
+        try:
+            await session.handle()
+        finally:
+            if task and task in self._active_sessions:
+                self._active_sessions.remove(task)
 
     async def stop(self) -> None:
         """Stop the FTPS server."""
         logger.info("Stopping FTP server")
         self._running = False
+
+        # Cancel all active sessions first
+        for task in self._active_sessions[:]:  # Copy list to avoid modification during iteration
+            task.cancel()
+
+        # Wait briefly for sessions to clean up
+        if self._active_sessions:
+            await asyncio.sleep(0.1)
+
+        self._active_sessions.clear()
 
         if self._server:
             try:

@@ -1,25 +1,25 @@
+from backend.app.schemas.archive import (
+    ArchiveBase,
+    ArchiveResponse,
+    ArchiveUpdate,
+    ProjectPageImage,
+    ProjectPageResponse,
+)
 from backend.app.schemas.printer import (
     PrinterBase,
     PrinterCreate,
-    PrinterUpdate,
     PrinterResponse,
     PrinterStatus,
-)
-from backend.app.schemas.archive import (
-    ArchiveBase,
-    ArchiveUpdate,
-    ArchiveResponse,
-    ProjectPageResponse,
-    ProjectPageImage,
+    PrinterUpdate,
 )
 from backend.app.schemas.smart_plug import (
     SmartPlugBase,
-    SmartPlugCreate,
-    SmartPlugUpdate,
-    SmartPlugResponse,
     SmartPlugControl,
+    SmartPlugCreate,
+    SmartPlugResponse,
     SmartPlugStatus,
     SmartPlugTestConnection,
+    SmartPlugUpdate,
 )
 
 __all__ = [

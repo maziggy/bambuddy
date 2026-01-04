@@ -4,19 +4,19 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import get_db
-from backend.app.models.printer import Printer
 from backend.app.models.kprofile_note import KProfileNote as KProfileNoteModel
+from backend.app.models.printer import Printer
 from backend.app.schemas.kprofile import (
     KProfile,
     KProfileCreate,
     KProfileDelete,
-    KProfilesResponse,
     KProfileNote,
     KProfileNoteResponse,
+    KProfilesResponse,
 )
 from backend.app.services.printer_manager import printer_manager
 
@@ -293,15 +293,11 @@ async def get_kprofile_notes(
         raise HTTPException(404, "Printer not found")
 
     # Get all notes for this printer
-    result = await db.execute(
-        select(KProfileNoteModel).where(KProfileNoteModel.printer_id == printer_id)
-    )
+    result = await db.execute(select(KProfileNoteModel).where(KProfileNoteModel.printer_id == printer_id))
     notes = result.scalars().all()
 
     # Return as a dictionary mapping setting_id -> note
-    return KProfileNoteResponse(
-        notes={note.setting_id: note.note for note in notes}
-    )
+    return KProfileNoteResponse(notes={note.setting_id: note.note for note in notes})
 
 
 @router.put("/notes", response_model=dict)

@@ -55,7 +55,9 @@
 ### 📊 Monitoring & Control
 - Real-time printer status via WebSocket
 - Live camera streaming (MJPEG) & snapshots
+- Fan status monitoring (part cooling, auxiliary, chamber)
 - Printer control (stop, pause, resume)
+- Resizable printer cards (S/M/L/XL)
 - Skip objects during print
 - AMS slot RFID re-read
 - HMS error monitoring with history
@@ -67,6 +69,7 @@
 ### ⏰ Scheduling & Automation
 - Print queue with drag-and-drop
 - Scheduled prints (date/time)
+- Queue Only mode (stage without auto-start)
 - Smart plug integration (Tasmota)
 - Energy consumption tracking
 - Auto power-on before print
@@ -95,10 +98,12 @@
 - K-profiles (pressure advance)
 - External sidebar links
 - Webhooks & API keys
+- Interactive API browser with live testing
 
 ### 🖨️ Virtual Printer
 - Emulates a Bambu Lab printer on your network
 - Send prints directly from Bambu Studio/Orca Slicer
+- Configurable printer model (X1C, P1S, A1, H2D, etc.)
 - Queue mode or auto-start mode
 - SSDP discovery (appears in slicer automatically)
 - Secure TLS/MQTT communication
@@ -274,6 +279,8 @@ docker compose up -d --build
 Open **http://localhost:8000** in your browser.
 
 > **Multi-architecture support:** Pre-built images are available for `linux/amd64` and `linux/arm64` (Raspberry Pi 4/5).
+
+> **macOS/Windows users:** Docker Desktop doesn't support `network_mode: host`. Edit docker-compose.yml: comment out `network_mode: host` and uncomment the `ports:` section. Printer discovery won't work - add printers manually by IP.
 
 <details>
 <summary><strong>Docker Configuration & Commands</strong></summary>

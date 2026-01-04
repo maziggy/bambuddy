@@ -15,9 +15,8 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.models.notification import NotificationLog, NotificationProvider, NotificationDigestQueue
+from backend.app.models.notification import NotificationDigestQueue, NotificationLog, NotificationProvider
 from backend.app.models.notification_template import NotificationTemplate
-from backend.app.models.settings import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -77,9 +76,7 @@ class NotificationService:
         if event_type in self._template_cache:
             return self._template_cache[event_type]
 
-        result = await db.execute(
-            select(NotificationTemplate).where(NotificationTemplate.event_type == event_type)
-        )
+        result = await db.execute(select(NotificationTemplate).where(NotificationTemplate.event_type == event_type))
         template = result.scalar_one_or_none()
 
         if template:
@@ -109,6 +106,7 @@ class NotificationService:
     def _clean_filename(self, filename: str) -> str:
         """Extract filename and remove file extensions."""
         import os
+
         # Strip path prefix (e.g., /data/Metadata/plate_5.gcode -> plate_5.gcode)
         filename = os.path.basename(filename)
         # Remove common extensions
@@ -334,11 +332,13 @@ class NotificationService:
 
         # Discord embed format for nicer messages
         data = {
-            "embeds": [{
-                "title": title,
-                "description": message,
-                "color": 0x00AE42,  # Bambu green
-            }]
+            "embeds": [
+                {
+                    "title": title,
+                    "description": message,
+                    "color": 0x00AE42,  # Bambu green
+                }
+            ]
         }
 
         client = await self._get_client()
@@ -422,9 +422,7 @@ class NotificationService:
         self, db: AsyncSession, provider_id: int, success: bool, error: str | None = None
     ):
         """Update provider status after sending notification."""
-        result = await db.execute(
-            select(NotificationProvider).where(NotificationProvider.id == provider_id)
-        )
+        result = await db.execute(select(NotificationProvider).where(NotificationProvider.id == provider_id))
         provider = result.scalar_one_or_none()
         if provider:
             if success:
@@ -443,13 +441,13 @@ class NotificationService:
         """Get all enabled providers that want a specific event type."""
         # Build the query dynamically based on event field
         query = select(NotificationProvider).where(
-            NotificationProvider.enabled == True,
-            getattr(NotificationProvider, event_field) == True,
+            NotificationProvider.enabled.is_(True),
+            getattr(NotificationProvider, event_field).is_(True),
         )
 
         if printer_id is not None:
             query = query.where(
-                (NotificationProvider.printer_id == None) | (NotificationProvider.printer_id == printer_id)
+                (NotificationProvider.printer_id.is_(None)) | (NotificationProvider.printer_id == printer_id)
             )
 
         result = await db.execute(query)
@@ -700,9 +698,7 @@ class NotificationService:
         title, message = await self._build_message_from_template(db, "print_progress", variables)
         await self._send_to_providers(providers, title, message, db, "print_progress", printer_id, printer_name)
 
-    async def on_printer_offline(
-        self, printer_id: int, printer_name: str, db: AsyncSession
-    ):
+    async def on_printer_offline(self, printer_id: int, printer_name: str, db: AsyncSession):
         """Handle printer offline event."""
         providers = await self._get_providers_for_event(db, "on_printer_offline", printer_id)
         if not providers:
@@ -814,7 +810,9 @@ class NotificationService:
 
         title, message = await self._build_message_from_template(db, "ams_humidity_high", variables)
         # Alarms always send immediately, bypassing digest mode
-        await self._send_to_providers(providers, title, message, db, "ams_humidity_high", printer_id, printer_name, force_immediate=True)
+        await self._send_to_providers(
+            providers, title, message, db, "ams_humidity_high", printer_id, printer_name, force_immediate=True
+        )
 
     async def on_ams_temperature_high(
         self,
@@ -839,7 +837,9 @@ class NotificationService:
 
         title, message = await self._build_message_from_template(db, "ams_temperature_high", variables)
         # Alarms always send immediately, bypassing digest mode
-        await self._send_to_providers(providers, title, message, db, "ams_temperature_high", printer_id, printer_name, force_immediate=True)
+        await self._send_to_providers(
+            providers, title, message, db, "ams_temperature_high", printer_id, printer_name, force_immediate=True
+        )
 
     async def on_ams_ht_humidity_high(
         self,
@@ -865,7 +865,9 @@ class NotificationService:
         # Use the same template as regular AMS (can create separate templates later if needed)
         title, message = await self._build_message_from_template(db, "ams_humidity_high", variables)
         # Alarms always send immediately, bypassing digest mode
-        await self._send_to_providers(providers, title, message, db, "ams_ht_humidity_high", printer_id, printer_name, force_immediate=True)
+        await self._send_to_providers(
+            providers, title, message, db, "ams_ht_humidity_high", printer_id, printer_name, force_immediate=True
+        )
 
     async def on_ams_ht_temperature_high(
         self,
@@ -891,7 +893,9 @@ class NotificationService:
         # Use the same template as regular AMS (can create separate templates later if needed)
         title, message = await self._build_message_from_template(db, "ams_temperature_high", variables)
         # Alarms always send immediately, bypassing digest mode
-        await self._send_to_providers(providers, title, message, db, "ams_ht_temperature_high", printer_id, printer_name, force_immediate=True)
+        await self._send_to_providers(
+            providers, title, message, db, "ams_ht_temperature_high", printer_id, printer_name, force_immediate=True
+        )
 
     def clear_template_cache(self):
         """Clear the template cache. Call this when templates are updated."""
@@ -929,9 +933,7 @@ class NotificationService:
 
         async with async_session() as db:
             # Get the provider
-            result = await db.execute(
-                select(NotificationProvider).where(NotificationProvider.id == provider_id)
-            )
+            result = await db.execute(select(NotificationProvider).where(NotificationProvider.id == provider_id))
             provider = result.scalar_one_or_none()
 
             if not provider or not provider.enabled:
@@ -1011,8 +1013,8 @@ class NotificationService:
             # Find all providers with digest enabled at this time
             result = await db.execute(
                 select(NotificationProvider).where(
-                    NotificationProvider.enabled == True,
-                    NotificationProvider.daily_digest_enabled == True,
+                    NotificationProvider.enabled.is_(True),
+                    NotificationProvider.daily_digest_enabled.is_(True),
                     NotificationProvider.daily_digest_time == current_time,
                 )
             )

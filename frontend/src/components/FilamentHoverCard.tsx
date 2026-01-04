@@ -14,6 +14,7 @@ interface FilamentData {
 interface SpoolmanConfig {
   enabled: boolean;
   onLinkSpool?: (trayUuid: string) => void;
+  hasUnlinkedSpools?: boolean; // Whether there are spools available to link
 }
 
 interface FilamentHoverCardProps {
@@ -268,9 +269,17 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        spoolman.onLinkSpool?.(data.trayUuid!);
+                        if (spoolman.hasUnlinkedSpools !== false) {
+                          spoolman.onLinkSpool?.(data.trayUuid!);
+                        }
                       }}
-                      className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 bg-bambu-green/20 hover:bg-bambu-green/30 text-bambu-green text-xs font-medium rounded transition-colors"
+                      disabled={spoolman.hasUnlinkedSpools === false}
+                      className={`w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors ${
+                        spoolman.hasUnlinkedSpools === false
+                          ? 'bg-bambu-gray/10 text-bambu-gray cursor-not-allowed'
+                          : 'bg-bambu-green/20 hover:bg-bambu-green/30 text-bambu-green'
+                      }`}
+                      title={spoolman.hasUnlinkedSpools === false ? 'No unlinked spools available' : 'Link this spool to a Spoolman spool'}
                     >
                       <Link2 className="w-3.5 h-3.5" />
                       Link to Spoolman

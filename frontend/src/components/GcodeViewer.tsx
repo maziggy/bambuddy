@@ -1,56 +1,60 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { WebGLPreview, init } from 'gcode-preview';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { WebGLPreview } from 'gcode-preview';
 import { Loader2, Layers, ChevronLeft, ChevronRight, FileWarning } from 'lucide-react';
-
-interface BuildVolume {
-  x: number;
-  y: number;
-  z: number;
-}
 
 interface GcodeViewerProps {
   gcodeUrl: string;
-  buildVolume?: BuildVolume;
+  buildVolume?: { x: number; y: number; z: number };
   filamentColors?: string[];
   className?: string;
 }
 
-export function GcodeViewer({ gcodeUrl, buildVolume = { x: 256, y: 256, z: 256 }, filamentColors, className = '' }: GcodeViewerProps) {
+export function GcodeViewer({
+  gcodeUrl,
+  buildVolume = { x: 256, y: 256, z: 256 },
+  filamentColors,
+  className = ''
+}: GcodeViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewRef = useRef<WebGLPreview | null>(null);
   const renderTimeoutRef = useRef<number | null>(null);
+  const initRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notSliced, setNotSliced] = useState(false);
   const [currentLayer, setCurrentLayer] = useState(0);
   const [totalLayers, setTotalLayers] = useState(0);
 
+  // Memoize colors to prevent re-renders
+  const colorsKey = useMemo(() => JSON.stringify(filamentColors), [filamentColors]);
+
   useEffect(() => {
-    if (!canvasRef.current) return;
+    if (!canvasRef.current || initRef.current) return;
+    initRef.current = true;
 
     const canvas = canvasRef.current;
 
-    const hasColors = filamentColors && filamentColors.length > 0;
-    const hasMultipleColors = filamentColors && filamentColors.length > 1;
+    // Set canvas size before creating preview
+    const rect = canvas.parentElement?.getBoundingClientRect();
+    if (rect) {
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+    }
 
-    // First color or default bambu green
-    const primaryColor = hasColors ? filamentColors[0] : '#00ae42';
+    // Use extrusionColor as array for multi-tool support
+    // Index in array = tool number
+    const hasMultiColor = filamentColors && filamentColors.length > 1;
+    const primaryColor = filamentColors?.[0] || '#00ae42';
 
-    // Initialize the preview
-    // For multi-color: pass array of CSS color strings to extrusionColor
-    // The library uses index to match tool number (T0, T1, T2...)
-    const preview = init({
+    // Create preview
+    const preview = new WebGLPreview({
       canvas,
-      buildVolume: buildVolume,
+      buildVolume,
       backgroundColor: 0x1a1a1a,
-      travelColor: 0x444444,
-      // Pass array for multi-color, single value for single color
-      extrusionColor: hasMultipleColors ? filamentColors : primaryColor,
-      // Disable topLayerColor for multi-color (it overrides per-tool colors)
-      ...(hasMultipleColors ? {} : { topLayerColor: primaryColor }),
-      // Disable gradient for multi-color to preserve actual filament colors
-      ...(hasMultipleColors ? { disableGradient: true } : {}),
-      lastSegmentColor: 0xffffff,
+      // Pass full color array - library uses index as tool number
+      extrusionColor: hasMultiColor ? filamentColors : primaryColor,
+      disableGradient: true,
+      lineHeight: 0.2,
       lineWidth: 2,
       renderTravel: false,
       renderExtrusion: true,
@@ -58,11 +62,7 @@ export function GcodeViewer({ gcodeUrl, buildVolume = { x: 256, y: 256, z: 256 }
 
     previewRef.current = preview;
 
-    // Fetch and parse G-code
-    setLoading(true);
-    setError(null);
-    setNotSliced(false);
-
+    // Fetch and process gcode
     fetch(gcodeUrl)
       .then(async response => {
         if (!response.ok) {
@@ -78,59 +78,83 @@ export function GcodeViewer({ gcodeUrl, buildVolume = { x: 256, y: 256, z: 256 }
         return response.text();
       })
       .then(gcode => {
-        let processedGcode = gcode;
-
-        if (hasMultipleColors) {
-          // Bambu G-code uses special T commands that confuse the parser:
-          // T255, T1000, T1001, T65535, T65279 etc. are not real tool changes
-          // Filter these out and keep only valid tool numbers (T0-T15)
-          processedGcode = gcode
-            .split('\n')
-            .map(line => {
-              const match = line.match(/^(\s*)T(\d+)(\s*;.*)?$/i);
-              if (match) {
-                const toolNum = parseInt(match[2], 10);
-                // Keep only valid tool numbers (0-15), comment out others
-                if (toolNum > 15) {
-                  return `${match[1]}; FILTERED: T${toolNum}${match[3] || ''}`;
-                }
-              }
-              return line;
-            })
-            .join('\n');
-
-          // Prepend T0 to ensure initial tool is set
-          processedGcode = `T0\n${processedGcode}`;
+        // The gcode-preview library only supports T0-T7
+        // We need to remap higher tool numbers to fit within this range
+        // First, find all unique tool numbers used
+        const toolNumbers = new Set<number>();
+        const toolRegex = /^(\s*)T(\d+)(\s*;.*)?$/gim;
+        let match;
+        while ((match = toolRegex.exec(gcode)) !== null) {
+          const toolNum = parseInt(match[2], 10);
+          if (toolNum <= 15) { // Valid tool, not a special command
+            toolNumbers.add(toolNum);
+          }
         }
 
-        // Parse G-code
-        preview.processGCode(processedGcode);
+        // Create a mapping from original tool numbers to 0-7 range
+        const toolMapping = new Map<number, number>();
+        const sortedTools = Array.from(toolNumbers).sort((a, b) => a - b);
+        sortedTools.forEach((tool, index) => {
+          toolMapping.set(tool, index % 8); // Map to 0-7
+        });
 
-        // Get layer count
+        // Build remapped color array based on the mapping
+        const remappedColors: string[] = [];
+        sortedTools.forEach((originalTool, index) => {
+          const color = filamentColors?.[originalTool] || '#00ae42';
+          remappedColors[index % 8] = color;
+        });
+
+        // Process gcode: filter special commands and remap tool numbers
+        const cleanedGcode = gcode
+          .split('\n')
+          .map(line => {
+            const match = line.match(/^(\s*)T(\d+)(\s*;.*)?$/i);
+            if (match) {
+              const toolNum = parseInt(match[2], 10);
+              if (toolNum > 15) {
+                // Filter out Bambu special commands (T255, T1000, T65535, etc.)
+                return `; FILTERED: ${line.trim()}`;
+              }
+              // Remap tool number to 0-7 range
+              const mappedTool = toolMapping.get(toolNum) ?? 0;
+              return `${match[1]}T${mappedTool}${match[3] || ''}`;
+            }
+            return line;
+          })
+          .join('\n');
+
+        // Update colors for the preview using the remapped array
+        if (remappedColors.length > 0) {
+          (preview as unknown as { extrusionColor: string[] }).extrusionColor = remappedColors;
+        }
+
+        preview.processGCode(cleanedGcode);
+
         const layers = preview.layers?.length || 0;
         setTotalLayers(layers);
         setCurrentLayer(layers);
 
-        // Render all layers initially
         preview.render();
         setLoading(false);
       })
       .catch(err => {
-        setError(err.message);
+        if (err.message !== 'not_sliced') {
+          setError(err.message);
+        }
         setLoading(false);
       });
 
     // Handle resize
     const handleResize = () => {
-      if (canvas.parentElement) {
-        const rect = canvas.parentElement.getBoundingClientRect();
-        canvas.width = rect.width;
-        canvas.height = rect.height;
-        preview.resize();
+      if (canvas.parentElement && previewRef.current) {
+        const newRect = canvas.parentElement.getBoundingClientRect();
+        canvas.width = newRect.width;
+        canvas.height = newRect.height;
+        previewRef.current.resize();
       }
     };
 
-    handleResize();
     window.addEventListener('resize', handleResize);
 
     return () => {
@@ -138,17 +162,19 @@ export function GcodeViewer({ gcodeUrl, buildVolume = { x: 256, y: 256, z: 256 }
       if (renderTimeoutRef.current) {
         cancelAnimationFrame(renderTimeoutRef.current);
       }
-      preview.dispose();
+      if (previewRef.current) {
+        previewRef.current.dispose();
+        previewRef.current = null;
+      }
+      initRef.current = false;
     };
-  }, [gcodeUrl, buildVolume, filamentColors]);
+  }, [gcodeUrl, colorsKey]); // Use colorsKey instead of filamentColors
 
-  // Debounce render to prevent freezing when dragging slider
   const handleLayerChange = useCallback((layer: number) => {
     if (!previewRef.current) return;
     const newLayer = Math.max(1, Math.min(layer, totalLayers));
     setCurrentLayer(newLayer);
 
-    // Debounce the actual render to avoid freezing
     if (renderTimeoutRef.current) {
       cancelAnimationFrame(renderTimeoutRef.current);
     }
@@ -167,12 +193,8 @@ export function GcodeViewer({ gcodeUrl, buildVolume = { x: 256, y: 256, z: 256 }
 
   return (
     <div className={`relative flex flex-col h-full ${className}`}>
-      {/* Canvas container */}
       <div className="flex-1 relative bg-bambu-dark rounded-lg overflow-hidden">
-        <canvas
-          ref={canvasRef}
-          className="w-full h-full"
-        />
+        <canvas ref={canvasRef} className="w-full h-full" />
 
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-bambu-dark/80">
@@ -190,7 +212,7 @@ export function GcodeViewer({ gcodeUrl, buildVolume = { x: 256, y: 256, z: 256 }
               <p className="text-white font-medium mb-2">G-code not available</p>
               <p className="text-bambu-gray text-sm">
                 This file hasn't been sliced yet. G-code preview is only available
-                after slicing the model in Bambu Studio or Orca Slicer.
+                after slicing in Bambu Studio or Orca Slicer.
               </p>
             </div>
           </div>
@@ -205,7 +227,6 @@ export function GcodeViewer({ gcodeUrl, buildVolume = { x: 256, y: 256, z: 256 }
         )}
       </div>
 
-      {/* Layer controls */}
       {!loading && !error && !notSliced && totalLayers > 0 && (
         <div className="mt-4 px-2">
           <div className="flex items-center gap-3">

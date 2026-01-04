@@ -24,6 +24,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   const submenuTimeoutRef = useRef<number | null>(null);
   const [position, setPosition] = useState({ x, y, visible: false });
   const [openSubmenuLeft, setOpenSubmenuLeft] = useState(false);
+  const [submenuPositions, setSubmenuPositions] = useState<Record<number, 'top' | 'bottom'>>({});
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -100,11 +101,23 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
     }
   }, [x, y]);
 
-  const handleMouseEnterSubmenu = (index: number) => {
+  const handleMouseEnterSubmenu = (index: number, element: HTMLElement) => {
     if (submenuTimeoutRef.current) {
       clearTimeout(submenuTimeoutRef.current);
       submenuTimeoutRef.current = null;
     }
+
+    // Calculate if submenu should open upward or downward
+    const rect = element.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const submenuMaxHeight = 300; // matches max-h-[300px]
+    const padding = 8;
+
+    // Check if there's enough space below for the submenu
+    const spaceBelow = viewportHeight - rect.top - padding;
+    const shouldOpenUpward = spaceBelow < submenuMaxHeight && rect.top > submenuMaxHeight;
+
+    setSubmenuPositions(prev => ({ ...prev, [index]: shouldOpenUpward ? 'bottom' : 'top' }));
     setActiveSubmenu(index);
   };
 
@@ -135,11 +148,11 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
           <div
             key={index}
             className="relative"
-            onMouseEnter={() => hasSubmenu && handleMouseEnterSubmenu(index)}
+            onMouseEnter={(e) => hasSubmenu && handleMouseEnterSubmenu(index, e.currentTarget)}
             onMouseLeave={() => hasSubmenu && handleMouseLeaveSubmenu()}
           >
             <button
-              onMouseEnter={() => hasSubmenu && handleMouseEnterSubmenu(index)}
+              onMouseEnter={(e) => hasSubmenu && handleMouseEnterSubmenu(index, e.currentTarget.parentElement!)}
               onClick={() => {
                 if (hasSubmenu) {
                   // Toggle submenu on click as well
@@ -165,9 +178,9 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
             {/* Submenu */}
             {hasSubmenu && activeSubmenu === index && (
               <div
-                className={`absolute top-0 min-w-[160px] bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1 overflow-hidden max-h-[300px] overflow-y-auto z-[60] ${
+                className={`absolute min-w-[160px] bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1 overflow-hidden max-h-[300px] overflow-y-auto z-[60] ${
                   openSubmenuLeft ? 'right-full mr-1' : 'left-full ml-1'
-                }`}
+                } ${submenuPositions[index] === 'bottom' ? 'bottom-0' : 'top-0'}`}
                 onMouseEnter={() => {
                   if (submenuTimeoutRef.current) {
                     clearTimeout(submenuTimeoutRef.current);

@@ -17,21 +17,17 @@ EN = {
         "filament": "Filament",
         "reason": "Reason",
         "unknown": "Unknown",
-
         # Printer events
         "printer_offline": "Printer Offline",
         "printer_disconnected": "{printer} has disconnected",
         "printer_error": "Printer Error: {error_type}",
-
         # Filament
         "filament_low": "Filament Low",
         "slot_at_percent": "{printer}: Slot {slot} at {percent}%",
-
         # Maintenance
         "maintenance_due": "Maintenance Due",
         "overdue": "OVERDUE",
         "soon": "Soon",
-
         # Test notification
         "test_title": "Bambuddy Test",
         "test_message": "This is a test notification from Bambuddy. If you see this, notifications are working correctly!",
@@ -53,21 +49,17 @@ DE = {
         "filament": "Filament",
         "reason": "Grund",
         "unknown": "Unbekannt",
-
         # Printer events
         "printer_offline": "Drucker offline",
         "printer_disconnected": "{printer} wurde getrennt",
         "printer_error": "Druckerfehler: {error_type}",
-
         # Filament
         "filament_low": "Wenig Filament",
         "slot_at_percent": "{printer}: Slot {slot} bei {percent}%",
-
         # Maintenance
         "maintenance_due": "Wartung fällig",
         "overdue": "ÜBERFÄLLIG",
         "soon": "Bald",
-
         # Test notification
         "test_title": "Bambuddy Test",
         "test_message": "Dies ist eine Testbenachrichtigung von Bambuddy. Wenn Sie dies sehen, funktionieren die Benachrichtigungen!",

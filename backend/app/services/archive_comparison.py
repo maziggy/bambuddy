@@ -1,5 +1,5 @@
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.models.archive import PrintArchive
@@ -40,9 +40,7 @@ class ArchiveComparisonService:
 
         # Fetch archives
         result = await self.db.execute(
-            select(PrintArchive)
-            .options(selectinload(PrintArchive.project))
-            .where(PrintArchive.id.in_(archive_ids))
+            select(PrintArchive).options(selectinload(PrintArchive.project)).where(PrintArchive.id.in_(archive_ids))
         )
         archives = {a.id: a for a in result.scalars().all()}
 
@@ -90,7 +88,7 @@ class ArchiveComparisonService:
 
             # Check if values differ
             non_none_values = [v for v in values if v is not None]
-            has_difference = len(set(str(v) for v in non_none_values)) > 1 if non_none_values else False
+            has_difference = len({str(v) for v in non_none_values}) > 1 if non_none_values else False
 
             field_data = {
                 "field": field_name,
@@ -130,7 +128,7 @@ class ArchiveComparisonService:
         # Find settings that differ between successful and failed
         insights = []
 
-        for field_name, display_name, unit in self.COMPARABLE_FIELDS:
+        for field_name, display_name, _unit in self.COMPARABLE_FIELDS:
             if field_name == "status":
                 continue
 
@@ -147,26 +145,30 @@ class ArchiveComparisonService:
 
                 if abs(success_avg - failed_avg) > 0.1 * max(abs(success_avg), abs(failed_avg), 0.01):
                     direction = "higher" if success_avg > failed_avg else "lower"
-                    insights.append({
-                        "field": field_name,
-                        "label": display_name,
-                        "success_avg": round(success_avg, 2),
-                        "failed_avg": round(failed_avg, 2),
-                        "insight": f"Successful prints had {direction} {display_name}",
-                    })
+                    insights.append(
+                        {
+                            "field": field_name,
+                            "label": display_name,
+                            "success_avg": round(success_avg, 2),
+                            "failed_avg": round(failed_avg, 2),
+                            "insight": f"Successful prints had {direction} {display_name}",
+                        }
+                    )
             else:
                 # For categorical fields, check if success uses different values
-                success_set = set(str(v) for v in success_values)
-                failed_set = set(str(v) for v in failed_values)
+                success_set = {str(v) for v in success_values}
+                failed_set = {str(v) for v in failed_values}
 
                 if success_set != failed_set:
-                    insights.append({
-                        "field": field_name,
-                        "label": display_name,
-                        "success_values": list(success_set),
-                        "failed_values": list(failed_set),
-                        "insight": f"Different {display_name} used in successful vs failed prints",
-                    })
+                    insights.append(
+                        {
+                            "field": field_name,
+                            "label": display_name,
+                            "success_values": list(success_set),
+                            "failed_values": list(failed_set),
+                            "insight": f"Different {display_name} used in successful vs failed prints",
+                        }
+                    )
 
         return {
             "has_both_outcomes": True,
@@ -190,9 +192,7 @@ class ArchiveComparisonService:
             List of similar archives with match reasons
         """
         # Get the reference archive
-        result = await self.db.execute(
-            select(PrintArchive).where(PrintArchive.id == archive_id)
-        )
+        result = await self.db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
         reference = result.scalar_one_or_none()
 
         if not reference:
@@ -213,16 +213,18 @@ class ArchiveComparisonService:
                 .limit(limit)
             )
             for a in result.scalars().all():
-                similar.append({
-                    "archive": {
-                        "id": a.id,
-                        "print_name": a.print_name or a.filename,
-                        "status": a.status,
-                        "created_at": a.created_at.isoformat() if a.created_at else None,
-                    },
-                    "match_reason": "Same print name",
-                    "match_score": 100,
-                })
+                similar.append(
+                    {
+                        "archive": {
+                            "id": a.id,
+                            "print_name": a.print_name or a.filename,
+                            "status": a.status,
+                            "created_at": a.created_at.isoformat() if a.created_at else None,
+                        },
+                        "match_reason": "Same print name",
+                        "match_score": 100,
+                    }
+                )
 
         # By content hash
         if reference.content_hash and len(similar) < limit:
@@ -237,16 +239,18 @@ class ArchiveComparisonService:
             )
             for a in result.scalars().all():
                 if not any(s["archive"]["id"] == a.id for s in similar):
-                    similar.append({
-                        "archive": {
-                            "id": a.id,
-                            "print_name": a.print_name or a.filename,
-                            "status": a.status,
-                            "created_at": a.created_at.isoformat() if a.created_at else None,
-                        },
-                        "match_reason": "Same file content",
-                        "match_score": 95,
-                    })
+                    similar.append(
+                        {
+                            "archive": {
+                                "id": a.id,
+                                "print_name": a.print_name or a.filename,
+                                "status": a.status,
+                                "created_at": a.created_at.isoformat() if a.created_at else None,
+                            },
+                            "match_reason": "Same file content",
+                            "match_score": 95,
+                        }
+                    )
 
         # By same filament type
         if reference.filament_type and len(similar) < limit:
@@ -261,16 +265,18 @@ class ArchiveComparisonService:
             )
             for a in result.scalars().all():
                 if not any(s["archive"]["id"] == a.id for s in similar):
-                    similar.append({
-                        "archive": {
-                            "id": a.id,
-                            "print_name": a.print_name or a.filename,
-                            "status": a.status,
-                            "created_at": a.created_at.isoformat() if a.created_at else None,
-                        },
-                        "match_reason": f"Same filament type ({reference.filament_type})",
-                        "match_score": 50,
-                    })
+                    similar.append(
+                        {
+                            "archive": {
+                                "id": a.id,
+                                "print_name": a.print_name or a.filename,
+                                "status": a.status,
+                                "created_at": a.created_at.isoformat() if a.created_at else None,
+                            },
+                            "match_reason": f"Same filament type ({reference.filament_type})",
+                            "match_score": 50,
+                        }
+                    )
 
         # Sort by match score
         similar.sort(key=lambda x: x["match_score"], reverse=True)

@@ -289,8 +289,8 @@ class SimpleMQTTServer:
                 pass
             self._status_push_task = None
 
-        # Close all client connections
-        for _client_id, writer in self._clients.items():
+        # Close all client connections (iterate over copy to avoid modification during iteration)
+        for _client_id, writer in list(self._clients.items()):
             try:
                 writer.close()
                 await writer.wait_closed()

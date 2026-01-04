@@ -3,8 +3,9 @@
 Tests the full request/response cycle for /api/v1/system/ endpoints.
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 from httpx import AsyncClient
 
 
@@ -20,18 +21,12 @@ class TestSystemAPI:
     async def test_get_system_info(self, async_client: AsyncClient):
         """Verify system info endpoint returns expected structure."""
         # Mock psutil to avoid system-specific values
-        with patch('backend.app.api.routes.system.psutil') as mock_psutil:
+        with patch("backend.app.api.routes.system.psutil") as mock_psutil:
             mock_psutil.disk_usage.return_value = MagicMock(
-                total=500000000000,
-                used=250000000000,
-                free=250000000000,
-                percent=50.0
+                total=500000000000, used=250000000000, free=250000000000, percent=50.0
             )
             mock_psutil.virtual_memory.return_value = MagicMock(
-                total=16000000000,
-                available=8000000000,
-                used=8000000000,
-                percent=50.0
+                total=16000000000, available=8000000000, used=8000000000, percent=50.0
             )
             mock_psutil.boot_time.return_value = 1700000000.0
             mock_psutil.cpu_count.return_value = 4
@@ -55,7 +50,7 @@ class TestSystemAPI:
     @pytest.mark.integration
     async def test_system_info_app_section(self, async_client: AsyncClient):
         """Verify app section contains version and directory info."""
-        with patch('backend.app.api.routes.system.psutil') as mock_psutil:
+        with patch("backend.app.api.routes.system.psutil") as mock_psutil:
             mock_psutil.disk_usage.return_value = MagicMock(
                 total=500000000000, used=250000000000, free=250000000000, percent=50.0
             )
@@ -79,7 +74,7 @@ class TestSystemAPI:
     @pytest.mark.integration
     async def test_system_info_database_section(self, async_client: AsyncClient):
         """Verify database section contains counts and statistics."""
-        with patch('backend.app.api.routes.system.psutil') as mock_psutil:
+        with patch("backend.app.api.routes.system.psutil") as mock_psutil:
             mock_psutil.disk_usage.return_value = MagicMock(
                 total=500000000000, used=250000000000, free=250000000000, percent=50.0
             )
@@ -111,7 +106,7 @@ class TestSystemAPI:
     @pytest.mark.integration
     async def test_system_info_storage_section(self, async_client: AsyncClient):
         """Verify storage section contains disk usage info."""
-        with patch('backend.app.api.routes.system.psutil') as mock_psutil:
+        with patch("backend.app.api.routes.system.psutil") as mock_psutil:
             mock_psutil.disk_usage.return_value = MagicMock(
                 total=500000000000, used=250000000000, free=250000000000, percent=50.0
             )
@@ -141,7 +136,7 @@ class TestSystemAPI:
     @pytest.mark.integration
     async def test_system_info_memory_section(self, async_client: AsyncClient):
         """Verify memory section contains RAM usage info."""
-        with patch('backend.app.api.routes.system.psutil') as mock_psutil:
+        with patch("backend.app.api.routes.system.psutil") as mock_psutil:
             mock_psutil.disk_usage.return_value = MagicMock(
                 total=500000000000, used=250000000000, free=250000000000, percent=50.0
             )
@@ -167,7 +162,7 @@ class TestSystemAPI:
     @pytest.mark.integration
     async def test_system_info_cpu_section(self, async_client: AsyncClient):
         """Verify CPU section contains processor info."""
-        with patch('backend.app.api.routes.system.psutil') as mock_psutil:
+        with patch("backend.app.api.routes.system.psutil") as mock_psutil:
             mock_psutil.disk_usage.return_value = MagicMock(
                 total=500000000000, used=250000000000, free=250000000000, percent=50.0
             )
@@ -192,10 +187,12 @@ class TestSystemAPI:
     async def test_system_info_printers_section(self, async_client: AsyncClient, printer_factory):
         """Verify printers section contains connected printer info."""
         # Create a test printer
-        printer = await printer_factory(name="Test Printer", model="X1C")
+        _printer = await printer_factory(name="Test Printer", model="X1C")
 
-        with patch('backend.app.api.routes.system.psutil') as mock_psutil, \
-             patch('backend.app.api.routes.system.printer_manager') as mock_pm:
+        with (
+            patch("backend.app.api.routes.system.psutil") as mock_psutil,
+            patch("backend.app.api.routes.system.printer_manager") as mock_pm,
+        ):
             mock_psutil.disk_usage.return_value = MagicMock(
                 total=500000000000, used=250000000000, free=250000000000, percent=50.0
             )
@@ -227,8 +224,10 @@ class TestSystemAPI:
         await archive_factory(printer.id, status="completed", print_time_seconds=3600)
         await archive_factory(printer.id, status="failed", print_time_seconds=1800)
 
-        with patch('backend.app.api.routes.system.psutil') as mock_psutil, \
-             patch('backend.app.api.routes.system.printer_manager') as mock_pm:
+        with (
+            patch("backend.app.api.routes.system.psutil") as mock_psutil,
+            patch("backend.app.api.routes.system.printer_manager") as mock_pm,
+        ):
             mock_psutil.disk_usage.return_value = MagicMock(
                 total=500000000000, used=250000000000, free=250000000000, percent=50.0
             )

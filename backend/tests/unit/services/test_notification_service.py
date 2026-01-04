@@ -3,10 +3,11 @@
 Tests event-based notifications and toggle behavior.
 """
 
-import pytest
 import json
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from backend.app.services.notification_service import NotificationService
 
@@ -59,20 +60,13 @@ class TestNotificationService:
     # ========================================================================
 
     @pytest.mark.asyncio
-    async def test_on_print_start_sends_notification(
-        self, service, mock_provider, mock_db
-    ):
+    async def test_on_print_start_sends_notification(self, service, mock_provider, mock_db):
         """Verify notification is sent when print starts."""
-        with patch.object(
-            service, '_get_providers_for_event', new_callable=AsyncMock
-        ) as mock_get, \
-             patch.object(
-            service, '_send_to_providers', new_callable=AsyncMock
-        ) as mock_send, \
-             patch.object(
-            service, '_build_message_from_template', new_callable=AsyncMock
-        ) as mock_build:
-
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
+        ):
             mock_get.return_value = [mock_provider]
             mock_build.return_value = ("Print Started", "Test Printer: test.3mf")
 
@@ -87,17 +81,12 @@ class TestNotificationService:
             mock_send.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_on_print_start_skipped_when_no_providers(
-        self, service, mock_db
-    ):
+    async def test_on_print_start_skipped_when_no_providers(self, service, mock_db):
         """Verify no error when no providers are configured for event."""
-        with patch.object(
-            service, '_get_providers_for_event', new_callable=AsyncMock
-        ) as mock_get, \
-             patch.object(
-            service, '_send_to_providers', new_callable=AsyncMock
-        ) as mock_send:
-
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+        ):
             mock_get.return_value = []
 
             await service.on_print_start(
@@ -114,20 +103,13 @@ class TestNotificationService:
     # ========================================================================
 
     @pytest.mark.asyncio
-    async def test_on_print_complete_routes_completed_status(
-        self, service, mock_provider, mock_db
-    ):
+    async def test_on_print_complete_routes_completed_status(self, service, mock_provider, mock_db):
         """Verify completed status uses on_print_complete field."""
-        with patch.object(
-            service, '_get_providers_for_event', new_callable=AsyncMock
-        ) as mock_get, \
-             patch.object(
-            service, '_send_to_providers', new_callable=AsyncMock
-        ), \
-             patch.object(
-            service, '_build_message_from_template', new_callable=AsyncMock
-        ) as mock_build:
-
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
+        ):
             mock_get.return_value = [mock_provider]
             mock_build.return_value = ("Test", "Test")
 
@@ -144,20 +126,13 @@ class TestNotificationService:
             assert call_args[0][1] == "on_print_complete"
 
     @pytest.mark.asyncio
-    async def test_on_print_complete_routes_failed_status(
-        self, service, mock_provider, mock_db
-    ):
+    async def test_on_print_complete_routes_failed_status(self, service, mock_provider, mock_db):
         """Verify failed status uses on_print_failed field."""
-        with patch.object(
-            service, '_get_providers_for_event', new_callable=AsyncMock
-        ) as mock_get, \
-             patch.object(
-            service, '_send_to_providers', new_callable=AsyncMock
-        ), \
-             patch.object(
-            service, '_build_message_from_template', new_callable=AsyncMock
-        ) as mock_build:
-
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
+        ):
             mock_get.return_value = [mock_provider]
             mock_build.return_value = ("Test", "Test")
 
@@ -173,20 +148,13 @@ class TestNotificationService:
             assert call_args[0][1] == "on_print_failed"
 
     @pytest.mark.asyncio
-    async def test_on_print_complete_routes_stopped_status(
-        self, service, mock_provider, mock_db
-    ):
+    async def test_on_print_complete_routes_stopped_status(self, service, mock_provider, mock_db):
         """Verify stopped status uses on_print_stopped field."""
-        with patch.object(
-            service, '_get_providers_for_event', new_callable=AsyncMock
-        ) as mock_get, \
-             patch.object(
-            service, '_send_to_providers', new_callable=AsyncMock
-        ), \
-             patch.object(
-            service, '_build_message_from_template', new_callable=AsyncMock
-        ) as mock_build:
-
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
+        ):
             mock_get.return_value = [mock_provider]
             mock_build.return_value = ("Test", "Test")
 
@@ -202,20 +170,13 @@ class TestNotificationService:
             assert call_args[0][1] == "on_print_stopped"
 
     @pytest.mark.asyncio
-    async def test_on_print_complete_routes_aborted_status(
-        self, service, mock_provider, mock_db
-    ):
+    async def test_on_print_complete_routes_aborted_status(self, service, mock_provider, mock_db):
         """Verify aborted status uses on_print_stopped field."""
-        with patch.object(
-            service, '_get_providers_for_event', new_callable=AsyncMock
-        ) as mock_get, \
-             patch.object(
-            service, '_send_to_providers', new_callable=AsyncMock
-        ), \
-             patch.object(
-            service, '_build_message_from_template', new_callable=AsyncMock
-        ) as mock_build:
-
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
+        ):
             mock_get.return_value = [mock_provider]
             mock_build.return_value = ("Test", "Test")
 
@@ -241,15 +202,11 @@ class TestNotificationService:
 
         # The actual filtering happens in _get_providers_for_event
         # which queries only enabled providers
-        with patch.object(
-            service, '_get_providers_for_event', new_callable=AsyncMock
-        ) as mock_get:
+        with patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get:
             # Simulate the query filtering out disabled providers
             mock_get.return_value = []
 
-            result = await service._get_providers_for_event(
-                mock_db, "on_print_start", printer_id=1
-            )
+            result = await service._get_providers_for_event(mock_db, "on_print_start", printer_id=1)
 
             assert len(result) == 0
 
@@ -258,15 +215,11 @@ class TestNotificationService:
         """Verify providers can be filtered by specific printer."""
         mock_provider.printer_id = 2  # Linked to printer 2
 
-        with patch.object(
-            service, '_get_providers_for_event', new_callable=AsyncMock
-        ) as mock_get:
+        with patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get:
             # When querying for printer 1, provider linked to printer 2 is excluded
             mock_get.return_value = []
 
-            result = await service._get_providers_for_event(
-                mock_db, "on_print_start", printer_id=1
-            )
+            result = await service._get_providers_for_event(mock_db, "on_print_start", printer_id=1)
 
             assert len(result) == 0
 
@@ -280,9 +233,7 @@ class TestNotificationService:
         mock_provider.quiet_hours_start = "22:00"
         mock_provider.quiet_hours_end = "07:00"
 
-        with patch(
-            'backend.app.services.notification_service.datetime'
-        ) as mock_datetime:
+        with patch("backend.app.services.notification_service.datetime") as mock_datetime:
             # Test during quiet hours (23:00)
             mock_now = MagicMock()
             mock_now.hour = 23
@@ -299,9 +250,7 @@ class TestNotificationService:
         mock_provider.quiet_hours_start = "22:00"
         mock_provider.quiet_hours_end = "07:00"
 
-        with patch(
-            'backend.app.services.notification_service.datetime'
-        ) as mock_datetime:
+        with patch("backend.app.services.notification_service.datetime") as mock_datetime:
             # Test outside quiet hours (12:00)
             mock_now = MagicMock()
             mock_now.hour = 12
@@ -326,9 +275,7 @@ class TestNotificationService:
         mock_provider.quiet_hours_start = "22:00"
         mock_provider.quiet_hours_end = "07:00"
 
-        with patch(
-            'backend.app.services.notification_service.datetime'
-        ) as mock_datetime:
+        with patch("backend.app.services.notification_service.datetime") as mock_datetime:
             # Test early morning (03:00) - should be in quiet hours
             mock_now = MagicMock()
             mock_now.hour = 3
@@ -344,22 +291,15 @@ class TestNotificationService:
     # ========================================================================
 
     @pytest.mark.asyncio
-    async def test_on_ams_humidity_high_sends_notification(
-        self, service, mock_provider, mock_db
-    ):
+    async def test_on_ams_humidity_high_sends_notification(self, service, mock_provider, mock_db):
         """Verify AMS humidity alarm sends notification."""
         mock_provider.on_ams_humidity_high = True
 
-        with patch.object(
-            service, '_get_providers_for_event', new_callable=AsyncMock
-        ) as mock_get, \
-             patch.object(
-            service, '_send_to_providers', new_callable=AsyncMock
-        ) as mock_send, \
-             patch.object(
-            service, '_build_message_from_template', new_callable=AsyncMock
-        ) as mock_build:
-
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
+        ):
             mock_get.return_value = [mock_provider]
             mock_build.return_value = ("AMS Humidity Alert", "High humidity detected")
 
@@ -375,25 +315,18 @@ class TestNotificationService:
             mock_send.assert_called_once()
             # Verify force_immediate is True for alarms
             call_kwargs = mock_send.call_args[1]
-            assert call_kwargs.get('force_immediate') is True
+            assert call_kwargs.get("force_immediate") is True
 
     @pytest.mark.asyncio
-    async def test_on_ams_temperature_high_sends_notification(
-        self, service, mock_provider, mock_db
-    ):
+    async def test_on_ams_temperature_high_sends_notification(self, service, mock_provider, mock_db):
         """Verify AMS temperature alarm sends notification."""
         mock_provider.on_ams_temperature_high = True
 
-        with patch.object(
-            service, '_get_providers_for_event', new_callable=AsyncMock
-        ) as mock_get, \
-             patch.object(
-            service, '_send_to_providers', new_callable=AsyncMock
-        ) as mock_send, \
-             patch.object(
-            service, '_build_message_from_template', new_callable=AsyncMock
-        ) as mock_build:
-
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
+        ):
             mock_get.return_value = [mock_provider]
             mock_build.return_value = ("AMS Temperature Alert", "High temp detected")
 
@@ -409,22 +342,17 @@ class TestNotificationService:
             mock_send.assert_called_once()
             # Verify force_immediate is True for alarms
             call_kwargs = mock_send.call_args[1]
-            assert call_kwargs.get('force_immediate') is True
+            assert call_kwargs.get("force_immediate") is True
 
     @pytest.mark.asyncio
-    async def test_ams_alarm_skipped_when_toggle_disabled(
-        self, service, mock_provider, mock_db
-    ):
+    async def test_ams_alarm_skipped_when_toggle_disabled(self, service, mock_provider, mock_db):
         """CRITICAL: Verify AMS alarms respect toggle setting."""
         mock_provider.on_ams_humidity_high = False
 
-        with patch.object(
-            service, '_get_providers_for_event', new_callable=AsyncMock
-        ) as mock_get, \
-             patch.object(
-            service, '_send_to_providers', new_callable=AsyncMock
-        ) as mock_send:
-
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+        ):
             # Provider with toggle disabled won't be returned
             mock_get.return_value = []
 
@@ -444,23 +372,16 @@ class TestNotificationService:
     # ========================================================================
 
     @pytest.mark.asyncio
-    async def test_daily_digest_queues_notification(
-        self, service, mock_provider, mock_db
-    ):
+    async def test_daily_digest_queues_notification(self, service, mock_provider, mock_db):
         """Verify notifications are queued when digest mode is enabled."""
         mock_provider.daily_digest_enabled = True
         mock_provider.daily_digest_time = "09:00"
 
-        with patch.object(
-            service, '_get_providers_for_event', new_callable=AsyncMock
-        ) as mock_get, \
-             patch.object(
-            service, '_send_to_providers', new_callable=AsyncMock
-        ) as mock_send, \
-             patch.object(
-            service, '_build_message_from_template', new_callable=AsyncMock
-        ) as mock_build:
-
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
+        ):
             mock_get.return_value = [mock_provider]
             mock_build.return_value = ("Test", "Test")
 
@@ -477,23 +398,16 @@ class TestNotificationService:
             mock_send.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_force_immediate_bypasses_digest(
-        self, service, mock_provider, mock_db
-    ):
+    async def test_force_immediate_bypasses_digest(self, service, mock_provider, mock_db):
         """Verify force_immediate=True bypasses digest mode."""
         mock_provider.daily_digest_enabled = True
         mock_provider.on_ams_humidity_high = True
 
-        with patch.object(
-            service, '_get_providers_for_event', new_callable=AsyncMock
-        ) as mock_get, \
-             patch.object(
-            service, '_send_to_providers', new_callable=AsyncMock
-        ) as mock_send, \
-             patch.object(
-            service, '_build_message_from_template', new_callable=AsyncMock
-        ) as mock_build:
-
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
+        ):
             mock_get.return_value = [mock_provider]
             mock_build.return_value = ("Alert", "Alert message")
 
@@ -508,7 +422,7 @@ class TestNotificationService:
 
             # Verify force_immediate is passed
             call_kwargs = mock_send.call_args[1]
-            assert call_kwargs.get('force_immediate') is True
+            assert call_kwargs.get("force_immediate") is True
 
 
 class TestDigestModeAlwaysSendsImmediately:
@@ -534,25 +448,27 @@ class TestDigestModeAlwaysSendsImmediately:
         mock_db = AsyncMock()
 
         # Mock the _send_to_provider method
-        with patch.object(service, '_send_to_provider', new_callable=AsyncMock) as mock_send:
+        with (
+            patch.object(service, "_send_to_provider", new_callable=AsyncMock) as mock_send,
+            patch.object(service, "_queue_for_digest", new_callable=AsyncMock) as mock_queue,
+            patch.object(service, "_update_provider_status", new_callable=AsyncMock),
+            patch.object(service, "_log_notification", new_callable=AsyncMock),
+        ):
             mock_send.return_value = (True, None)
 
-            with patch.object(service, '_queue_for_digest', new_callable=AsyncMock) as mock_queue:
-                with patch.object(service, '_update_provider_status', new_callable=AsyncMock):
-                    with patch.object(service, '_log_notification', new_callable=AsyncMock):
-                        await service._send_to_providers(
-                            providers=[mock_provider],
-                            title="Print Started",
-                            message="Your print has started",
-                            db=mock_db,
-                            event_type="print_start",
-                        )
+            await service._send_to_providers(
+                providers=[mock_provider],
+                title="Print Started",
+                message="Your print has started",
+                db=mock_db,
+                event_type="print_start",
+            )
 
-                        # CRITICAL: _send_to_provider MUST be called (immediate send)
-                        mock_send.assert_called_once()
+            # CRITICAL: _send_to_provider MUST be called (immediate send)
+            mock_send.assert_called_once()
 
-                        # Digest queue should also be called (for daily summary)
-                        mock_queue.assert_called_once()
+            # Digest queue should also be called (for daily summary)
+            mock_queue.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_notification_sends_without_digest_queue_when_disabled(self, service):
@@ -568,25 +484,27 @@ class TestDigestModeAlwaysSendsImmediately:
 
         mock_db = AsyncMock()
 
-        with patch.object(service, '_send_to_provider', new_callable=AsyncMock) as mock_send:
+        with (
+            patch.object(service, "_send_to_provider", new_callable=AsyncMock) as mock_send,
+            patch.object(service, "_queue_for_digest", new_callable=AsyncMock) as mock_queue,
+            patch.object(service, "_update_provider_status", new_callable=AsyncMock),
+            patch.object(service, "_log_notification", new_callable=AsyncMock),
+        ):
             mock_send.return_value = (True, None)
 
-            with patch.object(service, '_queue_for_digest', new_callable=AsyncMock) as mock_queue:
-                with patch.object(service, '_update_provider_status', new_callable=AsyncMock):
-                    with patch.object(service, '_log_notification', new_callable=AsyncMock):
-                        await service._send_to_providers(
-                            providers=[mock_provider],
-                            title="Print Started",
-                            message="Your print has started",
-                            db=mock_db,
-                            event_type="print_start",
-                        )
+            await service._send_to_providers(
+                providers=[mock_provider],
+                title="Print Started",
+                message="Your print has started",
+                db=mock_db,
+                event_type="print_start",
+            )
 
-                        # Notification must still be sent immediately
-                        mock_send.assert_called_once()
+            # Notification must still be sent immediately
+            mock_send.assert_called_once()
 
-                        # Digest queue should NOT be called when digest is disabled
-                        mock_queue.assert_not_called()
+            # Digest queue should NOT be called when digest is disabled
+            mock_queue.assert_not_called()
 
 
 class TestNotificationProviderTypes:
@@ -613,12 +531,10 @@ class TestNotificationProviderTypes:
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(return_value=mock_response)
 
-        with patch.object(service, '_get_client', new_callable=AsyncMock) as mock_get_client:
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client:
             mock_get_client.return_value = mock_client
 
-            success, message = await service._send_webhook(
-                config, "Test Title", "Test Message"
-            )
+            success, message = await service._send_webhook(config, "Test Title", "Test Message")
 
             assert success is True
             mock_client.post.assert_called_once()
@@ -630,17 +546,13 @@ class TestNotificationProviderTypes:
             "webhook_url": "http://test.local/webhook",
         }
 
-        with patch('httpx.AsyncClient') as mock_client_class:
+        with patch("httpx.AsyncClient") as mock_client_class:
             mock_instance = AsyncMock()
             mock_instance.post.side_effect = Exception("Connection failed")
-            mock_client_class.return_value.__aenter__ = AsyncMock(
-                return_value=mock_instance
-            )
+            mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_instance)
             mock_client_class.return_value.__aexit__ = AsyncMock()
 
-            success, message = await service._send_webhook(
-                config, "Test", "Test"
-            )
+            success, message = await service._send_webhook(config, "Test", "Test")
 
             assert success is False
             assert "Connection failed" in message or "error" in message.lower()
@@ -686,16 +598,11 @@ class TestNotificationVariableFallbacks:
         """CRITICAL: Verify fallback values when archive_data is missing."""
         mock_db = AsyncMock()
 
-        with patch.object(
-            service, '_get_providers_for_event', new_callable=AsyncMock
-        ) as mock_get, \
-             patch.object(
-            service, '_send_to_providers', new_callable=AsyncMock
-        ) as mock_send, \
-             patch.object(
-            service, '_build_message_from_template', new_callable=AsyncMock
-        ) as mock_build:
-
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
+        ):
             mock_get.return_value = []  # No providers, just testing variable setup
             mock_build.return_value = ("Test", "Test")
 
@@ -721,16 +628,11 @@ class TestNotificationVariableFallbacks:
             captured_variables.update(variables)
             return ("Test", "Test")
 
-        with patch.object(
-            service, '_get_providers_for_event', new_callable=AsyncMock
-        ) as mock_get, \
-             patch.object(
-            service, '_send_to_providers', new_callable=AsyncMock
-        ), \
-             patch.object(
-            service, '_build_message_from_template', side_effect=capture_build
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
         ):
-
             mock_get.return_value = []
 
             await service.on_print_complete(
@@ -762,16 +664,11 @@ class TestNotificationVariableFallbacks:
             captured_variables.update(variables)
             return ("Test", "Test")
 
-        with patch.object(
-            service, '_get_providers_for_event', new_callable=AsyncMock
-        ) as mock_get, \
-             patch.object(
-            service, '_send_to_providers', new_callable=AsyncMock
-        ), \
-             patch.object(
-            service, '_build_message_from_template', side_effect=capture_build
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
         ):
-
             # Need at least one provider to trigger message building
             mock_get.return_value = [mock_provider]
 
@@ -801,16 +698,11 @@ class TestNotificationVariableFallbacks:
             captured_variables.update(variables)
             return ("Test", "Test")
 
-        with patch.object(
-            service, '_get_providers_for_event', new_callable=AsyncMock
-        ) as mock_get, \
-             patch.object(
-            service, '_send_to_providers', new_callable=AsyncMock
-        ), \
-             patch.object(
-            service, '_build_message_from_template', side_effect=capture_build
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
         ):
-
             # Need at least one provider to trigger message building
             mock_get.return_value = [mock_provider]
 
@@ -839,16 +731,11 @@ class TestNotificationVariableFallbacks:
             captured_variables.update(variables)
             return ("Test", "Test")
 
-        with patch.object(
-            service, '_get_providers_for_event', new_callable=AsyncMock
-        ) as mock_get, \
-             patch.object(
-            service, '_send_to_providers', new_callable=AsyncMock
-        ), \
-             patch.object(
-            service, '_build_message_from_template', side_effect=capture_build
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
         ):
-
             # Need at least one provider to trigger message building
             mock_get.return_value = [mock_provider]
 
@@ -876,16 +763,11 @@ class TestNotificationVariableFallbacks:
             captured_variables.update(variables)
             return ("Test", "Test")
 
-        with patch.object(
-            service, '_get_providers_for_event', new_callable=AsyncMock
-        ) as mock_get, \
-             patch.object(
-            service, '_send_to_providers', new_callable=AsyncMock
-        ), \
-             patch.object(
-            service, '_build_message_from_template', side_effect=capture_build
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
         ):
-
             mock_get.return_value = [mock_provider]
 
             # Pass archive_data with print_time_seconds (7200 seconds = 2 hours)
@@ -913,16 +795,11 @@ class TestNotificationVariableFallbacks:
             captured_variables.update(variables)
             return ("Test", "Test")
 
-        with patch.object(
-            service, '_get_providers_for_event', new_callable=AsyncMock
-        ) as mock_get, \
-             patch.object(
-            service, '_send_to_providers', new_callable=AsyncMock
-        ), \
-             patch.object(
-            service, '_build_message_from_template', side_effect=capture_build
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
         ):
-
             mock_get.return_value = [mock_provider]
 
             # Both archive_data and MQTT remaining_time provided
@@ -954,16 +831,11 @@ class TestNotificationVariableFallbacks:
             captured_variables.update(variables)
             return ("Test", "Test")
 
-        with patch.object(
-            service, '_get_providers_for_event', new_callable=AsyncMock
-        ) as mock_get, \
-             patch.object(
-            service, '_send_to_providers', new_callable=AsyncMock
-        ), \
-             patch.object(
-            service, '_build_message_from_template', side_effect=capture_build
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
         ):
-
             mock_get.return_value = [mock_provider]
 
             # Only MQTT remaining_time provided (1800 seconds = 30 minutes)
@@ -1018,9 +890,7 @@ class TestNotificationTemplates:
 
         # Should handle gracefully - either leave placeholder or skip
         try:
-            result = template.format_map(
-                {**variables, "unknown_var": "{unknown_var}"}
-            )
+            result = template.format_map({**variables, "unknown_var": "{unknown_var}"})
             assert "Test" in result
         except KeyError:
             pytest.fail("Template should handle missing variables gracefully")

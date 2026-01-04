@@ -1,10 +1,11 @@
 """API routes for AMS sensor history."""
 
 from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func, and_
-from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
+from sqlalchemy import and_, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import get_db
 from backend.app.models.ams_history import AMSSensorHistory
@@ -64,8 +65,7 @@ async def get_ams_history(
             func.min(AMSSensorHistory.temperature).label("min_temp"),
             func.max(AMSSensorHistory.temperature).label("max_temp"),
             func.avg(AMSSensorHistory.temperature).label("avg_temp"),
-        )
-        .where(
+        ).where(
             and_(
                 AMSSensorHistory.printer_id == printer_id,
                 AMSSensorHistory.ams_id == ams_id,
@@ -106,8 +106,7 @@ async def delete_old_history(
     cutoff = datetime.now() - timedelta(days=days)
 
     result = await db.execute(
-        select(func.count(AMSSensorHistory.id))
-        .where(
+        select(func.count(AMSSensorHistory.id)).where(
             and_(
                 AMSSensorHistory.printer_id == printer_id,
                 AMSSensorHistory.recorded_at < cutoff,

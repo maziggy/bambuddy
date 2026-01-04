@@ -7,9 +7,9 @@ that could cause runtime errors but aren't caught by normal tests.
 
 import ast
 import os
-import pytest
 from pathlib import Path
 
+import pytest
 
 # Get the backend source directory
 BACKEND_DIR = Path(__file__).parent.parent.parent / "app"
@@ -18,8 +18,22 @@ BACKEND_DIR = Path(__file__).parent.parent.parent / "app"
 # Safe imports that are commonly re-imported in functions without issues
 # These are typically imported at the START of a function, not midway through
 SAFE_REIMPORT_NAMES = {
-    'logging', 're', 'os', 'sys', 'json', 'Path', 'datetime', 'timedelta',
-    'asyncio', 'time', 'typing', 'Optional', 'List', 'Dict', 'Any', 'Union',
+    "logging",
+    "re",
+    "os",
+    "sys",
+    "json",
+    "Path",
+    "datetime",
+    "timedelta",
+    "asyncio",
+    "time",
+    "typing",
+    "Optional",
+    "List",
+    "Dict",
+    "Any",
+    "Union",
 }
 
 
@@ -68,16 +82,10 @@ class DangerousImportVisitor(ast.NodeVisitor):
         for child in ast.walk(node):
             # Find local imports
             if isinstance(child, (ast.Import, ast.ImportFrom)):
-                if isinstance(child, ast.Import):
-                    for alias in child.names:
-                        name = alias.asname or alias.name
-                        if name in self.module_imports and name not in SAFE_REIMPORT_NAMES:
-                            local_imports[name] = child.lineno
-                elif isinstance(child, ast.ImportFrom):
-                    for alias in child.names:
-                        name = alias.asname or alias.name
-                        if name in self.module_imports and name not in SAFE_REIMPORT_NAMES:
-                            local_imports[name] = child.lineno
+                for alias in child.names:
+                    name = alias.asname or alias.name
+                    if name in self.module_imports and name not in SAFE_REIMPORT_NAMES:
+                        local_imports[name] = child.lineno
 
             # Find name uses
             if isinstance(child, ast.Name):
@@ -130,7 +138,7 @@ def find_import_shadowing(file_path: Path) -> list[tuple[str, int, str]]:
     Returns list of (name, line_number, function_name) tuples.
     """
     try:
-        with open(file_path, 'r') as f:
+        with open(file_path) as f:
             source = f.read()
         tree = ast.parse(source)
         visitor = DangerousImportVisitor()

@@ -6,7 +6,8 @@ are properly persisted to the database and survive page reloads.
 """
 
 import time
-from playwright.sync_api import sync_playwright, expect
+
+from playwright.sync_api import expect, sync_playwright
 
 BASE_URL = "http://localhost:8000"
 
@@ -20,7 +21,7 @@ def test_smart_plug_auto_off_toggle_persistence(page):
 
     # Navigate to Settings page
     page.goto(f"{BASE_URL}/settings")
-    page.wait_for_load_state('networkidle')
+    page.wait_for_load_state("networkidle")
     time.sleep(1)
 
     # Look for Smart Plugs section
@@ -46,7 +47,7 @@ def test_smart_plug_auto_off_toggle_persistence(page):
 
     # Find the toggle switch near the Auto Off label
     # The toggle is a sibling element
-    auto_off_section = auto_off_label.locator('..').first
+    auto_off_section = auto_off_label.locator("..").first
     toggle = auto_off_section.locator('button[role="switch"]').first
 
     if not toggle.is_visible():
@@ -58,7 +59,7 @@ def test_smart_plug_auto_off_toggle_persistence(page):
         return True
 
     # Get initial state
-    initial_state = toggle.get_attribute('aria-checked')
+    initial_state = toggle.get_attribute("aria-checked")
     print(f"✓ Initial auto_off state: {initial_state}")
 
     # Click to toggle
@@ -66,13 +67,13 @@ def test_smart_plug_auto_off_toggle_persistence(page):
     time.sleep(1)  # Wait for API call
 
     # Verify toggle changed
-    new_state = toggle.get_attribute('aria-checked')
+    new_state = toggle.get_attribute("aria-checked")
     assert new_state != initial_state, "Toggle should have changed state"
     print(f"✓ Toggled auto_off to: {new_state}")
 
     # Reload the page
     page.reload()
-    page.wait_for_load_state('networkidle')
+    page.wait_for_load_state("networkidle")
     time.sleep(1)
 
     # Expand automation settings again
@@ -81,13 +82,15 @@ def test_smart_plug_auto_off_toggle_persistence(page):
     time.sleep(0.5)
 
     # Find toggle again and verify state persisted
-    auto_off_section = page.locator('text="Auto Off"').first.locator('..').first
+    auto_off_section = page.locator('text="Auto Off"').first.locator("..").first
     toggle = auto_off_section.locator('button[role="switch"]').first
     if not toggle.is_visible():
         toggle = page.locator('button[role="switch"]').nth(1)
 
-    persisted_state = toggle.get_attribute('aria-checked')
-    assert persisted_state == new_state, f"State should persist after reload. Expected {new_state}, got {persisted_state}"
+    persisted_state = toggle.get_attribute("aria-checked")
+    assert (
+        persisted_state == new_state
+    ), f"State should persist after reload. Expected {new_state}, got {persisted_state}"
     print(f"✓ Toggle state persisted after reload: {persisted_state}")
 
     # Restore original state
@@ -108,7 +111,7 @@ def test_notification_event_toggle_persistence(page):
 
     # Navigate to Settings page
     page.goto(f"{BASE_URL}/settings")
-    page.wait_for_load_state('networkidle')
+    page.wait_for_load_state("networkidle")
     time.sleep(1)
 
     # Look for Notifications section
@@ -133,7 +136,7 @@ def test_notification_event_toggle_persistence(page):
         return True
 
     # Find the toggle switch
-    stopped_section = stopped_label.locator('..').first
+    stopped_section = stopped_label.locator("..").first
     toggle = stopped_section.locator('button[role="switch"]').first
 
     if not toggle.is_visible():
@@ -141,7 +144,7 @@ def test_notification_event_toggle_persistence(page):
         return True
 
     # Get initial state
-    initial_state = toggle.get_attribute('aria-checked')
+    initial_state = toggle.get_attribute("aria-checked")
     print(f"✓ Initial on_print_stopped state: {initial_state}")
 
     # Click to toggle
@@ -149,13 +152,13 @@ def test_notification_event_toggle_persistence(page):
     time.sleep(1)  # Wait for API call
 
     # Verify toggle changed
-    new_state = toggle.get_attribute('aria-checked')
+    new_state = toggle.get_attribute("aria-checked")
     assert new_state != initial_state, "Toggle should have changed state"
     print(f"✓ Toggled on_print_stopped to: {new_state}")
 
     # Reload the page
     page.reload()
-    page.wait_for_load_state('networkidle')
+    page.wait_for_load_state("networkidle")
     time.sleep(1)
 
     # Expand event settings again
@@ -164,12 +167,14 @@ def test_notification_event_toggle_persistence(page):
     time.sleep(0.5)
 
     # Find toggle again and verify state persisted
-    stopped_section = page.locator('text="Print Stopped"').first.locator('..').first
+    stopped_section = page.locator('text="Print Stopped"').first.locator("..").first
     toggle = stopped_section.locator('button[role="switch"]').first
 
     if toggle.is_visible():
-        persisted_state = toggle.get_attribute('aria-checked')
-        assert persisted_state == new_state, f"State should persist after reload. Expected {new_state}, got {persisted_state}"
+        persisted_state = toggle.get_attribute("aria-checked")
+        assert (
+            persisted_state == new_state
+        ), f"State should persist after reload. Expected {new_state}, got {persisted_state}"
         print(f"✓ Toggle state persisted after reload: {persisted_state}")
 
         # Restore original state
@@ -187,7 +192,7 @@ def test_ams_alarm_toggle_persistence(page):
 
     # Navigate to Settings page
     page.goto(f"{BASE_URL}/settings")
-    page.wait_for_load_state('networkidle')
+    page.wait_for_load_state("networkidle")
     time.sleep(1)
 
     # Look for Event Settings in notification provider
@@ -208,33 +213,33 @@ def test_ams_alarm_toggle_persistence(page):
     print("✓ AMS Alarm toggles section found")
 
     # Find and test the toggle
-    ams_section = ams_humidity_label.locator('..').first
+    ams_section = ams_humidity_label.locator("..").first
     toggle = ams_section.locator('button[role="switch"]').first
 
     if toggle.is_visible():
-        initial_state = toggle.get_attribute('aria-checked')
+        initial_state = toggle.get_attribute("aria-checked")
         print(f"✓ Initial AMS humidity alarm state: {initial_state}")
 
         toggle.click()
         time.sleep(1)
 
-        new_state = toggle.get_attribute('aria-checked')
+        new_state = toggle.get_attribute("aria-checked")
         print(f"✓ Toggled AMS humidity alarm to: {new_state}")
 
         # Reload and verify
         page.reload()
-        page.wait_for_load_state('networkidle')
+        page.wait_for_load_state("networkidle")
         time.sleep(1)
 
         event_settings = page.locator('text="Event Settings"').first
         event_settings.click()
         time.sleep(0.5)
 
-        ams_section = page.locator('text="AMS Humidity High"').first.locator('..').first
+        ams_section = page.locator('text="AMS Humidity High"').first.locator("..").first
         toggle = ams_section.locator('button[role="switch"]').first
 
         if toggle.is_visible():
-            persisted_state = toggle.get_attribute('aria-checked')
+            persisted_state = toggle.get_attribute("aria-checked")
             print(f"✓ AMS alarm state after reload: {persisted_state}")
 
             # Restore
@@ -250,7 +255,7 @@ def test_smart_plug_power_off_confirmation(page):
     print("\n=== Testing Smart Plug Power Off Confirmation ===")
 
     page.goto(f"{BASE_URL}/settings")
-    page.wait_for_load_state('networkidle')
+    page.wait_for_load_state("networkidle")
     time.sleep(1)
 
     # Find an Off button
@@ -263,7 +268,7 @@ def test_smart_plug_power_off_confirmation(page):
     time.sleep(0.5)
 
     # Look for confirmation dialog
-    confirm_dialog = page.locator('text=/Turn Off|Confirm|cut power/i').first
+    confirm_dialog = page.locator("text=/Turn Off|Confirm|cut power/i").first
     if confirm_dialog.is_visible():
         print("✓ Confirmation dialog appeared")
 
@@ -286,7 +291,7 @@ def run_all_toggle_tests():
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context(viewport={'width': 1280, 'height': 720})
+        context = browser.new_context(viewport={"width": 1280, "height": 720})
         page = context.new_page()
 
         tests = [
@@ -324,5 +329,6 @@ def run_all_toggle_tests():
 
 if __name__ == "__main__":
     import sys
+
     success = run_all_toggle_tests()
     sys.exit(0 if success else 1)

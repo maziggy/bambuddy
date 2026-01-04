@@ -4,8 +4,9 @@ Tests for the BambuMQTTClient service.
 These tests focus on timelapse tracking during prints.
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 class TestTimelapseTracking:
@@ -140,12 +141,14 @@ class TestPrintCompletionWithTimelapse:
             mqtt_client._completion_triggered = True
             mqtt_client._was_running = False
             mqtt_client._timelapse_during_print = False
-            mqtt_client.on_print_complete({
-                "status": status,
-                "filename": mqtt_client._previous_gcode_file,
-                "subtask_name": mqtt_client.state.subtask_name,
-                "timelapse_was_active": timelapse_was_active,
-            })
+            mqtt_client.on_print_complete(
+                {
+                    "status": status,
+                    "filename": mqtt_client._previous_gcode_file,
+                    "subtask_name": mqtt_client.state.subtask_name,
+                    "timelapse_was_active": timelapse_was_active,
+                }
+            )
 
         assert "timelapse_was_active" in callback_data
         assert callback_data["timelapse_was_active"] is True
@@ -170,12 +173,14 @@ class TestPrintCompletionWithTimelapse:
 
         # Trigger completion
         timelapse_was_active = mqtt_client._timelapse_during_print
-        mqtt_client.on_print_complete({
-            "status": "completed",
-            "filename": mqtt_client._previous_gcode_file,
-            "subtask_name": mqtt_client.state.subtask_name,
-            "timelapse_was_active": timelapse_was_active,
-        })
+        mqtt_client.on_print_complete(
+            {
+                "status": "completed",
+                "filename": mqtt_client._previous_gcode_file,
+                "subtask_name": mqtt_client.state.subtask_name,
+                "timelapse_was_active": timelapse_was_active,
+            }
+        )
 
         assert callback_data["timelapse_was_active"] is False
 
@@ -254,9 +259,9 @@ class TestRealisticMessageFlow:
         # Verify timelapse was detected even though xcam is parsed before state
         assert mqtt_client._was_running is True, "_was_running should be True after RUNNING state"
         assert mqtt_client.state.timelapse is True, "state.timelapse should be True"
-        assert mqtt_client._timelapse_during_print is True, (
-            "timelapse_during_print should be True when timelapse is in the same message as RUNNING state"
-        )
+        assert (
+            mqtt_client._timelapse_during_print is True
+        ), "timelapse_during_print should be True when timelapse is in the same message as RUNNING state"
 
     def test_timelapse_not_detected_when_disabled(self, mqtt_client):
         """Test that timelapse is NOT detected when disabled in xcam data."""
@@ -334,40 +339,46 @@ class TestRealisticMessageFlow:
         mqtt_client.on_print_complete = on_complete
 
         # 1. Print starts with timelapse
-        mqtt_client._process_message({
-            "print": {
-                "gcode_state": "RUNNING",
-                "gcode_file": "/data/Metadata/test.gcode",
-                "subtask_name": "Test",
-                "xcam": {"timelapse": "enable"},
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "RUNNING",
+                    "gcode_file": "/data/Metadata/test.gcode",
+                    "subtask_name": "Test",
+                    "xcam": {"timelapse": "enable"},
+                }
             }
-        })
+        )
 
         assert mqtt_client._timelapse_during_print is True
         assert "subtask_name" in start_data
 
         # 2. Print continues (multiple messages)
         for _ in range(3):
-            mqtt_client._process_message({
-                "print": {
-                    "gcode_state": "RUNNING",
-                    "gcode_file": "/data/Metadata/test.gcode",
-                    "subtask_name": "Test",
-                    "mc_percent": 50,
+            mqtt_client._process_message(
+                {
+                    "print": {
+                        "gcode_state": "RUNNING",
+                        "gcode_file": "/data/Metadata/test.gcode",
+                        "subtask_name": "Test",
+                        "mc_percent": 50,
+                    }
                 }
-            })
+            )
 
         # Timelapse flag should still be True
         assert mqtt_client._timelapse_during_print is True
 
         # 3. Print completes
-        mqtt_client._process_message({
-            "print": {
-                "gcode_state": "FINISH",
-                "gcode_file": "/data/Metadata/test.gcode",
-                "subtask_name": "Test",
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "FINISH",
+                    "gcode_file": "/data/Metadata/test.gcode",
+                    "subtask_name": "Test",
+                }
             }
-        })
+        )
 
         # Verify completion callback received timelapse flag
         assert "timelapse_was_active" in complete_data
@@ -389,23 +400,27 @@ class TestRealisticMessageFlow:
         mqtt_client.on_print_complete = on_complete
 
         # Start with timelapse
-        mqtt_client._process_message({
-            "print": {
-                "gcode_state": "RUNNING",
-                "gcode_file": "/data/Metadata/test.gcode",
-                "subtask_name": "Test",
-                "xcam": {"timelapse": "enable"},
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "RUNNING",
+                    "gcode_file": "/data/Metadata/test.gcode",
+                    "subtask_name": "Test",
+                    "xcam": {"timelapse": "enable"},
+                }
             }
-        })
+        )
 
         # Print fails
-        mqtt_client._process_message({
-            "print": {
-                "gcode_state": "FAILED",
-                "gcode_file": "/data/Metadata/test.gcode",
-                "subtask_name": "Test",
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "FAILED",
+                    "gcode_file": "/data/Metadata/test.gcode",
+                    "subtask_name": "Test",
+                }
             }
-        })
+        )
 
         assert complete_data["timelapse_was_active"] is True
         assert complete_data["status"] == "failed"

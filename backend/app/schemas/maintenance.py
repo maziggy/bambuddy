@@ -1,6 +1,7 @@
 """Maintenance tracking schemas."""
 
 from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -91,6 +92,7 @@ class MaintenanceHistoryResponse(MaintenanceHistoryBase):
 # Combined status response for frontend
 class MaintenanceStatus(BaseModel):
     """Maintenance status for a printer with calculated values."""
+
     id: int
     printer_id: int
     printer_name: str
@@ -116,6 +118,7 @@ class MaintenanceStatus(BaseModel):
 
 class PrinterMaintenanceOverview(BaseModel):
     """Overview of all maintenance items for a printer."""
+
     printer_id: int
     printer_name: str
     total_print_hours: float
@@ -126,4 +129,5 @@ class PrinterMaintenanceOverview(BaseModel):
 
 class PerformMaintenanceRequest(BaseModel):
     """Request to mark maintenance as performed."""
+
     notes: str | None = None

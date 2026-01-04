@@ -10,6 +10,7 @@ class TestFilamentsAPI:
     @pytest.fixture
     async def filament_factory(self, db_session):
         """Factory to create test filaments."""
+
         async def _create_filament(**kwargs):
             from backend.app.models.filament import Filament
 
@@ -41,9 +42,7 @@ class TestFilamentsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_list_filaments_with_data(
-        self, async_client: AsyncClient, filament_factory, db_session
-    ):
+    async def test_list_filaments_with_data(self, async_client: AsyncClient, filament_factory, db_session):
         """Verify list returns existing filaments."""
         await filament_factory(name="Test Filament")
         response = await async_client.get("/api/v1/filaments/")
@@ -71,9 +70,7 @@ class TestFilamentsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_get_filament(
-        self, async_client: AsyncClient, filament_factory, db_session
-    ):
+    async def test_get_filament(self, async_client: AsyncClient, filament_factory, db_session):
         """Verify single filament can be retrieved."""
         filament = await filament_factory(name="Get Test")
         response = await async_client.get(f"/api/v1/filaments/{filament.id}")
@@ -89,14 +86,11 @@ class TestFilamentsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_filament(
-        self, async_client: AsyncClient, filament_factory, db_session
-    ):
+    async def test_update_filament(self, async_client: AsyncClient, filament_factory, db_session):
         """Verify filament can be updated."""
         filament = await filament_factory(name="Original")
         response = await async_client.patch(
-            f"/api/v1/filaments/{filament.id}",
-            json={"name": "Updated", "cost_per_kg": 35.0}
+            f"/api/v1/filaments/{filament.id}", json={"name": "Updated", "cost_per_kg": 35.0}
         )
         assert response.status_code == 200
         result = response.json()
@@ -105,9 +99,7 @@ class TestFilamentsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_delete_filament(
-        self, async_client: AsyncClient, filament_factory, db_session
-    ):
+    async def test_delete_filament(self, async_client: AsyncClient, filament_factory, db_session):
         """Verify filament can be deleted."""
         filament = await filament_factory()
         response = await async_client.delete(f"/api/v1/filaments/{filament.id}")

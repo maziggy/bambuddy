@@ -17,6 +17,7 @@ interface ModelViewerModalProps {
 interface Capabilities {
   has_model: boolean;
   has_gcode: boolean;
+  has_source: boolean;
   build_volume: { x: number; y: number; z: number };
   filament_colors: string[];
 }
@@ -49,7 +50,7 @@ export function ModelViewerModal({ archiveId, title, onClose }: ModelViewerModal
       })
       .catch(() => {
         // Fallback to 3D model tab if capabilities check fails
-        setCapabilities({ has_model: true, has_gcode: false, build_volume: { x: 256, y: 256, z: 256 }, filament_colors: [] });
+        setCapabilities({ has_model: true, has_gcode: false, has_source: false, build_volume: { x: 256, y: 256, z: 256 }, filament_colors: [] });
         setActiveTab('3d');
         setLoading(false);
       });
@@ -129,14 +130,16 @@ export function ModelViewerModal({ archiveId, title, onClose }: ModelViewerModal
             </div>
           ) : activeTab === '3d' && capabilities ? (
             <ModelViewer
-              url={api.getArchiveDownload(archiveId)}
+              url={capabilities.has_source
+                ? api.getSource3mfDownloadUrl(archiveId)
+                : api.getArchiveDownload(archiveId)}
               buildVolume={capabilities.build_volume}
+              filamentColors={capabilities.filament_colors}
               className="w-full h-full"
             />
           ) : activeTab === 'gcode' && capabilities ? (
             <GcodeViewer
               gcodeUrl={api.getArchiveGcode(archiveId)}
-              buildVolume={capabilities.build_volume}
               filamentColors={capabilities.filament_colors}
               className="w-full h-full"
             />

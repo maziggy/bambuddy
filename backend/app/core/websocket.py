@@ -1,6 +1,7 @@
 import asyncio
 import json
 from typing import Any
+
 from fastapi import WebSocket
 
 
@@ -44,41 +45,51 @@ class ConnectionManager:
 
     async def send_printer_status(self, printer_id: int, status: dict):
         """Send printer status update to all clients."""
-        await self.broadcast({
-            "type": "printer_status",
-            "printer_id": printer_id,
-            "data": status,
-        })
+        await self.broadcast(
+            {
+                "type": "printer_status",
+                "printer_id": printer_id,
+                "data": status,
+            }
+        )
 
     async def send_print_start(self, printer_id: int, data: dict):
         """Notify clients that a print has started."""
-        await self.broadcast({
-            "type": "print_start",
-            "printer_id": printer_id,
-            "data": data,
-        })
+        await self.broadcast(
+            {
+                "type": "print_start",
+                "printer_id": printer_id,
+                "data": data,
+            }
+        )
 
     async def send_print_complete(self, printer_id: int, data: dict):
         """Notify clients that a print has completed."""
-        await self.broadcast({
-            "type": "print_complete",
-            "printer_id": printer_id,
-            "data": data,
-        })
+        await self.broadcast(
+            {
+                "type": "print_complete",
+                "printer_id": printer_id,
+                "data": data,
+            }
+        )
 
     async def send_archive_created(self, archive: dict):
         """Notify clients that a new archive was created."""
-        await self.broadcast({
-            "type": "archive_created",
-            "data": archive,
-        })
+        await self.broadcast(
+            {
+                "type": "archive_created",
+                "data": archive,
+            }
+        )
 
     async def send_archive_updated(self, archive: dict):
         """Notify clients that an archive was updated."""
-        await self.broadcast({
-            "type": "archive_updated",
-            "data": archive,
-        })
+        await self.broadcast(
+            {
+                "type": "archive_updated",
+                "data": archive,
+            }
+        )
 
 
 # Global connection manager

@@ -1,11 +1,12 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from pydantic import BaseModel
 
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.app.core.auth import check_permission, check_printer_access, get_api_key
 from backend.app.core.database import get_db
-from backend.app.core.auth import get_api_key, check_permission, check_printer_access
 from backend.app.models.api_key import APIKey
 from backend.app.models.archive import PrintArchive
 from backend.app.models.print_queue import PrintQueueItem
@@ -56,6 +57,7 @@ class QueueStatusResponse(BaseModel):
 
 # Webhook endpoints
 
+
 @router.post("/queue/add", response_model=QueueAddResponse)
 async def webhook_add_to_queue(
     data: QueueAddRequest,
@@ -66,21 +68,17 @@ async def webhook_add_to_queue(
 
     Requires 'can_queue' permission.
     """
-    check_permission(api_key, 'queue')
+    check_permission(api_key, "queue")
     check_printer_access(api_key, data.printer_id)
 
     # Verify archive exists
-    result = await db.execute(
-        select(PrintArchive).where(PrintArchive.id == data.archive_id)
-    )
+    result = await db.execute(select(PrintArchive).where(PrintArchive.id == data.archive_id))
     archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(status_code=404, detail="Archive not found")
 
     # Verify printer exists
-    result = await db.execute(
-        select(Printer).where(Printer.id == data.printer_id)
-    )
+    result = await db.execute(select(Printer).where(Printer.id == data.printer_id))
     printer = result.scalar_one_or_none()
     if not printer:
         raise HTTPException(status_code=404, detail="Printer not found")
@@ -102,8 +100,9 @@ async def webhook_add_to_queue(
     scheduled_time = None
     if data.scheduled_time:
         from datetime import datetime
+
         try:
-            scheduled_time = datetime.fromisoformat(data.scheduled_time.replace('Z', '+00:00'))
+            scheduled_time = datetime.fromisoformat(data.scheduled_time.replace("Z", "+00:00"))
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid scheduled_time format")
 
@@ -141,7 +140,7 @@ async def webhook_start_print(
 
     Requires 'can_control_printer' permission.
     """
-    check_permission(api_key, 'control_printer')
+    check_permission(api_key, "control_printer")
     check_printer_access(api_key, printer_id)
 
     # Get printer
@@ -170,10 +169,7 @@ async def webhook_start_print(
         raise HTTPException(status_code=503, detail="Printer not connected")
 
     if status.get("state") not in ["IDLE", "FINISH", "FAILED"]:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Printer is busy (state: {status.get('state')})"
-        )
+        raise HTTPException(status_code=409, detail=f"Printer is busy (state: {status.get('state')})")
 
     # Start the print
     try:
@@ -194,7 +190,7 @@ async def webhook_stop_print(
 
     Requires 'can_control_printer' permission.
     """
-    check_permission(api_key, 'control_printer')
+    check_permission(api_key, "control_printer")
     check_printer_access(api_key, printer_id)
 
     status = printer_manager.get_status(printer_id)
@@ -222,7 +218,7 @@ async def webhook_cancel_print(
 
     Requires 'can_control_printer' permission.
     """
-    check_permission(api_key, 'control_printer')
+    check_permission(api_key, "control_printer")
     check_printer_access(api_key, printer_id)
 
     status = printer_manager.get_status(printer_id)
@@ -251,7 +247,7 @@ async def webhook_get_printer_status(
 
     Requires 'can_read_status' permission.
     """
-    check_permission(api_key, 'read_status')
+    check_permission(api_key, "read_status")
     check_printer_access(api_key, printer_id)
 
     # Get printer
@@ -283,7 +279,7 @@ async def webhook_get_queue_status(
 
     Requires 'can_read_status' permission.
     """
-    check_permission(api_key, 'read_status')
+    check_permission(api_key, "read_status")
 
     # Get printers
     if printer_id:
@@ -313,20 +309,22 @@ async def webhook_get_queue_status(
         pending_count = sum(1 for i in items if i.status == "pending")
         printing_count = sum(1 for i in items if i.status == "printing")
 
-        response.append(QueueStatusResponse(
-            printer_id=printer.id,
-            printer_name=printer.name,
-            pending=pending_count,
-            printing=printing_count,
-            items=[
-                {
-                    "id": item.id,
-                    "archive_id": item.archive_id,
-                    "position": item.position,
-                    "status": item.status,
-                }
-                for item in items
-            ],
-        ))
+        response.append(
+            QueueStatusResponse(
+                printer_id=printer.id,
+                printer_name=printer.name,
+                pending=pending_count,
+                printing=printing_count,
+                items=[
+                    {
+                        "id": item.id,
+                        "archive_id": item.archive_id,
+                        "position": item.position,
+                        "status": item.status,
+                    }
+                    for item in items
+                ],
+            )
+        )
 
     return response

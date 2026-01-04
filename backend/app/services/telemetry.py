@@ -25,9 +25,7 @@ _last_heartbeat: datetime | None = None
 
 async def get_or_create_installation_id(db: AsyncSession) -> str:
     """Get existing installation ID or create a new one."""
-    result = await db.execute(
-        select(Settings).where(Settings.key == "installation_id")
-    )
+    result = await db.execute(select(Settings).where(Settings.key == "installation_id"))
     setting = result.scalar_one_or_none()
 
     if setting:
@@ -47,9 +45,7 @@ async def get_or_create_installation_id(db: AsyncSession) -> str:
 
 async def is_telemetry_enabled(db: AsyncSession) -> bool:
     """Check if telemetry is enabled (opt-out model)."""
-    result = await db.execute(
-        select(Settings).where(Settings.key == "telemetry_enabled")
-    )
+    result = await db.execute(select(Settings).where(Settings.key == "telemetry_enabled"))
     setting = result.scalar_one_or_none()
 
     # Default to enabled (opt-out model)
@@ -61,9 +57,7 @@ async def is_telemetry_enabled(db: AsyncSession) -> bool:
 
 async def get_telemetry_url(db: AsyncSession) -> str:
     """Get telemetry server URL from settings."""
-    result = await db.execute(
-        select(Settings).where(Settings.key == "telemetry_url")
-    )
+    result = await db.execute(select(Settings).where(Settings.key == "telemetry_url"))
     setting = result.scalar_one_or_none()
 
     return setting.value if setting else DEFAULT_TELEMETRY_URL

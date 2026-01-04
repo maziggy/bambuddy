@@ -1,7 +1,8 @@
 """Maintenance tracking models."""
 
 from datetime import datetime
-from sqlalchemy import String, Boolean, DateTime, Integer, Float, ForeignKey, Text, func
+
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -9,6 +10,7 @@ from backend.app.core.database import Base
 
 class MaintenanceType(Base):
     """Defines a type of maintenance task with default interval."""
+
     __tablename__ = "maintenance_types"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -19,9 +21,7 @@ class MaintenanceType(Base):
     interval_type: Mapped[str] = mapped_column(String(20), default="hours")
     icon: Mapped[str | None] = mapped_column(String(50))  # Icon name for UI
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)  # Pre-defined vs custom
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     # Relationships
     printer_maintenance: Mapped[list["PrinterMaintenance"]] = relationship(
@@ -31,6 +31,7 @@ class MaintenanceType(Base):
 
 class PrinterMaintenance(Base):
     """Tracks maintenance status for a specific printer."""
+
     __tablename__ = "printer_maintenance"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -47,12 +48,8 @@ class PrinterMaintenance(Base):
     last_performed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_performed_hours: Mapped[float] = mapped_column(Float, default=0.0)  # Hours at last reset
 
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     # Relationships
     printer: Mapped["Printer"] = relationship(back_populates="maintenance_items")
@@ -64,12 +61,11 @@ class PrinterMaintenance(Base):
 
 class MaintenanceHistory(Base):
     """Log of maintenance actions performed."""
+
     __tablename__ = "maintenance_history"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    printer_maintenance_id: Mapped[int] = mapped_column(
-        ForeignKey("printer_maintenance.id", ondelete="CASCADE")
-    )
+    printer_maintenance_id: Mapped[int] = mapped_column(ForeignKey("printer_maintenance.id", ondelete="CASCADE"))
     performed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     hours_at_maintenance: Mapped[float] = mapped_column(Float, default=0.0)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

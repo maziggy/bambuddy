@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Upload, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, Info, X, Shield, Printer } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Upload, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, Info, X, Shield, Printer, Cylinder } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus } from '../api/client';
@@ -17,6 +17,7 @@ import { RestoreModal } from '../components/RestoreModal';
 import { SpoolmanSettings } from '../components/SpoolmanSettings';
 import { ExternalLinksSettings } from '../components/ExternalLinksSettings';
 import { VirtualPrinterSettings } from '../components/VirtualPrinterSettings';
+import { APIBrowser } from '../components/APIBrowser';
 import { virtualPrinterApi } from '../api/client';
 import { defaultNavItems, getDefaultView, setDefaultView } from '../components/Layout';
 import { availableLanguages } from '../i18n';
@@ -44,7 +45,7 @@ export function SettingsPage() {
   const [editingTemplate, setEditingTemplate] = useState<NotificationTemplate | null>(null);
   const [showLogViewer, setShowLogViewer] = useState(false);
   const [defaultView, setDefaultViewState] = useState<string>(getDefaultView());
-  const [activeTab, setActiveTab] = useState<'general' | 'plugs' | 'notifications' | 'apikeys' | 'virtual-printer'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'plugs' | 'notifications' | 'filament' | 'apikeys' | 'virtual-printer'>('general');
   const [showCreateAPIKey, setShowCreateAPIKey] = useState(false);
   const [newAPIKeyName, setNewAPIKeyName] = useState('');
   const [newAPIKeyPermissions, setNewAPIKeyPermissions] = useState({
@@ -54,6 +55,7 @@ export function SettingsPage() {
   });
   const [createdAPIKey, setCreatedAPIKey] = useState<string | null>(null);
   const [showDeleteAPIKeyConfirm, setShowDeleteAPIKeyConfirm] = useState<number | null>(null);
+  const [testApiKey, setTestApiKey] = useState('');
 
   // Confirm modal states
   const [showClearLogsConfirm, setShowClearLogsConfirm] = useState(false);
@@ -413,7 +415,7 @@ export function SettingsPage() {
           className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
             activeTab === 'general'
               ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray hover:text-white border-transparent'
+              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
           }`}
         >
           General
@@ -423,7 +425,7 @@ export function SettingsPage() {
           className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
             activeTab === 'plugs'
               ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray hover:text-white border-transparent'
+              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
           }`}
         >
           <Plug className="w-4 h-4" />
@@ -439,7 +441,7 @@ export function SettingsPage() {
           className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
             activeTab === 'notifications'
               ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray hover:text-white border-transparent'
+              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
           }`}
         >
           <Bell className="w-4 h-4" />
@@ -451,11 +453,22 @@ export function SettingsPage() {
           )}
         </button>
         <button
+          onClick={() => setActiveTab('filament')}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
+            activeTab === 'filament'
+              ? 'text-bambu-green border-bambu-green'
+              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
+          }`}
+        >
+          <Cylinder className="w-4 h-4" />
+          Filament
+        </button>
+        <button
           onClick={() => setActiveTab('apikeys')}
           className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
             activeTab === 'apikeys'
               ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray hover:text-white border-transparent'
+              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
           }`}
         >
           <Key className="w-4 h-4" />
@@ -471,7 +484,7 @@ export function SettingsPage() {
           className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
             activeTab === 'virtual-printer'
               ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray hover:text-white border-transparent'
+              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
           }`}
         >
           <Printer className="w-4 h-4" />
@@ -992,8 +1005,6 @@ export function SettingsPage() {
               </div>
             </CardContent>
           </Card>
-
-          <SpoolmanSettings />
         </div>
 
         {/* Third Column - Updates */}
@@ -1644,271 +1655,323 @@ export function SettingsPage() {
 
       {/* API Keys Tab */}
       {activeTab === 'apikeys' && (
-        <div className="max-w-3xl">
-          <div className="flex items-start justify-between gap-4 mb-6">
-            <div className="flex-1">
-              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                <Key className="w-5 h-5 text-bambu-green" />
-                API Keys
-              </h2>
-              <p className="text-sm text-bambu-gray mt-1">
-                Create API keys for external integrations and webhooks. Use these keys to control your printers from automation tools like Home Assistant.
-              </p>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+          {/* Left Column - API Keys Management */}
+          <div>
+            <div className="flex items-start justify-between gap-4 mb-6">
+              <div className="flex-1">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <Key className="w-5 h-5 text-bambu-green" />
+                  API Keys
+                </h2>
+                <p className="text-sm text-bambu-gray mt-1">
+                  Create API keys for external integrations and webhooks.
+                </p>
+              </div>
+              <Button size="sm" onClick={() => setShowCreateAPIKey(true)} className="flex-shrink-0">
+                <Plus className="w-4 h-4" />
+                Create Key
+              </Button>
             </div>
-            <Button size="sm" onClick={() => setShowCreateAPIKey(true)} className="flex-shrink-0">
-              <Plus className="w-4 h-4" />
-              Create Key
-            </Button>
-          </div>
 
-          {/* Created Key Display */}
-          {createdAPIKey && (
-            <Card className="mb-6 border-bambu-green">
-              <CardContent className="py-4">
-                <div className="flex items-start gap-3">
-                  <CheckCircle className="w-5 h-5 text-bambu-green flex-shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="text-white font-medium mb-1">API Key Created Successfully</p>
-                    <p className="text-sm text-bambu-gray mb-2">
-                      Copy this key now - it won't be shown again!
-                    </p>
-                    <div className="flex items-center gap-2 bg-bambu-dark rounded-lg p-2">
-                      <code className="flex-1 text-sm text-bambu-green font-mono break-all">
-                        {createdAPIKey}
-                      </code>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={async () => {
-                          try {
-                            if (navigator.clipboard && navigator.clipboard.writeText) {
-                              await navigator.clipboard.writeText(createdAPIKey);
-                            } else {
-                              // Fallback for non-HTTPS contexts
-                              const textArea = document.createElement('textarea');
-                              textArea.value = createdAPIKey;
-                              textArea.style.position = 'fixed';
-                              textArea.style.left = '-999999px';
-                              document.body.appendChild(textArea);
-                              textArea.select();
-                              document.execCommand('copy');
-                              document.body.removeChild(textArea);
-                            }
-                            showToast('Key copied to clipboard');
-                          } catch {
-                            showToast('Failed to copy key', 'error');
-                          }
-                        }}
-                      >
-                        <Copy className="w-4 h-4" />
-                      </Button>
-                    </div>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="mt-3"
-                      onClick={() => setCreatedAPIKey(null)}
-                    >
-                      Dismiss
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Create Key Form */}
-          {showCreateAPIKey && (
-            <Card className="mb-6">
-              <CardHeader>
-                <h3 className="text-base font-semibold text-white">Create New API Key</h3>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <label className="block text-sm text-bambu-gray mb-1">Key Name</label>
-                  <input
-                    type="text"
-                    value={newAPIKeyName}
-                    onChange={(e) => setNewAPIKeyName(e.target.value)}
-                    placeholder="e.g., Home Assistant, OctoPrint"
-                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-bambu-gray mb-2">Permissions</label>
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={newAPIKeyPermissions.can_read_status}
-                        onChange={(e) => setNewAPIKeyPermissions(prev => ({ ...prev, can_read_status: e.target.checked }))}
-                        className="w-4 h-4 text-bambu-green rounded border-bambu-dark-tertiary bg-bambu-dark focus:ring-bambu-green"
-                      />
-                      <div>
-                        <span className="text-white">Read Status</span>
-                        <p className="text-xs text-bambu-gray">View printer status and queue</p>
-                      </div>
-                    </label>
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={newAPIKeyPermissions.can_queue}
-                        onChange={(e) => setNewAPIKeyPermissions(prev => ({ ...prev, can_queue: e.target.checked }))}
-                        className="w-4 h-4 text-bambu-green rounded border-bambu-dark-tertiary bg-bambu-dark focus:ring-bambu-green"
-                      />
-                      <div>
-                        <span className="text-white">Manage Queue</span>
-                        <p className="text-xs text-bambu-gray">Add and remove items from print queue</p>
-                      </div>
-                    </label>
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={newAPIKeyPermissions.can_control_printer}
-                        onChange={(e) => setNewAPIKeyPermissions(prev => ({ ...prev, can_control_printer: e.target.checked }))}
-                        className="w-4 h-4 text-bambu-green rounded border-bambu-dark-tertiary bg-bambu-dark focus:ring-bambu-green"
-                      />
-                      <div>
-                        <span className="text-white">Control Printer</span>
-                        <p className="text-xs text-bambu-gray">Pause, resume, and stop prints</p>
-                      </div>
-                    </label>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 pt-2">
-                  <Button
-                    onClick={() => createAPIKeyMutation.mutate({
-                      name: newAPIKeyName || 'Unnamed Key',
-                      ...newAPIKeyPermissions,
-                    })}
-                    disabled={createAPIKeyMutation.isPending}
-                  >
-                    {createAPIKeyMutation.isPending ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Plus className="w-4 h-4" />
-                    )}
-                    Create Key
-                  </Button>
-                  <Button variant="secondary" onClick={() => setShowCreateAPIKey(false)}>
-                    Cancel
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Existing Keys List */}
-          {apiKeysLoading ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="w-8 h-8 text-bambu-green animate-spin" />
-            </div>
-          ) : apiKeys && apiKeys.length > 0 ? (
-            <div className="space-y-3">
-              {apiKeys.map((key) => (
-                <Card key={key.id}>
-                  <CardContent className="py-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <Key className={`w-5 h-5 ${key.enabled ? 'text-bambu-green' : 'text-bambu-gray'}`} />
-                        <div>
-                          <p className="text-white font-medium">{key.name}</p>
-                          <p className="text-xs text-bambu-gray">
-                            {key.key_prefix}••••••••
-                            {key.last_used && ` · Last used: ${new Date(key.last_used).toLocaleDateString()}`}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="flex gap-1 text-xs">
-                          {key.can_read_status && (
-                            <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded">Read</span>
-                          )}
-                          {key.can_queue && (
-                            <span className="px-1.5 py-0.5 bg-green-500/20 text-green-400 rounded">Queue</span>
-                          )}
-                          {key.can_control_printer && (
-                            <span className="px-1.5 py-0.5 bg-orange-500/20 text-orange-400 rounded">Control</span>
-                          )}
-                        </div>
+            {/* Created Key Display */}
+            {createdAPIKey && (
+              <Card className="mb-6 border-bambu-green">
+                <CardContent className="py-4">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle className="w-5 h-5 text-bambu-green flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-white font-medium mb-1">API Key Created Successfully</p>
+                      <p className="text-sm text-bambu-gray mb-2">
+                        Copy this key now - it won't be shown again!
+                      </p>
+                      <div className="flex items-center gap-2 bg-bambu-dark rounded-lg p-2">
+                        <code className="flex-1 text-sm text-bambu-green font-mono break-all">
+                          {createdAPIKey}
+                        </code>
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() => setShowDeleteAPIKeyConfirm(key.id)}
+                          onClick={async () => {
+                            try {
+                              if (navigator.clipboard && navigator.clipboard.writeText) {
+                                await navigator.clipboard.writeText(createdAPIKey);
+                              } else {
+                                const textArea = document.createElement('textarea');
+                                textArea.value = createdAPIKey;
+                                textArea.style.position = 'fixed';
+                                textArea.style.left = '-999999px';
+                                document.body.appendChild(textArea);
+                                textArea.select();
+                                document.execCommand('copy');
+                                document.body.removeChild(textArea);
+                              }
+                              showToast('Key copied to clipboard');
+                            } catch {
+                              showToast('Failed to copy key', 'error');
+                            }
+                          }}
                         >
-                          <Trash2 className="w-4 h-4 text-red-400" />
+                          <Copy className="w-4 h-4" />
+                        </Button>
+                      </div>
+                      <div className="flex gap-2 mt-3">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            setTestApiKey(createdAPIKey);
+                            showToast('Key added to API Browser');
+                          }}
+                        >
+                          Use in API Browser
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setCreatedAPIKey(null)}
+                        >
+                          Dismiss
                         </Button>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <Card>
-              <CardContent className="py-12">
-                <div className="text-center text-bambu-gray">
-                  <Key className="w-16 h-16 mx-auto mb-4 opacity-30" />
-                  <p className="text-lg font-medium text-white mb-2">No API keys</p>
-                  <p className="text-sm mb-4">Create an API key to integrate with external services.</p>
-                  <Button onClick={() => setShowCreateAPIKey(true)}>
-                    <Plus className="w-4 h-4" />
-                    Create Your First Key
-                  </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Create Key Form */}
+            {showCreateAPIKey && (
+              <Card className="mb-6">
+                <CardHeader>
+                  <h3 className="text-base font-semibold text-white">Create New API Key</h3>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <label className="block text-sm text-bambu-gray mb-1">Key Name</label>
+                    <input
+                      type="text"
+                      value={newAPIKeyName}
+                      onChange={(e) => setNewAPIKeyName(e.target.value)}
+                      placeholder="e.g., Home Assistant, OctoPrint"
+                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-bambu-gray mb-2">Permissions</label>
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newAPIKeyPermissions.can_read_status}
+                          onChange={(e) => setNewAPIKeyPermissions(prev => ({ ...prev, can_read_status: e.target.checked }))}
+                          className="w-4 h-4 text-bambu-green rounded border-bambu-dark-tertiary bg-bambu-dark focus:ring-bambu-green"
+                        />
+                        <div>
+                          <span className="text-white">Read Status</span>
+                          <p className="text-xs text-bambu-gray">View printer status and queue</p>
+                        </div>
+                      </label>
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newAPIKeyPermissions.can_queue}
+                          onChange={(e) => setNewAPIKeyPermissions(prev => ({ ...prev, can_queue: e.target.checked }))}
+                          className="w-4 h-4 text-bambu-green rounded border-bambu-dark-tertiary bg-bambu-dark focus:ring-bambu-green"
+                        />
+                        <div>
+                          <span className="text-white">Manage Queue</span>
+                          <p className="text-xs text-bambu-gray">Add and remove items from print queue</p>
+                        </div>
+                      </label>
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newAPIKeyPermissions.can_control_printer}
+                          onChange={(e) => setNewAPIKeyPermissions(prev => ({ ...prev, can_control_printer: e.target.checked }))}
+                          className="w-4 h-4 text-bambu-green rounded border-bambu-dark-tertiary bg-bambu-dark focus:ring-bambu-green"
+                        />
+                        <div>
+                          <span className="text-white">Control Printer</span>
+                          <p className="text-xs text-bambu-gray">Pause, resume, and stop prints</p>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 pt-2">
+                    <Button
+                      onClick={() => createAPIKeyMutation.mutate({
+                        name: newAPIKeyName || 'Unnamed Key',
+                        ...newAPIKeyPermissions,
+                      })}
+                      disabled={createAPIKeyMutation.isPending}
+                    >
+                      {createAPIKeyMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Plus className="w-4 h-4" />
+                      )}
+                      Create Key
+                    </Button>
+                    <Button variant="secondary" onClick={() => setShowCreateAPIKey(false)}>
+                      Cancel
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Existing Keys List */}
+            {apiKeysLoading ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="w-8 h-8 text-bambu-green animate-spin" />
+              </div>
+            ) : apiKeys && apiKeys.length > 0 ? (
+              <div className="space-y-3">
+                {apiKeys.map((key) => (
+                  <Card key={key.id}>
+                    <CardContent className="py-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <Key className={`w-5 h-5 ${key.enabled ? 'text-bambu-green' : 'text-bambu-gray'}`} />
+                          <div>
+                            <p className="text-white font-medium">{key.name}</p>
+                            <p className="text-xs text-bambu-gray">
+                              {key.key_prefix}••••••••
+                              {key.last_used && ` · Last used: ${new Date(key.last_used).toLocaleDateString()}`}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex gap-1 text-xs">
+                            {key.can_read_status && (
+                              <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded">Read</span>
+                            )}
+                            {key.can_queue && (
+                              <span className="px-1.5 py-0.5 bg-green-500/20 text-green-400 rounded">Queue</span>
+                            )}
+                            {key.can_control_printer && (
+                              <span className="px-1.5 py-0.5 bg-orange-500/20 text-orange-400 rounded">Control</span>
+                            )}
+                          </div>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setShowDeleteAPIKeyConfirm(key.id)}
+                          >
+                            <Trash2 className="w-4 h-4 text-red-400" />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <Card>
+                <CardContent className="py-12">
+                  <div className="text-center text-bambu-gray">
+                    <Key className="w-16 h-16 mx-auto mb-4 opacity-30" />
+                    <p className="text-lg font-medium text-white mb-2">No API keys</p>
+                    <p className="text-sm mb-4">Create an API key to integrate with external services.</p>
+                    <Button onClick={() => setShowCreateAPIKey(true)}>
+                      <Plus className="w-4 h-4" />
+                      Create Your First Key
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Webhook Documentation */}
+            <Card className="mt-6">
+              <CardHeader>
+                <h3 className="text-base font-semibold text-white">Webhook Endpoints</h3>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <p className="text-bambu-gray">
+                  Use your API key in the <code className="text-bambu-green">X-API-Key</code> header.
+                </p>
+                <div className="space-y-2 font-mono text-xs">
+                  <div className="p-2 bg-bambu-dark rounded">
+                    <span className="text-blue-400">GET</span>{' '}
+                    <span className="text-white">/api/v1/webhook/status</span>
+                    <span className="text-bambu-gray"> - Get all printer status</span>
+                  </div>
+                  <div className="p-2 bg-bambu-dark rounded">
+                    <span className="text-blue-400">GET</span>{' '}
+                    <span className="text-white">/api/v1/webhook/status/:id</span>
+                    <span className="text-bambu-gray"> - Get specific printer status</span>
+                  </div>
+                  <div className="p-2 bg-bambu-dark rounded">
+                    <span className="text-green-400">POST</span>{' '}
+                    <span className="text-white">/api/v1/webhook/queue</span>
+                    <span className="text-bambu-gray"> - Add to print queue</span>
+                  </div>
+                  <div className="p-2 bg-bambu-dark rounded">
+                    <span className="text-orange-400">POST</span>{' '}
+                    <span className="text-white">/api/v1/webhook/printer/:id/pause</span>
+                    <span className="text-bambu-gray"> - Pause print</span>
+                  </div>
+                  <div className="p-2 bg-bambu-dark rounded">
+                    <span className="text-orange-400">POST</span>{' '}
+                    <span className="text-white">/api/v1/webhook/printer/:id/resume</span>
+                    <span className="text-bambu-gray"> - Resume print</span>
+                  </div>
+                  <div className="p-2 bg-bambu-dark rounded">
+                    <span className="text-red-400">POST</span>{' '}
+                    <span className="text-white">/api/v1/webhook/printer/:id/stop</span>
+                    <span className="text-bambu-gray"> - Stop print</span>
+                  </div>
                 </div>
               </CardContent>
             </Card>
-          )}
+          </div>
 
-          {/* Webhook Documentation */}
-          <Card className="mt-6">
-            <CardHeader>
-              <h3 className="text-base font-semibold text-white">Webhook Endpoints</h3>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <p className="text-bambu-gray">
-                Use your API key in the <code className="text-bambu-green">X-API-Key</code> header.
+          {/* Right Column - API Browser */}
+          <div>
+            <div className="mb-6">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Globe className="w-5 h-5 text-bambu-green" />
+                API Browser
+              </h2>
+              <p className="text-sm text-bambu-gray mt-1">
+                Explore and test all available API endpoints.
               </p>
-              <div className="space-y-2 font-mono text-xs">
-                <div className="p-2 bg-bambu-dark rounded">
-                  <span className="text-blue-400">GET</span>{' '}
-                  <span className="text-white">/api/v1/webhook/status</span>
-                  <span className="text-bambu-gray"> - Get all printer status</span>
-                </div>
-                <div className="p-2 bg-bambu-dark rounded">
-                  <span className="text-blue-400">GET</span>{' '}
-                  <span className="text-white">/api/v1/webhook/status/:id</span>
-                  <span className="text-bambu-gray"> - Get specific printer status</span>
-                </div>
-                <div className="p-2 bg-bambu-dark rounded">
-                  <span className="text-green-400">POST</span>{' '}
-                  <span className="text-white">/api/v1/webhook/queue</span>
-                  <span className="text-bambu-gray"> - Add to print queue</span>
-                </div>
-                <div className="p-2 bg-bambu-dark rounded">
-                  <span className="text-orange-400">POST</span>{' '}
-                  <span className="text-white">/api/v1/webhook/printer/:id/pause</span>
-                  <span className="text-bambu-gray"> - Pause print</span>
-                </div>
-                <div className="p-2 bg-bambu-dark rounded">
-                  <span className="text-orange-400">POST</span>{' '}
-                  <span className="text-white">/api/v1/webhook/printer/:id/resume</span>
-                  <span className="text-bambu-gray"> - Resume print</span>
-                </div>
-                <div className="p-2 bg-bambu-dark rounded">
-                  <span className="text-red-400">POST</span>{' '}
-                  <span className="text-white">/api/v1/webhook/printer/:id/stop</span>
-                  <span className="text-bambu-gray"> - Stop print</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+            </div>
+
+            {/* API Key Input for Testing */}
+            <Card className="mb-4">
+              <CardContent className="py-3">
+                <label className="block text-sm text-bambu-gray mb-2">API Key for Testing</label>
+                <input
+                  type="text"
+                  value={testApiKey}
+                  onChange={(e) => setTestApiKey(e.target.value)}
+                  placeholder="Paste your API key here to test authenticated endpoints..."
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white font-mono text-sm focus:border-bambu-green focus:outline-none"
+                />
+                <p className="text-xs text-bambu-gray mt-2">
+                  This key will be sent as <code className="text-bambu-green">X-API-Key</code> header with requests.
+                </p>
+              </CardContent>
+            </Card>
+
+            <APIBrowser apiKey={testApiKey} />
+          </div>
         </div>
       )}
 
       {/* Virtual Printer Tab */}
       {activeTab === 'virtual-printer' && (
         <VirtualPrinterSettings />
+      )}
+
+      {/* Filament Tab */}
+      {activeTab === 'filament' && (
+        <div className="max-w-2xl">
+          <SpoolmanSettings />
+        </div>
       )}
 
       {/* Delete API Key Confirmation */}

@@ -3,6 +3,9 @@
 Generates certificates that mimic real Bambu printer certificate format:
 - CA certificate mimics "BBL CA" from "BBL Technologies Co., Ltd"
 - Printer certificate has CN = serial number, signed by the CA
+
+The CA certificate is persistent and only regenerated if missing or expired.
+This allows users to add the CA to their slicer's trust store once.
 """
 
 import logging
@@ -20,6 +23,9 @@ logger = logging.getLogger(__name__)
 
 # Default serial number for virtual printer (matches SSDP/MQTT config)
 DEFAULT_SERIAL = "00M09A391800001"
+
+# Minimum days remaining before CA is considered expired and needs regeneration
+CA_EXPIRY_THRESHOLD_DAYS = 30
 
 
 def _get_local_ip() -> str:
@@ -67,8 +73,70 @@ class CertificateService:
             return self.cert_path, self.key_path
         return self.generate_certificates()
 
+    def _load_existing_ca(self) -> tuple[rsa.RSAPrivateKey, x509.Certificate] | None:
+        """Try to load existing CA certificate and key.
+
+        Returns:
+            Tuple of (ca_private_key, ca_certificate) if valid CA exists, None otherwise
+        """
+        if not self.ca_cert_path.exists() or not self.ca_key_path.exists():
+            logger.debug("CA certificate or key not found")
+            return None
+
+        try:
+            # Load CA certificate
+            ca_cert_pem = self.ca_cert_path.read_bytes()
+            ca_cert = x509.load_pem_x509_certificate(ca_cert_pem)
+
+            # Check if CA is expired or about to expire
+            now = datetime.now(UTC)
+            days_remaining = (ca_cert.not_valid_after_utc - now).days
+            if days_remaining < CA_EXPIRY_THRESHOLD_DAYS:
+                logger.warning(f"CA certificate expires in {days_remaining} days, will regenerate")
+                return None
+
+            # Load CA private key
+            ca_key_pem = self.ca_key_path.read_bytes()
+            ca_key = serialization.load_pem_private_key(ca_key_pem, password=None)
+
+            logger.info(f"Using existing CA certificate (expires in {days_remaining} days)")
+            return ca_key, ca_cert
+
+        except Exception as e:
+            logger.warning(f"Failed to load existing CA: {e}")
+            return None
+
+    def _get_or_create_ca(self) -> tuple[rsa.RSAPrivateKey, x509.Certificate]:
+        """Get existing CA or create a new one.
+
+        Returns:
+            Tuple of (ca_private_key, ca_certificate)
+        """
+        # Try to load existing CA first
+        existing = self._load_existing_ca()
+        if existing:
+            return existing
+
+        # Generate new CA
+        ca_key, ca_cert = self._generate_ca_certificate()
+
+        # Save CA certificate and key
+        self.cert_dir.mkdir(parents=True, exist_ok=True)
+        self.ca_key_path.write_bytes(
+            ca_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.TraditionalOpenSSL,
+                encryption_algorithm=serialization.NoEncryption(),
+            )
+        )
+        self.ca_key_path.chmod(0o600)
+        self.ca_cert_path.write_bytes(ca_cert.public_bytes(serialization.Encoding.PEM))
+
+        logger.info("Saved new CA certificate")
+        return ca_key, ca_cert
+
     def _generate_ca_certificate(self) -> tuple[rsa.RSAPrivateKey, x509.Certificate]:
-        """Generate a CA certificate for the virtual printer.
+        """Generate a new CA certificate for the virtual printer.
 
         We use a generic name instead of mimicking BBL CA, since the slicer
         may specifically reject certificates claiming to be from BBL but
@@ -77,7 +145,7 @@ class CertificateService:
         Returns:
             Tuple of (ca_private_key, ca_certificate)
         """
-        logger.info("Generating Virtual Printer CA certificate...")
+        logger.info("Generating new Virtual Printer CA certificate...")
 
         # Generate CA private key
         ca_key = rsa.generate_private_key(
@@ -126,11 +194,11 @@ class CertificateService:
         return ca_key, ca_cert
 
     def generate_certificates(self) -> tuple[Path, Path]:
-        """Generate CA and printer certificates.
+        """Generate printer certificate (reusing existing CA if available).
 
         Creates a certificate chain mimicking real Bambu printers:
-        - BBL CA (self-signed root)
-        - Printer certificate (CN=serial, signed by BBL CA)
+        - CA certificate (reused if exists and valid, otherwise generated)
+        - Printer certificate (CN=serial, signed by CA)
 
         Returns:
             Tuple of (cert_path, key_path)
@@ -140,19 +208,8 @@ class CertificateService:
         # Ensure directory exists
         self.cert_dir.mkdir(parents=True, exist_ok=True)
 
-        # Generate or load CA
-        ca_key, ca_cert = self._generate_ca_certificate()
-
-        # Save CA certificate and key
-        self.ca_key_path.write_bytes(
-            ca_key.private_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.TraditionalOpenSSL,
-                encryption_algorithm=serialization.NoEncryption(),
-            )
-        )
-        self.ca_key_path.chmod(0o600)
-        self.ca_cert_path.write_bytes(ca_cert.public_bytes(serialization.Encoding.PEM))
+        # Get or create CA (reuses existing if valid)
+        ca_key, ca_cert = self._get_or_create_ca()
 
         # Generate printer private key
         printer_key = rsa.generate_private_key(
@@ -246,9 +303,30 @@ class CertificateService:
         logger.info(f"  Printer: CN={self.serial}")
         return self.cert_path, self.key_path
 
-    def delete_certificates(self) -> None:
-        """Delete existing certificates."""
-        for path in [self.cert_path, self.key_path, self.ca_cert_path, self.ca_key_path]:
+    def delete_printer_certificate(self) -> None:
+        """Delete only the printer certificate (preserves CA)."""
+        for path in [self.cert_path, self.key_path]:
             if path.exists():
                 path.unlink()
-        logger.info("Deleted virtual printer certificates")
+        logger.info("Deleted printer certificate (CA preserved)")
+
+    def delete_certificates(self, include_ca: bool = False) -> None:
+        """Delete existing certificates.
+
+        Args:
+            include_ca: If True, also delete CA certificate and key.
+                       If False (default), only delete printer certificate.
+        """
+        # Always delete printer certificate
+        for path in [self.cert_path, self.key_path]:
+            if path.exists():
+                path.unlink()
+
+        # Only delete CA if explicitly requested
+        if include_ca:
+            for path in [self.ca_cert_path, self.ca_key_path]:
+                if path.exists():
+                    path.unlink()
+            logger.info("Deleted all certificates including CA")
+        else:
+            logger.info("Deleted printer certificate (CA preserved)")

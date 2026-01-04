@@ -1,20 +1,19 @@
 """System information API routes."""
 
-import os
 import platform
-import psutil
 from datetime import datetime
 from pathlib import Path
 
+import psutil
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.config import settings, APP_VERSION
+from backend.app.core.config import APP_VERSION, settings
 from backend.app.core.database import get_db
 from backend.app.models.archive import PrintArchive
-from backend.app.models.printer import Printer
 from backend.app.models.filament import Filament
+from backend.app.models.printer import Printer
 from backend.app.models.project import Project
 from backend.app.models.smart_plug import SmartPlug
 from backend.app.services.printer_manager import printer_manager
@@ -26,7 +25,7 @@ def get_directory_size(path: Path) -> int:
     """Calculate total size of a directory in bytes."""
     total = 0
     try:
-        for entry in path.rglob('*'):
+        for entry in path.rglob("*"):
             if entry.is_file():
                 total += entry.stat().st_size
     except (PermissionError, OSError):
@@ -36,7 +35,7 @@ def get_directory_size(path: Path) -> int:
 
 def format_bytes(bytes_value: int) -> str:
     """Format bytes to human-readable string."""
-    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
         if bytes_value < 1024:
             return f"{bytes_value:.1f} {unit}"
         bytes_value /= 1024
@@ -72,29 +71,25 @@ async def get_system_info(db: AsyncSession = Depends(get_db)):
     smart_plug_count = await db.scalar(select(func.count(SmartPlug.id)))
 
     # Archive stats by status
-    completed_count = await db.scalar(
-        select(func.count(PrintArchive.id)).where(PrintArchive.status == "completed")
-    )
-    failed_count = await db.scalar(
-        select(func.count(PrintArchive.id)).where(PrintArchive.status == "failed")
-    )
-    printing_count = await db.scalar(
-        select(func.count(PrintArchive.id)).where(PrintArchive.status == "printing")
-    )
+    completed_count = await db.scalar(select(func.count(PrintArchive.id)).where(PrintArchive.status == "completed"))
+    failed_count = await db.scalar(select(func.count(PrintArchive.id)).where(PrintArchive.status == "failed"))
+    printing_count = await db.scalar(select(func.count(PrintArchive.id)).where(PrintArchive.status == "printing"))
 
     # Total print time
-    total_print_time = await db.scalar(
-        select(func.sum(PrintArchive.print_time_seconds)).where(
-            PrintArchive.print_time_seconds.isnot(None)
+    total_print_time = (
+        await db.scalar(
+            select(func.sum(PrintArchive.print_time_seconds)).where(PrintArchive.print_time_seconds.isnot(None))
         )
-    ) or 0
+        or 0
+    )
 
     # Total filament used
-    total_filament = await db.scalar(
-        select(func.sum(PrintArchive.filament_used_grams)).where(
-            PrintArchive.filament_used_grams.isnot(None)
+    total_filament = (
+        await db.scalar(
+            select(func.sum(PrintArchive.filament_used_grams)).where(PrintArchive.filament_used_grams.isnot(None))
         )
-    ) or 0
+        or 0
+    )
 
     # Connected printers
     connected_printers = []
@@ -102,18 +97,18 @@ async def get_system_info(db: AsyncSession = Depends(get_db)):
         state = client.state
         if state and state.connected:
             # Get printer name and model from database
-            result = await db.execute(
-                select(Printer.name, Printer.model).where(Printer.id == printer_id)
-            )
+            result = await db.execute(select(Printer.name, Printer.model).where(Printer.id == printer_id))
             row = result.first()
             name = row[0] if row else f"Printer {printer_id}"
             model = row[1] if row else "unknown"
-            connected_printers.append({
-                "id": printer_id,
-                "name": name,
-                "state": state.state,
-                "model": model,
-            })
+            connected_printers.append(
+                {
+                    "id": printer_id,
+                    "name": name,
+                    "state": state.state,
+                    "model": model,
+                }
+            )
 
     # Storage info
     archive_dir = settings.archive_dir

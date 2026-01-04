@@ -82,22 +82,27 @@ if ! docker info 2>/dev/null | grep -q "Username"; then
     echo ""
 fi
 
-# Determine if this is a release version (no pre-release suffix)
+# Determine if this is a release version (includes betas for now)
 IS_RELEASE=false
-if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(b[0-9]+)?$ ]]; then
     IS_RELEASE=true
 fi
 
 # Setup buildx builder if not exists
 echo -e "${BLUE}[1/4] Setting up Docker Buildx...${NC}"
 if ! docker buildx inspect "$BUILDER_NAME" >/dev/null 2>&1; then
-    echo "Creating new buildx builder: $BUILDER_NAME"
+    echo "Creating new buildx builder: $BUILDER_NAME (optimized for ${CPU_COUNT} cores)"
     docker buildx create \
         --name "$BUILDER_NAME" \
         --driver docker-container \
         --driver-opt network=host \
-        --buildkitd-flags '--allow-insecure-entitlement network.host' \
-        --bootstrap
+        --driver-opt "env.BUILDKIT_STEP_LOG_MAX_SIZE=10000000" \
+        --buildkitd-flags "--allow-insecure-entitlement network.host --oci-worker-gc=false" \
+        --config /dev/stdin <<EOF
+[worker.oci]
+  max-parallelism = ${CPU_COUNT}
+EOF
+    docker buildx inspect --bootstrap "$BUILDER_NAME"
 fi
 docker buildx use "$BUILDER_NAME"
 
@@ -117,9 +122,13 @@ else
     echo -e "${BLUE}[3/4] Building and pushing (version only, no latest)...${NC}"
 fi
 
+# Common build args for speed
+BUILD_ARGS="--provenance=false --sbom=false"
+CACHE_ARGS="--cache-from type=registry,ref=${FULL_IMAGE}:buildcache --cache-to type=registry,ref=${FULL_IMAGE}:buildcache,mode=max"
+
 if [ "$PARALLEL" = true ]; then
     # Parallel build: Build each architecture separately then combine
-    echo -e "${YELLOW}Building amd64 and arm64 in parallel...${NC}"
+    echo -e "${YELLOW}Building amd64 and arm64 in parallel (${CPU_COUNT} cores each)...${NC}"
 
     # Build amd64 in background
     (
@@ -127,7 +136,9 @@ if [ "$PARALLEL" = true ]; then
         docker buildx build \
             --platform linux/amd64 \
             -t "${FULL_IMAGE}:${VERSION}-amd64" \
-            --provenance=false \
+            ${BUILD_ARGS} \
+            --cache-from type=registry,ref=${FULL_IMAGE}:cache-amd64 \
+            --cache-to type=registry,ref=${FULL_IMAGE}:cache-amd64,mode=max \
             --push \
             . 2>&1 | sed 's/^/[amd64] /'
         echo -e "${GREEN}[amd64] Complete!${NC}"
@@ -140,7 +151,9 @@ if [ "$PARALLEL" = true ]; then
         docker buildx build \
             --platform linux/arm64 \
             -t "${FULL_IMAGE}:${VERSION}-arm64" \
-            --provenance=false \
+            ${BUILD_ARGS} \
+            --cache-from type=registry,ref=${FULL_IMAGE}:cache-arm64 \
+            --cache-to type=registry,ref=${FULL_IMAGE}:cache-arm64,mode=max \
             --push \
             . 2>&1 | sed 's/^/[arm64] /'
         echo -e "${GREEN}[arm64] Complete!${NC}"
@@ -167,10 +180,11 @@ if [ "$PARALLEL" = true ]; then
     fi
 else
     # Sequential build (default): Build both platforms in one command
+    echo -e "${YELLOW}Building sequentially with ${CPU_COUNT} cores...${NC}"
     DOCKER_BUILDKIT=1 docker buildx build \
         --platform "$PLATFORMS" \
-        --build-arg BUILDKIT_INLINE_CACHE=1 \
-        --provenance=false \
+        ${BUILD_ARGS} \
+        ${CACHE_ARGS} \
         $TAGS \
         --push \
         .

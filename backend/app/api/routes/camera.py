@@ -33,6 +33,12 @@ _active_chamber_streams: dict[str, tuple] = {}
 # Store last frame for each printer (for photo capture from active stream)
 _last_frames: dict[int, bytes] = {}
 
+# Track last frame timestamp for each printer (for stall detection)
+_last_frame_times: dict[int, float] = {}
+
+# Track stream start times for each printer
+_stream_start_times: dict[int, float] = {}
+
 
 def get_buffered_frame(printer_id: int) -> bytes | None:
     """Get the last buffered frame for a printer from an active stream.
@@ -98,9 +104,12 @@ async def generate_chamber_mjpeg_stream(
                 logger.warning(f"Chamber image stream ended for {stream_id}")
                 break
 
-            # Save frame to buffer for photo capture
+            # Save frame to buffer for photo capture and track timestamp
             if printer_id is not None:
+                import time
+
                 _last_frames[printer_id] = frame
+                _last_frame_times[printer_id] = time.time()
 
             # Rate limiting - skip frames if needed to maintain target FPS
             current_time = asyncio.get_event_loop().time()
@@ -127,9 +136,11 @@ async def generate_chamber_mjpeg_stream(
         if stream_id and stream_id in _active_chamber_streams:
             del _active_chamber_streams[stream_id]
 
-        # Clean up frame buffer
-        if printer_id is not None and printer_id in _last_frames:
-            del _last_frames[printer_id]
+        # Clean up frame buffer and timestamps
+        if printer_id is not None:
+            _last_frames.pop(printer_id, None)
+            _last_frame_times.pop(printer_id, None)
+            _stream_start_times.pop(printer_id, None)
 
         # Close the connection
         try:
@@ -156,7 +167,7 @@ async def generate_rtsp_mjpeg_stream(
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
         logger.error("ffmpeg not found - camera streaming requires ffmpeg")
-        yield (b"--frame\r\n" b"Content-Type: text/plain\r\n\r\n" b"Error: ffmpeg not installed\r\n")
+        yield (b"--frame\r\nContent-Type: text/plain\r\n\r\nError: ffmpeg not installed\r\n")
         return
 
     port = get_camera_port(model)
@@ -265,9 +276,12 @@ async def generate_rtsp_mjpeg_stream(
                     frame = buffer[: end_idx + 2]
                     buffer = buffer[end_idx + 2 :]
 
-                    # Save frame to buffer for photo capture
+                    # Save frame to buffer for photo capture and track timestamp
                     if printer_id is not None:
+                        import time
+
                         _last_frames[printer_id] = frame
+                        _last_frame_times[printer_id] = time.time()
 
                     # Yield frame in MJPEG format
                     yield (
@@ -289,7 +303,7 @@ async def generate_rtsp_mjpeg_stream(
 
     except FileNotFoundError:
         logger.error("ffmpeg not found - camera streaming requires ffmpeg")
-        yield (b"--frame\r\n" b"Content-Type: text/plain\r\n\r\n" b"Error: ffmpeg not installed\r\n")
+        yield (b"--frame\r\nContent-Type: text/plain\r\n\r\nError: ffmpeg not installed\r\n")
     except asyncio.CancelledError:
         logger.info(f"Camera stream task cancelled (stream_id={stream_id})")
     except GeneratorExit:
@@ -301,9 +315,11 @@ async def generate_rtsp_mjpeg_stream(
         if stream_id and stream_id in _active_streams:
             del _active_streams[stream_id]
 
-        # Clean up frame buffer
-        if printer_id is not None and printer_id in _last_frames:
-            del _last_frames[printer_id]
+        # Clean up frame buffer and timestamps
+        if printer_id is not None:
+            _last_frames.pop(printer_id, None)
+            _last_frame_times.pop(printer_id, None)
+            _stream_start_times.pop(printer_id, None)
 
         if process and process.returncode is None:
             logger.info(f"Terminating ffmpeg process for stream {stream_id}")
@@ -365,6 +381,11 @@ async def camera_stream(
     else:
         stream_generator = generate_rtsp_mjpeg_stream
         logger.info(f"Using RTSP protocol for {printer.model}")
+
+    # Track stream start time
+    import time
+
+    _stream_start_times[printer_id] = time.time()
 
     async def stream_with_disconnect_check():
         """Wrapper generator that monitors for client disconnect."""
@@ -519,3 +540,60 @@ async def test_camera(
     )
 
     return result
+
+
+@router.get("/{printer_id}/camera/status")
+async def camera_status(printer_id: int):
+    """Get the status of an active camera stream.
+
+    Returns whether a stream is active and when the last frame was received.
+    Used by the frontend to detect stalled streams and auto-reconnect.
+    """
+    import time
+
+    # Check if there's an active stream for this printer
+    has_active_stream = False
+
+    # Check ffmpeg/RTSP streams
+    for stream_id in _active_streams:
+        if stream_id.startswith(f"{printer_id}-"):
+            process = _active_streams[stream_id]
+            if process.returncode is None:
+                has_active_stream = True
+                break
+
+    # Check chamber image streams
+    if not has_active_stream:
+        for stream_id in _active_chamber_streams:
+            if stream_id.startswith(f"{printer_id}-"):
+                has_active_stream = True
+                break
+
+    # Get timing information
+    current_time = time.time()
+    last_frame_time = _last_frame_times.get(printer_id)
+    stream_start_time = _stream_start_times.get(printer_id)
+
+    # Calculate seconds since last frame
+    seconds_since_frame = None
+    if last_frame_time is not None:
+        seconds_since_frame = current_time - last_frame_time
+
+    # Calculate stream uptime
+    stream_uptime = None
+    if stream_start_time is not None:
+        stream_uptime = current_time - stream_start_time
+
+    return {
+        "active": has_active_stream,
+        "has_frames": printer_id in _last_frames,
+        "seconds_since_frame": seconds_since_frame,
+        "stream_uptime": stream_uptime,
+        # Consider stalled if no frame for more than 10 seconds after stream started
+        "stalled": (
+            has_active_stream
+            and stream_uptime is not None
+            and stream_uptime > 5  # Give 5 seconds for stream to start
+            and (seconds_since_frame is None or seconds_since_frame > 10)
+        ),
+    }

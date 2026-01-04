@@ -577,9 +577,7 @@ class SpoolmanClient:
             )
 
         # Spool not found - auto-create it
-        logger.info(
-            f"Creating new spool in Spoolman for {tray.tray_sub_brands} " f"(tray_uuid: {tray.tray_uuid[:16]}...)"
-        )
+        logger.info(f"Creating new spool in Spoolman for {tray.tray_sub_brands} (tray_uuid: {tray.tray_uuid[:16]}...)")
 
         # First find or create the filament type
         filament = await self._find_or_create_filament(tray)
@@ -602,17 +600,28 @@ class SpoolmanClient:
     async def _find_or_create_filament(self, tray: AMSTray) -> dict | None:
         """Find existing filament or create new one.
 
+        Only matches Bambu Lab vendor filaments since this is called for
+        Bambu Lab spools. Third-party filaments (like 3DJAKE) are ignored
+        to prevent incorrect matching by color alone.
+
         Args:
             tray: The AMSTray containing filament info
 
         Returns:
             Filament dictionary or None on failure.
         """
-        # Search internal filaments first
-        filaments = await self.get_filaments()
+        # Get Bambu Lab vendor ID for filtering
+        bambu_vendor_id = await self.ensure_bambu_vendor()
         color_hex = tray.tray_color[:6]  # Strip alpha channel
 
+        # Search internal filaments - only match Bambu Lab vendor
+        filaments = await self.get_filaments()
         for filament in filaments:
+            # Only match filaments from Bambu Lab vendor
+            fil_vendor_id = filament.get("vendor_id") or filament.get("vendor", {}).get("id")
+            if fil_vendor_id != bambu_vendor_id:
+                continue
+
             # Match by material and color (handle None values)
             fil_material = filament.get("material") or ""
             fil_color = filament.get("color_hex") or ""
@@ -628,11 +637,10 @@ class SpoolmanClient:
                 # Found in external library - need to create internal copy
                 return await self._create_filament_from_external(filament, tray)
 
-        # Not found - create new filament
-        vendor_id = await self.ensure_bambu_vendor()
+        # Not found - create new Bambu Lab filament
         return await self.create_filament(
             name=tray.tray_sub_brands or tray.tray_type,
-            vendor_id=vendor_id,
+            vendor_id=bambu_vendor_id,
             material=tray.tray_type,
             color_hex=color_hex,
             weight=tray.tray_weight,

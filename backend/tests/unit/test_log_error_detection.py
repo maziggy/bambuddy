@@ -5,8 +5,9 @@ These tests use the capture_logs fixture to detect runtime errors
 that might not cause test failures but indicate problems.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 
 class TestMQTTMessageProcessingNoErrors:
@@ -39,8 +40,7 @@ class TestMQTTMessageProcessingNoErrors:
 
         client._process_message(message)
 
-        assert not capture_logs.has_errors(), \
-            f"Errors during message processing: {capture_logs.format_errors()}"
+        assert not capture_logs.has_errors(), f"Errors during message processing: {capture_logs.format_errors()}"
 
     def test_process_xcam_data(self, capture_logs):
         """Test processing xcam (camera/AI) data."""
@@ -66,8 +66,7 @@ class TestMQTTMessageProcessingNoErrors:
 
         client._process_message(message)
 
-        assert not capture_logs.has_errors(), \
-            f"Errors during xcam processing: {capture_logs.format_errors()}"
+        assert not capture_logs.has_errors(), f"Errors during xcam processing: {capture_logs.format_errors()}"
 
     def test_process_ams_data(self, capture_logs):
         """Test processing AMS (Automatic Material System) data."""
@@ -94,7 +93,7 @@ class TestMQTTMessageProcessingNoErrors:
                                     "tray_color": "FF0000",
                                     "remain": 80,
                                 }
-                            ]
+                            ],
                         }
                     ]
                 }
@@ -103,8 +102,7 @@ class TestMQTTMessageProcessingNoErrors:
 
         client._process_message(message)
 
-        assert not capture_logs.has_errors(), \
-            f"Errors during AMS processing: {capture_logs.format_errors()}"
+        assert not capture_logs.has_errors(), f"Errors during AMS processing: {capture_logs.format_errors()}"
 
     def test_process_hms_errors(self, capture_logs):
         """Test processing HMS (Health Management System) errors."""
@@ -129,8 +127,7 @@ class TestMQTTMessageProcessingNoErrors:
 
         client._process_message(message)
 
-        assert not capture_logs.has_errors(), \
-            f"Errors during HMS processing: {capture_logs.format_errors()}"
+        assert not capture_logs.has_errors(), f"Errors during HMS processing: {capture_logs.format_errors()}"
 
 
 class TestPrintLifecycleNoErrors:
@@ -149,36 +146,41 @@ class TestPrintLifecycleNoErrors:
         client.on_print_complete = lambda data: None
 
         # Start print
-        client._process_message({
-            "print": {
-                "gcode_state": "RUNNING",
-                "gcode_file": "/data/Metadata/test.gcode",
-                "subtask_name": "Test",
-                "mc_percent": 0,
-            }
-        })
-
-        # Progress updates
-        for percent in [25, 50, 75]:
-            client._process_message({
+        client._process_message(
+            {
                 "print": {
                     "gcode_state": "RUNNING",
                     "gcode_file": "/data/Metadata/test.gcode",
-                    "mc_percent": percent,
+                    "subtask_name": "Test",
+                    "mc_percent": 0,
                 }
-            })
+            }
+        )
+
+        # Progress updates
+        for percent in [25, 50, 75]:
+            client._process_message(
+                {
+                    "print": {
+                        "gcode_state": "RUNNING",
+                        "gcode_file": "/data/Metadata/test.gcode",
+                        "mc_percent": percent,
+                    }
+                }
+            )
 
         # Complete
-        client._process_message({
-            "print": {
-                "gcode_state": "FINISH",
-                "gcode_file": "/data/Metadata/test.gcode",
-                "subtask_name": "Test",
+        client._process_message(
+            {
+                "print": {
+                    "gcode_state": "FINISH",
+                    "gcode_file": "/data/Metadata/test.gcode",
+                    "subtask_name": "Test",
+                }
             }
-        })
+        )
 
-        assert not capture_logs.has_errors(), \
-            f"Errors during print lifecycle: {capture_logs.format_errors()}"
+        assert not capture_logs.has_errors(), f"Errors during print lifecycle: {capture_logs.format_errors()}"
 
     def test_print_failure_handling(self, capture_logs):
         """Test print failure is handled without errors."""
@@ -193,26 +195,29 @@ class TestPrintLifecycleNoErrors:
         client.on_print_complete = lambda data: None
 
         # Start print
-        client._process_message({
-            "print": {
-                "gcode_state": "RUNNING",
-                "gcode_file": "/data/Metadata/test.gcode",
-                "subtask_name": "Test",
+        client._process_message(
+            {
+                "print": {
+                    "gcode_state": "RUNNING",
+                    "gcode_file": "/data/Metadata/test.gcode",
+                    "subtask_name": "Test",
+                }
             }
-        })
+        )
 
         # Fail
-        client._process_message({
-            "print": {
-                "gcode_state": "FAILED",
-                "gcode_file": "/data/Metadata/test.gcode",
-                "subtask_name": "Test",
-                "print_error": 117506052,
+        client._process_message(
+            {
+                "print": {
+                    "gcode_state": "FAILED",
+                    "gcode_file": "/data/Metadata/test.gcode",
+                    "subtask_name": "Test",
+                    "print_error": 117506052,
+                }
             }
-        })
+        )
 
-        assert not capture_logs.has_errors(), \
-            f"Errors during print failure: {capture_logs.format_errors()}"
+        assert not capture_logs.has_errors(), f"Errors during print failure: {capture_logs.format_errors()}"
 
 
 class TestServiceImports:
@@ -221,18 +226,21 @@ class TestServiceImports:
     def test_archive_service_import(self, capture_logs):
         """Verify ArchiveService can be imported without errors."""
         from backend.app.services.archive import ArchiveService
+
         assert ArchiveService is not None
         assert not capture_logs.has_errors()
 
     def test_notification_service_import(self, capture_logs):
         """Verify NotificationService can be imported without errors."""
         from backend.app.services.notification_service import notification_service
+
         assert notification_service is not None
         assert not capture_logs.has_errors()
 
     def test_printer_manager_import(self, capture_logs):
         """Verify PrinterManager can be imported without errors."""
         from backend.app.services.printer_manager import printer_manager
+
         assert printer_manager is not None
         assert not capture_logs.has_errors()
 
@@ -240,11 +248,12 @@ class TestServiceImports:
         """Verify main module imports cleanly."""
         # This will fail if there are import shadowing issues
         from backend.app import main
+
         assert main is not None
 
         # Verify key functions exist
-        assert hasattr(main, 'on_print_start')
-        assert hasattr(main, 'on_print_complete')
+        assert hasattr(main, "on_print_start")
+        assert hasattr(main, "on_print_complete")
         assert not capture_logs.has_errors()
 
 
@@ -263,8 +272,7 @@ class TestEdgeCases:
 
         client._process_message({})
 
-        assert not capture_logs.has_errors(), \
-            f"Errors with empty message: {capture_logs.format_errors()}"
+        assert not capture_logs.has_errors(), f"Errors with empty message: {capture_logs.format_errors()}"
 
     def test_message_with_unknown_fields(self, capture_logs):
         """Test handling of message with unknown fields."""
@@ -276,17 +284,18 @@ class TestEdgeCases:
             access_code="12345678",
         )
 
-        client._process_message({
-            "print": {
-                "gcode_state": "RUNNING",
-                "unknown_field_1": "value1",
-                "unknown_field_2": 12345,
-                "unknown_nested": {"a": 1, "b": 2},
+        client._process_message(
+            {
+                "print": {
+                    "gcode_state": "RUNNING",
+                    "unknown_field_1": "value1",
+                    "unknown_field_2": 12345,
+                    "unknown_nested": {"a": 1, "b": 2},
+                }
             }
-        })
+        )
 
-        assert not capture_logs.has_errors(), \
-            f"Errors with unknown fields: {capture_logs.format_errors()}"
+        assert not capture_logs.has_errors(), f"Errors with unknown fields: {capture_logs.format_errors()}"
 
     def test_message_with_null_values(self, capture_logs):
         """Test handling of message with null values for optional fields."""
@@ -300,14 +309,15 @@ class TestEdgeCases:
 
         # Only test null values for fields that should handle them gracefully
         # mc_percent is expected to be a number when present
-        client._process_message({
-            "print": {
-                "gcode_state": "IDLE",
-                "gcode_file": None,
-                "subtask_name": None,
-                "bed_temper": 0.0,  # Use 0 instead of None
+        client._process_message(
+            {
+                "print": {
+                    "gcode_state": "IDLE",
+                    "gcode_file": None,
+                    "subtask_name": None,
+                    "bed_temper": 0.0,  # Use 0 instead of None
+                }
             }
-        })
+        )
 
-        assert not capture_logs.has_errors(), \
-            f"Errors with null values: {capture_logs.format_errors()}"
+        assert not capture_logs.has_errors(), f"Errors with null values: {capture_logs.format_errors()}"

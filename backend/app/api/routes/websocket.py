@@ -1,4 +1,5 @@
 import logging
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from backend.app.core.websocket import ws_manager
@@ -19,11 +20,13 @@ async def websocket_endpoint(websocket: WebSocket):
         # Send initial status of all printers
         statuses = printer_manager.get_all_statuses()
         for printer_id, state in statuses.items():
-            await websocket.send_json({
-                "type": "printer_status",
-                "printer_id": printer_id,
-                "data": printer_state_to_dict(state),
-            })
+            await websocket.send_json(
+                {
+                    "type": "printer_status",
+                    "printer_id": printer_id,
+                    "data": printer_state_to_dict(state),
+                }
+            )
         logger.info(f"Sent initial status for {len(statuses)} printers")
 
         # Keep connection alive and handle incoming messages
@@ -40,11 +43,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 if printer_id:
                     state = printer_manager.get_status(printer_id)
                     if state:
-                        await websocket.send_json({
-                            "type": "printer_status",
-                            "printer_id": printer_id,
-                            "data": printer_state_to_dict(state),
-                        })
+                        await websocket.send_json(
+                            {
+                                "type": "printer_status",
+                                "printer_id": printer_id,
+                                "data": printer_state_to_dict(state),
+                            }
+                        )
 
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected normally")

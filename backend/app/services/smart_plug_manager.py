@@ -5,11 +5,11 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.services.tasmota import tasmota_service
 from backend.app.services.printer_manager import printer_manager
+from backend.app.services.tasmota import tasmota_service
 
 if TYPE_CHECKING:
     from backend.app.models.smart_plug import SmartPlug
@@ -64,8 +64,8 @@ class SmartPlugManager:
         async with async_session() as db:
             result = await db.execute(
                 select(SmartPlug).where(
-                    SmartPlug.enabled == True,
-                    SmartPlug.schedule_enabled == True,
+                    SmartPlug.enabled.is_(True),
+                    SmartPlug.schedule_enabled.is_(True),
                 )
             )
             plugs = result.scalars().all()
@@ -98,15 +98,11 @@ class SmartPlugManager:
 
             await db.commit()
 
-    async def _get_plug_for_printer(
-        self, printer_id: int, db: AsyncSession
-    ) -> "SmartPlug | None":
+    async def _get_plug_for_printer(self, printer_id: int, db: AsyncSession) -> "SmartPlug | None":
         """Get the smart plug linked to a printer."""
         from backend.app.models.smart_plug import SmartPlug
 
-        result = await db.execute(
-            select(SmartPlug).where(SmartPlug.printer_id == printer_id)
-        )
+        result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
         return result.scalar_one_or_none()
 
     async def on_print_start(self, printer_id: int, db: AsyncSession):
@@ -138,9 +134,7 @@ class SmartPlugManager:
             plug.auto_off_executed = False  # Reset flag when turning on
             await db.commit()
 
-    async def on_print_complete(
-        self, printer_id: int, status: str, db: AsyncSession
-    ):
+    async def on_print_complete(self, printer_id: int, status: str, db: AsyncSession):
         """Called when a print completes - schedule turn off if configured.
 
         Only triggers auto-off on successful completion (status='completed').
@@ -168,10 +162,7 @@ class SmartPlugManager:
             )
             return
 
-        logger.info(
-            f"Print completed successfully on printer {printer_id}, "
-            f"scheduling turn-off for plug '{plug.name}'"
-        )
+        logger.info(f"Print completed successfully on printer {printer_id}, scheduling turn-off for plug '{plug.name}'")
 
         if plug.off_delay_mode == "time":
             self._schedule_delayed_off(plug, printer_id, plug.off_delay_minutes * 60)
@@ -183,9 +174,7 @@ class SmartPlugManager:
         # Cancel any existing task for this plug
         self._cancel_pending_off(plug.id)
 
-        logger.info(
-            f"Scheduling turn-off for plug '{plug.name}' in {delay_seconds} seconds"
-        )
+        logger.info(f"Scheduling turn-off for plug '{plug.name}' in {delay_seconds} seconds")
 
         # Mark as pending in database (survives restarts)
         asyncio.create_task(self._mark_auto_off_pending(plug.id, True))
@@ -231,17 +220,12 @@ class SmartPlugManager:
         finally:
             self._pending_off.pop(plug_id, None)
 
-    def _schedule_temp_based_off(
-        self, plug: "SmartPlug", printer_id: int, temp_threshold: int
-    ):
+    def _schedule_temp_based_off(self, plug: "SmartPlug", printer_id: int, temp_threshold: int):
         """Monitor temperature and turn off when below threshold."""
         # Cancel any existing task for this plug
         self._cancel_pending_off(plug.id)
 
-        logger.info(
-            f"Scheduling temperature-based turn-off for plug '{plug.name}' "
-            f"(threshold: {temp_threshold}°C)"
-        )
+        logger.info(f"Scheduling temperature-based turn-off for plug '{plug.name}' (threshold: {temp_threshold}°C)")
 
         # Mark as pending in database (survives restarts)
         asyncio.create_task(self._mark_auto_off_pending(plug.id, True))
@@ -295,10 +279,7 @@ class SmartPlugManager:
                             f"threshold={temp_threshold}°C"
                         )
                     else:
-                        logger.info(
-                            f"Temp check plug {plug_id}: nozzle={nozzle_temp}°C, "
-                            f"threshold={temp_threshold}°C"
-                        )
+                        logger.info(f"Temp check plug {plug_id}: nozzle={nozzle_temp}°C, threshold={temp_threshold}°C")
 
                     if max_nozzle_temp < temp_threshold:
                         # All nozzles are below threshold, turn off
@@ -328,9 +309,7 @@ class SmartPlugManager:
                 elapsed += check_interval
 
             if elapsed >= max_wait:
-                logger.warning(
-                    f"Temperature-based turn-off timed out for plug {plug_id} after {max_wait}s"
-                )
+                logger.warning(f"Temperature-based turn-off timed out for plug {plug_id} after {max_wait}s")
 
         except asyncio.CancelledError:
             logger.debug(f"Temperature-based turn-off cancelled for plug {plug_id}")
@@ -344,9 +323,7 @@ class SmartPlugManager:
             from backend.app.models.smart_plug import SmartPlug
 
             async with async_session() as db:
-                result = await db.execute(
-                    select(SmartPlug).where(SmartPlug.id == plug_id)
-                )
+                result = await db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
                 plug = result.scalar_one_or_none()
                 if plug:
                     plug.auto_off_pending = pending
@@ -363,9 +340,7 @@ class SmartPlugManager:
             from backend.app.models.smart_plug import SmartPlug
 
             async with async_session() as db:
-                result = await db.execute(
-                    select(SmartPlug).where(SmartPlug.id == plug_id)
-                )
+                result = await db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
                 plug = result.scalar_one_or_none()
                 if plug:
                     plug.auto_off = False  # Disable auto-off (one-shot behavior)
@@ -407,8 +382,8 @@ class SmartPlugManager:
                 # Find all plugs with pending auto-off
                 result = await db.execute(
                     select(SmartPlug).where(
-                        SmartPlug.auto_off_pending == True,
-                        SmartPlug.printer_id != None,
+                        SmartPlug.auto_off_pending.is_(True),
+                        SmartPlug.printer_id.isnot(None),
                     )
                 )
                 pending_plugs = result.scalars().all()
@@ -419,7 +394,7 @@ class SmartPlugManager:
                         elapsed = (datetime.utcnow() - plug.auto_off_pending_since).total_seconds()
                         if elapsed > 7200:  # 2 hours
                             logger.warning(
-                                f"Auto-off for plug '{plug.name}' was pending for {elapsed/60:.0f} minutes, "
+                                f"Auto-off for plug '{plug.name}' was pending for {elapsed / 60:.0f} minutes, "
                                 f"clearing stale pending state"
                             )
                             plug.auto_off_pending = False
@@ -427,10 +402,7 @@ class SmartPlugManager:
                             await db.commit()
                             continue
 
-                    logger.info(
-                        f"Resuming pending auto-off for plug '{plug.name}' "
-                        f"(printer {plug.printer_id})"
-                    )
+                    logger.info(f"Resuming pending auto-off for plug '{plug.name}' (printer {plug.printer_id})")
 
                     # Resume the appropriate off mode
                     if plug.off_delay_mode == "temperature":

@@ -1,11 +1,10 @@
 import hashlib
 import secrets
 from datetime import datetime
-from typing import Optional
 
-from fastapi import Header, HTTPException, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Depends, Header, HTTPException
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import get_db
 from backend.app.models.api_key import APIKey
@@ -39,9 +38,7 @@ async def get_api_key(
     """
     key_hash = hash_api_key(x_api_key)
 
-    result = await db.execute(
-        select(APIKey).where(APIKey.key_hash == key_hash)
-    )
+    result = await db.execute(select(APIKey).where(APIKey.key_hash == key_hash))
     api_key = result.scalar_one_or_none()
 
     if not api_key:
@@ -60,9 +57,9 @@ async def get_api_key(
 
 
 async def get_optional_api_key(
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    x_api_key: str | None = Header(None, alias="X-API-Key"),
     db: AsyncSession = Depends(get_db),
-) -> Optional[APIKey]:
+) -> APIKey | None:
     """Get API key if provided, return None otherwise."""
     if not x_api_key:
         return None
@@ -83,19 +80,16 @@ def check_permission(api_key: APIKey, permission: str) -> None:
     Raises HTTPException if permission is denied.
     """
     permission_map = {
-        'queue': api_key.can_queue,
-        'control_printer': api_key.can_control_printer,
-        'read_status': api_key.can_read_status,
+        "queue": api_key.can_queue,
+        "control_printer": api_key.can_control_printer,
+        "read_status": api_key.can_read_status,
     }
 
     if permission not in permission_map:
         raise HTTPException(status_code=500, detail=f"Unknown permission: {permission}")
 
     if not permission_map[permission]:
-        raise HTTPException(
-            status_code=403,
-            detail=f"API key does not have '{permission}' permission"
-        )
+        raise HTTPException(status_code=403, detail=f"API key does not have '{permission}' permission")
 
 
 def check_printer_access(api_key: APIKey, printer_id: int) -> None:
@@ -108,7 +102,4 @@ def check_printer_access(api_key: APIKey, printer_id: int) -> None:
     Raises HTTPException if access is denied.
     """
     if api_key.printer_ids is not None and printer_id not in api_key.printer_ids:
-        raise HTTPException(
-            status_code=403,
-            detail=f"API key does not have access to printer {printer_id}"
-        )
+        raise HTTPException(status_code=403, detail=f"API key does not have access to printer {printer_id}")

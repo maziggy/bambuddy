@@ -16,9 +16,7 @@ class TestNotificationsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_list_notification_providers_empty(
-        self, async_client: AsyncClient
-    ):
+    async def test_list_notification_providers_empty(self, async_client: AsyncClient):
         """Verify empty list is returned when no providers exist."""
         response = await async_client.get("/api/v1/notifications/")
 
@@ -31,7 +29,7 @@ class TestNotificationsAPI:
         self, async_client: AsyncClient, notification_provider_factory, db_session
     ):
         """Verify list returns existing providers."""
-        provider = await notification_provider_factory(name="Test Provider")
+        _provider = await notification_provider_factory(name="Test Provider")
 
         response = await async_client.get("/api/v1/notifications/")
 
@@ -91,9 +89,7 @@ class TestNotificationsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_create_provider_with_printer(
-        self, async_client: AsyncClient, printer_factory, db_session
-    ):
+    async def test_create_provider_with_printer(self, async_client: AsyncClient, printer_factory, db_session):
         """Verify provider can be linked to specific printer."""
         printer = await printer_factory(name="Test Printer")
 
@@ -143,9 +139,7 @@ class TestNotificationsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_event_toggles(
-        self, async_client: AsyncClient, notification_provider_factory, db_session
-    ):
+    async def test_update_event_toggles(self, async_client: AsyncClient, notification_provider_factory, db_session):
         """CRITICAL: Verify notification event toggles persist correctly."""
         provider = await notification_provider_factory(
             on_print_start=True,
@@ -154,10 +148,7 @@ class TestNotificationsAPI:
         )
 
         # Toggle on_print_stopped to True
-        response = await async_client.patch(
-            f"/api/v1/notifications/{provider.id}",
-            json={"on_print_stopped": True}
-        )
+        response = await async_client.patch(f"/api/v1/notifications/{provider.id}", json={"on_print_stopped": True})
 
         assert response.status_code == 200
         assert response.json()["on_print_stopped"] is True
@@ -168,9 +159,7 @@ class TestNotificationsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_ams_alarm_toggles(
-        self, async_client: AsyncClient, notification_provider_factory, db_session
-    ):
+    async def test_update_ams_alarm_toggles(self, async_client: AsyncClient, notification_provider_factory, db_session):
         """CRITICAL: Verify AMS alarm toggles persist correctly."""
         provider = await notification_provider_factory(
             on_ams_humidity_high=False,
@@ -183,7 +172,7 @@ class TestNotificationsAPI:
             json={
                 "on_ams_humidity_high": True,
                 "on_ams_temperature_high": True,
-            }
+            },
         )
 
         assert response.status_code == 200
@@ -199,35 +188,25 @@ class TestNotificationsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_enable_disable_provider(
-        self, async_client: AsyncClient, notification_provider_factory, db_session
-    ):
+    async def test_enable_disable_provider(self, async_client: AsyncClient, notification_provider_factory, db_session):
         """Verify provider can be enabled/disabled."""
         provider = await notification_provider_factory(enabled=True)
 
         # Disable
-        response = await async_client.patch(
-            f"/api/v1/notifications/{provider.id}",
-            json={"enabled": False}
-        )
+        response = await async_client.patch(f"/api/v1/notifications/{provider.id}", json={"enabled": False})
 
         assert response.status_code == 200
         assert response.json()["enabled"] is False
 
         # Enable
-        response = await async_client.patch(
-            f"/api/v1/notifications/{provider.id}",
-            json={"enabled": True}
-        )
+        response = await async_client.patch(f"/api/v1/notifications/{provider.id}", json={"enabled": True})
 
         assert response.status_code == 200
         assert response.json()["enabled"] is True
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_quiet_hours(
-        self, async_client: AsyncClient, notification_provider_factory, db_session
-    ):
+    async def test_update_quiet_hours(self, async_client: AsyncClient, notification_provider_factory, db_session):
         """Verify quiet hours can be configured."""
         provider = await notification_provider_factory(quiet_hours_enabled=False)
 
@@ -237,7 +216,7 @@ class TestNotificationsAPI:
                 "quiet_hours_enabled": True,
                 "quiet_hours_start": "22:00",
                 "quiet_hours_end": "07:00",
-            }
+            },
         )
 
         assert response.status_code == 200
@@ -248,9 +227,7 @@ class TestNotificationsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_daily_digest(
-        self, async_client: AsyncClient, notification_provider_factory, db_session
-    ):
+    async def test_update_daily_digest(self, async_client: AsyncClient, notification_provider_factory, db_session):
         """Verify daily digest can be configured."""
         provider = await notification_provider_factory(daily_digest_enabled=False)
 
@@ -259,7 +236,7 @@ class TestNotificationsAPI:
             json={
                 "daily_digest_enabled": True,
                 "daily_digest_time": "09:00",
-            }
+            },
         )
 
         assert response.status_code == 200
@@ -287,7 +264,7 @@ class TestNotificationsAPI:
                 "on_print_start": False,
                 "on_print_stopped": True,
                 "on_printer_offline": True,
-            }
+            },
         )
 
         assert response.status_code == 200
@@ -306,15 +283,12 @@ class TestNotificationsAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_test_notification(
-        self, async_client: AsyncClient, notification_provider_factory,
-        mock_httpx_client, db_session
+        self, async_client: AsyncClient, notification_provider_factory, mock_httpx_client, db_session
     ):
         """Verify test notification can be sent."""
         provider = await notification_provider_factory()
 
-        response = await async_client.post(
-            f"/api/v1/notifications/{provider.id}/test"
-        )
+        response = await async_client.post(f"/api/v1/notifications/{provider.id}/test")
 
         assert response.status_code == 200
         result = response.json()
@@ -328,9 +302,7 @@ class TestNotificationsAPI:
         """Verify test notification works even for disabled provider."""
         provider = await notification_provider_factory(enabled=False)
 
-        response = await async_client.post(
-            f"/api/v1/notifications/{provider.id}/test"
-        )
+        response = await async_client.post(f"/api/v1/notifications/{provider.id}/test")
 
         # Test should still work for disabled providers
         assert response.status_code == 200
@@ -371,7 +343,7 @@ class TestNotificationTemplatesAPI:
     @pytest.fixture
     async def seeded_templates(self, db_session):
         """Seed notification templates for tests."""
-        from backend.app.models.notification_template import NotificationTemplate, DEFAULT_TEMPLATES
+        from backend.app.models.notification_template import DEFAULT_TEMPLATES, NotificationTemplate
 
         templates = []
         for template_data in DEFAULT_TEMPLATES:
@@ -401,9 +373,7 @@ class TestNotificationTemplatesAPI:
         # Get first template ID from seeded data
         template_id = seeded_templates[0].id
 
-        response = await async_client.get(
-            f"/api/v1/notification-templates/{template_id}"
-        )
+        response = await async_client.get(f"/api/v1/notification-templates/{template_id}")
 
         assert response.status_code == 200
         template = response.json()
@@ -422,7 +392,7 @@ class TestNotificationTemplatesAPI:
             json={
                 "title_template": "Custom Title: {printer}",
                 "body_template": "Custom body for {filename}",
-            }
+            },
         )
 
         assert response.status_code == 200
@@ -436,9 +406,7 @@ class TestNotificationTemplatesAPI:
         """Verify template can be reset to default."""
         template_id = seeded_templates[0].id
 
-        response = await async_client.post(
-            f"/api/v1/notification-templates/{template_id}/reset"
-        )
+        response = await async_client.post(f"/api/v1/notification-templates/{template_id}/reset")
 
         assert response.status_code == 200
         result = response.json()

@@ -43,9 +43,7 @@ class TestProjectsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_list_projects_with_data(
-        self, async_client: AsyncClient, project_factory, db_session
-    ):
+    async def test_list_projects_with_data(self, async_client: AsyncClient, project_factory, db_session):
         """Verify list returns existing projects."""
         await project_factory(name="My Project")
         response = await async_client.get("/api/v1/projects/")
@@ -70,9 +68,7 @@ class TestProjectsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_get_project(
-        self, async_client: AsyncClient, project_factory, db_session
-    ):
+    async def test_get_project(self, async_client: AsyncClient, project_factory, db_session):
         """Verify single project can be retrieved."""
         project = await project_factory(name="Get Test Project")
         response = await async_client.get(f"/api/v1/projects/{project.id}")
@@ -88,14 +84,11 @@ class TestProjectsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_project(
-        self, async_client: AsyncClient, project_factory, db_session
-    ):
+    async def test_update_project(self, async_client: AsyncClient, project_factory, db_session):
         """Verify project can be updated."""
         project = await project_factory(name="Original")
         response = await async_client.patch(
-            f"/api/v1/projects/{project.id}",
-            json={"name": "Updated", "description": "Updated description"}
+            f"/api/v1/projects/{project.id}", json={"name": "Updated", "description": "Updated description"}
         )
         assert response.status_code == 200
         result = response.json()
@@ -104,9 +97,7 @@ class TestProjectsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_delete_project(
-        self, async_client: AsyncClient, project_factory, db_session
-    ):
+    async def test_delete_project(self, async_client: AsyncClient, project_factory, db_session):
         """Verify project can be deleted."""
         project = await project_factory()
         response = await async_client.delete(f"/api/v1/projects/{project.id}")
@@ -128,6 +119,7 @@ class TestProjectArchivesAPI:
     @pytest.fixture
     async def project_factory(self, db_session):
         """Factory to create test projects."""
+
         async def _create_project(**kwargs):
             from backend.app.models.project import Project
 
@@ -148,9 +140,7 @@ class TestProjectArchivesAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_get_project_with_archives(
-        self, async_client: AsyncClient, project_factory, db_session
-    ):
+    async def test_get_project_with_archives(self, async_client: AsyncClient, project_factory, db_session):
         """Verify project can be retrieved with archive count."""
         project = await project_factory()
         response = await async_client.get(f"/api/v1/projects/{project.id}")

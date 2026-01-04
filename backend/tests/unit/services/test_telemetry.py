@@ -3,20 +3,21 @@
 Tests the anonymous telemetry/stats collection functionality.
 """
 
-import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
 from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
+from backend.app.models.settings import Settings
 from backend.app.services.telemetry import (
-    get_or_create_installation_id,
-    is_telemetry_enabled,
-    get_telemetry_url,
-    send_heartbeat,
     DEFAULT_TELEMETRY_URL,
     HEARTBEAT_INTERVAL,
     _last_heartbeat,
+    get_or_create_installation_id,
+    get_telemetry_url,
+    is_telemetry_enabled,
+    send_heartbeat,
 )
-from backend.app.models.settings import Settings
 
 
 class TestTelemetryService:
@@ -134,7 +135,7 @@ class TestTelemetryService:
         db_session.add(setting)
         await db_session.commit()
 
-        with patch('httpx.AsyncClient') as mock_client:
+        with patch("httpx.AsyncClient") as mock_client:
             result = await send_heartbeat(db_session)
 
         assert result is False
@@ -145,6 +146,7 @@ class TestTelemetryService:
         """Verify heartbeat is sent successfully when enabled."""
         # Reset the last heartbeat to allow sending
         import backend.app.services.telemetry as telemetry_module
+
         telemetry_module._last_heartbeat = None
 
         result = await send_heartbeat(db_session)
@@ -159,7 +161,7 @@ class TestTelemetryService:
         # Set last heartbeat to recent time
         telemetry_module._last_heartbeat = datetime.now()
 
-        with patch('httpx.AsyncClient') as mock_client:
+        with patch("httpx.AsyncClient") as mock_client:
             result = await send_heartbeat(db_session)
 
         # Should return True (already sent) without making HTTP request
@@ -193,14 +195,14 @@ class TestTelemetryService:
 
         captured_data = {}
 
-        with patch('httpx.AsyncClient') as mock_class:
+        with patch("httpx.AsyncClient") as mock_class:
             mock_instance = AsyncMock()
             mock_response = MagicMock()
             mock_response.raise_for_status = MagicMock()
 
             async def capture_post(url, json=None):
-                captured_data['url'] = url
-                captured_data['json'] = json
+                captured_data["url"] = url
+                captured_data["json"] = json
                 return mock_response
 
             mock_instance.post = capture_post
@@ -210,9 +212,9 @@ class TestTelemetryService:
 
             await send_heartbeat(db_session)
 
-        assert "heartbeat" in captured_data['url']
-        assert "installation_id" in captured_data['json']
-        assert captured_data['json']['version'] == APP_VERSION
+        assert "heartbeat" in captured_data["url"]
+        assert "installation_id" in captured_data["json"]
+        assert captured_data["json"]["version"] == APP_VERSION
 
 
 class TestHeartbeatInterval:
@@ -220,7 +222,7 @@ class TestHeartbeatInterval:
 
     def test_heartbeat_interval_is_24_hours(self):
         """Verify heartbeat interval is set to 24 hours."""
-        assert HEARTBEAT_INTERVAL == timedelta(hours=24)
+        assert timedelta(hours=24) == HEARTBEAT_INTERVAL
 
     def test_default_telemetry_url(self):
         """Verify default telemetry URL is correct."""

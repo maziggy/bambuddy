@@ -74,12 +74,11 @@ def _provider_to_dict(provider: NotificationProvider) -> dict:
 # Provider List/Create Routes (no path parameters)
 # ============================================================================
 
+
 @router.get("/", response_model=list[NotificationProviderResponse])
 async def list_notification_providers(db: AsyncSession = Depends(get_db)):
     """List all notification providers."""
-    result = await db.execute(
-        select(NotificationProvider).order_by(NotificationProvider.created_at.desc())
-    )
+    result = await db.execute(select(NotificationProvider).order_by(NotificationProvider.created_at.desc()))
     providers = result.scalars().all()
 
     return [_provider_to_dict(provider) for provider in providers]
@@ -137,6 +136,7 @@ async def create_notification_provider(
 # Static Path Routes (must come BEFORE parameterized routes)
 # ============================================================================
 
+
 @router.post("/test-config", response_model=NotificationTestResponse)
 async def test_notification_config(
     test_request: NotificationTestRequest,
@@ -153,9 +153,7 @@ async def test_notification_config(
 @router.post("/test-all")
 async def test_all_notification_providers(db: AsyncSession = Depends(get_db)):
     """Send a test notification to all enabled providers."""
-    result = await db.execute(
-        select(NotificationProvider).where(NotificationProvider.enabled == True)
-    )
+    result = await db.execute(select(NotificationProvider).where(NotificationProvider.enabled.is_(True)))
     providers = result.scalars().all()
 
     if not providers:
@@ -167,9 +165,7 @@ async def test_all_notification_providers(db: AsyncSession = Depends(get_db)):
 
     for provider in providers:
         config = json.loads(provider.config) if isinstance(provider.config, str) else provider.config
-        success, message = await notification_service.send_test_notification(
-            provider.provider_type, config, db
-        )
+        success, message = await notification_service.send_test_notification(provider.provider_type, config, db)
 
         # Update provider status
         if success:
@@ -180,13 +176,15 @@ async def test_all_notification_providers(db: AsyncSession = Depends(get_db)):
             provider.last_error_at = datetime.utcnow()
             failed_count += 1
 
-        results.append({
-            "provider_id": provider.id,
-            "provider_name": provider.name,
-            "provider_type": provider.provider_type,
-            "success": success,
-            "message": message,
-        })
+        results.append(
+            {
+                "provider_id": provider.id,
+                "provider_name": provider.name,
+                "provider_type": provider.provider_type,
+                "success": success,
+                "message": message,
+            }
+        )
 
     await db.commit()
 
@@ -201,6 +199,7 @@ async def test_all_notification_providers(db: AsyncSession = Depends(get_db)):
 # ============================================================================
 # Notification Log Routes (must come BEFORE /{provider_id} routes)
 # ============================================================================
+
 
 @router.get("/logs", response_model=list[NotificationLogResponse])
 async def get_notification_logs(
@@ -243,20 +242,22 @@ async def get_notification_logs(
             providers_cache[log.provider_id] = provider_result.scalar_one_or_none()
 
         provider = providers_cache[log.provider_id]
-        response.append(NotificationLogResponse(
-            id=log.id,
-            provider_id=log.provider_id,
-            provider_name=provider.name if provider else None,
-            provider_type=provider.provider_type if provider else None,
-            event_type=log.event_type,
-            title=log.title,
-            message=log.message,
-            success=log.success,
-            error_message=log.error_message,
-            printer_id=log.printer_id,
-            printer_name=log.printer_name,
-            created_at=log.created_at,
-        ))
+        response.append(
+            NotificationLogResponse(
+                id=log.id,
+                provider_id=log.provider_id,
+                provider_name=provider.name if provider else None,
+                provider_type=provider.provider_type if provider else None,
+                event_type=log.event_type,
+                title=log.title,
+                message=log.message,
+                success=log.success,
+                error_message=log.error_message,
+                printer_id=log.printer_id,
+                printer_name=log.printer_name,
+                created_at=log.created_at,
+            )
+        )
 
     return response
 
@@ -270,15 +271,12 @@ async def get_notification_log_stats(
     cutoff = datetime.utcnow() - timedelta(days=days)
 
     # Total counts
-    total_result = await db.execute(
-        select(func.count(NotificationLog.id)).where(NotificationLog.created_at >= cutoff)
-    )
+    total_result = await db.execute(select(func.count(NotificationLog.id)).where(NotificationLog.created_at >= cutoff))
     total = total_result.scalar() or 0
 
     success_result = await db.execute(
         select(func.count(NotificationLog.id)).where(
-            NotificationLog.created_at >= cutoff,
-            NotificationLog.success == True
+            NotificationLog.created_at >= cutoff, NotificationLog.success.is_(True)
         )
     )
     success_count = success_result.scalar() or 0
@@ -317,9 +315,7 @@ async def clear_notification_logs(
     """Clear old notification logs."""
     cutoff = datetime.utcnow() - timedelta(days=older_than_days)
 
-    result = await db.execute(
-        delete(NotificationLog).where(NotificationLog.created_at < cutoff)
-    )
+    result = await db.execute(delete(NotificationLog).where(NotificationLog.created_at < cutoff))
     await db.commit()
 
     deleted_count = result.rowcount
@@ -332,15 +328,14 @@ async def clear_notification_logs(
 # Provider Instance Routes (parameterized - must come LAST)
 # ============================================================================
 
+
 @router.get("/{provider_id}", response_model=NotificationProviderResponse)
 async def get_notification_provider(
     provider_id: int,
     db: AsyncSession = Depends(get_db),
 ):
     """Get a specific notification provider."""
-    result = await db.execute(
-        select(NotificationProvider).where(NotificationProvider.id == provider_id)
-    )
+    result = await db.execute(select(NotificationProvider).where(NotificationProvider.id == provider_id))
     provider = result.scalar_one_or_none()
 
     if not provider:
@@ -356,9 +351,7 @@ async def update_notification_provider(
     db: AsyncSession = Depends(get_db),
 ):
     """Update a notification provider."""
-    result = await db.execute(
-        select(NotificationProvider).where(NotificationProvider.id == provider_id)
-    )
+    result = await db.execute(select(NotificationProvider).where(NotificationProvider.id == provider_id))
     provider = result.scalar_one_or_none()
 
     if not provider:
@@ -389,9 +382,7 @@ async def delete_notification_provider(
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a notification provider."""
-    result = await db.execute(
-        select(NotificationProvider).where(NotificationProvider.id == provider_id)
-    )
+    result = await db.execute(select(NotificationProvider).where(NotificationProvider.id == provider_id))
     provider = result.scalar_one_or_none()
 
     if not provider:
@@ -412,18 +403,14 @@ async def test_notification_provider(
     db: AsyncSession = Depends(get_db),
 ):
     """Send a test notification using an existing provider."""
-    result = await db.execute(
-        select(NotificationProvider).where(NotificationProvider.id == provider_id)
-    )
+    result = await db.execute(select(NotificationProvider).where(NotificationProvider.id == provider_id))
     provider = result.scalar_one_or_none()
 
     if not provider:
         raise HTTPException(status_code=404, detail="Notification provider not found")
 
     config = json.loads(provider.config) if isinstance(provider.config, str) else provider.config
-    success, message = await notification_service.send_test_notification(
-        provider.provider_type, config, db
-    )
+    success, message = await notification_service.send_test_notification(provider.provider_type, config, db)
 
     # Update provider status
     if success:

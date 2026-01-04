@@ -478,6 +478,7 @@ async def export_backup(
                     "scheduled_time": qi.scheduled_time.isoformat() if qi.scheduled_time else None,
                     "require_previous_success": qi.require_previous_success,
                     "auto_off_after": qi.auto_off_after,
+                    "manual_start": qi.manual_start,
                     "status": qi.status,
                     "started_at": qi.started_at.isoformat() if qi.started_at else None,
                     "completed_at": qi.completed_at.isoformat() if qi.completed_at else None,
@@ -1468,6 +1469,7 @@ async def import_backup(
                 position=qi_data.get("position", 0),
                 require_previous_success=qi_data.get("require_previous_success", False),
                 auto_off_after=qi_data.get("auto_off_after", False),
+                manual_start=qi_data.get("manual_start", False),
                 status=qi_data.get("status", "pending"),
                 error_message=qi_data.get("error_message"),
             )
@@ -1590,22 +1592,26 @@ async def import_backup(
             vp_enabled = await get_setting(db, "virtual_printer_enabled")
             vp_access_code = await get_setting(db, "virtual_printer_access_code")
             vp_mode = await get_setting(db, "virtual_printer_mode")
+            vp_model = await get_setting(db, "virtual_printer_model")
 
             enabled = vp_enabled and vp_enabled.lower() == "true"
             access_code = vp_access_code or ""
             mode = vp_mode or "immediate"
+            model = vp_model or ""
 
             if enabled and access_code:
                 await virtual_printer_manager.configure(
                     enabled=True,
                     access_code=access_code,
                     mode=mode,
+                    model=model,
                 )
             elif not enabled and virtual_printer_manager.is_enabled:
                 await virtual_printer_manager.configure(
                     enabled=False,
                     access_code=access_code,
                     mode=mode,
+                    model=model,
                 )
         except Exception:
             pass  # Virtual printer config failed, but don't fail the restore
@@ -1647,19 +1653,38 @@ async def import_backup(
 # =============================================================================
 
 
+@router.get("/virtual-printer/models")
+async def get_virtual_printer_models():
+    """Get available virtual printer models."""
+    from backend.app.services.virtual_printer import (
+        DEFAULT_VIRTUAL_PRINTER_MODEL,
+        VIRTUAL_PRINTER_MODELS,
+    )
+
+    return {
+        "models": VIRTUAL_PRINTER_MODELS,
+        "default": DEFAULT_VIRTUAL_PRINTER_MODEL,
+    }
+
+
 @router.get("/virtual-printer")
 async def get_virtual_printer_settings(db: AsyncSession = Depends(get_db)):
     """Get virtual printer settings and status."""
-    from backend.app.services.virtual_printer import virtual_printer_manager
+    from backend.app.services.virtual_printer import (
+        DEFAULT_VIRTUAL_PRINTER_MODEL,
+        virtual_printer_manager,
+    )
 
     enabled = await get_setting(db, "virtual_printer_enabled")
     access_code = await get_setting(db, "virtual_printer_access_code")
     mode = await get_setting(db, "virtual_printer_mode")
+    model = await get_setting(db, "virtual_printer_model")
 
     return {
         "enabled": enabled == "true" if enabled else False,
         "access_code_set": bool(access_code),
         "mode": mode or "immediate",
+        "model": model or DEFAULT_VIRTUAL_PRINTER_MODEL,
         "status": virtual_printer_manager.get_status(),
     }
 
@@ -1669,26 +1694,40 @@ async def update_virtual_printer_settings(
     enabled: bool = None,
     access_code: str = None,
     mode: str = None,
+    model: str = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Update virtual printer settings and restart services if needed."""
-    from backend.app.services.virtual_printer import virtual_printer_manager
+    from backend.app.services.virtual_printer import (
+        DEFAULT_VIRTUAL_PRINTER_MODEL,
+        VIRTUAL_PRINTER_MODELS,
+        virtual_printer_manager,
+    )
 
     # Get current values
     current_enabled = await get_setting(db, "virtual_printer_enabled") == "true"
     current_access_code = await get_setting(db, "virtual_printer_access_code") or ""
     current_mode = await get_setting(db, "virtual_printer_mode") or "immediate"
+    current_model = await get_setting(db, "virtual_printer_model") or DEFAULT_VIRTUAL_PRINTER_MODEL
 
     # Apply updates
     new_enabled = enabled if enabled is not None else current_enabled
     new_access_code = access_code if access_code is not None else current_access_code
     new_mode = mode if mode is not None else current_mode
+    new_model = model if model is not None else current_model
 
     # Validate mode
     if new_mode not in ("immediate", "queue"):
         return JSONResponse(
             status_code=400,
             content={"detail": "Mode must be 'immediate' or 'queue'"},
+        )
+
+    # Validate model
+    if model is not None and model not in VIRTUAL_PRINTER_MODELS:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": f"Invalid model. Must be one of: {', '.join(VIRTUAL_PRINTER_MODELS.keys())}"},
         )
 
     # Validate access code when enabling
@@ -1710,6 +1749,8 @@ async def update_virtual_printer_settings(
     if access_code is not None:
         await set_setting(db, "virtual_printer_access_code", access_code)
     await set_setting(db, "virtual_printer_mode", new_mode)
+    if model is not None:
+        await set_setting(db, "virtual_printer_model", model)
     await db.commit()
 
     # Reconfigure virtual printer
@@ -1718,6 +1759,7 @@ async def update_virtual_printer_settings(
             enabled=new_enabled,
             access_code=new_access_code,
             mode=new_mode,
+            model=new_model,
         )
     except ValueError as e:
         return JSONResponse(

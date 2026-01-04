@@ -1,8 +1,9 @@
 """Unit tests for the archive service."""
 
-import pytest
 from datetime import datetime
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 
 class TestArchiveServiceHelpers:
@@ -12,7 +13,7 @@ class TestArchiveServiceHelpers:
         """Test parsing print time to seconds."""
         # Import the actual function if available, otherwise test the logic
         # 2h 30m 15s = 2*3600 + 30*60 + 15 = 9015 seconds
-        time_str = "2h 30m 15s"
+        _time_str = "2h 30m 15s"  # Example format
         # Parse hours
         hours = 2
         minutes = 30
@@ -24,7 +25,7 @@ class TestArchiveServiceHelpers:
         """Test parsing filament usage to grams."""
         # Example: "150.5g" -> 150.5
         filament_str = "150.5g"
-        grams = float(filament_str.replace('g', ''))
+        grams = float(filament_str.replace("g", ""))
         assert grams == 150.5
 
     def test_format_duration(self):
@@ -95,7 +96,7 @@ class TestArchiveFilePaths:
     def test_generate_archive_path(self):
         """Test generating archive file paths."""
         printer_name = "X1C_01"
-        print_name = "benchy"
+        _print_name = "benchy"  # Example print name
         timestamp = datetime(2024, 1, 15, 14, 30, 0)
 
         # Expected pattern: archives/{printer}/{year}/{month}/{filename}
@@ -110,25 +111,25 @@ class TestArchiveFilePaths:
     def test_sanitize_filename(self):
         """Test filename sanitization."""
         # Characters to remove: / \ : * ? " < > |
-        dirty_name = 'test:file<name>.3mf'
+        dirty_name = "test:file<name>.3mf"
         # Simple sanitization
         safe_chars = []
         for c in dirty_name:
             if c not in '\\/:*?"<>|':
                 safe_chars.append(c)
-        clean_name = ''.join(safe_chars)
-        assert ':' not in clean_name
-        assert '<' not in clean_name
-        assert '>' not in clean_name
+        clean_name = "".join(safe_chars)
+        assert ":" not in clean_name
+        assert "<" not in clean_name
+        assert ">" not in clean_name
 
     def test_thumbnail_path(self):
         """Test thumbnail path generation."""
         archive_path = "archives/X1C_01/2024/01/benchy.3mf"
         # Thumbnail typically has same path with _thumb.png suffix
-        base_path = archive_path.rsplit('.', 1)[0]
+        base_path = archive_path.rsplit(".", 1)[0]
         thumbnail_path = f"{base_path}_thumb.png"
-        assert thumbnail_path.endswith('_thumb.png')
-        assert 'benchy' in thumbnail_path
+        assert thumbnail_path.endswith("_thumb.png")
+        assert "benchy" in thumbnail_path
 
 
 class TestArchiveStatus:
@@ -199,7 +200,7 @@ class TestArchiveThumbnails:
         """Test supported thumbnail file types."""
         supported_types = [".png", ".jpg", ".jpeg"]
         for ext in supported_types:
-            assert ext.startswith('.')
+            assert ext.startswith(".")
             assert ext.lower() in [".png", ".jpg", ".jpeg"]
 
     def test_extract_thumbnail_from_3mf(self):

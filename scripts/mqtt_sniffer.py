@@ -14,7 +14,6 @@ Example:
 import json
 import ssl
 import sys
-import time
 from datetime import datetime
 
 import paho.mqtt.client as mqtt
@@ -56,7 +55,7 @@ def on_message(client, userdata, msg):
             print(f"\n{'='*80}")
             print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] *** CALIBRATION COMMAND: {command} ***")
             print(f"Topic: {msg.topic}")
-            print(f"Full payload:")
+            print("Full payload:")
             print(json.dumps(payload, indent=2))
             print(f"{'='*80}\n")
         else:

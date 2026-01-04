@@ -566,7 +566,7 @@ class TasmotaScanner:
                 try:
                     await asyncio.gather(*tasks, return_exceptions=True)
                 except Exception as e:
-                    logger.warning(f"Batch {i//batch_size} error: {e}")
+                    logger.warning(f"Batch {i // batch_size} error: {e}")
                 self._scanned = min(i + batch_size, len(hosts))
 
             logger.info(f"Tasmota scan complete. Found {len(self._discovered)} devices.")

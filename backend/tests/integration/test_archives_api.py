@@ -72,9 +72,7 @@ class TestArchivesAPI:
         await archive_factory(printer1.id, print_name="Printer 1 Archive")
         await archive_factory(printer2.id, print_name="Printer 2 Archive")
 
-        response = await async_client.get(
-            f"/api/v1/archives/?printer_id={printer1.id}"
-        )
+        response = await async_client.get(f"/api/v1/archives/?printer_id={printer1.id}")
 
         assert response.status_code == 200
         data = response.json()
@@ -86,9 +84,7 @@ class TestArchivesAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_get_archive(
-        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
-    ):
+    async def test_get_archive(self, async_client: AsyncClient, archive_factory, printer_factory, db_session):
         """Verify single archive can be retrieved."""
         printer = await printer_factory()
         archive = await archive_factory(printer.id, print_name="Get Test Archive")
@@ -114,34 +110,24 @@ class TestArchivesAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_archive_name(
-        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
-    ):
+    async def test_update_archive_name(self, async_client: AsyncClient, archive_factory, printer_factory, db_session):
         """Verify archive name can be updated."""
         printer = await printer_factory()
         archive = await archive_factory(printer.id, print_name="Original Name")
 
-        response = await async_client.patch(
-            f"/api/v1/archives/{archive.id}",
-            json={"print_name": "Updated Name"}
-        )
+        response = await async_client.patch(f"/api/v1/archives/{archive.id}", json={"print_name": "Updated Name"})
 
         assert response.status_code == 200
         assert response.json()["print_name"] == "Updated Name"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_archive_notes(
-        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
-    ):
+    async def test_update_archive_notes(self, async_client: AsyncClient, archive_factory, printer_factory, db_session):
         """Verify archive notes can be updated."""
         printer = await printer_factory()
         archive = await archive_factory(printer.id)
 
-        response = await async_client.patch(
-            f"/api/v1/archives/{archive.id}",
-            json={"notes": "Great print!"}
-        )
+        response = await async_client.patch(f"/api/v1/archives/{archive.id}", json={"notes": "Great print!"})
 
         assert response.status_code == 200
         assert response.json()["notes"] == "Great print!"
@@ -155,10 +141,7 @@ class TestArchivesAPI:
         printer = await printer_factory()
         archive = await archive_factory(printer.id)
 
-        response = await async_client.patch(
-            f"/api/v1/archives/{archive.id}",
-            json={"is_favorite": True}
-        )
+        response = await async_client.patch(f"/api/v1/archives/{archive.id}", json={"is_favorite": True})
 
         assert response.status_code == 200
         assert response.json()["is_favorite"] is True
@@ -169,9 +152,7 @@ class TestArchivesAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_delete_archive(
-        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
-    ):
+    async def test_delete_archive(self, async_client: AsyncClient, archive_factory, printer_factory, db_session):
         """Verify archive can be deleted."""
         printer = await printer_factory()
         archive = await archive_factory(printer.id)
@@ -199,9 +180,7 @@ class TestArchivesAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_get_archive_stats(
-        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
-    ):
+    async def test_get_archive_stats(self, async_client: AsyncClient, archive_factory, printer_factory, db_session):
         """Verify archive statistics can be retrieved."""
         printer = await printer_factory()
         await archive_factory(
@@ -282,10 +261,7 @@ class TestArchiveDataIntegrity:
         archive = await archive_factory(printer.id, notes="Original notes")
 
         # Update
-        await async_client.patch(
-            f"/api/v1/archives/{archive.id}",
-            json={"notes": "Updated notes", "is_favorite": True}
-        )
+        await async_client.patch(f"/api/v1/archives/{archive.id}", json={"notes": "Updated notes", "is_favorite": True})
 
         # Verify persistence
         response = await async_client.get(f"/api/v1/archives/{archive.id}")

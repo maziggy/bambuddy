@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Calendar, Clock, X, AlertCircle, Power } from 'lucide-react';
+import { Calendar, Clock, X, AlertCircle, Power, Hand } from 'lucide-react';
 import { api } from '../api/client';
 import type { PrintQueueItemCreate } from '../api/client';
 import { Card, CardContent } from './Card';
@@ -18,7 +18,7 @@ export function AddToQueueModal({ archiveId, archiveName, onClose }: AddToQueueM
   const { showToast } = useToast();
 
   const [printerId, setPrinterId] = useState<number | null>(null);
-  const [scheduleType, setScheduleType] = useState<'asap' | 'scheduled'>('asap');
+  const [scheduleType, setScheduleType] = useState<'asap' | 'scheduled' | 'manual'>('asap');
   const [scheduledTime, setScheduledTime] = useState('');
   const [requirePreviousSuccess, setRequirePreviousSuccess] = useState(false);
   const [autoOffAfter, setAutoOffAfter] = useState(false);
@@ -68,6 +68,7 @@ export function AddToQueueModal({ archiveId, archiveName, onClose }: AddToQueueM
       archive_id: archiveId,
       require_previous_success: requirePreviousSuccess,
       auto_off_after: autoOffAfter,
+      manual_start: scheduleType === 'manual',
     };
 
     if (scheduleType === 'scheduled' && scheduledTime) {
@@ -142,7 +143,7 @@ export function AddToQueueModal({ archiveId, archiveName, onClose }: AddToQueueM
               <div className="flex gap-2">
                 <button
                   type="button"
-                  className={`flex-1 px-3 py-2 rounded-lg border text-sm flex items-center justify-center gap-2 transition-colors ${
+                  className={`flex-1 px-2 py-2 rounded-lg border text-sm flex items-center justify-center gap-1.5 transition-colors ${
                     scheduleType === 'asap'
                       ? 'bg-bambu-green border-bambu-green text-white'
                       : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:text-white'
@@ -150,11 +151,11 @@ export function AddToQueueModal({ archiveId, archiveName, onClose }: AddToQueueM
                   onClick={() => setScheduleType('asap')}
                 >
                   <Clock className="w-4 h-4" />
-                  ASAP (when idle)
+                  ASAP
                 </button>
                 <button
                   type="button"
-                  className={`flex-1 px-3 py-2 rounded-lg border text-sm flex items-center justify-center gap-2 transition-colors ${
+                  className={`flex-1 px-2 py-2 rounded-lg border text-sm flex items-center justify-center gap-1.5 transition-colors ${
                     scheduleType === 'scheduled'
                       ? 'bg-bambu-green border-bambu-green text-white'
                       : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:text-white'
@@ -163,6 +164,18 @@ export function AddToQueueModal({ archiveId, archiveName, onClose }: AddToQueueM
                 >
                   <Calendar className="w-4 h-4" />
                   Scheduled
+                </button>
+                <button
+                  type="button"
+                  className={`flex-1 px-2 py-2 rounded-lg border text-sm flex items-center justify-center gap-1.5 transition-colors ${
+                    scheduleType === 'manual'
+                      ? 'bg-bambu-green border-bambu-green text-white'
+                      : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:text-white'
+                  }`}
+                  onClick={() => setScheduleType('manual')}
+                >
+                  <Hand className="w-4 h-4" />
+                  Queue Only
                 </button>
               </div>
             </div>
@@ -215,7 +228,9 @@ export function AddToQueueModal({ archiveId, archiveName, onClose }: AddToQueueM
             <p className="text-xs text-bambu-gray">
               {scheduleType === 'asap'
                 ? 'Print will start as soon as the printer is idle.'
-                : 'Print will start at the scheduled time if the printer is idle. If busy, it will wait until the printer becomes available.'}
+                : scheduleType === 'scheduled'
+                ? 'Print will start at the scheduled time if the printer is idle. If busy, it will wait until the printer becomes available.'
+                : 'Print will be staged but won\'t start automatically. Use the Start button to release it to the queue.'}
             </p>
 
             {/* Actions */}

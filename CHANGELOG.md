@@ -2,6 +2,54 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
+## [0.1.6b6] - 2026-01-04
+
+### Added
+- **Resizable printer cards** - Adjust printer card size from the Printers page toolbar:
+  - Four sizes: Small, Medium (default), Large, XL
+  - Plus/minus buttons in toolbar header
+  - Size preference saved to localStorage
+  - Responsive grid adapts to selected size
+- **Queue Only mode** - Stage prints without automatic scheduling:
+  - New "Queue Only" option when adding prints to queue
+  - Staged prints show purple "Staged" badge
+  - Play button to manually release staged prints to the queue
+  - Edit queue items to switch between ASAP, Scheduled, and Queue Only modes
+  - Useful for preparing print batches before activating
+- **Virtual printer model selection** - Choose which Bambu printer model to emulate:
+  - Dropdown in Settings > Virtual Printer to select model
+  - Supports X1 series (X1C, X1, X1E), P series (P1S, P1P, P2S), A1 series (A1, A1 Mini), and H2 series (H2D, H2C, H2S)
+  - Affects how slicers detect and interact with the virtual printer
+  - Model change requires disabling/re-enabling the virtual printer
+  - Models sorted alphabetically in dropdown
+- **Pending upload delete confirmation** - Confirmation modal when discarding pending uploads in queue review mode
+
+### Fixed
+- **Camera stream reconnection** - Improved detection of stuck camera streams with automatic reconnection
+- **Virtual printer SSDP model codes** - Corrected model codes for slicer compatibility:
+  - C11=P1P, C12=P1S (were incorrectly swapped)
+  - N7=P2S (was incorrectly using C13 which is X1E)
+  - 3DPrinter-X1-Carbon for X1C (full model name format)
+- **Virtual printer serial prefixes** - Fixed serial number prefixes to match real printers:
+  - Based on actual Bambu Lab serial number format (MMM??RYMDDUUUUU)
+  - X1C=00M, P1S=01P, P1P=01S, P2S=22E, A1=039, A1M=030, H2D=094, X1E=03W
+- **Docker certificate persistence** - Fixed virtual printer certificate storage:
+  - Removed unused `bambuddy_vprinter` volume (was mounting to wrong path)
+  - Certificates now correctly persist in `bambuddy_data` volume
+  - Added optional bind mount for sharing certs between Docker and native installations
+
+### Changed
+- **Virtual printer setup documentation** - Improved setup instructions:
+  - Prominent "Setup Required" warning in UI linking to documentation
+  - Certificate must be appended to slicer's printer.cer file (not system cert store)
+  - Platform-specific instructions for Linux, Docker, macOS, Windows, Unraid, Synology, TrueNAS, Proxmox
+
+### Tests
+- Added integration tests for print queue API endpoints (16 new tests)
+- Tests cover queue CRUD, manual_start flag, and start/cancel endpoints
+- Added unit tests for virtual printer model configuration (3 new tests)
+- Updated VirtualPrinterSettings tests for new UI layout and model codes
+
 ## [0.1.6b5] - 2026-01-02
 
 ### Added
@@ -41,6 +89,17 @@ All notable changes to Bambuddy will be documented in this file.
   - Light and dark theme support
   - Close with ESC key or click outside
   - Requires "Exclude Objects" option enabled in slicer
+- **Interactive API Browser** - Explore and test all API endpoints directly in Bambuddy:
+  - Settings → API Keys now includes a full API browser
+  - Fetches OpenAPI schema automatically
+  - Endpoints grouped by category (printers, archives, settings, etc.)
+  - Expandable sections with color-coded method badges (GET, POST, PATCH, DELETE)
+  - Parameter inputs for path, query, and JSON body
+  - Auto-populates request body with schema examples
+  - Live API execution with response display (status, timing, formatted JSON)
+  - Paste API key to test authenticated endpoints
+  - Search to filter endpoints across all categories
+  - Two-column layout: API key management + API browser side-by-side
 - **AMS slot RFID re-read** - Re-read RFID data for individual AMS slots:
   - Menu button (⋮) appears on hover over AMS slots
   - "Re-read RFID" option triggers filament info refresh
@@ -53,9 +112,19 @@ All notable changes to Bambuddy will be documented in this file.
   - Progress bar tracks items toward target count
   - Useful for batch printing (e.g., 10 copies in one print = 10 items)
   - Default quantity of 1 for backwards compatibility
+- **Fan status display** - Real-time fan speeds in new Controls section:
+  - Part cooling fan, Auxiliary fan, Chamber fan status
+  - Distinct icons for each fan type (Fan, Wind, AirVent)
+  - Dynamic coloring: active fans show colored, off fans show gray
+  - Percentage display (0-100%)
+  - Real-time updates via WebSocket
+  - Always visible on printer cards in expanded view
 
 ### Changed
-- **Temperature cards layout** - Refactored printer card layout with slimmer temperature displays to make room for control buttons
+- **Printer card layout** - Reorganized expanded view with new Controls section:
+  - Temperature display is now standalone (no longer shares row with buttons)
+  - New Controls section contains fan status (left) and print buttons (right)
+  - Removed divider lines before Controls and Filaments sections for cleaner look
 - **Cover image availability** - Print cover image now shown in PAUSE/PAUSED states (not just RUNNING) for skip objects modal
 - **Spoolman info banner** - Updated settings UI with clearer sync documentation
 

@@ -1,16 +1,17 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
-from backend.app.core.database import get_db
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from backend.app.core.auth import generate_api_key
+from backend.app.core.database import get_db
 from backend.app.models.api_key import APIKey
 from backend.app.schemas.api_key import (
     APIKeyCreate,
-    APIKeyUpdate,
-    APIKeyResponse,
     APIKeyCreateResponse,
+    APIKeyResponse,
+    APIKeyUpdate,
 )
 
 logger = logging.getLogger(__name__)
@@ -21,9 +22,7 @@ router = APIRouter(prefix="/api-keys", tags=["api-keys"])
 @router.get("/", response_model=list[APIKeyResponse])
 async def list_api_keys(db: AsyncSession = Depends(get_db)):
     """List all API keys (without full key values)."""
-    result = await db.execute(
-        select(APIKey).order_by(APIKey.created_at.desc())
-    )
+    result = await db.execute(select(APIKey).order_by(APIKey.created_at.desc()))
     return list(result.scalars().all())
 
 

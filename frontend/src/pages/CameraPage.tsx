@@ -7,6 +7,7 @@ import { api } from '../api/client';
 const MAX_RECONNECT_ATTEMPTS = 5;
 const INITIAL_RECONNECT_DELAY = 2000; // 2 seconds
 const MAX_RECONNECT_DELAY = 30000; // 30 seconds
+const STALL_CHECK_INTERVAL = 5000; // Check every 5 seconds
 
 export function CameraPage() {
   const { printerId } = useParams<{ printerId: string }>();
@@ -25,6 +26,7 @@ export function CameraPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const stallCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch printer info for the title
   const { data: printer } = useQuery({
@@ -146,6 +148,9 @@ export function CameraPage() {
       if (countdownIntervalRef.current) {
         clearInterval(countdownIntervalRef.current);
       }
+      if (stallCheckIntervalRef.current) {
+        clearInterval(stallCheckIntervalRef.current);
+      }
     };
   }, []);
 
@@ -191,6 +196,48 @@ export function CameraPage() {
       setImageKey(Date.now());
     }, delay);
   }, [reconnectAttempts]);
+
+  // Stall detection - periodically check if stream is still receiving frames
+  useEffect(() => {
+    if (streamMode !== 'stream' || streamLoading || streamError || isReconnecting || transitioning) {
+      // Clear stall check when not actively streaming
+      if (stallCheckIntervalRef.current) {
+        clearInterval(stallCheckIntervalRef.current);
+        stallCheckIntervalRef.current = null;
+      }
+      return;
+    }
+
+    // Start stall detection after stream has loaded
+    stallCheckIntervalRef.current = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/v1/printers/${id}/camera/status`);
+        if (response.ok) {
+          const status = await response.json();
+          if (status.stalled) {
+            console.log('Stream stall detected, auto-reconnecting...');
+            // Trigger reconnect
+            if (stallCheckIntervalRef.current) {
+              clearInterval(stallCheckIntervalRef.current);
+              stallCheckIntervalRef.current = null;
+            }
+            // Use the same reconnect logic as stream error
+            setStreamLoading(false);
+            attemptReconnect();
+          }
+        }
+      } catch {
+        // Ignore fetch errors - server might be temporarily unavailable
+      }
+    }, STALL_CHECK_INTERVAL);
+
+    return () => {
+      if (stallCheckIntervalRef.current) {
+        clearInterval(stallCheckIntervalRef.current);
+        stallCheckIntervalRef.current = null;
+      }
+    };
+  }, [streamMode, streamLoading, streamError, isReconnecting, transitioning, id, attemptReconnect]);
 
   const handleStreamError = () => {
     setStreamLoading(false);

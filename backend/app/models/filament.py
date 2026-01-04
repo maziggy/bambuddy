@@ -1,5 +1,6 @@
 from datetime import datetime
-from sqlalchemy import String, Float, DateTime, func
+
+from sqlalchemy import DateTime, Float, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.core.database import Base
@@ -29,9 +30,5 @@ class Filament(Base):
     bed_temp_min: Mapped[int | None] = mapped_column()
     bed_temp_max: Mapped[int | None] = mapped_column()
 
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

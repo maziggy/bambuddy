@@ -46,7 +46,9 @@ class NotificationProviderBase(BaseModel):
 
     # Event triggers - AMS-HT environmental alarms
     on_ams_ht_humidity_high: bool = Field(default=False, description="Notify when AMS-HT humidity exceeds threshold")
-    on_ams_ht_temperature_high: bool = Field(default=False, description="Notify when AMS-HT temperature exceeds threshold")
+    on_ams_ht_temperature_high: bool = Field(
+        default=False, description="Notify when AMS-HT temperature exceeds threshold"
+    )
 
     # Quiet hours
     quiet_hours_enabled: bool = Field(default=False, description="Enable quiet hours")

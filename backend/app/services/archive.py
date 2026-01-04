@@ -342,7 +342,7 @@ class ThreeMFParser:
 
 def extract_printable_objects_from_3mf(
     data: bytes, plate_number: int | None = None, include_positions: bool = False
-) -> dict[int, str] | dict[int, dict]:
+) -> dict[int, str] | dict[int, dict] | tuple[dict[int, dict], list | None]:
     """Extract printable objects from 3MF file bytes.
 
     This is a lightweight function used during print start to get the list
@@ -351,16 +351,17 @@ def extract_printable_objects_from_3mf(
     Args:
         data: Raw bytes of the 3MF file
         plate_number: Which plate was printed (1-based), or None for first plate
-        include_positions: If True, return dict with name and position info
+        include_positions: If True, return tuple of (objects dict, bbox_all)
 
     Returns:
         If include_positions=False: Dictionary mapping identify_id (int) to object name (str)
-        If include_positions=True: Dictionary mapping identify_id to {name, x, y} dict
+        If include_positions=True: Tuple of (dict mapping identify_id to {name, x, y}, bbox_all list or None)
     """
     import json
     from io import BytesIO
 
     printable_objects: dict = {}
+    bbox_all: list | None = None
 
     try:
         with zipfile.ZipFile(BytesIO(data), "r") as zf:
@@ -371,7 +372,6 @@ def extract_printable_objects_from_3mf(
             root = ET.fromstring(content)
 
             # Find the correct plate
-            plate_idx = plate_number or 1
             if plate_number:
                 plate = root.find(f".//plate[@plate_idx='{plate_number}']")
                 if plate is None:
@@ -382,19 +382,35 @@ def extract_printable_objects_from_3mf(
             if plate is None:
                 return printable_objects
 
+            # Get actual plate index from metadata (sliced files only have one plate)
+            plate_idx = plate_number or 1
+            for meta in plate.findall("metadata"):
+                if meta.get("key") == "index":
+                    try:
+                        plate_idx = int(meta.get("value", "1"))
+                    except ValueError:
+                        pass
+                    break
+
             # Load position data from plate_N.json if we need positions
-            bbox_objects = []
+            # Build a lookup by name since bbox_objects.id != slice_info identify_id
+            bbox_by_name: dict[str, list] = {}
             if include_positions:
                 plate_json_path = f"Metadata/plate_{plate_idx}.json"
                 if plate_json_path in zf.namelist():
                     try:
                         plate_json = json.loads(zf.read(plate_json_path).decode())
-                        bbox_objects = plate_json.get("bbox_objects", [])
+                        # Get bbox_all - the bounding box of all objects (used for image bounds)
+                        bbox_all = plate_json.get("bbox_all")
+                        for bbox_obj in plate_json.get("bbox_objects", []):
+                            obj_name = bbox_obj.get("name")
+                            bbox = bbox_obj.get("bbox", [])
+                            if obj_name and len(bbox) >= 4:
+                                bbox_by_name[obj_name] = bbox
                     except (json.JSONDecodeError, KeyError):
                         pass
 
             # Extract objects from slice_info.config
-            objects_list = []
             for obj in plate.findall("object"):
                 identify_id = obj.get("identify_id")
                 name = obj.get("name")
@@ -403,27 +419,25 @@ def extract_printable_objects_from_3mf(
                 if identify_id and name and skipped.lower() != "true":
                     try:
                         obj_id = int(identify_id)
-                        objects_list.append((obj_id, name))
+                        if include_positions:
+                            x, y = None, None
+                            # Match by name to get bbox coordinates
+                            bbox = bbox_by_name.get(name)
+                            if bbox:
+                                # Calculate center from bbox [x_min, y_min, x_max, y_max]
+                                x = (bbox[0] + bbox[2]) / 2
+                                y = (bbox[1] + bbox[3]) / 2
+                            printable_objects[obj_id] = {"name": name, "x": x, "y": y}
+                        else:
+                            printable_objects[obj_id] = name
                     except ValueError:
                         pass
-
-            # Match objects with positions by index (both lists are in same order)
-            for idx, (obj_id, name) in enumerate(objects_list):
-                if include_positions:
-                    x, y = None, None
-                    if idx < len(bbox_objects):
-                        bbox = bbox_objects[idx].get("bbox", [])
-                        if len(bbox) >= 4:
-                            # Calculate center from bbox [x_min, y_min, x_max, y_max]
-                            x = (bbox[0] + bbox[2]) / 2
-                            y = (bbox[1] + bbox[3]) / 2
-                    printable_objects[obj_id] = {"name": name, "x": x, "y": y}
-                else:
-                    printable_objects[obj_id] = name
 
     except Exception:
         pass
 
+    if include_positions:
+        return printable_objects, bbox_all
     return printable_objects
 
 

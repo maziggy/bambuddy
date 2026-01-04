@@ -150,6 +150,11 @@ class PrinterState:
     printable_objects: dict = field(default_factory=dict)
     # Objects that have been skipped during the current print
     skipped_objects: list = field(default_factory=list)
+    # Fan speeds (0-100 percentage, None if not available for this model)
+    cooling_fan_speed: int | None = None  # Part cooling fan
+    big_fan1_speed: int | None = None  # Auxiliary fan
+    big_fan2_speed: int | None = None  # Chamber/exhaust fan
+    heatbreak_fan_speed: int | None = None  # Hotend heatbreak fan
 
 
 # Stage name mapping from BambuStudio DeviceManager.cpp
@@ -698,12 +703,15 @@ class BambuMQTTClient:
         import hashlib
 
         # Handle nested ams structure: {"ams": {"ams": [...]}} or {"ams": [...]}
-        if isinstance(ams_data, dict) and "ams" in ams_data:
-            ams_list = ams_data["ams"]
+        # Also handle P1S partial updates: {"tray_now": ..., "tray_tar": ...} without "ams" key
+        ams_list = None
+        if isinstance(ams_data, dict):
+            if "ams" in ams_data:
+                ams_list = ams_data["ams"]
             # Log all AMS dict fields to debug tray_now for H2D dual-nozzle
             non_list_fields = {k: v for k, v in ams_data.items() if k != "ams"}
             if non_list_fields:
-                logger.info(f"[{self.serial_number}] AMS dict fields: {non_list_fields}")
+                logger.debug(f"[{self.serial_number}] AMS dict fields: {non_list_fields}")
 
             # IMPORTANT: Parse ams_status FIRST before tray_now, so we have fresh status
             # when checking if we're in filament change mode for tray_now disambiguation
@@ -725,6 +733,7 @@ class BambuMQTTClient:
                 )
 
             # Parse tray_now from AMS dict - this is the currently loaded tray global ID
+            # Note: tray_tar is also available but on H2D it's just slot number (0-3), not global ID
             if "tray_now" in ams_data:
                 raw_tray_now = ams_data["tray_now"]
                 # Convert string to int if needed
@@ -767,33 +776,61 @@ class BambuMQTTClient:
                         active_ext = self.state.active_extruder  # 0=right, 1=left
                         ams_map = self.state.ams_extruder_map  # {ams_id: extruder_id}
 
-                        # Find the AMS connected to the active extruder
-                        active_ams_id = None
-                        for ams_id_str, ext_id in ams_map.items():
-                            if ext_id == active_ext:
-                                try:
-                                    active_ams_id = int(ams_id_str)
-                                except ValueError:
-                                    pass
-                                break
-
-                        if active_ams_id is not None:
-                            # Calculate global tray ID using the active AMS
-                            global_tray_id = active_ams_id * 4 + parsed_tray_now
-                            logger.info(
-                                f"[{self.serial_number}] H2D tray_now disambiguation: "
-                                f"slot {parsed_tray_now} + active_extruder {active_ext} -> AMS {active_ams_id} -> global ID {global_tray_id}"
-                            )
-                            self.state.tray_now = global_tray_id
-                        else:
-                            # No AMS found for active extruder - check if we already have a resolved global ID
-                            current_tray = self.state.tray_now
-                            if current_tray > 3 and current_tray != 255 and (current_tray % 4) == parsed_tray_now:
-                                # Current tray_now is already a valid global ID that matches this slot
+                        # First, check if current tray_now is already a valid global ID
+                        # that matches this slot AND is connected to the active extruder
+                        current_tray = self.state.tray_now
+                        if current_tray > 3 and current_tray != 255 and (current_tray % 4) == parsed_tray_now:
+                            current_ams = current_tray // 4
+                            current_ams_extruder = ams_map.get(str(current_ams))
+                            if current_ams_extruder == active_ext:
+                                # Current tray is valid, matches slot, and on correct extruder - keep it
                                 logger.debug(
                                     f"[{self.serial_number}] H2D tray_now: keeping existing global ID {current_tray} "
-                                    f"(matches incoming slot {parsed_tray_now})"
+                                    f"(slot {parsed_tray_now}, AMS {current_ams} on extruder {active_ext})"
                                 )
+                                # Don't update tray_now - it's already correct
+                                pass
+                            else:
+                                # Current AMS is on wrong extruder - need to find correct AMS
+                                active_ams_id = None
+                                for ams_id_str, ext_id in ams_map.items():
+                                    if ext_id == active_ext:
+                                        try:
+                                            active_ams_id = int(ams_id_str)
+                                        except ValueError:
+                                            pass
+                                        break
+                                if active_ams_id is not None:
+                                    global_tray_id = active_ams_id * 4 + parsed_tray_now
+                                    logger.info(
+                                        f"[{self.serial_number}] H2D tray_now disambiguation: "
+                                        f"slot {parsed_tray_now} + active_extruder {active_ext} -> AMS {active_ams_id} -> global ID {global_tray_id}"
+                                    )
+                                    self.state.tray_now = global_tray_id
+                                else:
+                                    logger.warning(
+                                        f"[{self.serial_number}] H2D tray_now: no ams_extruder_map for active_extruder {active_ext}"
+                                    )
+                                    self.state.tray_now = parsed_tray_now
+                        else:
+                            # No valid current tray - find an AMS connected to the active extruder
+                            active_ams_id = None
+                            for ams_id_str, ext_id in ams_map.items():
+                                if ext_id == active_ext:
+                                    try:
+                                        active_ams_id = int(ams_id_str)
+                                    except ValueError:
+                                        pass
+                                    break
+
+                            if active_ams_id is not None:
+                                # Calculate global tray ID using the active AMS
+                                global_tray_id = active_ams_id * 4 + parsed_tray_now
+                                logger.info(
+                                    f"[{self.serial_number}] H2D tray_now disambiguation: "
+                                    f"slot {parsed_tray_now} + active_extruder {active_ext} -> AMS {active_ams_id} -> global ID {global_tray_id}"
+                                )
+                                self.state.tray_now = global_tray_id
                             else:
                                 # Fallback: use slot as-is
                                 logger.warning(
@@ -813,17 +850,36 @@ class BambuMQTTClient:
 
             # NOTE: ams_status is parsed BEFORE tray_now (see above) to ensure correct
             # state when checking filament change mode for H2D disambiguation
+
+            # P1S/P1P send partial updates without "ams" key - this is valid, not an error
+            # We've already processed the status fields above, so just return if no ams list
+            if ams_list is None:
+                logger.debug(f"[{self.serial_number}] AMS partial update (no tray data)")
+                return
         elif isinstance(ams_data, list):
             ams_list = ams_data
         else:
             logger.warning(f"[{self.serial_number}] Unexpected AMS data format: {type(ams_data)}")
             return
 
-        # Store AMS data in raw_data so it's accessible via API
-        self.state.raw_data["ams"] = ams_list
+        # Merge AMS data instead of replacing, to handle partial updates
+        # During prints, the printer may only send updates for active AMS units
+        existing_ams = self.state.raw_data.get("ams", [])
+        existing_by_id = {ams.get("id"): ams for ams in existing_ams if ams.get("id") is not None}
+
+        # Update existing units with new data, add new units
+        for ams_unit in ams_list:
+            ams_id = ams_unit.get("id")
+            if ams_id is not None:
+                existing_by_id[ams_id] = ams_unit
+
+        # Convert back to list, sorted by ID for consistent ordering
+        merged_ams = sorted(existing_by_id.values(), key=lambda x: x.get("id", 0))
+        self.state.raw_data["ams"] = merged_ams
+
         # Update timestamp for RFID refresh detection (frontend can detect "new data arrived")
         self.state.last_ams_update = time.time()
-        logger.debug(f"[{self.serial_number}] Stored AMS data with {len(ams_list)} units")
+        logger.debug(f"[{self.serial_number}] Merged AMS data: {len(ams_list)} new units, {len(merged_ams)} total")
 
         # Extract ams_extruder_map from each AMS unit's info field
         # According to OpenBambuAPI: info field bit 8 indicates which extruder (0=right, 1=left)
@@ -902,6 +958,40 @@ class BambuMQTTClient:
             self.state.layer_num = int(data["layer_num"])
         if "total_layer_num" in data:
             self.state.total_layers = int(data["total_layer_num"])
+
+        # Fan speeds (MQTT sends as string "0"-"15" representing speed levels, or percentage)
+        # Convert to 0-100 percentage for display
+        def parse_fan_speed(value: str | int | None) -> int | None:
+            if value is None:
+                return None
+            try:
+                speed = int(value)
+                # MQTT reports 0-15 speed levels, convert to percentage (0-100)
+                # 15 = 100%, so multiply by 100/15 ≈ 6.67
+                if speed <= 15:
+                    return round(speed * 100 / 15)
+                # If already a percentage (0-255 scale from some printers), convert
+                elif speed <= 255:
+                    return round(speed * 100 / 255)
+                return speed
+            except (ValueError, TypeError):
+                return None
+
+        # Log fan fields once for debugging
+        if not hasattr(self, "_fan_fields_logged"):
+            fan_fields = {k: v for k, v in data.items() if "fan" in k.lower()}
+            if fan_fields:
+                logger.info(f"[{self.serial_number}] Fan fields in MQTT data: {fan_fields}")
+                self._fan_fields_logged = True
+
+        if "cooling_fan_speed" in data:
+            self.state.cooling_fan_speed = parse_fan_speed(data["cooling_fan_speed"])
+        if "big_fan1_speed" in data:
+            self.state.big_fan1_speed = parse_fan_speed(data["big_fan1_speed"])
+        if "big_fan2_speed" in data:
+            self.state.big_fan2_speed = parse_fan_speed(data["big_fan2_speed"])
+        if "heatbreak_fan_speed" in data:
+            self.state.heatbreak_fan_speed = parse_fan_speed(data["heatbreak_fan_speed"])
 
         # Calibration stage tracking
         if "stg_cur" in data:

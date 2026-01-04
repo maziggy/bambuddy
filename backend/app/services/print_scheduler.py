@@ -3,16 +3,15 @@
 import asyncio
 import logging
 from datetime import datetime
-from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings
 from backend.app.core.database import async_session
+from backend.app.models.archive import PrintArchive
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
-from backend.app.models.archive import PrintArchive
 from backend.app.models.smart_plug import SmartPlug
 from backend.app.services.bambu_ftp import upload_file_async
 from backend.app.services.printer_manager import printer_manager
@@ -73,6 +72,10 @@ class PrintScheduler:
                 if item.scheduled_time and item.scheduled_time > datetime.utcnow():
                     continue
 
+                # Skip items that require manual start
+                if item.manual_start:
+                    continue
+
                 # Check if printer is idle
                 printer_idle = self._is_printer_idle(item.printer_id)
                 printer_connected = printer_manager.is_connected(item.printer_id)
@@ -128,9 +131,7 @@ class PrintScheduler:
 
     async def _get_smart_plug(self, db: AsyncSession, printer_id: int) -> SmartPlug | None:
         """Get the smart plug associated with a printer."""
-        result = await db.execute(
-            select(SmartPlug).where(SmartPlug.printer_id == printer_id)
-        )
+        result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
         return result.scalar_one_or_none()
 
     async def _power_on_and_wait(self, plug: SmartPlug, printer_id: int, db: AsyncSession) -> bool:
@@ -222,9 +223,7 @@ class PrintScheduler:
         logger.info(f"Starting queue item {item.id}")
 
         # Get archive
-        result = await db.execute(
-            select(PrintArchive).where(PrintArchive.id == item.archive_id)
-        )
+        result = await db.execute(select(PrintArchive).where(PrintArchive.id == item.archive_id))
         archive = result.scalar_one_or_none()
         if not archive:
             item.status = "failed"
@@ -236,9 +235,7 @@ class PrintScheduler:
             return
 
         # Get printer
-        result = await db.execute(
-            select(Printer).where(Printer.id == item.printer_id)
-        )
+        result = await db.execute(select(Printer).where(Printer.id == item.printer_id))
         printer = result.scalar_one_or_none()
         if not printer:
             item.status = "failed"
@@ -296,6 +293,7 @@ class PrintScheduler:
 
         # Register as expected print so we don't create a duplicate archive
         from backend.app.main import register_expected_print
+
         register_expected_print(item.printer_id, remote_filename, archive.id)
 
         # Start the print

@@ -153,3 +153,8 @@ class PrinterStatus(BaseModel):
     last_ams_update: float = 0.0
     # Number of printable objects in current print (for skip objects feature)
     printable_objects_count: int = 0
+    # Fan speeds (0-100 percentage, None if not available for this model)
+    cooling_fan_speed: int | None = None  # Part cooling fan
+    big_fan1_speed: int | None = None  # Auxiliary fan
+    big_fan2_speed: int | None = None  # Chamber/exhaust fan
+    heatbreak_fan_speed: int | None = None  # Hotend heatbreak fan

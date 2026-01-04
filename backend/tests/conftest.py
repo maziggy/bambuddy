@@ -5,25 +5,26 @@ import json
 import logging
 import os
 import sys
-import pytest
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 # IMPORTANT: Set environment variables BEFORE any app imports
 # This must happen before settings/config are loaded
 os.environ["LOG_TO_FILE"] = "false"
 os.environ["DEBUG"] = "false"
 
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient  # noqa: E402
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine  # noqa: E402
 
 # Ensure settings use our env vars - import and override before database import
-from backend.app.core.config import settings
+from backend.app.core.config import settings  # noqa: E402
+
 settings.log_to_file = False
 
-from backend.app.core.database import Base
-
+from backend.app.core.database import Base  # noqa: E402
 
 # Use in-memory SQLite for tests
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -44,10 +45,20 @@ async def test_engine():
 
     # Import all models to register them
     from backend.app.models import (
-        printer, archive, filament, settings, smart_plug,
-        print_queue, notification, maintenance, kprofile_note,
-        notification_template, external_link, project, api_key,
-        ams_history
+        ams_history,
+        api_key,
+        archive,
+        external_link,
+        filament,
+        kprofile_note,
+        maintenance,
+        notification,
+        notification_template,
+        print_queue,
+        printer,
+        project,
+        settings,
+        smart_plug,
     )
 
     async with engine.begin() as conn:
@@ -63,9 +74,7 @@ async def test_engine():
 @pytest.fixture
 async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
     """Create a test database session."""
-    async_session_maker = async_sessionmaker(
-        test_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    async_session_maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with async_session_maker() as session:
         yield session
 
@@ -73,13 +82,11 @@ async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
 @pytest.fixture
 async def async_client(test_engine, db_session) -> AsyncGenerator[AsyncClient, None]:
     """Create an async test client."""
+    from backend.app.core.database import async_session, get_db
     from backend.app.main import app
-    from backend.app.core.database import get_db, async_session
 
     # Create a new session maker for the test engine
-    test_async_session = async_sessionmaker(
-        test_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    test_async_session = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
 
     async def override_get_db():
         async with test_async_session() as session:
@@ -88,11 +95,8 @@ async def async_client(test_engine, db_session) -> AsyncGenerator[AsyncClient, N
     app.dependency_overrides[get_db] = override_get_db
 
     # Also patch the module-level async_session used by services
-    with patch('backend.app.core.database.async_session', test_async_session):
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test"
-        ) as client:
+    with patch("backend.app.core.database.async_session", test_async_session):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             yield client
 
     app.dependency_overrides.clear()
@@ -102,33 +106,30 @@ async def async_client(test_engine, db_session) -> AsyncGenerator[AsyncClient, N
 # Mock External Services
 # ============================================================================
 
+
 @pytest.fixture
 def mock_tasmota_service():
     """Mock the Tasmota service for smart plug tests."""
     # Patch both the module where it's defined and where it's imported
-    with patch('backend.app.services.tasmota.tasmota_service') as mock, \
-         patch('backend.app.api.routes.smart_plugs.tasmota_service') as mock2:
+    with (
+        patch("backend.app.services.tasmota.tasmota_service") as mock,
+        patch("backend.app.api.routes.smart_plugs.tasmota_service") as mock2,
+    ):
         mock.turn_on = AsyncMock(return_value=True)
         mock.turn_off = AsyncMock(return_value=True)
         mock.toggle = AsyncMock(return_value=True)
-        mock.get_status = AsyncMock(return_value={
-            "state": "ON",
-            "reachable": True,
-            "device_name": "Test Plug"
-        })
-        mock.get_energy = AsyncMock(return_value={
-            "power": 150.5,
-            "voltage": 120.0,
-            "current": 1.25,
-            "today": 2.5,
-            "total": 100.0,
-            "factor": 0.95,
-        })
-        mock.test_connection = AsyncMock(return_value={
-            "success": True,
-            "state": "ON",
-            "device_name": "Test Plug"
-        })
+        mock.get_status = AsyncMock(return_value={"state": "ON", "reachable": True, "device_name": "Test Plug"})
+        mock.get_energy = AsyncMock(
+            return_value={
+                "power": 150.5,
+                "voltage": 120.0,
+                "current": 1.25,
+                "today": 2.5,
+                "total": 100.0,
+                "factor": 0.95,
+            }
+        )
+        mock.test_connection = AsyncMock(return_value={"success": True, "state": "ON", "device_name": "Test Plug"})
         # Copy mocks to second patch target
         mock2.turn_on = mock.turn_on
         mock2.turn_off = mock.turn_off
@@ -142,14 +143,9 @@ def mock_tasmota_service():
 @pytest.fixture
 def mock_mqtt_client():
     """Mock the MQTT client for printer communication tests."""
-    with patch('backend.app.services.bambu_mqtt.BambuMQTTClient') as mock:
+    with patch("backend.app.services.bambu_mqtt.BambuMQTTClient") as mock:
         instance = MagicMock()
-        instance.state = MagicMock(
-            connected=True,
-            state="IDLE",
-            progress=0,
-            temperatures={"nozzle": 25, "bed": 25}
-        )
+        instance.state = MagicMock(connected=True, state="IDLE", progress=0, temperatures={"nozzle": 25, "bed": 25})
         instance.connect = MagicMock()
         instance.disconnect = MagicMock()
         mock.return_value = instance
@@ -159,8 +155,10 @@ def mock_mqtt_client():
 @pytest.fixture
 def mock_ftp_client():
     """Mock the FTP client for file transfer tests."""
-    with patch('backend.app.services.bambu_ftp.download_file_async') as download_mock, \
-         patch('backend.app.services.bambu_ftp.list_files_async') as list_mock:
+    with (
+        patch("backend.app.services.bambu_ftp.download_file_async") as download_mock,
+        patch("backend.app.services.bambu_ftp.list_files_async") as list_mock,
+    ):
         download_mock.return_value = True
         list_mock.return_value = []
         yield {"download": download_mock, "list": list_mock}
@@ -169,7 +167,7 @@ def mock_ftp_client():
 @pytest.fixture
 def mock_httpx_client():
     """Mock httpx for webhook/notification HTTP calls."""
-    with patch('httpx.AsyncClient') as mock_class:
+    with patch("httpx.AsyncClient") as mock_class:
         mock_instance = AsyncMock()
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -188,14 +186,16 @@ def mock_httpx_client():
 @pytest.fixture
 def mock_printer_manager():
     """Mock the printer manager for status checks."""
-    with patch('backend.app.services.printer_manager.printer_manager') as mock:
-        mock.get_status = MagicMock(return_value=MagicMock(
-            connected=True,
-            state="IDLE",
-            progress=0,
-            temperatures={"nozzle": 25, "bed": 25, "chamber": 25},
-            raw_data={}
-        ))
+    with patch("backend.app.services.printer_manager.printer_manager") as mock:
+        mock.get_status = MagicMock(
+            return_value=MagicMock(
+                connected=True,
+                state="IDLE",
+                progress=0,
+                temperatures={"nozzle": 25, "bed": 25, "chamber": 25},
+                raw_data={},
+            )
+        )
         mock.mark_printer_offline = MagicMock()
         yield mock
 
@@ -204,9 +204,11 @@ def mock_printer_manager():
 # Factory Fixtures for Test Data
 # ============================================================================
 
+
 @pytest.fixture
 def smart_plug_factory(db_session):
     """Factory to create test smart plugs."""
+
     async def _create_plug(**kwargs):
         from backend.app.models.smart_plug import SmartPlug
 
@@ -267,6 +269,7 @@ def printer_factory(db_session):
 @pytest.fixture
 def notification_provider_factory(db_session):
     """Factory to create test notification providers."""
+
     async def _create_provider(**kwargs):
         from backend.app.models.notification import NotificationProvider
 
@@ -307,6 +310,7 @@ def notification_provider_factory(db_session):
 @pytest.fixture
 def archive_factory(db_session):
     """Factory to create test archives."""
+
     async def _create_archive(printer_id: int, **kwargs):
         from backend.app.models.archive import PrintArchive
 
@@ -335,6 +339,7 @@ def archive_factory(db_session):
 # ============================================================================
 # Sample Data Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def sample_mqtt_print_start():
@@ -385,6 +390,7 @@ def sample_printer_status():
 # Log Capture Fixtures for Error Detection
 # ============================================================================
 
+
 class LogCapture(logging.Handler):
     """Handler that captures log records for testing."""
 
@@ -415,7 +421,7 @@ class LogCapture(logging.Handler):
         errors = self.get_errors()
         if not errors:
             return "No errors"
-        formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
         return "\n".join(formatter.format(r) for r in errors)
 
 

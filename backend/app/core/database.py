@@ -381,6 +381,12 @@ async def run_migrations(conn):
     except Exception:
         pass
 
+    # Migration: Add manual_start column to print_queue for staged prints
+    try:
+        await conn.execute(text("ALTER TABLE print_queue ADD COLUMN manual_start BOOLEAN DEFAULT 0"))
+    except Exception:
+        pass
+
 
 async def seed_notification_templates():
     """Seed default notification templates if they don't exist."""

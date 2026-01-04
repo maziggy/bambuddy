@@ -1,0 +1,15 @@
+{
+  "name": "bambuddy-demo-video",
+  "version": "1.0.0",
+  "description": "Automated demo video recording for Bambuddy",
+  "type": "module",
+  "scripts": {
+    "record": "npx tsx record-demo.ts",
+    "record:headless": "HEADLESS=true npx tsx record-demo.ts",
+    "install-browsers": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.40.0",
+    "tsx": "^4.7.0"
+  }
+}

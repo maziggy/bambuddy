@@ -3,9 +3,10 @@
 Tests the full request/response cycle for /api/v1/printers/{id}/camera/ endpoints.
 """
 
-import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
 import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from httpx import AsyncClient
 
 
@@ -64,7 +65,7 @@ class TestCameraAPI:
         mock_process.returncode = None
         mock_process.terminate = MagicMock()
 
-        with patch('backend.app.api.routes.camera._active_streams', {f"{printer.id}-abc123": mock_process}):
+        with patch("backend.app.api.routes.camera._active_streams", {f"{printer.id}-abc123": mock_process}):
             response = await async_client.post(f"/api/v1/printers/{printer.id}/camera/stop")
 
         assert response.status_code == 200
@@ -92,7 +93,7 @@ class TestCameraAPI:
             f"{printer2.id}-def456": mock_process2,
         }
 
-        with patch('backend.app.api.routes.camera._active_streams', active_streams):
+        with patch("backend.app.api.routes.camera._active_streams", active_streams):
             response = await async_client.post(f"/api/v1/printers/{printer1.id}/camera/stop")
 
         assert response.status_code == 200
@@ -119,7 +120,7 @@ class TestCameraAPI:
         """Verify camera test returns success when camera is accessible."""
         printer = await printer_factory()
 
-        with patch('backend.app.api.routes.camera.test_camera_connection', new_callable=AsyncMock) as mock_test:
+        with patch("backend.app.api.routes.camera.test_camera_connection", new_callable=AsyncMock) as mock_test:
             mock_test.return_value = {"success": True, "message": "Camera connected"}
 
             response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/test")
@@ -134,7 +135,7 @@ class TestCameraAPI:
         """Verify camera test returns failure when camera is not accessible."""
         printer = await printer_factory()
 
-        with patch('backend.app.api.routes.camera.test_camera_connection', new_callable=AsyncMock) as mock_test:
+        with patch("backend.app.api.routes.camera.test_camera_connection", new_callable=AsyncMock) as mock_test:
             mock_test.return_value = {"success": False, "message": "Connection timeout"}
 
             response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/test")
@@ -162,18 +163,17 @@ class TestCameraAPI:
         printer = await printer_factory()
 
         # Create a fake JPEG (starts with FFD8)
-        fake_jpeg = b'\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00'
+        fake_jpeg = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
 
-        with patch('backend.app.api.routes.camera.capture_camera_frame', new_callable=AsyncMock) as mock_capture:
+        with patch("backend.app.api.routes.camera.capture_camera_frame", new_callable=AsyncMock) as mock_capture:
             mock_capture.return_value = True
 
             # Mock the file read
-            with patch('builtins.open', create=True) as mock_open:
+            with patch("builtins.open", create=True) as mock_open:
                 mock_open.return_value.__enter__.return_value.read.return_value = fake_jpeg
 
-                with patch('pathlib.Path.exists', return_value=True), \
-                     patch('pathlib.Path.unlink'):
-                    response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/snapshot")
+                with patch("pathlib.Path.exists", return_value=True), patch("pathlib.Path.unlink"):
+                    _response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/snapshot")
 
         # Note: The actual test might fail due to file operations, but this tests the endpoint structure
         # In production tests, we'd mock more comprehensively
@@ -184,11 +184,10 @@ class TestCameraAPI:
         """Verify 503 when camera capture fails."""
         printer = await printer_factory()
 
-        with patch('backend.app.api.routes.camera.capture_camera_frame', new_callable=AsyncMock) as mock_capture:
+        with patch("backend.app.api.routes.camera.capture_camera_frame", new_callable=AsyncMock) as mock_capture:
             mock_capture.return_value = False
 
-            with patch('pathlib.Path.exists', return_value=False), \
-                 patch('pathlib.Path.unlink'):
+            with patch("pathlib.Path.exists", return_value=False), patch("pathlib.Path.unlink"):
                 response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/snapshot")
 
         assert response.status_code == 503
@@ -216,11 +215,11 @@ class TestCameraAPI:
         # Testing that the endpoint accepts various FPS values without error
         # (actual streaming would require mocking ffmpeg)
 
-        with patch('backend.app.api.routes.camera.get_ffmpeg_path', return_value=None):
+        with patch("backend.app.api.routes.camera.get_ffmpeg_path", return_value=None):
             # With no ffmpeg, stream should return error message but not crash
             response = await async_client.get(
                 f"/api/v1/printers/{printer.id}/camera/stream",
-                params={"fps": 100}  # Should be clamped to 30
+                params={"fps": 100},  # Should be clamped to 30
             )
             # Response will be a streaming response with error
             assert response.status_code == 200

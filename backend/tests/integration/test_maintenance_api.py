@@ -56,17 +56,13 @@ class TestMaintenanceTypesAPI:
             "description": "Original",
             "default_interval_hours": 100.0,
         }
-        create_response = await async_client.post(
-            "/api/v1/maintenance/types", json=create_data
-        )
+        create_response = await async_client.post("/api/v1/maintenance/types", json=create_data)
         assert create_response.status_code == 200
         type_id = create_response.json()["id"]
 
         # Update it
         update_data = {"description": "Updated description"}
-        response = await async_client.patch(
-            f"/api/v1/maintenance/types/{type_id}", json=update_data
-        )
+        response = await async_client.patch(f"/api/v1/maintenance/types/{type_id}", json=update_data)
         assert response.status_code == 200
         assert response.json()["description"] == "Updated description"
 
@@ -80,9 +76,7 @@ class TestMaintenanceTypesAPI:
             "description": "To be deleted",
             "default_interval_hours": 50.0,
         }
-        create_response = await async_client.post(
-            "/api/v1/maintenance/types", json=create_data
-        )
+        create_response = await async_client.post("/api/v1/maintenance/types", json=create_data)
         type_id = create_response.json()["id"]
 
         # Delete it
@@ -102,9 +96,7 @@ class TestPrinterMaintenanceAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_get_printer_maintenance(
-        self, async_client: AsyncClient, printer_factory, db_session
-    ):
+    async def test_get_printer_maintenance(self, async_client: AsyncClient, printer_factory, db_session):
         """Verify maintenance overview for a printer."""
         printer = await printer_factory(name="Maintenance Test Printer")
         response = await async_client.get(f"/api/v1/maintenance/printers/{printer.id}")
@@ -117,9 +109,7 @@ class TestPrinterMaintenanceAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_get_all_maintenance_overview(
-        self, async_client: AsyncClient, printer_factory, db_session
-    ):
+    async def test_get_all_maintenance_overview(self, async_client: AsyncClient, printer_factory, db_session):
         """Verify overview endpoint returns all printers."""
         await printer_factory(name="Overview Printer 1")
         await printer_factory(name="Overview Printer 2")
@@ -158,50 +148,39 @@ class TestMaintenanceItemsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_maintenance_item(
-        self, async_client: AsyncClient, maintenance_item
-    ):
+    async def test_update_maintenance_item(self, async_client: AsyncClient, maintenance_item):
         """Verify maintenance item can be updated."""
         if not maintenance_item:
             pytest.skip("No maintenance items available")
 
         item_id = maintenance_item["id"]
         response = await async_client.patch(
-            f"/api/v1/maintenance/items/{item_id}",
-            json={"custom_interval_hours": 150.0}
+            f"/api/v1/maintenance/items/{item_id}", json={"custom_interval_hours": 150.0}
         )
         assert response.status_code == 200
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_disable_maintenance_item(
-        self, async_client: AsyncClient, maintenance_item
-    ):
+    async def test_disable_maintenance_item(self, async_client: AsyncClient, maintenance_item):
         """Verify maintenance item can be disabled."""
         if not maintenance_item:
             pytest.skip("No maintenance items available")
 
         item_id = maintenance_item["id"]
-        response = await async_client.patch(
-            f"/api/v1/maintenance/items/{item_id}",
-            json={"enabled": False}
-        )
+        response = await async_client.patch(f"/api/v1/maintenance/items/{item_id}", json={"enabled": False})
         assert response.status_code == 200
         assert response.json()["enabled"] is False
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_perform_maintenance(
-        self, async_client: AsyncClient, maintenance_item
-    ):
+    async def test_perform_maintenance(self, async_client: AsyncClient, maintenance_item):
         """Verify maintenance can be marked as performed."""
         if not maintenance_item:
             pytest.skip("No maintenance items available")
 
         item_id = maintenance_item["id"]
         response = await async_client.post(
-            f"/api/v1/maintenance/items/{item_id}/perform",
-            json={"notes": "Test maintenance performed"}
+            f"/api/v1/maintenance/items/{item_id}/perform", json={"notes": "Test maintenance performed"}
         )
         assert response.status_code == 200
         data = response.json()
@@ -209,19 +188,14 @@ class TestMaintenanceItemsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_get_maintenance_history(
-        self, async_client: AsyncClient, maintenance_item
-    ):
+    async def test_get_maintenance_history(self, async_client: AsyncClient, maintenance_item):
         """Verify maintenance history can be retrieved."""
         if not maintenance_item:
             pytest.skip("No maintenance items available")
 
         item_id = maintenance_item["id"]
         # First perform maintenance to create history
-        await async_client.post(
-            f"/api/v1/maintenance/items/{item_id}/perform",
-            json={"notes": "History test"}
-        )
+        await async_client.post(f"/api/v1/maintenance/items/{item_id}/perform", json={"notes": "History test"})
 
         response = await async_client.get(f"/api/v1/maintenance/items/{item_id}/history")
         assert response.status_code == 200
@@ -232,10 +206,7 @@ class TestMaintenanceItemsAPI:
     @pytest.mark.integration
     async def test_update_maintenance_item_not_found(self, async_client: AsyncClient):
         """Verify 404 for non-existent maintenance item."""
-        response = await async_client.patch(
-            "/api/v1/maintenance/items/9999",
-            json={"enabled": False}
-        )
+        response = await async_client.patch("/api/v1/maintenance/items/9999", json={"enabled": False})
         assert response.status_code == 404
 
 
@@ -244,14 +215,11 @@ class TestPrinterHoursAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_set_printer_hours(
-        self, async_client: AsyncClient, printer_factory, db_session
-    ):
+    async def test_set_printer_hours(self, async_client: AsyncClient, printer_factory, db_session):
         """Verify printer hours can be set."""
         printer = await printer_factory(name="Hours Test Printer")
         response = await async_client.patch(
-            f"/api/v1/maintenance/printers/{printer.id}/hours",
-            params={"total_hours": 500.0}
+            f"/api/v1/maintenance/printers/{printer.id}/hours", params={"total_hours": 500.0}
         )
         assert response.status_code == 200
         data = response.json()
@@ -261,8 +229,5 @@ class TestPrinterHoursAPI:
     @pytest.mark.integration
     async def test_set_printer_hours_not_found(self, async_client: AsyncClient):
         """Verify 404 for non-existent printer."""
-        response = await async_client.patch(
-            "/api/v1/maintenance/printers/9999/hours",
-            params={"total_hours": 100.0}
-        )
+        response = await async_client.patch("/api/v1/maintenance/printers/9999/hours", params={"total_hours": 100.0})
         assert response.status_code == 404

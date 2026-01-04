@@ -2,9 +2,11 @@
 """Comprehensive end-to-end test for Bambuddy application."""
 
 import time
-from playwright.sync_api import sync_playwright, expect
+
+from playwright.sync_api import expect, sync_playwright
 
 BASE_URL = "http://localhost:8000"
+
 
 def test_navigation_and_sidebar(page):
     """Test sidebar navigation and all main pages."""
@@ -12,14 +14,14 @@ def test_navigation_and_sidebar(page):
 
     # Go to home page
     page.goto(BASE_URL)
-    page.wait_for_load_state('networkidle')
+    page.wait_for_load_state("networkidle")
 
     # Take initial screenshot
-    page.screenshot(path='/tmp/bambuddy_home.png', full_page=True)
+    page.screenshot(path="/tmp/bambuddy_home.png", full_page=True)
     print("✓ Home page loaded")
 
     # Check sidebar is visible
-    sidebar = page.locator('nav').first
+    sidebar = page.locator("nav").first
     expect(sidebar).to_be_visible()
     print("✓ Sidebar is visible")
 
@@ -34,12 +36,12 @@ def test_navigation_and_sidebar(page):
         ("Settings", "/settings"),
     ]
 
-    for name, path in nav_items:
+    for name, _path in nav_items:
         # Click on nav item by text
         nav_link = page.locator(f'nav >> text="{name}"').first
         if nav_link.is_visible():
             nav_link.click()
-            page.wait_for_load_state('networkidle')
+            page.wait_for_load_state("networkidle")
             time.sleep(0.5)  # Brief wait for animations
             print(f"✓ Navigated to {name}")
         else:
@@ -53,7 +55,7 @@ def test_printers_page(page):
     print("\n=== Testing Printers Page ===")
 
     page.goto(BASE_URL)
-    page.wait_for_load_state('networkidle')
+    page.wait_for_load_state("networkidle")
     time.sleep(1)
 
     # Check for printer cards or "Add Printer" button
@@ -64,12 +66,12 @@ def test_printers_page(page):
         print("✓ Printers page content detected")
 
     # Check for AMS display if printers are connected
-    ams_elements = page.locator('text=/AMS-[A-Z]/').all()
+    ams_elements = page.locator("text=/AMS-[A-Z]/").all()
     if ams_elements:
         print(f"✓ Found {len(ams_elements)} AMS unit(s) displayed")
 
     # Take screenshot
-    page.screenshot(path='/tmp/bambuddy_printers.png', full_page=True)
+    page.screenshot(path="/tmp/bambuddy_printers.png", full_page=True)
     print("✓ Printers page screenshot saved")
 
     return True
@@ -80,7 +82,7 @@ def test_archives_page(page):
     print("\n=== Testing Archives Page ===")
 
     page.goto(f"{BASE_URL}/archives")
-    page.wait_for_load_state('networkidle')
+    page.wait_for_load_state("networkidle")
     time.sleep(1)
 
     # Check for search input
@@ -98,7 +100,7 @@ def test_archives_page(page):
         print("✓ Upload button found")
 
     # Take screenshot
-    page.screenshot(path='/tmp/bambuddy_archives.png', full_page=True)
+    page.screenshot(path="/tmp/bambuddy_archives.png", full_page=True)
     print("✓ Archives page screenshot saved")
 
     return True
@@ -109,7 +111,7 @@ def test_queue_page(page):
     print("\n=== Testing Queue Page ===")
 
     page.goto(f"{BASE_URL}/queue")
-    page.wait_for_load_state('networkidle')
+    page.wait_for_load_state("networkidle")
     time.sleep(1)
 
     # Check for queue-related content
@@ -119,7 +121,7 @@ def test_queue_page(page):
         print("✓ Queue page content detected")
 
     # Take screenshot
-    page.screenshot(path='/tmp/bambuddy_queue.png', full_page=True)
+    page.screenshot(path="/tmp/bambuddy_queue.png", full_page=True)
     print("✓ Queue page screenshot saved")
 
     return True
@@ -130,7 +132,7 @@ def test_statistics_page(page):
     print("\n=== Testing Statistics Page ===")
 
     page.goto(f"{BASE_URL}/stats")
-    page.wait_for_load_state('networkidle')
+    page.wait_for_load_state("networkidle")
     time.sleep(1)
 
     # Check for statistics widgets
@@ -143,7 +145,7 @@ def test_statistics_page(page):
         print(f"✓ Statistics found: {', '.join(found_stats)}")
 
     # Take screenshot
-    page.screenshot(path='/tmp/bambuddy_statistics.png', full_page=True)
+    page.screenshot(path="/tmp/bambuddy_statistics.png", full_page=True)
     print("✓ Statistics page screenshot saved")
 
     return True
@@ -154,7 +156,7 @@ def test_settings_page(page):
     print("\n=== Testing Settings Page ===")
 
     page.goto(f"{BASE_URL}/settings")
-    page.wait_for_load_state('networkidle')
+    page.wait_for_load_state("networkidle")
     time.sleep(1)
 
     # Check for settings sections
@@ -171,7 +173,7 @@ def test_settings_page(page):
             print(f"✓ Settings section found: {section}")
 
     # Take screenshot
-    page.screenshot(path='/tmp/bambuddy_settings.png', full_page=True)
+    page.screenshot(path="/tmp/bambuddy_settings.png", full_page=True)
     print("✓ Settings page screenshot saved")
 
     return True
@@ -182,21 +184,21 @@ def test_keyboard_shortcuts(page):
     print("\n=== Testing Keyboard Shortcuts ===")
 
     page.goto(BASE_URL)
-    page.wait_for_load_state('networkidle')
+    page.wait_for_load_state("networkidle")
     time.sleep(0.5)
 
     # Press '?' to open shortcuts modal
-    page.keyboard.press('?')
+    page.keyboard.press("?")
     time.sleep(0.5)
 
     # Check if modal opened
     modal = page.locator('text="Keyboard Shortcuts"').first
     if modal.is_visible():
         print("✓ Keyboard shortcuts modal opened with '?'")
-        page.screenshot(path='/tmp/bambuddy_shortcuts_modal.png')
+        page.screenshot(path="/tmp/bambuddy_shortcuts_modal.png")
 
         # Close with Escape
-        page.keyboard.press('Escape')
+        page.keyboard.press("Escape")
         time.sleep(0.3)
         if not modal.is_visible():
             print("✓ Modal closed with Escape")
@@ -205,8 +207,8 @@ def test_keyboard_shortcuts(page):
 
     # Test number key navigation
     # Press '2' to go to Archives
-    page.keyboard.press('2')
-    page.wait_for_load_state('networkidle')
+    page.keyboard.press("2")
+    page.wait_for_load_state("networkidle")
     time.sleep(0.5)
 
     current_url = page.url
@@ -216,8 +218,8 @@ def test_keyboard_shortcuts(page):
         print(f"⚠ Hotkey '2' navigation - current URL: {current_url}")
 
     # Press '1' to go back to Printers
-    page.keyboard.press('1')
-    page.wait_for_load_state('networkidle')
+    page.keyboard.press("1")
+    page.wait_for_load_state("networkidle")
     time.sleep(0.5)
 
     current_url = page.url
@@ -232,21 +234,21 @@ def test_theme_toggle(page):
     print("\n=== Testing Theme Toggle ===")
 
     page.goto(f"{BASE_URL}/settings")
-    page.wait_for_load_state('networkidle')
+    page.wait_for_load_state("networkidle")
     time.sleep(1)
 
     # Check if dark theme is applied (should be default)
-    html = page.locator('html')
-    classes = html.get_attribute('class') or ''
+    html = page.locator("html")
+    classes = html.get_attribute("class") or ""
 
-    if 'dark' in classes:
+    if "dark" in classes:
         print("✓ Dark theme is active (default)")
     else:
         print("ℹ Dark theme class not found on HTML element")
 
     # Look for theme-related UI elements
     page_content = page.content()
-    if 'theme' in page_content.lower() or 'dark' in page_content.lower():
+    if "theme" in page_content.lower() or "dark" in page_content.lower():
         print("✓ Theme-related content found on page")
 
     return True
@@ -265,10 +267,10 @@ def test_responsive_design(page):
     for name, width, height in viewports:
         page.set_viewport_size({"width": width, "height": height})
         page.goto(BASE_URL)
-        page.wait_for_load_state('networkidle')
+        page.wait_for_load_state("networkidle")
         time.sleep(0.5)
 
-        page.screenshot(path=f'/tmp/bambuddy_{name.lower()}.png', full_page=True)
+        page.screenshot(path=f"/tmp/bambuddy_{name.lower()}.png", full_page=True)
         print(f"✓ {name} viewport ({width}x{height}) screenshot saved")
 
     # Reset to desktop
@@ -282,7 +284,7 @@ def test_external_links_sidebar(page):
     print("\n=== Testing External Links in Sidebar ===")
 
     page.goto(BASE_URL)
-    page.wait_for_load_state('networkidle')
+    page.wait_for_load_state("networkidle")
     time.sleep(0.5)
 
     # Look for external link indicators
@@ -380,7 +382,7 @@ def run_comprehensive_test():
         print(f"  {status} - {test_name}")
 
     print(f"\nTotal: {passed}/{total} tests passed")
-    print(f"Screenshots saved to /tmp/bambuddy_*.png")
+    print("Screenshots saved to /tmp/bambuddy_*.png")
 
     return all(results.values())
 

@@ -3,9 +3,10 @@
 Tests smart plug HTTP communication and error handling.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import httpx
+import pytest
 
 from backend.app.services.tasmota import TasmotaService
 
@@ -39,9 +40,7 @@ class TestTasmotaService:
 
     def test_build_url_with_auth(self, service):
         """Verify URL includes credentials when provided."""
-        url = service._build_url(
-            "192.168.1.100", "Power On", username="admin", password="secret"
-        )
+        url = service._build_url("192.168.1.100", "Power On", username="admin", password="secret")
         assert url == "http://admin:secret@192.168.1.100/cm?cmnd=Power%20On"
 
     def test_build_url_encodes_special_characters(self, service):
@@ -56,24 +55,18 @@ class TestTasmotaService:
     @pytest.mark.asyncio
     async def test_turn_on_success(self, service, mock_plug):
         """Verify turn_on returns True on success."""
-        with patch.object(
-            service, '_send_command', new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(service, "_send_command", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = {"POWER": "ON"}
 
             result = await service.turn_on(mock_plug)
 
             assert result is True
-            mock_send.assert_called_once_with(
-                "192.168.1.100", "Power On", None, None
-            )
+            mock_send.assert_called_once_with("192.168.1.100", "Power On", None, None)
 
     @pytest.mark.asyncio
     async def test_turn_on_failure(self, service, mock_plug):
         """Verify turn_on returns False on failure."""
-        with patch.object(
-            service, '_send_command', new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(service, "_send_command", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = None
 
             result = await service.turn_on(mock_plug)
@@ -86,16 +79,12 @@ class TestTasmotaService:
         mock_plug.username = "admin"
         mock_plug.password = "secret"
 
-        with patch.object(
-            service, '_send_command', new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(service, "_send_command", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = {"POWER": "ON"}
 
             await service.turn_on(mock_plug)
 
-            mock_send.assert_called_once_with(
-                "192.168.1.100", "Power On", "admin", "secret"
-            )
+            mock_send.assert_called_once_with("192.168.1.100", "Power On", "admin", "secret")
 
     # ========================================================================
     # Tests for turn_off
@@ -104,9 +93,7 @@ class TestTasmotaService:
     @pytest.mark.asyncio
     async def test_turn_off_success(self, service, mock_plug):
         """Verify turn_off returns True on success."""
-        with patch.object(
-            service, '_send_command', new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(service, "_send_command", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = {"POWER": "OFF"}
 
             result = await service.turn_off(mock_plug)
@@ -116,9 +103,7 @@ class TestTasmotaService:
     @pytest.mark.asyncio
     async def test_turn_off_failure(self, service, mock_plug):
         """Verify turn_off returns False on failure."""
-        with patch.object(
-            service, '_send_command', new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(service, "_send_command", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = None
 
             result = await service.turn_off(mock_plug)
@@ -132,17 +117,13 @@ class TestTasmotaService:
     @pytest.mark.asyncio
     async def test_toggle_success(self, service, mock_plug):
         """Verify toggle returns True on success."""
-        with patch.object(
-            service, '_send_command', new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(service, "_send_command", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = {"POWER": "ON"}
 
             result = await service.toggle(mock_plug)
 
             assert result is True
-            mock_send.assert_called_once_with(
-                "192.168.1.100", "Power Toggle", None, None
-            )
+            mock_send.assert_called_once_with("192.168.1.100", "Power Toggle", None, None)
 
     # ========================================================================
     # Tests for get_status
@@ -151,9 +132,7 @@ class TestTasmotaService:
     @pytest.mark.asyncio
     async def test_get_status_returns_on(self, service, mock_plug):
         """Verify get_status returns correct state when ON."""
-        with patch.object(
-            service, '_send_command', new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(service, "_send_command", new_callable=AsyncMock) as mock_send:
             # Tasmota returns {"POWER": "ON"} for Power command
             mock_send.return_value = {"POWER": "ON"}
 
@@ -166,9 +145,7 @@ class TestTasmotaService:
     @pytest.mark.asyncio
     async def test_get_status_returns_off(self, service, mock_plug):
         """Verify get_status returns correct state when OFF."""
-        with patch.object(
-            service, '_send_command', new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(service, "_send_command", new_callable=AsyncMock) as mock_send:
             # Tasmota returns {"POWER": "OFF"} for Power command
             mock_send.return_value = {"POWER": "OFF"}
 
@@ -180,9 +157,7 @@ class TestTasmotaService:
     @pytest.mark.asyncio
     async def test_get_status_unreachable(self, service, mock_plug):
         """Verify get_status handles unreachable device."""
-        with patch.object(
-            service, '_send_command', new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(service, "_send_command", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = None
 
             result = await service.get_status(mock_plug)
@@ -197,9 +172,7 @@ class TestTasmotaService:
     @pytest.mark.asyncio
     async def test_get_energy_returns_data(self, service, mock_plug):
         """Verify get_energy parses energy data correctly."""
-        with patch.object(
-            service, '_send_command', new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(service, "_send_command", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = {
                 "StatusSNS": {
                     "ENERGY": {
@@ -226,9 +199,7 @@ class TestTasmotaService:
     @pytest.mark.asyncio
     async def test_get_energy_handles_missing_data(self, service, mock_plug):
         """Verify get_energy handles devices without energy monitoring."""
-        with patch.object(
-            service, '_send_command', new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(service, "_send_command", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = {"StatusSNS": {}}
 
             result = await service.get_energy(mock_plug)
@@ -238,9 +209,7 @@ class TestTasmotaService:
     @pytest.mark.asyncio
     async def test_get_energy_handles_unreachable(self, service, mock_plug):
         """Verify get_energy handles unreachable device."""
-        with patch.object(
-            service, '_send_command', new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(service, "_send_command", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = None
 
             result = await service.get_energy(mock_plug)
@@ -250,9 +219,7 @@ class TestTasmotaService:
     @pytest.mark.asyncio
     async def test_get_energy_handles_partial_data(self, service, mock_plug):
         """Verify get_energy handles partial energy data."""
-        with patch.object(
-            service, '_send_command', new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(service, "_send_command", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = {
                 "StatusSNS": {
                     "ENERGY": {
@@ -276,13 +243,11 @@ class TestTasmotaService:
     @pytest.mark.asyncio
     async def test_test_connection_success(self, service):
         """Verify test_connection returns success on reachable device."""
-        with patch.object(
-            service, '_send_command', new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(service, "_send_command", new_callable=AsyncMock) as mock_send:
             # First call (Power) returns state, second call (Status 0) returns device info
             mock_send.side_effect = [
                 {"POWER": "ON"},  # Power command response
-                {"Status": {"DeviceName": "Test Plug"}}  # Status 0 response
+                {"Status": {"DeviceName": "Test Plug"}},  # Status 0 response
             ]
 
             result = await service.test_connection("192.168.1.100")
@@ -294,9 +259,7 @@ class TestTasmotaService:
     @pytest.mark.asyncio
     async def test_test_connection_failure(self, service):
         """Verify test_connection returns failure on unreachable device."""
-        with patch.object(
-            service, '_send_command', new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(service, "_send_command", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = None
 
             result = await service.test_connection("192.168.1.100")
@@ -310,12 +273,10 @@ class TestTasmotaService:
     @pytest.mark.asyncio
     async def test_send_command_handles_timeout(self, service):
         """Verify timeout is handled gracefully."""
-        with patch('httpx.AsyncClient') as mock_client_class:
+        with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_client.get.side_effect = httpx.TimeoutException("Timeout")
-            mock_client_class.return_value.__aenter__ = AsyncMock(
-                return_value=mock_client
-            )
+            mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client_class.return_value.__aexit__ = AsyncMock()
 
             result = await service._send_command("192.168.1.100", "Power")
@@ -325,12 +286,10 @@ class TestTasmotaService:
     @pytest.mark.asyncio
     async def test_send_command_handles_connection_error(self, service):
         """Verify connection error is handled gracefully."""
-        with patch('httpx.AsyncClient') as mock_client_class:
+        with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_client.get.side_effect = httpx.ConnectError("Connection refused")
-            mock_client_class.return_value.__aenter__ = AsyncMock(
-                return_value=mock_client
-            )
+            mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client_class.return_value.__aexit__ = AsyncMock()
 
             result = await service._send_command("192.168.1.100", "Power")
@@ -340,14 +299,12 @@ class TestTasmotaService:
     @pytest.mark.asyncio
     async def test_send_command_handles_invalid_json(self, service):
         """Verify invalid JSON response is handled gracefully."""
-        with patch('httpx.AsyncClient') as mock_client_class:
+        with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_response = MagicMock()
             mock_response.json.side_effect = ValueError("Invalid JSON")
             mock_client.get.return_value = mock_response
-            mock_client_class.return_value.__aenter__ = AsyncMock(
-                return_value=mock_client
-            )
+            mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client_class.return_value.__aexit__ = AsyncMock()
 
             result = await service._send_command("192.168.1.100", "Power")
@@ -357,14 +314,12 @@ class TestTasmotaService:
     @pytest.mark.asyncio
     async def test_send_command_success(self, service):
         """Verify successful command returns parsed JSON."""
-        with patch('httpx.AsyncClient') as mock_client_class:
+        with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_response = MagicMock()
             mock_response.json.return_value = {"POWER": "ON"}
             mock_client.get.return_value = mock_response
-            mock_client_class.return_value.__aenter__ = AsyncMock(
-                return_value=mock_client
-            )
+            mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client_class.return_value.__aexit__ = AsyncMock()
 
             result = await service._send_command("192.168.1.100", "Power")

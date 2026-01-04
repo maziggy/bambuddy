@@ -1,7 +1,8 @@
 """Integration tests for AMS History API endpoints."""
 
-import pytest
 from datetime import datetime, timedelta
+
+import pytest
 from httpx import AsyncClient
 
 
@@ -11,6 +12,7 @@ class TestAMSHistoryAPI:
     @pytest.fixture
     async def ams_history_factory(self, db_session, printer_factory):
         """Factory to create test AMS history records."""
+
         async def _create_history(printer_id=None, ams_id=0, **kwargs):
             from backend.app.models.ams_history import AMSSensorHistory
 
@@ -38,9 +40,7 @@ class TestAMSHistoryAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_get_ams_history_empty(
-        self, async_client: AsyncClient, printer_factory, db_session
-    ):
+    async def test_get_ams_history_empty(self, async_client: AsyncClient, printer_factory, db_session):
         """Verify empty history returns empty data array."""
         printer = await printer_factory()
         response = await async_client.get(f"/api/v1/ams-history/{printer.id}/0")
@@ -52,9 +52,7 @@ class TestAMSHistoryAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_get_ams_history_with_data(
-        self, async_client: AsyncClient, ams_history_factory, db_session
-    ):
+    async def test_get_ams_history_with_data(self, async_client: AsyncClient, ams_history_factory, db_session):
         """Verify history returns recorded data."""
         # Create history records
         history = await ams_history_factory()
@@ -95,15 +93,9 @@ class TestAMSHistoryAPI:
         """Verify hours parameter filters data."""
         printer = await printer_factory()
         # Create a recent record
-        await ams_history_factory(
-            printer_id=printer.id,
-            recorded_at=datetime.now()
-        )
+        await ams_history_factory(printer_id=printer.id, recorded_at=datetime.now())
         # Create an old record (outside default 24h)
-        await ams_history_factory(
-            printer_id=printer.id,
-            recorded_at=datetime.now() - timedelta(hours=48)
-        )
+        await ams_history_factory(printer_id=printer.id, recorded_at=datetime.now() - timedelta(hours=48))
 
         # Request only last 24 hours (default)
         response = await async_client.get(f"/api/v1/ams-history/{printer.id}/0")
@@ -114,15 +106,10 @@ class TestAMSHistoryAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_get_ams_history_custom_hours(
-        self, async_client: AsyncClient, printer_factory, db_session
-    ):
+    async def test_get_ams_history_custom_hours(self, async_client: AsyncClient, printer_factory, db_session):
         """Verify custom hours parameter works."""
         printer = await printer_factory()
-        response = await async_client.get(
-            f"/api/v1/ams-history/{printer.id}/0",
-            params={"hours": 48}
-        )
+        response = await async_client.get(f"/api/v1/ams-history/{printer.id}/0", params={"hours": 48})
         assert response.status_code == 200
         data = response.json()
         assert data["printer_id"] == printer.id
@@ -159,31 +146,20 @@ class TestAMSHistoryAPI:
         """Verify old history can be deleted."""
         printer = await printer_factory()
         # Create an old record
-        await ams_history_factory(
-            printer_id=printer.id,
-            recorded_at=datetime.now() - timedelta(days=60)
-        )
+        await ams_history_factory(printer_id=printer.id, recorded_at=datetime.now() - timedelta(days=60))
 
         # Delete records older than 30 days
-        response = await async_client.delete(
-            f"/api/v1/ams-history/{printer.id}",
-            params={"days": 30}
-        )
+        response = await async_client.delete(f"/api/v1/ams-history/{printer.id}", params={"days": 30})
         assert response.status_code == 200
         data = response.json()
         assert data["deleted"] >= 1
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_delete_old_history_no_records(
-        self, async_client: AsyncClient, printer_factory, db_session
-    ):
+    async def test_delete_old_history_no_records(self, async_client: AsyncClient, printer_factory, db_session):
         """Verify delete with no old records returns 0."""
         printer = await printer_factory()
-        response = await async_client.delete(
-            f"/api/v1/ams-history/{printer.id}",
-            params={"days": 30}
-        )
+        response = await async_client.delete(f"/api/v1/ams-history/{printer.id}", params={"days": 30})
         assert response.status_code == 200
         data = response.json()
         assert data["deleted"] == 0

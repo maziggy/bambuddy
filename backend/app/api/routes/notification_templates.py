@@ -5,15 +5,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import get_db
-from backend.app.models.notification_template import NotificationTemplate, DEFAULT_TEMPLATES
+from backend.app.models.notification_template import DEFAULT_TEMPLATES, NotificationTemplate
 from backend.app.schemas.notification_template import (
-    NotificationTemplateResponse,
-    NotificationTemplateUpdate,
-    EventVariablesResponse,
-    TemplatePreviewRequest,
-    TemplatePreviewResponse,
     EVENT_VARIABLES,
     SAMPLE_DATA,
+    EventVariablesResponse,
+    NotificationTemplateResponse,
+    NotificationTemplateUpdate,
+    TemplatePreviewRequest,
+    TemplatePreviewResponse,
 )
 from backend.app.services.notification_service import notification_service
 
@@ -38,9 +38,7 @@ EVENT_NAMES = {
 @router.get("", response_model=list[NotificationTemplateResponse])
 async def get_templates(db: AsyncSession = Depends(get_db)):
     """Get all notification templates."""
-    result = await db.execute(
-        select(NotificationTemplate).order_by(NotificationTemplate.id)
-    )
+    result = await db.execute(select(NotificationTemplate).order_by(NotificationTemplate.id))
     return result.scalars().all()
 
 
@@ -60,9 +58,7 @@ async def get_variables():
 @router.get("/{template_id}", response_model=NotificationTemplateResponse)
 async def get_template(template_id: int, db: AsyncSession = Depends(get_db)):
     """Get a single notification template."""
-    result = await db.execute(
-        select(NotificationTemplate).where(NotificationTemplate.id == template_id)
-    )
+    result = await db.execute(select(NotificationTemplate).where(NotificationTemplate.id == template_id))
     template = result.scalar_one_or_none()
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
@@ -76,9 +72,7 @@ async def update_template(
     db: AsyncSession = Depends(get_db),
 ):
     """Update a notification template."""
-    result = await db.execute(
-        select(NotificationTemplate).where(NotificationTemplate.id == template_id)
-    )
+    result = await db.execute(select(NotificationTemplate).where(NotificationTemplate.id == template_id))
     template = result.scalar_one_or_none()
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
@@ -100,9 +94,7 @@ async def update_template(
 @router.post("/{template_id}/reset", response_model=NotificationTemplateResponse)
 async def reset_template(template_id: int, db: AsyncSession = Depends(get_db)):
     """Reset a notification template to its default values."""
-    result = await db.execute(
-        select(NotificationTemplate).where(NotificationTemplate.id == template_id)
-    )
+    result = await db.execute(select(NotificationTemplate).where(NotificationTemplate.id == template_id))
     template = result.scalar_one_or_none()
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
@@ -139,6 +131,7 @@ async def preview_template(request: TemplatePreviewRequest):
             result = result.replace("{" + key + "}", str(value))
         # Remove any remaining unreplaced placeholders
         import re
+
         result = re.sub(r"\{[a-z_]+\}", "", result)
         return result
 

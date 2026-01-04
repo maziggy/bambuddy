@@ -1,10 +1,10 @@
-import ssl
-import socket
 import asyncio
 import logging
-from ftplib import FTP_TLS, FTP
-from pathlib import Path
+import socket
+import ssl
+from ftplib import FTP, FTP_TLS
 from io import BytesIO
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ class ImplicitFTP_TLS(FTP_TLS):
         self.ssl_context.check_hostname = False
         self.ssl_context.verify_mode = ssl.CERT_NONE
 
-    def connect(self, host='', port=990, timeout=-999, source_address=None):
+    def connect(self, host="", port=990, timeout=-999, source_address=None):
         """Connect to host, wrapping socket in TLS immediately (implicit FTPS)."""
         if host:
             self.host = host
@@ -31,14 +31,10 @@ class ImplicitFTP_TLS(FTP_TLS):
             self.source_address = source_address
 
         # Create and wrap socket immediately (implicit TLS)
-        self.sock = socket.create_connection(
-            (self.host, self.port),
-            self.timeout,
-            source_address=self.source_address
-        )
+        self.sock = socket.create_connection((self.host, self.port), self.timeout, source_address=self.source_address)
         self.sock = self.ssl_context.wrap_socket(self.sock, server_hostname=self.host)
         self.af = self.sock.family
-        self.file = self.sock.makefile('r', encoding=self.encoding)
+        self.file = self.sock.makefile("r", encoding=self.encoding)
         self.welcome = self.getresp()
         return self.welcome
 
@@ -50,10 +46,9 @@ class ImplicitFTP_TLS(FTP_TLS):
             conn = self.ssl_context.wrap_socket(
                 conn,
                 server_hostname=self.host,
-                session=self.sock.session  # Reuse session!
+                session=self.sock.session,  # Reuse session!
             )
         return conn, size
-
 
 
 class BambuFTPClient:
@@ -69,11 +64,15 @@ class BambuFTPClient:
     def connect(self) -> bool:
         """Connect to the printer FTP server (implicit FTPS on port 990)."""
         try:
+            logger.debug(f"FTP connecting to {self.ip_address}:{self.FTP_PORT}")
             self._ftp = ImplicitFTP_TLS()
             self._ftp.connect(self.ip_address, self.FTP_PORT, timeout=10)
+            logger.debug("FTP connected, logging in as bblp")
             self._ftp.login("bblp", self.access_code)
+            logger.debug("FTP logged in, setting prot_p and passive mode")
             self._ftp.prot_p()
             self._ftp.set_pasv(True)
+            logger.info(f"FTP connected successfully to {self.ip_address}")
             return True
         except Exception as e:
             logger.warning(f"FTP connection failed to {self.ip_address}: {e}")
@@ -112,6 +111,7 @@ class BambuFTPClient:
                     mtime = None
                     try:
                         from datetime import datetime
+
                         month = parts[5]
                         day = parts[6]
                         time_or_year = parts[7]
@@ -141,8 +141,9 @@ class BambuFTPClient:
                     if mtime:
                         file_entry["mtime"] = mtime
                     files.append(file_entry)
-        except Exception:
-            pass
+            logger.debug(f"Listed {len(files)} files in {path}")
+        except Exception as e:
+            logger.info(f"FTP list_files failed for {path}: {e}")
 
         return files
 
@@ -168,10 +169,12 @@ class BambuFTPClient:
             local_path.parent.mkdir(parents=True, exist_ok=True)
             with open(local_path, "wb") as f:
                 self._ftp.retrbinary(f"RETR {remote_path}", f.write)
-            logger.info(f"Successfully downloaded {remote_path} to {local_path}")
+            file_size = local_path.stat().st_size if local_path.exists() else 0
+            logger.info(f"Successfully downloaded {remote_path} to {local_path} ({file_size} bytes)")
             return True
         except Exception as e:
-            logger.debug(f"Failed to download {remote_path}: {e}")
+            # Log at INFO level so we can see failures in normal logs
+            logger.info(f"FTP download failed for {remote_path}: {e}")
             # Clean up partial file if it exists
             if local_path.exists():
                 try:
@@ -183,7 +186,7 @@ class BambuFTPClient:
     def upload_file(self, local_path: Path, remote_path: str) -> bool:
         """Upload a file to the printer."""
         if not self._ftp:
-            logger.warning(f"upload_file: FTP not connected")
+            logger.warning("upload_file: FTP not connected")
             return False
 
         try:
@@ -289,8 +292,9 @@ async def download_file_async(
     access_code: str,
     remote_path: str,
     local_path: Path,
+    timeout: float = 60.0,
 ) -> bool:
-    """Async wrapper for downloading a file."""
+    """Async wrapper for downloading a file with timeout."""
     loop = asyncio.get_event_loop()
 
     def _download():
@@ -302,7 +306,11 @@ async def download_file_async(
                 client.disconnect()
         return False
 
-    return await loop.run_in_executor(None, _download)
+    try:
+        return await asyncio.wait_for(loop.run_in_executor(None, _download), timeout=timeout)
+    except TimeoutError:
+        logger.warning(f"FTP download timed out after {timeout}s for {remote_path}")
+        return False
 
 
 async def download_file_try_paths_async(
@@ -320,10 +328,7 @@ async def download_file_try_paths_async(
             return False
 
         try:
-            for remote_path in remote_paths:
-                if client.download_to_file(remote_path, local_path):
-                    return True
-            return False
+            return any(client.download_to_file(remote_path, local_path) for remote_path in remote_paths)
         finally:
             client.disconnect()
 
@@ -358,8 +363,9 @@ async def list_files_async(
     ip_address: str,
     access_code: str,
     path: str = "/",
+    timeout: float = 30.0,
 ) -> list[dict]:
-    """Async wrapper for listing files."""
+    """Async wrapper for listing files with timeout."""
     loop = asyncio.get_event_loop()
 
     def _list():
@@ -371,7 +377,11 @@ async def list_files_async(
                 client.disconnect()
         return []
 
-    return await loop.run_in_executor(None, _list)
+    try:
+        return await asyncio.wait_for(loop.run_in_executor(None, _list), timeout=timeout)
+    except TimeoutError:
+        logger.warning(f"FTP list_files timed out after {timeout}s for {path}")
+        return []
 
 
 async def delete_file_async(

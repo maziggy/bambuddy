@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import re
 import zipfile
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -447,12 +449,21 @@ async def get_printer_cover(
     if not subtask_name:
         raise HTTPException(404, f"No subtask_name in printer state (state={state.state})")
 
+    # Extract plate number from gcode_file (e.g., "/data/Metadata/plate_12.gcode" -> 12)
+    plate_num = 1
+    gcode_file = state.gcode_file
+    if gcode_file:
+        match = re.search(r"plate_(\d+)\.gcode", gcode_file)
+        if match:
+            plate_num = int(match.group(1))
+            logger.info(f"Detected plate number {plate_num} from gcode_file: {gcode_file}")
+
     # Normalize view parameter
     view_key = view or "default"
 
-    # Check cache
+    # Check cache - include plate_num in cache key for multi-plate projects
     if printer_id in _cover_cache:
-        cache_key = (subtask_name, view_key)
+        cache_key = (subtask_name, plate_num, view_key)
         if cache_key in _cover_cache[printer_id]:
             return Response(content=_cover_cache[printer_id][cache_key], media_type="image/png")
 
@@ -475,16 +486,31 @@ async def get_printer_cover(
 
     logger.info(f"Trying to download cover for '{filename}' from {printer.ip_address}")
 
-    try:
-        downloaded = await download_file_try_paths_async(
-            printer.ip_address,
-            printer.access_code,
-            remote_paths,
-            temp_path,
-        )
-    except Exception as e:
-        logger.error(f"FTP download exception: {e}")
-        raise HTTPException(500, f"FTP download failed: {e}")
+    # Retry logic for transient FTP failures
+    max_retries = 2
+    last_error = None
+    downloaded = False
+
+    for attempt in range(max_retries + 1):
+        try:
+            downloaded = await download_file_try_paths_async(
+                printer.ip_address,
+                printer.access_code,
+                remote_paths,
+                temp_path,
+            )
+            if downloaded:
+                break
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries:
+                logger.warning(f"FTP download attempt {attempt + 1} failed: {e}, retrying...")
+                await asyncio.sleep(0.5 * (attempt + 1))  # Brief backoff
+            else:
+                logger.error(f"FTP download failed after {max_retries + 1} attempts: {e}")
+
+    if last_error and not downloaded:
+        raise HTTPException(503, f"FTP download temporarily unavailable: {last_error}")
 
     if not downloaded:
         raise HTTPException(
@@ -513,21 +539,24 @@ async def get_printer_cover(
 
         try:
             # Try common thumbnail paths in 3MF files
+            # Use plate_num to get the correct plate's thumbnail for multi-plate projects
             # Use top-down view if requested (better for skip objects modal)
             if view == "top":
                 thumbnail_paths = [
+                    f"Metadata/top_{plate_num}.png",
+                    # Fall back to plate 1 if specific plate not found
                     "Metadata/top_1.png",
-                    "Metadata/top_2.png",
-                    "Metadata/top_3.png",
-                    "Metadata/top_4.png",
-                    # Fall back to regular views if no top view
+                    f"Metadata/plate_{plate_num}.png",
                     "Metadata/plate_1.png",
                     "Metadata/thumbnail.png",
                 ]
             else:
                 thumbnail_paths = [
+                    f"Metadata/plate_{plate_num}.png",
+                    # Fall back to plate 1 if specific plate not found
                     "Metadata/plate_1.png",
                     "Metadata/thumbnail.png",
+                    f"Metadata/plate_{plate_num}_small.png",
                     "Metadata/plate_1_small.png",
                     "Thumbnails/thumbnail.png",
                     "thumbnail.png",
@@ -536,10 +565,10 @@ async def get_printer_cover(
             for thumb_path in thumbnail_paths:
                 try:
                     image_data = zf.read(thumb_path)
-                    # Cache the result
+                    # Cache the result - include plate_num in cache key
                     if printer_id not in _cover_cache:
                         _cover_cache[printer_id] = {}
-                    _cover_cache[printer_id][(subtask_name, view_key)] = image_data
+                    _cover_cache[printer_id][(subtask_name, plate_num, view_key)] = image_data
                     return Response(content=image_data, media_type="image/png")
                 except KeyError:
                     continue
@@ -550,7 +579,7 @@ async def get_printer_cover(
                     image_data = zf.read(name)
                     if printer_id not in _cover_cache:
                         _cover_cache[printer_id] = {}
-                    _cover_cache[printer_id][(subtask_name, view_key)] = image_data
+                    _cover_cache[printer_id][(subtask_name, plate_num, view_key)] = image_data
                     return Response(content=image_data, media_type="image/png")
 
             raise HTTPException(404, "No thumbnail found in 3MF file")
@@ -1152,9 +1181,10 @@ async def get_printable_objects(
                 if downloaded and temp_path.exists():
                     with open(temp_path, "rb") as f:
                         data = f.read()
-                    objects = extract_printable_objects_from_3mf(data, include_positions=True)
+                    objects, bbox_all = extract_printable_objects_from_3mf(data, include_positions=True)
                     if objects:
                         client.state.printable_objects = objects
+                        client.state.printable_objects_bbox_all = bbox_all
                         logger.info(f"Reloaded {len(objects)} objects for printer {printer_id}")
             except Exception as e:
                 logger.debug(f"Failed to reload objects from printer: {e}")
@@ -1190,6 +1220,7 @@ async def get_printable_objects(
         "total": len(objects),
         "skipped_count": len(client.state.skipped_objects),
         "is_printing": client.state.state in ("RUNNING", "PAUSE"),
+        "bbox_all": getattr(client.state, "printable_objects_bbox_all", None),
     }
 
 
@@ -1268,3 +1299,36 @@ async def refresh_ams_slot(
         raise HTTPException(400, message)
 
     return {"success": True, "message": message}
+
+
+@router.get("/{printer_id}/runtime-debug")
+async def get_runtime_debug(
+    printer_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Debug endpoint: Get runtime tracking status for a printer."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    state = printer_manager.get_status(printer_id)
+
+    return {
+        "printer_name": printer.name,
+        "runtime_seconds": printer.runtime_seconds,
+        "runtime_hours": printer.runtime_seconds / 3600.0 if printer.runtime_seconds else 0,
+        "print_hours_offset": printer.print_hours_offset,
+        "total_hours": (printer.runtime_seconds / 3600.0 if printer.runtime_seconds else 0)
+        + (printer.print_hours_offset or 0),
+        "last_runtime_update": printer.last_runtime_update.isoformat() if printer.last_runtime_update else None,
+        "mqtt_state": {
+            "connected": state.connected if state else False,
+            "state": state.state if state else None,
+            "progress": state.progress if state else None,
+            "gcode_file": state.gcode_file if state else None,
+        }
+        if state
+        else None,
+        "is_active": printer.is_active,
+    }

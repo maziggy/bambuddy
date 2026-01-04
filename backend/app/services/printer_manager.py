@@ -477,6 +477,11 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None) ->
         "stg_cur_name": get_derived_status_name(state),
         # Printable objects count for skip objects feature
         "printable_objects_count": len(state.printable_objects),
+        # Fan speeds (0-100 percentage, None if not available)
+        "cooling_fan_speed": state.cooling_fan_speed,
+        "big_fan1_speed": state.big_fan1_speed,
+        "big_fan2_speed": state.big_fan2_speed,
+        "heatbreak_fan_speed": state.heatbreak_fan_speed,
     }
     # Add cover URL if there's an active print and printer_id is provided
     # Include PAUSE/PAUSED states so skip objects modal can show cover

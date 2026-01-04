@@ -1,8 +1,6 @@
 """Service for communicating with Tasmota devices via HTTP API."""
 
-import asyncio
 import logging
-from datetime import datetime
 from typing import TYPE_CHECKING
 
 import httpx
@@ -70,9 +68,7 @@ class TasmotaService:
             - reachable: bool
             - device_name: str or None
         """
-        result = await self._send_command(
-            plug.ip_address, "Power", plug.username, plug.password
-        )
+        result = await self._send_command(plug.ip_address, "Power", plug.username, plug.password)
 
         if result is None:
             return {"state": None, "reachable": False, "device_name": None}
@@ -89,9 +85,7 @@ class TasmotaService:
 
     async def turn_on(self, plug: "SmartPlug") -> bool:
         """Turn on the plug. Returns True if successful."""
-        result = await self._send_command(
-            plug.ip_address, "Power On", plug.username, plug.password
-        )
+        result = await self._send_command(plug.ip_address, "Power On", plug.username, plug.password)
 
         if result is None:
             return False
@@ -103,17 +97,13 @@ class TasmotaService:
         if success:
             logger.info(f"Turned ON smart plug '{plug.name}' at {plug.ip_address}")
         else:
-            logger.warning(
-                f"Failed to turn ON smart plug '{plug.name}' at {plug.ip_address}"
-            )
+            logger.warning(f"Failed to turn ON smart plug '{plug.name}' at {plug.ip_address}")
 
         return success
 
     async def turn_off(self, plug: "SmartPlug") -> bool:
         """Turn off the plug. Returns True if successful."""
-        result = await self._send_command(
-            plug.ip_address, "Power Off", plug.username, plug.password
-        )
+        result = await self._send_command(plug.ip_address, "Power Off", plug.username, plug.password)
 
         if result is None:
             return False
@@ -125,17 +115,13 @@ class TasmotaService:
         if success:
             logger.info(f"Turned OFF smart plug '{plug.name}' at {plug.ip_address}")
         else:
-            logger.warning(
-                f"Failed to turn OFF smart plug '{plug.name}' at {plug.ip_address}"
-            )
+            logger.warning(f"Failed to turn OFF smart plug '{plug.name}' at {plug.ip_address}")
 
         return success
 
     async def toggle(self, plug: "SmartPlug") -> bool:
         """Toggle the plug state. Returns True if successful."""
-        result = await self._send_command(
-            plug.ip_address, "Power Toggle", plug.username, plug.password
-        )
+        result = await self._send_command(plug.ip_address, "Power Toggle", plug.username, plug.password)
 
         if result is None:
             return False
@@ -144,9 +130,7 @@ class TasmotaService:
         success = state in ["ON", "OFF"]
 
         if success:
-            logger.info(
-                f"Toggled smart plug '{plug.name}' at {plug.ip_address} to {state}"
-            )
+            logger.info(f"Toggled smart plug '{plug.name}' at {plug.ip_address} to {state}")
 
         return success
 
@@ -161,9 +145,7 @@ class TasmotaService:
             - total: Total energy in kWh
             - factor: Power factor (0-1)
         """
-        result = await self._send_command(
-            plug.ip_address, "Status 8", plug.username, plug.password
-        )
+        result = await self._send_command(plug.ip_address, "Status 8", plug.username, plug.password)
 
         if result is None:
             return None

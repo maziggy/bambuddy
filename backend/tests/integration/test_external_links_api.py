@@ -44,9 +44,7 @@ class TestExternalLinksAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_list_external_links_with_data(
-        self, async_client: AsyncClient, link_factory, db_session
-    ):
+    async def test_list_external_links_with_data(self, async_client: AsyncClient, link_factory, db_session):
         """Verify list returns existing links."""
         await link_factory(name="My Link")
         response = await async_client.get("/api/v1/external-links/")
@@ -71,9 +69,7 @@ class TestExternalLinksAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_get_external_link(
-        self, async_client: AsyncClient, link_factory, db_session
-    ):
+    async def test_get_external_link(self, async_client: AsyncClient, link_factory, db_session):
         """Verify single link can be retrieved."""
         link = await link_factory(name="Get Test Link")
         response = await async_client.get(f"/api/v1/external-links/{link.id}")
@@ -89,14 +85,11 @@ class TestExternalLinksAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_external_link(
-        self, async_client: AsyncClient, link_factory, db_session
-    ):
+    async def test_update_external_link(self, async_client: AsyncClient, link_factory, db_session):
         """Verify link can be updated."""
         link = await link_factory(name="Original")
         response = await async_client.patch(
-            f"/api/v1/external-links/{link.id}",
-            json={"name": "Updated", "url": "https://updated.example.com"}
+            f"/api/v1/external-links/{link.id}", json={"name": "Updated", "url": "https://updated.example.com"}
         )
         assert response.status_code == 200
         result = response.json()
@@ -105,9 +98,7 @@ class TestExternalLinksAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_delete_external_link(
-        self, async_client: AsyncClient, link_factory, db_session
-    ):
+    async def test_delete_external_link(self, async_client: AsyncClient, link_factory, db_session):
         """Verify link can be deleted."""
         link = await link_factory()
         response = await async_client.delete(f"/api/v1/external-links/{link.id}")
@@ -118,9 +109,7 @@ class TestExternalLinksAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_reorder_external_links(
-        self, async_client: AsyncClient, link_factory, db_session
-    ):
+    async def test_reorder_external_links(self, async_client: AsyncClient, link_factory, db_session):
         """Verify links can be reordered."""
         link1 = await link_factory(name="Link 1")
         link2 = await link_factory(name="Link 2")
@@ -128,8 +117,7 @@ class TestExternalLinksAPI:
 
         # Reorder: 3, 1, 2
         response = await async_client.put(
-            "/api/v1/external-links/reorder",
-            json={"ids": [link3.id, link1.id, link2.id]}
+            "/api/v1/external-links/reorder", json={"ids": [link3.id, link1.id, link2.id]}
         )
         assert response.status_code == 200
         data = response.json()
@@ -144,6 +132,7 @@ class TestExternalLinksIconAPI:
     @pytest.fixture
     async def link_factory(self, db_session):
         """Factory to create test external links."""
+
         async def _create_link(**kwargs):
             from backend.app.models.external_link import ExternalLink
 
@@ -165,9 +154,7 @@ class TestExternalLinksIconAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_get_icon_not_set(
-        self, async_client: AsyncClient, link_factory, db_session
-    ):
+    async def test_get_icon_not_set(self, async_client: AsyncClient, link_factory, db_session):
         """Verify 404 when no custom icon is set."""
         link = await link_factory()
         response = await async_client.get(f"/api/v1/external-links/{link.id}/icon")
@@ -175,9 +162,7 @@ class TestExternalLinksIconAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_delete_icon_when_none(
-        self, async_client: AsyncClient, link_factory, db_session
-    ):
+    async def test_delete_icon_when_none(self, async_client: AsyncClient, link_factory, db_session):
         """Verify deleting non-existent icon succeeds silently."""
         link = await link_factory()
         response = await async_client.delete(f"/api/v1/external-links/{link.id}/icon")

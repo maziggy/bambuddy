@@ -6,19 +6,22 @@ services:
     #   docker compose up -d          → pulls pre-built image from ghcr.io
     #   docker compose up -d --build  → builds locally from source
     container_name: bambuddy
-    # Network mode options:
-    # - Default (bridge): Works for basic usage, but printer discovery and
-    #   camera streaming may not work since container can't reach LAN directly.
-    # - Host mode: Required for printer discovery scanning and camera streaming.
-    #   Uncomment "network_mode: host" and remove "ports:" section below.
     #
+    # LINUX: Use host mode for printer discovery and camera streaming
     network_mode: host
+    #
+    # macOS/WINDOWS: Docker Desktop doesn't support host mode.
+    # Comment out "network_mode: host" above and uncomment "ports:" below.
+    # Note: Printer discovery won't work - add printers manually by IP.
     #ports:
     #  - "8000:8000"
     volumes:
       - bambuddy_data:/app/data
       - bambuddy_logs:/app/logs
-      - bambuddy_vprinter:/app/virtual_printer
+      #
+      # Share virtual printer certs with native installation
+      # This ensures the slicer only needs to trust one CA certificate.
+      - ./virtual_printer:/app/data/virtual_printer
     environment:
       - TZ=Europe/Berlin
     restart: unless-stopped
@@ -26,4 +29,3 @@ services:
 volumes:
   bambuddy_data:
   bambuddy_logs:
-  bambuddy_vprinter:

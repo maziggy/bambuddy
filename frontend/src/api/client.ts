@@ -165,6 +165,11 @@ export interface PrinterStatus {
   last_ams_update: number;
   // Number of printable objects in current print (for skip objects feature)
   printable_objects_count: number;
+  // Fan speeds (0-100 percentage, null if not available for this model)
+  cooling_fan_speed: number | null;  // Part cooling fan
+  big_fan1_speed: number | null;     // Auxiliary fan
+  big_fan2_speed: number | null;     // Chamber/exhaust fan
+  heatbreak_fan_speed: number | null; // Hotend heatbreak fan
 }
 
 export interface PrinterCreate {
@@ -784,6 +789,7 @@ export interface PrintQueueItem {
   scheduled_time: string | null;
   require_previous_success: boolean;
   auto_off_after: boolean;
+  manual_start: boolean;  // Requires manual trigger to start (staged)
   status: 'pending' | 'printing' | 'completed' | 'failed' | 'skipped' | 'cancelled';
   started_at: string | null;
   completed_at: string | null;
@@ -801,6 +807,7 @@ export interface PrintQueueItemCreate {
   scheduled_time?: string | null;
   require_previous_success?: boolean;
   auto_off_after?: boolean;
+  manual_start?: boolean;  // Requires manual trigger to start (staged)
 }
 
 export interface PrintQueueItemUpdate {
@@ -809,6 +816,7 @@ export interface PrintQueueItemUpdate {
   scheduled_time?: string | null;
   require_previous_success?: boolean;
   auto_off_after?: boolean;
+  manual_start?: boolean;
 }
 
 // MQTT Logging types
@@ -1321,6 +1329,7 @@ export const api = {
       total: number;
       skipped_count: number;
       is_printing: boolean;
+      bbox_all: [number, number, number, number] | null;
     }>(`/printers/${printerId}/print/objects`),
 
   skipObjects: (printerId: number, objectIds: number[]) =>
@@ -1507,6 +1516,7 @@ export const api = {
   getArchiveThumbnail: (id: number) => `${API_BASE}/archives/${id}/thumbnail?v=${Date.now()}`,
   getArchiveDownload: (id: number) => `${API_BASE}/archives/${id}/download`,
   getArchiveGcode: (id: number) => `${API_BASE}/archives/${id}/gcode`,
+  getArchivePlatePreview: (id: number) => `${API_BASE}/archives/${id}/plate-preview`,
   getArchiveTimelapse: (id: number) => `${API_BASE}/archives/${id}/timelapse?v=${Date.now()}`,
   scanArchiveTimelapse: (id: number) =>
     request<{
@@ -1635,6 +1645,7 @@ export const api = {
     request<{
       has_model: boolean;
       has_gcode: boolean;
+      has_source: boolean;
       build_volume: { x: number; y: number; z: number };
       filament_colors: string[];
     }>(`/archives/${id}/capabilities`),
@@ -1906,6 +1917,8 @@ export const api = {
     request<{ message: string }>(`/queue/${id}/cancel`, { method: 'POST' }),
   stopQueueItem: (id: number) =>
     request<{ message: string }>(`/queue/${id}/stop`, { method: 'POST' }),
+  startQueueItem: (id: number) =>
+    request<PrintQueueItem>(`/queue/${id}/start`, { method: 'POST' }),
 
   // K-Profiles
   getKProfiles: (printerId: number, nozzleDiameter = '0.4') =>
@@ -2437,6 +2450,7 @@ export interface VirtualPrinterStatus {
   name: string;
   serial: string;
   model: string;
+  model_name: string;
   pending_files: number;
 }
 
@@ -2444,7 +2458,13 @@ export interface VirtualPrinterSettings {
   enabled: boolean;
   access_code_set: boolean;
   mode: 'immediate' | 'queue';
+  model: string;
   status: VirtualPrinterStatus;
+}
+
+export interface VirtualPrinterModels {
+  models: Record<string, string>;  // SSDP code -> display name
+  default: string;
 }
 
 export interface PendingUpload {
@@ -2463,15 +2483,19 @@ export interface PendingUpload {
 export const virtualPrinterApi = {
   getSettings: () => request<VirtualPrinterSettings>('/settings/virtual-printer'),
 
+  getModels: () => request<VirtualPrinterModels>('/settings/virtual-printer/models'),
+
   updateSettings: (data: {
     enabled?: boolean;
     access_code?: string;
     mode?: 'immediate' | 'queue';
+    model?: string;
   }) => {
     const params = new URLSearchParams();
     if (data.enabled !== undefined) params.set('enabled', String(data.enabled));
     if (data.access_code !== undefined) params.set('access_code', data.access_code);
     if (data.mode !== undefined) params.set('mode', data.mode);
+    if (data.model !== undefined) params.set('model', data.model);
 
     return request<VirtualPrinterSettings>(`/settings/virtual-printer?${params.toString()}`, {
       method: 'PUT',

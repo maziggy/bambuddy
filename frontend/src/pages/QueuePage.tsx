@@ -40,6 +40,7 @@ import {
   Layers,
   ArrowUp,
   ArrowDown,
+  Hand,
 } from 'lucide-react';
 import { api } from '../api/client';
 import type { PrintQueueItem } from '../api/client';
@@ -101,6 +102,7 @@ function SortableQueueItem({
   onRemove,
   onStop,
   onRequeue,
+  onStart,
 }: {
   item: PrintQueueItem;
   position?: number;
@@ -109,6 +111,7 @@ function SortableQueueItem({
   onRemove: () => void;
   onStop: () => void;
   onRequeue: () => void;
+  onStart: () => void;
 }) {
   const {
     attributes,
@@ -198,7 +201,7 @@ function SortableQueueItem({
                 {formatDuration(item.print_time_seconds)}
               </span>
             )}
-            {isPending && (
+            {isPending && !item.manual_start && (
               <span className="flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5" />
                 {formatRelativeTime(item.scheduled_time)}
@@ -208,6 +211,12 @@ function SortableQueueItem({
 
           {/* Options badges */}
           <div className="flex items-center gap-2 mt-2">
+            {item.manual_start && (
+              <span className="text-xs px-2 py-0.5 bg-purple-500/10 text-purple-400 rounded-full border border-purple-500/20 flex items-center gap-1">
+                <Hand className="w-3 h-3" />
+                Staged
+              </span>
+            )}
             {item.require_previous_success && (
               <span className="text-xs px-2 py-0.5 bg-orange-500/10 text-orange-400 rounded-full border border-orange-500/20">
                 Requires previous success
@@ -258,6 +267,17 @@ function SortableQueueItem({
           )}
           {isPending && (
             <>
+              {item.manual_start && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onStart}
+                  title="Start Print"
+                  className="text-bambu-green hover:text-bambu-green-light hover:bg-bambu-green/10"
+                >
+                  <Play className="w-4 h-4" />
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
@@ -391,6 +411,15 @@ export function QueuePage() {
       showToast('Print stopped');
     },
     onError: () => showToast('Failed to stop print', 'error'),
+  });
+
+  const startMutation = useMutation({
+    mutationFn: (id: number) => api.startQueueItem(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+      showToast('Print released to queue');
+    },
+    onError: () => showToast('Failed to start print', 'error'),
   });
 
   const reorderMutation = useMutation({
@@ -627,6 +656,7 @@ export function QueuePage() {
                     onRemove={() => {}}
                     onStop={() => setConfirmAction({ type: 'stop', item })}
                     onRequeue={() => {}}
+                    onStart={() => {}}
                   />
                 ))}
               </div>
@@ -689,6 +719,7 @@ export function QueuePage() {
                         onRemove={() => {}}
                         onStop={() => {}}
                         onRequeue={() => {}}
+                        onStart={() => startMutation.mutate(item.id)}
                       />
                     ))}
                   </div>
@@ -740,6 +771,7 @@ export function QueuePage() {
                     onRemove={() => setConfirmAction({ type: 'remove', item })}
                     onStop={() => {}}
                     onRequeue={() => setRequeueItem(item)}
+                    onStart={() => {}}
                   />
                 ))}
               </div>

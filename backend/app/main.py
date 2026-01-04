@@ -1597,7 +1597,11 @@ async def track_printer_runtime():
                 for printer in printers:
                     # Get current state from printer manager
                     state = printer_manager.get_status(printer.id)
-                    if not state or not state.connected:
+                    if not state:
+                        logger.debug(f"[{printer.name}] Runtime tracking: no state available")
+                        continue
+                    if not state.connected:
+                        logger.debug(f"[{printer.name}] Runtime tracking: not connected")
                         continue
 
                     # Check if printer is in an active state (RUNNING or PAUSE)
@@ -1610,14 +1614,27 @@ async def track_printer_runtime():
                                 printer.runtime_seconds += int(elapsed)
                                 updated_count += 1
                                 needs_commit = True
+                                logger.debug(
+                                    f"[{printer.name}] Runtime tracking: added {int(elapsed)}s, "
+                                    f"total={printer.runtime_seconds}s ({printer.runtime_seconds/3600:.2f}h)"
+                                )
+                            else:
+                                logger.warning(
+                                    f"[{printer.name}] Runtime tracking: skipped elapsed={elapsed:.1f}s "
+                                    f"(outside valid range 0-{RUNTIME_TRACKING_INTERVAL * 2}s)"
+                                )
                         else:
                             # First time seeing printer active - need to commit to save timestamp
                             needs_commit = True
+                            logger.debug(f"[{printer.name}] Runtime tracking: first active detection")
 
                         printer.last_runtime_update = now
                     else:
                         # Printer is idle/offline - clear last_runtime_update
                         if printer.last_runtime_update is not None:
+                            logger.debug(
+                                f"[{printer.name}] Runtime tracking: state={state.state}, clearing last_runtime_update"
+                            )
                             printer.last_runtime_update = None
                             needs_commit = True
 

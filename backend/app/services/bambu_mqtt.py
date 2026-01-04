@@ -862,11 +862,24 @@ class BambuMQTTClient:
             logger.warning(f"[{self.serial_number}] Unexpected AMS data format: {type(ams_data)}")
             return
 
-        # Store AMS data in raw_data so it's accessible via API
-        self.state.raw_data["ams"] = ams_list
+        # Merge AMS data instead of replacing, to handle partial updates
+        # During prints, the printer may only send updates for active AMS units
+        existing_ams = self.state.raw_data.get("ams", [])
+        existing_by_id = {ams.get("id"): ams for ams in existing_ams if ams.get("id") is not None}
+
+        # Update existing units with new data, add new units
+        for ams_unit in ams_list:
+            ams_id = ams_unit.get("id")
+            if ams_id is not None:
+                existing_by_id[ams_id] = ams_unit
+
+        # Convert back to list, sorted by ID for consistent ordering
+        merged_ams = sorted(existing_by_id.values(), key=lambda x: x.get("id", 0))
+        self.state.raw_data["ams"] = merged_ams
+
         # Update timestamp for RFID refresh detection (frontend can detect "new data arrived")
         self.state.last_ams_update = time.time()
-        logger.debug(f"[{self.serial_number}] Stored AMS data with {len(ams_list)} units")
+        logger.debug(f"[{self.serial_number}] Merged AMS data: {len(ams_list)} new units, {len(merged_ams)} total")
 
         # Extract ams_extruder_map from each AMS unit's info field
         # According to OpenBambuAPI: info field bit 8 indicates which extruder (0=right, 1=left)

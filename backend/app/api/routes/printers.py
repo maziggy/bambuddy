@@ -1299,3 +1299,36 @@ async def refresh_ams_slot(
         raise HTTPException(400, message)
 
     return {"success": True, "message": message}
+
+
+@router.get("/{printer_id}/runtime-debug")
+async def get_runtime_debug(
+    printer_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Debug endpoint: Get runtime tracking status for a printer."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    state = printer_manager.get_status(printer_id)
+
+    return {
+        "printer_name": printer.name,
+        "runtime_seconds": printer.runtime_seconds,
+        "runtime_hours": printer.runtime_seconds / 3600.0 if printer.runtime_seconds else 0,
+        "print_hours_offset": printer.print_hours_offset,
+        "total_hours": (printer.runtime_seconds / 3600.0 if printer.runtime_seconds else 0)
+        + (printer.print_hours_offset or 0),
+        "last_runtime_update": printer.last_runtime_update.isoformat() if printer.last_runtime_update else None,
+        "mqtt_state": {
+            "connected": state.connected if state else False,
+            "state": state.state if state else None,
+            "progress": state.progress if state else None,
+            "gcode_file": state.gcode_file if state else None,
+        }
+        if state
+        else None,
+        "is_active": printer.is_active,
+    }

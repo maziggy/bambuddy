@@ -396,8 +396,8 @@ def extract_printable_objects_from_3mf(
                     break
 
             # Load position data from plate_N.json if we need positions
-            # Build a lookup by name since bbox_objects.id != slice_info identify_id
-            bbox_by_name: dict[str, list] = {}
+            # Build a lookup by name - use list to handle duplicate names
+            bbox_by_name: dict[str, list[list]] = {}
             if include_positions:
                 plate_json_path = f"Metadata/plate_{plate_idx}.json"
                 if plate_json_path in zf.namelist():
@@ -409,7 +409,9 @@ def extract_printable_objects_from_3mf(
                             obj_name = bbox_obj.get("name")
                             bbox = bbox_obj.get("bbox", [])
                             if obj_name and len(bbox) >= 4:
-                                bbox_by_name[obj_name] = bbox
+                                if obj_name not in bbox_by_name:
+                                    bbox_by_name[obj_name] = []
+                                bbox_by_name[obj_name].append(bbox)
                     except (json.JSONDecodeError, KeyError):
                         pass
 
@@ -424,9 +426,10 @@ def extract_printable_objects_from_3mf(
                         obj_id = int(identify_id)
                         if include_positions:
                             x, y = None, None
-                            # Match by name to get bbox coordinates
-                            bbox = bbox_by_name.get(name)
-                            if bbox:
+                            # Match by name - pop first bbox to handle duplicates
+                            bboxes = bbox_by_name.get(name)
+                            if bboxes:
+                                bbox = bboxes.pop(0)
                                 # Calculate center from bbox [x_min, y_min, x_max, y_max]
                                 x = (bbox[0] + bbox[2]) / 2
                                 y = (bbox[1] + bbox[3]) / 2

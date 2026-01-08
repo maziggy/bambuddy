@@ -2580,30 +2580,31 @@ function PrinterCard({
 
                           // Use position data if available, otherwise fall back to grid
                           if (obj.x != null && obj.y != null && objectsData.bbox_all) {
-                            // bbox_all is [x_min, y_min, x_max, y_max] - the bounds of all objects
-                            // The top_N.png image is rendered to show this area with ~10% padding
+                            // bbox_all defines the visible area in the top_N.png image
+                            // Format: [x_min, y_min, x_max, y_max] in mm
                             const [xMin, yMin, xMax, yMax] = objectsData.bbox_all;
                             const bboxWidth = xMax - xMin;
                             const bboxHeight = yMax - yMin;
 
-                            // Calculate position relative to bbox, with padding
-                            // The image has roughly 10% padding on each side
-                            const padding = 10;
+                            // The image shows bbox_all area with some padding (~5-10%)
+                            const padding = 8;
                             const contentArea = 100 - (padding * 2);
 
+                            // Map object position to image percentage
                             x = padding + ((obj.x - xMin) / bboxWidth) * contentArea;
-                            // Y axis: in 3D coords Y increases toward back, in image Y increases down
-                            // So we need to flip: high Y in 3D = low Y in image (top)
+                            // Y axis: image Y increases downward, but 3D Y increases toward back
                             y = padding + ((yMax - obj.y) / bboxHeight) * contentArea;
 
                             // Clamp to valid range
                             x = Math.max(5, Math.min(95, x));
                             y = Math.max(5, Math.min(95, y));
                           } else if (obj.x != null && obj.y != null) {
-                            // Fallback: use full build plate (256mm for X1C)
-                            const buildPlateSize = 256;
-                            x = Math.max(10, Math.min(90, (obj.x / buildPlateSize) * 100));
-                            y = Math.max(10, Math.min(90, 100 - (obj.y / buildPlateSize) * 100));
+                            // Fallback: use full build plate (256mm)
+                            const buildPlate = 256;
+                            x = (obj.x / buildPlate) * 100;
+                            y = 100 - (obj.y / buildPlate) * 100;
+                            x = Math.max(5, Math.min(95, x));
+                            y = Math.max(5, Math.min(95, y));
                           } else {
                             // Fallback: arrange in a grid pattern over the build plate area
                             const cols = Math.ceil(Math.sqrt(objectsData.objects.length));

@@ -162,7 +162,7 @@ jobs:
         run: npm run build
 
   # ============================================================================
-  # Docker Build & Test
+  # Docker Tests (matches test_docker.sh)
   # ============================================================================
 
   docker-test:
@@ -172,7 +172,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Docker image
+      # Test 1: Docker Build
+      - name: Build production image
         run: docker build -t bambuddy:test .
 
       - name: Verify backend imports
@@ -181,31 +182,56 @@ jobs:
       - name: Verify static files exist
         run: docker run --rm bambuddy:test test -d /app/static
 
-      - name: Start container
+      # Test 2: Backend Unit Tests in Docker
+      - name: Build backend test image
+        run: docker compose -f docker-compose.test.yml build backend-test
+
+      - name: Run backend tests in Docker
+        run: docker compose -f docker-compose.test.yml run --rm backend-test
+
+      # Test 3: Frontend Unit Tests in Docker
+      - name: Build frontend test image
+        run: docker compose -f docker-compose.test.yml build frontend-test
+
+      - name: Run frontend tests in Docker
+        run: docker compose -f docker-compose.test.yml run --rm frontend-test
+
+      # Test 4: Integration Tests
+      - name: Build integration container
+        run: docker compose -f docker-compose.test.yml build integration
+
+      - name: Start integration container
         run: |
-          docker run -d --name bambuddy-test -p 8000:8000 bambuddy:test
-          sleep 10
+          docker compose -f docker-compose.test.yml up -d integration
+          echo "Waiting for container to be healthy..."
+          for i in {1..30}; do
+            if docker compose -f docker-compose.test.yml ps integration | grep -q "healthy"; then
+              echo "Container is healthy"
+              break
+            fi
+            sleep 2
+          done
 
       - name: Test health endpoint
         run: |
-          HEALTH=$(curl -s http://localhost:8000/health)
+          HEALTH=$(docker compose -f docker-compose.test.yml exec -T integration curl -s http://localhost:8000/health)
           echo "$HEALTH"
           echo "$HEALTH" | grep -q "healthy"
 
       - name: Test API endpoint
         run: |
-          curl -s http://localhost:8000/api/v1/printers | head -c 200
+          docker compose -f docker-compose.test.yml exec -T integration curl -s http://localhost:8000/api/v1/settings
 
       - name: Test static files served
         run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/)
+          STATUS=$(docker compose -f docker-compose.test.yml exec -T integration curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/)
           echo "Static files HTTP status: $STATUS"
           [ "$STATUS" = "200" ]
 
-      - name: Show container logs on failure
+      - name: Show logs on failure
         if: failure()
-        run: docker logs bambuddy-test
+        run: docker compose -f docker-compose.test.yml logs
 
       - name: Cleanup
         if: always()
-        run: docker rm -f bambuddy-test || true
+        run: docker compose -f docker-compose.test.yml down -v --remove-orphans

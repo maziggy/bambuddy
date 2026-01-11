@@ -1,4 +1,5 @@
 import asyncio
+import ftplib
 import logging
 import os
 import socket
@@ -77,7 +78,7 @@ class BambuFTPClient:
     FTP_PORT = 990
     DEFAULT_TIMEOUT = 30  # Default timeout in seconds (increased for A1 printers)
     # Models that need SSL session reuse disabled (A1 series has FTP issues with session reuse)
-    SKIP_SESSION_REUSE_MODELS = ("A1", "A1 Mini")
+    SKIP_SESSION_REUSE_MODELS = ("A1", "A1 Mini", "P1S", "P1P")
 
     def __init__(
         self,
@@ -106,7 +107,7 @@ class BambuFTPClient:
                 f"FTP connecting to {self.ip_address}:{self.FTP_PORT} "
                 f"(timeout={self.timeout}s, model={self.printer_model}, skip_session_reuse={skip_reuse})"
             )
-            self._ftp = ImplicitFTP_TLS(skip_session_reuse=skip_reuse)
+            self._ftp = ImplicitFTP_TLS()
             self._ftp.connect(self.ip_address, self.FTP_PORT, timeout=self.timeout)
             logger.debug("FTP connected, logging in as bblp")
             self._ftp.login("bblp", self.access_code)
@@ -250,6 +251,9 @@ class BambuFTPClient:
                     progress_callback(uploaded, file_size)
 
             with open(local_path, "rb") as f:
+                if self._should_skip_session_reuse():
+                    ftplib._SSLSocket = None
+
                 self._ftp.storbinary(f"STOR {remote_path}", f, callback=on_block)
             logger.info(f"FTP upload complete: {remote_path}")
             return True

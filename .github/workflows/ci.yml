@@ -66,10 +66,10 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-asyncio pytest-cov
 
-      - name: Run unit tests
+      - name: Run tests
         run: |
           cd backend
-          python -m pytest tests/unit/ -v --tb=short -m "not slow"
+          python -m pytest tests/ -v --tb=short
 
   # ============================================================================
   # Frontend Checks

@@ -56,7 +56,7 @@ Bambuddy communicates with your printers over your local network using:
 2. **Use reverse proxy**: If exposing to the internet, use a reverse proxy with HTTPS
 3. **Keep updated**: Always run the latest version for security patches
 4. **Secure API keys**: Treat API keys like passwords; don't share them publicly
-5. **LAN Mode**: Use your printer's LAN Mode access code; don't share it
+5. **Developer Mode**: Use your printer's Developer Mode access code; don't share it
 
 ### Known Security Features
 

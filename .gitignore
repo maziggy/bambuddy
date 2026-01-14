@@ -52,3 +52,4 @@ virtual_printer/
 logs/
 *.log*
 bambutrack.log.*
+firmware/

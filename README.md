@@ -31,7 +31,7 @@
 ## Why Bambuddy?
 
 - **Own your data** — All print history stored locally, no cloud dependency
-- **Works offline** — Uses LAN Mode for direct printer communication
+- **Works offline** — Uses Developer Mode for direct printer control via local network
 - **Full automation** — Schedule prints, auto power-off, get notified when done
 - **Multi-printer support** — Manage your entire print farm from one interface
 
@@ -94,6 +94,7 @@
 
 ### 🔧 Integrations
 - [Spoolman](https://github.com/Donkie/Spoolman) filament sync
+- MQTT publishing for Home Assistant, Node-RED, etc.
 - Bambu Cloud profile management
 - K-profiles (pressure advance)
 - External sidebar links
@@ -258,7 +259,7 @@
 
 ### Requirements
 - Python 3.10+ (3.11/3.12 recommended)
-- Bambu Lab printer with **LAN Mode** enabled
+- Bambu Lab printer with **Developer Mode** enabled (see below)
 - Same local network as printer
 
 ### Installation
@@ -392,12 +393,17 @@ Open **http://localhost:8000** and add your printer!
 
 > **Need detailed instructions?** See the [Installation Guide](http://wiki.bambuddy.cool/getting-started/installation/)
 
-### Enabling LAN Mode
+### Enabling Developer Mode
 
-1. On printer: **Settings** → **Network** → **LAN Mode**
-2. Enable LAN Mode and note the **Access Code**
-3. Find IP address in network settings
-4. Find Serial Number in device info
+Developer Mode allows third-party software like Bambuddy to control your printer over the local network.
+
+1. On printer: **Settings** → **Network** → **LAN Only Mode** → Enable
+2. Enable **Developer Mode** (appears after LAN Only Mode is enabled)
+3. Note the **Access Code** displayed
+4. Find IP address in network settings
+5. Find Serial Number in device info
+
+> **Note:** Developer Mode disables cloud features but provides full local control. Standard LAN Mode (without Developer Mode) only allows read-only monitoring.
 
 ---
 
@@ -415,12 +421,12 @@ Full documentation available at **[wiki.bambuddy.cool](http://wiki.bambuddy.cool
 
 ## 🖨️ Supported Printers
 
-| Series | Models | Status |
-|--------|--------|--------|
-| H2 | H2C, H2D, H2S | ✅ Tested (H2D) |
-| X1 | X1, X1 Carbon | ✅ Tested (X1C) |
-| P1 | P1P, P1S | 🧪 Needs testing |
-| A1 | A1, A1 Mini | 🧪 Needs testing |
+| Series | Models |
+|--------|--------|
+| H2 | H2D, H2S |
+| X1 | X1, X1 Carbon |
+| P1 | P1P, P1S, P2S |
+| A1 | A1, A1 Mini |
 
 ---
 

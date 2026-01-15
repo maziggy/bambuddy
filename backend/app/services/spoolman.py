@@ -49,6 +49,7 @@ class AMSTray:
     remain: int  # Remaining percentage (0-100)
     tag_uid: str  # RFID tag UID
     tray_uuid: str  # Spool UUID
+    tray_info_idx: str  # Bambu filament preset ID like "GFA00"
     tray_weight: int  # Spool weight in grams (usually 1000)
 
 
@@ -521,6 +522,9 @@ class SpoolmanClient:
         if tray_uuid in ("", "00000000000000000000000000000000"):
             tray_uuid = ""
 
+        # Get tray_info_idx (Bambu filament preset ID like "GFA00")
+        tray_info_idx = tray_data.get("tray_info_idx", "") or ""
+
         # Get remaining percentage, ensure non-negative
         remain = max(0, int(tray_data.get("remain", 0)))
 
@@ -533,6 +537,7 @@ class SpoolmanClient:
             remain=remain,
             tag_uid=tag_uid,
             tray_uuid=tray_uuid,
+            tray_info_idx=tray_info_idx.strip(),
             tray_weight=int(tray_data.get("tray_weight", 1000)),
         )
 
@@ -552,25 +557,35 @@ class SpoolmanClient:
         ams_letter = chr(ord("A") + ams_id)
         return f"AMS {ams_letter}{tray_id + 1}"
 
-    def is_bambu_lab_spool(self, tray_uuid: str, tag_uid: str = "") -> bool:
+    def is_bambu_lab_spool(self, tray_uuid: str, tag_uid: str = "", tray_info_idx: str = "") -> bool:
         """Check if a tray has a valid Bambu Lab spool.
 
-        Bambu Lab spools have a tray_uuid (32-character hex string) and/or
-        a tag_uid (16-character hex string). The tray_uuid is preferred as
-        it's consistent across printer models, but tag_uid is accepted as
-        a fallback since some spools may have RFID read issues.
+        Bambu Lab spools can be identified by:
+        1. tray_uuid: 32-character hex string (preferred, consistent across printers)
+        2. tag_uid: 16-character hex string (RFID tag, varies between readers)
+        3. tray_info_idx: Bambu filament preset ID like "GFA00" (most reliable)
 
-        Non-Bambu Lab spools (SpoolEase, third-party) won't have valid
-        tray_uuid or tag_uid.
+        Non-Bambu Lab spools (SpoolEase, third-party) won't have these identifiers.
 
         Args:
             tray_uuid: The tray UUID to check (32 hex chars)
             tag_uid: The RFID tag UID to check as fallback (16 hex chars)
+            tray_info_idx: Bambu filament preset ID like "GFA00", "GFB00"
 
         Returns:
             True if the spool has valid Bambu Lab identifiers, False otherwise.
         """
-        # First check tray_uuid (preferred - consistent across printer models)
+        # Check tray_info_idx first - Bambu filament preset IDs like "GFA00", "GFB00", etc.
+        # This is the most reliable indicator as it's set when the spool is recognized
+        if tray_info_idx:
+            idx = tray_info_idx.strip()
+            # Bambu Lab preset IDs start with "GF" followed by letter and digits
+            # e.g., GFA00, GFB00, GFL00, GFN00, GFG00, GFS00, GFU00
+            if idx and len(idx) >= 3 and idx.startswith("GF"):
+                logger.debug(f"Identified Bambu Lab spool via tray_info_idx: {idx}")
+                return True
+
+        # Check tray_uuid (preferred - consistent across printer models)
         if tray_uuid:
             uuid = tray_uuid.strip()
             if len(uuid) == 32 and uuid != "00000000000000000000000000000000":
@@ -624,16 +639,17 @@ class SpoolmanClient:
         """
         logger.debug(
             f"Processing {printer_name} AMS {tray.ams_id} tray {tray.tray_id}: "
-            f"type={tray.tray_type}, uuid={tray.tray_uuid[:16] if tray.tray_uuid else 'none'}, "
+            f"type={tray.tray_type}, idx={tray.tray_info_idx or 'none'}, "
+            f"uuid={tray.tray_uuid[:16] if tray.tray_uuid else 'none'}, "
             f"tag={tray.tag_uid[:8] if tray.tag_uid else 'none'}..."
         )
 
-        # Only sync trays with valid Bambu Lab identifiers (tray_uuid or tag_uid)
-        if not self.is_bambu_lab_spool(tray.tray_uuid, tray.tag_uid):
-            if tray.tray_uuid or tray.tag_uid:
+        # Only sync trays with valid Bambu Lab identifiers
+        if not self.is_bambu_lab_spool(tray.tray_uuid, tray.tag_uid, tray.tray_info_idx):
+            if tray.tray_uuid or tray.tag_uid or tray.tray_info_idx:
                 logger.info(
                     f"Skipping non-Bambu Lab spool: {printer_name} AMS {tray.ams_id} tray {tray.tray_id} "
-                    f"(tray_uuid={tray.tray_uuid}, tag_uid={tray.tag_uid})"
+                    f"(tray_info_idx={tray.tray_info_idx}, tray_uuid={tray.tray_uuid}, tag_uid={tray.tag_uid})"
                 )
             else:
                 logger.debug(f"Skipping tray without RFID tag: AMS {tray.ams_id} tray {tray.tray_id}")
@@ -643,6 +659,14 @@ class SpoolmanClient:
         spool_tag = (
             tray.tray_uuid if tray.tray_uuid and tray.tray_uuid != "00000000000000000000000000000000" else tray.tag_uid
         )
+
+        # If no unique identifier available, we can't sync even if it's a Bambu Lab spool
+        if not spool_tag:
+            logger.warning(
+                f"Bambu Lab spool detected but no unique identifier for Spoolman: "
+                f"{printer_name} AMS {tray.ams_id} tray {tray.tray_id} (tray_info_idx={tray.tray_info_idx})"
+            )
+            return None
 
         # Calculate remaining weight
         remaining = self.calculate_remaining_weight(tray.remain, tray.tray_weight)

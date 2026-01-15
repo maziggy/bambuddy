@@ -213,7 +213,7 @@ async def sync_printer_ams(
             location = client.convert_ams_slot_to_location(ams_id, tray.tray_id)
 
             # Skip non-Bambu Lab spools (SpoolEase/third-party) - track as skipped
-            if not client.is_bambu_lab_spool(tray.tray_uuid, tray.tag_uid):
+            if not client.is_bambu_lab_spool(tray.tray_uuid, tray.tag_uid, tray.tray_info_idx):
                 skipped.append(
                     SkippedSpool(
                         location=location,
@@ -230,7 +230,8 @@ async def sync_printer_ams(
                 if tray.tray_uuid and tray.tray_uuid != "00000000000000000000000000000000"
                 else tray.tag_uid
             )
-            current_tray_uuids.add(spool_tag.upper())
+            if spool_tag:
+                current_tray_uuids.add(spool_tag.upper())
 
             try:
                 sync_result = await client.sync_ams_tray(tray, printer.name)
@@ -342,7 +343,7 @@ async def sync_all_printers(db: AsyncSession = Depends(get_db)):
                 location = f"{printer.name} - {client.convert_ams_slot_to_location(ams_id, tray.tray_id)}"
 
                 # Skip non-Bambu Lab spools (SpoolEase/third-party) - track as skipped
-                if not client.is_bambu_lab_spool(tray.tray_uuid, tray.tag_uid):
+                if not client.is_bambu_lab_spool(tray.tray_uuid, tray.tag_uid, tray.tray_info_idx):
                     all_skipped.append(
                         SkippedSpool(
                             location=location,
@@ -359,7 +360,8 @@ async def sync_all_printers(db: AsyncSession = Depends(get_db)):
                     if tray.tray_uuid and tray.tray_uuid != "00000000000000000000000000000000"
                     else tray.tag_uid
                 )
-                printer_tray_uuids[printer.name].add(spool_tag.upper())
+                if spool_tag:
+                    printer_tray_uuids[printer.name].add(spool_tag.upper())
 
                 try:
                     sync_result = await client.sync_ams_tray(tray, printer.name)

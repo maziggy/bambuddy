@@ -703,6 +703,35 @@ function getWifiStrength(rssi: number | null | undefined): { label: string; colo
   return { label: 'Very weak', color: 'text-red-400', bars: 1 };
 }
 
+/**
+ * Check if a tray contains a Bambu Lab spool.
+ * Uses same logic as backend: tray_info_idx (GF*), tray_uuid, or tag_uid.
+ */
+function isBambuLabSpool(tray: {
+  tray_uuid?: string | null;
+  tag_uid?: string | null;
+  tray_info_idx?: string | null;
+} | null | undefined): boolean {
+  if (!tray) return false;
+
+  // Check tray_info_idx first (most reliable - Bambu preset IDs start with "GF")
+  if (tray.tray_info_idx && tray.tray_info_idx.startsWith('GF')) {
+    return true;
+  }
+
+  // Check tray_uuid (32 hex chars, non-zero)
+  if (tray.tray_uuid && tray.tray_uuid !== '00000000000000000000000000000000') {
+    return true;
+  }
+
+  // Check tag_uid (16 hex chars, non-zero)
+  if (tray.tag_uid && tray.tag_uid !== '0000000000000000') {
+    return true;
+  }
+
+  return false;
+}
+
 function CoverImage({ url, printName }: { url: string | null; printName?: string }) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
@@ -1921,7 +1950,7 @@ function PrinterCard({
 
                                 // Build filament data for hover card
                                 const filamentData = tray?.tray_type ? {
-                                  vendor: (tray.tray_uuid ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
+                                  vendor: (isBambuLabSpool(tray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
                                   profile: cloudInfo?.name || tray.tray_sub_brands || tray.tray_type,
                                   colorName: getBambuColorName(tray.tray_id_name) || hexToBasicColorName(tray.tray_color),
                                   colorHex: tray.tray_color || null,
@@ -2068,7 +2097,7 @@ function PrinterCard({
 
                         // Build filament data for hover card
                         const filamentData = tray?.tray_type ? {
-                          vendor: (tray.tray_uuid ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
+                          vendor: (isBambuLabSpool(tray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
                           profile: cloudInfo?.name || tray.tray_sub_brands || tray.tray_type,
                           colorName: getBambuColorName(tray.tray_id_name) || hexToBasicColorName(tray.tray_color),
                           colorHex: tray.tray_color || null,
@@ -2242,7 +2271,7 @@ function PrinterCard({
 
                         // Build filament data for hover card
                         const extFilamentData = {
-                          vendor: (extTray.tray_uuid ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
+                          vendor: (isBambuLabSpool(extTray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
                           profile: extCloudInfo?.name || extTray.tray_sub_brands || extTray.tray_type || 'Unknown',
                           colorName: getBambuColorName(extTray.tray_id_name) || hexToBasicColorName(extTray.tray_color),
                           colorHex: extTray.tray_color || null,

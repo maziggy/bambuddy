@@ -13,6 +13,7 @@
   <a href="https://github.com/maziggy/bambuddy/blob/main/LICENSE"><img src="https://img.shields.io/github/license/maziggy/bambuddy?style=flat-square" alt="License"></a>
   <a href="https://github.com/maziggy/bambuddy/stargazers"><img src="https://img.shields.io/github/stars/maziggy/bambuddy?style=flat-square" alt="Stars"></a>
   <a href="https://github.com/maziggy/bambuddy/issues"><img src="https://img.shields.io/github/issues/maziggy/bambuddy?style=flat-square" alt="Issues"></a>
+  <a href="https://discord.gg/aFS3ZfScHM"><img src="https://img.shields.io/discord/1328797143099428895?style=flat-square&logo=discord&logoColor=white&label=Discord&color=5865F2" alt="Discord"></a>
   <img src="[https://api.visitorbadge.io/api/visitors?path=https%3A%2F%2Fgithub.com%2Fmaziggy%2Fbambuddy&labelColor=%23555555&countColor=%2379C83D&label=visitors&style=flat-square](https://camo.githubusercontent.com/54a267c3fa4c2d5e5eaa0df1cde45a31b0605e8a0e8a8c69aea49c7cbff4c3c6/68747470733a2f2f6170692e76697369746f7262616467652e696f2f6170692f76697369746f72733f706174683d68747470732533412532462532466769746875622e636f6d2532466d617a6967677925324662616d6275646479266c6162656c436f6c6f723d25323335353535353526636f756e74436f6c6f723d253233373943383344266c6162656c3d76697369746f7273267374796c653d666c61742d737175617265)" alt="Visitors">
 </p>
 
@@ -21,6 +22,7 @@
   <a href="#-screenshots">Screenshots</a> •
   <a href="#-quick-start">Quick Start</a> •
   <a href="http://wiki.bambuddy.cool">Documentation</a> •
+  <a href="https://discord.gg/aFS3ZfScHM">Discord</a> •
   <a href="#-contributing">Contributing</a>
 </p>
 
@@ -486,6 +488,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 <p align="center">
   Made with ❤️ for the 3D printing community
   <br><br>
+  <a href="https://discord.gg/aFS3ZfScHM">Join our Discord</a> •
   <a href="https://github.com/maziggy/bambuddy/issues">Report Bug</a> •
   <a href="https://github.com/maziggy/bambuddy/issues">Request Feature</a> •
   <a href="http://wiki.bambuddy.cool">Documentation</a>

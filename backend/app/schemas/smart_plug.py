@@ -1,12 +1,21 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class SmartPlugBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    ip_address: str = Field(..., pattern=r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
+    plug_type: Literal["tasmota", "homeassistant"] = "tasmota"
+
+    # Tasmota fields (required when plug_type="tasmota")
+    ip_address: str | None = Field(default=None, pattern=r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
+    username: str | None = None
+    password: str | None = None
+
+    # Home Assistant fields (required when plug_type="homeassistant")
+    ha_entity_id: str | None = Field(default=None, pattern=r"^(switch|light|input_boolean)\.[a-z0-9_]+$")
+
     printer_id: int | None = None
     enabled: bool = True
     auto_on: bool = True
@@ -14,8 +23,6 @@ class SmartPlugBase(BaseModel):
     off_delay_mode: Literal["time", "temperature"] = "time"
     off_delay_minutes: int = Field(default=5, ge=0, le=60)
     off_temp_threshold: int = Field(default=70, ge=30, le=150)
-    username: str | None = None
-    password: str | None = None
     # Power alerts
     power_alert_enabled: bool = False
     power_alert_high: float | None = Field(default=None, ge=0, le=5000)  # Alert when power > this (watts)
@@ -27,6 +34,14 @@ class SmartPlugBase(BaseModel):
     # Switchbar visibility
     show_in_switchbar: bool = False
 
+    @model_validator(mode="after")
+    def validate_plug_type_fields(self) -> "SmartPlugBase":
+        if self.plug_type == "tasmota" and not self.ip_address:
+            raise ValueError("ip_address is required for Tasmota plugs")
+        if self.plug_type == "homeassistant" and not self.ha_entity_id:
+            raise ValueError("ha_entity_id is required for Home Assistant plugs")
+        return self
+
 
 class SmartPlugCreate(SmartPlugBase):
     pass
@@ -34,7 +49,9 @@ class SmartPlugCreate(SmartPlugBase):
 
 class SmartPlugUpdate(BaseModel):
     name: str | None = None
+    plug_type: Literal["tasmota", "homeassistant"] | None = None
     ip_address: str | None = None
+    ha_entity_id: str | None = None
     printer_id: int | None = None
     enabled: bool | None = None
     auto_on: bool | None = None
@@ -98,3 +115,28 @@ class SmartPlugTestConnection(BaseModel):
     ip_address: str = Field(..., pattern=r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
     username: str | None = None
     password: str | None = None
+
+
+# Home Assistant schemas
+class HATestConnectionRequest(BaseModel):
+    """Request to test Home Assistant connection."""
+
+    url: str = Field(..., min_length=1)
+    token: str = Field(..., min_length=1)
+
+
+class HATestConnectionResponse(BaseModel):
+    """Response from HA connection test."""
+
+    success: bool
+    message: str | None = None
+    error: str | None = None
+
+
+class HAEntity(BaseModel):
+    """A Home Assistant entity that can be used as a smart plug."""
+
+    entity_id: str
+    friendly_name: str
+    state: str | None = None
+    domain: str  # "switch", "light", "input_boolean"

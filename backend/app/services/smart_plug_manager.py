@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.tasmota import tasmota_service
 
@@ -25,6 +26,44 @@ class SmartPlugManager:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._scheduler_task: asyncio.Task | None = None
         self._last_schedule_check: dict[int, str] = {}  # plug_id -> "HH:MM" last executed
+
+    async def _get_service_for_plug(self, plug: "SmartPlug", db: AsyncSession | None = None):
+        """Get the appropriate service for the plug type.
+
+        For HA plugs, configures the service with current settings from DB.
+        """
+        if plug.plug_type == "homeassistant":
+            # Configure HA service with current settings
+            await self._configure_ha_service(db)
+            return homeassistant_service
+        return tasmota_service
+
+    async def _configure_ha_service(self, db: AsyncSession | None = None):
+        """Configure the HA service with URL and token from settings."""
+        from backend.app.models.settings import Settings
+
+        try:
+            if db:
+                # Use provided session
+                result = await db.execute(select(Settings).where(Settings.key == "ha_url"))
+                ha_url_setting = result.scalar_one_or_none()
+                result = await db.execute(select(Settings).where(Settings.key == "ha_token"))
+                ha_token_setting = result.scalar_one_or_none()
+            else:
+                # Create new session
+                from backend.app.core.database import async_session
+
+                async with async_session() as session:
+                    result = await session.execute(select(Settings).where(Settings.key == "ha_url"))
+                    ha_url_setting = result.scalar_one_or_none()
+                    result = await session.execute(select(Settings).where(Settings.key == "ha_token"))
+                    ha_token_setting = result.scalar_one_or_none()
+
+            ha_url = ha_url_setting.value if ha_url_setting else ""
+            ha_token = ha_token_setting.value if ha_token_setting else ""
+            homeassistant_service.configure(ha_url, ha_token)
+        except Exception as e:
+            logger.warning(f"Failed to configure HA service: {e}")
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop):
         """Set the event loop for async operations."""
@@ -71,12 +110,14 @@ class SmartPlugManager:
             plugs = result.scalars().all()
 
             for plug in plugs:
+                service = await self._get_service_for_plug(plug, db)
+
                 # Check if we should turn on
                 if plug.schedule_on_time == current_time:
                     last_check = self._last_schedule_check.get(plug.id)
                     if last_check != f"on:{current_time}":
                         logger.info(f"Schedule: Turning on plug '{plug.name}' at {current_time}")
-                        success = await tasmota_service.turn_on(plug)
+                        success = await service.turn_on(plug)
                         if success:
                             plug.last_state = "ON"
                             plug.last_checked = datetime.utcnow()
@@ -87,7 +128,7 @@ class SmartPlugManager:
                     last_check = self._last_schedule_check.get(plug.id)
                     if last_check != f"off:{current_time}":
                         logger.info(f"Schedule: Turning off plug '{plug.name}' at {current_time}")
-                        success = await tasmota_service.turn_off(plug)
+                        success = await service.turn_off(plug)
                         if success:
                             plug.last_state = "OFF"
                             plug.last_checked = datetime.utcnow()
@@ -125,7 +166,8 @@ class SmartPlugManager:
 
         # Turn on the plug
         logger.info(f"Print started on printer {printer_id}, turning on plug '{plug.name}'")
-        success = await tasmota_service.turn_on(plug)
+        service = await self._get_service_for_plug(plug, db)
+        success = await service.turn_on(plug)
 
         if success:
             # Update last state and reset auto_off_executed
@@ -180,14 +222,25 @@ class SmartPlugManager:
         asyncio.create_task(self._mark_auto_off_pending(plug.id, True))
 
         task = asyncio.create_task(
-            self._delayed_off(plug.id, plug.ip_address, plug.username, plug.password, printer_id, delay_seconds)
+            self._delayed_off(
+                plug.id,
+                plug.plug_type,
+                plug.ip_address,
+                plug.ha_entity_id,
+                plug.username,
+                plug.password,
+                printer_id,
+                delay_seconds,
+            )
         )
         self._pending_off[plug.id] = task
 
     async def _delayed_off(
         self,
         plug_id: int,
-        ip_address: str,
+        plug_type: str,
+        ip_address: str | None,
+        ha_entity_id: str | None,
         username: str | None,
         password: str | None,
         printer_id: int,
@@ -197,16 +250,19 @@ class SmartPlugManager:
         try:
             await asyncio.sleep(delay_seconds)
 
-            # Create a minimal plug-like object for the tasmota service
+            # Create a minimal plug-like object for the service
             class PlugInfo:
                 def __init__(self):
+                    self.plug_type = plug_type
                     self.ip_address = ip_address
+                    self.ha_entity_id = ha_entity_id
                     self.username = username
                     self.password = password
                     self.name = f"plug_{plug_id}"
 
             plug_info = PlugInfo()
-            success = await tasmota_service.turn_off(plug_info)
+            service = await self._get_service_for_plug(plug_info)
+            success = await service.turn_off(plug_info)
             logger.info(f"Turned off plug {plug_id} after time delay")
 
             # Mark auto_off_executed in database and update printer status
@@ -233,7 +289,9 @@ class SmartPlugManager:
         task = asyncio.create_task(
             self._temp_based_off(
                 plug.id,
+                plug.plug_type,
                 plug.ip_address,
+                plug.ha_entity_id,
                 plug.username,
                 plug.password,
                 printer_id,
@@ -245,7 +303,9 @@ class SmartPlugManager:
     async def _temp_based_off(
         self,
         plug_id: int,
-        ip_address: str,
+        plug_type: str,
+        ip_address: str | None,
+        ha_entity_id: str | None,
         username: str | None,
         password: str | None,
         printer_id: int,
@@ -285,13 +345,16 @@ class SmartPlugManager:
                         # All nozzles are below threshold, turn off
                         class PlugInfo:
                             def __init__(self):
+                                self.plug_type = plug_type
                                 self.ip_address = ip_address
+                                self.ha_entity_id = ha_entity_id
                                 self.username = username
                                 self.password = password
                                 self.name = f"plug_{plug_id}"
 
                         plug_info = PlugInfo()
-                        success = await tasmota_service.turn_off(plug_info)
+                        service = await self._get_service_for_plug(plug_info)
+                        success = await service.turn_off(plug_info)
                         logger.info(
                             f"Turned off plug {plug_id} after nozzle temp dropped to "
                             f"{max_nozzle_temp}°C (threshold: {temp_threshold}°C)"
@@ -411,14 +474,8 @@ class SmartPlugManager:
                         # For time mode, just turn off immediately since delay already passed
                         logger.info(f"Time-based auto-off was pending, turning off plug '{plug.name}' now")
 
-                        class PlugInfo:
-                            def __init__(self, p):
-                                self.ip_address = p.ip_address
-                                self.username = p.username
-                                self.password = p.password
-                                self.name = p.name
-
-                        success = await tasmota_service.turn_off(PlugInfo(plug))
+                        service = await self._get_service_for_plug(plug, db)
+                        success = await service.turn_off(plug)
                         if success:
                             await self._mark_auto_off_executed(plug.id)
                             printer_manager.mark_printer_offline(plug.printer_id)

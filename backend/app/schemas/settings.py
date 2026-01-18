@@ -85,6 +85,11 @@ class AppSettings(BaseModel):
     mqtt_topic_prefix: str = Field(default="bambuddy", description="Topic prefix for all published messages")
     mqtt_use_tls: bool = Field(default=False, description="Use TLS/SSL encryption for MQTT connection")
 
+    # Home Assistant integration for smart plug control
+    ha_enabled: bool = Field(default=False, description="Enable Home Assistant integration for smart plug control")
+    ha_url: str = Field(default="", description="Home Assistant URL (e.g., http://192.168.1.100:8123)")
+    ha_token: str = Field(default="", description="Home Assistant Long-Lived Access Token")
+
 
 class AppSettingsUpdate(BaseModel):
     """Schema for updating settings (all fields optional)."""
@@ -129,3 +134,6 @@ class AppSettingsUpdate(BaseModel):
     mqtt_password: str | None = None
     mqtt_topic_prefix: str | None = None
     mqtt_use_tls: bool | None = None
+    ha_enabled: bool | None = None
+    ha_url: str | None = None
+    ha_token: str | None = None

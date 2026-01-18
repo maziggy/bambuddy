@@ -456,6 +456,78 @@ async def run_migrations(conn):
     except Exception:
         pass
 
+    # Migration: Add plug_type column to smart_plugs for HA integration
+    try:
+        await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN plug_type VARCHAR(20) DEFAULT 'tasmota'"))
+    except Exception:
+        pass
+
+    # Migration: Add ha_entity_id column to smart_plugs for HA integration
+    try:
+        await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN ha_entity_id VARCHAR(100)"))
+    except Exception:
+        pass
+
+    # Migration: Make ip_address nullable for HA plugs (SQLite requires table recreation)
+    try:
+        # Check if ip_address is currently NOT NULL
+        result = await conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='smart_plugs'"))
+        row = result.fetchone()
+        if row and "ip_address VARCHAR(45) NOT NULL" in (row[0] or ""):
+            # Need to migrate - ip_address is currently NOT NULL
+            await conn.execute(
+                text("""
+                CREATE TABLE smart_plugs_new (
+                    id INTEGER PRIMARY KEY,
+                    name VARCHAR(100) NOT NULL,
+                    ip_address VARCHAR(45),
+                    plug_type VARCHAR(20) DEFAULT 'tasmota',
+                    ha_entity_id VARCHAR(100),
+                    printer_id INTEGER UNIQUE REFERENCES printers(id) ON DELETE SET NULL,
+                    enabled BOOLEAN NOT NULL DEFAULT 1,
+                    auto_on BOOLEAN NOT NULL DEFAULT 1,
+                    auto_off BOOLEAN NOT NULL DEFAULT 1,
+                    off_delay_mode VARCHAR(20) NOT NULL DEFAULT 'time',
+                    off_delay_minutes INTEGER NOT NULL DEFAULT 5,
+                    off_temp_threshold INTEGER NOT NULL DEFAULT 70,
+                    username VARCHAR(50),
+                    password VARCHAR(100),
+                    power_alert_enabled BOOLEAN NOT NULL DEFAULT 0,
+                    power_alert_high FLOAT,
+                    power_alert_low FLOAT,
+                    power_alert_last_triggered DATETIME,
+                    schedule_enabled BOOLEAN NOT NULL DEFAULT 0,
+                    schedule_on_time VARCHAR(5),
+                    schedule_off_time VARCHAR(5),
+                    show_in_switchbar BOOLEAN DEFAULT 0,
+                    last_state VARCHAR(10),
+                    last_checked DATETIME,
+                    auto_off_executed BOOLEAN NOT NULL DEFAULT 0,
+                    auto_off_pending BOOLEAN DEFAULT 0,
+                    auto_off_pending_since DATETIME,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
+                )
+            """)
+            )
+            await conn.execute(
+                text("""
+                INSERT INTO smart_plugs_new
+                SELECT id, name, ip_address,
+                       COALESCE(plug_type, 'tasmota'), ha_entity_id, printer_id,
+                       enabled, auto_on, auto_off, off_delay_mode, off_delay_minutes, off_temp_threshold,
+                       username, password, power_alert_enabled, power_alert_high, power_alert_low,
+                       power_alert_last_triggered, schedule_enabled, schedule_on_time, schedule_off_time,
+                       COALESCE(show_in_switchbar, 0), last_state, last_checked, auto_off_executed,
+                       COALESCE(auto_off_pending, 0), auto_off_pending_since, created_at, updated_at
+                FROM smart_plugs
+            """)
+            )
+            await conn.execute(text("DROP TABLE smart_plugs"))
+            await conn.execute(text("ALTER TABLE smart_plugs_new RENAME TO smart_plugs"))
+    except Exception:
+        pass
+
 
 async def seed_notification_templates():
     """Seed default notification templates if they don't exist."""

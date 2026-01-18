@@ -18,7 +18,9 @@ import type { SmartPlug } from '../../api/client';
 const createMockPlug = (overrides: Partial<SmartPlug> = {}): SmartPlug => ({
   id: 1,
   name: 'Test Plug',
+  plug_type: 'tasmota',
   ip_address: '192.168.1.100',
+  ha_entity_id: null,
   printer_id: 1,
   enabled: true,
   auto_on: true,
@@ -38,6 +40,7 @@ const createMockPlug = (overrides: Partial<SmartPlug> = {}): SmartPlug => ({
   last_state: 'ON',
   last_checked: null,
   auto_off_executed: false,
+  show_in_switchbar: false,
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
   ...overrides,
@@ -227,6 +230,46 @@ describe('SmartPlugCard', () => {
 
       // Plug should still render with its name
       expect(screen.getByText('Test Plug')).toBeInTheDocument();
+    });
+  });
+
+  describe('Home Assistant plugs', () => {
+    it('renders HA plug with entity_id instead of IP', () => {
+      const plug = createMockPlug({
+        plug_type: 'homeassistant',
+        ip_address: null,
+        ha_entity_id: 'switch.printer_plug',
+      });
+      render(<SmartPlugCard plug={plug} onEdit={mockOnEdit} />);
+
+      // Should show entity_id, not IP
+      expect(screen.getByText('switch.printer_plug')).toBeInTheDocument();
+      expect(screen.queryByText('192.168.1.100')).not.toBeInTheDocument();
+    });
+
+    it('renders HA plug name correctly', () => {
+      const plug = createMockPlug({
+        name: 'HA Printer Plug',
+        plug_type: 'homeassistant',
+        ip_address: null,
+        ha_entity_id: 'switch.printer_plug',
+      });
+      render(<SmartPlugCard plug={plug} onEdit={mockOnEdit} />);
+
+      expect(screen.getByText('HA Printer Plug')).toBeInTheDocument();
+    });
+
+    it('shows power controls for HA plug', () => {
+      const plug = createMockPlug({
+        plug_type: 'homeassistant',
+        ip_address: null,
+        ha_entity_id: 'switch.printer_plug',
+      });
+      render(<SmartPlugCard plug={plug} onEdit={mockOnEdit} />);
+
+      // Power control buttons should still be present
+      const buttons = screen.getAllByRole('button');
+      expect(buttons.length).toBeGreaterThan(0);
     });
   });
 });

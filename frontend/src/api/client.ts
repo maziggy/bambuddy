@@ -586,6 +586,10 @@ export interface AppSettings {
   mqtt_password: string;
   mqtt_topic_prefix: string;
   mqtt_use_tls: boolean;
+  // Home Assistant integration
+  ha_enabled: boolean;
+  ha_url: string;
+  ha_token: string;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
@@ -695,7 +699,9 @@ export interface CloudDevice {
 export interface SmartPlug {
   id: number;
   name: string;
-  ip_address: string;
+  plug_type: 'tasmota' | 'homeassistant';
+  ip_address: string | null;  // Required for Tasmota
+  ha_entity_id: string | null;  // Required for Home Assistant (e.g., "switch.printer_plug")
   printer_id: number | null;
   enabled: boolean;
   auto_on: boolean;
@@ -726,7 +732,9 @@ export interface SmartPlug {
 
 export interface SmartPlugCreate {
   name: string;
-  ip_address: string;
+  plug_type?: 'tasmota' | 'homeassistant';
+  ip_address?: string | null;  // Required for Tasmota
+  ha_entity_id?: string | null;  // Required for Home Assistant
   printer_id?: number | null;
   enabled?: boolean;
   auto_on?: boolean;
@@ -750,7 +758,9 @@ export interface SmartPlugCreate {
 
 export interface SmartPlugUpdate {
   name?: string;
-  ip_address?: string;
+  plug_type?: 'tasmota' | 'homeassistant';
+  ip_address?: string | null;
+  ha_entity_id?: string | null;
   printer_id?: number | null;
   enabled?: boolean;
   auto_on?: boolean;
@@ -770,6 +780,20 @@ export interface SmartPlugUpdate {
   schedule_off_time?: string | null;
   // Switchbar visibility
   show_in_switchbar?: boolean;
+}
+
+// Home Assistant entity for smart plug selection
+export interface HAEntity {
+  entity_id: string;
+  friendly_name: string;
+  state: string | null;
+  domain: string;  // "switch", "light", "input_boolean"
+}
+
+export interface HATestConnectionResult {
+  success: boolean;
+  message: string | null;
+  error: string | null;
 }
 
 export interface SmartPlugEnergy {
@@ -1978,6 +2002,15 @@ export const api = {
       .then(res => res.ok ? res.json() : res.json().then(e => { throw new Error(e.detail || `HTTP ${res.status}`); })),
   getDiscoveredTasmotaDevices: () =>
     request<DiscoveredTasmotaDevice[]>('/smart-plugs/discover/devices'),
+
+  // Home Assistant Integration
+  testHAConnection: (url: string, token: string) =>
+    request<HATestConnectionResult>('/smart-plugs/ha/test-connection', {
+      method: 'POST',
+      body: JSON.stringify({ url, token }),
+    }),
+  getHAEntities: () =>
+    request<HAEntity[]>('/smart-plugs/ha/entities'),
 
   // Print Queue
   getQueue: (printerId?: number, status?: string) => {

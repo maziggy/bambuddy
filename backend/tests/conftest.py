@@ -148,6 +148,44 @@ def mock_tasmota_service():
 
 
 @pytest.fixture
+def mock_homeassistant_service():
+    """Mock the Home Assistant service for smart plug tests."""
+    # Patch both the module where it's defined and where it's imported
+    with (
+        patch("backend.app.services.homeassistant.homeassistant_service") as mock,
+        patch("backend.app.api.routes.smart_plugs.homeassistant_service") as mock2,
+    ):
+        mock.turn_on = AsyncMock(return_value=True)
+        mock.turn_off = AsyncMock(return_value=True)
+        mock.toggle = AsyncMock(return_value=True)
+        mock.get_status = AsyncMock(return_value={"state": "ON", "reachable": True, "device_name": "Test HA Entity"})
+        mock.get_energy = AsyncMock(return_value=None)  # Most HA entities don't have power monitoring
+        mock.test_connection = AsyncMock(return_value={"success": True, "message": "API running", "error": None})
+        mock.list_entities = AsyncMock(
+            return_value=[
+                {
+                    "entity_id": "switch.printer_plug",
+                    "friendly_name": "Printer Plug",
+                    "state": "on",
+                    "domain": "switch",
+                },
+                {"entity_id": "switch.test", "friendly_name": "Test Switch", "state": "off", "domain": "switch"},
+            ]
+        )
+        mock.configure = MagicMock()
+        # Copy mocks to second patch target
+        mock2.turn_on = mock.turn_on
+        mock2.turn_off = mock.turn_off
+        mock2.toggle = mock.toggle
+        mock2.get_status = mock.get_status
+        mock2.get_energy = mock.get_energy
+        mock2.test_connection = mock.test_connection
+        mock2.list_entities = mock.list_entities
+        mock2.configure = mock.configure
+        yield mock
+
+
+@pytest.fixture
 def mock_mqtt_client():
     """Mock the MQTT client for printer communication tests."""
     with patch("backend.app.services.bambu_mqtt.BambuMQTTClient") as mock:
@@ -219,9 +257,12 @@ def smart_plug_factory(db_session):
     async def _create_plug(**kwargs):
         from backend.app.models.smart_plug import SmartPlug
 
+        # Determine defaults based on plug_type
+        plug_type = kwargs.get("plug_type", "tasmota")
+
         defaults = {
             "name": "Test Plug",
-            "ip_address": "192.168.1.100",
+            "plug_type": plug_type,
             "enabled": True,
             "auto_on": True,
             "auto_off": True,
@@ -231,6 +272,15 @@ def smart_plug_factory(db_session):
             "schedule_enabled": False,
             "power_alert_enabled": False,
         }
+
+        # Set required fields based on plug_type
+        if plug_type == "homeassistant":
+            defaults["ha_entity_id"] = "switch.test"
+            defaults["ip_address"] = None
+        else:
+            defaults["ip_address"] = "192.168.1.100"
+            defaults["ha_entity_id"] = None
+
         defaults.update(kwargs)
 
         plug = SmartPlug(**defaults)

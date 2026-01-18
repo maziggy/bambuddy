@@ -7,13 +7,18 @@ from backend.app.core.database import Base
 
 
 class SmartPlug(Base):
-    """Tasmota smart plug for printer power control."""
+    """Smart plug for printer power control (Tasmota or Home Assistant)."""
 
     __tablename__ = "smart_plugs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
-    ip_address: Mapped[str] = mapped_column(String(45))  # IPv4/IPv6
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)  # IPv4/IPv6 (required for Tasmota)
+
+    # Plug type: "tasmota" (default) or "homeassistant"
+    plug_type: Mapped[str] = mapped_column(String(20), default="tasmota")
+    # Home Assistant entity ID (e.g., "switch.printer_plug")
+    ha_entity_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Link to printer (1:1)
     printer_id: Mapped[int | None] = mapped_column(

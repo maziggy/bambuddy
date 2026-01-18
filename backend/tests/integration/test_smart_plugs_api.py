@@ -407,3 +407,117 @@ class TestSmartPlugsAPI:
         assert response.status_code == 200
         data = response.json()
         assert "running" in data
+
+    # ========================================================================
+    # Home Assistant Integration tests
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_homeassistant_plug(self, async_client: AsyncClient):
+        """Verify Home Assistant plug can be created."""
+        data = {
+            "name": "HA Plug",
+            "plug_type": "homeassistant",
+            "ha_entity_id": "switch.printer_plug",
+            "enabled": True,
+            "auto_on": True,
+            "auto_off": False,
+        }
+
+        response = await async_client.post("/api/v1/smart-plugs/", json=data)
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["name"] == "HA Plug"
+        assert result["plug_type"] == "homeassistant"
+        assert result["ha_entity_id"] == "switch.printer_plug"
+        assert result["ip_address"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_homeassistant_plug_missing_entity_id(self, async_client: AsyncClient):
+        """Verify creating HA plug without entity_id fails."""
+        data = {
+            "name": "HA Plug",
+            "plug_type": "homeassistant",
+            # Missing ha_entity_id
+            "enabled": True,
+        }
+
+        response = await async_client.post("/api/v1/smart-plugs/", json=data)
+
+        assert response.status_code == 422  # Validation error
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_tasmota_plug_missing_ip(self, async_client: AsyncClient):
+        """Verify creating Tasmota plug without IP fails."""
+        data = {
+            "name": "Tasmota Plug",
+            "plug_type": "tasmota",
+            # Missing ip_address
+            "enabled": True,
+        }
+
+        response = await async_client.post("/api/v1/smart-plugs/", json=data)
+
+        assert response.status_code == 422  # Validation error
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_ha_entities_endpoint_not_configured(self, async_client: AsyncClient):
+        """Verify HA entities endpoint returns error when not configured."""
+        response = await async_client.get("/api/v1/smart-plugs/ha/entities")
+
+        assert response.status_code == 400
+        assert "not configured" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_plug_type(self, async_client: AsyncClient, smart_plug_factory, db_session):
+        """Verify plug_type can be updated."""
+        plug = await smart_plug_factory(plug_type="tasmota", ip_address="192.168.1.100")
+
+        response = await async_client.patch(
+            f"/api/v1/smart-plugs/{plug.id}",
+            json={
+                "plug_type": "homeassistant",
+                "ha_entity_id": "switch.test",
+            },
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["plug_type"] == "homeassistant"
+        assert result["ha_entity_id"] == "switch.test"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_control_homeassistant_plug(
+        self, async_client: AsyncClient, smart_plug_factory, mock_homeassistant_service, db_session
+    ):
+        """Verify HA smart plug can be controlled."""
+        plug = await smart_plug_factory(plug_type="homeassistant", ha_entity_id="switch.test")
+
+        response = await async_client.post(f"/api/v1/smart-plugs/{plug.id}/control", json={"action": "on"})
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["success"] is True
+        assert result["action"] == "on"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_homeassistant_plug_status(
+        self, async_client: AsyncClient, smart_plug_factory, mock_homeassistant_service, db_session
+    ):
+        """Verify HA smart plug status can be retrieved."""
+        plug = await smart_plug_factory(plug_type="homeassistant", ha_entity_id="switch.test")
+
+        response = await async_client.get(f"/api/v1/smart-plugs/{plug.id}/status")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["state"] == "ON"
+        assert result["reachable"] is True

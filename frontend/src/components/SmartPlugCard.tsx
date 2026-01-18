@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
-import { Plug, Power, PowerOff, Loader2, Trash2, Settings2, Thermometer, Clock, Wifi, WifiOff, Edit2, Bell, Calendar, LayoutGrid, ExternalLink } from 'lucide-react';
+import { Plug, Power, PowerOff, Loader2, Trash2, Settings2, Thermometer, Clock, Wifi, WifiOff, Edit2, Bell, Calendar, LayoutGrid, ExternalLink, Home } from 'lucide-react';
 import { api } from '../api/client';
 import type { SmartPlug, SmartPlugUpdate } from '../api/client';
 import { Card, CardContent } from './Card';
 import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
+import { useToast } from '../contexts/ToastContext';
 
 interface SmartPlugCardProps {
   plug: SmartPlug;
@@ -14,13 +15,14 @@ interface SmartPlugCardProps {
 
 export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showPowerOnConfirm, setShowPowerOnConfirm] = useState(false);
   const [showPowerOffConfirm, setShowPowerOffConfirm] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
 
   // Fetch current status
-  const { data: status, isLoading: statusLoading, refetch: refetchStatus } = useQuery({
+  const { data: status, isLoading: statusLoading } = useQuery({
     queryKey: ['smart-plug-status', plug.id],
     queryFn: () => api.getSmartPlugStatus(plug.id),
     refetchInterval: 30000, // Refresh every 30 seconds
@@ -34,11 +36,38 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
 
   const linkedPrinter = printers?.find(p => p.id === plug.printer_id);
 
-  // Control mutation
+  // Control mutation with optimistic updates
   const controlMutation = useMutation({
     mutationFn: (action: 'on' | 'off' | 'toggle') => api.controlSmartPlug(plug.id, action),
-    onSuccess: () => {
-      refetchStatus();
+    onMutate: async (action) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['smart-plug-status', plug.id] });
+
+      // Snapshot the previous value
+      const previousStatus = queryClient.getQueryData(['smart-plug-status', plug.id]);
+
+      // Optimistically update to the new value
+      const newState = action === 'on' ? 'ON' : action === 'off' ? 'OFF' : (status?.state === 'ON' ? 'OFF' : 'ON');
+      queryClient.setQueryData(['smart-plug-status', plug.id], (old: typeof status) => ({
+        ...old,
+        state: newState,
+      }));
+
+      return { previousStatus };
+    },
+    onError: (_err, action, context) => {
+      // Rollback on error
+      if (context?.previousStatus) {
+        queryClient.setQueryData(['smart-plug-status', plug.id], context.previousStatus);
+      }
+      showToast(`Failed to turn ${action} "${plug.name}"`, 'error');
+    },
+    onSettled: () => {
+      // Refetch after a short delay to get actual state
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['smart-plug-status', plug.id] });
+        queryClient.invalidateQueries({ queryKey: ['smart-plugs'] });
+      }, 1000);
     },
   });
 
@@ -66,8 +95,9 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
   const isReachable = status?.reachable ?? false;
   const isPending = controlMutation.isPending;
 
-  // Generate admin URL with auto-login credentials
+  // Generate admin URL with auto-login credentials (Tasmota only)
   const getAdminUrl = () => {
+    if (plug.plug_type !== 'tasmota' || !plug.ip_address) return null;
     const ip = plug.ip_address;
     if (plug.username && plug.password) {
       // Use HTTP Basic Auth in URL for auto-login
@@ -75,6 +105,8 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
     }
     return `http://${ip}/`;
   };
+
+  const adminUrl = getAdminUrl();
 
   return (
     <>
@@ -84,11 +116,17 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
           <div className="flex items-start justify-between mb-3">
             <div className="flex items-center gap-3">
               <div className={`p-2 rounded-lg ${isReachable ? (isOn ? 'bg-bambu-green/20' : 'bg-bambu-dark') : 'bg-red-500/20'}`}>
-                <Plug className={`w-5 h-5 ${isReachable ? (isOn ? 'text-bambu-green' : 'text-bambu-gray') : 'text-red-400'}`} />
+                {plug.plug_type === 'homeassistant' ? (
+                  <Home className={`w-5 h-5 ${isReachable ? (isOn ? 'text-bambu-green' : 'text-bambu-gray') : 'text-red-400'}`} />
+                ) : (
+                  <Plug className={`w-5 h-5 ${isReachable ? (isOn ? 'text-bambu-green' : 'text-bambu-gray') : 'text-red-400'}`} />
+                )}
               </div>
               <div>
                 <h3 className="font-medium text-white">{plug.name}</h3>
-                <p className="text-sm text-bambu-gray">{plug.ip_address}</p>
+                <p className="text-sm text-bambu-gray">
+                  {plug.plug_type === 'homeassistant' ? plug.ha_entity_id : plug.ip_address}
+                </p>
               </div>
             </div>
 
@@ -107,17 +145,19 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
                   <span>Offline</span>
                 </div>
               )}
-              {/* Admin page link */}
-              <a
-                href={getAdminUrl()}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 px-2 py-0.5 bg-bambu-dark hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white text-xs rounded-full transition-colors"
-                title="Open plug admin page"
-              >
-                <ExternalLink className="w-3 h-3" />
-                Admin
-              </a>
+              {/* Admin page link - only for Tasmota */}
+              {adminUrl && (
+                <a
+                  href={adminUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 px-2 py-0.5 bg-bambu-dark hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white text-xs rounded-full transition-colors"
+                  title="Open plug admin page"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  Admin
+                </a>
+              )}
             </div>
           </div>
 

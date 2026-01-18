@@ -8,10 +8,14 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes.settings import get_setting
 from backend.app.core.database import get_db
 from backend.app.models.printer import Printer
 from backend.app.models.smart_plug import SmartPlug
 from backend.app.schemas.smart_plug import (
+    HAEntity,
+    HATestConnectionRequest,
+    HATestConnectionResponse,
     SmartPlugControl,
     SmartPlugCreate,
     SmartPlugEnergy,
@@ -21,6 +25,7 @@ from backend.app.schemas.smart_plug import (
     SmartPlugUpdate,
 )
 from backend.app.services.discovery import tasmota_scanner
+from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.notification_service import notification_service
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.tasmota import tasmota_service
@@ -59,7 +64,10 @@ async def create_smart_plug(
     await db.commit()
     await db.refresh(plug)
 
-    logger.info(f"Created smart plug '{plug.name}' at {plug.ip_address}")
+    if plug.plug_type == "homeassistant":
+        logger.info(f"Created Home Assistant plug '{plug.name}' ({plug.ha_entity_id})")
+    else:
+        logger.info(f"Created Tasmota plug '{plug.name}' at {plug.ip_address}")
     return plug
 
 
@@ -191,6 +199,32 @@ async def get_discovered_tasmota_devices():
     ]
 
 
+# Home Assistant Discovery Endpoints
+
+
+@router.post("/ha/test-connection", response_model=HATestConnectionResponse)
+async def test_ha_connection(request: HATestConnectionRequest):
+    """Test connection to Home Assistant."""
+    result = await homeassistant_service.test_connection(request.url, request.token)
+    return HATestConnectionResponse(**result)
+
+
+@router.get("/ha/entities", response_model=list[HAEntity])
+async def list_ha_entities(db: AsyncSession = Depends(get_db)):
+    """List available Home Assistant entities.
+
+    Requires HA connection settings to be configured in Settings.
+    """
+    ha_url = await get_setting(db, "ha_url") or ""
+    ha_token = await get_setting(db, "ha_token") or ""
+
+    if not ha_url or not ha_token:
+        raise HTTPException(400, "Home Assistant not configured. Please set HA URL and token in Settings.")
+
+    entities = await homeassistant_service.list_entities(ha_url, ha_token)
+    return [HAEntity(**e) for e in entities]
+
+
 @router.get("/{plug_id}", response_model=SmartPlugResponse)
 async def get_smart_plug(plug_id: int, db: AsyncSession = Depends(get_db)):
     """Get a specific smart plug."""
@@ -260,6 +294,20 @@ async def delete_smart_plug(plug_id: int, db: AsyncSession = Depends(get_db)):
     return {"message": "Smart plug deleted"}
 
 
+async def _get_service_for_plug(plug: SmartPlug, db: AsyncSession):
+    """Get the appropriate service for the plug type.
+
+    For HA plugs, configures the service with current settings from DB.
+    """
+    if plug.plug_type == "homeassistant":
+        # Configure HA service with current settings
+        ha_url = await get_setting(db, "ha_url") or ""
+        ha_token = await get_setting(db, "ha_token") or ""
+        homeassistant_service.configure(ha_url, ha_token)
+        return homeassistant_service
+    return tasmota_service
+
+
 @router.post("/{plug_id}/control")
 async def control_smart_plug(
     plug_id: int,
@@ -272,14 +320,16 @@ async def control_smart_plug(
     if not plug:
         raise HTTPException(404, "Smart plug not found")
 
+    service = await _get_service_for_plug(plug, db)
+
     if control.action == "on":
-        success = await tasmota_service.turn_on(plug)
+        success = await service.turn_on(plug)
         expected_state = "ON"
     elif control.action == "off":
-        success = await tasmota_service.turn_off(plug)
+        success = await service.turn_off(plug)
         expected_state = "OFF"
     elif control.action == "toggle":
-        success = await tasmota_service.toggle(plug)
+        success = await service.toggle(plug)
         expected_state = None  # Unknown after toggle
     else:
         raise HTTPException(400, f"Invalid action: {control.action}")
@@ -331,7 +381,8 @@ async def get_plug_status(plug_id: int, db: AsyncSession = Depends(get_db)):
     if not plug:
         raise HTTPException(404, "Smart plug not found")
 
-    status = await tasmota_service.get_status(plug)
+    service = await _get_service_for_plug(plug, db)
+    status = await service.get_status(plug)
 
     # Update last state in database
     if status["reachable"]:
@@ -342,7 +393,7 @@ async def get_plug_status(plug_id: int, db: AsyncSession = Depends(get_db)):
     # Fetch energy data if device is reachable
     energy_data = None
     if status["reachable"]:
-        energy = await tasmota_service.get_energy(plug)
+        energy = await service.get_energy(plug)
         if energy:
             energy_data = SmartPlugEnergy(**energy)
 

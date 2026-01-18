@@ -76,6 +76,7 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
                 "ftp_retry_enabled",
                 "mqtt_enabled",
                 "mqtt_use_tls",
+                "ha_enabled",
             ]:
                 settings_dict[setting.key] = setting.value.lower() == "true"
             elif setting.key in ["default_filament_cost", "energy_cost_per_kwh", "ams_temp_good", "ams_temp_fair"]:
@@ -323,7 +324,9 @@ async def export_backup(
             backup["smart_plugs"].append(
                 {
                     "name": plug.name,
+                    "plug_type": plug.plug_type,
                     "ip_address": plug.ip_address,
+                    "ha_entity_id": plug.ha_entity_id,
                     "printer_serial": printer_id_to_serial.get(plug.printer_id) if plug.printer_id else None,
                     "enabled": plug.enabled,
                     "auto_on": plug.auto_on,
@@ -1056,11 +1059,28 @@ async def import_backup(
             printer_serial = plug_data.get("printer_serial")
             printer_id = printer_serial_to_id.get(printer_serial) if printer_serial else plug_data.get("printer_id")
 
-            result = await db.execute(select(SmartPlug).where(SmartPlug.ip_address == plug_data["ip_address"]))
-            existing = result.scalar_one_or_none()
+            # Determine plug type (default to tasmota for backwards compatibility)
+            plug_type = plug_data.get("plug_type", "tasmota")
+
+            # Find existing plug by IP (Tasmota) or entity_id (Home Assistant)
+            existing = None
+            if plug_type == "homeassistant" and plug_data.get("ha_entity_id"):
+                result = await db.execute(select(SmartPlug).where(SmartPlug.ha_entity_id == plug_data["ha_entity_id"]))
+                existing = result.scalar_one_or_none()
+                plug_identifier = plug_data["ha_entity_id"]
+            elif plug_data.get("ip_address"):
+                result = await db.execute(select(SmartPlug).where(SmartPlug.ip_address == plug_data["ip_address"]))
+                existing = result.scalar_one_or_none()
+                plug_identifier = plug_data["ip_address"]
+            else:
+                # Skip invalid plug data
+                continue
+
             if existing:
                 if overwrite:
                     existing.name = plug_data["name"]
+                    existing.plug_type = plug_type
+                    existing.ha_entity_id = plug_data.get("ha_entity_id")
                     existing.printer_id = printer_id
                     existing.enabled = plug_data.get("enabled", True)
                     existing.auto_on = plug_data.get("auto_on", True)
@@ -1080,11 +1100,13 @@ async def import_backup(
                     restored["smart_plugs"] += 1
                 else:
                     skipped["smart_plugs"] += 1
-                    skipped_details["smart_plugs"].append(f"{plug_data['name']} ({plug_data['ip_address']})")
+                    skipped_details["smart_plugs"].append(f"{plug_data['name']} ({plug_identifier})")
             else:
                 plug = SmartPlug(
                     name=plug_data["name"],
-                    ip_address=plug_data["ip_address"],
+                    plug_type=plug_type,
+                    ip_address=plug_data.get("ip_address"),
+                    ha_entity_id=plug_data.get("ha_entity_id"),
                     printer_id=printer_id,
                     enabled=plug_data.get("enabled", True),
                     auto_on=plug_data.get("auto_on", True),

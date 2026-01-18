@@ -71,7 +71,7 @@
 - Print queue with drag-and-drop
 - Scheduled prints (date/time)
 - Queue Only mode (stage without auto-start)
-- Smart plug integration (Tasmota)
+- Smart plug integration (Tasmota, Home Assistant)
 - Energy consumption tracking
 - Auto power-on before print
 - Auto power-off after cooldown

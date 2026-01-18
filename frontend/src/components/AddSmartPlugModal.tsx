@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
-import { X, Save, Loader2, Wifi, WifiOff, CheckCircle, Bell, Clock, LayoutGrid, Search, Plug, Power } from 'lucide-react';
+import { X, Save, Loader2, Wifi, WifiOff, CheckCircle, Bell, Clock, LayoutGrid, Search, Plug, Power, Home } from 'lucide-react';
 import { api } from '../api/client';
 import type { SmartPlug, SmartPlugCreate, SmartPlugUpdate, DiscoveredTasmotaDevice } from '../api/client';
 import { Button } from './Button';
@@ -14,10 +14,17 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
   const queryClient = useQueryClient();
   const isEditing = !!plug;
 
+  // Plug type selection
+  const [plugType, setPlugType] = useState<'tasmota' | 'homeassistant'>(plug?.plug_type || 'tasmota');
+
   const [name, setName] = useState(plug?.name || '');
+  // Tasmota fields
   const [ipAddress, setIpAddress] = useState(plug?.ip_address || '');
   const [username, setUsername] = useState(plug?.username || '');
   const [password, setPassword] = useState(plug?.password || '');
+  // Home Assistant fields
+  const [haEntityId, setHaEntityId] = useState(plug?.ha_entity_id || '');
+
   const [printerId, setPrinterId] = useState<number | null>(plug?.printer_id || null);
   const [testResult, setTestResult] = useState<{ success: boolean; state?: string | null; device_name?: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +58,14 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
   const { data: existingPlugs } = useQuery({
     queryKey: ['smart-plugs'],
     queryFn: api.getSmartPlugs,
+  });
+
+  // Fetch Home Assistant entities when in HA mode
+  const { data: haEntities, isLoading: haEntitiesLoading, error: haEntitiesError } = useQuery({
+    queryKey: ['ha-entities'],
+    queryFn: api.getHAEntities,
+    enabled: plugType === 'homeassistant',
+    retry: false,
   });
 
   // Close on Escape key and cleanup scan polling
@@ -184,16 +199,24 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
       setError('Name is required');
       return;
     }
-    if (!ipAddress.trim()) {
-      setError('IP address is required');
+
+    if (plugType === 'tasmota' && !ipAddress.trim()) {
+      setError('IP address is required for Tasmota plugs');
+      return;
+    }
+
+    if (plugType === 'homeassistant' && !haEntityId) {
+      setError('Entity is required for Home Assistant plugs');
       return;
     }
 
     const data = {
       name: name.trim(),
-      ip_address: ipAddress.trim(),
-      username: username.trim() || null,
-      password: password.trim() || null,
+      plug_type: plugType,
+      ip_address: plugType === 'tasmota' ? ipAddress.trim() : null,
+      ha_entity_id: plugType === 'homeassistant' ? haEntityId : null,
+      username: plugType === 'tasmota' ? (username.trim() || null) : null,
+      password: plugType === 'tasmota' ? (password.trim() || null) : null,
       printer_id: printerId,
       // Power alerts
       power_alert_enabled: powerAlertEnabled,
@@ -246,8 +269,46 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
             </div>
           )}
 
-          {/* Discovery Section - only show when not editing */}
+          {/* Plug Type Selector - only show when not editing */}
           {!isEditing && (
+            <div className="flex gap-2 mb-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setPlugType('tasmota');
+                  setTestResult(null);
+                  setError(null);
+                }}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-colors ${
+                  plugType === 'tasmota'
+                    ? 'bg-bambu-green text-white'
+                    : 'bg-bambu-dark text-bambu-gray hover:text-white border border-bambu-dark-tertiary'
+                }`}
+              >
+                <Plug className="w-4 h-4" />
+                Tasmota
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPlugType('homeassistant');
+                  setTestResult(null);
+                  setError(null);
+                }}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-colors ${
+                  plugType === 'homeassistant'
+                    ? 'bg-bambu-green text-white'
+                    : 'bg-bambu-dark text-bambu-gray hover:text-white border border-bambu-dark-tertiary'
+                }`}
+              >
+                <Home className="w-4 h-4" />
+                Home Assistant
+              </button>
+            </div>
+          )}
+
+          {/* Discovery Section - only show when not editing and Tasmota is selected */}
+          {!isEditing && plugType === 'tasmota' && (
             <div className="space-y-3">
               {/* Scan button - auto-detects network */}
               {isScanning ? (
@@ -319,38 +380,114 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
             </div>
           )}
 
-          {/* IP Address */}
-          <div>
-            <label className="block text-sm text-bambu-gray mb-1">IP Address *</label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={ipAddress}
-                onChange={(e) => {
-                  setIpAddress(e.target.value);
-                  setTestResult(null);
-                }}
-                placeholder="192.168.1.100"
-                className="flex-1 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => testMutation.mutate()}
-                disabled={!ipAddress.trim() || testMutation.isPending}
-              >
-                {testMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Wifi className="w-4 h-4" />
-                )}
-                Test
-              </Button>
-            </div>
-          </div>
+          {/* Home Assistant Entity Selector - only show when HA is selected */}
+          {plugType === 'homeassistant' && (
+            <div className="space-y-3">
+              {haEntitiesLoading && (
+                <div className="flex items-center justify-center py-4 text-bambu-gray">
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                  Loading entities...
+                </div>
+              )}
 
-          {/* Test Result */}
-          {testResult && (
+              {haEntitiesError && (
+                <div className="p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-sm text-red-400">
+                  {haEntitiesError instanceof Error ? haEntitiesError.message : 'Failed to load Home Assistant entities. Check Settings → Network → Home Assistant.'}
+                </div>
+              )}
+
+              {haEntities && haEntities.length === 0 && (
+                <div className="p-3 bg-yellow-500/20 border border-yellow-500/50 rounded-lg text-sm text-yellow-400">
+                  No switch/light entities found in Home Assistant
+                </div>
+              )}
+
+              {haEntities && haEntities.length > 0 && (() => {
+                // Filter out entities already configured (except current plug when editing)
+                const configuredEntityIds = existingPlugs
+                  ?.filter(p => p.ha_entity_id && p.id !== plug?.id)
+                  .map(p => p.ha_entity_id) || [];
+                const availableEntities = haEntities.filter(e => !configuredEntityIds.includes(e.entity_id));
+
+                return (
+                  <div>
+                    <label className="block text-sm text-bambu-gray mb-1">Select Entity *</label>
+                    <select
+                      value={haEntityId}
+                      onChange={(e) => {
+                        setHaEntityId(e.target.value);
+                        // Auto-fill name from entity friendly name
+                        const entity = haEntities?.find(ent => ent.entity_id === e.target.value);
+                        if (entity && !name) {
+                          setName(entity.friendly_name);
+                        }
+                      }}
+                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                    >
+                      <option value="">Choose an entity...</option>
+                      {availableEntities.map((entity) => (
+                        <option key={entity.entity_id} value={entity.entity_id}>
+                          {entity.friendly_name} ({entity.entity_id}) - {entity.state}
+                        </option>
+                      ))}
+                    </select>
+                    {configuredEntityIds.length > 0 && (
+                      <p className="text-xs text-bambu-gray mt-1">
+                        {configuredEntityIds.length} entity(s) already configured
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {haEntityId && haEntities && (
+                <div className="p-3 bg-bambu-green/20 border border-bambu-green/50 rounded-lg text-sm text-bambu-green flex items-center gap-2">
+                  <CheckCircle className="w-5 h-5" />
+                  <div>
+                    <p className="font-medium">Entity selected</p>
+                    <p className="text-xs opacity-80">
+                      {haEntities.find(e => e.entity_id === haEntityId)?.friendly_name} - {haEntities.find(e => e.entity_id === haEntityId)?.state}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* IP Address - only show for Tasmota */}
+          {plugType === 'tasmota' && (
+            <div>
+              <label className="block text-sm text-bambu-gray mb-1">IP Address *</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={ipAddress}
+                  onChange={(e) => {
+                    setIpAddress(e.target.value);
+                    setTestResult(null);
+                  }}
+                  placeholder="192.168.1.100"
+                  className="flex-1 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => testMutation.mutate()}
+                  disabled={!ipAddress.trim() || testMutation.isPending}
+                >
+                  {testMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Wifi className="w-4 h-4" />
+                  )}
+                  Test
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Test Result - only show for Tasmota */}
+          {plugType === 'tasmota' && testResult && (
             <div className={`p-3 rounded-lg flex items-center gap-2 ${
               testResult.success
                 ? 'bg-bambu-green/20 border border-bambu-green/50 text-bambu-green'
@@ -388,32 +525,36 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
             />
           </div>
 
-          {/* Authentication (optional) */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm text-bambu-gray mb-1">Username</label>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="admin"
-                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-bambu-gray mb-1">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="********"
-                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-              />
-            </div>
-          </div>
-          <p className="text-xs text-bambu-gray -mt-2">
-            Leave empty if your Tasmota device doesn't require authentication
-          </p>
+          {/* Authentication (optional) - only show for Tasmota */}
+          {plugType === 'tasmota' && (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-bambu-gray mb-1">Username</label>
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="admin"
+                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-bambu-gray mb-1">Password</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="********"
+                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-bambu-gray -mt-2">
+                Leave empty if your Tasmota device doesn't require authentication
+              </p>
+            </>
+          )}
 
           {/* Link to Printer */}
           <div>

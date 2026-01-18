@@ -5,6 +5,13 @@ All notable changes to Bambuddy will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Home Assistant smart plug integration** - Control any Home Assistant switch/light entity as a smart plug:
+  - Configure HA connection (URL + Long-Lived Access Token) in Settings → Network
+  - Add HA-controlled plugs via Settings → Plugs → Add Smart Plug → Home Assistant tab
+  - Entity dropdown shows all available switch/light/input_boolean entities
+  - Full automation support: auto-on, auto-off, scheduling, power alerts
+  - Works alongside existing Tasmota plugs
+  - Closes [#91](https://github.com/maziggy/bambuddy/issues/91)
 - **Fusion 360 design file attachments** - Attach F3D files to archives for complete design tracking:
   - Upload F3D files via archive context menu ("Upload F3D" / "Replace F3D")
   - Cyan badge on archive card indicates attached F3D file (next to source 3MF badge)

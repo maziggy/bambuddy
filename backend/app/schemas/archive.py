@@ -40,6 +40,7 @@ class ArchiveResponse(BaseModel):
     thumbnail_path: str | None
     timelapse_path: str | None
     source_3mf_path: str | None = None  # Original project 3MF from slicer
+    f3d_path: str | None = None  # Fusion 360 design file
 
     # Duplicate detection
     duplicates: list[ArchiveDuplicate] | None = None

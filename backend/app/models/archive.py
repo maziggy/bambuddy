@@ -21,6 +21,7 @@ class PrintArchive(Base):
     thumbnail_path: Mapped[str | None] = mapped_column(String(500))
     timelapse_path: Mapped[str | None] = mapped_column(String(500))
     source_3mf_path: Mapped[str | None] = mapped_column(String(500))  # Original project 3MF from slicer
+    f3d_path: Mapped[str | None] = mapped_column(String(500))  # Fusion 360 design file
 
     # Print details from 3MF / printer
     print_name: Mapped[str | None] = mapped_column(String(255))

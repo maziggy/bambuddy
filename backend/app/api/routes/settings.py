@@ -622,6 +622,12 @@ async def export_backup(
                     archive_data["source_3mf_path"] = a.source_3mf_path
                     backup_files.append((a.source_3mf_path, source_path))
 
+            if a.f3d_path:
+                f3d_path = base_dir / a.f3d_path
+                if f3d_path.exists():
+                    archive_data["f3d_path"] = a.f3d_path
+                    backup_files.append((a.f3d_path, f3d_path))
+
             # Include photos
             if a.photos:
                 for photo in a.photos:
@@ -1366,6 +1372,7 @@ async def import_backup(
                     thumbnail_path=archive_data.get("thumbnail_path"),
                     timelapse_path=archive_data.get("timelapse_path"),
                     source_3mf_path=archive_data.get("source_3mf_path"),
+                    f3d_path=archive_data.get("f3d_path"),
                     print_name=archive_data.get("print_name"),
                     print_time_seconds=archive_data.get("print_time_seconds"),
                     filament_used_grams=archive_data.get("filament_used_grams"),

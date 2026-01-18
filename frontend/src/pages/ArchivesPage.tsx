@@ -120,8 +120,10 @@ function ArchiveCard({
   const [showProjectPage, setShowProjectPage] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const [showDeleteSource3mfConfirm, setShowDeleteSource3mfConfirm] = useState(false);
+  const [showDeleteF3dConfirm, setShowDeleteF3dConfirm] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const source3mfInputRef = useRef<HTMLInputElement>(null);
+  const f3dInputRef = useRef<HTMLInputElement>(null);
 
   const source3mfUploadMutation = useMutation({
     mutationFn: (file: File) => api.uploadSource3mf(archive.id, file),
@@ -142,6 +144,28 @@ function ArchiveCard({
     },
     onError: (error: Error) => {
       showToast(error.message || 'Failed to remove source 3MF', 'error');
+    },
+  });
+
+  const f3dUploadMutation = useMutation({
+    mutationFn: (file: File) => api.uploadF3d(archive.id, file),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['archives'] });
+      showToast(`F3D attached: ${data.filename}`);
+    },
+    onError: (error: Error) => {
+      showToast(error.message || 'Failed to upload F3D', 'error');
+    },
+  });
+
+  const f3dDeleteMutation = useMutation({
+    mutationFn: () => api.deleteF3d(archive.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['archives'] });
+      showToast('F3D removed');
+    },
+    onError: (error: Error) => {
+      showToast(error.message || 'Failed to remove F3D', 'error');
     },
   });
 
@@ -299,6 +323,27 @@ function ArchiveCard({
       label: 'Remove Source 3MF',
       icon: <Trash2 className="w-4 h-4" />,
       onClick: () => setShowDeleteSource3mfConfirm(true),
+      danger: true,
+    }] : []),
+    {
+      label: archive.f3d_path ? 'Replace F3D' : 'Upload F3D',
+      icon: <Box className="w-4 h-4" />,
+      onClick: () => f3dInputRef.current?.click(),
+    },
+    ...(archive.f3d_path ? [{
+      label: 'Download F3D',
+      icon: <Download className="w-4 h-4" />,
+      onClick: () => {
+        const link = document.createElement('a');
+        link.href = api.getF3dDownloadUrl(archive.id);
+        link.download = `${archive.print_name || archive.filename}.f3d`;
+        link.click();
+      },
+    },
+    {
+      label: 'Remove F3D',
+      icon: <Trash2 className="w-4 h-4" />,
+      onClick: () => setShowDeleteF3dConfirm(true),
       danger: true,
     }] : []),
     { label: '', divider: true, onClick: () => {} },
@@ -509,6 +554,20 @@ function ArchiveCard({
             title="Open source 3MF in Bambu Studio (right-click for more options)"
           >
             <FileCode className="w-4 h-4 text-orange-400" />
+          </button>
+        )}
+        {/* F3D badge */}
+        {archive.f3d_path && (
+          <button
+            className={`absolute bottom-2 ${archive.source_3mf_path ? 'left-12' : 'left-2'} p-1.5 rounded bg-black/60 hover:bg-black/80 transition-colors`}
+            onClick={(e) => {
+              e.stopPropagation();
+              // Download F3D file
+              window.location.href = api.getF3dDownloadUrl(archive.id);
+            }}
+            title="Download Fusion 360 design file"
+          >
+            <Box className="w-4 h-4 text-cyan-400" />
           </button>
         )}
         {/* Timelapse badge */}
@@ -833,6 +892,21 @@ function ArchiveCard({
         />
       )}
 
+      {/* Delete F3D Confirmation */}
+      {showDeleteF3dConfirm && (
+        <ConfirmModal
+          title="Remove F3D"
+          message={`Are you sure you want to remove the Fusion 360 design file from "${archive.print_name || archive.filename}"?`}
+          confirmText="Remove"
+          variant="danger"
+          onConfirm={() => {
+            f3dDeleteMutation.mutate();
+            setShowDeleteF3dConfirm(false);
+          }}
+          onCancel={() => setShowDeleteF3dConfirm(false)}
+        />
+      )}
+
       {/* Context Menu */}
       {contextMenu && (
         <ContextMenu
@@ -973,6 +1047,20 @@ function ArchiveCard({
           e.target.value = '';
         }}
       />
+      {/* Hidden file input for F3D upload */}
+      <input
+        ref={f3dInputRef}
+        type="file"
+        accept=".f3d"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            f3dUploadMutation.mutate(file);
+          }
+          e.target.value = '';
+        }}
+      />
     </Card>
   );
 }
@@ -1008,8 +1096,10 @@ function ArchiveListRow({
   const [showPhotos, setShowPhotos] = useState(false);
   const [showProjectPage, setShowProjectPage] = useState(false);
   const [showDeleteSource3mfConfirm, setShowDeleteSource3mfConfirm] = useState(false);
+  const [showDeleteF3dConfirm, setShowDeleteF3dConfirm] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const source3mfInputRef = useRef<HTMLInputElement>(null);
+  const f3dInputRef = useRef<HTMLInputElement>(null);
 
   const source3mfUploadMutation = useMutation({
     mutationFn: (file: File) => api.uploadSource3mf(archive.id, file),
@@ -1030,6 +1120,28 @@ function ArchiveListRow({
     },
     onError: (error: Error) => {
       showToast(error.message || 'Failed to remove source 3MF', 'error');
+    },
+  });
+
+  const f3dUploadMutation = useMutation({
+    mutationFn: (file: File) => api.uploadF3d(archive.id, file),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['archives'] });
+      showToast(`F3D attached: ${data.filename}`);
+    },
+    onError: (error: Error) => {
+      showToast(error.message || 'Failed to upload F3D', 'error');
+    },
+  });
+
+  const f3dDeleteMutation = useMutation({
+    mutationFn: () => api.deleteF3d(archive.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['archives'] });
+      showToast('F3D removed');
+    },
+    onError: (error: Error) => {
+      showToast(error.message || 'Failed to remove F3D', 'error');
     },
   });
 
@@ -1184,6 +1296,27 @@ function ArchiveListRow({
       label: 'Remove Source 3MF',
       icon: <Trash2 className="w-4 h-4" />,
       onClick: () => setShowDeleteSource3mfConfirm(true),
+      danger: true,
+    }] : []),
+    {
+      label: archive.f3d_path ? 'Replace F3D' : 'Upload F3D',
+      icon: <Box className="w-4 h-4" />,
+      onClick: () => f3dInputRef.current?.click(),
+    },
+    ...(archive.f3d_path ? [{
+      label: 'Download F3D',
+      icon: <Download className="w-4 h-4" />,
+      onClick: () => {
+        const link = document.createElement('a');
+        link.href = api.getF3dDownloadUrl(archive.id);
+        link.download = `${archive.print_name || archive.filename}.f3d`;
+        link.click();
+      },
+    },
+    {
+      label: 'Remove F3D',
+      icon: <Trash2 className="w-4 h-4" />,
+      onClick: () => setShowDeleteF3dConfirm(true),
       danger: true,
     }] : []),
     { label: '', divider: true, onClick: () => {} },
@@ -1489,6 +1622,21 @@ function ArchiveListRow({
         />
       )}
 
+      {/* Delete F3D Confirmation */}
+      {showDeleteF3dConfirm && (
+        <ConfirmModal
+          title="Remove F3D"
+          message={`Are you sure you want to remove the Fusion 360 design file from "${archive.print_name || archive.filename}"?`}
+          confirmText="Remove"
+          variant="danger"
+          onConfirm={() => {
+            f3dDeleteMutation.mutate();
+            setShowDeleteF3dConfirm(false);
+          }}
+          onCancel={() => setShowDeleteF3dConfirm(false)}
+        />
+      )}
+
       {/* Context Menu */}
       {contextMenu && (
         <ContextMenu
@@ -1613,6 +1761,20 @@ function ArchiveListRow({
           const file = e.target.files?.[0];
           if (file) {
             source3mfUploadMutation.mutate(file);
+          }
+          e.target.value = '';
+        }}
+      />
+      {/* Hidden file input for F3D upload */}
+      <input
+        ref={f3dInputRef}
+        type="file"
+        accept=".f3d"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            f3dUploadMutation.mutate(file);
           }
           e.target.value = '';
         }}

@@ -99,6 +99,13 @@ async def run_migrations(conn):
         # Column already exists
         pass
 
+    # Migration: Add f3d_path column to print_archives for Fusion 360 design files
+    try:
+        await conn.execute(text("ALTER TABLE print_archives ADD COLUMN f3d_path VARCHAR(500)"))
+    except Exception:
+        # Column already exists
+        pass
+
     # Migration: Add on_maintenance_due column to notification_providers
     try:
         await conn.execute(text("ALTER TABLE notification_providers ADD COLUMN on_maintenance_due BOOLEAN DEFAULT 0"))

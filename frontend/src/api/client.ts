@@ -202,6 +202,7 @@ export interface Archive {
   thumbnail_path: string | null;
   timelapse_path: string | null;
   source_3mf_path: string | null;
+  f3d_path: string | null;
   duplicates: ArchiveDuplicate[] | null;
   duplicate_count: number;
   object_count: number | null;
@@ -1680,6 +1681,26 @@ export const api = {
   },
   deleteSource3mf: (archiveId: number) =>
     request<{ status: string }>(`/archives/${archiveId}/source`, {
+      method: 'DELETE',
+    }),
+  // F3D (Fusion 360 design file)
+  getF3dDownloadUrl: (archiveId: number) =>
+    `${API_BASE}/archives/${archiveId}/f3d`,
+  uploadF3d: async (archiveId: number, file: File): Promise<{ status: string; filename: string }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(`${API_BASE}/archives/${archiveId}/f3d`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    return response.json();
+  },
+  deleteF3d: (archiveId: number) =>
+    request<{ status: string }>(`/archives/${archiveId}/f3d`, {
       method: 'DELETE',
     }),
 

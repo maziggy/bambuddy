@@ -65,6 +65,7 @@ def archive_to_response(
         "thumbnail_path": archive.thumbnail_path,
         "timelapse_path": archive.timelapse_path,
         "source_3mf_path": archive.source_3mf_path,
+        "f3d_path": archive.f3d_path,
         "duplicates": duplicates,
         "duplicate_count": duplicate_count if duplicates is None else len(duplicates),
         "print_name": archive.print_name,
@@ -2474,6 +2475,112 @@ async def delete_source_3mf(
 
     # Clear the path in database
     archive.source_3mf_path = None
+    await db.commit()
+
+    return {"status": "deleted"}
+
+
+# =============================================================================
+# F3D API (Fusion 360 Design Files)
+# =============================================================================
+
+
+@router.post("/{archive_id}/f3d")
+async def upload_f3d(
+    archive_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload a Fusion 360 design file for an archive."""
+    result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
+    archive = result.scalar_one_or_none()
+    if not archive:
+        raise HTTPException(404, "Archive not found")
+
+    if not file.filename or not file.filename.endswith(".f3d"):
+        raise HTTPException(400, "File must be a .f3d file")
+
+    # Get archive directory and create f3d subdirectory
+    file_path = settings.base_dir / archive.file_path
+    archive_dir = file_path.parent
+    f3d_dir = archive_dir / "f3d"
+    f3d_dir.mkdir(exist_ok=True)
+
+    # Delete old F3D file if exists
+    if archive.f3d_path:
+        old_f3d_path = settings.base_dir / archive.f3d_path
+        if old_f3d_path.exists():
+            old_f3d_path.unlink()
+
+    # Save the F3D file - preserve original filename
+    f3d_filename = file.filename
+    f3d_path = f3d_dir / f3d_filename
+
+    content = await file.read()
+    f3d_path.write_bytes(content)
+
+    # Update archive with F3D path (relative to base_dir)
+    archive.f3d_path = str(f3d_path.relative_to(settings.base_dir))
+
+    await db.commit()
+    await db.refresh(archive)
+
+    return {
+        "status": "uploaded",
+        "f3d_path": archive.f3d_path,
+        "filename": f3d_filename,
+    }
+
+
+@router.get("/{archive_id}/f3d")
+async def download_f3d(
+    archive_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Download the Fusion 360 design file."""
+    result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
+    archive = result.scalar_one_or_none()
+    if not archive:
+        raise HTTPException(404, "Archive not found")
+
+    if not archive.f3d_path:
+        raise HTTPException(404, "No F3D file attached to this archive")
+
+    f3d_path = settings.base_dir / archive.f3d_path
+    if not f3d_path.exists():
+        raise HTTPException(404, "F3D file not found on disk")
+
+    # Use the actual filename from the path
+    filename = f3d_path.name
+
+    return FileResponse(
+        path=f3d_path,
+        filename=filename,
+        media_type="application/octet-stream",
+    )
+
+
+@router.delete("/{archive_id}/f3d")
+async def delete_f3d(
+    archive_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete the Fusion 360 design file from an archive."""
+    result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
+    archive = result.scalar_one_or_none()
+    if not archive:
+        raise HTTPException(404, "Archive not found")
+
+    if not archive.f3d_path:
+        raise HTTPException(404, "No F3D file attached to this archive")
+
+    # Delete the file
+    f3d_path = settings.base_dir / archive.f3d_path
+    if f3d_path.exists():
+        f3d_path.unlink()
+
+    # Clear the path in database
+    archive.f3d_path = None
     await db.commit()
 
     return {"status": "deleted"}

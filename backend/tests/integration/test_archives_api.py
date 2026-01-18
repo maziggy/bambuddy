@@ -268,3 +268,115 @@ class TestArchiveDataIntegrity:
         result = response.json()
         assert result["notes"] == "Updated notes"
         assert result["is_favorite"] is True
+
+
+class TestArchiveF3DEndpoints:
+    """Tests for F3D (Fusion 360 design file) attachment endpoints."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archive_response_includes_f3d_path(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Verify f3d_path is included in archive response."""
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, f3d_path="archives/test/design.f3d")
+
+        response = await async_client.get(f"/api/v1/archives/{archive.id}")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert "f3d_path" in result
+        assert result["f3d_path"] == "archives/test/design.f3d"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archive_response_f3d_path_null_when_not_set(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Verify f3d_path is null when no F3D file attached."""
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id)
+
+        response = await async_client.get(f"/api/v1/archives/{archive.id}")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert "f3d_path" in result
+        assert result["f3d_path"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_f3d_to_nonexistent_archive(self, async_client: AsyncClient):
+        """Verify 404 when uploading F3D to non-existent archive."""
+        # Create a minimal file-like upload
+        files = {"file": ("design.f3d", b"fake f3d content", "application/octet-stream")}
+        response = await async_client.post("/api/v1/archives/9999/f3d", files=files)
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_download_f3d_not_found_when_no_file(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Verify 404 when downloading F3D from archive without F3D file."""
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id)
+
+        response = await async_client.get(f"/api/v1/archives/{archive.id}/f3d")
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_download_f3d_nonexistent_archive(self, async_client: AsyncClient):
+        """Verify 404 when downloading F3D from non-existent archive."""
+        response = await async_client.get("/api/v1/archives/9999/f3d")
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_delete_f3d_nonexistent_archive(self, async_client: AsyncClient):
+        """Verify 404 when deleting F3D from non-existent archive."""
+        response = await async_client.delete("/api/v1/archives/9999/f3d")
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_delete_f3d_when_no_file(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Verify 404 when deleting F3D from archive without F3D file."""
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id)
+
+        response = await async_client.delete(f"/api/v1/archives/{archive.id}/f3d")
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_archives_includes_f3d_path(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Verify f3d_path is included in archive list responses."""
+        printer = await printer_factory()
+        await archive_factory(printer.id, print_name="With F3D", f3d_path="archives/test/design.f3d")
+        await archive_factory(printer.id, print_name="Without F3D")
+
+        response = await async_client.get("/api/v1/archives/")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) >= 2
+
+        with_f3d = next((a for a in data if a["print_name"] == "With F3D"), None)
+        without_f3d = next((a for a in data if a["print_name"] == "Without F3D"), None)
+
+        assert with_f3d is not None
+        assert with_f3d["f3d_path"] == "archives/test/design.f3d"
+        assert without_f3d is not None
+        assert without_f3d["f3d_path"] is None

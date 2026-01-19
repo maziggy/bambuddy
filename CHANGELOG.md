@@ -5,6 +5,11 @@ All notable changes to Bambuddy will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Multi-plate 3MF plate selection** - When reprinting multi-plate 3MF files (exported with "All sliced file"), users can now select which plate to print:
+  - Plate selection grid with thumbnails, names, and print times
+  - Filament requirements filtered to show only selected plate's filaments
+  - Prevents incorrect filament mapping across plates
+  - Closes [#93](https://github.com/maziggy/bambuddy/issues/93)
 - **Home Assistant smart plug integration** - Control any Home Assistant switch/light entity as a smart plug:
   - Configure HA connection (URL + Long-Lived Access Token) in Settings → Network
   - Add HA-controlled plugs via Settings → Plugs → Add Smart Plug → Home Assistant tab
@@ -18,6 +23,13 @@ All notable changes to Bambuddy will be documented in this file.
   - Click badge to download, or use "Download F3D" in context menu
   - F3D files included in backup/restore
   - API tests for F3D endpoints
+
+### Fixed
+- **Multi-plate 3MF metadata extraction** - Single-plate exports from multi-plate projects now show correct thumbnail and name:
+  - Extracts plate index from slice_info.config metadata
+  - Uses correct plate thumbnail (e.g., plate_5.png instead of plate_1.png)
+  - Appends "Plate N" to print name for plates > 1
+  - Closes [#92](https://github.com/maziggy/bambuddy/issues/92)
 
 ## [0.1.6b8] - 2026-01-17
 

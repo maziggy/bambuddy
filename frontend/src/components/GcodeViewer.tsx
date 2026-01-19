@@ -168,7 +168,8 @@ export function GcodeViewer({
       }
       initRef.current = false;
     };
-  }, [gcodeUrl, colorsKey]); // Use colorsKey instead of filamentColors
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gcodeUrl, colorsKey]); // Intentionally use colorsKey instead of filamentColors, buildVolume rarely changes
 
   const handleLayerChange = useCallback((layer: number) => {
     if (!previewRef.current) return;

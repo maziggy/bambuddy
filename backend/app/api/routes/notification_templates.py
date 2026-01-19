@@ -36,6 +36,7 @@ EVENT_NAMES = {
 
 
 @router.get("", response_model=list[NotificationTemplateResponse])
+@router.get("/", response_model=list[NotificationTemplateResponse])
 async def get_templates(db: AsyncSession = Depends(get_db)):
     """Get all notification templates."""
     result = await db.execute(select(NotificationTemplate).order_by(NotificationTemplate.id))

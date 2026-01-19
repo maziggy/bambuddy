@@ -118,7 +118,7 @@ export function useWebSocket() {
     };
 
     wsRef.current = ws;
-  }, []);
+  }, [processMessageQueue]);
 
   // Throttled printer status update - coalesces rapid updates per printer
   const throttledPrinterStatusUpdate = useCallback((printerId: number, data: Record<string, unknown>) => {

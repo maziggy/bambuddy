@@ -67,12 +67,15 @@ export function CameraPage() {
 
     window.addEventListener('beforeunload', handleBeforeUnload);
 
+    // Store ref value for cleanup - ref may change by cleanup time
+    const imgElement = imgRef.current;
+
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
 
       // Clear the image source first to stop the stream
-      if (imgRef.current) {
-        imgRef.current.src = '';
+      if (imgElement) {
+        imgElement.src = '';
       }
       // Send stop signal only once
       sendStopOnce();

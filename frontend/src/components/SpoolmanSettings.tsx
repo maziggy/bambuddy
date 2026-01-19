@@ -72,6 +72,7 @@ export function SpoolmanSettings() {
   }, [settings]);
 
   // Auto-save when settings change (after initial load)
+  // Intentionally omit saveMutation and settings from deps to avoid infinite loops
   useEffect(() => {
     if (!isInitialized || !settings) return;
 
@@ -86,6 +87,7 @@ export function SpoolmanSettings() {
       }, 500);
       return () => clearTimeout(timeoutId);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [localEnabled, localUrl, localSyncMode, isInitialized]);
 
   // Save mutation

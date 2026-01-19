@@ -53,6 +53,7 @@ async def set_setting(db: AsyncSession, key: str, value: str) -> None:
     await db.execute(stmt)
 
 
+@router.get("", response_model=AppSettings)
 @router.get("/", response_model=AppSettings)
 async def get_settings(db: AsyncSession = Depends(get_db)):
     """Get all application settings."""

@@ -711,8 +711,8 @@ export function KProfilesView() {
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [bulkDeleteInProgress, setBulkDeleteInProgress] = useState(false);
 
-  // Helper to create unique profile key for selection
-  const getProfileKey = (profile: KProfile) => `${profile.slot_id}_${profile.extruder_id}`;
+  // Helper to create unique profile key for selection - wrapped in useCallback to prevent re-renders
+  const getProfileKey = useCallback((profile: KProfile) => `${profile.slot_id}_${profile.extruder_id}`, []);
 
   // Save nozzle diameter to localStorage when it changes
   useEffect(() => {

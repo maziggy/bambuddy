@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Printer, Archive, Calendar, BarChart3, Cloud, Settings, Sun, Moon, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, X, Menu, Info, Plug, Bug, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -162,9 +162,9 @@ export function Layout() {
     return () => clearInterval(interval);
   }, [debugLoggingState?.enabled, debugLoggingState?.enabled_at]);
 
-  // Build the unified sidebar items list
-  const navItemsMap = new Map(defaultNavItems.map(item => [item.id, item]));
-  const extLinksMap = new Map((externalLinks || []).map(link => [`ext-${link.id}`, link]));
+  // Build the unified sidebar items list - memoized to prevent re-renders
+  const navItemsMap = useMemo(() => new Map(defaultNavItems.map(item => [item.id, item])), []);
+  const extLinksMap = useMemo(() => new Map((externalLinks || []).map(link => [`ext-${link.id}`, link])), [externalLinks]);
 
   // Compute the ordered sidebar: include stored order + any new items
   const orderedSidebarIds = (() => {

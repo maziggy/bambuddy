@@ -92,7 +92,7 @@ export function MQTTDebugModal({ printerId, printerName, onClose }: MQTTDebugMod
   };
 
   const loggingEnabled = data?.logging_enabled ?? false;
-  const logs = data?.logs ?? [];
+  const logs = useMemo(() => data?.logs ?? [], [data?.logs]);
 
   // Filter logs based on search query and direction filter
   const filteredLogs = useMemo(() => {

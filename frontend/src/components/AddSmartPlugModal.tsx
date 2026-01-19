@@ -60,12 +60,22 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
     queryFn: api.getSmartPlugs,
   });
 
-  // Fetch Home Assistant entities when in HA mode
-  const { data: haEntities, isLoading: haEntitiesLoading, error: haEntitiesError } = useQuery({
+  // Fetch settings to check if HA is configured
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: api.getSettings,
+  });
+
+  // Check if HA is properly configured
+  const haConfigured = !!(settings?.ha_enabled && settings?.ha_url && settings?.ha_token);
+
+  // Fetch Home Assistant entities when in HA mode AND HA is configured
+  const { data: haEntities, isLoading: haEntitiesLoading } = useQuery({
     queryKey: ['ha-entities'],
     queryFn: api.getHAEntities,
-    enabled: plugType === 'homeassistant',
+    enabled: plugType === 'homeassistant' && haConfigured,
     retry: false,
+    staleTime: 0,
   });
 
   // Close on Escape key and cleanup scan polling
@@ -383,73 +393,91 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
           {/* Home Assistant Entity Selector - only show when HA is selected */}
           {plugType === 'homeassistant' && (
             <div className="space-y-3">
-              {haEntitiesLoading && (
-                <div className="flex items-center justify-center py-4 text-bambu-gray">
-                  <Loader2 className="w-5 h-5 animate-spin mr-2" />
-                  Loading entities...
-                </div>
-              )}
-
-              {haEntitiesError && (
-                <div className="p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-sm text-red-400">
-                  {haEntitiesError instanceof Error ? haEntitiesError.message : 'Failed to load Home Assistant entities. Check Settings → Network → Home Assistant.'}
-                </div>
-              )}
-
-              {haEntities && haEntities.length === 0 && (
-                <div className="p-3 bg-yellow-500/20 border border-yellow-500/50 rounded-lg text-sm text-yellow-400">
-                  No switch/light entities found in Home Assistant
-                </div>
-              )}
-
-              {haEntities && haEntities.length > 0 && (() => {
-                // Filter out entities already configured (except current plug when editing)
-                const configuredEntityIds = existingPlugs
-                  ?.filter(p => p.ha_entity_id && p.id !== plug?.id)
-                  .map(p => p.ha_entity_id) || [];
-                const availableEntities = haEntities.filter(e => !configuredEntityIds.includes(e.entity_id));
-
-                return (
+              {/* HA not configured */}
+              {!haConfigured && (
+                <div className="space-y-3">
+                  <div className="p-3 bg-yellow-500/20 border border-yellow-500/50 rounded-lg text-sm text-yellow-400">
+                    Home Assistant is not configured. Set it up in{' '}
+                    <span className="font-medium">Settings → Network → Home Assistant</span>
+                  </div>
                   <div>
-                    <label className="block text-sm text-bambu-gray mb-1">Select Entity *</label>
+                    <label className="block text-sm text-bambu-gray mb-1 opacity-50">Select Entity *</label>
                     <select
-                      value={haEntityId}
-                      onChange={(e) => {
-                        setHaEntityId(e.target.value);
-                        // Auto-fill name from entity friendly name
-                        const entity = haEntities?.find(ent => ent.entity_id === e.target.value);
-                        if (entity && !name) {
-                          setName(entity.friendly_name);
-                        }
-                      }}
-                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                      disabled
+                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-bambu-gray cursor-not-allowed opacity-50"
                     >
-                      <option value="">Choose an entity...</option>
-                      {availableEntities.map((entity) => (
-                        <option key={entity.entity_id} value={entity.entity_id}>
-                          {entity.friendly_name} ({entity.entity_id}) - {entity.state}
-                        </option>
-                      ))}
+                      <option>Choose an entity...</option>
                     </select>
-                    {configuredEntityIds.length > 0 && (
-                      <p className="text-xs text-bambu-gray mt-1">
-                        {configuredEntityIds.length} entity(s) already configured
-                      </p>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {haEntityId && haEntities && (
-                <div className="p-3 bg-bambu-green/20 border border-bambu-green/50 rounded-lg text-sm text-bambu-green flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5" />
-                  <div>
-                    <p className="font-medium">Entity selected</p>
-                    <p className="text-xs opacity-80">
-                      {haEntities.find(e => e.entity_id === haEntityId)?.friendly_name} - {haEntities.find(e => e.entity_id === haEntityId)?.state}
-                    </p>
                   </div>
                 </div>
+              )}
+
+              {/* HA configured - show loading/entities */}
+              {haConfigured && (
+                <>
+                  {haEntitiesLoading && (
+                    <div className="flex items-center justify-center py-4 text-bambu-gray">
+                      <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                      Loading entities...
+                    </div>
+                  )}
+
+                  {haEntities && haEntities.length === 0 && (
+                    <div className="p-3 bg-yellow-500/20 border border-yellow-500/50 rounded-lg text-sm text-yellow-400">
+                      No switch/light entities found in Home Assistant
+                    </div>
+                  )}
+
+                  {haEntities && haEntities.length > 0 && (() => {
+                    // Filter out entities already configured (except current plug when editing)
+                    const configuredEntityIds = existingPlugs
+                      ?.filter(p => p.ha_entity_id && p.id !== plug?.id)
+                      .map(p => p.ha_entity_id) || [];
+                    const availableEntities = haEntities.filter(e => !configuredEntityIds.includes(e.entity_id));
+
+                    return (
+                      <div>
+                        <label className="block text-sm text-bambu-gray mb-1">Select Entity *</label>
+                        <select
+                          value={haEntityId}
+                          onChange={(e) => {
+                            setHaEntityId(e.target.value);
+                            // Auto-fill name from entity friendly name
+                            const entity = haEntities?.find(ent => ent.entity_id === e.target.value);
+                            if (entity && !name) {
+                              setName(entity.friendly_name);
+                            }
+                          }}
+                          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                        >
+                          <option value="">Choose an entity...</option>
+                          {availableEntities.map((entity) => (
+                            <option key={entity.entity_id} value={entity.entity_id}>
+                              {entity.friendly_name} ({entity.entity_id}) - {entity.state}
+                            </option>
+                          ))}
+                        </select>
+                        {configuredEntityIds.length > 0 && (
+                          <p className="text-xs text-bambu-gray mt-1">
+                            {configuredEntityIds.length} entity(s) already configured
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {haEntityId && haEntities && (
+                    <div className="p-3 bg-bambu-green/20 border border-bambu-green/50 rounded-lg text-sm text-bambu-green flex items-center gap-2">
+                      <CheckCircle className="w-5 h-5" />
+                      <div>
+                        <p className="font-medium">Entity selected</p>
+                        <p className="text-xs opacity-80">
+                          {haEntities.find(e => e.entity_id === haEntityId)?.friendly_name} - {haEntities.find(e => e.entity_id === haEntityId)?.state}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}

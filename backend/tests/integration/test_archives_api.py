@@ -380,3 +380,35 @@ class TestArchiveF3DEndpoints:
         assert with_f3d["f3d_path"] == "archives/test/design.f3d"
         assert without_f3d is not None
         assert without_f3d["f3d_path"] is None
+
+    # ========================================================================
+    # Multi-Plate 3MF endpoints (Issue #93)
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_archive_plates_not_found(self, async_client: AsyncClient):
+        """Verify 404 when fetching plates for non-existent archive."""
+        response = await async_client.get("/api/v1/archives/999999/plates")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_plate_thumbnail_not_found(self, async_client: AsyncClient):
+        """Verify 404 when fetching plate thumbnail for non-existent archive."""
+        response = await async_client.get("/api/v1/archives/999999/plate-thumbnail/1")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_filament_requirements_not_found(self, async_client: AsyncClient):
+        """Verify filament-requirements returns 404 for non-existent archive."""
+        response = await async_client.get("/api/v1/archives/999999/filament-requirements")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_filament_requirements_with_plate_id_not_found(self, async_client: AsyncClient):
+        """Verify filament-requirements with plate_id returns 404 for non-existent archive."""
+        response = await async_client.get("/api/v1/archives/999999/filament-requirements?plate_id=1")
+        assert response.status_code == 404

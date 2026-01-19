@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { X, Printer, Loader2, AlertTriangle, Check, Circle, RefreshCw, ChevronDown, ChevronUp, Settings } from 'lucide-react';
+import { X, Printer, Loader2, AlertTriangle, Check, Circle, RefreshCw, ChevronDown, ChevronUp, Settings, Layers } from 'lucide-react';
 import { api } from '../api/client';
 import { Card, CardContent } from './Card';
 import { Button } from './Button';
@@ -30,19 +30,29 @@ const DEFAULT_PRINT_OPTIONS: PrintOptions = {
   timelapse: false,
 };
 
+// Format seconds to human readable time
+const formatTime = (seconds: number | null | undefined): string => {
+  if (!seconds) return '';
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+};
+
 export function ReprintModal({ archiveId, archiveName, onClose, onSuccess }: ReprintModalProps) {
   const queryClient = useQueryClient();
   const [selectedPrinter, setSelectedPrinter] = useState<number | null>(null);
+  const [selectedPlate, setSelectedPlate] = useState<number | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [printOptions, setPrintOptions] = useState<PrintOptions>(DEFAULT_PRINT_OPTIONS);
   // Manual slot overrides: slot_id (1-indexed) -> globalTrayId
   const [manualMappings, setManualMappings] = useState<Record<number, number>>({});
 
-  // Clear manual mappings when printer changes
+  // Clear manual mappings when printer or plate changes
   useEffect(() => {
     setManualMappings({});
-  }, [selectedPrinter]);
+  }, [selectedPrinter, selectedPlate]);
 
   // Close on Escape key
   useEffect(() => {
@@ -58,10 +68,24 @@ export function ReprintModal({ archiveId, archiveName, onClose, onSuccess }: Rep
     queryFn: api.getPrinters,
   });
 
-  // Fetch filament requirements from the archived 3MF
+  // Fetch available plates from the archived 3MF
+  const { data: platesData } = useQuery({
+    queryKey: ['archive-plates', archiveId],
+    queryFn: () => api.getArchivePlates(archiveId),
+  });
+
+  // Auto-select the first plate for single-plate files, or require selection for multi-plate
+  useEffect(() => {
+    if (platesData?.plates?.length === 1) {
+      setSelectedPlate(platesData.plates[0].index);
+    }
+  }, [platesData]);
+
+  // Fetch filament requirements from the archived 3MF (filtered by plate if selected)
   const { data: filamentReqs } = useQuery({
-    queryKey: ['archive-filaments', archiveId],
-    queryFn: () => api.getArchiveFilamentRequirements(archiveId),
+    queryKey: ['archive-filaments', archiveId, selectedPlate],
+    queryFn: () => api.getArchiveFilamentRequirements(archiveId, selectedPlate ?? undefined),
+    enabled: selectedPlate !== null || !platesData?.is_multi_plate,
   });
 
   // Fetch printer status when a printer is selected
@@ -75,6 +99,7 @@ export function ReprintModal({ archiveId, archiveName, onClose, onSuccess }: Rep
     mutationFn: () => {
       if (!selectedPrinter) throw new Error('No printer selected');
       return api.reprintArchive(archiveId, selectedPrinter, {
+        plate_id: selectedPlate ?? undefined,
         ams_mapping: amsMapping,
         ...printOptions,
       });
@@ -86,6 +111,8 @@ export function ReprintModal({ archiveId, archiveName, onClose, onSuccess }: Rep
   });
 
   const activePrinters = printers?.filter((p) => p.is_active) || [];
+  const isMultiPlate = platesData?.is_multi_plate ?? false;
+  const plates = platesData?.plates ?? [];
 
   // Helper to normalize color format (API returns "RRGGBBAA", 3MF uses "#RRGGBB")
   const normalizeColor = (color: string | null | undefined): string => {
@@ -372,8 +399,61 @@ export function ReprintModal({ archiveId, archiveName, onClose, onSuccess }: Rep
             </div>
           )}
 
+          {/* Plate selection - show when multi-plate file detected */}
+          {isMultiPlate && plates.length > 1 && (
+            <div className="mb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Layers className="w-4 h-4 text-bambu-gray" />
+                <span className="text-sm text-bambu-gray">Select Plate to Print</span>
+                {!selectedPlate && (
+                  <span className="text-xs text-orange-400 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    Selection required
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {plates.map((plate) => (
+                  <button
+                    key={plate.index}
+                    onClick={() => setSelectedPlate(plate.index)}
+                    className={`flex items-center gap-2 p-2 rounded-lg border transition-colors text-left ${
+                      selectedPlate === plate.index
+                        ? 'border-bambu-green bg-bambu-green/10'
+                        : 'border-bambu-dark-tertiary bg-bambu-dark hover:border-bambu-gray'
+                    }`}
+                  >
+                    {plate.has_thumbnail && plate.thumbnail_url ? (
+                      <img
+                        src={plate.thumbnail_url}
+                        alt={`Plate ${plate.index}`}
+                        className="w-10 h-10 rounded object-cover bg-bambu-dark-tertiary"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded bg-bambu-dark-tertiary flex items-center justify-center">
+                        <Layers className="w-5 h-5 text-bambu-gray" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-white font-medium truncate">
+                        Plate {plate.index}
+                      </p>
+                      <p className="text-xs text-bambu-gray truncate">
+                        {plate.name || `${plate.filaments.length} filament${plate.filaments.length !== 1 ? 's' : ''}`}
+                        {plate.print_time_seconds ? ` • ${formatTime(plate.print_time_seconds)}` : ''}
+                      </p>
+                    </div>
+                    {selectedPlate === plate.index && (
+                      <Check className="w-4 h-4 text-bambu-green flex-shrink-0" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Filament comparison - show when printer selected and has filament requirements */}
-          {selectedPrinter && filamentComparison.length > 0 && (
+          {selectedPrinter && (isMultiPlate ? selectedPlate !== null : true) && filamentComparison.length > 0 && (
             <div className="mb-4">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-sm text-bambu-gray">Filament Check</span>
@@ -561,7 +641,7 @@ export function ReprintModal({ archiveId, archiveName, onClose, onSuccess }: Rep
             </Button>
             <Button
               onClick={() => reprintMutation.mutate()}
-              disabled={!selectedPrinter || reprintMutation.isPending}
+              disabled={!selectedPrinter || (isMultiPlate && !selectedPlate) || reprintMutation.isPending}
               className="flex-1"
             >
               {reprintMutation.isPending ? (

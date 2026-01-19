@@ -1964,15 +1964,189 @@ async def upload_archives_bulk(
     }
 
 
+@router.get("/{archive_id}/plates")
+async def get_archive_plates(
+    archive_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get available plates from a multi-plate 3MF archive.
+
+    Returns a list of plates with their index, name, thumbnail availability,
+    and filament requirements. For single-plate exports, returns a single plate.
+    """
+    import xml.etree.ElementTree as ET
+
+    service = ArchiveService(db)
+    archive = await service.get_archive(archive_id)
+    if not archive:
+        raise HTTPException(404, "Archive not found")
+
+    file_path = settings.base_dir / archive.file_path
+    if not file_path.exists():
+        raise HTTPException(404, "Archive file not found")
+
+    plates = []
+
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            namelist = zf.namelist()
+
+            # Find all plate gcode files to determine available plates
+            gcode_files = [n for n in namelist if n.startswith("Metadata/plate_") and n.endswith(".gcode")]
+
+            if not gcode_files:
+                # No sliced plates found
+                return {"archive_id": archive_id, "filename": archive.filename, "plates": []}
+
+            # Extract plate indices from gcode filenames
+            plate_indices = []
+            for gf in gcode_files:
+                # "Metadata/plate_5.gcode" -> 5
+                try:
+                    plate_str = gf[15:-6]  # Remove "Metadata/plate_" and ".gcode"
+                    plate_indices.append(int(plate_str))
+                except ValueError:
+                    pass
+
+            plate_indices.sort()
+
+            # Parse slice_info.config for plate metadata
+            plate_metadata = {}  # plate_index -> {filaments, prediction, weight, name}
+            if "Metadata/slice_info.config" in namelist:
+                content = zf.read("Metadata/slice_info.config").decode()
+                root = ET.fromstring(content)
+
+                for plate_elem in root.findall(".//plate"):
+                    plate_info = {"filaments": [], "prediction": None, "weight": None, "name": None}
+
+                    # Get plate index from metadata
+                    plate_index = None
+                    for meta in plate_elem.findall("metadata"):
+                        key = meta.get("key")
+                        value = meta.get("value")
+                        if key == "index" and value:
+                            try:
+                                plate_index = int(value)
+                            except ValueError:
+                                pass
+                        elif key == "prediction" and value:
+                            try:
+                                plate_info["prediction"] = int(value)
+                            except ValueError:
+                                pass
+                        elif key == "weight" and value:
+                            try:
+                                plate_info["weight"] = float(value)
+                            except ValueError:
+                                pass
+
+                    # Get filaments used in this plate
+                    for filament_elem in plate_elem.findall("filament"):
+                        filament_id = filament_elem.get("id")
+                        filament_type = filament_elem.get("type", "")
+                        filament_color = filament_elem.get("color", "")
+                        used_g = filament_elem.get("used_g", "0")
+                        used_m = filament_elem.get("used_m", "0")
+
+                        try:
+                            used_grams = float(used_g)
+                        except (ValueError, TypeError):
+                            used_grams = 0
+
+                        if used_grams > 0 and filament_id:
+                            plate_info["filaments"].append(
+                                {
+                                    "slot_id": int(filament_id),
+                                    "type": filament_type,
+                                    "color": filament_color,
+                                    "used_grams": round(used_grams, 1),
+                                    "used_meters": float(used_m) if used_m else 0,
+                                }
+                            )
+
+                    # Sort filaments by slot ID
+                    plate_info["filaments"].sort(key=lambda x: x["slot_id"])
+
+                    # Get first object name as plate name hint
+                    first_obj = plate_elem.find("object")
+                    if first_obj is not None:
+                        plate_info["name"] = first_obj.get("name")
+
+                    if plate_index is not None:
+                        plate_metadata[plate_index] = plate_info
+
+            # Build plate list
+            for idx in plate_indices:
+                meta = plate_metadata.get(idx, {})
+                has_thumbnail = f"Metadata/plate_{idx}.png" in namelist
+
+                plates.append(
+                    {
+                        "index": idx,
+                        "name": meta.get("name"),
+                        "has_thumbnail": has_thumbnail,
+                        "thumbnail_url": f"/api/v1/archives/{archive_id}/plate-thumbnail/{idx}"
+                        if has_thumbnail
+                        else None,
+                        "print_time_seconds": meta.get("prediction"),
+                        "filament_used_grams": meta.get("weight"),
+                        "filaments": meta.get("filaments", []),
+                    }
+                )
+
+    except Exception as e:
+        logger.warning(f"Failed to parse plates from archive {archive_id}: {e}")
+
+    return {
+        "archive_id": archive_id,
+        "filename": archive.filename,
+        "plates": plates,
+        "is_multi_plate": len(plates) > 1,
+    }
+
+
+@router.get("/{archive_id}/plate-thumbnail/{plate_index}")
+async def get_plate_thumbnail(
+    archive_id: int,
+    plate_index: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the thumbnail image for a specific plate."""
+    service = ArchiveService(db)
+    archive = await service.get_archive(archive_id)
+    if not archive:
+        raise HTTPException(404, "Archive not found")
+
+    file_path = settings.base_dir / archive.file_path
+    if not file_path.exists():
+        raise HTTPException(404, "Archive file not found")
+
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            thumb_path = f"Metadata/plate_{plate_index}.png"
+            if thumb_path in zf.namelist():
+                data = zf.read(thumb_path)
+                return Response(content=data, media_type="image/png")
+    except Exception:
+        pass
+
+    raise HTTPException(404, f"Thumbnail for plate {plate_index} not found")
+
+
 @router.get("/{archive_id}/filament-requirements")
 async def get_filament_requirements(
     archive_id: int,
+    plate_id: int | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Get filament requirements from the archived 3MF file.
 
     Returns the filaments used in this print with their slot IDs, types, colors,
     and usage amounts. This can be compared with current AMS state before reprinting.
+
+    Args:
+        archive_id: The archive ID
+        plate_id: Optional plate index to filter filaments for (for multi-plate files)
     """
     import xml.etree.ElementTree as ET
 
@@ -1994,31 +2168,70 @@ async def get_filament_requirements(
                 content = zf.read("Metadata/slice_info.config").decode()
                 root = ET.fromstring(content)
 
-                # Extract filament elements
-                # Format: <filament id="1" type="PLA" color="#FFFFFF" used_g="100" used_m="10" />
-                for filament_elem in root.findall(".//filament"):
-                    filament_id = filament_elem.get("id")
-                    filament_type = filament_elem.get("type", "")
-                    filament_color = filament_elem.get("color", "")
-                    used_g = filament_elem.get("used_g", "0")
-                    used_m = filament_elem.get("used_m", "0")
+                # If plate_id is specified, find filaments for that specific plate
+                if plate_id is not None:
+                    # Find the plate element with matching index
+                    for plate_elem in root.findall(".//plate"):
+                        plate_index = None
+                        for meta in plate_elem.findall("metadata"):
+                            if meta.get("key") == "index":
+                                try:
+                                    plate_index = int(meta.get("value", "0"))
+                                except ValueError:
+                                    pass
+                                break
 
-                    # Only include filaments that are actually used
-                    try:
-                        used_grams = float(used_g)
-                    except (ValueError, TypeError):
-                        used_grams = 0
+                        if plate_index == plate_id:
+                            # Extract filaments from this plate element
+                            for filament_elem in plate_elem.findall("filament"):
+                                filament_id = filament_elem.get("id")
+                                filament_type = filament_elem.get("type", "")
+                                filament_color = filament_elem.get("color", "")
+                                used_g = filament_elem.get("used_g", "0")
+                                used_m = filament_elem.get("used_m", "0")
 
-                    if used_grams > 0 and filament_id:
-                        filaments.append(
-                            {
-                                "slot_id": int(filament_id),
-                                "type": filament_type,
-                                "color": filament_color,
-                                "used_grams": round(used_grams, 1),
-                                "used_meters": float(used_m) if used_m else 0,
-                            }
-                        )
+                                try:
+                                    used_grams = float(used_g)
+                                except (ValueError, TypeError):
+                                    used_grams = 0
+
+                                if used_grams > 0 and filament_id:
+                                    filaments.append(
+                                        {
+                                            "slot_id": int(filament_id),
+                                            "type": filament_type,
+                                            "color": filament_color,
+                                            "used_grams": round(used_grams, 1),
+                                            "used_meters": float(used_m) if used_m else 0,
+                                        }
+                                    )
+                            break
+                else:
+                    # No plate_id specified - extract all filaments with used_g > 0
+                    # This is the legacy behavior for single-plate files
+                    for filament_elem in root.findall(".//filament"):
+                        filament_id = filament_elem.get("id")
+                        filament_type = filament_elem.get("type", "")
+                        filament_color = filament_elem.get("color", "")
+                        used_g = filament_elem.get("used_g", "0")
+                        used_m = filament_elem.get("used_m", "0")
+
+                        # Only include filaments that are actually used
+                        try:
+                            used_grams = float(used_g)
+                        except (ValueError, TypeError):
+                            used_grams = 0
+
+                        if used_grams > 0 and filament_id:
+                            filaments.append(
+                                {
+                                    "slot_id": int(filament_id),
+                                    "type": filament_type,
+                                    "color": filament_color,
+                                    "used_grams": round(used_grams, 1),
+                                    "used_meters": float(used_m) if used_m else 0,
+                                }
+                            )
 
             # Sort by slot ID
             filaments.sort(key=lambda x: x["slot_id"])
@@ -2029,6 +2242,7 @@ async def get_filament_requirements(
     return {
         "archive_id": archive_id,
         "filename": archive.filename,
+        "plate_id": plate_id,
         "filaments": filaments,
     }
 
@@ -2129,18 +2343,22 @@ async def reprint_archive(
     # Register this as an expected print so we don't create a duplicate archive
     register_expected_print(printer_id, remote_filename, archive_id)
 
-    # Detect plate ID from 3MF file
-    plate_id = 1
-    try:
-        with zipfile.ZipFile(file_path, "r") as zf:
-            for name in zf.namelist():
-                if name.startswith("Metadata/plate_") and name.endswith(".gcode"):
-                    # Extract plate number from "Metadata/plate_X.gcode"
-                    plate_str = name[15:-6]  # Remove "Metadata/plate_" and ".gcode"
-                    plate_id = int(plate_str)
-                    break
-    except Exception:
-        pass  # Default to plate 1 if detection fails
+    # Use plate_id from request if provided, otherwise auto-detect from 3MF file
+    if body.plate_id is not None:
+        plate_id = body.plate_id
+    else:
+        # Auto-detect plate ID from 3MF file (legacy behavior for single-plate files)
+        plate_id = 1
+        try:
+            with zipfile.ZipFile(file_path, "r") as zf:
+                for name in zf.namelist():
+                    if name.startswith("Metadata/plate_") and name.endswith(".gcode"):
+                        # Extract plate number from "Metadata/plate_X.gcode"
+                        plate_str = name[15:-6]  # Remove "Metadata/plate_" and ".gcode"
+                        plate_id = int(plate_str)
+                        break
+        except Exception:
+            pass  # Default to plate 1 if detection fails
 
     logger.info(
         f"Reprint archive {archive_id}: plate_id={plate_id}, "

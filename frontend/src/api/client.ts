@@ -1780,10 +1780,32 @@ export const api = {
     `${API_BASE}/archives/${archiveId}/project-image/${encodeURIComponent(imagePath)}`,
   getArchiveForSlicer: (id: number, filename: string) =>
     `${API_BASE}/archives/${id}/file/${encodeURIComponent(filename.endsWith('.3mf') ? filename : filename + '.3mf')}`,
-  getArchiveFilamentRequirements: (archiveId: number) =>
+  getArchivePlates: (archiveId: number) =>
     request<{
       archive_id: number;
       filename: string;
+      plates: Array<{
+        index: number;
+        name: string | null;
+        has_thumbnail: boolean;
+        thumbnail_url: string | null;
+        print_time_seconds: number | null;
+        filament_used_grams: number | null;
+        filaments: Array<{
+          slot_id: number;
+          type: string;
+          color: string;
+          used_grams: number;
+          used_meters: number;
+        }>;
+      }>;
+      is_multi_plate: boolean;
+    }>(`/archives/${archiveId}/plates`),
+  getArchiveFilamentRequirements: (archiveId: number, plateId?: number) =>
+    request<{
+      archive_id: number;
+      filename: string;
+      plate_id: number | null;
       filaments: Array<{
         slot_id: number;
         type: string;
@@ -1791,11 +1813,12 @@ export const api = {
         used_grams: number;
         used_meters: number;
       }>;
-    }>(`/archives/${archiveId}/filament-requirements`),
+    }>(`/archives/${archiveId}/filament-requirements${plateId !== undefined ? `?plate_id=${plateId}` : ''}`),
   reprintArchive: (
     archiveId: number,
     printerId: number,
     options?: {
+      plate_id?: number;
       ams_mapping?: number[];
       timelapse?: boolean;
       bed_levelling?: boolean;

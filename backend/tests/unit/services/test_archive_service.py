@@ -426,3 +426,188 @@ class TestThreeMFPlateIndexExtraction:
         # Verify thumbnail would use correct plate
         thumbnail_path = f"Metadata/plate_{plate_index}.png"
         assert thumbnail_path == "Metadata/plate_28.png"
+
+
+class TestMultiPlate3MFParsing:
+    """Tests for parsing multi-plate 3MF files (Issue #93)."""
+
+    def test_parse_multiple_plates_from_slice_info(self):
+        """Test parsing multiple plates from slice_info.config."""
+        from xml.etree import ElementTree as ET
+
+        # Multi-plate 3MF with 3 plates
+        slice_info_xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <plate>
+                <metadata key="index" value="1" />
+                <metadata key="prediction" value="3600" />
+                <metadata key="weight" value="50.0" />
+                <filament id="1" type="PLA" color="#FF0000" used_g="25.0" used_m="8.5" />
+                <object identify_id="1" name="Part_A" skipped="false" />
+            </plate>
+            <plate>
+                <metadata key="index" value="2" />
+                <metadata key="prediction" value="7200" />
+                <metadata key="weight" value="100.0" />
+                <filament id="2" type="PETG" color="#00FF00" used_g="50.0" used_m="17.0" />
+                <object identify_id="2" name="Part_B" skipped="false" />
+            </plate>
+            <plate>
+                <metadata key="index" value="3" />
+                <metadata key="prediction" value="1800" />
+                <metadata key="weight" value="25.0" />
+                <filament id="1" type="PLA" color="#FF0000" used_g="12.5" used_m="4.2" />
+                <filament id="3" type="TPU" color="#0000FF" used_g="12.5" used_m="4.2" />
+                <object identify_id="3" name="Part_C" skipped="false" />
+            </plate>
+        </config>
+        """
+        root = ET.fromstring(slice_info_xml)
+        plates = root.findall(".//plate")
+
+        assert len(plates) == 3
+
+        # Parse each plate
+        plate_data = []
+        for plate_elem in plates:
+            plate_info = {"index": None, "filaments": []}
+
+            for meta in plate_elem.findall("metadata"):
+                if meta.get("key") == "index":
+                    plate_info["index"] = int(meta.get("value"))
+
+            for filament_elem in plate_elem.findall("filament"):
+                used_g = float(filament_elem.get("used_g", "0"))
+                if used_g > 0:
+                    plate_info["filaments"].append(
+                        {
+                            "slot_id": int(filament_elem.get("id")),
+                            "type": filament_elem.get("type"),
+                            "color": filament_elem.get("color"),
+                            "used_grams": used_g,
+                        }
+                    )
+
+            plate_data.append(plate_info)
+
+        # Verify plate 1
+        assert plate_data[0]["index"] == 1
+        assert len(plate_data[0]["filaments"]) == 1
+        assert plate_data[0]["filaments"][0]["slot_id"] == 1
+        assert plate_data[0]["filaments"][0]["type"] == "PLA"
+
+        # Verify plate 2
+        assert plate_data[1]["index"] == 2
+        assert len(plate_data[1]["filaments"]) == 1
+        assert plate_data[1]["filaments"][0]["slot_id"] == 2
+        assert plate_data[1]["filaments"][0]["type"] == "PETG"
+
+        # Verify plate 3 (has 2 filaments)
+        assert plate_data[2]["index"] == 3
+        assert len(plate_data[2]["filaments"]) == 2
+        filament_types = {f["type"] for f in plate_data[2]["filaments"]}
+        assert filament_types == {"PLA", "TPU"}
+
+    def test_filter_filaments_by_plate_id(self):
+        """Test filtering filaments for a specific plate."""
+        from xml.etree import ElementTree as ET
+
+        slice_info_xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <plate>
+                <metadata key="index" value="1" />
+                <filament id="1" type="PLA" color="#FF0000" used_g="25.0" />
+            </plate>
+            <plate>
+                <metadata key="index" value="2" />
+                <filament id="2" type="PETG" color="#00FF00" used_g="50.0" />
+            </plate>
+        </config>
+        """
+        root = ET.fromstring(slice_info_xml)
+
+        # Filter for plate 2 only
+        target_plate_id = 2
+        filaments = []
+
+        for plate_elem in root.findall(".//plate"):
+            plate_index = None
+            for meta in plate_elem.findall("metadata"):
+                if meta.get("key") == "index":
+                    plate_index = int(meta.get("value", "0"))
+                    break
+
+            if plate_index == target_plate_id:
+                for filament_elem in plate_elem.findall("filament"):
+                    used_g = float(filament_elem.get("used_g", "0"))
+                    if used_g > 0:
+                        filaments.append(
+                            {
+                                "slot_id": int(filament_elem.get("id")),
+                                "type": filament_elem.get("type"),
+                            }
+                        )
+                break
+
+        # Should only have plate 2's filament
+        assert len(filaments) == 1
+        assert filaments[0]["slot_id"] == 2
+        assert filaments[0]["type"] == "PETG"
+
+    def test_detect_multi_plate_from_gcode_files(self):
+        """Test detecting multiple plates from gcode file presence."""
+        # Simulate namelist from a multi-plate 3MF
+        namelist = [
+            "Metadata/plate_1.gcode",
+            "Metadata/plate_2.gcode",
+            "Metadata/plate_3.gcode",
+            "Metadata/plate_1.png",
+            "Metadata/plate_2.png",
+            "Metadata/plate_3.png",
+            "Metadata/slice_info.config",
+            "3D/3dmodel.model",
+        ]
+
+        # Extract plate indices from gcode files
+        gcode_files = [n for n in namelist if n.startswith("Metadata/plate_") and n.endswith(".gcode")]
+        plate_indices = []
+        for gf in gcode_files:
+            plate_str = gf[15:-6]  # Remove "Metadata/plate_" and ".gcode"
+            plate_indices.append(int(plate_str))
+
+        plate_indices.sort()
+
+        assert len(plate_indices) == 3
+        assert plate_indices == [1, 2, 3]
+
+        # Verify it's a multi-plate file
+        is_multi_plate = len(plate_indices) > 1
+        assert is_multi_plate is True
+
+    def test_single_plate_export_not_multi_plate(self):
+        """Test that single-plate exports are not detected as multi-plate."""
+        # Simulate namelist from a single-plate export (plate 5 only)
+        namelist = [
+            "Metadata/plate_5.gcode",
+            "Metadata/plate_1.png",
+            "Metadata/plate_2.png",
+            "Metadata/plate_3.png",
+            "Metadata/plate_4.png",
+            "Metadata/plate_5.png",  # All thumbnails present
+            "Metadata/slice_info.config",
+            "3D/3dmodel.model",
+        ]
+
+        # Extract plate indices from gcode files (not thumbnails!)
+        gcode_files = [n for n in namelist if n.startswith("Metadata/plate_") and n.endswith(".gcode")]
+        plate_indices = []
+        for gf in gcode_files:
+            plate_str = gf[15:-6]
+            plate_indices.append(int(plate_str))
+
+        # Only one gcode file = single plate export
+        assert len(plate_indices) == 1
+        assert plate_indices[0] == 5
+
+        is_multi_plate = len(plate_indices) > 1
+        assert is_multi_plate is False

@@ -170,6 +170,10 @@ class ProjectPageUpdate(BaseModel):
 class ReprintRequest(BaseModel):
     """Request body for reprinting an archive."""
 
+    # Plate selection for multi-plate 3MF files
+    # If not specified, auto-detects from file (legacy behavior for single-plate files)
+    plate_id: int | None = None
+
     # AMS slot mapping: list of tray IDs for each filament slot in the 3MF
     # Global tray ID = (ams_id * 4) + slot_id, external = 254
     ams_mapping: list[int] | None = None

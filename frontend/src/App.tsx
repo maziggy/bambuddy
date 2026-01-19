@@ -10,6 +10,7 @@ import { ProfilesPage } from './pages/ProfilesPage';
 import { MaintenancePage } from './pages/MaintenancePage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
+import { FileManagerPage } from './pages/FileManagerPage';
 import { CameraPage } from './pages/CameraPage';
 import { ExternalLinkPage } from './pages/ExternalLinkPage';
 import { SystemInfoPage } from './pages/SystemInfoPage';
@@ -51,6 +52,7 @@ function App() {
                 <Route path="maintenance" element={<MaintenancePage />} />
                 <Route path="projects" element={<ProjectsPage />} />
                 <Route path="projects/:id" element={<ProjectDetailPage />} />
+                <Route path="files" element={<FileManagerPage />} />
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="system" element={<SystemInfoPage />} />
                 <Route path="external/:id" element={<ExternalLinkPage />} />

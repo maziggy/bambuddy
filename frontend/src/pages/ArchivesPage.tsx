@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Download,
@@ -220,6 +221,12 @@ function ArchiveCard({
       queryClient.invalidateQueries({ queryKey: ['archives'] });
       showToast(data.is_favorite ? 'Added to favorites' : 'Removed from favorites');
     },
+  });
+
+  // Query for linked folders
+  const { data: linkedFolders } = useQuery({
+    queryKey: ['archive-folders', archive.id],
+    queryFn: () => api.getLibraryFoldersByArchive(archive.id),
   });
 
   const assignProjectMutation = useMutation({
@@ -600,6 +607,18 @@ function ArchiveCard({
               </span>
             )}
           </button>
+        )}
+        {/* Linked folder badge */}
+        {linkedFolders && linkedFolders.length > 0 && (
+          <Link
+            to={`/files?folder=${linkedFolders[0].id}`}
+            className="absolute bottom-2 p-1.5 rounded bg-black/60 hover:bg-black/80 transition-colors"
+            onClick={(e) => e.stopPropagation()}
+            title={`Open folder: ${linkedFolders[0].name}`}
+            style={{ left: archive.source_3mf_path ? (archive.f3d_path ? '5.5rem' : '3rem') : (archive.f3d_path ? '3rem' : '0.5rem') }}
+          >
+            <FolderOpen className="w-4 h-4 text-yellow-400" />
+          </Link>
         )}
       </div>
 
@@ -1197,6 +1216,12 @@ function ArchiveListRow({
     },
   });
 
+  // Query for linked folders
+  const { data: linkedFolders } = useQuery({
+    queryKey: ['archive-folders', archive.id],
+    queryFn: () => api.getLibraryFoldersByArchive(archive.id),
+  });
+
   const assignProjectMutation = useMutation({
     mutationFn: (projectId: number | null) => api.updateArchive(archive.id, { project_id: projectId }),
     onSuccess: () => {
@@ -1470,6 +1495,16 @@ function ArchiveListRow({
               <span title="Has timelapse">
                 <Film className="w-3.5 h-3.5 text-bambu-green flex-shrink-0" />
               </span>
+            )}
+            {linkedFolders && linkedFolders.length > 0 && (
+              <Link
+                to={`/files?folder=${linkedFolders[0].id}`}
+                className="flex-shrink-0"
+                title={`Open folder: ${linkedFolders[0].name}`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <FolderOpen className="w-3.5 h-3.5 text-yellow-400" />
+              </Link>
             )}
           </div>
           {archive.filament_type && (

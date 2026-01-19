@@ -70,7 +70,7 @@ export function useWebSocket() {
     let pingInterval: number | null = null;
 
     ws.onopen = () => {
-      console.log('[WebSocket] Connected');
+      if (import.meta.env.MODE !== 'test') console.log('[WebSocket] Connected');
       setIsConnected(true);
       // Start ping interval
       pingInterval = window.setInterval(() => {
@@ -98,7 +98,7 @@ export function useWebSocket() {
     };
 
     ws.onclose = (event) => {
-      console.log('[WebSocket] Closed', event.code, event.reason);
+      if (import.meta.env.MODE !== 'test') console.log('[WebSocket] Closed', event.code, event.reason);
       if (pingInterval) {
         clearInterval(pingInterval);
         pingInterval = null;
@@ -113,7 +113,7 @@ export function useWebSocket() {
     };
 
     ws.onerror = (error) => {
-      console.error('[WebSocket] Error', error);
+      if (import.meta.env.MODE !== 'test') console.error('[WebSocket] Error', error);
       ws.close();
     };
 

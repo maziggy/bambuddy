@@ -283,4 +283,28 @@ export const handlers = [
   http.get('/health', () => {
     return HttpResponse.json({ status: 'healthy' });
   }),
+
+  // ========================================================================
+  // Archives
+  // ========================================================================
+
+  http.get('/api/v1/archives/:id/plates', () => {
+    return HttpResponse.json([]);
+  }),
+
+  http.get('/api/v1/archives/:id/filament-requirements', () => {
+    return HttpResponse.json([]);
+  }),
+
+  // ========================================================================
+  // Library
+  // ========================================================================
+
+  http.get('/api/v1/library/stats', () => {
+    return HttpResponse.json({
+      total_files: 0,
+      total_size: 0,
+      total_folders: 0,
+    });
+  }),
 ];

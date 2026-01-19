@@ -8,6 +8,7 @@ export default {
     profiles: 'Profile',
     maintenance: 'Wartung',
     projects: 'Projekte',
+    files: 'Dateimanager',
     settings: 'Einstellungen',
     system: 'System',
     collapseSidebar: 'Seitenleiste einklappen',

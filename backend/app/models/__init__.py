@@ -3,6 +3,7 @@ from backend.app.models.api_key import APIKey
 from backend.app.models.archive import PrintArchive
 from backend.app.models.filament import Filament
 from backend.app.models.kprofile_note import KProfileNote
+from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.maintenance import MaintenanceHistory, MaintenanceType, PrinterMaintenance
 from backend.app.models.notification import NotificationLog
 from backend.app.models.notification_template import NotificationTemplate
@@ -28,4 +29,6 @@ __all__ = [
     "APIKey",
     "AMSSensorHistory",
     "PendingUpload",
+    "LibraryFolder",
+    "LibraryFile",
 ]

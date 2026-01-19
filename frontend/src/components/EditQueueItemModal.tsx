@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Calendar, Clock, X, AlertCircle, Power, Pencil, Hand, Check, AlertTriangle, Circle, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { Calendar, Clock, X, AlertCircle, Power, Pencil, Hand, Check, AlertTriangle, Circle, RefreshCw, ChevronDown, ChevronUp, Layers, Settings } from 'lucide-react';
 import { api } from '../api/client';
 import type { PrintQueueItem, PrintQueueItemUpdate } from '../api/client';
 import { Card, CardContent } from './Card';
@@ -18,6 +18,7 @@ export function EditQueueItemModal({ item, onClose }: EditQueueItemModalProps) {
   const { showToast } = useToast();
 
   const [printerId, setPrinterId] = useState<number | null>(item.printer_id);
+  const [selectedPlate, setSelectedPlate] = useState<number | null>(item.plate_id);
 
   // Check if scheduled_time is a "placeholder" far-future date (more than 6 months out)
   const isPlaceholderDate = item.scheduled_time &&
@@ -39,7 +40,17 @@ export function EditQueueItemModal({ item, onClose }: EditQueueItemModalProps) {
   const [requirePreviousSuccess, setRequirePreviousSuccess] = useState(item.require_previous_success);
   const [autoOffAfter, setAutoOffAfter] = useState(item.auto_off_after);
   const [showFilamentMapping, setShowFilamentMapping] = useState(false);
+  const [showPrintOptions, setShowPrintOptions] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // Print options
+  const [printOptions, setPrintOptions] = useState({
+    bed_levelling: item.bed_levelling ?? true,
+    flow_cali: item.flow_cali ?? false,
+    vibration_cali: item.vibration_cali ?? true,
+    layer_inspect: item.layer_inspect ?? false,
+    timelapse: item.timelapse ?? false,
+    use_ams: item.use_ams ?? true,
+  });
   // Manual slot overrides: slot_id (1-indexed) -> globalTrayId
   // Initialize from existing ams_mapping if present
   const [manualMappings, setManualMappings] = useState<Record<number, number>>(() => {
@@ -60,10 +71,27 @@ export function EditQueueItemModal({ item, onClose }: EditQueueItemModalProps) {
     queryFn: () => api.getPrinters(),
   });
 
-  // Fetch filament requirements from the archived 3MF
+  // Fetch available plates from the archived 3MF
+  const { data: platesData } = useQuery({
+    queryKey: ['archive-plates', item.archive_id],
+    queryFn: () => api.getArchivePlates(item.archive_id),
+  });
+
+  // Auto-select the first plate for single-plate files, or use existing plate_id
+  useEffect(() => {
+    if (platesData?.plates?.length === 1 && !selectedPlate) {
+      setSelectedPlate(platesData.plates[0].index);
+    }
+  }, [platesData, selectedPlate]);
+
+  const isMultiPlate = platesData?.is_multi_plate ?? false;
+  const plates = platesData?.plates ?? [];
+
+  // Fetch filament requirements from the archived 3MF (filtered by plate if selected)
   const { data: filamentReqs } = useQuery({
-    queryKey: ['archive-filaments', item.archive_id],
-    queryFn: () => api.getArchiveFilamentRequirements(item.archive_id),
+    queryKey: ['archive-filaments', item.archive_id, selectedPlate],
+    queryFn: () => api.getArchiveFilamentRequirements(item.archive_id, selectedPlate ?? undefined),
+    enabled: selectedPlate !== null || !isMultiPlate,
   });
 
   // Fetch printer status when a printer is selected
@@ -73,13 +101,14 @@ export function EditQueueItemModal({ item, onClose }: EditQueueItemModalProps) {
     enabled: printerId !== null,
   });
 
-  // Clear manual mappings when printer changes (but not on initial load)
+  // Clear manual mappings when printer or plate changes (but not on initial load)
   const [initialPrinterId] = useState(item.printer_id);
+  const [initialPlateId] = useState(item.plate_id);
   useEffect(() => {
-    if (printerId !== initialPrinterId) {
+    if (printerId !== initialPrinterId || selectedPlate !== initialPlateId) {
       setManualMappings({});
     }
-  }, [printerId, initialPrinterId]);
+  }, [printerId, initialPrinterId, selectedPlate, initialPlateId]);
 
   // Close on Escape key
   useEffect(() => {
@@ -312,6 +341,8 @@ export function EditQueueItemModal({ item, onClose }: EditQueueItemModalProps) {
       auto_off_after: autoOffAfter,
       manual_start: scheduleType === 'manual',
       ams_mapping: amsMapping,
+      plate_id: selectedPlate,
+      ...printOptions,
     };
 
     if (scheduleType === 'scheduled' && scheduledTime) {
@@ -393,8 +424,61 @@ export function EditQueueItemModal({ item, onClose }: EditQueueItemModalProps) {
               )}
             </div>
 
+            {/* Plate selection - show when multi-plate file detected */}
+            {isMultiPlate && plates.length > 1 && (
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <Layers className="w-4 h-4 text-bambu-gray" />
+                  <label className="text-sm text-bambu-gray">Select Plate to Print</label>
+                  {!selectedPlate && (
+                    <span className="text-xs text-orange-400 flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3" />
+                      Selection required
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {plates.map((plate) => (
+                    <button
+                      key={plate.index}
+                      type="button"
+                      onClick={() => setSelectedPlate(plate.index)}
+                      className={`flex items-center gap-2 p-2 rounded-lg border transition-colors text-left ${
+                        selectedPlate === plate.index
+                          ? 'border-bambu-green bg-bambu-green/10'
+                          : 'border-bambu-dark-tertiary bg-bambu-dark hover:border-bambu-gray'
+                      }`}
+                    >
+                      {plate.has_thumbnail && plate.thumbnail_url ? (
+                        <img
+                          src={plate.thumbnail_url}
+                          alt={`Plate ${plate.index}`}
+                          className="w-10 h-10 rounded object-cover bg-bambu-dark-tertiary"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded bg-bambu-dark-tertiary flex items-center justify-center">
+                          <Layers className="w-5 h-5 text-bambu-gray" />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-white font-medium truncate">
+                          Plate {plate.index}
+                        </p>
+                        <p className="text-xs text-bambu-gray truncate">
+                          {plate.name || `${plate.filaments.length} filament${plate.filaments.length !== 1 ? 's' : ''}`}
+                        </p>
+                      </div>
+                      {selectedPlate === plate.index && (
+                        <Check className="w-4 h-4 text-bambu-green flex-shrink-0" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Filament Mapping Section */}
-            {printerId !== null && hasFilamentReqs && (
+            {printerId !== null && (isMultiPlate ? selectedPlate !== null : true) && hasFilamentReqs && (
               <div>
                 <button
                   type="button"
@@ -509,6 +593,49 @@ export function EditQueueItemModal({ item, onClose }: EditQueueItemModalProps) {
                 )}
               </div>
             )}
+
+            {/* Print Options */}
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowPrintOptions(!showPrintOptions)}
+                className="flex items-center gap-2 text-sm text-bambu-gray hover:text-white transition-colors w-full"
+              >
+                <Settings className="w-4 h-4" />
+                <span>Print Options</span>
+                {showPrintOptions ? <ChevronUp className="w-4 h-4 ml-auto" /> : <ChevronDown className="w-4 h-4 ml-auto" />}
+              </button>
+              {showPrintOptions && (
+                <div className="mt-2 bg-bambu-dark rounded-lg p-3 space-y-2">
+                  {[
+                    { key: 'bed_levelling', label: 'Bed Levelling', desc: 'Auto-level bed before print' },
+                    { key: 'flow_cali', label: 'Flow Calibration', desc: 'Calibrate extrusion flow' },
+                    { key: 'vibration_cali', label: 'Vibration Calibration', desc: 'Reduce ringing artifacts' },
+                    { key: 'layer_inspect', label: 'First Layer Inspection', desc: 'AI inspection of first layer' },
+                    { key: 'timelapse', label: 'Timelapse', desc: 'Record timelapse video' },
+                  ].map(({ key, label, desc }) => (
+                    <label key={key} className="flex items-center justify-between cursor-pointer group">
+                      <div>
+                        <span className="text-sm text-white">{label}</span>
+                        <p className="text-xs text-bambu-gray">{desc}</p>
+                      </div>
+                      <div
+                        className={`relative w-10 h-5 rounded-full transition-colors ${
+                          printOptions[key as keyof typeof printOptions] ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
+                        }`}
+                        onClick={() => setPrintOptions((prev) => ({ ...prev, [key]: !prev[key as keyof typeof printOptions] }))}
+                      >
+                        <div
+                          className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                            printOptions[key as keyof typeof printOptions] ? 'translate-x-5' : 'translate-x-0.5'
+                          }`}
+                        />
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Schedule type */}
             <div>

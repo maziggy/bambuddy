@@ -20,10 +20,18 @@ import {
   Bug,
   Download,
   Headphones,
+  FolderOpen,
 } from 'lucide-react';
 import { api, supportApi } from '../api/client';
 import { Card } from '../components/Card';
 import { formatDateTime, type TimeFormat } from '../utils/date';
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
 
 function StatCard({
   icon: Icon,
@@ -106,6 +114,11 @@ export function SystemInfoPage() {
   const { data: settings } = useQuery({
     queryKey: ['settings'],
     queryFn: api.getSettings,
+  });
+
+  const { data: libraryStats } = useQuery({
+    queryKey: ['library-stats'],
+    queryFn: api.getLibraryStats,
   });
 
   const timeFormat: TimeFormat = settings?.time_format || 'system';
@@ -456,7 +469,7 @@ export function SystemInfoPage() {
               {(100 - systemInfo.storage.disk_percent_used).toFixed(1)}%)
             </p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <StatCard
               icon={Archive}
               label={t('system.archiveStorage', 'Archive Storage')}
@@ -467,6 +480,14 @@ export function SystemInfoPage() {
               label={t('system.databaseSize', 'Database Size')}
               value={systemInfo.storage.database_size_formatted}
             />
+            {libraryStats && (
+              <StatCard
+                icon={FolderOpen}
+                label={t('system.fileManagerStorage', 'File Manager')}
+                value={formatBytes(libraryStats.total_size_bytes)}
+                subValue={`${libraryStats.total_files} files, ${libraryStats.total_folders} folders`}
+              />
+            )}
           </div>
         </div>
       </Section>

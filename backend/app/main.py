@@ -61,6 +61,7 @@ from backend.app.api.routes import (
     filaments,
     firmware,
     kprofiles,
+    library,
     maintenance,
     notification_templates,
     notifications,
@@ -1963,6 +1964,7 @@ app.include_router(maintenance.router, prefix=app_settings.api_prefix)
 app.include_router(camera.router, prefix=app_settings.api_prefix)
 app.include_router(external_links.router, prefix=app_settings.api_prefix)
 app.include_router(projects.router, prefix=app_settings.api_prefix)
+app.include_router(library.router, prefix=app_settings.api_prefix)
 app.include_router(api_keys.router, prefix=app_settings.api_prefix)
 app.include_router(webhook.router, prefix=app_settings.api_prefix)
 app.include_router(ams_history.router, prefix=app_settings.api_prefix)

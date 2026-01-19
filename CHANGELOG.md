@@ -5,6 +5,16 @@ All notable changes to Bambuddy will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Add to Queue from File Manager** - Queue sliced files directly from File Manager:
+  - New "Add to Queue" toolbar button appears when sliced files are selected
+  - Context menu and list view button options for individual files
+  - Supports multiple file selection for batch queueing
+  - Only accepts sliced files (.gcode or .gcode.3mf)
+  - Creates archive and queue item in one action
+- **Print Queue plate selection and options** - Full print configuration in queue edit modal:
+  - Plate selection grid with thumbnails for multi-plate 3MF files
+  - Print options section (bed levelling, flow calibration, vibration calibration, layer inspect, timelapse, use AMS)
+  - Options saved with queue item and used when print starts
 - **Multi-plate 3MF plate selection** - When reprinting multi-plate 3MF files (exported with "All sliced file"), users can now select which plate to print:
   - Plate selection grid with thumbnails, names, and print times
   - Filament requirements filtered to show only selected plate's filaments

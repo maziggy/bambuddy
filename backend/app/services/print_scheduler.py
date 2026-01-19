@@ -345,11 +345,18 @@ class PrintScheduler:
             except json.JSONDecodeError:
                 logger.warning(f"Queue item {item.id}: Invalid AMS mapping JSON, ignoring")
 
-        # Start the print with AMS mapping if available
+        # Start the print with AMS mapping, plate_id and print options
         started = printer_manager.start_print(
             item.printer_id,
             remote_filename,
+            plate_id=item.plate_id or 1,
             ams_mapping=ams_mapping,
+            bed_levelling=item.bed_levelling,
+            flow_cali=item.flow_cali,
+            vibration_cali=item.vibration_cali,
+            layer_inspect=item.layer_inspect,
+            timelapse=item.timelapse,
+            use_ams=item.use_ams,
         )
 
         if started:

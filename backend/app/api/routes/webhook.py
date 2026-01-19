@@ -171,9 +171,13 @@ async def webhook_start_print(
     if status.get("state") not in ["IDLE", "FINISH", "FAILED"]:
         raise HTTPException(status_code=409, detail=f"Printer is busy (state: {status.get('state')})")
 
-    # Start the print
+    # Start the print with plate_id if available
     try:
-        await printer_manager.start_print(printer_id, queue_item.archive_id)
+        await printer_manager.start_print(
+            printer_id,
+            queue_item.archive_id,
+            plate_id=queue_item.plate_id or 1,
+        )
     except Exception as e:
         logger.error(f"Failed to start print: {e}")
         raise HTTPException(status_code=500, detail=str(e))

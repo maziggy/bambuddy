@@ -322,6 +322,8 @@ export function SettingsPage() {
     mutationFn: api.updateSettings,
     onSuccess: (data) => {
       queryClient.setQueryData(['settings'], data);
+      // Sync localSettings with the saved data to prevent re-triggering saves
+      setLocalSettings(data);
       // Invalidate archive stats to reflect energy tracking mode change
       queryClient.invalidateQueries({ queryKey: ['archiveStats'] });
       showToast('Settings saved', 'success');
@@ -375,7 +377,9 @@ export function SettingsPage() {
       settings.mqtt_use_tls !== localSettings.mqtt_use_tls ||
       settings.ha_enabled !== localSettings.ha_enabled ||
       settings.ha_url !== localSettings.ha_url ||
-      settings.ha_token !== localSettings.ha_token;
+      settings.ha_token !== localSettings.ha_token ||
+      (settings.library_archive_mode ?? 'ask') !== (localSettings.library_archive_mode ?? 'ask') ||
+      Number(settings.library_disk_warning_gb ?? 5) !== Number(localSettings.library_disk_warning_gb ?? 5);
 
     if (!hasChanges) {
       return;
@@ -432,6 +436,8 @@ export function SettingsPage() {
         ha_enabled: localSettings.ha_enabled,
         ha_url: localSettings.ha_url,
         ha_token: localSettings.ha_token,
+        library_archive_mode: localSettings.library_archive_mode,
+        library_disk_warning_gb: localSettings.library_disk_warning_gb,
       };
       updateMutation.mutate(settingsToSave);
     }, 500);
@@ -943,12 +949,63 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Sidebar Links */}
-          <ExternalLinksSettings />
+          {/* File Manager Settings */}
+          <Card>
+            <CardHeader>
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <FileText className="w-5 h-5 text-bambu-green" />
+                File Manager
+              </h2>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Archive Mode */}
+              <div>
+                <label className="block text-sm text-bambu-gray mb-1">
+                  Create Archive Entry When Printing
+                </label>
+                <select
+                  value={localSettings.library_archive_mode ?? 'ask'}
+                  onChange={(e) => updateSetting('library_archive_mode', e.target.value as 'always' | 'never' | 'ask')}
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                >
+                  <option value="always">Always create archive entry</option>
+                  <option value="never">Never create archive entry</option>
+                  <option value="ask">Ask each time</option>
+                </select>
+                <p className="text-xs text-bambu-gray mt-1">
+                  When printing from File Manager, optionally create an archive entry
+                </p>
+              </div>
+
+              {/* Disk Space Warning Threshold */}
+              <div>
+                <label className="block text-sm text-bambu-gray mb-1">
+                  Low Disk Space Warning
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0.5"
+                    max="100"
+                    step="0.5"
+                    value={localSettings.library_disk_warning_gb ?? 5}
+                    onChange={(e) => updateSetting('library_disk_warning_gb', parseFloat(e.target.value) || 5)}
+                    className="w-24 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                  />
+                  <span className="text-bambu-gray">GB</span>
+                </div>
+                <p className="text-xs text-bambu-gray mt-1">
+                  Show warning when free disk space falls below this threshold
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
-        {/* Right Column - Updates */}
+        {/* Third Column - Sidebar Links & Updates */}
         <div className="space-y-6 flex-1 lg:max-w-sm">
+          {/* Sidebar Links */}
+          <ExternalLinksSettings />
 
           <Card>
             <CardHeader>

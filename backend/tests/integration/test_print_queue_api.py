@@ -170,6 +170,81 @@ class TestPrintQueueAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_add_to_queue_with_plate_id(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Verify item can be added to queue with plate_id for multi-plate 3MF."""
+        printer = await printer_factory()
+        archive = await archive_factory()
+
+        data = {
+            "printer_id": printer.id,
+            "archive_id": archive.id,
+            "plate_id": 3,
+        }
+        response = await async_client.post("/api/v1/queue/", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["plate_id"] == 3
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_with_print_options(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Verify item can be added to queue with print options."""
+        printer = await printer_factory()
+        archive = await archive_factory()
+
+        data = {
+            "printer_id": printer.id,
+            "archive_id": archive.id,
+            "bed_levelling": False,
+            "flow_cali": True,
+            "vibration_cali": False,
+            "layer_inspect": True,
+            "timelapse": True,
+            "use_ams": False,
+        }
+        response = await async_client.post("/api/v1/queue/", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["bed_levelling"] is False
+        assert result["flow_cali"] is True
+        assert result["vibration_cali"] is False
+        assert result["layer_inspect"] is True
+        assert result["timelapse"] is True
+        assert result["use_ams"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_queue_item_plate_id(self, async_client: AsyncClient, queue_item_factory, db_session):
+        """Verify queue item plate_id can be updated."""
+        item = await queue_item_factory()
+        response = await async_client.patch(f"/api/v1/queue/{item.id}", json={"plate_id": 5})
+        assert response.status_code == 200
+        result = response.json()
+        assert result["plate_id"] == 5
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_queue_item_print_options(self, async_client: AsyncClient, queue_item_factory, db_session):
+        """Verify queue item print options can be updated."""
+        item = await queue_item_factory()
+        response = await async_client.patch(
+            f"/api/v1/queue/{item.id}",
+            json={
+                "bed_levelling": False,
+                "timelapse": True,
+            },
+        )
+        assert response.status_code == 200
+        result = response.json()
+        assert result["bed_levelling"] is False
+        assert result["timelapse"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_get_queue_item(self, async_client: AsyncClient, queue_item_factory, db_session):
         """Verify single queue item can be retrieved."""
         item = await queue_item_factory()

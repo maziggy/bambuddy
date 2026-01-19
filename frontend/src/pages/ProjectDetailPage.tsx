@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -18,11 +18,7 @@ import {
   AlertTriangle,
   Save,
   X,
-  Paperclip,
-  Upload,
-  Download,
   Trash2,
-  File,
   Plus,
   History,
   FolderTree,
@@ -30,6 +26,7 @@ import {
   Layers,
   ExternalLink,
   ShoppingCart,
+  FolderOpen,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { parseUTCDate, formatDateOnly, formatDateTime, type TimeFormat } from '../utils/date';
@@ -202,8 +199,6 @@ export function ProjectDetailPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesContent, setNotesContent] = useState('');
-  const [uploadingAttachment, setUploadingAttachment] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const projectId = parseInt(id || '0', 10);
 
@@ -236,6 +231,12 @@ export function ProjectDetailPage() {
     queryFn: api.getSettings,
   });
 
+  const { data: linkedFolders } = useQuery({
+    queryKey: ['project-folders', projectId],
+    queryFn: () => api.getLibraryFoldersByProject(projectId),
+    enabled: projectId > 0,
+  });
+
   const currency = settings?.currency || '$';
   const timeFormat: TimeFormat = settings?.time_format || 'system';
 
@@ -265,49 +266,6 @@ export function ProjectDetailPage() {
   const handleCancelNotes = () => {
     setEditingNotes(false);
     setNotesContent('');
-  };
-
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setUploadingAttachment(true);
-    try {
-      const result = await api.uploadProjectAttachment(projectId, file);
-      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
-      showToast(`Uploaded: ${result.original_name}`, 'success');
-    } catch (error) {
-      showToast((error as Error).message, 'error');
-    } finally {
-      setUploadingAttachment(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    }
-  };
-
-  const handleDeleteAttachment = (filename: string, originalName: string) => {
-    setConfirmModal({
-      isOpen: true,
-      title: 'Delete Attachment',
-      message: `Are you sure you want to delete "${originalName}"?`,
-      onConfirm: async () => {
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
-        try {
-          await api.deleteProjectAttachment(projectId, filename);
-          queryClient.invalidateQueries({ queryKey: ['project', projectId] });
-          showToast('Attachment deleted', 'success');
-        } catch (error) {
-          showToast((error as Error).message, 'error');
-        }
-      },
-    });
-  };
-
-  const formatFileSize = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   // BOM handlers
@@ -787,82 +745,49 @@ export function ProjectDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Attachments section */}
+      {/* Files section - linked folders from File Manager */}
       <Card>
         <CardContent className="p-4">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <Paperclip className="w-5 h-5" />
-              Attachments ({project.attachments?.length || 0})
+              <FolderOpen className="w-5 h-5" />
+              Files
             </h2>
-            <div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                onChange={handleFileSelect}
-                className="hidden"
-              />
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploadingAttachment}
-              >
-                {uploadingAttachment ? (
-                  <Loader2 className="w-4 h-4 animate-spin mr-1" />
-                ) : (
-                  <Upload className="w-4 h-4 mr-1" />
-                )}
-                Upload
-              </Button>
-            </div>
           </div>
 
           <p className="text-xs text-bambu-gray mb-3">
-            Upload any file: images (PNG, JPG), PDFs, STL files, or documents.
+            <Link to="/files" className="text-bambu-green hover:underline">
+              Link folders from the File Manager
+            </Link>
+            {' '}to this project for quick access.
           </p>
 
-          {project.attachments && project.attachments.length > 0 ? (
+          {linkedFolders && linkedFolders.length > 0 ? (
             <div className="space-y-2">
-              {project.attachments.map((attachment) => (
-                <div
-                  key={attachment.filename}
-                  className="flex items-center justify-between p-3 bg-bambu-dark rounded-lg"
+              {linkedFolders.map((folder) => (
+                <Link
+                  key={folder.id}
+                  to={`/files?folder=${folder.id}`}
+                  className="flex items-center justify-between p-3 bg-bambu-dark rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <File className="w-5 h-5 text-bambu-gray flex-shrink-0" />
+                    <FolderOpen className="w-5 h-5 text-bambu-green flex-shrink-0" />
                     <div className="min-w-0">
                       <p className="text-sm text-white truncate">
-                        {attachment.original_name}
+                        {folder.name}
                       </p>
                       <p className="text-xs text-bambu-gray">
-                        {formatFileSize(attachment.size)}
+                        {folder.file_count} file{folder.file_count !== 1 ? 's' : ''}
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <a
-                      href={api.getProjectAttachmentUrl(projectId, attachment.filename)}
-                      download={attachment.original_name}
-                      className="p-2 rounded hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray hover:text-white"
-                      title="Download"
-                    >
-                      <Download className="w-4 h-4" />
-                    </a>
-                    <button
-                      onClick={() => handleDeleteAttachment(attachment.filename, attachment.original_name)}
-                      className="p-2 rounded hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray hover:text-red-400"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
+                  <ChevronRight className="w-4 h-4 text-bambu-gray flex-shrink-0" />
+                </Link>
               ))}
             </div>
           ) : (
             <p className="text-bambu-gray/70 text-sm italic">
-              No attachments yet. Click Upload to add files.
+              No folders linked. Go to File Manager and link a folder to this project.
             </p>
           )}
         </CardContent>

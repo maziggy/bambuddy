@@ -33,6 +33,17 @@ class PrintQueueItem(Base):
     # Format: "[5, -1, 2, -1]" where position = slot_id-1, value = global tray ID (-1 = unused)
     ams_mapping: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Plate ID for multi-plate 3MF files (1-indexed, None = auto-detect/plate 1)
+    plate_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Print options
+    bed_levelling: Mapped[bool] = mapped_column(Boolean, default=True)
+    flow_cali: Mapped[bool] = mapped_column(Boolean, default=False)
+    vibration_cali: Mapped[bool] = mapped_column(Boolean, default=True)
+    layer_inspect: Mapped[bool] = mapped_column(Boolean, default=False)
+    timelapse: Mapped[bool] = mapped_column(Boolean, default=False)
+    use_ams: Mapped[bool] = mapped_column(Boolean, default=True)
+
     # Status: pending, printing, completed, failed, skipped, cancelled
     status: Mapped[str] = mapped_column(String(20), default="pending")
 

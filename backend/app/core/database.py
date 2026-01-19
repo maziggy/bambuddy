@@ -39,6 +39,7 @@ async def init_db():
         external_link,
         filament,
         kprofile_note,
+        library,
         maintenance,
         notification,
         notification_template,
@@ -468,6 +469,24 @@ async def run_migrations(conn):
     except Exception:
         pass
 
+    # Migration: Add project_id column to library_folders for linking folders to projects
+    try:
+        await conn.execute(
+            text("ALTER TABLE library_folders ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL")
+        )
+    except Exception:
+        pass
+
+    # Migration: Add archive_id column to library_folders for linking folders to archives
+    try:
+        await conn.execute(
+            text(
+                "ALTER TABLE library_folders ADD COLUMN archive_id INTEGER REFERENCES print_archives(id) ON DELETE SET NULL"
+            )
+        )
+    except Exception:
+        pass
+
     # Migration: Make ip_address nullable for HA plugs (SQLite requires table recreation)
     try:
         # Check if ip_address is currently NOT NULL
@@ -525,6 +544,38 @@ async def run_migrations(conn):
             )
             await conn.execute(text("DROP TABLE smart_plugs"))
             await conn.execute(text("ALTER TABLE smart_plugs_new RENAME TO smart_plugs"))
+    except Exception:
+        pass
+
+    # Migration: Add plate_id column to print_queue for multi-plate 3MF support
+    try:
+        await conn.execute(text("ALTER TABLE print_queue ADD COLUMN plate_id INTEGER"))
+    except Exception:
+        pass
+
+    # Migration: Add print options columns to print_queue
+    try:
+        await conn.execute(text("ALTER TABLE print_queue ADD COLUMN bed_levelling BOOLEAN DEFAULT 1"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE print_queue ADD COLUMN flow_cali BOOLEAN DEFAULT 0"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE print_queue ADD COLUMN vibration_cali BOOLEAN DEFAULT 1"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE print_queue ADD COLUMN layer_inspect BOOLEAN DEFAULT 0"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE print_queue ADD COLUMN timelapse BOOLEAN DEFAULT 0"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE print_queue ADD COLUMN use_ams BOOLEAN DEFAULT 1"))
     except Exception:
         pass
 

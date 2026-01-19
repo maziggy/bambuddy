@@ -31,11 +31,19 @@ class ThreeMFParser:
         """Extract metadata from 3MF file."""
         try:
             with zipfile.ZipFile(self.file_path, "r") as zf:
-                self._parse_slice_info(zf)
+                self._parse_slice_info(zf)  # Now sets self.plate_number from slice_info
                 self._parse_project_settings(zf)
                 self._parse_gcode_header(zf)
                 self._parse_3dmodel(zf)
-                self._extract_thumbnail(zf)
+                self._extract_thumbnail(zf)  # Uses correct plate_number for thumbnail
+
+                # Enhance print_name with plate info if this is a multi-plate export
+                plate_index = self.metadata.get("_plate_index")
+                if plate_index and plate_index > 1:
+                    # Append plate number to distinguish from other plates
+                    existing_name = self.metadata.get("print_name", "")
+                    if existing_name and f"Plate {plate_index}" not in existing_name:
+                        self.metadata["print_name"] = f"{existing_name} - Plate {plate_index}"
 
                 # ALWAYS prefer slice_info values - they contain ONLY filaments actually used in print
                 # project_settings contains ALL configured filaments (AMS slots), not just used ones
@@ -47,6 +55,7 @@ class ThreeMFParser:
                 # Clean up internal keys
                 self.metadata.pop("_slice_filament_type", None)
                 self.metadata.pop("_slice_filament_color", None)
+                self.metadata.pop("_plate_index", None)
         except Exception:
             pass
         return self.metadata
@@ -58,21 +67,26 @@ class ThreeMFParser:
                 content = zf.read("Metadata/slice_info.config").decode()
                 root = ET.fromstring(content)
 
-                # Get the correct plate's metadata (use plate_number if specified)
-                if self.plate_number:
-                    plate = root.find(f".//plate[@plate_idx='{self.plate_number}']")
-                    if plate is None:
-                        # Fallback to first plate if specific plate not found
-                        plate = root.find(".//plate")
-                else:
-                    plate = root.find(".//plate")
+                # Find the plate element (single-plate exports only have one plate)
+                plate = root.find(".//plate")
 
                 if plate is not None:
-                    # Get prediction and weight from metadata elements
+                    # Extract metadata from plate element
                     for meta in plate.findall("metadata"):
                         key = meta.get("key")
                         value = meta.get("value")
-                        if key == "prediction" and value:
+                        if key == "index" and value:
+                            # Extract plate index - this tells us which plate was exported
+                            try:
+                                extracted_index = int(value)
+                                # Set plate_number if not already set from filename
+                                if not self.plate_number:
+                                    self.plate_number = extracted_index
+                                # Store in metadata for print_name generation
+                                self.metadata["_plate_index"] = extracted_index
+                            except ValueError:
+                                pass
+                        elif key == "prediction" and value:
                             self.metadata["print_time_seconds"] = int(value)
                         elif key == "weight" and value:
                             self.metadata["filament_used_grams"] = float(value)

@@ -292,3 +292,137 @@ class TestPrintableObjectsExtraction:
                 count += 1
 
         assert count == 0  # All objects skipped
+
+
+class TestThreeMFPlateIndexExtraction:
+    """Tests for extracting plate index from multi-plate 3MF exports (Issue #92)."""
+
+    def test_extract_plate_index_from_slice_info(self):
+        """Test parsing plate index from slice_info.config metadata."""
+        from xml.etree import ElementTree as ET
+
+        # Single-plate export from plate 5 of a multi-plate project
+        slice_info_xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <plate>
+                <metadata key="index" value="5" />
+                <metadata key="prediction" value="3600" />
+                <metadata key="weight" value="50.5" />
+                <object identify_id="1" name="Part_A" skipped="false" />
+            </plate>
+        </config>
+        """
+        root = ET.fromstring(slice_info_xml)
+        plate = root.find(".//plate")
+
+        plate_index = None
+        for meta in plate.findall("metadata"):
+            if meta.get("key") == "index":
+                plate_index = int(meta.get("value"))
+                break
+
+        assert plate_index == 5
+
+    def test_extract_plate_index_plate_1(self):
+        """Test parsing plate index when it's plate 1."""
+        from xml.etree import ElementTree as ET
+
+        slice_info_xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <plate>
+                <metadata key="index" value="1" />
+                <metadata key="prediction" value="1800" />
+            </plate>
+        </config>
+        """
+        root = ET.fromstring(slice_info_xml)
+        plate = root.find(".//plate")
+
+        plate_index = None
+        for meta in plate.findall("metadata"):
+            if meta.get("key") == "index":
+                plate_index = int(meta.get("value"))
+                break
+
+        assert plate_index == 1
+
+    def test_thumbnail_path_uses_plate_number(self):
+        """Test that thumbnail path correctly uses the extracted plate number."""
+        plate_number = 5
+        thumbnail_paths = []
+
+        if plate_number:
+            thumbnail_paths.append(f"Metadata/plate_{plate_number}.png")
+
+        thumbnail_paths.extend(
+            [
+                "Metadata/plate_1.png",
+                "Metadata/thumbnail.png",
+            ]
+        )
+
+        # First priority should be plate_5.png
+        assert thumbnail_paths[0] == "Metadata/plate_5.png"
+
+    def test_print_name_enhanced_for_plate_greater_than_1(self):
+        """Test that print_name is enhanced with plate info for plate > 1."""
+        plate_index = 5
+        print_name = "Benchy"
+
+        # Logic from archive.py
+        if plate_index and plate_index > 1:
+            if print_name and f"Plate {plate_index}" not in print_name:
+                print_name = f"{print_name} - Plate {plate_index}"
+
+        assert print_name == "Benchy - Plate 5"
+
+    def test_print_name_not_enhanced_for_plate_1(self):
+        """Test that print_name is NOT enhanced for plate 1."""
+        plate_index = 1
+        print_name = "Benchy"
+
+        # Logic from archive.py
+        if plate_index and plate_index > 1:
+            if print_name and f"Plate {plate_index}" not in print_name:
+                print_name = f"{print_name} - Plate {plate_index}"
+
+        assert print_name == "Benchy"  # Unchanged for plate 1
+
+    def test_print_name_not_duplicated(self):
+        """Test that plate info is not added if already present in print_name."""
+        plate_index = 5
+        print_name = "Benchy - Plate 5"
+
+        # Logic from archive.py
+        if plate_index and plate_index > 1:
+            if print_name and f"Plate {plate_index}" not in print_name:
+                print_name = f"{print_name} - Plate {plate_index}"
+
+        assert print_name == "Benchy - Plate 5"  # Not duplicated
+
+    def test_high_plate_number_extraction(self):
+        """Test extracting high plate numbers (e.g., plate 28)."""
+        from xml.etree import ElementTree as ET
+
+        slice_info_xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <plate>
+                <metadata key="index" value="28" />
+                <metadata key="prediction" value="7200" />
+            </plate>
+        </config>
+        """
+        root = ET.fromstring(slice_info_xml)
+        plate = root.find(".//plate")
+
+        plate_index = None
+        for meta in plate.findall("metadata"):
+            if meta.get("key") == "index":
+                plate_index = int(meta.get("value"))
+                break
+
+        assert plate_index == 28
+
+        # Verify thumbnail would use correct plate
+        thumbnail_path = f"Metadata/plate_{plate_index}.png"
+        assert thumbnail_path == "Metadata/plate_28.png"

@@ -219,7 +219,9 @@ async def list_ha_entities(db: AsyncSession = Depends(get_db)):
     ha_token = await get_setting(db, "ha_token") or ""
 
     if not ha_url or not ha_token:
-        raise HTTPException(400, "Home Assistant not configured. Please set HA URL and token in Settings.")
+        raise HTTPException(
+            400, "Home Assistant not configured. Please set HA URL and token in Settings → Network → Home Assistant."
+        )
 
     entities = await homeassistant_service.list_entities(ha_url, ha_token)
     return [HAEntity(**e) for e in entities]

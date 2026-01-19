@@ -2,9 +2,9 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
-## [Unreleased]
+## [0.1.6b9] - 2026-01-19
 
-### Added
+### New Features
 - **Add to Queue from File Manager** - Queue sliced files directly from File Manager:
   - New "Add to Queue" toolbar button appears when sliced files are selected
   - Context menu and list view button options for individual files

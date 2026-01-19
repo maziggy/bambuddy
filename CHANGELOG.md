@@ -2,7 +2,7 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
-## [Unreleased]
+## [0.1.6b9] - 2026-01-19
 
 ### Added
 - **Add to Queue from File Manager** - Queue sliced files directly from File Manager:

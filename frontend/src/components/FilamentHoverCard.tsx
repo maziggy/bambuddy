@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react';
-import { Droplets, Link2, Copy, Check } from 'lucide-react';
+import { Droplets, Link2, Copy, Check, Settings2 } from 'lucide-react';
 
 interface FilamentData {
   vendor: 'Bambu Lab' | 'Generic';
@@ -17,19 +17,25 @@ interface SpoolmanConfig {
   hasUnlinkedSpools?: boolean; // Whether there are spools available to link
 }
 
+interface ConfigureSlotConfig {
+  enabled: boolean;
+  onConfigure?: () => void;
+}
+
 interface FilamentHoverCardProps {
   data: FilamentData;
   children: ReactNode;
   disabled?: boolean;
   className?: string;
   spoolman?: SpoolmanConfig;
+  configureSlot?: ConfigureSlotConfig;
 }
 
 /**
  * A hover card that displays filament details when hovering over AMS slots.
  * Replaces the basic browser tooltip with a styled popover.
  */
-export function FilamentHoverCard({ data, children, disabled, className = '', spoolman }: FilamentHoverCardProps) {
+export function FilamentHoverCard({ data, children, disabled, className = '', spoolman, configureSlot }: FilamentHoverCardProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState<'top' | 'bottom'>('top');
   const [copied, setCopied] = useState(false);
@@ -287,6 +293,23 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                   )}
                 </div>
               )}
+
+              {/* Configure slot section - always show if enabled */}
+              {configureSlot?.enabled && (
+                <div className={`${spoolman?.enabled && data.trayUuid ? '' : 'pt-2 mt-2 border-t border-bambu-dark-tertiary'}`}>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      configureSlot.onConfigure?.();
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-blue/20 hover:bg-bambu-blue/30 text-bambu-blue"
+                    title="Configure slot with filament profile and K value"
+                  >
+                    <Settings2 className="w-3.5 h-3.5" />
+                    Configure
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -307,10 +330,16 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
   );
 }
 
+interface EmptySlotHoverCardProps {
+  children: ReactNode;
+  className?: string;
+  configureSlot?: ConfigureSlotConfig;
+}
+
 /**
- * Wrapper for empty slots - just shows "Empty" on hover
+ * Wrapper for empty slots - shows "Empty" on hover with optional configure button
  */
-export function EmptySlotHoverCard({ children, className = '' }: { children: ReactNode; className?: string }) {
+export function EmptySlotHoverCard({ children, className = '', configureSlot }: EmptySlotHoverCardProps) {
   const [isVisible, setIsVisible] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -344,10 +373,28 @@ export function EmptySlotHoverCard({ children, className = '' }: { children: Rea
           animate-in fade-in-0 zoom-in-95 duration-150
         ">
           <div className="
-            px-3 py-1.5 bg-bambu-dark-secondary border border-bambu-dark-tertiary
-            rounded-md shadow-lg text-xs text-bambu-gray whitespace-nowrap
+            bg-bambu-dark-secondary border border-bambu-dark-tertiary
+            rounded-md shadow-lg overflow-hidden
           ">
-            Empty slot
+            <div className="px-3 py-1.5 text-xs text-bambu-gray whitespace-nowrap">
+              Empty slot
+            </div>
+            {/* Configure slot button */}
+            {configureSlot?.enabled && (
+              <div className="px-2 pb-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    configureSlot.onConfigure?.();
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-blue/20 hover:bg-bambu-blue/30 text-bambu-blue"
+                  title="Configure slot with filament profile and K value"
+                >
+                  <Settings2 className="w-3.5 h-3.5" />
+                  Configure
+                </button>
+              </div>
+            )}
           </div>
           <div className="
             absolute left-1/2 -translate-x-1/2 top-full w-0 h-0

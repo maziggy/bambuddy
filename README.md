@@ -61,6 +61,7 @@
 - Resizable printer cards (S/M/L/XL)
 - Skip objects during print
 - AMS slot RFID re-read
+- AMS slot configuration (custom presets, K profiles, color picker)
 - HMS error monitoring with history
 - Print success rates & trends
 - Filament usage tracking
@@ -287,6 +288,8 @@ Open **http://localhost:8000** in your browser.
 
 > **macOS/Windows users:** Docker Desktop doesn't support `network_mode: host`. Edit docker-compose.yml: comment out `network_mode: host` and uncomment the `ports:` section. Printer discovery won't work - add printers manually by IP.
 
+> **Linux users:** If you get "permission denied" errors, either prefix commands with `sudo` (e.g., `sudo docker compose up -d`) or [add your user to the docker group](https://docs.docker.com/engine/install/linux-postinstall/).
+
 <details>
 <summary><strong>Docker Configuration & Commands</strong></summary>
 
@@ -295,6 +298,7 @@ Open **http://localhost:8000** in your browser.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `TZ` | `UTC` | Your timezone (e.g., `America/New_York`, `Europe/Berlin`) |
+| `PORT` | `8000` | Port BamBuddy runs on (with host networking mode) |
 | `DEBUG` | `false` | Enable debug logging |
 | `LOG_LEVEL` | `INFO` | Log level: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 

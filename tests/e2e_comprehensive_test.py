@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Comprehensive end-to-end test for Bambuddy application."""
 
+import os
 import time
 
 from playwright.sync_api import expect, sync_playwright
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.environ.get("BAMBUDDY_URL", "http://localhost:8000")
 
 
 def test_navigation_and_sidebar(page):
@@ -365,7 +366,7 @@ def run_comprehensive_test():
             except Exception as e:
                 print(f"\n❌ {test_name} FAILED: {e}")
                 results[test_name] = False
-                page.screenshot(path=f'/tmp/bambuddy_error_{test_name.lower().replace(" ", "_")}.png')
+                page.screenshot(path=f"/tmp/bambuddy_error_{test_name.lower().replace(' ', '_')}.png")
 
         browser.close()
 

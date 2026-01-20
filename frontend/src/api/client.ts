@@ -1814,6 +1814,7 @@ export const api = {
       plates: Array<{
         index: number;
         name: string | null;
+        objects: string[];
         has_thumbnail: boolean;
         thumbnail_url: string | null;
         print_time_seconds: number | null;
@@ -2139,6 +2140,57 @@ export const api = {
     request<{ success: boolean }>(`/printers/${printerId}/slot-presets/${amsId}/${trayId}`, {
       method: 'DELETE',
     }),
+  configureAmsSlot: (
+    printerId: number,
+    amsId: number,
+    trayId: number,
+    config: {
+      tray_info_idx: string;
+      tray_type: string;
+      tray_sub_brands: string;
+      tray_color: string;
+      nozzle_temp_min: number;
+      nozzle_temp_max: number;
+      cali_idx: number;
+      nozzle_diameter: string;
+      setting_id?: string;
+      kprofile_filament_id?: string;
+      kprofile_setting_id?: string;
+      k_value?: number;
+    }
+  ) => {
+    const params = new URLSearchParams({
+      tray_info_idx: config.tray_info_idx,
+      tray_type: config.tray_type,
+      tray_sub_brands: config.tray_sub_brands,
+      tray_color: config.tray_color,
+      nozzle_temp_min: config.nozzle_temp_min.toString(),
+      nozzle_temp_max: config.nozzle_temp_max.toString(),
+      cali_idx: config.cali_idx.toString(),
+      nozzle_diameter: config.nozzle_diameter,
+    });
+    if (config.setting_id) {
+      params.set('setting_id', config.setting_id);
+    }
+    if (config.kprofile_filament_id) {
+      params.set('kprofile_filament_id', config.kprofile_filament_id);
+    }
+    if (config.kprofile_setting_id) {
+      params.set('kprofile_setting_id', config.kprofile_setting_id);
+    }
+    if (config.k_value !== undefined && config.k_value > 0) {
+      params.set('k_value', config.k_value.toString());
+    }
+    return request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/slots/${amsId}/${trayId}/configure?${params}`,
+      { method: 'POST' }
+    );
+  },
+  resetAmsSlot: (printerId: number, amsId: number, trayId: number) =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/ams/${amsId}/tray/${trayId}/reset`,
+      { method: 'POST' }
+    ),
 
   // Filaments
   listFilaments: () => request<Filament[]>('/filaments/'),

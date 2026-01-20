@@ -1006,6 +1006,7 @@ export function FileManagerPage() {
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['library-files'] });
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['archives'] }); // Archives are created when adding to queue
       setSelectedFiles([]);
 
       if (result.added.length > 0 && result.errors.length === 0) {

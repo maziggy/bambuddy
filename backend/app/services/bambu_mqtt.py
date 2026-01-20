@@ -358,6 +358,7 @@ class BambuMQTTClient:
             # Track last message time - receiving a message proves we're connected
             self._last_message_time = time.time()
             self.state.connected = True
+
             # TEMP: Dump full payload once to find extruder state field
             if not hasattr(self, "_payload_dumped"):
                 self._payload_dumped = True
@@ -1858,7 +1859,9 @@ class BambuMQTTClient:
             True if the request was sent, False if not connected.
         """
         if not self._client or not self.state.connected:
+            logger.warning(f"[{self.serial_number}] request_status_update: not connected")
             return False
+        logger.info(f"[{self.serial_number}] Requesting status update (pushall)")
         self._request_push_all()
         # Note: get_accessories returns stale nozzle data on H2D.
         # The correct nozzle data comes from push_status response.
@@ -3155,20 +3158,22 @@ class BambuMQTTClient:
         tray_color: str,
         nozzle_temp_min: int,
         nozzle_temp_max: int,
-        k: float,
+        setting_id: str = "",
     ) -> bool:
-        """Set AMS tray filament settings including K (pressure advance) value.
+        """Set AMS tray filament settings (type, color, temperature).
+
+        Note: K value is set separately via extrusion_cali_sel command.
 
         Args:
-            ams_id: AMS unit ID (0-3)
+            ams_id: AMS unit ID (0-3 for regular AMS, 128-135 for HT AMS)
             tray_id: Tray ID within the AMS (0-3)
-            tray_info_idx: Filament preset ID (e.g., "GFA00")
+            tray_info_idx: Filament ID short format (e.g., "GFL05")
             tray_type: Filament type (e.g., "PLA", "PETG")
             tray_sub_brands: Sub-brand name (e.g., "PLA Basic", "PETG HF")
             tray_color: Color in RRGGBBAA hex format (e.g., "FFFF00FF")
             nozzle_temp_min: Minimum nozzle temperature
             nozzle_temp_max: Maximum nozzle temperature
-            k: Pressure advance (K) value (e.g., 0.020)
+            setting_id: Full setting ID with version (e.g., "GFSL05_07") - optional
 
         Returns:
             True if command was sent, False otherwise
@@ -3177,25 +3182,194 @@ class BambuMQTTClient:
             logger.warning(f"[{self.serial_number}] Cannot set AMS filament setting: not connected")
             return False
 
+        # Calculate slot_id based on AMS type
+        if ams_id <= 3:
+            slot_id = tray_id
+        else:
+            # AMS-HT or external: slot_id = 0
+            slot_id = 0
+
         command = {
             "print": {
                 "command": "ams_filament_setting",
                 "ams_id": ams_id,
                 "tray_id": tray_id,
+                "slot_id": slot_id,
                 "tray_info_idx": tray_info_idx,
                 "tray_type": tray_type,
                 "tray_sub_brands": tray_sub_brands,
                 "tray_color": tray_color,
                 "nozzle_temp_min": nozzle_temp_min,
                 "nozzle_temp_max": nozzle_temp_max,
-                "k": k,
+                "sequence_id": "0",
+            }
+        }
+
+        # Include setting_id if provided (helps slicer show correct profile)
+        if setting_id:
+            command["print"]["setting_id"] = setting_id
+
+        command_json = json.dumps(command)
+        logger.info(
+            f"[{self.serial_number}] Publishing ams_filament_setting: AMS {ams_id}, tray {tray_id}, tray_info_idx={tray_info_idx}, setting_id={setting_id}"
+        )
+        logger.debug(f"[{self.serial_number}] ams_filament_setting command: {command_json}")
+        self._client.publish(self.topic_publish, command_json, qos=1)
+        return True
+
+    def reset_ams_slot(self, ams_id: int, tray_id: int) -> bool:
+        """Reset an AMS slot to empty/unconfigured state.
+
+        Args:
+            ams_id: AMS unit ID (0-3 for regular AMS, 128-135 for HT AMS)
+            tray_id: Tray ID within the AMS (0-3)
+
+        Returns:
+            True if command was sent, False otherwise
+        """
+        if not self._client or not self.state.connected:
+            logger.warning(f"[{self.serial_number}] Cannot reset AMS slot: not connected")
+            return False
+
+        # Calculate slot_id based on AMS type
+        if ams_id <= 3:
+            slot_id = tray_id
+        else:
+            slot_id = 0
+
+        command = {
+            "print": {
+                "command": "ams_filament_setting",
+                "ams_id": ams_id,
+                "tray_id": tray_id,
+                "slot_id": slot_id,
+                "tray_info_idx": "",
+                "tray_type": "",
+                "tray_sub_brands": "",
+                "tray_color": "00000000",
+                "nozzle_temp_min": 0,
+                "nozzle_temp_max": 0,
                 "sequence_id": "0",
             }
         }
 
         command_json = json.dumps(command)
-        logger.info(f"[{self.serial_number}] Publishing ams_filament_setting: AMS {ams_id}, tray {tray_id}, k={k}")
-        logger.debug(f"[{self.serial_number}] ams_filament_setting command: {command_json}")
+        logger.info(f"[{self.serial_number}] Resetting AMS slot: AMS {ams_id}, tray {tray_id}")
+        logger.debug(f"[{self.serial_number}] reset_ams_slot command: {command_json}")
+        self._client.publish(self.topic_publish, command_json, qos=1)
+        return True
+
+    def extrusion_cali_sel(
+        self,
+        ams_id: int,
+        tray_id: int,
+        cali_idx: int,
+        filament_id: str,
+        nozzle_diameter: str = "0.4",
+        setting_id: str | None = None,
+    ) -> bool:
+        """Set calibration profile (K value) for an AMS slot.
+
+        This command selects a K profile from the printer's calibration list.
+        Use cali_idx=-1 to use the default K value (0.020).
+
+        Args:
+            ams_id: AMS unit ID (0-3 for regular AMS, 128-135 for HT AMS)
+            tray_id: Tray ID within the AMS (0-3)
+            cali_idx: Calibration profile index (-1 for default)
+            filament_id: Filament preset ID (same as tray_info_idx)
+            nozzle_diameter: Nozzle diameter string (e.g., "0.4")
+            setting_id: Full setting ID with version (e.g., "GFSL05_07") - optional
+
+        Returns:
+            True if command was sent, False otherwise
+        """
+        if not self._client or not self.state.connected:
+            logger.warning(f"[{self.serial_number}] Cannot set calibration: not connected")
+            return False
+
+        # Calculate slot_id based on AMS type
+        # tray_id in the command should be the local tray index (0-3)
+        if ams_id <= 3:
+            slot_id = tray_id
+        elif ams_id >= 128 and ams_id <= 135:
+            slot_id = 0
+        else:
+            slot_id = 0
+
+        command = {
+            "print": {
+                "command": "extrusion_cali_sel",
+                "cali_idx": cali_idx,
+                "filament_id": filament_id,
+                "nozzle_diameter": nozzle_diameter,
+                "ams_id": ams_id,
+                "tray_id": tray_id,  # Local tray index (0-3), not global
+                "slot_id": slot_id,
+                "sequence_id": "0",
+            }
+        }
+
+        # Include setting_id if provided (helps slicer show correct K profile)
+        if setting_id:
+            command["print"]["setting_id"] = setting_id
+
+        command_json = json.dumps(command)
+        logger.info(
+            f"[{self.serial_number}] Publishing extrusion_cali_sel: AMS {ams_id}, tray {tray_id}, cali_idx={cali_idx}, setting_id={setting_id}"
+        )
+        logger.debug(f"[{self.serial_number}] extrusion_cali_sel command: {command_json}")
+        self._client.publish(self.topic_publish, command_json, qos=1)
+        return True
+
+    def extrusion_cali_set(
+        self,
+        tray_id: int,
+        k_value: float,
+        n_coef: float = 0.0,
+        nozzle_diameter: str = "0.4",
+        bed_temp: int = 60,
+        nozzle_temp: int = 220,
+        max_volumetric_speed: float = 20.0,
+    ) -> bool:
+        """Directly set K value (pressure advance) for a tray.
+
+        This command sets the K value directly without selecting from stored profiles.
+        Use this when you want to apply a specific K value to a tray.
+
+        Args:
+            tray_id: Global tray ID (ams_id * 4 + slot)
+            k_value: Pressure advance K value (e.g., 0.020)
+            n_coef: N coefficient (usually 0.0 for manual, 1.4 for auto-calibration)
+            nozzle_diameter: Nozzle diameter string (e.g., "0.4")
+            bed_temp: Bed temperature for calibration reference
+            nozzle_temp: Nozzle temperature for calibration reference
+            max_volumetric_speed: Max volumetric speed for calibration reference
+
+        Returns:
+            True if command was sent, False otherwise
+        """
+        if not self._client or not self.state.connected:
+            logger.warning(f"[{self.serial_number}] Cannot set K value: not connected")
+            return False
+
+        command = {
+            "print": {
+                "command": "extrusion_cali_set",
+                "tray_id": tray_id,
+                "k_value": k_value,
+                "n_coef": n_coef,
+                "nozzle_diameter": nozzle_diameter,
+                "bed_temp": bed_temp,
+                "nozzle_temp": nozzle_temp,
+                "max_volumetric_speed": max_volumetric_speed,
+                "sequence_id": "0",
+            }
+        }
+
+        command_json = json.dumps(command)
+        logger.info(f"[{self.serial_number}] Publishing extrusion_cali_set: tray {tray_id}, k_value={k_value}")
+        logger.debug(f"[{self.serial_number}] extrusion_cali_set command: {command_json}")
         self._client.publish(self.topic_publish, command_json, qos=1)
         return True
 

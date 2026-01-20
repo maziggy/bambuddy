@@ -6,6 +6,9 @@
 
 set -e
 
+# Configuration
+PORT=${PORT:-8000}
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -214,7 +217,7 @@ if [ "$RUN_INTEGRATION" = true ]; then
         print_info "Running integration tests..."
 
         # Test health endpoint
-        HEALTH_RESPONSE=$(sudo docker compose -f docker-compose.test.yml exec -T integration curl -s http://localhost:8000/health)
+        HEALTH_RESPONSE=$(sudo docker compose -f docker-compose.test.yml exec -T integration curl -s http://localhost:${PORT}/health)
         if echo "$HEALTH_RESPONSE" | grep -q "healthy"; then
             print_success "Health endpoint responds correctly"
         else
@@ -222,7 +225,7 @@ if [ "$RUN_INTEGRATION" = true ]; then
         fi
 
         # Test API endpoints
-        API_RESPONSE=$(sudo docker compose -f docker-compose.test.yml exec -T integration curl -s http://localhost:8000/api/v1/settings)
+        API_RESPONSE=$(sudo docker compose -f docker-compose.test.yml exec -T integration curl -s http://localhost:${PORT}/api/v1/settings)
         if echo "$API_RESPONSE" | grep -q "settings"; then
             print_success "Settings API endpoint responds"
         else
@@ -231,7 +234,7 @@ if [ "$RUN_INTEGRATION" = true ]; then
         fi
 
         # Test static files
-        STATIC_RESPONSE=$(sudo docker compose -f docker-compose.test.yml exec -T integration curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/)
+        STATIC_RESPONSE=$(sudo docker compose -f docker-compose.test.yml exec -T integration curl -s -o /dev/null -w "%{http_code}" http://localhost:${PORT}/)
         if [ "$STATIC_RESPONSE" = "200" ]; then
             print_success "Static files served correctly"
         else

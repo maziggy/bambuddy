@@ -280,6 +280,19 @@ async def on_ams_change(printer_id: int, ams_data: list):
     except Exception:
         pass  # Don't fail AMS callback if MQTT fails
 
+    # Broadcast AMS change via WebSocket (bypasses status_key deduplication)
+    # This ensures frontend gets immediate updates when AMS slots are configured
+    try:
+        state = printer_manager.get_status(printer_id)
+        if state:
+            logger.info(f"[Printer {printer_id}] Broadcasting AMS change via WebSocket")
+            await ws_manager.send_printer_status(
+                printer_id,
+                printer_state_to_dict(state, printer_id, printer_manager.get_model(printer_id)),
+            )
+    except Exception as e:
+        logger.warning(f"Failed to broadcast AMS change for printer {printer_id}: {e}")
+
     try:
         async with async_session() as db:
             from backend.app.api.routes.settings import get_setting

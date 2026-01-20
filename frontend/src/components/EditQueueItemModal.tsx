@@ -462,10 +462,12 @@ export function EditQueueItemModal({ item, onClose }: EditQueueItemModalProps) {
                       )}
                       <div className="min-w-0 flex-1">
                         <p className="text-sm text-white font-medium truncate">
-                          Plate {plate.index}
+                          {plate.name || `Plate ${plate.index}`}
                         </p>
                         <p className="text-xs text-bambu-gray truncate">
-                          {plate.name || `${plate.filaments.length} filament${plate.filaments.length !== 1 ? 's' : ''}`}
+                          {plate.objects?.length > 0
+                            ? plate.objects.slice(0, 3).join(', ') + (plate.objects.length > 3 ? '...' : '')
+                            : `${plate.filaments.length} filament${plate.filaments.length !== 1 ? 's' : ''}`}
                         </p>
                       </div>
                       {selectedPlate === plate.index && (

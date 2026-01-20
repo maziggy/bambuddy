@@ -5,11 +5,12 @@ These tests verify that toggle settings (auto_off, notification events, etc.)
 are properly persisted to the database and survive page reloads.
 """
 
+import os
 import time
 
 from playwright.sync_api import expect, sync_playwright
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.environ.get("BAMBUDDY_URL", "http://localhost:8000")
 
 
 def test_smart_plug_auto_off_toggle_persistence(page):
@@ -88,9 +89,9 @@ def test_smart_plug_auto_off_toggle_persistence(page):
         toggle = page.locator('button[role="switch"]').nth(1)
 
     persisted_state = toggle.get_attribute("aria-checked")
-    assert (
-        persisted_state == new_state
-    ), f"State should persist after reload. Expected {new_state}, got {persisted_state}"
+    assert persisted_state == new_state, (
+        f"State should persist after reload. Expected {new_state}, got {persisted_state}"
+    )
     print(f"✓ Toggle state persisted after reload: {persisted_state}")
 
     # Restore original state
@@ -172,9 +173,9 @@ def test_notification_event_toggle_persistence(page):
 
     if toggle.is_visible():
         persisted_state = toggle.get_attribute("aria-checked")
-        assert (
-            persisted_state == new_state
-        ), f"State should persist after reload. Expected {new_state}, got {persisted_state}"
+        assert persisted_state == new_state, (
+            f"State should persist after reload. Expected {new_state}, got {persisted_state}"
+        )
         print(f"✓ Toggle state persisted after reload: {persisted_state}")
 
         # Restore original state

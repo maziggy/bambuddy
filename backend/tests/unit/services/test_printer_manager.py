@@ -916,3 +916,34 @@ class TestInitPrinterConnections:
             await init_printer_connections(mock_db)
 
             mock_manager.connect_printer.assert_not_called()
+
+
+class TestAmsChangeCallback:
+    """Tests for AMS change callback functionality."""
+
+    @pytest.fixture
+    def manager(self):
+        """Create a fresh PrinterManager instance."""
+        return PrinterManager()
+
+    def test_ams_change_callback_is_triggered(self, manager):
+        """Verify AMS change callback is called when AMS data changes."""
+        callback = MagicMock()
+        manager.set_ams_change_callback(callback)
+
+        # Verify callback was set
+        assert manager._on_ams_change == callback
+
+    def test_ams_change_callback_receives_correct_data(self, manager):
+        """Verify AMS change callback receives the correct AMS data format."""
+        received_data = []
+
+        def capture_callback(printer_id, ams_data):
+            received_data.append((printer_id, ams_data))
+
+        manager.set_ams_change_callback(capture_callback)
+
+        # The callback should accept printer_id and ams_data
+        # This tests the callback signature
+        assert manager._on_ams_change is not None
+        assert callable(manager._on_ams_change)

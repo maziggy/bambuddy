@@ -1067,6 +1067,169 @@ async def delete_slot_preset(
     return {"success": True}
 
 
+@router.post("/{printer_id}/slots/{ams_id}/{tray_id}/configure")
+async def configure_ams_slot(
+    printer_id: int,
+    ams_id: int,
+    tray_id: int,
+    tray_info_idx: str = Query(...),
+    tray_type: str = Query(...),
+    tray_sub_brands: str = Query(...),
+    tray_color: str = Query(...),
+    nozzle_temp_min: int = Query(...),
+    nozzle_temp_max: int = Query(...),
+    cali_idx: int = Query(-1),
+    nozzle_diameter: str = Query("0.4"),
+    setting_id: str = Query(""),
+    kprofile_filament_id: str = Query(""),
+    kprofile_setting_id: str = Query(""),
+    k_value: float = Query(0.0),
+):
+    """Configure an AMS slot with a specific filament setting and K profile.
+
+    This sends two commands to the printer:
+    1. ams_filament_setting - sets filament type, color, temperature
+    2. extrusion_cali_sel - sets the K profile (pressure advance value)
+
+    Args:
+        printer_id: Database ID of the printer
+        ams_id: AMS unit ID (0-3 for regular AMS, 128-135 for HT AMS)
+        tray_id: Tray ID within the AMS (0-3)
+        tray_info_idx: Filament ID short format (e.g., "GFL05") or user preset ID
+        tray_type: Filament type (e.g., "PLA", "PETG")
+        tray_sub_brands: Sub-brand/profile name (e.g., "PLA Basic", "PETG HF")
+        tray_color: Color in RRGGBBAA hex format (e.g., "FFFF00FF")
+        nozzle_temp_min: Minimum nozzle temperature
+        nozzle_temp_max: Maximum nozzle temperature
+        cali_idx: K profile calibration index (-1 for default 0.020)
+        nozzle_diameter: Nozzle diameter string (e.g., "0.4")
+        setting_id: Full setting ID with version (e.g., "GFSL05_07") - optional
+        kprofile_filament_id: K profile's filament_id for proper K profile linking
+        k_value: Direct K value to set (0.0 to skip direct K value setting)
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+    logger.info(f"[configure_ams_slot] printer_id={printer_id}, ams_id={ams_id}, tray_id={tray_id}")
+    logger.info(
+        f"[configure_ams_slot] tray_info_idx={tray_info_idx!r}, tray_type={tray_type!r}, tray_sub_brands={tray_sub_brands!r}"
+    )
+    logger.info(
+        f"[configure_ams_slot] setting_id={setting_id!r}, kprofile_filament_id={kprofile_filament_id!r}, kprofile_setting_id={kprofile_setting_id!r}"
+    )
+
+    # Get MQTT client for this printer
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(status_code=400, detail="Printer not connected")
+
+    # Send the filament setting command (type, color, temp)
+    success = client.ams_set_filament_setting(
+        ams_id=ams_id,
+        tray_id=tray_id,
+        tray_info_idx=tray_info_idx,
+        tray_type=tray_type,
+        tray_sub_brands=tray_sub_brands,
+        tray_color=tray_color,
+        nozzle_temp_min=nozzle_temp_min,
+        nozzle_temp_max=nozzle_temp_max,
+        setting_id=setting_id,
+    )
+
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to send filament configuration command")
+
+    # Send the calibration/K-profile commands
+    # Use the K profile's filament_id if provided, otherwise use tray_info_idx
+    filament_id_for_kprofile = kprofile_filament_id if kprofile_filament_id else tray_info_idx
+
+    # Method 1: Select existing calibration profile by cali_idx
+    # IMPORTANT: Only pass setting_id if the K profile itself has one (from kprofile_setting_id)
+    # Do NOT use the preset's setting_id as fallback - it breaks the K profile linking in the slicer
+    client.extrusion_cali_sel(
+        ams_id=ams_id,
+        tray_id=tray_id,
+        cali_idx=cali_idx,
+        filament_id=filament_id_for_kprofile,
+        nozzle_diameter=nozzle_diameter,
+        setting_id=kprofile_setting_id if kprofile_setting_id else None,
+    )
+
+    # Method 2: Also directly set the K value if provided (for better compatibility)
+    if k_value > 0:
+        # Calculate global tray ID for extrusion_cali_set
+        if ams_id <= 3:
+            global_tray_id = ams_id * 4 + tray_id
+        elif ams_id >= 128 and ams_id <= 135:
+            global_tray_id = (ams_id - 128) * 4 + tray_id
+        else:
+            global_tray_id = tray_id
+
+        client.extrusion_cali_set(
+            tray_id=global_tray_id,
+            k_value=k_value,
+            n_coef=0.0,
+            nozzle_diameter=nozzle_diameter,
+            bed_temp=60,
+            nozzle_temp=nozzle_temp_max,
+            max_volumetric_speed=20.0,
+        )
+
+    # Request fresh status push from printer so frontend gets updated data via WebSocket
+    logger.info("[configure_ams_slot] Requesting status update from printer")
+    update_result = client.request_status_update()
+    logger.info(f"[configure_ams_slot] Status update request result: {update_result}")
+
+    return {
+        "success": True,
+        "message": f"Configured AMS {ams_id} tray {tray_id} with {tray_sub_brands}",
+    }
+
+
+@router.post("/{printer_id}/ams/{ams_id}/tray/{tray_id}/reset")
+async def reset_ams_slot(
+    printer_id: int,
+    ams_id: int,
+    tray_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Reset an AMS slot to empty/unconfigured state.
+
+    This clears the filament configuration from the slot.
+    """
+    # Get MQTT client for this printer
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(status_code=400, detail="Printer not connected")
+
+    # Reset the slot
+    success = client.reset_ams_slot(ams_id=ams_id, tray_id=tray_id)
+
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to send reset command")
+
+    # Also delete any saved slot preset mapping
+    result = await db.execute(
+        select(SlotPresetMapping).where(
+            SlotPresetMapping.printer_id == printer_id,
+            SlotPresetMapping.ams_id == ams_id,
+            SlotPresetMapping.tray_id == tray_id,
+        )
+    )
+    mapping = result.scalar_one_or_none()
+    if mapping:
+        await db.delete(mapping)
+        await db.commit()
+
+    # Request fresh status push from printer so frontend gets updated data via WebSocket
+    client.request_status_update()
+
+    return {
+        "success": True,
+        "message": f"Reset AMS {ams_id} tray {tray_id}",
+    }
+
+
 @router.post("/{printer_id}/debug/simulate-print-complete")
 async def debug_simulate_print_complete(
     printer_id: int,

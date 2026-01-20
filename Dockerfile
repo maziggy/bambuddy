@@ -43,13 +43,15 @@ RUN mkdir -p /app/data /app/logs
 ENV PYTHONUNBUFFERED=1
 ENV DATA_DIR=/app/data
 ENV LOG_DIR=/app/logs
+ENV PORT=8000
 
 EXPOSE 8000
 
-# Health check
+# Health check (uses PORT env var via shell)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+    CMD python -c "import urllib.request, os; urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\", \"8000\")}/health')" || exit 1
 
 # Run the application
 # Use standard asyncio loop (uvloop has permission issues in some Docker environments)
-CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--loop", "asyncio"]
+# Port is configurable via PORT environment variable (default: 8000)
+CMD sh -c "uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000} --loop asyncio"

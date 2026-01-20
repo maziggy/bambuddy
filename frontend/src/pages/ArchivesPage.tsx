@@ -80,6 +80,17 @@ function formatDuration(seconds: number): string {
   return `${minutes}m`;
 }
 
+/**
+ * Check if an archive filename represents a sliced/printable file.
+ * Matches: .gcode, .gcode.3mf, .gcode.anything
+ */
+function isSlicedFile(filename: string | null | undefined): boolean {
+  if (!filename) return false;
+  const lower = filename.toLowerCase();
+  // Match .gcode at end OR .gcode. followed by anything (like .gcode.3mf)
+  return lower.endsWith('.gcode') || lower.includes('.gcode.');
+}
+
 // formatDate imported from '../utils/date' - handles UTC conversion
 
 function ArchiveCard({
@@ -246,7 +257,7 @@ function ArchiveCard({
     setContextMenu({ x: e.clientX, y: e.clientY });
   };
 
-  const isGcodeFile = archive.filename?.toLowerCase().includes('.gcode.');
+  const isGcodeFile = isSlicedFile(archive.filename);
 
   const contextMenuItems: ContextMenuItem[] = [
     // For gcode files: show Print option
@@ -632,17 +643,17 @@ function ArchiveCard({
           {/* File type badge */}
           <span
             className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-              archive.filename?.toLowerCase().includes('.gcode.')
+              isSlicedFile(archive.filename)
                 ? 'bg-bambu-green/20 text-bambu-green'
                 : 'bg-orange-500/20 text-orange-400'
             }`}
             title={
-              archive.filename?.toLowerCase().includes('.gcode.')
+              isSlicedFile(archive.filename)
                 ? 'Sliced file - ready to print'
                 : 'Source file only - no AMS mapping available'
             }
           >
-            {archive.filename?.toLowerCase().includes('.gcode.') ? 'GCODE' : 'SOURCE'}
+            {isSlicedFile(archive.filename) ? 'GCODE' : 'SOURCE'}
           </span>
           {archive.project_name && (
             <span
@@ -755,7 +766,7 @@ function ArchiveCard({
 
         {/* Actions */}
         <div className="flex gap-1 mt-3">
-          {archive.filename?.toLowerCase().includes('.gcode.') ? (
+          {isSlicedFile(archive.filename) ? (
             // Sliced file - can print directly
             <>
               <Button
@@ -1239,7 +1250,7 @@ function ArchiveListRow({
     setContextMenu({ x: e.clientX, y: e.clientY });
   };
 
-  const isGcodeFile = archive.filename?.toLowerCase().includes('.gcode.');
+  const isGcodeFile = isSlicedFile(archive.filename);
 
   const contextMenuItems: ContextMenuItem[] = [
     ...(isGcodeFile ? [
@@ -2067,7 +2078,7 @@ export function ArchivesPage() {
       const matchesTag = !filterTag || archiveTags.includes(filterTag);
 
       // File type filter (gcode = sliced, source = project file only)
-      const isGcodeFile = a.filename?.toLowerCase().includes('.gcode.');
+      const isGcodeFile = isSlicedFile(a.filename);
       const matchesFileType = filterFileType === 'all' ||
         (filterFileType === 'gcode' && isGcodeFile) ||
         (filterFileType === 'source' && !isGcodeFile);

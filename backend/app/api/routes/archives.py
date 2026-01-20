@@ -2010,14 +2010,39 @@ async def get_archive_plates(
 
             plate_indices.sort()
 
+            # Parse model_settings.config for plate names
+            # Plate names are stored with plater_id and plater_name keys
+            plate_names = {}  # plater_id -> name
+            if "Metadata/model_settings.config" in namelist:
+                try:
+                    model_content = zf.read("Metadata/model_settings.config").decode()
+                    model_root = ET.fromstring(model_content)
+                    for plate_elem in model_root.findall(".//plate"):
+                        plater_id = None
+                        plater_name = None
+                        for meta in plate_elem.findall("metadata"):
+                            key = meta.get("key")
+                            value = meta.get("value")
+                            if key == "plater_id" and value:
+                                try:
+                                    plater_id = int(value)
+                                except ValueError:
+                                    pass
+                            elif key == "plater_name" and value:
+                                plater_name = value.strip()
+                        if plater_id is not None and plater_name:
+                            plate_names[plater_id] = plater_name
+                except Exception:
+                    pass  # model_settings.config parsing is optional
+
             # Parse slice_info.config for plate metadata
-            plate_metadata = {}  # plate_index -> {filaments, prediction, weight, name}
+            plate_metadata = {}  # plate_index -> {filaments, prediction, weight, name, objects}
             if "Metadata/slice_info.config" in namelist:
                 content = zf.read("Metadata/slice_info.config").decode()
                 root = ET.fromstring(content)
 
                 for plate_elem in root.findall(".//plate"):
-                    plate_info = {"filaments": [], "prediction": None, "weight": None, "name": None}
+                    plate_info = {"filaments": [], "prediction": None, "weight": None, "name": None, "objects": []}
 
                     # Get plate index from metadata
                     plate_index = None
@@ -2067,12 +2092,23 @@ async def get_archive_plates(
                     # Sort filaments by slot ID
                     plate_info["filaments"].sort(key=lambda x: x["slot_id"])
 
-                    # Get first object name as plate name hint
-                    first_obj = plate_elem.find("object")
-                    if first_obj is not None:
-                        plate_info["name"] = first_obj.get("name")
+                    # Collect all object names on this plate
+                    for obj_elem in plate_elem.findall("object"):
+                        obj_name = obj_elem.get("name")
+                        if obj_name and obj_name not in plate_info["objects"]:
+                            plate_info["objects"].append(obj_name)
 
+                    # Set plate name: prefer custom name from model_settings.config,
+                    # fall back to first object name if no custom name was set
                     if plate_index is not None:
+                        custom_name = plate_names.get(plate_index)
+                        if custom_name:
+                            plate_info["name"] = custom_name
+                        else:
+                            # Fall back to first object name as hint
+                            if plate_info["objects"]:
+                                plate_info["name"] = plate_info["objects"][0]
+
                         plate_metadata[plate_index] = plate_info
 
             # Build plate list
@@ -2084,6 +2120,7 @@ async def get_archive_plates(
                     {
                         "index": idx,
                         "name": meta.get("name"),
+                        "objects": meta.get("objects", []),
                         "has_thumbnail": has_thumbnail,
                         "thumbnail_url": f"/api/v1/archives/{archive_id}/plate-thumbnail/{idx}"
                         if has_thumbnail

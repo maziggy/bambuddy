@@ -2,6 +2,22 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
+## [0.1.6b10] - 2026-01-20
+
+### New Features
+- **Expandable Color Picker** - Configure AMS Slot modal now has an expandable color palette:
+  - 8 basic colors shown by default (White, Black, Red, Blue, Green, Yellow, Orange, Gray)
+  - Click "+" to expand 24 additional colors (Cyan, Magenta, Purple, Pink, Brown, Beige, Navy, Teal, Lime, Gold, Silver, Maroon, Olive, Coral, Salmon, Turquoise, Violet, Indigo, Chocolate, Tan, Slate, Charcoal, Ivory, Cream)
+  - Click "-" to collapse back to basic colors
+
+### Fixed
+- **User preset AMS configuration** - Fixed user presets (inheriting from Bambu presets) showing empty fields in Bambu Studio after configuration:
+  - Now correctly derives `tray_info_idx` from the preset's `base_id` when `filament_id` is null
+  - User presets that inherit from Bambu presets (e.g., "# Overture Matte PLA @BBL H2D") now work correctly
+- **Faster AMS slot updates** - Frontend now updates immediately after configuring AMS slots:
+  - Added WebSocket broadcast to AMS change callback for instant UI updates
+  - Removed unnecessary delayed refetch that was causing slow updates
+
 ## [0.1.6b9] - 2026-01-19
 
 ### New Features

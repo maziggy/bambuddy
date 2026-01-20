@@ -14,7 +14,7 @@ services:
     # Comment out "network_mode: host" above and uncomment "ports:" below.
     # Note: Printer discovery won't work - add printers manually by IP.
     #ports:
-    #  - "8000:8000"
+    #  - "${PORT:-8000}:8000"
     volumes:
       - bambuddy_data:/app/data
       - bambuddy_logs:/app/logs
@@ -24,6 +24,9 @@ services:
       - ./virtual_printer:/app/data/virtual_printer
     environment:
       - TZ=Europe/Berlin
+      # Port BamBuddy runs on (default: 8000)
+      # Usage: PORT=8080 docker compose up -d
+      - PORT=${PORT:-8000}
     restart: unless-stopped
 
 volumes:

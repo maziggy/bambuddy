@@ -1470,6 +1470,7 @@ export const api = {
         is_directory: boolean;
         size: number;
         path: string;
+        mtime?: string;
       }>;
     }>(`/printers/${printerId}/files?path=${encodeURIComponent(path)}`),
   getPrinterFileDownloadUrl: (printerId: number, path: string) =>

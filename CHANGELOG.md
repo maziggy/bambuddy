@@ -9,6 +9,11 @@ All notable changes to Bambuddy will be documented in this file.
   - 8 basic colors shown by default (White, Black, Red, Blue, Green, Yellow, Orange, Gray)
   - Click "+" to expand 24 additional colors (Cyan, Magenta, Purple, Pink, Brown, Beige, Navy, Teal, Lime, Gold, Silver, Maroon, Olive, Coral, Salmon, Turquoise, Violet, Indigo, Chocolate, Tan, Slate, Charcoal, Ivory, Cream)
   - Click "-" to collapse back to basic colors
+- **File Manager Sorting** - Printer file manager now has sorting options:
+  - Sort by name (A-Z or Z-A)
+  - Sort by size (smallest or largest first)
+  - Sort by date (oldest or newest first)
+  - Directories always sorted first
 
 ### Fixed
 - **User preset AMS configuration** - Fixed user presets (inheriting from Bambu presets) showing empty fields in Bambu Studio after configuration:

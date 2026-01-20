@@ -15,6 +15,7 @@ import {
   FileText,
   Image,
   Search,
+  ArrowUpDown,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { Button } from './Button';
@@ -66,6 +67,17 @@ function getFileIcon(filename: string, isDirectory: boolean) {
   }
 }
 
+type SortOption = 'name-asc' | 'name-desc' | 'size-asc' | 'size-desc' | 'date-asc' | 'date-desc';
+
+const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+  { value: 'name-asc', label: 'Name (A-Z)' },
+  { value: 'name-desc', label: 'Name (Z-A)' },
+  { value: 'size-asc', label: 'Size (smallest)' },
+  { value: 'size-desc', label: 'Size (largest)' },
+  { value: 'date-asc', label: 'Date (oldest)' },
+  { value: 'date-desc', label: 'Date (newest)' },
+];
+
 export function FileManagerModal({ printerId, printerName, onClose }: FileManagerModalProps) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -73,6 +85,7 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [fileToDelete, setFileToDelete] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<SortOption>('name-asc');
 
   // Close on Escape key
   useEffect(() => {
@@ -206,6 +219,20 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
               className="w-40 pl-8 pr-3 py-1.5 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none"
             />
           </div>
+          <div className="relative flex items-center gap-1">
+            <ArrowUpDown className="w-4 h-4 text-bambu-gray" />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as SortOption)}
+              className="appearance-none bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm py-1.5 pl-2 pr-6 focus:border-bambu-green focus:outline-none cursor-pointer"
+            >
+              {SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
           <Button
             variant="secondary"
             size="sm"
@@ -240,15 +267,39 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
               </div>
             ) : (
               <div className="space-y-1">
-                {/* Filter and sort: directories first, then files */}
+                {/* Filter and sort: directories first, then files with selected sort */}
                 {[...data.files]
                   .filter((file) =>
                     !searchQuery || file.name.toLowerCase().includes(searchQuery.toLowerCase())
                   )
                   .sort((a, b) => {
+                    // Directories always first
                     if (a.is_directory && !b.is_directory) return -1;
                     if (!a.is_directory && b.is_directory) return 1;
-                    return a.name.localeCompare(b.name);
+
+                    // Apply selected sort within same type
+                    switch (sortBy) {
+                      case 'name-asc':
+                        return a.name.localeCompare(b.name);
+                      case 'name-desc':
+                        return b.name.localeCompare(a.name);
+                      case 'size-asc':
+                        return a.size - b.size;
+                      case 'size-desc':
+                        return b.size - a.size;
+                      case 'date-asc': {
+                        const aTime = a.mtime ? new Date(a.mtime).getTime() : 0;
+                        const bTime = b.mtime ? new Date(b.mtime).getTime() : 0;
+                        return aTime - bTime;
+                      }
+                      case 'date-desc': {
+                        const aTime = a.mtime ? new Date(a.mtime).getTime() : 0;
+                        const bTime = b.mtime ? new Date(b.mtime).getTime() : 0;
+                        return bTime - aTime;
+                      }
+                      default:
+                        return a.name.localeCompare(b.name);
+                    }
                   })
                   .map((file) => {
                     const FileIcon = getFileIcon(file.name, file.is_directory);

@@ -2,6 +2,28 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
+## [0.1.6b11] - 2026-01-20
+
+### New Features
+- **Unified Print Modal** - Consolidated three separate modals into one unified component:
+  - Single modal handles reprint, add-to-queue, and edit-queue-item operations
+  - Consistent UI/UX across all print operations
+  - Reduced code duplication (~1300 LOC removed)
+- **Multi-Printer Selection** - Send prints or queue items to multiple printers at once:
+  - Checkbox selection for multiple printers in reprint and add-to-queue modes
+  - "Select all" / "Clear" buttons for quick selection
+  - Same filament slot mapping applies to all selected printers
+  - Progress indicator during multi-printer submission
+  - Ideal for print farms with identical filament configurations
+- **Enhanced Add-to-Queue** - Now includes plate selection and print options:
+  - Configure all print settings upfront instead of editing afterward
+  - Filament mapping with manual override capability
+
+### Fixed
+- **File Manager folder navigation** - Fixed bug where opening a folder would briefly show files then jump back to root:
+  - Removed `selectedFolderId` from useEffect dependency array that was causing a reset loop
+  - Folder navigation now works correctly without resetting
+
 ## [0.1.6b10] - 2026-01-20
 
 ### New Features

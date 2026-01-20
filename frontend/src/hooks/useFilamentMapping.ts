@@ -10,6 +10,127 @@ import {
 import type { PrinterStatus } from '../api/client';
 
 /**
+ * Build loaded filaments list from printer status (non-hook version).
+ * Extracts filaments from all AMS units (regular and HT) and external spool.
+ */
+export function buildLoadedFilaments(printerStatus: PrinterStatus | undefined): LoadedFilament[] {
+  const filaments: LoadedFilament[] = [];
+
+  // Add filaments from all AMS units (regular and HT)
+  printerStatus?.ams?.forEach((amsUnit) => {
+    const isHt = amsUnit.tray.length === 1; // AMS-HT has single tray
+    amsUnit.tray.forEach((tray) => {
+      if (tray.tray_type) {
+        const color = normalizeColor(tray.tray_color);
+        filaments.push({
+          type: tray.tray_type,
+          color,
+          colorName: getColorName(color),
+          amsId: amsUnit.id,
+          trayId: tray.id,
+          isHt,
+          isExternal: false,
+          label: formatSlotLabel(amsUnit.id, tray.id, isHt, false),
+          globalTrayId: getGlobalTrayId(amsUnit.id, tray.id, false),
+        });
+      }
+    });
+  });
+
+  // Add external spool if loaded
+  if (printerStatus?.vt_tray?.tray_type) {
+    const color = normalizeColor(printerStatus.vt_tray.tray_color);
+    filaments.push({
+      type: printerStatus.vt_tray.tray_type,
+      color,
+      colorName: getColorName(color),
+      amsId: -1,
+      trayId: 0,
+      isHt: false,
+      isExternal: true,
+      label: 'External',
+      globalTrayId: 254,
+    });
+  }
+
+  return filaments;
+}
+
+/**
+ * Compute AMS mapping for a printer given filament requirements and printer status.
+ * This is a non-hook version that can be called imperatively (e.g., in a loop for multiple printers).
+ *
+ * @param filamentReqs - Required filaments from the 3MF file
+ * @param printerStatus - Current printer status with AMS information
+ * @returns AMS mapping array or undefined if no mapping needed
+ */
+export function computeAmsMapping(
+  filamentReqs: { filaments: FilamentRequirement[] } | undefined,
+  printerStatus: PrinterStatus | undefined
+): number[] | undefined {
+  if (!filamentReqs?.filaments || filamentReqs.filaments.length === 0) return undefined;
+
+  const loadedFilaments = buildLoadedFilaments(printerStatus);
+  if (loadedFilaments.length === 0) return undefined;
+
+  // Track which trays have been assigned to avoid duplicates
+  const usedTrayIds = new Set<number>();
+
+  const comparisons = filamentReqs.filaments.map((req) => {
+    // Auto-match: Find a loaded filament that matches by TYPE
+    // Priority: exact color match > similar color match > type-only match
+    const exactMatch = loadedFilaments.find(
+      (f) =>
+        !usedTrayIds.has(f.globalTrayId) &&
+        f.type?.toUpperCase() === req.type?.toUpperCase() &&
+        normalizeColorForCompare(f.color) === normalizeColorForCompare(req.color)
+    );
+    const similarMatch =
+      !exactMatch &&
+      loadedFilaments.find(
+        (f) =>
+          !usedTrayIds.has(f.globalTrayId) &&
+          f.type?.toUpperCase() === req.type?.toUpperCase() &&
+          colorsAreSimilar(f.color, req.color)
+      );
+    const typeOnlyMatch =
+      !exactMatch &&
+      !similarMatch &&
+      loadedFilaments.find(
+        (f) =>
+          !usedTrayIds.has(f.globalTrayId) && f.type?.toUpperCase() === req.type?.toUpperCase()
+      );
+    const loaded = exactMatch || similarMatch || typeOnlyMatch || undefined;
+
+    // Mark this tray as used so it won't be assigned to another slot
+    if (loaded) {
+      usedTrayIds.add(loaded.globalTrayId);
+    }
+
+    return {
+      slot_id: req.slot_id,
+      globalTrayId: loaded?.globalTrayId ?? -1,
+    };
+  });
+
+  // Find the max slot_id to determine array size
+  const maxSlotId = Math.max(...comparisons.map((f) => f.slot_id || 0));
+  if (maxSlotId <= 0) return undefined;
+
+  // Create array with -1 for all positions
+  const mapping = new Array(maxSlotId).fill(-1);
+
+  // Fill in tray IDs at correct positions (slot_id - 1)
+  comparisons.forEach((f) => {
+    if (f.slot_id && f.slot_id > 0) {
+      mapping[f.slot_id - 1] = f.globalTrayId;
+    }
+  });
+
+  return mapping;
+}
+
+/**
  * Represents a loaded filament in the printer's AMS/HT/External spool holder.
  */
 export interface LoadedFilament {

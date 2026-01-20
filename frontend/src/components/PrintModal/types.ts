@@ -104,9 +104,12 @@ export interface PlatesResponse {
 export interface PrinterSelectorProps {
   printers: Printer[];
   selectedPrinterId: number | null;
+  selectedPrinterIds?: number[];
   onSelect: (printerId: number | null) => void;
+  onMultiSelect?: (printerIds: number[]) => void;
   isLoading?: boolean;
   allowUnassigned?: boolean;
+  allowMultiple?: boolean;
 }
 
 /**

@@ -70,6 +70,7 @@
 
 ### ⏰ Scheduling & Automation
 - Print queue with drag-and-drop
+- Multi-printer selection (send to multiple printers at once)
 - Scheduled prints (date/time)
 - Queue Only mode (stage without auto-start)
 - Smart plug integration (Tasmota, Home Assistant)

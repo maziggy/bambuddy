@@ -64,13 +64,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio pytest-cov
+          pip install pytest pytest-asyncio pytest-cov pytest-timeout
 
       - name: Run tests
         timeout-minutes: 10
         run: |
           cd backend
-          python -m pytest tests/ -v --tb=short
+          python -m pytest tests/ -v --tb=short --timeout=60 --timeout-method=thread
 
   # ============================================================================
   # Frontend Checks

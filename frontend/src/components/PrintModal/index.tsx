@@ -125,6 +125,10 @@ export function PrintModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitProgress, setSubmitProgress] = useState({ current: 0, total: 0 });
 
+  // Track which printers have had the "Expand custom mapping by default" setting applied
+  // This ensures the setting only affects initial state, not preventing unchecking
+  const [initialExpandApplied, setInitialExpandApplied] = useState<Set<number>>(new Set());
+
   // Printer counts and effective printer for filament mapping
   const effectivePrinterCount = selectedPrinters.length;
   // For filament mapping, use first selected printer (mapping applies to all)
@@ -225,30 +229,46 @@ export function PrintModal({
       if (printersChanged || selectedPlate !== initialPlateId) {
         setManualMappings({});
         setPerPrinterConfigs({});
+        setInitialExpandApplied(new Set());
       }
     } else {
       setManualMappings({});
       setPerPrinterConfigs({});
+      setInitialExpandApplied(new Set());
     }
   }, [mode, selectedPrinters, selectedPlate, initialPrinterIds, initialPlateId]);
 
   // Auto-expand per-printer mapping when setting is enabled and multiple printers selected
+  // Only applies once per printer on initial selection, not when user unchecks
   useEffect(() => {
     if (!settings?.per_printer_mapping_expanded) return;
     if (selectedPrinters.length <= 1) return;
 
-    // Check if any printer needs to be auto-configured
-    const printersNeedingConfig = selectedPrinters.filter(
-      printerId => !perPrinterConfigs[printerId] || perPrinterConfigs[printerId].useDefault
-    );
+    // Only auto-configure printers that:
+    // 1. Haven't had initial expand applied yet
+    // 2. Have their status loaded (so auto-configure will actually work)
+    const printersReadyForExpand = selectedPrinters.filter(printerId => {
+      if (initialExpandApplied.has(printerId)) return false;
 
-    if (printersNeedingConfig.length > 0) {
-      // Auto-configure printers that don't have custom config
-      printersNeedingConfig.forEach(printerId => {
+      // Check if this printer has status loaded
+      const result = multiPrinterMapping.printerResults.find(r => r.printerId === printerId);
+      return result && result.status && !result.isLoading;
+    });
+
+    if (printersReadyForExpand.length > 0) {
+      // Mark these printers as having been initially expanded
+      setInitialExpandApplied(prev => {
+        const next = new Set(prev);
+        printersReadyForExpand.forEach(id => next.add(id));
+        return next;
+      });
+
+      // Auto-configure printers
+      printersReadyForExpand.forEach(printerId => {
         multiPrinterMapping.autoConfigurePrinter(printerId);
       });
     }
-  }, [settings?.per_printer_mapping_expanded, selectedPrinters, perPrinterConfigs, multiPrinterMapping]);
+  }, [settings?.per_printer_mapping_expanded, selectedPrinters, initialExpandApplied, multiPrinterMapping]);
 
   // Close on Escape key
   useEffect(() => {

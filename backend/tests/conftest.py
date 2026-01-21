@@ -99,9 +99,10 @@ async def async_client(test_engine, db_session) -> AsyncGenerator[AsyncClient, N
     async def mock_init_printer_connections(db):
         pass  # No-op - don't connect to real printers
 
-    # Also patch the module-level async_session used by services
+    # Also patch the module-level async_session used by services and auth
     with (
         patch("backend.app.core.database.async_session", test_async_session),
+        patch("backend.app.core.auth.async_session", test_async_session),
         patch("backend.app.main.init_printer_connections", mock_init_printer_connections),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

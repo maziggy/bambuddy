@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import secrets
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -12,11 +12,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import async_session, get_db
+from backend.app.models.api_key import APIKey
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
-
-if TYPE_CHECKING:
-    from backend.app.models.api_key import APIKey
 
 # Password hashing
 # Use pbkdf2_sha256 instead of bcrypt to avoid 72-byte limit and passlib initialization issues
@@ -245,10 +243,6 @@ async def get_api_key(
 
     Checks both 'Authorization: Bearer <key>' and 'X-API-Key: <key>' headers.
     """
-    from fastapi import HTTPException, status
-
-    from backend.app.models.api_key import APIKey
-
     api_key_value = None
     if x_api_key:
         api_key_value = x_api_key
@@ -295,8 +289,6 @@ def check_permission(api_key: APIKey, permission: str) -> None:
     Raises:
         HTTPException: If permission is not granted
     """
-    from fastapi import HTTPException, status
-
     permission_map = {
         "queue": "can_queue",
         "control_printer": "can_control_printer",
@@ -327,8 +319,6 @@ def check_printer_access(api_key: APIKey, printer_id: int) -> None:
     Raises:
         HTTPException: If access is denied
     """
-    from fastapi import HTTPException, status
-
     # If printer_ids is None or empty, access to all printers
     if api_key.printer_ids is None or len(api_key.printer_ids) == 0:
         return

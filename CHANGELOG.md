@@ -12,6 +12,11 @@ All notable changes to Bambuddy will be documented in this file.
   - Falls back to switch entity attributes if no sensors configured
   - Print energy tracking now works correctly for HA plugs (not just Tasmota)
   - New API endpoint: `GET /api/v1/smart-plugs/ha/sensors` to list available energy sensors
+- **Finish Photo in Notifications** - Camera snapshot URL available in notification templates (Issue #126):
+  - New `{finish_photo_url}` template variable for print_complete, print_failed, print_stopped events
+  - Photo is captured before notification is sent (ensures image is available)
+  - New "External URL" setting in Settings → Network (auto-detects from browser)
+  - Full URL constructed for external notification services (Telegram, Email, Discord, etc.)
 
 ### Fixed
 - **Filament cost using wrong default** - Statistics now correctly uses the "Default filament cost (per kg)" setting instead of hardcoded €25 value (Issue #120)

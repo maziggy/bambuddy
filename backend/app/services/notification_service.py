@@ -251,11 +251,17 @@ class NotificationService:
             return False, "Bot token and chat ID are required"
 
         url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+
+        # Check if message contains URLs (which have underscores that break Markdown)
+        # If so, don't use parse_mode to avoid parsing errors
+        has_url = "http://" in message or "https://" in message
+
         data = {
             "chat_id": chat_id,
             "text": message,
-            "parse_mode": "Markdown",
         }
+        if not has_url:
+            data["parse_mode"] = "Markdown"
 
         client = await self._get_client()
         response = await client.post(url, json=data)
@@ -667,6 +673,8 @@ class NotificationService:
                 variables["filament_grams"] = f"{archive_data['actual_filament_grams']:.1f}"
             if status == "failed" and archive_data.get("failure_reason"):
                 variables["reason"] = archive_data["failure_reason"]
+            if archive_data.get("finish_photo_url"):
+                variables["finish_photo_url"] = archive_data["finish_photo_url"]
 
         logger.info(f"on_print_complete variables: {variables}, archive_data: {archive_data}")
 

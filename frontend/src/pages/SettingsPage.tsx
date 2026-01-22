@@ -334,7 +334,12 @@ export function SettingsPage() {
   // Sync local state when settings load
   useEffect(() => {
     if (settings && !localSettings) {
-      setLocalSettings(settings);
+      // Auto-detect external_url from browser if not set
+      const settingsWithExternalUrl = {
+        ...settings,
+        external_url: settings.external_url || window.location.origin,
+      };
+      setLocalSettings(settingsWithExternalUrl);
       // Mark initial load complete after a short delay
       setTimeout(() => {
         isInitialLoadRef.current = false;
@@ -400,6 +405,7 @@ export function SettingsPage() {
       settings.mqtt_password !== localSettings.mqtt_password ||
       settings.mqtt_topic_prefix !== localSettings.mqtt_topic_prefix ||
       settings.mqtt_use_tls !== localSettings.mqtt_use_tls ||
+      settings.external_url !== localSettings.external_url ||
       settings.ha_enabled !== localSettings.ha_enabled ||
       settings.ha_url !== localSettings.ha_url ||
       settings.ha_token !== localSettings.ha_token ||
@@ -460,6 +466,7 @@ export function SettingsPage() {
         mqtt_password: localSettings.mqtt_password,
         mqtt_topic_prefix: localSettings.mqtt_topic_prefix,
         mqtt_use_tls: localSettings.mqtt_use_tls,
+        external_url: localSettings.external_url,
         ha_enabled: localSettings.ha_enabled,
         ha_url: localSettings.ha_url,
         ha_token: localSettings.ha_token,
@@ -1326,6 +1333,36 @@ export function SettingsPage() {
       <div className="flex flex-col lg:flex-row gap-6">
         {/* Left Column - FTP Retry & Home Assistant */}
         <div className="flex-1 lg:max-w-xl space-y-4">
+          {/* External URL */}
+          <Card>
+            <CardHeader>
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Globe className="w-5 h-5 text-blue-400" />
+                External URL
+              </h2>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-bambu-gray">
+                The external URL where Bambuddy is accessible. Used for notification images and external integrations.
+              </p>
+              <div>
+                <label className="block text-sm text-bambu-gray mb-1">
+                  Bambuddy URL
+                </label>
+                <input
+                  type="text"
+                  value={localSettings.external_url ?? ''}
+                  onChange={(e) => updateSetting('external_url', e.target.value)}
+                  placeholder="http://192.168.1.100:8000"
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                />
+                <p className="text-xs text-bambu-gray mt-1">
+                  Include protocol and port (e.g., http://192.168.1.100:8000)
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">

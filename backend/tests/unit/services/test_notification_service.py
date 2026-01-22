@@ -652,6 +652,45 @@ class TestNotificationVariableFallbacks:
                 assert captured_variables["duration"] != "Unknown"
 
     @pytest.mark.asyncio
+    async def test_print_complete_with_finish_photo_url(self, service):
+        """Verify finish_photo_url is passed through from archive_data."""
+        mock_db = AsyncMock()
+        mock_provider = MagicMock()
+        mock_provider.id = 1
+
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_print_complete(
+                printer_id=1,
+                printer_name="Test",
+                status="completed",
+                data={"subtask_name": "test_print"},
+                db=mock_db,
+                archive_data={
+                    "print_time_seconds": 3600,
+                    "actual_filament_grams": 50.5,
+                    "finish_photo_url": "http://localhost:8000/api/v1/archives/1/photos/finish_test.jpg",
+                },
+            )
+
+            # finish_photo_url should be passed through to template variables
+            assert (
+                captured_variables.get("finish_photo_url")
+                == "http://localhost:8000/api/v1/archives/1/photos/finish_test.jpg"
+            )
+
+    @pytest.mark.asyncio
     async def test_print_start_estimated_time_fallback(self, service):
         """Verify estimated time shows 'Unknown' when not available."""
         mock_db = AsyncMock()

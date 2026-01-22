@@ -107,6 +107,7 @@
 - Custom webhooks
 - Quiet hours & daily digest
 - Customizable message templates
+- Print finish photo URL in notifications
 
 ### 🔧 Integrations
 - [Spoolman](https://github.com/Donkie/Spoolman) filament sync

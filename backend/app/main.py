@@ -1309,8 +1309,8 @@ async def on_print_complete(printer_id: int, data: dict):
         except Exception as e:
             logger.warning(f"[ENERGY-BG] Failed: {e}")
 
-    async def _background_finish_photo():
-        """Capture finish photo in background."""
+    async def _background_finish_photo() -> str | None:
+        """Capture finish photo in background. Returns photo filename if captured."""
         try:
             logger.info(f"[PHOTO-BG] Starting finish photo capture for archive {archive_id}")
 
@@ -1377,11 +1377,15 @@ async def on_print_complete(printer_id: int, data: dict):
                                 archive.photos = photos
                                 await db.commit()
                                 logger.info(f"[PHOTO-BG] Saved: {photo_filename}")
+                                return photo_filename
+            return None
         except Exception as e:
             logger.warning(f"[PHOTO-BG] Failed: {e}")
+            return None
 
     asyncio.create_task(_background_energy_calculation())
-    asyncio.create_task(_background_finish_photo())  # Skips if camera stream active
+    # Photo capture task - result will be used by notifications
+    photo_task = asyncio.create_task(_background_finish_photo())
     log_timing("Background tasks scheduled (energy, photo)")
 
     # Also run smart plug, notifications, and maintenance as background tasks
@@ -1397,10 +1401,10 @@ async def on_print_complete(printer_id: int, data: dict):
         except Exception as e:
             logger.warning(f"[AUTO-OFF-BG] Failed: {e}")
 
-    async def _background_notifications():
+    async def _background_notifications(finish_photo_filename: str | None = None):
         """Send print complete notifications in background."""
         try:
-            logger.info(f"[NOTIFY-BG] Starting notifications for printer {printer_id}")
+            logger.info(f"[NOTIFY-BG] Starting notifications for printer {printer_id}, photo={finish_photo_filename}")
             async with async_session() as db:
                 from backend.app.models.archive import PrintArchive
                 from backend.app.models.printer import Printer
@@ -1419,6 +1423,21 @@ async def on_print_complete(printer_id: int, data: dict):
                             "actual_filament_grams": archive.filament_used_grams,
                             "failure_reason": archive.failure_reason,
                         }
+                        # Add finish photo URL if available
+                        if finish_photo_filename:
+                            from backend.app.api.routes.settings import get_setting
+
+                            external_url = await get_setting(db, "external_url")
+                            if external_url:
+                                external_url = external_url.rstrip("/")
+                                archive_data["finish_photo_url"] = (
+                                    f"{external_url}/api/v1/archives/{archive_id}/photos/{finish_photo_filename}"
+                                )
+                            else:
+                                # Fallback to relative URL (won't work for external services)
+                                archive_data["finish_photo_url"] = (
+                                    f"/api/v1/archives/{archive_id}/photos/{finish_photo_filename}"
+                                )
 
                 await notification_service.on_print_complete(
                     printer_id, printer_name, print_status, data, db, archive_data=archive_data
@@ -1471,8 +1490,21 @@ async def on_print_complete(printer_id: int, data: dict):
             logger.warning(f"[MAINT-BG] Failed: {e}")
 
     asyncio.create_task(_background_smart_plug())
-    asyncio.create_task(_background_notifications())
     asyncio.create_task(_background_maintenance_check())
+
+    # Notification task waits for photo capture to complete first
+    async def _photo_then_notify():
+        """Wait for photo capture, then send notification with photo URL."""
+        try:
+            finish_photo = await photo_task
+            logger.info(f"[PHOTO-NOTIFY] Photo task returned: {finish_photo}")
+            await _background_notifications(finish_photo)
+        except Exception as e:
+            logger.warning(f"[PHOTO-NOTIFY] Failed: {e}")
+            # Still try to send notification without photo
+            await _background_notifications(None)
+
+    asyncio.create_task(_photo_then_notify())
     log_timing("All background tasks scheduled")
 
     # Auto-scan for timelapse if recording was active during the print

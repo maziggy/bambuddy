@@ -1903,6 +1903,8 @@ async def lifespan(app: FastAPI):
                 client = await init_spoolman_client(spoolman_url)
                 if await client.health_check():
                     logging.info(f"Auto-connected to Spoolman at {spoolman_url}")
+                    # Ensure the 'tag' extra field exists for RFID/UUID storage
+                    await client.ensure_tag_extra_field()
                 else:
                     logging.warning(f"Spoolman at {spoolman_url} is not reachable")
             except Exception as e:

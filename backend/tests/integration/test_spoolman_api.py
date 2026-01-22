@@ -39,6 +39,7 @@ class TestSpoolmanAPI:
         mock_client.is_connected = True
         mock_client.base_url = "http://localhost:7912"
         mock_client.health_check = AsyncMock(return_value=True)
+        mock_client.ensure_tag_extra_field = AsyncMock(return_value=True)
         mock_client.get_spools = AsyncMock(return_value=[])
         mock_client.get_filaments = AsyncMock(return_value=[])
         mock_client.create_spool = AsyncMock(return_value={"id": 1})

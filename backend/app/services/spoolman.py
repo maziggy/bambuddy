@@ -488,6 +488,42 @@ class SpoolmanClient:
         vendor = await self.create_vendor("Bambu Lab")
         return vendor["id"] if vendor else None
 
+    async def ensure_tag_extra_field(self) -> bool:
+        """Ensure the 'tag' extra field exists for spools.
+
+        Spoolman requires extra fields to be registered before use.
+        This creates the 'tag' field used to store RFID/UUID identifiers.
+
+        Returns:
+            True if field exists or was created, False on failure.
+        """
+        try:
+            client = await self._get_client()
+
+            # Check if field already exists
+            response = await client.get(f"{self.api_url}/field/spool/tag")
+            if response.status_code == 200:
+                logger.debug("Spoolman 'tag' extra field already exists")
+                return True
+
+            # Field doesn't exist - create it
+            field_data = {
+                "name": "tag",
+                "field_type": "text",
+                "default_value": None,
+            }
+            response = await client.post(f"{self.api_url}/field/spool/tag", json=field_data)
+            if response.status_code in (200, 201):
+                logger.info("Created 'tag' extra field in Spoolman")
+                return True
+
+            logger.warning(f"Failed to create 'tag' extra field: {response.status_code} - {response.text}")
+            return False
+
+        except Exception as e:
+            logger.warning(f"Failed to ensure 'tag' extra field exists: {e}")
+            return False
+
     def parse_ams_tray(self, ams_id: int, tray_data: dict) -> AMSTray | None:
         """Parse AMS tray data into AMSTray object.
 

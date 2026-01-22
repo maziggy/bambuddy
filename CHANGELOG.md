@@ -15,6 +15,7 @@ All notable changes to Bambuddy will be documented in this file.
 
 ### Fixed
 - **Filament cost using wrong default** - Statistics now correctly uses the "Default filament cost (per kg)" setting instead of hardcoded €25 value (Issue #120)
+- **Spoolman tag field not auto-created** - The required "tag" extra field is now automatically created in Spoolman on first connect, fixing sync failures for fresh Spoolman installs (Issue #123)
 
 ## [0.1.6b10] - 2026-01-21
 

@@ -109,6 +109,9 @@ async def connect_spoolman(db: AsyncSession = Depends(get_db)):
                 detail=f"Could not connect to Spoolman at {url}",
             )
 
+        # Ensure the 'tag' extra field exists for RFID/UUID storage
+        await client.ensure_tag_extra_field()
+
         return {"success": True, "message": f"Connected to Spoolman at {url}"}
     except Exception as e:
         logger.error(f"Failed to connect to Spoolman: {e}")

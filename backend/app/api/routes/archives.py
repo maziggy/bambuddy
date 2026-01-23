@@ -425,9 +425,23 @@ async def get_archive_stats(db: AsyncSession = Depends(get_db)):
     failed_result = await db.execute(select(func.count(PrintArchive.id)).where(PrintArchive.status == "failed"))
     failed_prints = failed_result.scalar() or 0
 
-    # Totals
-    time_result = await db.execute(select(func.sum(PrintArchive.print_time_seconds)))
-    total_time = (time_result.scalar() or 0) / 3600  # Convert to hours
+    # Totals - use actual print time from timestamps (not slicer estimates)
+    # For archives with both started_at and completed_at, calculate actual duration
+    # Fall back to print_time_seconds only for archives without timestamps
+    archives_for_time = await db.execute(
+        select(PrintArchive.started_at, PrintArchive.completed_at, PrintArchive.print_time_seconds)
+    )
+    total_seconds = 0
+    for started_at, completed_at, print_time_seconds in archives_for_time.all():
+        if started_at and completed_at:
+            # Use actual elapsed time
+            actual_seconds = (completed_at - started_at).total_seconds()
+            if actual_seconds > 0:
+                total_seconds += actual_seconds
+        elif print_time_seconds:
+            # Fallback to estimate only if no timestamps
+            total_seconds += print_time_seconds
+    total_time = total_seconds / 3600  # Convert to hours
 
     filament_result = await db.execute(select(func.sum(PrintArchive.filament_used_grams)))
     total_filament = filament_result.scalar() or 0

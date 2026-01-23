@@ -49,9 +49,6 @@ describe('Layout', () => {
       }),
       http.get('/api/v1/updates/check', () => {
         return HttpResponse.json({ update_available: false });
-      }),
-      http.get('/api/v1/auth/status', () => {
-        return HttpResponse.json({ auth_enabled: false, requires_setup: false });
       })
     );
   });

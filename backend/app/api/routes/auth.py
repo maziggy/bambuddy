@@ -97,7 +97,9 @@ async def setup_auth(request: SetupRequest, db: AsyncSession = Depends(get_db)):
 
             if has_admin_users:
                 # Admin users already exist, just enable auth (don't create new admin)
-                logger.info(f"Admin users already exist ({len(existing_admin_users)} found), enabling authentication without creating new admin")
+                logger.info(
+                    f"Admin users already exist ({len(existing_admin_users)} found), enabling authentication without creating new admin"
+                )
                 admin_created = False
             else:
                 # No admin users exist, require admin credentials to create first admin

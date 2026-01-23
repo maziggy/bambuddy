@@ -16,7 +16,6 @@ export default {
           dark: '#1a1a1a',
           'dark-secondary': '#2d2d2d',
           'dark-tertiary': '#3d3d3d',
-          card: '#2d2d2d', // Same as dark-secondary for card backgrounds
           gray: '#808080',
           'gray-light': '#a0a0a0',
           'gray-dark': '#4a4a4a',

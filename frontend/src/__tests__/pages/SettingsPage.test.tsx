@@ -60,9 +60,6 @@ describe('SettingsPage', () => {
       }),
       http.get('/api/v1/virtual-printer/status', () => {
         return HttpResponse.json({ running: false });
-      }),
-      http.get('/api/v1/auth/status', () => {
-        return HttpResponse.json({ auth_enabled: false, requires_setup: false });
       })
     );
   });

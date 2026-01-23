@@ -12,7 +12,6 @@ from backend.app.models.printer import Printer
 from backend.app.models.project import Project
 from backend.app.models.settings import Settings
 from backend.app.models.smart_plug import SmartPlug
-from backend.app.models.user import User
 
 __all__ = [
     "Printer",
@@ -32,5 +31,4 @@ __all__ = [
     "PendingUpload",
     "LibraryFolder",
     "LibraryFile",
-    "User",
 ]

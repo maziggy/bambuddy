@@ -49,7 +49,6 @@ async def init_db():
         project_bom,
         settings,
         smart_plug,
-        user,
     )
 
     async with engine.begin() as conn:

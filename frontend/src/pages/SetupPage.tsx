@@ -27,7 +27,7 @@ export function SetupPage() {
     onSuccess: async (data) => {
       // Refresh auth status after setup
       await refreshAuth();
-      
+
       if (data.auth_enabled) {
         if (data.admin_created) {
           showToast('Authentication enabled and admin user created');

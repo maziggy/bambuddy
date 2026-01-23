@@ -9,7 +9,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import { ThemeProvider } from '../contexts/ThemeContext';
 import { ToastProvider } from '../contexts/ToastContext';
-import { AuthProvider } from '../contexts/AuthContext';
 
 // Create a new QueryClient for each test
 function createTestQueryClient() {
@@ -37,9 +36,7 @@ function AllProviders({ children }: AllProvidersProps) {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <ThemeProvider>
-          <AuthProvider>
-            <ToastProvider>{children}</ToastProvider>
-          </AuthProvider>
+          <ToastProvider>{children}</ToastProvider>
         </ThemeProvider>
       </BrowserRouter>
     </QueryClientProvider>

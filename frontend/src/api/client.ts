@@ -626,6 +626,11 @@ export interface AppSettings {
   // File Manager / Library settings
   library_archive_mode: 'always' | 'never' | 'ask';
   library_disk_warning_gb: number;
+  // External folder settings
+  external_library_enabled: boolean;
+  external_library_allowed_paths: string;
+  external_library_max_scan_depth: number;
+  external_library_cache_thumbnails: boolean;
   // Camera view settings
   camera_view_mode: 'window' | 'embedded';
 }

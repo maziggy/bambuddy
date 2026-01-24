@@ -718,7 +718,9 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
           <div className="w-4.5" />
         )}
         {folder.is_external ? (
-          <Link2 className="w-4 h-4 text-blue-400 flex-shrink-0" title="External folder" />
+          <span title="External folder">
+            <Link2 className="w-4 h-4 text-blue-400 flex-shrink-0" />
+          </span>
         ) : (
           <FolderOpen className="w-4 h-4 text-bambu-green flex-shrink-0" />
         )}
@@ -730,7 +732,9 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
           </div>
         )}
         {folder.is_external && !folder.external_accessible && (
-          <AlertTriangle className="w-3 h-3 text-red-500 flex-shrink-0" title="Path not accessible" />
+          <span title="Path not accessible">
+            <AlertTriangle className="w-3 h-3 text-red-500 flex-shrink-0" />
+          </span>
         )}
         {/* Link indicator - clickable to change link */}
         {isLinked && (

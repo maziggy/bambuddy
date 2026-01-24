@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react"
-import { useMutation, useQuery } from "@tanstack/react-query"
+import { useMutation } from "@tanstack/react-query"
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react"
 import { api } from "../api/client"
 import { debounce } from "../utils/debounce"

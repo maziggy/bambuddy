@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Upload, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, Info, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Upload, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, Info, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, FolderOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -19,6 +19,7 @@ import { BackupModal } from '../components/BackupModal';
 import { RestoreModal } from '../components/RestoreModal';
 import { SpoolmanSettings } from '../components/SpoolmanSettings';
 import { ExternalLinksSettings } from '../components/ExternalLinksSettings';
+import { ExternalFolderSettings } from '../components/ExternalFolderSettings';
 import { VirtualPrinterSettings } from '../components/VirtualPrinterSettings';
 import { APIBrowser } from '../components/APIBrowser';
 import { virtualPrinterApi } from '../api/client';
@@ -29,7 +30,7 @@ import { useTheme, type ThemeStyle, type DarkBackground, type LightBackground, t
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Palette } from 'lucide-react';
 
-const validTabs = ['general', 'network', 'plugs', 'notifications', 'filament', 'apikeys', 'virtual-printer', 'users'] as const;
+const validTabs = ['general', 'network', 'plugs', 'notifications', 'filament', 'file-manager', 'apikeys', 'virtual-printer', 'users'] as const;
 type TabType = typeof validTabs[number];
 
 export function SettingsPage() {
@@ -558,6 +559,17 @@ export function SettingsPage() {
         >
           <Cylinder className="w-4 h-4" />
           Filament
+        </button>
+        <button
+          onClick={() => handleTabChange('file-manager')}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
+            activeTab === 'file-manager'
+              ? 'text-bambu-green border-bambu-green'
+              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
+          }`}
+        >
+          <FolderOpen className="w-4 h-4" />
+          File Manager
         </button>
         <button
           onClick={() => handleTabChange('network')}
@@ -2149,6 +2161,23 @@ export function SettingsPage() {
               </Card>
             )}
           </div>
+        </div>
+      )}
+
+      {/* File Manager Tab */}
+      {activeTab === 'file-manager' && (
+        <div className="max-w-4xl">
+          <Card>
+            <CardHeader>
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <FolderOpen className="w-5 h-5 text-bambu-green" />
+                File Manager Settings
+              </h2>
+            </CardHeader>
+            <CardContent>
+              <ExternalFolderSettings />
+            </CardContent>
+          </Card>
         </div>
       )}
 

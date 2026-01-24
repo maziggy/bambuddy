@@ -488,6 +488,53 @@ async def run_migrations(conn):
     except Exception:
         pass
 
+    # Migration: Add external folder support (v0.1.7)
+    try:
+        await conn.execute(text("ALTER TABLE library_folders ADD COLUMN is_external BOOLEAN DEFAULT 0"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE library_folders ADD COLUMN external_path VARCHAR(1000)"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE library_folders ADD COLUMN external_readonly BOOLEAN DEFAULT 1"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE library_folders ADD COLUMN external_show_hidden BOOLEAN DEFAULT 0"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE library_folders ADD COLUMN external_extensions VARCHAR(500)"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE library_folders ADD COLUMN external_last_scan DATETIME"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE library_folders ADD COLUMN external_dir_mtime INTEGER"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_library_folders_is_external ON library_folders(is_external)"))
+    except Exception:
+        pass
+
+    try:
+        await conn.execute(text("ALTER TABLE library_files ADD COLUMN is_external BOOLEAN DEFAULT 0"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE library_files ADD COLUMN external_mtime INTEGER"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_library_files_is_external ON library_files(is_external)"))
+    except Exception:
+        pass
+
     # Migration: Make ip_address nullable for HA plugs (SQLite requires table recreation)
     try:
         # Check if ip_address is currently NOT NULL

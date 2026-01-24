@@ -110,6 +110,26 @@ class AppSettings(BaseModel):
         description="Show warning when free disk space falls below this threshold (GB)",
     )
 
+    # External Library Settings
+    external_library_enabled: bool = Field(
+        default=True,
+        description="Enable external folder mounting feature"
+    )
+    external_library_allowed_paths: str = Field(
+        default="/mnt/external",
+        description="Comma-separated list of allowed base paths (container paths). Example: /mnt/nas,/mnt/models"
+    )
+    external_library_max_scan_depth: int = Field(
+        default=10,
+        ge=1,
+        le=20,
+        description="Maximum directory depth for recursive scanning"
+    )
+    external_library_cache_thumbnails: bool = Field(
+        default=True,
+        description="Cache thumbnails for external files in internal storage"
+    )
+
     # Camera view settings
     camera_view_mode: str = Field(
         default="window",
@@ -167,4 +187,8 @@ class AppSettingsUpdate(BaseModel):
     ha_token: str | None = None
     library_archive_mode: str | None = None
     library_disk_warning_gb: float | None = None
+    external_library_enabled: bool | None = None
+    external_library_allowed_paths: str | None = None
+    external_library_max_scan_depth: int | None = None
+    external_library_cache_thumbnails: bool | None = None
     camera_view_mode: str | None = None

@@ -80,6 +80,8 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
                 "mqtt_use_tls",
                 "ha_enabled",
                 "per_printer_mapping_expanded",
+                "external_library_enabled",
+                "external_library_cache_thumbnails",
             ]:
                 settings_dict[setting.key] = setting.value.lower() == "true"
             elif setting.key in [
@@ -97,6 +99,7 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
                 "ftp_retry_count",
                 "ftp_retry_delay",
                 "mqtt_port",
+                "external_library_max_scan_depth",
             ]:
                 settings_dict[setting.key] = int(setting.value)
             elif setting.key == "default_printer_id":

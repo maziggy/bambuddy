@@ -2821,6 +2821,27 @@ export const api = {
         used_meters: number;
       }>;
     }>(`/library/files/${fileId}/filament-requirements${plateId !== undefined ? `?plate_id=${plateId}` : ''}`),
+
+  // External Folder Mounting
+  validateExternalPath: (data: ExternalFolderValidateRequest) =>
+    request<ExternalFolderValidateResponse>('/library/folders/external/validate', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  createExternalFolder: (data: ExternalFolderCreate) =>
+    request<LibraryFolder>('/library/folders/external', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  scanExternalFolder: (folderId: number, force: boolean = false) =>
+    request<ExternalFolderScanResponse>(`/library/folders/${folderId}/scan?force=${force}`, {
+      method: 'POST',
+    }),
+  updateExternalFolder: (folderId: number, data: ExternalFolderUpdate) =>
+    request<LibraryFolder>(`/library/folders/${folderId}/external`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
 };
 
 // AMS History types
@@ -2924,6 +2945,13 @@ export interface LibraryFolderTree {
   project_name: string | null;
   archive_name: string | null;
   file_count: number;
+  is_external: boolean;
+  external_path: string | null;
+  external_readonly: boolean;
+  external_show_hidden: boolean;
+  external_extensions: string | null;
+  external_last_scan: string | null;
+  external_accessible: boolean;
   children: LibraryFolderTree[];
 }
 
@@ -2936,6 +2964,13 @@ export interface LibraryFolder {
   project_name: string | null;
   archive_name: string | null;
   file_count: number;
+  is_external: boolean;
+  external_path: string | null;
+  external_readonly: boolean;
+  external_show_hidden: boolean;
+  external_extensions: string | null;
+  external_last_scan: string | null;
+  external_accessible: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -2952,6 +2987,43 @@ export interface LibraryFolderUpdate {
   parent_id?: number | null;
   project_id?: number | null;  // 0 to unlink
   archive_id?: number | null;  // 0 to unlink
+}
+
+// External Folder Types
+export interface ExternalFolderCreate {
+  name: string;
+  external_path: string;
+  parent_id?: number | null;
+  external_readonly?: boolean;
+  external_show_hidden?: boolean;
+  external_extensions?: string | null;
+}
+
+export interface ExternalFolderUpdate {
+  name?: string;
+  external_readonly?: boolean;
+  external_show_hidden?: boolean;
+  external_extensions?: string | null;
+}
+
+export interface ExternalFolderValidateRequest {
+  path: string;
+}
+
+export interface ExternalFolderValidateResponse {
+  valid: boolean;
+  error?: string;
+  file_count?: number;
+  accessible?: boolean;
+  directory_size_mb?: number;
+}
+
+export interface ExternalFolderScanResponse {
+  added: number;
+  updated: number;
+  removed: number;
+  scan_duration_seconds: number;
+  last_scan: string;
 }
 
 export interface LibraryFileDuplicate {
@@ -2978,6 +3050,8 @@ export interface LibraryFile {
   print_count: number;
   last_printed_at: string | null;
   notes: string | null;
+  is_external: boolean;
+  external_mtime: number | null;
   duplicates: LibraryFileDuplicate[] | null;
   duplicate_count: number;
   created_at: string;
@@ -2993,6 +3067,7 @@ export interface LibraryFileListItem {
   thumbnail_path: string | null;
   print_count: number;
   duplicate_count: number;
+  is_external: boolean;
   created_at: string;
   print_name: string | null;
   print_time_seconds: number | null;

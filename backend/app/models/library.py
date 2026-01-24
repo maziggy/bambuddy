@@ -21,6 +21,15 @@ class LibraryFolder(Base):
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
     archive_id: Mapped[int | None] = mapped_column(ForeignKey("print_archives.id", ondelete="SET NULL"), nullable=True)
 
+    # External folder support fields
+    is_external: Mapped[bool] = mapped_column(default=False, index=True)
+    external_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    external_readonly: Mapped[bool] = mapped_column(default=True)
+    external_show_hidden: Mapped[bool] = mapped_column(default=False)
+    external_extensions: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    external_last_scan: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    external_dir_mtime: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -62,6 +71,10 @@ class LibraryFile(Base):
     file_size: Mapped[int] = mapped_column(Integer)
     file_hash: Mapped[str | None] = mapped_column(String(64))  # SHA256 for duplicate detection
     thumbnail_path: Mapped[str | None] = mapped_column(String(500))
+
+    # External file support fields
+    is_external: Mapped[bool] = mapped_column(default=False, index=True)
+    external_mtime: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Extracted metadata (from 3MF parser)
     file_metadata: Mapped[dict | None] = mapped_column(JSON)

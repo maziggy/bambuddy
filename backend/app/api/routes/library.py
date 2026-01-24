@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
@@ -27,6 +28,11 @@ from backend.app.schemas.library import (
     AddToQueueResult,
     BulkDeleteRequest,
     BulkDeleteResponse,
+    ExternalFolderCreate,
+    ExternalFolderScanResponse,
+    ExternalFolderUpdate,
+    ExternalFolderValidateRequest,
+    ExternalFolderValidateResponse,
     FileDuplicate,
     FileListResponse,
     FileMoveRequest,
@@ -228,6 +234,14 @@ async def list_folders(response: Response, db: AsyncSession = Depends(get_db)):
     root_folders = []
 
     for folder, project_name, archive_name in rows:
+        # Check if external path still exists
+        external_accessible = True
+        if folder.is_external and folder.external_path:
+            try:
+                external_accessible = os.path.exists(folder.external_path)
+            except Exception:
+                external_accessible = False
+
         folder_item = FolderTreeItem(
             id=folder.id,
             name=folder.name,
@@ -237,6 +251,13 @@ async def list_folders(response: Response, db: AsyncSession = Depends(get_db)):
             project_name=project_name,
             archive_name=archive_name,
             file_count=file_counts.get(folder.id, 0),
+            is_external=folder.is_external,
+            external_path=folder.external_path,
+            external_readonly=folder.external_readonly,
+            external_show_hidden=folder.external_show_hidden,
+            external_extensions=folder.external_extensions,
+            external_last_scan=folder.external_last_scan,
+            external_accessible=external_accessible,
             children=[],
         )
         folder_map[folder.id] = folder_item
@@ -398,6 +419,14 @@ async def get_folder(folder_id: int, db: AsyncSession = Depends(get_db)):
     file_count_result = await db.execute(select(func.count(LibraryFile.id)).where(LibraryFile.folder_id == folder_id))
     file_count = file_count_result.scalar() or 0
 
+    # Check if external path still exists
+    external_accessible = True
+    if folder.is_external and folder.external_path:
+        try:
+            external_accessible = os.path.exists(folder.external_path)
+        except Exception:
+            external_accessible = False
+
     return FolderResponse(
         id=folder.id,
         name=folder.name,
@@ -407,6 +436,13 @@ async def get_folder(folder_id: int, db: AsyncSession = Depends(get_db)):
         project_name=project_name,
         archive_name=archive_name,
         file_count=file_count,
+        is_external=folder.is_external,
+        external_path=folder.external_path,
+        external_readonly=folder.external_readonly,
+        external_show_hidden=folder.external_show_hidden,
+        external_extensions=folder.external_extensions,
+        external_last_scan=folder.external_last_scan,
+        external_accessible=external_accessible,
         created_at=folder.created_at,
         updated_at=folder.updated_at,
     )
@@ -481,6 +517,14 @@ async def update_folder(folder_id: int, data: FolderUpdate, db: AsyncSession = D
         archive_result = await db.execute(select(PrintArchive.print_name).where(PrintArchive.id == folder.archive_id))
         archive_name = archive_result.scalar()
 
+    # Check if external path still exists
+    external_accessible = True
+    if folder.is_external and folder.external_path:
+        try:
+            external_accessible = os.path.exists(folder.external_path)
+        except Exception:
+            external_accessible = False
+
     return FolderResponse(
         id=folder.id,
         name=folder.name,
@@ -490,6 +534,13 @@ async def update_folder(folder_id: int, data: FolderUpdate, db: AsyncSession = D
         project_name=project_name,
         archive_name=archive_name,
         file_count=file_count,
+        is_external=folder.is_external,
+        external_path=folder.external_path,
+        external_readonly=folder.external_readonly,
+        external_show_hidden=folder.external_show_hidden,
+        external_extensions=folder.external_extensions,
+        external_last_scan=folder.external_last_scan,
+        external_accessible=external_accessible,
         created_at=folder.created_at,
         updated_at=folder.updated_at,
     )
@@ -539,6 +590,223 @@ async def delete_folder(folder_id: int, db: AsyncSession = Depends(get_db)):
     await db.delete(folder)
 
     return {"status": "success", "message": "Folder deleted"}
+
+
+# ============ External Folder Endpoints ============
+
+
+@router.post("/folders/external/validate", response_model=ExternalFolderValidateResponse)
+async def validate_external_path(
+    data: ExternalFolderValidateRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Validate external path before creating folder.
+
+    Returns preview info: file count, accessibility, validation errors.
+    """
+    from backend.app.services.external_library import ExternalLibraryService
+
+    service = ExternalLibraryService(db)
+    is_valid, error = await service.validate_external_path(data.path)
+
+    if not is_valid:
+        return ExternalFolderValidateResponse(
+            valid=False,
+            error=error,
+            accessible=False,
+        )
+
+    # Get file count preview
+    file_count = 0
+    directory_size_mb = 0.0
+    try:
+        from pathlib import Path
+        import asyncio
+
+        path = Path(data.path)
+        files = await service.enumerate_files_recursive(path, True, None, 2)
+        file_count = len(files)
+        directory_size_mb = sum(f["size"] for f in files) / (1024 * 1024)
+    except Exception as e:
+        logger.warning(f"Failed to get file count preview: {e}")
+
+    return ExternalFolderValidateResponse(
+        valid=True,
+        accessible=True,
+        file_count=file_count,
+        directory_size_mb=round(directory_size_mb, 2),
+    )
+
+
+@router.post("/folders/external", response_model=FolderResponse)
+async def create_external_folder(
+    data: ExternalFolderCreate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Create external folder mount.
+
+    Steps:
+    1. Validate path via ExternalLibraryService
+    2. Check parent folder exists if parent_id provided
+    3. Create LibraryFolder with is_external=True
+    4. Run initial scan (smart refresh - only if needed)
+    5. Return folder response
+    """
+    from backend.app.services.external_library import ExternalLibraryService
+
+    service = ExternalLibraryService(db)
+
+    # Validate path
+    is_valid, error = await service.validate_external_path(data.external_path)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error)
+
+    # Verify parent exists if specified
+    if data.parent_id is not None:
+        parent_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == data.parent_id))
+        if not parent_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Parent folder not found")
+
+    # Create external folder
+    folder = LibraryFolder(
+        name=data.name,
+        parent_id=data.parent_id,
+        is_external=True,
+        external_path=data.external_path,
+        external_readonly=data.external_readonly,
+        external_show_hidden=data.external_show_hidden,
+        external_extensions=data.external_extensions,
+    )
+    db.add(folder)
+    await db.flush()
+    await db.refresh(folder)
+
+    # Run initial scan
+    scan_result = await service.scan_external_folder(folder.id, force_rescan=True)
+    logger.info(f"Created external folder {folder.id} with initial scan: {scan_result}")
+
+    return FolderResponse(
+        id=folder.id,
+        name=folder.name,
+        parent_id=folder.parent_id,
+        is_external=True,
+        external_path=folder.external_path,
+        external_readonly=folder.external_readonly,
+        external_show_hidden=folder.external_show_hidden,
+        external_extensions=folder.external_extensions,
+        external_last_scan=folder.external_last_scan,
+        external_accessible=True,
+        file_count=0,
+        created_at=folder.created_at,
+        updated_at=folder.updated_at,
+    )
+
+
+@router.post("/folders/{folder_id}/scan", response_model=ExternalFolderScanResponse)
+async def scan_external_folder(
+    folder_id: int,
+    force: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """Scan external folder to sync with filesystem.
+
+    Smart refresh: Only rescans if directory mtime changed (unless force=True).
+
+    Returns stats: added, updated, removed file counts.
+    """
+    import time
+
+    from backend.app.services.external_library import ExternalLibraryService
+
+    result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
+    folder = result.scalar_one_or_none()
+
+    if not folder or not folder.is_external:
+        raise HTTPException(status_code=404, detail="External folder not found")
+
+    service = ExternalLibraryService(db)
+    start_time = time.time()
+    scan_result = await service.scan_external_folder(folder_id, force_rescan=force)
+    duration = time.time() - start_time
+
+    # Get updated folder
+    await db.refresh(folder)
+
+    return ExternalFolderScanResponse(
+        added=scan_result["added"],
+        updated=scan_result["updated"],
+        removed=scan_result["removed"],
+        scan_duration_seconds=round(duration, 2),
+        last_scan=folder.external_last_scan or datetime.utcnow(),
+    )
+
+
+@router.put("/folders/{folder_id}/external", response_model=FolderResponse)
+async def update_external_folder(
+    folder_id: int,
+    data: ExternalFolderUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update external folder settings.
+
+    Note: Cannot change external_path (security). Delete and recreate instead.
+
+    If show_hidden or extensions changed, triggers background rescan.
+    """
+    result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
+    folder = result.scalar_one_or_none()
+
+    if not folder or not folder.is_external:
+        raise HTTPException(status_code=404, detail="External folder not found")
+
+    # Track if settings changed (requires rescan)
+    settings_changed = False
+
+    if data.name is not None:
+        folder.name = data.name
+
+    if data.external_readonly is not None:
+        folder.external_readonly = data.external_readonly
+
+    if data.external_show_hidden is not None:
+        if folder.external_show_hidden != data.external_show_hidden:
+            settings_changed = True
+        folder.external_show_hidden = data.external_show_hidden
+
+    if data.external_extensions is not None:
+        if folder.external_extensions != data.external_extensions:
+            settings_changed = True
+        folder.external_extensions = data.external_extensions
+
+    folder.updated_at = datetime.utcnow()
+    await db.commit()
+
+    # Trigger rescan if settings changed
+    if settings_changed:
+        from backend.app.services.external_library import ExternalLibraryService
+
+        service = ExternalLibraryService(db)
+        await service.scan_external_folder(folder_id, force_rescan=True)
+
+    # Get file count
+    file_count_result = await db.execute(select(func.count(LibraryFile.id)).where(LibraryFile.folder_id == folder_id))
+    file_count = file_count_result.scalar() or 0
+
+    return FolderResponse(
+        id=folder.id,
+        name=folder.name,
+        parent_id=folder.parent_id,
+        is_external=True,
+        external_path=folder.external_path,
+        external_readonly=folder.external_readonly,
+        external_show_hidden=folder.external_show_hidden,
+        external_extensions=folder.external_extensions,
+        external_last_scan=folder.external_last_scan,
+        external_accessible=True,
+        file_count=file_count,
+        created_at=folder.created_at,
+        updated_at=folder.updated_at,
+    )
 
 
 # ============ File Endpoints ============

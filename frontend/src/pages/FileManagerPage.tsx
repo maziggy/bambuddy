@@ -48,6 +48,7 @@ import type {
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { PrintModal } from '../components/PrintModal';
+import { ExternalFolderModal } from '../components/ExternalFolderModal';
 import { useToast } from '../contexts/ToastContext';
 
 type SortField = 'name' | 'date' | 'size' | 'type' | 'prints';
@@ -716,8 +717,21 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
         ) : (
           <div className="w-4.5" />
         )}
-        <FolderOpen className="w-4 h-4 text-bambu-green flex-shrink-0" />
+        {folder.is_external ? (
+          <Link2 className="w-4 h-4 text-blue-400 flex-shrink-0" title="External folder" />
+        ) : (
+          <FolderOpen className="w-4 h-4 text-bambu-green flex-shrink-0" />
+        )}
         <span className="text-sm truncate flex-1">{folder.name}</span>
+        {/* External folder indicators */}
+        {folder.is_external && folder.external_readonly && (
+          <div className="w-3 h-3 text-gray-400 flex-shrink-0" title="Read-only">
+            🔒
+          </div>
+        )}
+        {folder.is_external && !folder.external_accessible && (
+          <AlertTriangle className="w-3 h-3 text-red-500 flex-shrink-0" title="Path not accessible" />
+        )}
         {/* Link indicator - clickable to change link */}
         {isLinked && (
           <button
@@ -961,6 +975,7 @@ export function FileManagerPage() {
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(initialFolderId);
   const [selectedFiles, setSelectedFiles] = useState<number[]>([]);
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
+  const [showExternalFolderModal, setShowExternalFolderModal] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [linkFolder, setLinkFolder] = useState<LibraryFolderTree | null>(null);
@@ -1212,6 +1227,21 @@ export function FileManagerPage() {
     },
   });
 
+  const rescanFolderMutation = useMutation({
+    mutationFn: (folderId: number) =>
+      api.scanExternalFolder(folderId, false),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['library-files'] });
+      showToast(
+        `Scan complete: +${result.added}, ~${result.updated}, -${result.removed}`,
+        'success'
+      );
+    },
+    onError: (error: Error) => {
+      showToast(error.message, 'error');
+    },
+  });
+
   // Helper to check if a file is sliced (printable)
   const isSlicedFile = useCallback((filename: string) => {
     const lower = filename.toLowerCase();
@@ -1272,6 +1302,22 @@ export function FileManagerPage() {
 
   const isLoading = foldersLoading || filesLoading;
 
+  // Check if selected folder is readonly external
+  const selectedFolderData = useMemo(() => {
+    if (!selectedFolderId || !folders) return null;
+    const findFolder = (items: LibraryFolderTree[]): LibraryFolderTree | null => {
+      for (const item of items) {
+        if (item.id === selectedFolderId) return item;
+        const found = findFolder(item.children);
+        if (found) return found;
+      }
+      return null;
+    };
+    return findFolder(folders);
+  }, [selectedFolderId, folders]);
+
+  const isSelectedFolderReadonly = selectedFolderData?.is_external && selectedFolderData?.external_readonly;
+
   return (
     <div className="p-4 md:p-8 h-[calc(100vh-64px)] flex flex-col">
       {/* Header */}
@@ -1313,7 +1359,15 @@ export function FileManagerPage() {
             <FolderPlus className="w-4 h-4 mr-2" />
             New Folder
           </Button>
-          <Button onClick={() => setShowUploadModal(true)}>
+          <Button variant="secondary" onClick={() => setShowExternalFolderModal(true)}>
+            <Link2 className="w-4 h-4 mr-2" />
+            External Folder
+          </Button>
+          <Button
+            onClick={() => setShowUploadModal(true)}
+            disabled={isSelectedFolderReadonly}
+            title={isSelectedFolderReadonly ? "Cannot upload to read-only external folder" : ""}
+          >
             <Upload className="w-4 h-4 mr-2" />
             Upload
           </Button>
@@ -1466,6 +1520,39 @@ export function FileManagerPage() {
             </div>
           )}
 
+          {/* External folder rescan button */}
+          {selectedFolderId !== null && folders && (
+            (() => {
+              const selectedFolder = folders.find(f => {
+                const findInTree = (folder: any): any => {
+                  if (folder.id === selectedFolderId) return folder;
+                  return folder.children?.find((child: any) => findInTree(child));
+                };
+                return findInTree(f);
+              });
+              return selectedFolder?.is_external ? (
+                <div className="flex items-center gap-2 mb-4 p-2 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                  <span className="text-sm text-blue-400">External folder</span>
+                  <div className="flex-1" />
+                  {selectedFolder.external_last_scan && (
+                    <span className="text-xs text-gray-400">
+                      Last scanned: {new Date(selectedFolder.external_last_scan).toLocaleString()}
+                    </span>
+                  )}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => selectedFolderId && rescanFolderMutation.mutate(selectedFolderId)}
+                    disabled={rescanFolderMutation.isPending}
+                  >
+                    {rescanFolderMutation.isPending && <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />}
+                    Rescan
+                  </Button>
+                </div>
+              ) : null;
+            })()
+          )}
+
           {/* Selection toolbar */}
           {filteredAndSortedFiles.length > 0 && (
             <div className="flex items-center gap-2 mb-4 p-2 bg-bambu-card rounded-lg border border-bambu-dark-tertiary">
@@ -1528,6 +1615,7 @@ export function FileManagerPage() {
                   <Button
                     variant="danger"
                     size="sm"
+                    disabled={isSelectedFolderReadonly}
                     onClick={() => {
                       if (selectedFiles.length === 1) {
                         setDeleteConfirm({ type: 'file', id: selectedFiles[0] });
@@ -1535,6 +1623,7 @@ export function FileManagerPage() {
                         setDeleteConfirm({ type: 'bulk', id: 0, count: selectedFiles.length });
                       }
                     }}
+                    title={isSelectedFolderReadonly ? "Cannot delete from read-only external folder" : ""}
                   >
                     <Trash2 className="w-4 h-4 mr-1" />
                     Delete
@@ -1743,6 +1832,18 @@ export function FileManagerPage() {
           onClose={() => setShowNewFolderModal(false)}
           onSave={(data) => createFolderMutation.mutate(data)}
           isLoading={createFolderMutation.isPending}
+        />
+      )}
+
+      {showExternalFolderModal && (
+        <ExternalFolderModal
+          parentId={selectedFolderId}
+          onClose={() => setShowExternalFolderModal(false)}
+          onSuccess={() => {
+            setShowExternalFolderModal(false);
+            // Refresh folder list
+            queryClient.invalidateQueries({ queryKey: ['library-folders'] });
+          }}
         />
       )}
 

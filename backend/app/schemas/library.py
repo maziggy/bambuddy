@@ -36,6 +36,16 @@ class FolderResponse(BaseModel):
     project_name: str | None = None
     archive_name: str | None = None
     file_count: int = 0  # Computed field
+
+    # External folder fields
+    is_external: bool = False
+    external_path: str | None = None
+    external_readonly: bool = True
+    external_show_hidden: bool = False
+    external_extensions: str | None = None
+    external_last_scan: datetime | None = None
+    external_accessible: bool = True  # Computed: whether path exists
+
     created_at: datetime
     updated_at: datetime
 
@@ -54,6 +64,16 @@ class FolderTreeItem(BaseModel):
     project_name: str | None = None
     archive_name: str | None = None
     file_count: int = 0
+
+    # External folder fields
+    is_external: bool = False
+    external_path: str | None = None
+    external_readonly: bool = True
+    external_show_hidden: bool = False
+    external_extensions: str | None = None
+    external_last_scan: datetime | None = None
+    external_accessible: bool = True
+
     children: list["FolderTreeItem"] = []
 
     class Config:
@@ -118,6 +138,10 @@ class FileResponse(BaseModel):
     last_printed_at: datetime | None
 
     notes: str | None
+
+    # External file support
+    is_external: bool = False
+    external_mtime: int | None = None
 
     # Duplicate detection
     duplicates: list[FileDuplicate] | None = None
@@ -235,6 +259,58 @@ class AddToQueueResponse(BaseModel):
 
     added: list[AddToQueueResult]
     errors: list[AddToQueueError]
+
+
+# ============ External Folder Schemas ============
+
+
+class ExternalFolderCreate(BaseModel):
+    """Create external folder mount."""
+
+    name: str = Field(..., min_length=1, max_length=255)
+    external_path: str = Field(..., description="Absolute container path to external directory")
+    parent_id: int | None = None
+    external_readonly: bool = True
+    external_show_hidden: bool = False
+    external_extensions: str | None = Field(
+        None,
+        description="Comma-separated extensions (e.g., '.3mf,.stl,.gcode'). None = all files"
+    )
+
+
+class ExternalFolderUpdate(BaseModel):
+    """Update external folder settings (not path)."""
+
+    name: str | None = Field(None, min_length=1, max_length=255)
+    external_readonly: bool | None = None
+    external_show_hidden: bool | None = None
+    external_extensions: str | None = None
+
+
+class ExternalFolderValidateRequest(BaseModel):
+    """Request to validate external path."""
+
+    path: str
+
+
+class ExternalFolderValidateResponse(BaseModel):
+    """Path validation result."""
+
+    valid: bool
+    error: str | None = None
+    file_count: int | None = None
+    accessible: bool = True
+    directory_size_mb: float | None = None
+
+
+class ExternalFolderScanResponse(BaseModel):
+    """Folder scan results."""
+
+    added: int
+    updated: int
+    removed: int
+    scan_duration_seconds: float
+    last_scan: datetime
 
 
 # ============ ZIP Extraction ============

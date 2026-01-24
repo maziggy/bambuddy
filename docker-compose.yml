@@ -22,6 +22,9 @@ services:
       # Share virtual printer certs with native installation
       # This ensures the slicer only needs to trust one CA certificate.
       - ./virtual_printer:/app/data/virtual_printer
+      #
+      # Test external folder mount (for testing Issue #124)
+      - /tmp/test-external:/mnt/external:ro
     environment:
       - TZ=Europe/Berlin
       # Port BamBuddy runs on (default: 8000)

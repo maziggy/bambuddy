@@ -14,7 +14,6 @@ export function ExternalFolderModal({ parentId, onClose, onSuccess }: ExternalFo
   const [path, setPath] = useState("")
   const [name, setName] = useState("")
   const [readonly, setReadonly] = useState(true)
-  const [showHidden, setShowHidden] = useState(false)
   const [extensions, setExtensions] = useState(".3mf,.stl,.gcode")
   const [isValidating, setIsValidating] = useState(false)
   const [validation, setValidation] = useState<{
@@ -70,7 +69,7 @@ export function ExternalFolderModal({ parentId, onClose, onSuccess }: ExternalFo
         external_path: path.trim(),
         parent_id: parentId,
         external_readonly: readonly,
-        external_show_hidden: showHidden,
+        external_show_hidden: false,  // Hidden files are never shown
         external_extensions: extensions || null,
       })
     },
@@ -191,19 +190,6 @@ export function ExternalFolderModal({ parentId, onClose, onSuccess }: ExternalFo
               />
               <span className="text-sm text-gray-700 dark:text-gray-300">
                 Read-only (prevent uploads/deletes)
-              </span>
-            </label>
-
-            <label className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                checked={showHidden}
-                onChange={(e) => setShowHidden(e.target.checked)}
-                className="w-4 h-4 rounded border-gray-300 text-bambu-green
-                           focus:ring-bambu-green/50"
-              />
-              <span className="text-sm text-gray-700 dark:text-gray-300">
-                Show hidden files (starting with .)
               </span>
             </label>
           </div>

@@ -672,6 +672,8 @@ async def on_print_start(printer_id: int, data: dict):
             remote_paths = [
                 f"/cache/{try_filename}",
                 f"/model/{try_filename}",
+                f"/data/{try_filename}",
+                f"/data/Metadata/{try_filename}",
                 f"/{try_filename}",
             ]
 
@@ -713,48 +715,54 @@ async def on_print_start(printer_id: int, data: dict):
             if downloaded_filename:
                 break
 
-        # If still not found, try listing /cache to find matching file
+        # If still not found, try listing directories to find matching file
+        # Different printer models use different directory structures
         if not downloaded_filename and (filename or subtask_name):
             search_term = (subtask_name or filename).lower().replace(".gcode", "").replace(".3mf", "")
-            logger.info(f"Direct FTP download failed, listing /cache to find '{search_term}'")
-            try:
-                cache_files = await list_files_async(printer.ip_address, printer.access_code, "/cache")
-                threemf_files = [f.get("name") for f in cache_files if f.get("name", "").endswith(".3mf")]
-                logger.info(
-                    f"Found {len(threemf_files)} 3MF files in /cache: {threemf_files[:5]}{'...' if len(threemf_files) > 5 else ''}"
-                )
-                for f in cache_files:
-                    if f.get("is_directory"):
-                        continue
-                    fname = f.get("name", "")
-                    if fname.endswith(".3mf") and search_term in fname.lower():
-                        logger.info(f"Found matching file: {fname}")
-                        temp_path = app_settings.archive_dir / "temp" / fname
-                        temp_path.parent.mkdir(parents=True, exist_ok=True)
-                        if ftp_retry_enabled:
-                            downloaded = await with_ftp_retry(
-                                download_file_async,
-                                printer.ip_address,
-                                printer.access_code,
-                                f"/cache/{fname}",
-                                temp_path,
-                                max_retries=ftp_retry_count,
-                                retry_delay=ftp_retry_delay,
-                                operation_name=f"Download 3MF from /cache/{fname}",
-                            )
-                        else:
-                            downloaded = await download_file_async(
-                                printer.ip_address,
-                                printer.access_code,
-                                f"/cache/{fname}",
-                                temp_path,
-                            )
-                        if downloaded:
-                            downloaded_filename = fname
-                            logger.info(f"Found and downloaded from cache: {fname}")
-                            break
-            except Exception as e:
-                logger.warning(f"Failed to list cache: {e}")
+            logger.info(f"Direct FTP download failed, searching directories for '{search_term}'")
+            search_dirs = ["/cache", "/model", "/data", "/data/Metadata"]
+            for search_dir in search_dirs:
+                if downloaded_filename:
+                    break
+                try:
+                    dir_files = await list_files_async(printer.ip_address, printer.access_code, search_dir)
+                    threemf_files = [f.get("name") for f in dir_files if f.get("name", "").endswith(".3mf")]
+                    if threemf_files:
+                        logger.info(
+                            f"Found {len(threemf_files)} 3MF files in {search_dir}: {threemf_files[:5]}{'...' if len(threemf_files) > 5 else ''}"
+                        )
+                    for f in dir_files:
+                        if f.get("is_directory"):
+                            continue
+                        fname = f.get("name", "")
+                        if fname.endswith(".3mf") and search_term in fname.lower():
+                            logger.info(f"Found matching file in {search_dir}: {fname}")
+                            temp_path = app_settings.archive_dir / "temp" / fname
+                            temp_path.parent.mkdir(parents=True, exist_ok=True)
+                            if ftp_retry_enabled:
+                                downloaded = await with_ftp_retry(
+                                    download_file_async,
+                                    printer.ip_address,
+                                    printer.access_code,
+                                    f"{search_dir}/{fname}",
+                                    temp_path,
+                                    max_retries=ftp_retry_count,
+                                    retry_delay=ftp_retry_delay,
+                                    operation_name=f"Download 3MF from {search_dir}/{fname}",
+                                )
+                            else:
+                                downloaded = await download_file_async(
+                                    printer.ip_address,
+                                    printer.access_code,
+                                    f"{search_dir}/{fname}",
+                                    temp_path,
+                                )
+                            if downloaded:
+                                downloaded_filename = fname
+                                logger.info(f"Found and downloaded from {search_dir}: {fname}")
+                                break
+                except Exception as e:
+                    logger.debug(f"Failed to list {search_dir}: {e}")
 
         if not downloaded_filename or not temp_path:
             logger.warning(f"Could not find 3MF file for print: {filename or subtask_name}")

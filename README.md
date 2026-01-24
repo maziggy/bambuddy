@@ -90,6 +90,9 @@
 - Plate selection for multi-plate 3MF files
 - Duplicate detection via file hash
 - Mobile-friendly with always-visible action buttons
+- **External folder mounting** (NAS, USB, network shares) with read-only protection
+- Smart refresh using directory modification time tracking
+- Recursive file scanning with configurable depth limit
 
 ### 📁 Projects
 - Group related prints (e.g., "Voron Build")

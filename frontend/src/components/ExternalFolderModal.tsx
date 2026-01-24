@@ -86,18 +86,18 @@ export function ExternalFolderModal({ parentId, onClose, onSuccess }: ExternalFo
     !createMutation.isPending
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full mx-4">
-        <div className="px-6 py-4 border-b border-gray-200 dark:border-slate-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-sm border border-bambu-dark-tertiary">
+        <div className="p-4 border-b border-bambu-dark-tertiary">
+          <h2 className="text-lg font-semibold text-white">
             Mount External Folder
           </h2>
         </div>
 
-        <div className="px-6 py-4 space-y-4">
+        <form onSubmit={(e) => { e.preventDefault(); createMutation.mutate() }} className="p-4 space-y-4">
           {/* Path Input */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label className="block text-sm font-medium text-white mb-1">
               Folder Path
             </label>
             <input
@@ -105,36 +105,34 @@ export function ExternalFolderModal({ parentId, onClose, onSuccess }: ExternalFo
               value={path}
               onChange={handlePathChange}
               placeholder="/mnt/external/models"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg
-                         dark:bg-slate-700 dark:text-white text-sm focus:outline-none focus:ring-2
-                         focus:ring-bambu-green/50"
+              className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
             />
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            <p className="mt-1 text-xs text-bambu-gray">
               Absolute path to the directory (container path)
             </p>
 
             {/* Validation Status */}
             {isValidating && (
-              <div className="mt-2 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+              <div className="mt-2 flex items-center gap-2 text-sm text-bambu-gray">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 Validating...
               </div>
             )}
 
             {validation && !validation.valid && (
-              <div className="mt-2 flex items-start gap-2 text-sm text-red-600 dark:text-red-400">
+              <div className="mt-2 flex items-start gap-2 text-sm text-red-400">
                 <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                 <span>{validation.error}</span>
               </div>
             )}
 
             {validation && validation.valid && (
-              <div className="mt-2 flex items-start gap-2 text-sm text-green-600 dark:text-green-400">
+              <div className="mt-2 flex items-start gap-2 text-sm text-green-400">
                 <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
                 <div>
                   <p>Valid directory</p>
                   {validation.file_count !== undefined && (
-                    <p className="text-xs text-gray-600 dark:text-gray-400">
+                    <p className="text-xs text-bambu-gray">
                       {validation.file_count} files ({validation.directory_size_mb}MB)
                     </p>
                   )}
@@ -145,7 +143,7 @@ export function ExternalFolderModal({ parentId, onClose, onSuccess }: ExternalFo
 
           {/* Name Input */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label className="block text-sm font-medium text-white mb-1">
               Folder Name
             </label>
             <input
@@ -153,15 +151,13 @@ export function ExternalFolderModal({ parentId, onClose, onSuccess }: ExternalFo
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="My External Files"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg
-                         dark:bg-slate-700 dark:text-white text-sm focus:outline-none focus:ring-2
-                         focus:ring-bambu-green/50"
+              className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
             />
           </div>
 
           {/* Extensions Filter */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label className="block text-sm font-medium text-white mb-1">
               File Extensions (optional)
             </label>
             <input
@@ -169,11 +165,9 @@ export function ExternalFolderModal({ parentId, onClose, onSuccess }: ExternalFo
               value={extensions}
               onChange={(e) => setExtensions(e.target.value)}
               placeholder=".3mf,.stl,.gcode"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg
-                         dark:bg-slate-700 dark:text-white text-sm focus:outline-none focus:ring-2
-                         focus:ring-bambu-green/50"
+              className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
             />
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            <p className="mt-1 text-xs text-bambu-gray">
               Comma-separated list (e.g., .3mf,.stl). Leave empty to include all files.
             </p>
           </div>
@@ -185,10 +179,9 @@ export function ExternalFolderModal({ parentId, onClose, onSuccess }: ExternalFo
                 type="checkbox"
                 checked={readonly}
                 onChange={(e) => setReadonly(e.target.checked)}
-                className="w-4 h-4 rounded border-gray-300 text-bambu-green
-                           focus:ring-bambu-green/50"
+                className="w-4 h-4 rounded border-bambu-dark-tertiary text-bambu-green focus:ring-bambu-green/50"
               />
-              <span className="text-sm text-gray-700 dark:text-gray-300">
+              <span className="text-sm text-white">
                 Read-only (prevent uploads/deletes)
               </span>
             </label>
@@ -196,10 +189,9 @@ export function ExternalFolderModal({ parentId, onClose, onSuccess }: ExternalFo
 
           {/* Error Message */}
           {createMutation.isError && (
-            <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800
-                           rounded-lg flex gap-2">
-              <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-red-600 dark:text-red-400">
+            <div className="p-3 bg-red-900/20 border border-red-800 rounded-lg flex gap-2">
+              <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-red-400">
                 {createMutation.error instanceof Error
                   ? createMutation.error.message
                   : "Failed to create folder"}
@@ -208,22 +200,23 @@ export function ExternalFolderModal({ parentId, onClose, onSuccess }: ExternalFo
           )}
         </div>
 
+        </form>
+
         {/* Actions */}
-        <div className="px-6 py-4 border-t border-gray-200 dark:border-slate-700 flex gap-3 justify-end">
+        <div className="flex justify-end gap-2 pt-2 px-4 pb-4">
           <button
+            type="button"
             onClick={onClose}
             disabled={createMutation.isPending}
-            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100
-                      dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg
-                      transition-colors disabled:opacity-50"
+            className="px-4 py-2 text-sm font-medium text-white bg-slate-700 hover:bg-slate-600 rounded transition-colors disabled:opacity-50"
           >
             Cancel
           </button>
           <button
+            type="button"
             onClick={() => createMutation.mutate()}
             disabled={!canSubmit}
-            className="px-4 py-2 text-sm font-medium text-white bg-bambu-green hover:bg-bambu-green/90
-                      rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+            className="px-4 py-2 text-sm font-medium text-white bg-bambu-green hover:bg-bambu-green/90 rounded transition-colors disabled:opacity-50 flex items-center gap-2"
           >
             {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
             Create

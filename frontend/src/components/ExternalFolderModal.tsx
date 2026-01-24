@@ -14,7 +14,6 @@ export function ExternalFolderModal({ parentId, onClose, onSuccess }: ExternalFo
   const [path, setPath] = useState("")
   const [name, setName] = useState("")
   const [readonly, setReadonly] = useState(true)
-  const [extensions, setExtensions] = useState(".3mf,.stl,.gcode")
   const [isValidating, setIsValidating] = useState(false)
   const [validation, setValidation] = useState<{
     valid: boolean
@@ -70,7 +69,6 @@ export function ExternalFolderModal({ parentId, onClose, onSuccess }: ExternalFo
         parent_id: parentId,
         external_readonly: readonly,
         external_show_hidden: false,  // Hidden files are never shown
-        external_extensions: extensions || null,
       })
     },
     onSuccess: () => {
@@ -153,23 +151,6 @@ export function ExternalFolderModal({ parentId, onClose, onSuccess }: ExternalFo
               placeholder="My External Files"
               className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
             />
-          </div>
-
-          {/* Extensions Filter */}
-          <div>
-            <label className="block text-sm font-medium text-white mb-1">
-              File Extensions (optional)
-            </label>
-            <input
-              type="text"
-              value={extensions}
-              onChange={(e) => setExtensions(e.target.value)}
-              placeholder=".3mf,.stl,.gcode"
-              className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-            />
-            <p className="mt-1 text-xs text-bambu-gray">
-              Comma-separated list (e.g., .3mf,.stl). Leave empty to include all files.
-            </p>
           </div>
 
           {/* Options */}

@@ -25,6 +25,9 @@ All notable changes to Bambuddy will be documented in this file.
   - Bulk delete for multiple files at once
 
 ### Fixes
+- **Empty AMS Slot Not Recognized** - Fixed bug where removed spools still appeared in Bambuddy (Issue #147):
+  - Old AMS: Now properly applies empty values from tray data updates
+  - New AMS (AMS 2 Pro): Now checks `tray_exist_bits` bitmask to detect and clear empty slots
 - **Reprint Cost Tracking** - Reprinting an archive now adds the cost to the existing total, so statistics accurately reflect total filament expenditure across all prints
 - **HA Energy Sensors Not Detected** - Home Assistant energy sensors with lowercase units (w, kwh) are now properly detected; unit matching is now case-insensitive (Issue #119)
 - **File Manager Upload** - Upload modal now accepts all file types, not just ZIP files

@@ -934,9 +934,25 @@ class BambuMQTTClient:
                             # Merge: start with existing, update with new non-empty values
                             merged_tray = existing_trays[tray_id].copy()
                             for key, value in new_tray.items():
-                                # Only overwrite if new value is not empty/None
-                                # Exception: remain/k can be 0, which is valid
-                                if key in ("remain", "k", "id", "cali_idx") or value not in (
+                                # Fields that should always be updated (even with empty/zero values):
+                                # - remain, k, id, cali_idx: status indicators where 0 is valid
+                                # - tray_type, tray_sub_brands, tag_uid, tray_uuid, tray_info_idx,
+                                #   tray_color, tray_id_name: slot content indicators that must be
+                                #   cleared when a spool is removed (fixes #147 - old AMS empty slot)
+                                always_update_fields = (
+                                    "remain",
+                                    "k",
+                                    "id",
+                                    "cali_idx",
+                                    "tray_type",
+                                    "tray_sub_brands",
+                                    "tag_uid",
+                                    "tray_uuid",
+                                    "tray_info_idx",
+                                    "tray_color",
+                                    "tray_id_name",
+                                )
+                                if key in always_update_fields or value not in (
                                     None,
                                     "",
                                     "0000000000000000",
@@ -952,6 +968,48 @@ class BambuMQTTClient:
 
         # Convert back to list, sorted by ID for consistent ordering
         merged_ams = sorted(existing_by_id.values(), key=lambda x: x.get("id", 0))
+
+        # Check tray_exist_bits to clear empty slots (Issue #147)
+        # New AMS models don't send empty tray data - they just update tray_exist_bits
+        # Each bit in tray_exist_bits represents a slot: bit=0 means empty, bit=1 means has spool
+        tray_exist_bits_str = ams_data.get("tray_exist_bits") if isinstance(ams_data, dict) else None
+        if tray_exist_bits_str:
+            try:
+                tray_exist_bits = int(tray_exist_bits_str, 16)
+                for ams_unit in merged_ams:
+                    ams_id_raw = ams_unit.get("id")
+                    if ams_id_raw is None:
+                        continue
+                    # Convert to int (may be string from JSON)
+                    ams_id = int(ams_id_raw) if isinstance(ams_id_raw, str) else ams_id_raw
+                    if ams_id >= 128:  # Skip HT AMS (id >= 128)
+                        continue
+                    # Bits for this AMS unit: bits (ams_id*4) to (ams_id*4 + 3)
+                    for tray in ams_unit.get("tray", []):
+                        tray_id_raw = tray.get("id")
+                        if tray_id_raw is None:
+                            continue
+                        # Convert to int (may be string from JSON)
+                        tray_id = int(tray_id_raw) if isinstance(tray_id_raw, str) else tray_id_raw
+                        global_bit = ams_id * 4 + tray_id
+                        slot_exists = (tray_exist_bits >> global_bit) & 1
+                        if not slot_exists and tray.get("tray_type"):
+                            # Slot is marked empty but has data - clear it
+                            logger.info(
+                                f"[{self.serial_number}] Clearing empty slot: AMS {ams_id} slot {tray_id} "
+                                f"(tray_exist_bits bit {global_bit} = 0)"
+                            )
+                            tray["tray_type"] = ""
+                            tray["tray_sub_brands"] = ""
+                            tray["tray_color"] = ""
+                            tray["tray_id_name"] = ""
+                            tray["tag_uid"] = "0000000000000000"
+                            tray["tray_uuid"] = "00000000000000000000000000000000"
+                            tray["tray_info_idx"] = ""
+                            tray["remain"] = 0
+            except (ValueError, TypeError) as e:
+                logger.debug(f"[{self.serial_number}] Could not parse tray_exist_bits: {e}")
+
         self.state.raw_data["ams"] = merged_ams
 
         # Update timestamp for RFID refresh detection (frontend can detect "new data arrived")

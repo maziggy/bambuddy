@@ -2,6 +2,22 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
+## [0.1.7] - 2026-01-26
+
+### New Features
+- **Build Plate Empty Detection** - Automatically detect if objects are on the build plate before printing:
+  - Per-printer toggle to enable/disable plate detection
+  - Multi-reference calibration: Store up to 5 reference images of empty plates (different plate types)
+  - Automatic print pause when objects detected on plate at print start
+  - Push notification and WebSocket alert when print is paused due to plate detection
+  - ROI (Region of Interest) calibration UI with sliders to focus detection on build plate area
+  - Reference management: View thumbnails, add labels, delete references
+  - Works with both built-in and external cameras
+  - Uses buffered camera frames when stream is active (no blocking)
+  - Split button UI: Main button opens calibration modal, chevron toggles detection on/off
+  - Green visual indicator when plate detection is enabled
+  - Included in backup/restore
+
 ## [0.1.6] - 2026-01-24
 
 ### New Features

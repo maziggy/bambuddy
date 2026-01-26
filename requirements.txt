@@ -41,6 +41,10 @@ psutil>=6.0.0
 PyJWT>=2.8.0
 passlib[bcrypt]>=1.7.4
 
+# Plate Detection (optional - enables build plate empty detection)
+opencv-python-headless>=4.8.0
+numpy>=1.24.0
+
 # Development
 pytest>=8.0.0
 pytest-asyncio>=0.23.0

@@ -92,6 +92,22 @@ async def update_printer(
         raise HTTPException(404, "Printer not found")
 
     update_data = printer_data.model_dump(exclude_unset=True)
+
+    # Handle nested ROI object - flatten to individual columns
+    if "plate_detection_roi" in update_data:
+        roi = update_data.pop("plate_detection_roi")
+        if roi:
+            update_data["plate_detection_roi_x"] = roi.get("x")
+            update_data["plate_detection_roi_y"] = roi.get("y")
+            update_data["plate_detection_roi_w"] = roi.get("w")
+            update_data["plate_detection_roi_h"] = roi.get("h")
+        else:
+            # Clear ROI if set to null
+            update_data["plate_detection_roi_x"] = None
+            update_data["plate_detection_roi_y"] = None
+            update_data["plate_detection_roi_w"] = None
+            update_data["plate_detection_roi_h"] = None
+
     for field, value in update_data.items():
         setattr(printer, field, value)
 

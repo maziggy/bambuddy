@@ -68,6 +68,8 @@ export interface Printer {
   external_camera_url: string | null;
   external_camera_type: string | null;  // "mjpeg", "rtsp", "snapshot"
   external_camera_enabled: boolean;
+  plate_detection_enabled: boolean;  // Check plate before print
+  plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
   created_at: string;
   updated_at: string;
 }
@@ -215,6 +217,51 @@ export interface PrinterCreate {
   external_camera_url?: string | null;
   external_camera_type?: string | null;
   external_camera_enabled?: boolean;
+  plate_detection_enabled?: boolean;
+  plate_detection_roi?: PlateDetectionROI;
+}
+
+// Plate Detection
+export interface PlateDetectionROI {
+  x: number;  // X start % (0.0-1.0)
+  y: number;  // Y start % (0.0-1.0)
+  w: number;  // Width % (0.0-1.0)
+  h: number;  // Height % (0.0-1.0)
+}
+
+export interface PlateDetectionResult {
+  is_empty: boolean;
+  confidence: number;
+  difference_percent: number;
+  message: string;
+  has_debug_image: boolean;
+  debug_image_url?: string;
+  needs_calibration: boolean;
+  light_warning?: boolean;
+  reference_count?: number;
+  max_references?: number;
+  roi?: PlateDetectionROI;
+}
+
+export interface PlateDetectionStatus {
+  available: boolean;
+  calibrated: boolean;
+  reference_count: number;
+  max_references: number;
+  message: string;
+}
+
+export interface CalibrationResult {
+  success: boolean;
+  message: string;
+}
+
+export interface PlateReference {
+  index: number;
+  label: string;
+  timestamp: string;
+  has_image: boolean;
+  thumbnail_url: string;
 }
 
 // Archive types
@@ -2595,6 +2642,59 @@ export const api = {
     `${API_BASE}/printers/${printerId}/camera/snapshot`,
   testCameraConnection: (printerId: number) =>
     request<{ success: boolean; message?: string; error?: string }>(`/printers/${printerId}/camera/test`),
+
+  // Plate Detection - Multi-reference calibration (stores up to 5 references per printer)
+  checkPlateEmpty: (printerId: number, options?: { useExternal?: boolean; includeDebugImage?: boolean }) => {
+    const params = new URLSearchParams();
+    params.set('use_external', String(options?.useExternal ?? false));
+    params.set('include_debug_image', String(options?.includeDebugImage ?? false));
+    return request<PlateDetectionResult>(
+      `/printers/${printerId}/camera/check-plate?${params.toString()}`
+    );
+  },
+  getPlateDetectionStatus: (printerId: number) => {
+    return request<PlateDetectionStatus & { chamber_light?: boolean }>(
+      `/printers/${printerId}/camera/plate-detection/status`
+    );
+  },
+  calibratePlateDetection: (printerId: number, options?: { label?: string; useExternal?: boolean }) => {
+    const params = new URLSearchParams();
+    if (options?.label) params.set('label', options.label);
+    params.set('use_external', String(options?.useExternal ?? false));
+    return request<CalibrationResult & { index: number }>(
+      `/printers/${printerId}/camera/plate-detection/calibrate?${params.toString()}`,
+      { method: 'POST' }
+    );
+  },
+  deletePlateCalibration: (printerId: number) => {
+    return request<CalibrationResult>(
+      `/printers/${printerId}/camera/plate-detection/calibrate`,
+      { method: 'DELETE' }
+    );
+  },
+  getPlateReferences: (printerId: number) => {
+    return request<{
+      references: PlateReference[];
+      max_references: number;
+    }>(`/printers/${printerId}/camera/plate-detection/references`);
+  },
+  getPlateReferenceThumbnailUrl: (printerId: number, index: number) => {
+    return `${API_BASE}/printers/${printerId}/camera/plate-detection/references/${index}/thumbnail`;
+  },
+  updatePlateReferenceLabel: (printerId: number, index: number, label: string) => {
+    const params = new URLSearchParams();
+    params.set('label', label);
+    return request<{ success: boolean; index: number; label: string }>(
+      `/printers/${printerId}/camera/plate-detection/references/${index}?${params.toString()}`,
+      { method: 'PUT' }
+    );
+  },
+  deletePlateReference: (printerId: number, index: number) => {
+    return request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/camera/plate-detection/references/${index}`,
+      { method: 'DELETE' }
+    );
+  },
 
   // External Links
   getExternalLinks: () => request<ExternalLink[]>('/external-links/'),

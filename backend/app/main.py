@@ -505,6 +505,80 @@ async def on_print_start(printer_id: int, data: dict):
         result = await db.execute(select(Printer).where(Printer.id == printer_id))
         printer = result.scalar_one_or_none()
 
+        # Plate detection check - pause if objects detected on build plate
+        if printer and printer.plate_detection_enabled:
+            try:
+                from backend.app.services.plate_detection import check_plate_empty
+
+                # Build ROI tuple from printer settings if available
+                roi = None
+                if all(
+                    [
+                        printer.plate_detection_roi_x is not None,
+                        printer.plate_detection_roi_y is not None,
+                        printer.plate_detection_roi_w is not None,
+                        printer.plate_detection_roi_h is not None,
+                    ]
+                ):
+                    roi = (
+                        printer.plate_detection_roi_x,
+                        printer.plate_detection_roi_y,
+                        printer.plate_detection_roi_w,
+                        printer.plate_detection_roi_h,
+                    )
+
+                logger.info(f"[PLATE CHECK] Running plate detection for printer {printer_id}")
+                plate_result = await check_plate_empty(
+                    printer_id=printer_id,
+                    ip_address=printer.ip_address,
+                    access_code=printer.access_code,
+                    model=printer.model,
+                    include_debug_image=False,
+                    external_camera_url=printer.external_camera_url,
+                    external_camera_type=printer.external_camera_type,
+                    use_external=printer.external_camera_enabled,
+                    roi=roi,
+                )
+
+                if not plate_result.needs_calibration and not plate_result.is_empty:
+                    # Objects detected - pause the print!
+                    logger.warning(
+                        f"[PLATE CHECK] Objects detected on plate for printer {printer_id}! "
+                        f"Confidence: {plate_result.confidence:.0%}, Diff: {plate_result.difference_percent:.1f}%"
+                    )
+                    client = printer_manager.get_client(printer_id)
+                    if client:
+                        client.pause_print()
+                        logger.info(f"[PLATE CHECK] Print paused for printer {printer_id}")
+
+                    # Send notification about plate not empty
+                    await ws_manager.broadcast(
+                        {
+                            "type": "plate_not_empty",
+                            "printer_id": printer_id,
+                            "printer_name": printer.name,
+                            "message": f"Objects detected on build plate! Print paused. (Diff: {plate_result.difference_percent:.1f}%)",
+                        }
+                    )
+
+                    # Also send push notification
+                    try:
+                        await notification_service.send_notification(
+                            printer_id=printer_id,
+                            printer_name=printer.name,
+                            event_type="plate_not_empty",
+                            title=f"⚠️ {printer.name}: Plate Not Empty!",
+                            body="Objects detected on build plate. Print has been paused. Please clear the plate and resume.",
+                            db=db,
+                        )
+                    except Exception as notif_err:
+                        logger.warning(f"[PLATE CHECK] Failed to send notification: {notif_err}")
+                else:
+                    logger.info(f"[PLATE CHECK] Plate is empty for printer {printer_id}, proceeding with print")
+            except Exception as plate_err:
+                # Don't block print on plate detection errors
+                logger.warning(f"[PLATE CHECK] Plate detection failed for printer {printer_id}: {plate_err}")
+
         if not printer or not printer.auto_archive:
             # Send notification without archive data (auto-archive disabled)
             logger.info(

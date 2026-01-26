@@ -84,6 +84,11 @@ export function Layout() {
   const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState<string | null>(() =>
     sessionStorage.getItem('dismissedUpdateVersion')
   );
+  const [plateDetectionAlert, setPlateDetectionAlert] = useState<{
+    printer_id: number;
+    printer_name: string;
+    message: string;
+  } | null>(null);
 
   // Check for updates
   const { data: versionInfo } = useQuery({
@@ -299,6 +304,20 @@ export function Layout() {
       setMobileDrawerOpen(false);
     }
   }, [location.pathname, isMobile]);
+
+  // Listen for plate detection warnings (objects on plate, print paused)
+  useEffect(() => {
+    const handlePlateNotEmpty = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      setPlateDetectionAlert({
+        printer_id: detail.printer_id,
+        printer_name: detail.printer_name,
+        message: detail.message,
+      });
+    };
+    window.addEventListener('plate-not-empty', handlePlateNotEmpty);
+    return () => window.removeEventListener('plate-not-empty', handlePlateNotEmpty);
+  }, []);
 
   // Global keyboard shortcuts for navigation
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -749,6 +768,37 @@ export function Layout() {
             }
           }).filter(Boolean) as { type: 'nav' | 'external'; label: string; labelKey?: string }[]}
         />
+      )}
+
+      {/* Plate Detection Alert Modal */}
+      {plateDetectionAlert && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-4">
+          <div className="bg-bambu-dark-secondary border-2 border-yellow-500 rounded-xl shadow-2xl max-w-md w-full animate-in fade-in zoom-in duration-200">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-yellow-500/20 flex items-center justify-center">
+                <svg className="w-10 h-10 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <h2 className="text-xl font-bold text-yellow-400 mb-2">
+                Print Paused!
+              </h2>
+              <p className="text-lg text-white mb-2">
+                {plateDetectionAlert.printer_name}
+              </p>
+              <p className="text-bambu-gray mb-6">
+                Objects detected on build plate. The print has been automatically paused.
+                Please clear the plate and resume the print.
+              </p>
+              <button
+                onClick={() => setPlateDetectionAlert(null)}
+                className="w-full py-3 px-6 bg-yellow-500 hover:bg-yellow-600 text-black font-semibold rounded-lg transition-colors"
+              >
+                I Understand
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -416,6 +416,11 @@ async def export_backup(
                 "external_camera_url": printer.external_camera_url,
                 "external_camera_type": printer.external_camera_type,
                 "external_camera_enabled": printer.external_camera_enabled,
+                "plate_detection_enabled": printer.plate_detection_enabled,
+                "plate_detection_roi_x": printer.plate_detection_roi_x,
+                "plate_detection_roi_y": printer.plate_detection_roi_y,
+                "plate_detection_roi_w": printer.plate_detection_roi_w,
+                "plate_detection_roi_h": printer.plate_detection_roi_h,
             }
             if include_access_codes:
                 printer_data["access_code"] = printer.access_code
@@ -1000,6 +1005,11 @@ async def import_backup(
                     external_camera_url=printer_data.get("external_camera_url"),
                     external_camera_type=printer_data.get("external_camera_type"),
                     external_camera_enabled=printer_data.get("external_camera_enabled", False),
+                    plate_detection_enabled=printer_data.get("plate_detection_enabled", False),
+                    plate_detection_roi_x=printer_data.get("plate_detection_roi_x"),
+                    plate_detection_roi_y=printer_data.get("plate_detection_roi_y"),
+                    plate_detection_roi_w=printer_data.get("plate_detection_roi_w"),
+                    plate_detection_roi_h=printer_data.get("plate_detection_roi_h"),
                 )
                 db.add(printer)
                 restored["printers"] += 1

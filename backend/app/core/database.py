@@ -729,6 +729,30 @@ async def run_migrations(conn):
     except Exception:
         pass
 
+    # Migration: Add plate_detection_enabled column to printers
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN plate_detection_enabled BOOLEAN DEFAULT 0"))
+    except Exception:
+        pass
+
+    # Migration: Add plate detection ROI columns to printers
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN plate_detection_roi_x REAL"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN plate_detection_roi_y REAL"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN plate_detection_roi_w REAL"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN plate_detection_roi_h REAL"))
+    except Exception:
+        pass
+
 
 async def seed_notification_templates():
     """Seed default notification templates if they don't exist."""

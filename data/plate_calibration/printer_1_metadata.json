@@ -1,0 +1,20 @@
+{
+  "references": {
+    "0": {
+      "label": "CyroGrip",
+      "timestamp": "2026-01-26T12:06:09.612288"
+    },
+    "1": {
+      "label": "Carbon",
+      "timestamp": "2026-01-26T12:07:01.878776"
+    },
+    "2": {
+      "label": "Textured PEI",
+      "timestamp": "2026-01-26T12:07:31.460596"
+    },
+    "3": {
+      "label": "Wham Bam",
+      "timestamp": "2026-01-26T12:07:53.889845"
+    }
+  }
+}

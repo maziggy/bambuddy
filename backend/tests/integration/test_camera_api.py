@@ -223,3 +223,188 @@ class TestCameraAPI:
             )
             # Response will be a streaming response with error
             assert response.status_code == 200
+
+    # ========================================================================
+    # Plate Detection Endpoints
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_plate_detection_status_printer_not_found(self, async_client: AsyncClient):
+        """Verify 404 when checking plate detection status for non-existent printer."""
+        response = await async_client.get("/api/v1/printers/99999/camera/plate-detection/status")
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_plate_detection_status_opencv_not_available(self, async_client: AsyncClient, printer_factory):
+        """Verify plate detection status returns unavailable when OpenCV not installed."""
+        printer = await printer_factory()
+
+        with patch("backend.app.services.plate_detection.OPENCV_AVAILABLE", False):
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/plate-detection/status")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["available"] is False
+        assert result["calibrated"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_plate_detection_status_success(self, async_client: AsyncClient, printer_factory):
+        """Verify plate detection status returns correctly when OpenCV available."""
+        printer = await printer_factory()
+
+        # OpenCV is available in test environment, just check the response structure
+        response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/plate-detection/status")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert "available" in result
+        assert "calibrated" in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_check_plate_empty_printer_not_found(self, async_client: AsyncClient):
+        """Verify 404 when checking plate for non-existent printer."""
+        response = await async_client.get("/api/v1/printers/99999/camera/check-plate")
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_check_plate_empty_success_structure(self, async_client: AsyncClient, printer_factory):
+        """Verify check plate returns proper structure when OpenCV available."""
+        printer = await printer_factory()
+
+        # Mock PlateDetectionResult to avoid camera timeout
+        mock_result = MagicMock()
+        mock_result.is_empty = True
+        mock_result.confidence = 0.95
+        mock_result.difference_percent = 0.5
+        mock_result.message = "Plate appears empty"
+        mock_result.needs_calibration = False
+        mock_result.to_dict.return_value = {
+            "is_empty": True,
+            "confidence": 0.95,
+            "difference_percent": 0.5,
+            "message": "Plate appears empty",
+            "has_debug_image": False,
+            "needs_calibration": False,
+        }
+
+        with patch("backend.app.services.plate_detection.check_plate_empty", new_callable=AsyncMock) as mock_check:
+            mock_check.return_value = mock_result
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/check-plate")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert "is_empty" in result
+        assert "confidence" in result
+        assert "message" in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_calibrate_plate_printer_not_found(self, async_client: AsyncClient):
+        """Verify 404 when calibrating plate for non-existent printer."""
+        response = await async_client.post("/api/v1/printers/99999/camera/plate-detection/calibrate")
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_calibrate_plate_success_structure(self, async_client: AsyncClient, printer_factory):
+        """Verify calibrate endpoint responds with proper structure."""
+        printer = await printer_factory()
+
+        # Mock calibrate_plate at the source module to avoid camera timeout
+        with patch("backend.app.services.plate_detection.calibrate_plate", new_callable=AsyncMock) as mock_calibrate:
+            mock_calibrate.return_value = (True, "Calibration saved (1/5 references)", 0)
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/camera/plate-detection/calibrate")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["success"] is True
+        assert "index" in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_delete_calibration_printer_not_found(self, async_client: AsyncClient):
+        """Verify 404 when deleting calibration for non-existent printer."""
+        response = await async_client.delete("/api/v1/printers/99999/camera/plate-detection/calibrate")
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_delete_calibration_success(self, async_client: AsyncClient, printer_factory):
+        """Verify delete calibration returns proper structure."""
+        printer = await printer_factory()
+
+        response = await async_client.delete(f"/api/v1/printers/{printer.id}/camera/plate-detection/calibrate")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert "success" in result
+        assert "message" in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_references_printer_not_found(self, async_client: AsyncClient):
+        """Verify 404 when getting references for non-existent printer."""
+        response = await async_client.get("/api/v1/printers/99999/camera/plate-detection/references")
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_references_opencv_not_available(self, async_client: AsyncClient, printer_factory):
+        """Verify get references returns unavailable when OpenCV not installed."""
+        printer = await printer_factory()
+
+        with patch("backend.app.services.plate_detection.OPENCV_AVAILABLE", False):
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/plate-detection/references")
+
+        assert response.status_code == 503
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_references_success(self, async_client: AsyncClient, printer_factory):
+        """Verify get references returns proper structure."""
+        printer = await printer_factory()
+
+        # OpenCV is available in test environment, just check the response structure
+        response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/plate-detection/references")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert "references" in result
+        assert "max_references" in result
+        assert isinstance(result["references"], list)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_reference_label_printer_not_found(self, async_client: AsyncClient):
+        """Verify 404 when updating reference label for non-existent printer."""
+        response = await async_client.put(
+            "/api/v1/printers/99999/camera/plate-detection/references/0", params={"label": "New Label"}
+        )
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_delete_reference_printer_not_found(self, async_client: AsyncClient):
+        """Verify 404 when deleting reference for non-existent printer."""
+        response = await async_client.delete("/api/v1/printers/99999/camera/plate-detection/references/0")
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_reference_thumbnail_printer_not_found(self, async_client: AsyncClient):
+        """Verify 404 when getting reference thumbnail for non-existent printer."""
+        response = await async_client.get("/api/v1/printers/99999/camera/plate-detection/references/0/thumbnail")
+
+        assert response.status_code == 404

@@ -53,9 +53,6 @@ class AppSettings(BaseModel):
     # Default printer for operations
     default_printer_id: int | None = Field(default=None, description="Default printer ID for uploads, reprints, etc.")
 
-    # Telemetry
-    telemetry_enabled: bool = Field(default=True, description="Send anonymous usage data to help improve BamBuddy")
-
     # Virtual Printer
     virtual_printer_enabled: bool = Field(default=False, description="Enable virtual printer for slicer uploads")
     virtual_printer_access_code: str = Field(default="", description="Access code for virtual printer authentication")
@@ -141,7 +138,6 @@ class AppSettingsUpdate(BaseModel):
     date_format: str | None = None
     time_format: str | None = None
     default_printer_id: int | None = None
-    telemetry_enabled: bool | None = None
     virtual_printer_enabled: bool | None = None
     virtual_printer_access_code: str | None = None
     virtual_printer_mode: str | None = None

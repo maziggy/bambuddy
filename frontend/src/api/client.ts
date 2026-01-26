@@ -648,8 +648,6 @@ export interface AppSettings {
   time_format: 'system' | '12h' | '24h';
   // Default printer
   default_printer_id: number | null;
-  // Telemetry
-  telemetry_enabled: boolean;
   // Dark mode theme settings
   dark_style: 'classic' | 'glow' | 'vibrant';
   dark_background: 'neutral' | 'warm' | 'cool' | 'oled' | 'slate' | 'forest';

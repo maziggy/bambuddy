@@ -100,7 +100,6 @@ from backend.app.services.printer_manager import (
 from backend.app.services.smart_plug_manager import smart_plug_manager
 from backend.app.services.spoolman import close_spoolman_client, get_spoolman_client, init_spoolman_client
 from backend.app.services.tasmota import tasmota_service
-from backend.app.services.telemetry import start_telemetry_loop
 
 # Track active prints: {(printer_id, filename): archive_id}
 _active_prints: dict[tuple[int, str], int] = {}
@@ -2070,9 +2069,6 @@ async def lifespan(app: FastAPI):
 
     # Start printer runtime tracking
     start_runtime_tracking()
-
-    # Start anonymous telemetry (opt-out via settings)
-    asyncio.create_task(start_telemetry_loop(async_session))
 
     # Initialize virtual printer manager
     from backend.app.services.virtual_printer import virtual_printer_manager

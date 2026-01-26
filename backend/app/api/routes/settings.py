@@ -73,7 +73,6 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
                 "capture_finish_photo",
                 "spoolman_enabled",
                 "check_updates",
-                "telemetry_enabled",
                 "virtual_printer_enabled",
                 "ftp_retry_enabled",
                 "mqtt_enabled",

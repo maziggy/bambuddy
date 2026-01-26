@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Upload, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, Info, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Upload, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -87,7 +87,6 @@ export function SettingsPage() {
   const [showBulkPlugConfirm, setShowBulkPlugConfirm] = useState<'on' | 'off' | null>(null);
   const [showBackupModal, setShowBackupModal] = useState(false);
   const [showRestoreModal, setShowRestoreModal] = useState(false);
-  const [showTelemetryInfo, setShowTelemetryInfo] = useState(false);
   const [showReleaseNotes, setShowReleaseNotes] = useState(false);
   const [showDisableAuthConfirm, setShowDisableAuthConfirm] = useState(false);
 
@@ -400,7 +399,6 @@ export function SettingsPage() {
       settings.energy_tracking_mode !== localSettings.energy_tracking_mode ||
       settings.check_updates !== localSettings.check_updates ||
       settings.notification_language !== localSettings.notification_language ||
-      settings.telemetry_enabled !== localSettings.telemetry_enabled ||
       settings.ams_humidity_good !== localSettings.ams_humidity_good ||
       settings.ams_humidity_fair !== localSettings.ams_humidity_fair ||
       settings.ams_temp_good !== localSettings.ams_temp_good ||
@@ -461,7 +459,6 @@ export function SettingsPage() {
         energy_tracking_mode: localSettings.energy_tracking_mode,
         check_updates: localSettings.check_updates,
         notification_language: localSettings.notification_language,
-        telemetry_enabled: localSettings.telemetry_enabled,
         ams_humidity_good: localSettings.ams_humidity_good,
         ams_humidity_fair: localSettings.ams_humidity_fair,
         ams_temp_good: localSettings.ams_temp_good,
@@ -1237,33 +1234,6 @@ export function SettingsPage() {
                   <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
                 </label>
               </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="text-white">{t('settings.telemetry')}</p>
-                    <button
-                      onClick={() => setShowTelemetryInfo(true)}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-bambu-dark rounded-full text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary transition-colors"
-                    >
-                      <Info className="w-3 h-3" />
-                      {t('settings.telemetryLearnMore')}
-                    </button>
-                  </div>
-                  <p className="text-sm text-bambu-gray">
-                    {t('settings.telemetryDescription')}
-                  </p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={localSettings.telemetry_enabled}
-                    onChange={(e) => updateSetting('telemetry_enabled', e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
-                </label>
-              </div>
-
               <div className="border-t border-bambu-dark-tertiary pt-4">
                 <div className="flex items-center justify-between mb-2">
                   <div>
@@ -2935,89 +2905,6 @@ export function SettingsPage() {
             queryClient.invalidateQueries({ queryKey: ['api-keys'] });
           }}
         />
-      )}
-
-      {/* Telemetry Info Modal */}
-      {showTelemetryInfo && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-          onClick={() => setShowTelemetryInfo(false)}
-        >
-          <Card className="w-full max-w-lg" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Shield className="w-5 h-5 text-bambu-green" />
-                <h2 className="text-lg font-semibold text-white">{t('settings.telemetryInfoTitle')}</h2>
-              </div>
-              <button
-                onClick={() => setShowTelemetryInfo(false)}
-                className="p-1 rounded hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-bambu-gray text-sm">
-                {t('settings.telemetryInfoIntro')}
-              </p>
-
-              <div className="space-y-3">
-                <h3 className="text-white font-medium">{t('settings.telemetryInfoCollected')}</h3>
-                <ul className="space-y-2 text-sm">
-                  <li className="flex items-start gap-2 text-bambu-gray">
-                    <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 shrink-0" />
-                    <span>{t('settings.telemetryInfoItem1')}</span>
-                  </li>
-                  <li className="flex items-start gap-2 text-bambu-gray">
-                    <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 shrink-0" />
-                    <span>{t('settings.telemetryInfoItem2')}</span>
-                  </li>
-                  <li className="flex items-start gap-2 text-bambu-gray">
-                    <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 shrink-0" />
-                    <span>{t('settings.telemetryInfoItem3')}</span>
-                  </li>
-                  <li className="flex items-start gap-2 text-bambu-gray">
-                    <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 shrink-0" />
-                    <span>{t('settings.telemetryInfoItem4')}</span>
-                  </li>
-                </ul>
-              </div>
-
-              <div className="space-y-3">
-                <h3 className="text-white font-medium">{t('settings.telemetryInfoNotCollected')}</h3>
-                <ul className="space-y-2 text-sm">
-                  <li className="flex items-start gap-2 text-bambu-gray">
-                    <XCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
-                    <span>{t('settings.telemetryInfoNotItem1')}</span>
-                  </li>
-                  <li className="flex items-start gap-2 text-bambu-gray">
-                    <XCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
-                    <span>{t('settings.telemetryInfoNotItem2')}</span>
-                  </li>
-                  <li className="flex items-start gap-2 text-bambu-gray">
-                    <XCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
-                    <span>{t('settings.telemetryInfoNotItem3')}</span>
-                  </li>
-                  <li className="flex items-start gap-2 text-bambu-gray">
-                    <XCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
-                    <span>{t('settings.telemetryInfoNotItem4')}</span>
-                  </li>
-                </ul>
-              </div>
-
-              <p className="text-bambu-gray text-xs border-t border-bambu-dark-tertiary pt-4">
-                {t('settings.telemetryInfoFooter')}
-              </p>
-
-              <Button
-                onClick={() => setShowTelemetryInfo(false)}
-                className="w-full"
-              >
-                {t('common.close')}
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
       )}
 
       {/* Release Notes Modal */}

@@ -80,6 +80,7 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
                 "mqtt_use_tls",
                 "ha_enabled",
                 "per_printer_mapping_expanded",
+                "prometheus_enabled",
             ]:
                 settings_dict[setting.key] = setting.value.lower() == "true"
             elif setting.key in [

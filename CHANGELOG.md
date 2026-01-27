@@ -47,6 +47,17 @@ All notable changes to Bambuddy will be documented in this file.
 - **BOM Item Editing** - Bill of Materials items are now fully editable:
   - Edit name, quantity, price, URL, and remarks after creation
   - Pencil icon on each BOM item to enter edit mode
+- **Prometheus Metrics Endpoint** - Export printer telemetry for external monitoring systems (Issue #161):
+  - Enable via Settings → Network → Prometheus Metrics
+  - Endpoint: `GET /api/v1/metrics` (Prometheus text format)
+  - Optional bearer token authentication for security
+  - Printer metrics: connection status, state, temperatures (bed, nozzle, chamber), fans, WiFi signal
+  - Print metrics: progress, remaining time, layer count
+  - Statistics: total prints by status, filament used, print time
+  - Queue metrics: pending and active jobs
+  - System metrics: connected printers count
+  - Labels include printer_id, printer_name, serial for filtering
+  - Ready for Grafana dashboards
 - **External Link for Archives** - Add custom external links to archives for non-MakerWorld sources (Issue #151):
   - Link archives to Printables, Thingiverse, or any other URL
   - Globe button opens external link when set, falls back to auto-detected MakerWorld URL
@@ -98,7 +109,11 @@ All notable changes to Bambuddy will be documented in this file.
   - Added touch-based panning when zoomed in
   - Both embedded camera viewer and standalone camera page updated
 - **Progress Milestone Time** - Fixed milestone notifications showing wrong time (e.g., "17m" instead of "17h 47m") by converting remaining_time from minutes to seconds (Issue #157)
-- **File Manager Folder Tooltip** - Long folder names in File Manager navigation now show full name on hover (Issue #160)
+- **File Manager Folder Navigation** - Improved handling of long folder names (Issue #160):
+  - Resizable sidebar: Drag the edge to adjust width (200-500px), double-click to reset
+  - Text wrap toggle: "Wrap" button in header to wrap long names instead of truncating
+  - Both settings persist in localStorage
+  - Tooltip shows full name on hover
 
 ## [0.1.6b11] - 2026-01-22
 

@@ -119,6 +119,7 @@
 ### 🔧 Integrations
 - [Spoolman](https://github.com/Donkie/Spoolman) filament sync
 - MQTT publishing for Home Assistant, Node-RED, etc.
+- **Prometheus metrics** - Export printer telemetry for Grafana dashboards
 - Bambu Cloud profile management
 - K-profiles (pressure advance)
 - **GitHub backup** - Schedule automatic backups of cloud profiles, k profiles and settings to GitHub

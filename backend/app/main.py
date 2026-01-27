@@ -186,6 +186,7 @@ from backend.app.api.routes import (
     kprofiles,
     library,
     maintenance,
+    metrics,
     notification_templates,
     notifications,
     pending_uploads,
@@ -2491,6 +2492,7 @@ app.include_router(discovery.router, prefix=app_settings.api_prefix)
 app.include_router(pending_uploads.router, prefix=app_settings.api_prefix)
 app.include_router(firmware.router, prefix=app_settings.api_prefix)
 app.include_router(github_backup.router, prefix=app_settings.api_prefix)
+app.include_router(metrics.router, prefix=app_settings.api_prefix)
 
 
 # Serve static files (React build)

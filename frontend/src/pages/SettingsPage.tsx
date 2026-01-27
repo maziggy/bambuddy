@@ -434,7 +434,9 @@ export function SettingsPage() {
       settings.ha_token !== localSettings.ha_token ||
       (settings.library_archive_mode ?? 'ask') !== (localSettings.library_archive_mode ?? 'ask') ||
       Number(settings.library_disk_warning_gb ?? 5) !== Number(localSettings.library_disk_warning_gb ?? 5) ||
-      (settings.camera_view_mode ?? 'window') !== (localSettings.camera_view_mode ?? 'window');
+      (settings.camera_view_mode ?? 'window') !== (localSettings.camera_view_mode ?? 'window') ||
+      settings.prometheus_enabled !== localSettings.prometheus_enabled ||
+      settings.prometheus_token !== localSettings.prometheus_token;
 
     if (!hasChanges) {
       return;
@@ -495,6 +497,8 @@ export function SettingsPage() {
         library_archive_mode: localSettings.library_archive_mode,
         library_disk_warning_gb: localSettings.library_disk_warning_gb,
         camera_view_mode: localSettings.camera_view_mode,
+        prometheus_enabled: localSettings.prometheus_enabled,
+        prometheus_token: localSettings.prometheus_token,
       };
       updateMutation.mutate(settingsToSave);
     }, 500);
@@ -1850,6 +1854,70 @@ export function SettingsPage() {
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Prometheus Metrics */}
+          <Card>
+            <CardHeader>
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-orange-400" />
+                Prometheus Metrics
+              </h2>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-bambu-gray">
+                Expose printer metrics at <code className="bg-bambu-dark px-1 rounded">/api/v1/metrics</code> for Prometheus/Grafana monitoring.
+              </p>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-white">Enable Metrics Endpoint</p>
+                  <p className="text-xs text-bambu-gray">Expose printer data in Prometheus format</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.prometheus_enabled ?? false}
+                    onChange={(e) => updateSetting('prometheus_enabled', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
+
+              {localSettings.prometheus_enabled && (
+                <div className="space-y-4 pt-2 border-t border-bambu-dark-tertiary">
+                  <div>
+                    <label className="block text-sm text-bambu-gray mb-1">
+                      Bearer Token (optional)
+                    </label>
+                    <input
+                      type="password"
+                      value={localSettings.prometheus_token ?? ''}
+                      onChange={(e) => updateSetting('prometheus_token', e.target.value)}
+                      placeholder="Leave empty for no authentication"
+                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                    />
+                    <p className="text-xs text-bambu-gray mt-1">
+                      If set, requests must include <code className="bg-bambu-dark px-1 rounded">Authorization: Bearer &lt;token&gt;</code>
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-bambu-dark-tertiary">
+                    <p className="text-sm text-white mb-2">Available Metrics</p>
+                    <div className="text-xs text-bambu-gray space-y-1">
+                      <p><code className="text-orange-400">bambuddy_printer_connected</code> - Connection status</p>
+                      <p><code className="text-orange-400">bambuddy_printer_state</code> - Printer state (idle/printing/etc)</p>
+                      <p><code className="text-orange-400">bambuddy_print_progress</code> - Print progress 0-100%</p>
+                      <p><code className="text-orange-400">bambuddy_bed_temp_celsius</code> - Bed temperature</p>
+                      <p><code className="text-orange-400">bambuddy_nozzle_temp_celsius</code> - Nozzle temperature</p>
+                      <p><code className="text-orange-400">bambuddy_prints_total</code> - Total prints by result</p>
+                      <p className="text-bambu-gray/70 italic">...and more (layers, fans, queue, filament usage)</p>
+                    </div>
+                  </div>
                 </div>
               )}
             </CardContent>

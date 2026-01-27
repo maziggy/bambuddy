@@ -77,8 +77,8 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # Ensure directories exist
-settings.archive_dir.mkdir(exist_ok=True)
-settings.plate_calibration_dir.mkdir(exist_ok=True)
+settings.archive_dir.mkdir(parents=True, exist_ok=True)
+settings.plate_calibration_dir.mkdir(parents=True, exist_ok=True)
 settings.static_dir.mkdir(exist_ok=True)
 if settings.log_to_file:
     settings.log_dir.mkdir(exist_ok=True)

@@ -408,3 +408,51 @@ class TestCameraAPI:
         response = await async_client.get("/api/v1/printers/99999/camera/plate-detection/references/0/thumbnail")
 
         assert response.status_code == 404
+
+    # ========================================================================
+    # USB Camera Endpoint
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_usb_cameras_returns_list(self, async_client: AsyncClient):
+        """Verify USB cameras endpoint returns a list of cameras."""
+        response = await async_client.get("/api/v1/printers/usb-cameras")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert "cameras" in result
+        assert isinstance(result["cameras"], list)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_usb_cameras_structure(self, async_client: AsyncClient):
+        """Verify USB cameras endpoint returns proper structure for each camera."""
+        with patch("backend.app.services.external_camera.list_usb_cameras") as mock_list:
+            mock_list.return_value = [
+                {"device": "/dev/video0", "name": "Logitech Webcam C920", "index": 0},
+                {"device": "/dev/video2", "name": "USB Camera", "index": 2},
+            ]
+
+            response = await async_client.get("/api/v1/printers/usb-cameras")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert len(result["cameras"]) == 2
+        assert result["cameras"][0]["device"] == "/dev/video0"
+        assert result["cameras"][0]["name"] == "Logitech Webcam C920"
+        assert result["cameras"][1]["device"] == "/dev/video2"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_usb_cameras_empty_on_non_linux(self, async_client: AsyncClient):
+        """Verify USB cameras endpoint returns empty list on non-Linux systems."""
+        with patch("backend.app.services.external_camera.list_usb_cameras") as mock_list:
+            # Simulate non-Linux system (no /dev/video* devices)
+            mock_list.return_value = []
+
+            response = await async_client.get("/api/v1/printers/usb-cameras")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["cameras"] == []

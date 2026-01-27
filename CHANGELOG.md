@@ -2,9 +2,15 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
-## [0.1.7] - 2026-01-26
+## [0.1.6] - Not released
 
 ### New Features
+- **USB Camera Support** - Connect USB webcams directly to your Bambuddy host:
+  - New "USB Camera (V4L2)" option in external camera settings
+  - Auto-detection of available USB cameras via V4L2
+  - API endpoint to list connected USB cameras (`GET /api/v1/printers/usb-cameras`)
+  - Works with any V4L2-compatible camera on Linux
+  - Uses ffmpeg for frame capture and streaming
 - **Build Plate Empty Detection** - Automatically detect if objects are on the build plate before printing:
   - Per-printer toggle to enable/disable plate detection
   - Multi-reference calibration: Store up to 5 reference images of empty plates (different plate types)
@@ -17,10 +23,6 @@ All notable changes to Bambuddy will be documented in this file.
   - Split button UI: Main button opens calibration modal, chevron toggles detection on/off
   - Green visual indicator when plate detection is enabled
   - Included in backup/restore
-
-## [0.1.6] - 2026-01-24
-
-### New Features
 - **Project Import/Export** - Export and import projects with full file support (Issue #152):
   - Export single project as ZIP (includes project settings, BOM, and all files from linked library folders)
   - Export all projects as JSON for metadata-only backup

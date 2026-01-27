@@ -526,9 +526,45 @@ export function SettingsPage() {
     }
   };
 
-  const handleUpdatePrinterCamera = (printerId: number, updates: { url?: string; type?: string; enabled?: boolean }) => {
-    const data: Partial<{ external_camera_url: string | null; external_camera_type: string | null; external_camera_enabled: boolean }> = {};
-    if (updates.url !== undefined) data.external_camera_url = updates.url || null;
+  // Local state for camera URL inputs (to avoid saving on every keystroke)
+  const [localCameraUrls, setLocalCameraUrls] = useState<Record<number, string>>({});
+  const cameraUrlSaveTimeoutRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+
+  // Initialize local camera URLs from printer data
+  useEffect(() => {
+    if (printers) {
+      const urls: Record<number, string> = {};
+      printers.forEach(p => {
+        if (p.external_camera_url && localCameraUrls[p.id] === undefined) {
+          urls[p.id] = p.external_camera_url;
+        }
+      });
+      if (Object.keys(urls).length > 0) {
+        setLocalCameraUrls(prev => ({ ...prev, ...urls }));
+      }
+    }
+  }, [printers]);
+
+  const handleCameraUrlChange = (printerId: number, url: string) => {
+    // Update local state immediately for responsive UI
+    setLocalCameraUrls(prev => ({ ...prev, [printerId]: url }));
+
+    // Clear existing timeout for this printer
+    if (cameraUrlSaveTimeoutRef.current[printerId]) {
+      clearTimeout(cameraUrlSaveTimeoutRef.current[printerId]);
+    }
+
+    // Debounce the save (800ms delay)
+    cameraUrlSaveTimeoutRef.current[printerId] = setTimeout(() => {
+      updatePrinterMutation.mutate({
+        id: printerId,
+        data: { external_camera_url: url || null }
+      });
+    }, 800);
+  };
+
+  const handleUpdatePrinterCamera = (printerId: number, updates: { type?: string; enabled?: boolean }) => {
+    const data: Partial<{ external_camera_type: string | null; external_camera_enabled: boolean }> = {};
     if (updates.type !== undefined) data.external_camera_type = updates.type || null;
     if (updates.enabled !== undefined) data.external_camera_enabled = updates.enabled;
     updatePrinterMutation.mutate({ id: printerId, data });
@@ -1002,7 +1038,7 @@ export function SettingsPage() {
               <div className="border-t border-bambu-dark-tertiary pt-4 mt-4">
                 <h3 className="text-sm font-medium text-white mb-2">External Cameras</h3>
                 <p className="text-xs text-bambu-gray mb-3">
-                  Configure network cameras to replace the built-in printer camera. Supports MJPEG streams, RTSP, and HTTP snapshots. When enabled, the external camera is used for live view and finish photos.
+                  Configure external cameras to replace the built-in printer camera. Supports MJPEG streams, RTSP, HTTP snapshots, and USB cameras (V4L2). When enabled, the external camera is used for live view and finish photos.
                 </p>
 
                 {printers && printers.length > 0 ? (
@@ -1026,9 +1062,9 @@ export function SettingsPage() {
                           <div className="space-y-2 mt-2">
                             <input
                               type="text"
-                              placeholder="Camera URL (rtsp://... or http://...)"
-                              value={printer.external_camera_url || ''}
-                              onChange={(e) => handleUpdatePrinterCamera(printer.id, { url: e.target.value })}
+                              placeholder={printer.external_camera_type === 'usb' ? 'Device path (/dev/video0)' : 'Camera URL (rtsp://... or http://...)'}
+                              value={localCameraUrls[printer.id] ?? printer.external_camera_url ?? ''}
+                              onChange={(e) => handleCameraUrlChange(printer.id, e.target.value)}
                               className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
                             />
                             <div className="flex gap-2">
@@ -1040,12 +1076,13 @@ export function SettingsPage() {
                                 <option value="mjpeg">MJPEG Stream</option>
                                 <option value="rtsp">RTSP Stream</option>
                                 <option value="snapshot">HTTP Snapshot</option>
+                                <option value="usb">USB Camera (V4L2)</option>
                               </select>
                               <Button
                                 size="sm"
                                 variant="secondary"
-                                onClick={() => handleTestExternalCamera(printer.id, printer.external_camera_url || '', printer.external_camera_type || 'mjpeg')}
-                                disabled={extCameraTestLoading[printer.id] || !printer.external_camera_url}
+                                onClick={() => handleTestExternalCamera(printer.id, localCameraUrls[printer.id] ?? printer.external_camera_url ?? '', printer.external_camera_type || 'mjpeg')}
+                                disabled={extCameraTestLoading[printer.id] || !(localCameraUrls[printer.id] ?? printer.external_camera_url)}
                               >
                                 {extCameraTestLoading[printer.id] ? (
                                   <Loader2 className="w-4 h-4 animate-spin" />

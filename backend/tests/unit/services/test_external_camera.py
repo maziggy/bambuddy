@@ -215,3 +215,45 @@ class TestRtspUrlHandling:
         # Only the URL differs
         assert cmd_rtsp[:-1] == cmd_rtsps[:-1]
         assert cmd_rtsp[-1] != cmd_rtsps[-1]
+
+
+class TestUsbCameraHandling:
+    """Tests for USB camera support."""
+
+    def test_list_usb_cameras_returns_list(self):
+        """Verify list_usb_cameras returns a list (may be empty if no cameras)."""
+        from backend.app.services.external_camera import list_usb_cameras
+
+        result = list_usb_cameras()
+        assert isinstance(result, list)
+
+    def test_list_usb_cameras_dict_structure(self):
+        """Verify each camera entry has expected fields."""
+        from backend.app.services.external_camera import list_usb_cameras
+
+        result = list_usb_cameras()
+        for camera in result:
+            assert "device" in camera
+            assert "name" in camera
+            assert camera["device"].startswith("/dev/video")
+
+    @pytest.mark.asyncio
+    async def test_capture_frame_usb_type_accepted(self):
+        """Verify 'usb' camera type is accepted."""
+        from backend.app.services.external_camera import capture_frame
+
+        # Non-existent device should fail gracefully
+        result = await capture_frame("/dev/video999", "usb", timeout=1)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_capture_frame_usb_invalid_device_path(self):
+        """Verify invalid USB device paths are rejected."""
+        from backend.app.services.external_camera import capture_frame
+
+        # Invalid device path (not /dev/video*)
+        result = await capture_frame("/dev/sda1", "usb", timeout=1)
+        assert result is None
+
+        result = await capture_frame("http://example.com", "usb", timeout=1)
+        assert result is None

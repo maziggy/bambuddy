@@ -68,6 +68,22 @@ async def create_printer(
     return printer
 
 
+@router.get("/usb-cameras")
+async def list_usb_cameras():
+    """List available USB cameras connected to the system.
+
+    Returns a list of detected V4L2 video devices with their info.
+    Only works on Linux systems with V4L2 support.
+
+    Returns:
+        List of dicts with {device: str, name: str, capabilities: list, formats?: list}
+    """
+    from backend.app.services.external_camera import list_usb_cameras
+
+    cameras = list_usb_cameras()
+    return {"cameras": cameras}
+
+
 @router.get("/{printer_id}", response_model=PrinterResponse)
 async def get_printer(printer_id: int, db: AsyncSession = Depends(get_db)):
     """Get a specific printer."""

@@ -57,7 +57,7 @@
 ### 📊 Monitoring & Control
 - Real-time printer status via WebSocket
 - Live camera streaming (MJPEG) & snapshots with multi-viewer support
-- External network camera support (MJPEG, RTSP, HTTP snapshot) with layer-based timelapse
+- External camera support (MJPEG, RTSP, HTTP snapshot, USB/V4L2) with layer-based timelapse
 - **Build plate empty detection** - Auto-pause print if objects detected on plate (multi-reference calibration, ROI adjustment)
 - Fan status monitoring (part cooling, auxiliary, chamber)
 - Printer control (stop, pause, resume, chamber light)

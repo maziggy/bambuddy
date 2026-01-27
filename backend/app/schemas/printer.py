@@ -12,7 +12,7 @@ class PrinterBase(BaseModel):
     location: str | None = None  # Group/location name
     auto_archive: bool = True
     external_camera_url: str | None = None
-    external_camera_type: str | None = None  # "mjpeg", "rtsp", "snapshot"
+    external_camera_type: str | None = None  # "mjpeg", "rtsp", "snapshot", "usb"
     external_camera_enabled: bool = False
 
 

@@ -977,6 +977,18 @@ async def import_backup(
                             is_active_val = is_active_val.lower() == "true"
                         existing.is_active = is_active_val
 
+                    # Restore external camera settings
+                    existing.external_camera_url = printer_data.get("external_camera_url")
+                    existing.external_camera_type = printer_data.get("external_camera_type")
+                    existing.external_camera_enabled = printer_data.get("external_camera_enabled", False)
+
+                    # Restore plate detection settings
+                    existing.plate_detection_enabled = printer_data.get("plate_detection_enabled", False)
+                    existing.plate_detection_roi_x = printer_data.get("plate_detection_roi_x")
+                    existing.plate_detection_roi_y = printer_data.get("plate_detection_roi_y")
+                    existing.plate_detection_roi_w = printer_data.get("plate_detection_roi_w")
+                    existing.plate_detection_roi_h = printer_data.get("plate_detection_roi_h")
+
                     restored["printers"] += 1
                 else:
                     skipped["printers"] += 1

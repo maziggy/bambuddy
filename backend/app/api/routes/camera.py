@@ -663,8 +663,8 @@ async def test_external_camera(
 
     Args:
         printer_id: Printer ID (for authorization)
-        url: Camera URL to test
-        camera_type: Camera type ("mjpeg", "rtsp", "snapshot")
+        url: Camera URL or USB device path to test
+        camera_type: Camera type ("mjpeg", "rtsp", "snapshot", "usb")
 
     Returns:
         Dict with {success: bool, error?: str, resolution?: str}

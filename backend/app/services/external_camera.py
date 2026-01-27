@@ -1,10 +1,11 @@
-"""External network camera service.
+"""External camera service.
 
-Supports MJPEG streams, RTSP streams (via ffmpeg), and HTTP snapshot URLs.
+Supports MJPEG streams, RTSP streams (via ffmpeg), HTTP snapshot URLs, and USB cameras.
 """
 
 import asyncio
 import logging
+import re
 import shutil
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -12,6 +13,69 @@ from pathlib import Path
 import aiohttp
 
 logger = logging.getLogger(__name__)
+
+
+def list_usb_cameras() -> list[dict]:
+    """List available USB cameras (V4L2 devices on Linux).
+
+    Returns:
+        List of dicts with {device: str, name: str, capabilities: list}
+    """
+    cameras = []
+    video_devices = sorted(Path("/dev").glob("video*"))
+
+    for device in video_devices:
+        device_path = str(device)
+        info = {"device": device_path, "name": device.name, "capabilities": []}
+
+        # Try to get device info via v4l2-ctl
+        v4l2_ctl = shutil.which("v4l2-ctl")
+        if v4l2_ctl:
+            import subprocess
+
+            try:
+                result = subprocess.run(
+                    [v4l2_ctl, "-d", device_path, "--info"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if result.returncode == 0:
+                    # Parse device name from output
+                    for line in result.stdout.splitlines():
+                        if "Card type" in line:
+                            info["name"] = line.split(":", 1)[1].strip()
+                        elif "Driver name" in line:
+                            info["driver"] = line.split(":", 1)[1].strip()
+
+                    # Check if device supports video capture
+                    result = subprocess.run(
+                        [v4l2_ctl, "-d", device_path, "--list-formats"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        info["capabilities"].append("capture")
+                        # Parse available formats
+                        formats = re.findall(r"'(\w+)'", result.stdout)
+                        info["formats"] = list(set(formats))
+
+            except (subprocess.TimeoutExpired, Exception) as e:
+                logger.debug(f"v4l2-ctl failed for {device_path}: {e}")
+
+        # Only include devices that look like video capture devices
+        # Skip metadata devices (typically odd numbered like video1, video3)
+        try:
+            device_num = int(device.name.replace("video", ""))
+            # Even numbered devices are usually capture, odd are metadata
+            # But also check if we got capabilities
+            if info.get("capabilities") or device_num % 2 == 0:
+                cameras.append(info)
+        except ValueError:
+            cameras.append(info)
+
+    return cameras
 
 
 def get_ffmpeg_path() -> str | None:
@@ -31,8 +95,8 @@ async def capture_frame(url: str, camera_type: str, timeout: int = 15) -> bytes 
     """Capture single frame from external camera.
 
     Args:
-        url: Camera URL (MJPEG stream, RTSP URL, or HTTP snapshot URL)
-        camera_type: "mjpeg", "rtsp", or "snapshot"
+        url: Camera URL (MJPEG stream, RTSP URL, HTTP snapshot URL, or USB device path)
+        camera_type: "mjpeg", "rtsp", "snapshot", or "usb"
         timeout: Connection timeout in seconds
 
     Returns:
@@ -45,8 +109,74 @@ async def capture_frame(url: str, camera_type: str, timeout: int = 15) -> bytes 
         return await _capture_rtsp_frame(url, timeout)
     elif camera_type == "snapshot":
         return await _capture_snapshot(url, timeout)
+    elif camera_type == "usb":
+        return await _capture_usb_frame(url, timeout)
     else:
         logger.warning(f"Unknown camera type: {camera_type}")
+        return None
+
+
+async def _capture_usb_frame(device: str, timeout: int) -> bytes | None:
+    """Capture frame from USB camera using ffmpeg."""
+    ffmpeg = get_ffmpeg_path()
+    if not ffmpeg:
+        logger.error("ffmpeg not found - required for USB camera capture")
+        return None
+
+    # Validate device path
+    if not device.startswith("/dev/video"):
+        logger.error(f"Invalid USB device path: {device}")
+        return None
+
+    if not Path(device).exists():
+        logger.error(f"USB device does not exist: {device}")
+        return None
+
+    # Use ffmpeg to grab a single frame from USB camera
+    cmd = [
+        ffmpeg,
+        "-f",
+        "v4l2",
+        "-i",
+        device,
+        "-frames:v",
+        "1",
+        "-f",
+        "image2pipe",
+        "-vcodec",
+        "mjpeg",
+        "-q:v",
+        "2",
+        "-",
+    ]
+
+    try:
+        logger.debug(f"Running USB capture: {' '.join(cmd)}")
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+
+        if process.returncode != 0:
+            logger.error(f"ffmpeg USB capture failed: {stderr.decode()[:200]}")
+            return None
+
+        if not stdout or len(stdout) < 100:
+            logger.error("ffmpeg returned empty or too small frame from USB camera")
+            return None
+
+        return stdout
+
+    except TimeoutError:
+        logger.warning(f"USB frame capture timed out after {timeout}s")
+        if process:
+            process.kill()
+        return None
+    except Exception as e:
+        logger.error(f"USB frame capture failed: {e}")
         return None
 
 
@@ -225,8 +355,8 @@ async def generate_mjpeg_stream(url: str, camera_type: str, fps: int = 10) -> As
     """Generator yielding MJPEG frames for streaming.
 
     Args:
-        url: Camera URL
-        camera_type: "mjpeg", "rtsp", or "snapshot"
+        url: Camera URL or USB device path
+        camera_type: "mjpeg", "rtsp", "snapshot", or "usb"
         fps: Target frames per second
 
     Yields:
@@ -246,6 +376,11 @@ async def generate_mjpeg_stream(url: str, camera_type: str, fps: int = 10) -> As
     elif camera_type == "rtsp":
         # Use ffmpeg to convert RTSP to MJPEG
         async for frame in _stream_rtsp(url, fps):
+            yield _format_mjpeg_frame(frame)
+
+    elif camera_type == "usb":
+        # Use ffmpeg to stream from USB camera
+        async for frame in _stream_usb(url, fps):
             yield _format_mjpeg_frame(frame)
 
     elif camera_type == "snapshot":
@@ -399,6 +534,105 @@ async def _stream_rtsp(url: str, fps: int) -> AsyncGenerator[bytes, None]:
         logger.info("RTSP stream cancelled")
     except Exception as e:
         logger.error(f"RTSP stream error: {e}")
+    finally:
+        if process and process.returncode is None:
+            process.terminate()
+            try:
+                await asyncio.wait_for(process.wait(), timeout=2.0)
+            except TimeoutError:
+                process.kill()
+                await process.wait()
+
+
+async def _stream_usb(device: str, fps: int) -> AsyncGenerator[bytes, None]:
+    """Stream frames from USB camera via ffmpeg."""
+    ffmpeg = get_ffmpeg_path()
+    if not ffmpeg:
+        logger.error("ffmpeg not found - required for USB camera streaming")
+        return
+
+    # Validate device path
+    if not device.startswith("/dev/video"):
+        logger.error(f"Invalid USB device path: {device}")
+        return
+
+    if not Path(device).exists():
+        logger.error(f"USB device does not exist: {device}")
+        return
+
+    # ffmpeg command to stream from USB camera (v4l2)
+    cmd = [
+        ffmpeg,
+        "-f",
+        "v4l2",
+        "-framerate",
+        str(fps),
+        "-i",
+        device,
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "-r",
+        str(fps),
+        "-",
+    ]
+
+    process = None
+    try:
+        logger.info(f"Starting USB camera stream from {device} at {fps} fps")
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        # Give ffmpeg a moment to start and check for immediate failures
+        await asyncio.sleep(0.5)
+        if process.returncode is not None:
+            stderr = await process.stderr.read()
+            logger.error(f"ffmpeg USB stream failed immediately: {stderr.decode()[:300]}")
+            return
+
+        buffer = b""
+        jpeg_start = b"\xff\xd8"
+        jpeg_end = b"\xff\xd9"
+
+        while True:
+            try:
+                chunk = await asyncio.wait_for(process.stdout.read(8192), timeout=30.0)
+
+                if not chunk:
+                    break
+
+                buffer += chunk
+
+                # Extract complete frames
+                while True:
+                    start_idx = buffer.find(jpeg_start)
+                    if start_idx == -1:
+                        buffer = buffer[-2:] if len(buffer) > 2 else buffer
+                        break
+
+                    if start_idx > 0:
+                        buffer = buffer[start_idx:]
+
+                    end_idx = buffer.find(jpeg_end, 2)
+                    if end_idx == -1:
+                        break
+
+                    frame = buffer[: end_idx + 2]
+                    buffer = buffer[end_idx + 2 :]
+                    yield frame
+
+            except TimeoutError:
+                logger.warning("USB stream read timeout")
+                break
+
+    except asyncio.CancelledError:
+        logger.info("USB stream cancelled")
+    except Exception as e:
+        logger.error(f"USB stream error: {e}")
     finally:
         if process and process.returncode is None:
             process.terminate()

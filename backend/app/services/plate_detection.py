@@ -147,6 +147,7 @@ class PlateDetector:
         # Delete slot 0
         slot0 = _get_calibration_dir() / f"printer_{printer_id}_ref_0.jpg"
         if slot0.exists():
+            logger.info(f"Rotating references: removing oldest {slot0}")
             slot0.unlink()
         # Shift others down
         for i in range(1, self.MAX_REFERENCES):
@@ -219,6 +220,7 @@ class PlateDetector:
             return False
 
         # Delete image
+        logger.info(f"Deleting reference {index} for printer {printer_id}: {path}")
         path.unlink()
 
         # Remove from metadata
@@ -338,7 +340,24 @@ class PlateDetector:
             # Save to next available slot
             slot_index = num_existing
             reference_path = _get_calibration_dir() / f"printer_{printer_id}_ref_{slot_index}.jpg"
-            cv2.imwrite(str(reference_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
+            write_success = cv2.imwrite(str(reference_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
+
+            if not write_success:
+                logger.error(f"cv2.imwrite failed for {reference_path}")
+                return False, "Failed to save reference image", -1
+
+            # Verify the file actually exists and has content
+            if not reference_path.exists():
+                logger.error(f"Reference image not found after save: {reference_path}")
+                return False, "Reference image not found after save", -1
+
+            file_size = reference_path.stat().st_size
+            if file_size < 1000:  # JPEG should be at least 1KB
+                logger.error(f"Reference image too small ({file_size} bytes): {reference_path}")
+                reference_path.unlink()  # Clean up invalid file
+                return False, f"Reference image corrupted (only {file_size} bytes)", -1
+
+            logger.info(f"Saved reference image: {reference_path} ({file_size} bytes)")
 
             # Save metadata
             metadata = self._load_metadata(printer_id)

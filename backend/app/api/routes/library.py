@@ -25,6 +25,9 @@ from backend.app.schemas.library import (
     AddToQueueRequest,
     AddToQueueResponse,
     AddToQueueResult,
+    BatchThumbnailRequest,
+    BatchThumbnailResponse,
+    BatchThumbnailResult,
     BulkDeleteRequest,
     BulkDeleteResponse,
     FileDuplicate,
@@ -708,6 +711,18 @@ async def upload_file(
             except Exception as e:
                 logger.warning(f"Failed to extract gcode thumbnail: {e}")
 
+        elif ext == ".stl":
+            # Generate thumbnail from STL file
+            try:
+                from backend.app.services.stl_thumbnail import generate_stl_thumbnail
+
+                thumb_filename = f"{uuid.uuid4().hex}.png"
+                thumb_path = thumbnails_dir / thumb_filename
+                if generate_stl_thumbnail(file_path, thumb_path):
+                    thumbnail_path = str(thumb_path)
+            except Exception as e:
+                logger.warning(f"Failed to generate STL thumbnail: {e}")
+
         elif ext.lower() in IMAGE_EXTENSIONS:
             # For image files, create a thumbnail from the image itself
             thumbnail_path = create_image_thumbnail(file_path, thumbnails_dir)
@@ -937,6 +952,17 @@ async def extract_zip_file(
                                 thumbnail_path = str(thumb_path)
                         except Exception as e:
                             logger.warning(f"Failed to extract gcode thumbnail from ZIP: {e}")
+
+                    elif ext == ".stl":
+                        try:
+                            from backend.app.services.stl_thumbnail import generate_stl_thumbnail
+
+                            thumb_filename = f"{uuid.uuid4().hex}.png"
+                            thumb_path = thumbnails_dir / thumb_filename
+                            if generate_stl_thumbnail(file_path, thumb_path):
+                                thumbnail_path = str(thumb_path)
+                        except Exception as e:
+                            logger.warning(f"Failed to generate STL thumbnail from ZIP: {e}")
 
                     elif ext.lower() in IMAGE_EXTENSIONS:
                         thumbnail_path = create_image_thumbnail(file_path, thumbnails_dir)
@@ -1919,3 +1945,197 @@ async def get_library_stats(db: AsyncSession = Depends(get_db)):
         "disk_total_bytes": disk_total_bytes,
         "disk_used_bytes": disk_used_bytes,
     }
+
+
+# ============ Thumbnail Generation Endpoints ============
+
+
+@router.post("/files/{file_id}/regenerate-thumbnail", response_model=FileResponseSchema)
+async def regenerate_thumbnail(file_id: int, db: AsyncSession = Depends(get_db)):
+    """Regenerate thumbnail for a specific file.
+
+    Works for STL, 3MF, gcode, and image files.
+    """
+    result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
+    file = result.scalar_one_or_none()
+
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    if not file.file_path or not os.path.exists(file.file_path):
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    thumbnails_dir = get_library_thumbnails_dir()
+    file_path = Path(file.file_path)
+
+    # Delete old thumbnail if exists
+    if file.thumbnail_path and os.path.exists(file.thumbnail_path):
+        try:
+            os.remove(file.thumbnail_path)
+        except Exception as e:
+            logger.warning(f"Failed to delete old thumbnail: {e}")
+
+    thumbnail_path = None
+
+    if ext == ".3mf":
+        try:
+            parser = ThreeMFParser(str(file_path))
+            raw_metadata = parser.parse()
+            thumbnail_data = raw_metadata.get("_thumbnail_data")
+            thumbnail_ext = raw_metadata.get("_thumbnail_ext", ".png")
+
+            if thumbnail_data:
+                thumb_filename = f"{uuid.uuid4().hex}{thumbnail_ext}"
+                thumb_path = thumbnails_dir / thumb_filename
+                with open(thumb_path, "wb") as f:
+                    f.write(thumbnail_data)
+                thumbnail_path = str(thumb_path)
+        except Exception as e:
+            logger.warning(f"Failed to extract 3MF thumbnail: {e}")
+
+    elif ext == ".gcode":
+        try:
+            thumbnail_data = extract_gcode_thumbnail(file_path)
+            if thumbnail_data:
+                thumb_filename = f"{uuid.uuid4().hex}.png"
+                thumb_path = thumbnails_dir / thumb_filename
+                with open(thumb_path, "wb") as f:
+                    f.write(thumbnail_data)
+                thumbnail_path = str(thumb_path)
+        except Exception as e:
+            logger.warning(f"Failed to extract gcode thumbnail: {e}")
+
+    elif ext == ".stl":
+        try:
+            from backend.app.services.stl_thumbnail import generate_stl_thumbnail
+
+            thumb_filename = f"{uuid.uuid4().hex}.png"
+            thumb_path = thumbnails_dir / thumb_filename
+            if generate_stl_thumbnail(file_path, thumb_path):
+                thumbnail_path = str(thumb_path)
+        except Exception as e:
+            logger.warning(f"Failed to generate STL thumbnail: {e}")
+
+    elif ext.lower() in IMAGE_EXTENSIONS:
+        thumbnail_path = create_image_thumbnail(file_path, thumbnails_dir)
+
+    # Update database
+    file.thumbnail_path = thumbnail_path
+    await db.flush()
+    await db.refresh(file)
+
+    # Return full response
+    return await get_file(file_id, db)
+
+
+@router.post("/generate-stl-thumbnails", response_model=BatchThumbnailResponse)
+async def batch_generate_stl_thumbnails(
+    request: BatchThumbnailRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate thumbnails for existing STL files.
+
+    Can target specific files, a folder, or all STL files missing thumbnails.
+
+    Args:
+        request: Batch request specifying which files to process
+            - file_ids: List of specific file IDs to process
+            - folder_id: Process all STL files in this folder
+            - all_missing: Process all STL files without thumbnails
+    """
+    from backend.app.services.stl_thumbnail import generate_stl_thumbnail
+
+    results: list[BatchThumbnailResult] = []
+    thumbnails_dir = get_library_thumbnails_dir()
+
+    # Build query based on request parameters
+    query = select(LibraryFile).where(LibraryFile.file_type == "stl")
+
+    if request.file_ids:
+        # Specific files requested
+        query = query.where(LibraryFile.id.in_(request.file_ids))
+    elif request.folder_id is not None:
+        # All STL files in a folder
+        query = query.where(LibraryFile.folder_id == request.folder_id)
+    elif request.all_missing:
+        # All STL files without thumbnails
+        query = query.where(LibraryFile.thumbnail_path.is_(None))
+    else:
+        # No valid filter specified
+        raise HTTPException(
+            status_code=400,
+            detail="Must specify file_ids, folder_id, or all_missing=true",
+        )
+
+    result = await db.execute(query)
+    files = result.scalars().all()
+
+    succeeded = 0
+    failed = 0
+
+    for file in files:
+        if not file.file_path or not os.path.exists(file.file_path):
+            results.append(
+                BatchThumbnailResult(
+                    file_id=file.id,
+                    filename=file.filename,
+                    success=False,
+                    error="File not found on disk",
+                )
+            )
+            failed += 1
+            continue
+
+        try:
+            # Delete old thumbnail if exists
+            if file.thumbnail_path and os.path.exists(file.thumbnail_path):
+                try:
+                    os.remove(file.thumbnail_path)
+                except Exception:
+                    pass
+
+            # Generate new thumbnail
+            thumb_filename = f"{uuid.uuid4().hex}.png"
+            thumb_path = thumbnails_dir / thumb_filename
+
+            if generate_stl_thumbnail(file.file_path, thumb_path):
+                file.thumbnail_path = str(thumb_path)
+                results.append(
+                    BatchThumbnailResult(
+                        file_id=file.id,
+                        filename=file.filename,
+                        success=True,
+                    )
+                )
+                succeeded += 1
+            else:
+                results.append(
+                    BatchThumbnailResult(
+                        file_id=file.id,
+                        filename=file.filename,
+                        success=False,
+                        error="Thumbnail generation failed",
+                    )
+                )
+                failed += 1
+
+        except Exception as e:
+            results.append(
+                BatchThumbnailResult(
+                    file_id=file.id,
+                    filename=file.filename,
+                    success=False,
+                    error=str(e),
+                )
+            )
+            failed += 1
+
+    await db.commit()
+
+    return BatchThumbnailResponse(
+        processed=len(results),
+        succeeded=succeeded,
+        failed=failed,
+        results=results,
+    )

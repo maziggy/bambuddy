@@ -37,6 +37,10 @@ qrcode[pil]>=7.4.0
 # System monitoring
 psutil>=6.0.0
 
+# STL thumbnail generation
+trimesh>=4.0.0
+matplotlib>=3.8.0
+
 # Authentication
 PyJWT>=2.8.0
 passlib[bcrypt]>=1.7.4

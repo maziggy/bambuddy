@@ -3158,6 +3158,21 @@ export const api = {
 
   clearGitHubBackupLogs: (keepLast: number = 10) =>
     request<{ deleted: number; message: string }>(`/github-backup/logs?keep_last=${keepLast}`, { method: 'DELETE' }),
+
+  // STL Thumbnail Generation
+  regenerateFileThumbnail: (fileId: number) =>
+    request<LibraryFile>(`/library/files/${fileId}/regenerate-thumbnail`, {
+      method: 'POST',
+    }),
+  batchGenerateStlThumbnails: (options: {
+    file_ids?: number[];
+    folder_id?: number;
+    all_missing?: boolean;
+  }) =>
+    request<BatchThumbnailResponse>('/library/generate-stl-thumbnails', {
+      method: 'POST',
+      body: JSON.stringify(options),
+    }),
 };
 
 // AMS History types
@@ -3380,6 +3395,21 @@ export interface ZipExtractResponse {
   folders_created: number;
   files: ZipExtractResult[];
   errors: ZipExtractError[];
+}
+
+// Batch Thumbnail Generation types
+export interface BatchThumbnailResult {
+  file_id: number;
+  filename: string;
+  success: boolean;
+  error: string | null;
+}
+
+export interface BatchThumbnailResponse {
+  processed: number;
+  succeeded: number;
+  failed: number;
+  results: BatchThumbnailResult[];
 }
 
 // Library Queue types

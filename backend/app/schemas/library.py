@@ -262,3 +262,32 @@ class ZipExtractResponse(BaseModel):
     folders_created: int
     files: list[ZipExtractResult]
     errors: list[ZipExtractError]
+
+
+# ============ Batch Thumbnail Generation ============
+
+
+class BatchThumbnailRequest(BaseModel):
+    """Schema for batch STL thumbnail generation request."""
+
+    file_ids: list[int] | None = None  # Specific file IDs to process
+    folder_id: int | None = None  # Process all STL files in this folder
+    all_missing: bool = False  # Process all STL files without thumbnails
+
+
+class BatchThumbnailResult(BaseModel):
+    """Result for a single file thumbnail generation."""
+
+    file_id: int
+    filename: str
+    success: bool
+    error: str | None = None
+
+
+class BatchThumbnailResponse(BaseModel):
+    """Schema for batch thumbnail generation response."""
+
+    processed: int
+    succeeded: int
+    failed: int
+    results: list[BatchThumbnailResult]

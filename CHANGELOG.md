@@ -5,6 +5,14 @@ All notable changes to Bambuddy will be documented in this file.
 ## [0.1.6-final] - Not released
 
 ### New Features
+- **STL Thumbnail Generation** - Auto-generate preview thumbnails for STL files (Issue #156):
+  - Checkbox option when uploading STL files to generate thumbnails automatically
+  - Batch generate thumbnails for existing STL files via "Generate Thumbnails" button
+  - Individual file thumbnail generation via context menu (three-dot menu)
+  - Works with ZIP extraction (generates thumbnails for all STL files in archive)
+  - Uses trimesh and matplotlib for 3D rendering with Bambu green color theme
+  - Thumbnails auto-refresh in UI after generation
+  - Graceful handling of complex/invalid STL files
 - **Disable Printer Firmware Checks** - New toggle in Settings → General → Updates to disable printer firmware update checks:
   - Prevents Bambuddy from checking Bambu Lab servers for firmware updates
   - Useful for users who prefer to manage firmware manually or have network restrictions

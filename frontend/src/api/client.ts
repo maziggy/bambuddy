@@ -3029,11 +3029,17 @@ export const api = {
     return request<LibraryFileListItem[]>(`/library/files?${params}`);
   },
   getLibraryFile: (id: number) => request<LibraryFile>(`/library/files/${id}`),
-  uploadLibraryFile: async (file: File, folderId?: number | null): Promise<LibraryFileUploadResponse> => {
+  uploadLibraryFile: async (
+    file: File,
+    folderId?: number | null,
+    generateStlThumbnails: boolean = true
+  ): Promise<LibraryFileUploadResponse> => {
     const formData = new FormData();
     formData.append('file', file);
-    const params = folderId ? `?folder_id=${folderId}` : '';
-    const response = await fetch(`${API_BASE}/library/files${params}`, {
+    const params = new URLSearchParams();
+    if (folderId) params.set('folder_id', String(folderId));
+    params.set('generate_stl_thumbnails', String(generateStlThumbnails));
+    const response = await fetch(`${API_BASE}/library/files?${params}`, {
       method: 'POST',
       body: formData,
     });
@@ -3047,7 +3053,8 @@ export const api = {
     file: File,
     folderId?: number | null,
     preserveStructure: boolean = true,
-    createFolderFromZip: boolean = false
+    createFolderFromZip: boolean = false,
+    generateStlThumbnails: boolean = true
   ): Promise<ZipExtractResponse> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -3055,6 +3062,7 @@ export const api = {
     if (folderId) params.set('folder_id', String(folderId));
     params.set('preserve_structure', String(preserveStructure));
     params.set('create_folder_from_zip', String(createFolderFromZip));
+    params.set('generate_stl_thumbnails', String(generateStlThumbnails));
     const response = await fetch(`${API_BASE}/library/files/extract-zip?${params}`, {
       method: 'POST',
       body: formData,
@@ -3088,6 +3096,15 @@ export const api = {
       body: JSON.stringify({ file_ids: fileIds, folder_ids: folderIds }),
     }),
   getLibraryStats: () => request<LibraryStats>('/library/stats'),
+  batchGenerateStlThumbnails: (options: {
+    file_ids?: number[];
+    folder_id?: number;
+    all_missing?: boolean;
+  }) =>
+    request<BatchThumbnailResponse>('/library/generate-stl-thumbnails', {
+      method: 'POST',
+      body: JSON.stringify(options),
+    }),
   addLibraryFilesToQueue: (fileIds: number[]) =>
     request<AddToQueueResponse>('/library/files/add-to-queue', {
       method: 'POST',
@@ -3410,6 +3427,21 @@ export interface ZipExtractResponse {
   folders_created: number;
   files: ZipExtractResult[];
   errors: ZipExtractError[];
+}
+
+// STL Thumbnail Generation types
+export interface BatchThumbnailResult {
+  file_id: number;
+  filename: string;
+  success: boolean;
+  error?: string | null;
+}
+
+export interface BatchThumbnailResponse {
+  processed: number;
+  succeeded: number;
+  failed: number;
+  results: BatchThumbnailResult[];
 }
 
 // Library Queue types

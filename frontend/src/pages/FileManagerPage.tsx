@@ -35,6 +35,7 @@ import {
   Printer,
   Pencil,
   Play,
+  Image,
 } from 'lucide-react';
 import { api } from '../api/client';
 import type {
@@ -427,6 +428,7 @@ function UploadModal({ folderId, onClose, onUploadComplete }: UploadModalProps) 
   const [isUploading, setIsUploading] = useState(false);
   const [preserveZipStructure, setPreserveZipStructure] = useState(true);
   const [createFolderFromZip, setCreateFolderFromZip] = useState(false);
+  const [generateStlThumbnails, setGenerateStlThumbnails] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
@@ -466,6 +468,7 @@ function UploadModal({ folderId, onClose, onUploadComplete }: UploadModalProps) 
   };
 
   const hasZipFiles = files.some((f) => f.isZip && f.status === 'pending');
+  const hasStlFiles = files.some((f) => f.file.name.toLowerCase().endsWith('.stl') && f.status === 'pending');
 
   const handleUpload = async () => {
     if (files.length === 0) return;
@@ -482,7 +485,7 @@ function UploadModal({ folderId, onClose, onUploadComplete }: UploadModalProps) 
       try {
         if (files[i].isZip) {
           // Extract ZIP file
-          const result = await api.extractZipFile(files[i].file, folderId, preserveZipStructure, createFolderFromZip);
+          const result = await api.extractZipFile(files[i].file, folderId, preserveZipStructure, createFolderFromZip, generateStlThumbnails);
           setFiles((prev) =>
             prev.map((f, idx) =>
               idx === i
@@ -497,7 +500,7 @@ function UploadModal({ folderId, onClose, onUploadComplete }: UploadModalProps) 
           );
         } else {
           // Regular file upload
-          await api.uploadLibraryFile(files[i].file, folderId);
+          await api.uploadLibraryFile(files[i].file, folderId, generateStlThumbnails);
           setFiles((prev) =>
             prev.map((f, idx) => (idx === i ? { ...f, status: 'success' } : f))
           );
@@ -590,6 +593,32 @@ function UploadModal({ folderId, onClose, onUploadComplete }: UploadModalProps) 
                       className="w-4 h-4 rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
                     />
                     <span className="text-sm text-white">Create folder from ZIP filename</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* STL Thumbnail Options - show for STL files or ZIP files (which may contain STLs) */}
+          {(hasStlFiles || hasZipFiles) && (
+            <div className="p-3 bg-bambu-green/10 border border-bambu-green/30 rounded-lg">
+              <div className="flex items-start gap-3">
+                <Image className="w-5 h-5 text-bambu-green mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm text-bambu-green font-medium">STL thumbnail generation</p>
+                  <p className="text-xs text-bambu-green/70 mt-1">
+                    {hasZipFiles && !hasStlFiles
+                      ? 'ZIP files may contain STL files. Thumbnails can be generated during extraction.'
+                      : 'Thumbnails can be generated for STL files. Large models may take longer to process.'}
+                  </p>
+                  <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={generateStlThumbnails}
+                      onChange={(e) => setGenerateStlThumbnails(e.target.checked)}
+                      className="w-4 h-4 rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
+                    />
+                    <span className="text-sm text-white">Generate thumbnails for STL files</span>
                   </label>
                 </div>
               </div>
@@ -832,9 +861,11 @@ interface FileCardProps {
   onAddToQueue?: (id: number) => void;
   onPrint?: (file: LibraryFileListItem) => void;
   onRename?: (file: LibraryFileListItem) => void;
+  onGenerateThumbnail?: (file: LibraryFileListItem) => void;
+  thumbnailVersion?: number;
 }
 
-function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onAddToQueue, onPrint, onRename }: FileCardProps) {
+function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onAddToQueue, onPrint, onRename, onGenerateThumbnail, thumbnailVersion }: FileCardProps) {
   const [showActions, setShowActions] = useState(false);
 
   return (
@@ -850,7 +881,7 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onAddToQue
       <div className="aspect-square bg-bambu-dark flex items-center justify-center overflow-hidden">
         {file.thumbnail_path ? (
           <img
-            src={api.getLibraryFileThumbnailUrl(file.id)}
+            src={`${api.getLibraryFileThumbnailUrl(file.id)}${thumbnailVersion ? `?v=${thumbnailVersion}` : ''}`}
             alt={file.filename}
             className="w-full h-full object-cover"
           />
@@ -935,6 +966,15 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onAddToQue
                   Rename
                 </button>
               )}
+              {onGenerateThumbnail && file.file_type === 'stl' && (
+                <button
+                  className="w-full px-3 py-1.5 text-left text-sm text-white hover:bg-bambu-dark flex items-center gap-2"
+                  onClick={() => { onGenerateThumbnail(file); setShowActions(false); }}
+                >
+                  <Image className="w-3.5 h-3.5" />
+                  Generate Thumbnail
+                </button>
+              )}
               <button
                 className="w-full px-3 py-1.5 text-left text-sm text-red-400 hover:bg-bambu-dark flex items-center gap-2"
                 onClick={() => { onDelete(file.id); setShowActions(false); }}
@@ -979,6 +1019,7 @@ export function FileManagerPage() {
   const [printFile, setPrintFile] = useState<LibraryFileListItem | null>(null);
   const [printMultiFile, setPrintMultiFile] = useState<LibraryFileListItem | null>(null);
   const [renameItem, setRenameItem] = useState<{ type: 'file' | 'folder'; id: number; name: string } | null>(null);
+  const [thumbnailVersions, setThumbnailVersions] = useState<Record<number, number>>({});
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
     return (localStorage.getItem('library-view-mode') as 'grid' | 'list') || 'grid';
   });
@@ -1272,6 +1313,52 @@ export function FileManagerPage() {
     },
   });
 
+  const batchThumbnailMutation = useMutation({
+    mutationFn: () => api.batchGenerateStlThumbnails({ all_missing: true }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['library-files'] });
+      // Update thumbnail versions for cache busting
+      if (result.succeeded > 0) {
+        const now = Date.now();
+        const newVersions: Record<number, number> = {};
+        result.results.forEach((r) => {
+          if (r.success) {
+            newVersions[r.file_id] = now;
+          }
+        });
+        setThumbnailVersions((prev) => ({ ...prev, ...newVersions }));
+      }
+      if (result.succeeded > 0 && result.failed === 0) {
+        showToast(`Generated ${result.succeeded} thumbnail${result.succeeded > 1 ? 's' : ''}`, 'success');
+      } else if (result.succeeded > 0 && result.failed > 0) {
+        showToast(`Generated ${result.succeeded} thumbnail${result.succeeded > 1 ? 's' : ''}, ${result.failed} failed`, 'success');
+      } else if (result.processed === 0) {
+        showToast('No STL files missing thumbnails', 'info');
+      } else {
+        showToast(`Failed to generate thumbnails: ${result.results[0]?.error || 'Unknown error'}`, 'error');
+      }
+    },
+    onError: (error: Error) => showToast(error.message, 'error'),
+  });
+
+  const singleThumbnailMutation = useMutation({
+    mutationFn: (fileId: number) => api.batchGenerateStlThumbnails({ file_ids: [fileId] }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['library-files'] });
+      // Update thumbnail version for cache busting
+      if (result.succeeded > 0) {
+        const fileId = result.results[0]?.file_id;
+        if (fileId) {
+          setThumbnailVersions((prev) => ({ ...prev, [fileId]: Date.now() }));
+        }
+        showToast('Thumbnail generated', 'success');
+      } else {
+        showToast(`Failed to generate thumbnail: ${result.results[0]?.error || 'Unknown error'}`, 'error');
+      }
+    },
+    onError: (error: Error) => showToast(error.message, 'error'),
+  });
+
   // Helper to check if a file is sliced (printable)
   const isSlicedFile = useCallback((filename: string) => {
     const lower = filename.toLowerCase();
@@ -1369,6 +1456,19 @@ export function FileManagerPage() {
               <List className="w-4 h-4" />
             </button>
           </div>
+          <Button
+            variant="secondary"
+            onClick={() => batchThumbnailMutation.mutate()}
+            disabled={batchThumbnailMutation.isPending}
+            title="Generate thumbnails for STL files missing them"
+          >
+            {batchThumbnailMutation.isPending ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Image className="w-4 h-4 mr-2" />
+            )}
+            Generate Thumbnails
+          </Button>
           <Button variant="secondary" onClick={() => setShowNewFolderModal(true)}>
             <FolderPlus className="w-4 h-4 mr-2" />
             New Folder
@@ -1738,6 +1838,8 @@ export function FileManagerPage() {
                     onAddToQueue={(id) => addToQueueMutation.mutate([id])}
                     onPrint={setPrintFile}
                     onRename={(f) => setRenameItem({ type: 'file', id: f.id, name: f.filename })}
+                    onGenerateThumbnail={(f) => singleThumbnailMutation.mutate(f.id)}
+                    thumbnailVersion={thumbnailVersions[file.id]}
                   />
                 ))}
               </div>
@@ -1777,7 +1879,7 @@ export function FileManagerPage() {
                         <div className="w-10 h-10 rounded bg-bambu-dark flex-shrink-0 overflow-hidden">
                           {file.thumbnail_path ? (
                             <img
-                              src={api.getLibraryFileThumbnailUrl(file.id)}
+                              src={`${api.getLibraryFileThumbnailUrl(file.id)}${thumbnailVersions[file.id] ? `?v=${thumbnailVersions[file.id]}` : ''}`}
                               alt=""
                               className="w-full h-full object-cover"
                             />
@@ -1792,7 +1894,7 @@ export function FileManagerPage() {
                           <div className="absolute left-0 top-full mt-2 z-50 hidden group-hover/thumb:block">
                             <div className="w-48 h-48 rounded-lg bg-bambu-dark-secondary border border-bambu-dark-tertiary shadow-xl overflow-hidden">
                               <img
-                                src={api.getLibraryFileThumbnailUrl(file.id)}
+                                src={`${api.getLibraryFileThumbnailUrl(file.id)}${thumbnailVersions[file.id] ? `?v=${thumbnailVersions[file.id]}` : ''}`}
                                 alt={file.filename}
                                 className="w-full h-full object-contain"
                               />
@@ -1854,6 +1956,16 @@ export function FileManagerPage() {
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
+                      {file.file_type === 'stl' && (
+                        <button
+                          onClick={() => singleThumbnailMutation.mutate(file.id)}
+                          className="p-1.5 rounded hover:bg-bambu-dark text-bambu-gray hover:text-bambu-green transition-colors"
+                          title="Generate Thumbnail"
+                          disabled={singleThumbnailMutation.isPending}
+                        >
+                          <Image className="w-4 h-4" />
+                        </button>
+                      )}
                       <button
                         onClick={() => setDeleteConfirm({ type: 'file', id: file.id })}
                         className="p-1.5 rounded hover:bg-bambu-dark text-bambu-gray hover:text-red-400 transition-colors"

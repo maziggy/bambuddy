@@ -25,6 +25,9 @@ from backend.app.schemas.library import (
     AddToQueueRequest,
     AddToQueueResponse,
     AddToQueueResult,
+    BatchThumbnailRequest,
+    BatchThumbnailResponse,
+    BatchThumbnailResult,
     BulkDeleteRequest,
     BulkDeleteResponse,
     FileDuplicate,
@@ -43,6 +46,7 @@ from backend.app.schemas.library import (
     ZipExtractResult,
 )
 from backend.app.services.archive import ArchiveService, ThreeMFParser
+from backend.app.services.stl_thumbnail import generate_stl_thumbnail
 
 logger = logging.getLogger(__name__)
 
@@ -621,6 +625,7 @@ async def list_files(
 async def upload_file(
     file: UploadFile = File(...),
     folder_id: int | None = None,
+    generate_stl_thumbnails: bool = Query(default=True),
     db: AsyncSession = Depends(get_db),
 ):
     """Upload a file to the library."""
@@ -712,6 +717,11 @@ async def upload_file(
             # For image files, create a thumbnail from the image itself
             thumbnail_path = create_image_thumbnail(file_path, thumbnails_dir)
 
+        elif ext == ".stl":
+            # Generate STL thumbnail if enabled
+            if generate_stl_thumbnails:
+                thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
+
         # Create database entry
         library_file = LibraryFile(
             folder_id=folder_id,
@@ -749,6 +759,7 @@ async def extract_zip_file(
     folder_id: int | None = Query(default=None),
     preserve_structure: bool = Query(default=True),
     create_folder_from_zip: bool = Query(default=False),
+    generate_stl_thumbnails: bool = Query(default=True),
     db: AsyncSession = Depends(get_db),
 ):
     """Upload and extract a ZIP file to the library.
@@ -758,6 +769,7 @@ async def extract_zip_file(
         folder_id: Target folder ID (None = root)
         preserve_structure: If True, recreate folder structure from ZIP; if False, extract all files flat
         create_folder_from_zip: If True, create a folder named after the ZIP file and extract into it
+        generate_stl_thumbnails: If True, generate thumbnails for STL files
     """
     import tempfile
     import zipfile
@@ -941,6 +953,11 @@ async def extract_zip_file(
                     elif ext.lower() in IMAGE_EXTENSIONS:
                         thumbnail_path = create_image_thumbnail(file_path, thumbnails_dir)
 
+                    elif ext == ".stl":
+                        # Generate STL thumbnail if enabled
+                        if generate_stl_thumbnails:
+                            thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
+
                     # Create database entry
                     library_file = LibraryFile(
                         folder_id=target_folder_id,
@@ -992,6 +1009,118 @@ async def extract_zip_file(
             os.unlink(tmp_path)
         except Exception:
             pass
+
+
+# ============ STL Thumbnail Batch Generation ============
+
+
+@router.post("/generate-stl-thumbnails", response_model=BatchThumbnailResponse)
+async def batch_generate_stl_thumbnails(
+    request: BatchThumbnailRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate thumbnails for STL files in batch.
+
+    Can generate thumbnails for:
+    - Specific file IDs (file_ids)
+    - All STL files in a folder (folder_id)
+    - All STL files missing thumbnails (all_missing=True)
+    """
+    thumbnails_dir = get_library_thumbnails_dir()
+    results: list[BatchThumbnailResult] = []
+
+    # Build query based on request
+    query = select(LibraryFile).where(LibraryFile.file_type == "stl")
+
+    if request.file_ids:
+        # Specific files
+        query = query.where(LibraryFile.id.in_(request.file_ids))
+    elif request.folder_id is not None:
+        # All STL files in a specific folder
+        query = query.where(LibraryFile.folder_id == request.folder_id)
+        if not request.all_missing:
+            # If not specifically asking for missing thumbnails, get all
+            pass
+        else:
+            query = query.where(LibraryFile.thumbnail_path.is_(None))
+    elif request.all_missing:
+        # All STL files without thumbnails
+        query = query.where(LibraryFile.thumbnail_path.is_(None))
+    else:
+        # No criteria specified - return empty
+        return BatchThumbnailResponse(
+            processed=0,
+            succeeded=0,
+            failed=0,
+            results=[],
+        )
+
+    result = await db.execute(query)
+    stl_files = result.scalars().all()
+
+    succeeded = 0
+    failed = 0
+
+    for stl_file in stl_files:
+        file_path = Path(stl_file.file_path)
+
+        if not file_path.exists():
+            results.append(
+                BatchThumbnailResult(
+                    file_id=stl_file.id,
+                    filename=stl_file.filename,
+                    success=False,
+                    error="File not found on disk",
+                )
+            )
+            failed += 1
+            continue
+
+        try:
+            thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
+
+            if thumbnail_path:
+                # Update database
+                stl_file.thumbnail_path = thumbnail_path
+                await db.flush()
+                results.append(
+                    BatchThumbnailResult(
+                        file_id=stl_file.id,
+                        filename=stl_file.filename,
+                        success=True,
+                    )
+                )
+                succeeded += 1
+            else:
+                results.append(
+                    BatchThumbnailResult(
+                        file_id=stl_file.id,
+                        filename=stl_file.filename,
+                        success=False,
+                        error="Thumbnail generation failed",
+                    )
+                )
+                failed += 1
+        except Exception as e:
+            logger.error(f"Failed to generate thumbnail for {stl_file.filename}: {e}")
+            results.append(
+                BatchThumbnailResult(
+                    file_id=stl_file.id,
+                    filename=stl_file.filename,
+                    success=False,
+                    error=str(e),
+                )
+            )
+            failed += 1
+
+    await db.commit()
+
+    return BatchThumbnailResponse(
+        processed=len(stl_files),
+        succeeded=succeeded,
+        failed=failed,
+        results=results,
+    )
 
 
 # ============ Queue Operations ============

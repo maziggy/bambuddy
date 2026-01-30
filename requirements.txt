@@ -34,6 +34,11 @@ aiofiles>=23.0.0
 # QR Code generation
 qrcode[pil]>=7.4.0
 
+# STL Thumbnail Generation
+trimesh>=4.0.0
+matplotlib>=3.8.0
+fast-simplification>=0.1.0
+
 # System monitoring
 psutil>=6.0.0
 

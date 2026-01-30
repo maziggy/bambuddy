@@ -87,7 +87,8 @@
 - Auto power-off after cooldown
 
 ### 📁 File Manager (Library)
-- Upload and organize sliced files (3MF, gcode)
+- Upload and organize sliced files (3MF, gcode, STL)
+- **STL thumbnail generation** - Auto-generate previews for STL files on upload or batch generate for existing files
 - ZIP file extraction with folder structure preservation
 - Option to create folder from ZIP filename
 - Folder structure with drag-and-drop

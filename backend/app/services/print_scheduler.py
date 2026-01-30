@@ -4,7 +4,7 @@ import asyncio
 import logging
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings
@@ -18,6 +18,7 @@ from backend.app.services.bambu_ftp import delete_file_async, get_ftp_retry_sett
 from backend.app.services.notification_service import notification_service
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.tasmota import tasmota_service
+from backend.app.utils.printer_models import normalize_printer_model
 
 logger = logging.getLogger(__name__)
 
@@ -226,13 +227,17 @@ class PrintScheduler:
             - (printer_id, None) if a matching printer was found
             - (None, reason) if no printer is available, with explanation
         """
+        # Normalize model name and use case-insensitive matching
+        normalized_model = normalize_printer_model(model) or model
         result = await db.execute(
-            select(Printer).where(Printer.model == model).where(Printer.is_active == True)  # noqa: E712
+            select(Printer)
+            .where(func.lower(Printer.model) == normalized_model.lower())
+            .where(Printer.is_active == True)  # noqa: E712
         )
         printers = list(result.scalars().all())
 
         if not printers:
-            return None, f"No active {model} printers configured"
+            return None, f"No active {normalized_model} printers configured"
 
         # Track reasons for skipping printers
         printers_busy = []

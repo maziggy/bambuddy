@@ -27,6 +27,7 @@ from backend.app.schemas.print_queue import (
     PrintQueueReorder,
 )
 from backend.app.services.notification_service import notification_service
+from backend.app.utils.printer_models import normalize_printer_model, normalize_printer_model_id
 
 logger = logging.getLogger(__name__)
 
@@ -197,12 +198,21 @@ async def add_to_queue(
     db: AsyncSession = Depends(get_db),
 ):
     """Add an item to the print queue."""
+    # Normalize target_model (e.g., "Bambu Lab X1E" / "C13" -> "X1E")
+    target_model_norm = None
+    if data.target_model:
+        target_model_norm = (
+            normalize_printer_model(data.target_model)
+            or normalize_printer_model_id(data.target_model)
+            or data.target_model
+        )
+
     # Validate that either archive_id or library_file_id is provided
     if not data.archive_id and not data.library_file_id:
         raise HTTPException(400, "Either archive_id or library_file_id must be provided")
 
     # Cannot specify both printer_id and target_model
-    if data.printer_id and data.target_model:
+    if data.printer_id and target_model_norm:
         raise HTTPException(400, "Cannot specify both printer_id and target_model")
 
     # Validate printer exists (if assigned)
@@ -212,12 +222,12 @@ async def add_to_queue(
             raise HTTPException(400, "Printer not found")
 
     # Validate target_model has active printers
-    if data.target_model:
+    if target_model_norm:
         result = await db.execute(
-            select(Printer).where(Printer.model == data.target_model).where(Printer.is_active == True)  # noqa: E712
+            select(Printer).where(Printer.model == target_model_norm).where(Printer.is_active == True)  # noqa: E712
         )
         if not result.scalars().first():
-            raise HTTPException(400, f"No active printers for model: {data.target_model}")
+            raise HTTPException(400, f"No active printers for model: {target_model_norm}")
 
     # Validate archive exists (if provided) and get it for filament extraction
     archive = None
@@ -237,7 +247,7 @@ async def add_to_queue(
 
     # Extract filament types for model-based assignment (used by scheduler for validation)
     required_filament_types = None
-    if data.target_model:
+    if target_model_norm:
         # Get file path from archive or library file
         file_path = None
         if archive:
@@ -270,7 +280,7 @@ async def add_to_queue(
 
     item = PrintQueueItem(
         printer_id=data.printer_id,
-        target_model=data.target_model,
+        target_model=target_model_norm,
         required_filament_types=required_filament_types,
         archive_id=data.archive_id,
         library_file_id=data.library_file_id,
@@ -297,7 +307,7 @@ async def add_to_queue(
     await db.refresh(item, ["archive", "printer", "library_file"])
 
     source_name = f"archive {data.archive_id}" if data.archive_id else f"library file {data.library_file_id}"
-    target_desc = data.printer_id or (f"model {data.target_model}" if data.target_model else "unassigned")
+    target_desc = data.printer_id or (f"model {target_model_norm}" if target_model_norm else "unassigned")
     logger.info(f"Added {source_name} to queue for {target_desc}")
 
     # MQTT relay - publish queue job added
@@ -324,7 +334,7 @@ async def add_to_queue(
         )
         job_name = job_name.replace(".gcode.3mf", "").replace(".3mf", "")
         target = (
-            item.printer.name if item.printer else (f"Any {item.target_model}" if data.target_model else "Unassigned")
+            item.printer.name if item.printer else (f"Any {item.target_model}" if target_model_norm else "Unassigned")
         )
         await notification_service.on_queue_job_added(
             job_name=job_name,
@@ -422,6 +432,14 @@ async def update_queue_item(
         raise HTTPException(400, "Can only update pending items")
 
     update_data = data.model_dump(exclude_unset=True)
+
+    # Normalize target_model if being updated
+    if "target_model" in update_data and update_data["target_model"]:
+        update_data["target_model"] = (
+            normalize_printer_model(update_data["target_model"])
+            or normalize_printer_model_id(update_data["target_model"])
+            or update_data["target_model"]
+        )
 
     # Cannot specify both printer_id and target_model
     new_printer_id = update_data.get("printer_id", item.printer_id)

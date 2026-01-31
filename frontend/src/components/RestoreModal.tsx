@@ -294,7 +294,7 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
                         .filter(([, count]) => count > 0)
                         .map(([key, count]) => (
                           <div key={key} className="flex items-center justify-between text-sm p-2 rounded bg-bambu-dark">
-                            <span className="text-white">{t(`backup.categories.${key}`, key)}</span>
+                            <span className="text-white">{t(`backup.categories.${key}`, { defaultValue: key })}</span>
                             <span className="text-bambu-green font-medium">{count}</span>
                           </div>
                         ))}
@@ -330,7 +330,7 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
                                 }`}
                               >
                                 <span className="text-white flex items-center gap-2">
-                                  {t(`backup.categories.${key}`, key)}
+                                  {t(`backup.categories.${key}`, { defaultValue: key })}
                                   {details.length > 0 && (
                                     isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
                                   )}

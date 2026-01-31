@@ -571,6 +571,12 @@ export function ProjectsPage() {
   const [editingProject, setEditingProject] = useState<ProjectListItem | undefined>();
   const [statusFilter, setStatusFilter] = useState<string>('active');
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  const statusLabelMap: Record<string, string> = {
+    active: t('projects.status.active'),
+    completed: t('projects.status.completed'),
+    archived: t('projects.status.archived'),
+  };
+  const statusLabel = statusLabelMap[statusFilter] || statusFilter;
 
   const { data: projects, isLoading } = useQuery({
     queryKey: ['projects', statusFilter === 'all' ? undefined : statusFilter],
@@ -717,12 +723,12 @@ export function ProjectsPage() {
             <FolderKanban className="w-12 h-12 text-bambu-gray/50" />
           </div>
           <h3 className="text-lg font-medium text-white mb-2">
-            {statusFilter === 'all' ? t('projects.noProjectsYet') : t('projects.noStatusProjects', { status: statusFilter })}
+            {statusFilter === 'all' ? t('projects.noProjectsYet') : t('projects.noStatusProjects', { status: statusLabel })}
           </h3>
           <p className="text-bambu-gray text-center max-w-md mb-6">
             {statusFilter === 'all'
               ? t('projects.noProjectsHint')
-              : t('projects.noStatusProjectsHint', { status: statusFilter })
+              : t('projects.noStatusProjectsHint', { status: statusLabel })
             }
           </p>
           {statusFilter === 'all' && (

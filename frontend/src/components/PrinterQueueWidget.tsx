@@ -3,24 +3,10 @@ import { Clock, Calendar, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
-import { parseUTCDate } from '../utils/date';
+import { formatRelativeTime } from '../utils/relativeTime';
 
 interface PrinterQueueWidgetProps {
   printerId: number;
-}
-
-function formatRelativeTime(dateString: string | null, t: (key: string, opts?: Record<string, unknown>) => string): string {
-  if (!dateString) return t('printerQueue.asap');
-  const date = parseUTCDate(dateString);
-  if (!date) return t('printerQueue.asap');
-  const now = new Date();
-  const diff = date.getTime() - now.getTime();
-
-  if (diff < 0) return t('printerQueue.now');
-  if (diff < 60000) return t('printerQueue.inLessThanMin');
-  if (diff < 3600000) return t('printerQueue.inMinutes', { count: Math.round(diff / 60000) });
-  if (diff < 86400000) return t('printerQueue.inHours', { count: Math.round(diff / 3600000) });
-  return date.toLocaleDateString();
 }
 
 export function PrinterQueueWidget({ printerId }: PrinterQueueWidgetProps) {
@@ -56,7 +42,7 @@ export function PrinterQueueWidget({ printerId }: PrinterQueueWidgetProps) {
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-xs text-bambu-gray flex items-center gap-1">
             <Clock className="w-3 h-3" />
-            {formatRelativeTime(nextItem?.scheduled_time || null, t)}
+            {formatRelativeTime(nextItem?.scheduled_time || null, { t })}
           </span>
           {totalPending > 1 && (
             <span className="text-xs px-1.5 py-0.5 bg-yellow-400/20 text-yellow-400 rounded">

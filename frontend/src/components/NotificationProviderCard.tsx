@@ -83,7 +83,9 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
             {/* Quick enable/disable toggle + Status indicator */}
             <div className="flex items-center gap-3">
               {provider.last_success && (
-                <span className="text-xs text-bambu-green hidden sm:inline">{t('providerCard.last')}{formatDateOnly(provider.last_success)}</span>
+                <span className="text-xs text-bambu-green hidden sm:inline">
+                  {t('providerCard.lastSuccessAt', { date: formatDateOnly(provider.last_success) })}
+                </span>
               )}
               {/* Only show error if it's more recent than last success */}
               {provider.last_error && provider.last_error_at && (
@@ -161,7 +163,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
             {provider.daily_digest_enabled && (
               <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 text-xs rounded flex items-center gap-1">
                 <Calendar className="w-3 h-3" />
-                {t('providerCard.digest')}{provider.daily_digest_time}
+                {t('providerCard.digestAt', { time: provider.daily_digest_time })}
               </span>
             )}
           </div>

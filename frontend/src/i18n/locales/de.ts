@@ -1856,6 +1856,7 @@ export default {
   // Notification provider card
   providerCard: {
     last: 'Zuletzt: ',
+    lastSuccessAt: 'Zuletzt: {{date}}',
     printer: 'Drucker: ',
     allPrinters: 'Alle Drucker',
     tagStart: 'Start',
@@ -1872,6 +1873,7 @@ export default {
     tagAmsHtTemp: 'AMS-HT Temp',
     quiet: 'Ruhe',
     digest: 'Zusammenfassung ',
+    digestAt: 'Zusammenfassung {{time}}',
     sendTest: 'Testbenachrichtigung senden',
     eventSettings: 'Ereigniseinstellungen',
     sendNotifications: 'Benachrichtigungen von diesem Anbieter senden',

@@ -20,6 +20,20 @@ const FAILURE_REASON_KEYS = [
   'other',
 ] as const;
 
+const FAILURE_REASON_LEGACY_MAP: Record<string, (typeof FAILURE_REASON_KEYS)[number]> = {
+  'Adhesion failure': 'adhesionFailure',
+  'Spaghetti / Detached': 'spaghettiDetached',
+  'Layer shift': 'layerShift',
+  'Clogged nozzle': 'cloggedNozzle',
+  'Filament runout': 'filamentRunout',
+  'Warping': 'warping',
+  'Stringing': 'stringing',
+  'Under-extrusion': 'underExtrusion',
+  'Power failure': 'powerFailure',
+  'User cancelled': 'userCancelled',
+  'Other': 'other',
+};
+
 const ARCHIVE_STATUS_KEYS = [
   { value: 'completed', key: 'statusCompleted' },
   { value: 'failed', key: 'statusFailed' },
@@ -49,7 +63,17 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
   const [projectId, setProjectId] = useState<number | null>(archive.project_id ?? null);
   const [notes, setNotes] = useState(archive.notes || '');
   const [tags, setTags] = useState(archive.tags || '');
-  const [failureReason, setFailureReason] = useState(archive.failure_reason || '');
+  const [failureReason, setFailureReason] = useState(() => {
+    const reason = archive.failure_reason || '';
+    if (!reason) return '';
+    if (FAILURE_REASON_KEYS.includes(reason as (typeof FAILURE_REASON_KEYS)[number])) {
+      return reason;
+    }
+    const legacyKey = FAILURE_REASON_LEGACY_MAP[reason];
+    if (legacyKey) return legacyKey;
+    const matchedKey = FAILURE_REASON_KEYS.find(key => t(`editArchive.failureReasons.${key}`) === reason);
+    return matchedKey || '';
+  });
   const [status, setStatus] = useState(archive.status);
   const [quantity, setQuantity] = useState(archive.quantity ?? 1);
   const [photos, setPhotos] = useState<string[]>(archive.photos || []);
@@ -376,7 +400,7 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
               >
                 <option value="">{t('editArchive.selectReason')}</option>
                 {FAILURE_REASON_KEYS.map((key) => (
-                  <option key={key} value={t(`editArchive.failureReasons.${key}`)}>
+                  <option key={key} value={key}>
                     {t(`editArchive.failureReasons.${key}`)}
                   </option>
                 ))}

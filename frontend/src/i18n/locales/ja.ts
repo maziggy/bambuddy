@@ -2369,6 +2369,7 @@ export default {
   // 通知プロバイダーカード
   providerCard: {
     last: '最終: ',
+    lastSuccessAt: '最終: {{date}}',
     printer: 'プリンター: ',
     allPrinters: 'すべてのプリンター',
     tagStart: '開始',
@@ -2385,6 +2386,7 @@ export default {
     tagAmsHtTemp: 'AMS-HT温度',
     quiet: 'おやすみ',
     digest: 'ダイジェスト ',
+    digestAt: 'ダイジェスト {{time}}',
     sendTest: 'テスト通知を送信',
     eventSettings: 'イベント設定',
     sendNotifications: 'このプロバイダーから通知を送信',

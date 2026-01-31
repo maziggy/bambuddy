@@ -8,6 +8,7 @@ import { render } from '../utils';
 import { ArchivesPage } from '../../pages/ArchivesPage';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+import i18n from '../../i18n';
 
 const mockArchives = [
   {
@@ -67,7 +68,8 @@ const mockArchiveStats = {
 };
 
 describe('ArchivesPage', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('en');
     server.use(
       http.get('/api/v1/archives/', () => {
         return HttpResponse.json(mockArchives);
@@ -101,7 +103,7 @@ describe('ArchivesPage', () => {
       render(<ArchivesPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Archives')).toBeInTheDocument();
+        expect(screen.getByText(i18n.t('archives.title'))).toBeInTheDocument();
       });
     });
 

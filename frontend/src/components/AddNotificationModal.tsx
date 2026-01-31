@@ -281,7 +281,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
               ))}
             </select>
             <p className="text-xs text-bambu-gray mt-1">
-              {t(`providers.descriptions.${providerType}`)}
+              {t(`providers.descriptions.${providerType}`, { defaultValue: providerType })}
             </p>
           </div>
 

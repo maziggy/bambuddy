@@ -44,7 +44,8 @@ import {
   Hand,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { parseUTCDate, formatDateTime, type TimeFormat } from '../utils/date';
+import { type TimeFormat } from '../utils/date';
+import { formatRelativeTime } from '../utils/relativeTime';
 import type { PrintQueueItem } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
@@ -58,21 +59,6 @@ function formatDuration(seconds: number | null | undefined): string {
   const minutes = Math.floor((seconds % 3600) / 60);
   if (hours > 0) return `${hours}h ${minutes}m`;
   return `${minutes}m`;
-}
-
-function formatRelativeTime(dateString: string | null, timeFormat: TimeFormat = 'system', t?: (key: string, options?: Record<string, unknown>) => string): string {
-  if (!dateString) return t ? t('printerQueue.asap') : 'ASAP';
-  const date = parseUTCDate(dateString);
-  if (!date) return t ? t('printerQueue.asap') : 'ASAP';
-  const now = new Date();
-  const diff = date.getTime() - now.getTime();
-
-  if (diff < -60000) return t ? t('queue.overdue') : 'Overdue';
-  if (diff < 0) return t ? t('printerQueue.now') : 'Now';
-  if (diff < 60000) return t ? t('printerQueue.inLessThanMin') : 'In less than a minute';
-  if (diff < 3600000) return t ? t('printerQueue.inMinutes', { count: Math.round(diff / 60000) }) : `In ${Math.round(diff / 60000)} min`;
-  if (diff < 86400000) return t ? t('printerQueue.inHours', { count: Math.round(diff / 3600000) }) : `In ${Math.round(diff / 3600000)} hours`;
-  return formatDateTime(dateString, timeFormat);
 }
 
 function StatusBadge({ status }: { status: PrintQueueItem['status'] }) {
@@ -226,7 +212,7 @@ function SortableQueueItem({
             {isPending && !item.manual_start && (
               <span className="flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5" />
-                {formatRelativeTime(item.scheduled_time, timeFormat, t)}
+                {formatRelativeTime(item.scheduled_time, { t, timeFormat })}
               </span>
             )}
           </div>

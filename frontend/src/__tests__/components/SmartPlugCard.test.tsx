@@ -13,6 +13,7 @@ import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { SmartPlugCard } from '../../components/SmartPlugCard';
 import type { SmartPlug } from '../../api/client';
+import i18n from '../../i18n';
 
 // Mock data
 const createMockPlug = (overrides: Partial<SmartPlug> = {}): SmartPlug => ({
@@ -49,8 +50,9 @@ const createMockPlug = (overrides: Partial<SmartPlug> = {}): SmartPlug => ({
 describe('SmartPlugCard', () => {
   const mockOnEdit = vi.fn();
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    await i18n.changeLanguage('en');
   });
 
   describe('rendering', () => {
@@ -85,13 +87,13 @@ describe('SmartPlugCard', () => {
       render(<SmartPlugCard plug={plug} onEdit={mockOnEdit} />);
 
       // Find and click the settings toggle
-      const settingsToggle = screen.getByText('Automation Settings');
+      const settingsToggle = screen.getByText(i18n.t('smartPlug.automationSettings'));
       await user.click(settingsToggle);
 
       // Should show Auto On and Auto Off labels
       await waitFor(() => {
-        expect(screen.getByText('Auto On')).toBeInTheDocument();
-        expect(screen.getByText('Auto Off')).toBeInTheDocument();
+        expect(screen.getByText(i18n.t('settings.smartPlug.autoOn'))).toBeInTheDocument();
+        expect(screen.getByText(i18n.t('settings.smartPlug.autoOff'))).toBeInTheDocument();
       });
     });
 
@@ -101,11 +103,11 @@ describe('SmartPlugCard', () => {
       render(<SmartPlugCard plug={plug} onEdit={mockOnEdit} />);
 
       // Expand settings
-      await user.click(screen.getByText('Automation Settings'));
+      await user.click(screen.getByText(i18n.t('smartPlug.automationSettings')));
 
       await waitFor(() => {
         // The toggle should reflect auto_off = true
-        const autoOffText = screen.getByText('Auto Off');
+        const autoOffText = screen.getByText(i18n.t('settings.smartPlug.autoOff'));
         expect(autoOffText).toBeInTheDocument();
       });
     });
@@ -116,10 +118,10 @@ describe('SmartPlugCard', () => {
       render(<SmartPlugCard plug={plug} onEdit={mockOnEdit} />);
 
       // Expand settings
-      await user.click(screen.getByText('Automation Settings'));
+      await user.click(screen.getByText(i18n.t('smartPlug.automationSettings')));
 
       await waitFor(() => {
-        const autoOffText = screen.getByText('Auto Off');
+        const autoOffText = screen.getByText(i18n.t('settings.smartPlug.autoOff'));
         expect(autoOffText).toBeInTheDocument();
       });
     });
@@ -130,12 +132,12 @@ describe('SmartPlugCard', () => {
       render(<SmartPlugCard plug={plug} onEdit={mockOnEdit} />);
 
       // Expand settings
-      await user.click(screen.getByText('Automation Settings'));
+      await user.click(screen.getByText(i18n.t('smartPlug.automationSettings')));
 
       await waitFor(() => {
         // Should show delay mode buttons
-        expect(screen.getByText('Time')).toBeInTheDocument();
-        expect(screen.getByText('Temp')).toBeInTheDocument();
+        expect(screen.getByText(i18n.t('common.time'))).toBeInTheDocument();
+        expect(screen.getByText(i18n.t('smartPlug.temp'))).toBeInTheDocument();
       });
     });
 
@@ -145,11 +147,11 @@ describe('SmartPlugCard', () => {
       render(<SmartPlugCard plug={plug} onEdit={mockOnEdit} />);
 
       // Expand settings
-      await user.click(screen.getByText('Automation Settings'));
+      await user.click(screen.getByText(i18n.t('smartPlug.automationSettings')));
 
       await waitFor(() => {
         // Delay mode options should not be visible
-        expect(screen.queryByText('Turn Off Delay Mode')).not.toBeInTheDocument();
+        expect(screen.queryByText(i18n.t('smartPlug.delayMode'))).not.toBeInTheDocument();
       });
     });
   });
@@ -191,7 +193,7 @@ describe('SmartPlugCard', () => {
 
       // Confirmation modal should appear with the dialog title
       await waitFor(() => {
-        expect(screen.getByText('Turn Off Smart Plug')).toBeInTheDocument();
+        expect(screen.getByText(i18n.t('smartPlug.turnOffTitle'))).toBeInTheDocument();
       });
     });
   });

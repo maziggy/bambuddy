@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Printer, Loader2, Calendar, Pencil, AlertCircle } from 'lucide-react';
 import { api } from '../../api/client';
@@ -40,6 +41,7 @@ export function PrintModal({
   onClose,
   onSuccess,
 }: PrintModalProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
@@ -437,9 +439,9 @@ export function PrintModal({
 
     if (mode === 'reprint') {
       return {
-        title: isLibraryFile ? 'Print' : 'Re-print',
+        title: isLibraryFile ? t('printModal.print') : t('printModal.reprint'),
         icon: Printer,
-        submitText: printerCount > 1 ? `Print to ${printerCount} Printers` : 'Print',
+        submitText: printerCount > 1 ? t('printModal.printToMultiple', { count: printerCount }) : t('printModal.print'),
         submitIcon: Printer,
         loadingText: submitProgress.total > 1
           ? `Sending ${submitProgress.current}/${submitProgress.total}...`
@@ -459,7 +461,7 @@ export function PrintModal({
     }
     // edit-queue-item mode
     return {
-      title: 'Edit Queue Item',
+      title: t('printModal.editQueueItem'),
       icon: Pencil,
       submitText: 'Save',
       submitIcon: Pencil,

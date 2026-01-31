@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight, Play, Copy, Loader2, ExternalLink, AlertCircle, CheckCircle } from 'lucide-react';
 import { Card, CardContent } from './Card';
 import { Button } from './Button';
@@ -142,6 +143,7 @@ interface EndpointItemProps {
 }
 
 function EndpointItem({ path, method, spec, schema, apiKey }: EndpointItemProps) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [params, setParams] = useState<Record<string, string>>({});
   const [bodyText, setBodyText] = useState('');
@@ -191,9 +193,9 @@ function EndpointItem({ path, method, spec, schema, apiKey }: EndpointItemProps)
     if (missingParams.length > 0) {
       setResponse({
         status: 0,
-        statusText: 'Validation Error',
+        statusText: t('apiBrowser.validationError'),
         headers: {},
-        body: `Missing required parameters: ${missingParams.join(', ')}`,
+        body: t('apiBrowser.missingRequiredParams', { params: missingParams.join(', ') }),
         duration: 0,
       });
       return;
@@ -266,9 +268,9 @@ function EndpointItem({ path, method, spec, schema, apiKey }: EndpointItemProps)
     } catch (err) {
       setResponse({
         status: 0,
-        statusText: 'Network Error',
+        statusText: t('apiBrowser.networkError'),
         headers: {},
-        body: err instanceof Error ? err.message : 'Unknown error',
+        body: err instanceof Error ? err.message : t('common.unknownError'),
         duration: 0,
       });
     } finally {
@@ -334,7 +336,7 @@ function EndpointItem({ path, method, spec, schema, apiKey }: EndpointItemProps)
           {/* Path Parameters */}
           {pathParams.length > 0 && (
             <div className="space-y-2">
-              <h4 className="text-sm font-medium text-white">Path Parameters</h4>
+              <h4 className="text-sm font-medium text-white">{t('apiBrowser.pathParameters')}</h4>
               <div className="space-y-2">
                 {pathParams.map(param => (
                   <div key={param.name} className="flex items-center gap-2">
@@ -358,7 +360,7 @@ function EndpointItem({ path, method, spec, schema, apiKey }: EndpointItemProps)
           {/* Query Parameters */}
           {queryParamsSpec.length > 0 && (
             <div className="space-y-2">
-              <h4 className="text-sm font-medium text-white">Query Parameters</h4>
+              <h4 className="text-sm font-medium text-white">{t('apiBrowser.queryParameters')}</h4>
               <div className="space-y-2">
                 {queryParamsSpec.map(param => (
                   <div key={param.name} className="flex items-center gap-2">
@@ -372,7 +374,7 @@ function EndpointItem({ path, method, spec, schema, apiKey }: EndpointItemProps)
                         onChange={(e) => setParams(p => ({ ...p, [param.name]: e.target.value }))}
                         className="flex-1 px-2 py-1 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
                       >
-                        <option value="">-- Select --</option>
+                        <option value="">{t('apiBrowser.selectOption')}</option>
                         {param.schema.enum.map(opt => (
                           <option key={opt} value={opt}>{opt}</option>
                         ))}
@@ -395,13 +397,13 @@ function EndpointItem({ path, method, spec, schema, apiKey }: EndpointItemProps)
           {/* Request Body */}
           {hasBody && (
             <div className="space-y-2">
-              <h4 className="text-sm font-medium text-white">Request Body</h4>
+              <h4 className="text-sm font-medium text-white">{t('apiBrowser.requestBody')}</h4>
               <textarea
                 value={bodyText}
                 onChange={(e) => setBodyText(e.target.value)}
                 rows={8}
                 className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm font-mono focus:border-bambu-green focus:outline-none resize-y"
-                placeholder="JSON request body..."
+                placeholder={t('settings.jsonRequestBody')}
               />
             </div>
           )}
@@ -414,12 +416,12 @@ function EndpointItem({ path, method, spec, schema, apiKey }: EndpointItemProps)
               ) : (
                 <Play className="w-4 h-4" />
               )}
-              Execute
+              {t('apiBrowser.execute')}
             </Button>
             {missingParams.length > 0 && (
               <span className="text-xs text-yellow-400 flex items-center gap-1">
                 <AlertCircle className="w-3 h-3" />
-                Fill in: {missingParams.join(', ')}
+                {t('apiBrowser.fillInRequired', { params: missingParams.join(', ') })}
               </span>
             )}
           </div>
@@ -429,7 +431,7 @@ function EndpointItem({ path, method, spec, schema, apiKey }: EndpointItemProps)
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-medium text-white flex items-center gap-2">
-                  Response
+                  {t('apiBrowser.response')}
                   <span className={`px-2 py-0.5 text-xs rounded ${
                     response.status >= 200 && response.status < 300
                       ? 'bg-green-500/20 text-green-400'
@@ -467,6 +469,7 @@ interface APIBrowserProps {
 }
 
 export function APIBrowser({ apiKey = '' }: APIBrowserProps) {
+  const { t } = useTranslation();
   const [schema, setSchema] = useState<OpenAPISchema | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -477,11 +480,11 @@ export function APIBrowser({ apiKey = '' }: APIBrowserProps) {
     async function fetchSchema() {
       try {
         const res = await fetch('/openapi.json');
-        if (!res.ok) throw new Error('Failed to fetch OpenAPI schema');
+        if (!res.ok) throw new Error(t('apiBrowser.failedToFetchSchema'));
         const data = await res.json();
         setSchema(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
+        setError(err instanceof Error ? err.message : t('common.unknownError'));
       } finally {
         setLoading(false);
       }
@@ -503,7 +506,7 @@ export function APIBrowser({ apiKey = '' }: APIBrowserProps) {
         <CardContent className="py-8">
           <div className="text-center text-red-400">
             <AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-50" />
-            <p>Failed to load API schema</p>
+            <p>{t('apiBrowser.failedToLoadSchema')}</p>
             <p className="text-sm text-bambu-gray mt-1">{error}</p>
           </div>
         </CardContent>
@@ -518,7 +521,7 @@ export function APIBrowser({ apiKey = '' }: APIBrowserProps) {
     for (const [method, spec] of Object.entries(methods)) {
       if (method === 'parameters') continue; // Skip path-level parameters
 
-      const tags = spec.tags || ['Other'];
+      const tags = spec.tags || [t('apiBrowser.otherCategory')];
       for (const tag of tags) {
         if (!endpointsByTag[tag]) {
           endpointsByTag[tag] = [];
@@ -577,16 +580,16 @@ export function APIBrowser({ apiKey = '' }: APIBrowserProps) {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search endpoints..."
+            placeholder={t('settings.searchEndpoints')}
             className="w-full max-w-md px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
           />
         </div>
         <div className="flex items-center gap-2">
           <Button variant="secondary" size="sm" onClick={expandAll}>
-            Expand All
+            {t('apiBrowser.expandAll')}
           </Button>
           <Button variant="secondary" size="sm" onClick={collapseAll}>
-            Collapse All
+            {t('apiBrowser.collapseAll')}
           </Button>
           <a
             href="/docs"
@@ -595,14 +598,14 @@ export function APIBrowser({ apiKey = '' }: APIBrowserProps) {
             className="flex items-center gap-1 text-sm text-bambu-green hover:underline"
           >
             <ExternalLink className="w-4 h-4" />
-            Swagger UI
+            {t('apiBrowser.swaggerUI')}
           </a>
         </div>
       </div>
 
       {/* Endpoint count */}
       <p className="text-sm text-bambu-gray">
-        {filteredTags.reduce((acc, t) => acc + t.endpoints.length, 0)} endpoints in {filteredTags.length} categories
+        {t('apiBrowser.endpointCount', { count: filteredTags.reduce((acc, tag) => acc + tag.endpoints.length, 0), categories: filteredTags.length })}
       </p>
 
       {/* Endpoints by Tag */}

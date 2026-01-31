@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme } from '../contexts/ThemeContext';
 
 export function LoginPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { login } = useAuth();
   const { showToast } = useToast();
@@ -16,18 +18,18 @@ export function LoginPage() {
   const loginMutation = useMutation({
     mutationFn: () => login(username, password),
     onSuccess: () => {
-      showToast('Logged in successfully');
+      showToast(t('login.success'));
       navigate('/');
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Login failed', 'error');
+      showToast(error.message || t('login.failed'), 'error');
     },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!username || !password) {
-      showToast('Please enter username and password', 'error');
+      showToast(t('login.enterCredentials'), 'error');
       return;
     }
     loginMutation.mutate();
@@ -45,10 +47,10 @@ export function LoginPage() {
             />
           </div>
           <h2 className="text-3xl font-bold text-white">
-            Bambuddy Login
+            {t('login.title')}
           </h2>
           <p className="mt-2 text-sm text-bambu-gray">
-            Sign in to your account
+            {t('login.subtitle')}
           </p>
         </div>
 
@@ -56,7 +58,7 @@ export function LoginPage() {
           <div className="space-y-4">
             <div>
               <label htmlFor="username" className="block text-sm font-medium text-white mb-2">
-                Username
+                {t('login.username')}
               </label>
               <input
                 id="username"
@@ -65,14 +67,14 @@ export function LoginPage() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="block w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                placeholder="Enter your username"
+                placeholder={t('login.usernamePlaceholder')}
                 autoComplete="username"
               />
             </div>
 
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-white mb-2">
-                Password
+                {t('login.password')}
               </label>
               <input
                 id="password"
@@ -81,7 +83,7 @@ export function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="block w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                placeholder="Enter your password"
+                placeholder={t('login.passwordPlaceholder')}
                 autoComplete="current-password"
               />
             </div>
@@ -93,7 +95,7 @@ export function LoginPage() {
               disabled={loginMutation.isPending}
               className="w-full flex justify-center py-3 px-4 bg-bambu-green hover:bg-bambu-green-light text-white font-medium rounded-lg shadow-lg shadow-bambu-green/20 hover:shadow-bambu-green/30 focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:ring-offset-2 focus:ring-offset-bambu-dark-secondary transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-bambu-green"
             >
-              {loginMutation.isPending ? 'Logging in...' : 'Sign in'}
+              {loginMutation.isPending ? t('login.loggingIn') : t('login.signIn')}
             </button>
           </div>
         </form>

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Droplets, Link2, Copy, Check, Settings2 } from 'lucide-react';
 
 interface FilamentData {
@@ -36,6 +37,7 @@ interface FilamentHoverCardProps {
  * Replaces the basic browser tooltip with a styled popover.
  */
 export function FilamentHoverCard({ data, children, disabled, className = '', spoolman, configureSlot }: FilamentHoverCardProps) {
+  const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState<'top' | 'bottom'>('top');
   const [copied, setCopied] = useState(false);
@@ -257,7 +259,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                         handleCopyUuid();
                       }}
                       className="flex items-center gap-1 text-xs text-bambu-gray hover:text-white transition-colors"
-                      title="Copy spool UUID"
+                      title={t('printers.copySpoolUuid')}
                     >
                       <span className="font-mono text-[10px] truncate max-w-[80px]">
                         {data.trayUuid.slice(0, 8)}...
@@ -285,10 +287,10 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                           ? 'bg-bambu-gray/10 text-bambu-gray cursor-not-allowed'
                           : 'bg-bambu-green/20 hover:bg-bambu-green/30 text-bambu-green'
                       }`}
-                      title={spoolman.hasUnlinkedSpools === false ? 'No unlinked spools available' : 'Link this spool to a Spoolman spool'}
+                      title={spoolman.hasUnlinkedSpools === false ? t('settings.spoolman.noUnlinked') : t('settings.spoolman.linkTooltip')}
                     >
                       <Link2 className="w-3.5 h-3.5" />
-                      Link to Spoolman
+                      {t('settings.spoolman.linkToSpoolman')}
                     </button>
                   )}
                 </div>
@@ -303,7 +305,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                       configureSlot.onConfigure?.();
                     }}
                     className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-blue/20 hover:bg-bambu-blue/30 text-bambu-blue"
-                    title="Configure slot with filament profile and K value"
+                    title={t('printers.configureSlot')}
                   >
                     <Settings2 className="w-3.5 h-3.5" />
                     Configure
@@ -340,6 +342,7 @@ interface EmptySlotHoverCardProps {
  * Wrapper for empty slots - shows "Empty" on hover with optional configure button
  */
 export function EmptySlotHoverCard({ children, className = '', configureSlot }: EmptySlotHoverCardProps) {
+  const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -388,7 +391,7 @@ export function EmptySlotHoverCard({ children, className = '', configureSlot }: 
                     configureSlot.onConfigure?.();
                   }}
                   className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-blue/20 hover:bg-bambu-blue/30 text-bambu-blue"
-                  title="Configure slot with filament profile and K value"
+                  title={t('printers.configureSlot')}
                 >
                   <Settings2 className="w-3.5 h-3.5" />
                   Configure

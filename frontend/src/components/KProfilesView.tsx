@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   Gauge,
@@ -76,6 +77,7 @@ const extractFilamentName = (profileName: string) => {
 };
 
 function KProfileCard({ profile, onEdit, onCopy, selectionMode, isSelected, onToggleSelect, note }: KProfileCardProps) {
+  const { t } = useTranslation();
   const flowType = getFlowTypeLabel(profile.nozzle_id);
   const diameter = profile.nozzle_diameter;
 
@@ -110,10 +112,10 @@ function KProfileCard({ profile, onEdit, onCopy, selectionMode, isSelected, onTo
             {truncateK(profile.k_value)}
           </span>
           <span className="text-white text-sm truncate flex-1" title={profile.name}>
-            {profile.name || 'Unnamed'}
+            {profile.name || t('kProfiles.unnamed')}
           </span>
           {note && (
-            <span title="Has note">
+            <span title={t('kProfiles.hasNote')}>
               <StickyNote className="w-3 h-3 text-yellow-500" />
             </span>
           )}
@@ -123,7 +125,7 @@ function KProfileCard({ profile, onEdit, onCopy, selectionMode, isSelected, onTo
         </div>
         {note && (
           <div className="text-xs mt-0.5 truncate text-yellow-500/70" title={note}>
-            Note: {note.length > 50 ? note.substring(0, 50) + '...' : note}
+            {t('kProfiles.notePrefix')}{note.length > 50 ? note.substring(0, 50) + '...' : note}
           </div>
         )}
       </button>
@@ -134,7 +136,7 @@ function KProfileCard({ profile, onEdit, onCopy, selectionMode, isSelected, onTo
             onCopy();
           }}
           className="text-bambu-gray hover:text-white transition-colors p-1"
-          title="Copy profile"
+          title={t('kProfiles.copyProfile')}
         >
           <Copy className="w-4 h-4" />
         </button>
@@ -168,6 +170,7 @@ function KProfileModal({
   onSave,
   onSaveNote,
 }: KProfileModalProps) {
+  const { t } = useTranslation();
   const { showToast } = useToast();
 
   const [name, setName] = useState(profile?.name || '');
@@ -216,7 +219,7 @@ function KProfileModal({
     },
     onSuccess: (result) => {
       console.log('[KProfile] Save success:', result);
-      showToast('K-profile saved');
+      showToast(t('kProfiles.profileSaved'));
       // Save note if it changed (including clearing it)
       if (onSaveNote && note !== initialNote) {
         let profileKey: string;
@@ -255,7 +258,7 @@ function KProfileModal({
     },
     onSuccess: (result) => {
       console.log('[KProfile] Delete success:', result);
-      showToast('K-profile deleted');
+      showToast(t('kProfiles.profileDeleted'));
       // Show syncing indicator while printer processes the command
       setIsSyncing(true);
       // Add longer delay for delete - printer needs more time to process
@@ -291,7 +294,7 @@ function KProfileModal({
 
     // Validate at least one extruder is selected for dual-nozzle
     if (isDualNozzle && !profile && selectedExtruders.length === 0) {
-      showToast('Please select at least one extruder', 'error');
+      showToast(t('kProfiles.selectExtruder'), 'error');
       return;
     }
 
@@ -337,7 +340,7 @@ function KProfileModal({
 
     try {
       await api.setKProfilesBatch(printerId, batchPayload);
-      showToast(`K-profile saved to ${selectedExtruders.length} extruders`);
+      showToast(t('kProfiles.profileSavedToExtruders', { count: selectedExtruders.length }));
       // Save note for new batch profiles
       if (onSaveNote && note) {
         const profileKey = `name_${name}_${filamentId}`;
@@ -345,7 +348,7 @@ function KProfileModal({
       }
     } catch (error) {
       console.error('[KProfile] Failed to save batch:', error);
-      showToast('Failed to save K-profiles', 'error');
+      showToast(t('kProfiles.failedToSave'), 'error');
       setIsSyncing(false);
       setSavingProgress({ current: 0, total: 0 });
       return;
@@ -370,16 +373,16 @@ function KProfileModal({
             <Loader2 className="w-8 h-8 text-bambu-green animate-spin mb-3" />
             <p className="text-white font-medium">
               {savingProgress.total > 1
-                ? `Saving to extruder ${savingProgress.current}/${savingProgress.total}...`
-                : 'Syncing with printer...'}
+                ? t('kProfiles.savingToExtruder', { current: savingProgress.current, total: savingProgress.total })
+                : t('kProfiles.syncingWithPrinter')}
             </p>
-            <p className="text-bambu-gray text-sm mt-1">Please wait</p>
+            <p className="text-bambu-gray text-sm mt-1">{t('kProfiles.pleaseWait')}</p>
           </div>
         )}
         <CardContent className="p-0">
           <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
             <h2 className="text-xl font-semibold text-white">
-              {profile ? 'Edit K-Profile' : 'Add K-Profile'}
+              {profile ? t('kProfiles.editProfile') : t('kProfiles.addProfile')}
             </h2>
             <button
               onClick={onClose}
@@ -393,21 +396,21 @@ function KProfileModal({
           <form onSubmit={handleSubmit} className="p-4 space-y-4">
             {/* Profile Name - read-only when editing */}
             <div>
-              <label className="block text-sm text-bambu-gray mb-1">Profile Name</label>
+              <label className="block text-sm text-bambu-gray mb-1">{t('kProfiles.profileName')}</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 disabled={!!profile}
                 className={`w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none ${profile ? 'opacity-60 cursor-not-allowed' : ''}`}
-                placeholder="My PLA Profile"
+                placeholder={t('kProfiles.profileNamePlaceholder')}
                 required={!profile}
               />
             </div>
 
             {/* K-Value - always editable */}
             <div>
-              <label className="block text-sm text-bambu-gray mb-1">K-Value</label>
+              <label className="block text-sm text-bambu-gray mb-1">{t('kProfiles.kValue')}</label>
               <input
                 type="text"
                 inputMode="decimal"
@@ -431,13 +434,13 @@ function KProfileModal({
                 required
               />
               <p className="text-xs text-bambu-gray mt-1">
-                Typical range: 0.01 - 0.06 for PLA, 0.02 - 0.10 for PETG
+                {t('kProfiles.kValueRange')}
               </p>
             </div>
 
             {/* Filament - read-only when editing */}
             <div>
-              <label className="block text-sm text-bambu-gray mb-1">Filament</label>
+              <label className="block text-sm text-bambu-gray mb-1">{t('kProfiles.filament')}</label>
               <select
                 value={filamentId}
                 onChange={(e) => {
@@ -457,7 +460,7 @@ function KProfileModal({
                 className={`w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none ${profile ? 'opacity-60 cursor-not-allowed' : ''}`}
                 required={!profile}
               >
-                <option value="">Select filament...</option>
+                <option value="">{t('kProfiles.selectFilament')}</option>
                 {/* Show current filament when editing - look up from knownFilaments */}
                 {profile?.filament_id && (
                   <option key={profile.filament_id} value={profile.filament_id}>
@@ -473,7 +476,7 @@ function KProfileModal({
               </select>
               {!profile && knownFilaments.length === 0 && (
                 <p className="text-xs text-bambu-gray mt-1">
-                  No filaments found. Create a K-profile in Bambu Studio first.
+                  {t('kProfiles.noFilamentsFound')}
                 </p>
               )}
             </div>
@@ -481,7 +484,7 @@ function KProfileModal({
             {/* Flow Type and Nozzle Size - read-only when editing */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-bambu-gray mb-1">Flow Type</label>
+                <label className="block text-sm text-bambu-gray mb-1">{t('kProfiles.flowType')}</label>
                 <select
                   value={nozzleType}
                   onChange={(e) => {
@@ -500,12 +503,12 @@ function KProfileModal({
                   disabled={!!profile}
                   className={`w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none ${profile ? 'opacity-60 cursor-not-allowed' : ''}`}
                 >
-                  <option value="HH00">High Flow</option>
-                  <option value="HS00">Standard</option>
+                  <option value="HH00">{t('kProfiles.highFlow')}</option>
+                  <option value="HS00">{t('kProfiles.standard')}</option>
                 </select>
               </div>
               <div>
-                <label className="block text-sm text-bambu-gray mb-1">Nozzle Size</label>
+                <label className="block text-sm text-bambu-gray mb-1">{t('kProfiles.nozzleSize')}</label>
                 <select
                   value={modalDiameter}
                   onChange={(e) => setModalDiameter(e.target.value)}
@@ -524,12 +527,12 @@ function KProfileModal({
             {isDualNozzle && (
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
-                  {profile ? 'Extruder' : 'Extruders'}
+                  {profile ? t('kProfiles.extruder') : t('kProfiles.extruders')}
                 </label>
                 {profile ? (
                   // Read-only display for editing
                   <div className="px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white opacity-60">
-                    {profile.extruder_id === 1 ? 'Left' : 'Right'}
+                    {profile.extruder_id === 1 ? t('kProfiles.left') : t('kProfiles.right')}
                   </div>
                 ) : (
                   // Checkboxes for new profile - can select both
@@ -547,7 +550,7 @@ function KProfileModal({
                         }}
                         className="w-4 h-4 rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green focus:ring-offset-0 accent-bambu-green"
                       />
-                      <span className="text-white">Left</span>
+                      <span className="text-white">{t('kProfiles.left')}</span>
                     </label>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
@@ -562,7 +565,7 @@ function KProfileModal({
                         }}
                         className="w-4 h-4 rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green focus:ring-offset-0 accent-bambu-green"
                       />
-                      <span className="text-white">Right</span>
+                      <span className="text-white">{t('kProfiles.right')}</span>
                     </label>
                   </div>
                 )}
@@ -571,16 +574,16 @@ function KProfileModal({
 
             {/* Notes */}
             <div>
-              <label className="block text-sm text-bambu-gray mb-1">Notes (stored locally)</label>
+              <label className="block text-sm text-bambu-gray mb-1">{t('kProfiles.notesStoredLocally')}</label>
               <textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder="Add notes about this profile..."
+                placeholder={t('kProfiles.notesPlaceholder')}
                 rows={2}
                 className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none resize-none"
               />
               <p className="text-xs text-bambu-gray mt-1">
-                Notes are saved in Bambuddy, not on the printer
+                {t('kProfiles.notesHint')}
               </p>
             </div>
 
@@ -607,7 +610,7 @@ function KProfileModal({
                 disabled={isSyncing}
                 className="flex-1"
               >
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button
                 type="submit"
@@ -619,7 +622,7 @@ function KProfileModal({
                 ) : (
                   <Gauge className="w-4 h-4" />
                 )}
-                Save
+                {t('common.save')}
               </Button>
             </div>
           </form>
@@ -636,12 +639,12 @@ function KProfileModal({
                   <Trash2 className="w-5 h-5 text-red-500" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-white">Delete Profile</h3>
-                  <p className="text-sm text-bambu-gray">This cannot be undone</p>
+                  <h3 className="text-lg font-semibold text-white">{t('kProfiles.deleteProfileTitle')}</h3>
+                  <p className="text-sm text-bambu-gray">{t('kProfiles.cannotBeUndone')}</p>
                 </div>
               </div>
               <p className="text-bambu-gray mb-6">
-                Are you sure you want to delete <span className="text-white font-medium">"{profile?.name}"</span> from the printer?
+                {t('kProfiles.confirmDeleteProfile', { name: profile?.name })}
               </p>
               <div className="flex gap-3">
                 <Button
@@ -649,7 +652,7 @@ function KProfileModal({
                   onClick={() => setShowDeleteConfirm(false)}
                   className="flex-1"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button
                   onClick={() => {
@@ -664,7 +667,7 @@ function KProfileModal({
                   ) : (
                     <Trash2 className="w-4 h-4" />
                   )}
-                  Delete
+                  {t('common.delete')}
                 </Button>
               </div>
             </CardContent>
@@ -686,6 +689,7 @@ const STORAGE_KEYS = {
 };
 
 export function KProfilesView() {
+  const { t } = useTranslation();
   const { showToast } = useToast();
   const [selectedPrinter, setSelectedPrinter] = useState<number | null>(null);
   // Load nozzle diameter from localStorage
@@ -876,7 +880,7 @@ export function KProfilesView() {
   // Export profiles to JSON file
   const handleExport = useCallback(() => {
     if (!kprofiles?.profiles || kprofiles.profiles.length === 0) {
-      showToast('No profiles to export', 'error');
+      showToast(t('kProfiles.noProfilesToExport'), 'error');
       return;
     }
 
@@ -904,8 +908,8 @@ export function KProfilesView() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    showToast(`Exported ${kprofiles.profiles.length} profiles`);
-  }, [kprofiles?.profiles, selectedPrinterData, nozzleDiameter, showToast]);
+    showToast(t('kProfiles.exportedProfiles', { count: kprofiles.profiles.length }));
+  }, [kprofiles?.profiles, selectedPrinterData, nozzleDiameter, showToast, t]);
 
   // Import profiles from JSON file
   const handleImport = useCallback(() => {
@@ -921,7 +925,7 @@ export function KProfilesView() {
         const data = JSON.parse(text);
 
         if (!data.profiles || !Array.isArray(data.profiles)) {
-          showToast('Invalid file format', 'error');
+          showToast(t('kProfiles.invalidFileFormat'), 'error');
           return;
         }
 
@@ -948,15 +952,15 @@ export function KProfilesView() {
           }
         }
 
-        showToast(`Imported ${imported} of ${data.profiles.length} profiles`);
+        showToast(t('kProfiles.importedProfiles', { imported, total: data.profiles.length }));
         refetchProfiles();
       } catch (err) {
         console.error('Import error:', err);
-        showToast('Failed to parse import file', 'error');
+        showToast(t('kProfiles.failedToParseImport'), 'error');
       }
     };
     input.click();
-  }, [selectedPrinter, nozzleDiameter, showToast, refetchProfiles]);
+  }, [selectedPrinter, nozzleDiameter, showToast, refetchProfiles, t]);
 
   // Toggle profile selection using composite key
   const toggleProfileSelection = useCallback((profileKey: string) => {
@@ -1006,13 +1010,13 @@ export function KProfilesView() {
       }
     }
 
-    showToast(`Deleted ${deleted} profiles`);
+    showToast(t('kProfiles.deletedProfiles', { count: deleted }));
     setBulkDeleteInProgress(false);
     setShowBulkDeleteConfirm(false);
     setSelectionMode(false);
     setSelectedProfiles(new Set());
     refetchProfiles();
-  }, [selectedPrinter, selectedProfiles, filteredProfiles, showToast, refetchProfiles, getProfileKey]);
+  }, [selectedPrinter, selectedProfiles, filteredProfiles, showToast, refetchProfiles, getProfileKey, t]);
 
   // Generate possible keys for a profile (for notes lookup)
   // Returns array of keys to check: setting_id, slot-based, name-based
@@ -1036,9 +1040,9 @@ export function KProfilesView() {
       refetchNotes();
     } catch (err) {
       console.error('Failed to save note:', err);
-      showToast('Failed to save note', 'error');
+      showToast(t('kProfiles.failedToSaveNote'), 'error');
     }
-  }, [selectedPrinter, refetchNotes, showToast]);
+  }, [selectedPrinter, refetchNotes, showToast, t]);
 
   // Get note for a profile (checks all possible keys)
   // Returns { note, key } so we know which key the note was stored under
@@ -1071,9 +1075,9 @@ export function KProfilesView() {
       <Card>
         <CardContent className="py-12 text-center">
           <AlertCircle className="w-12 h-12 text-bambu-gray mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-white mb-2">No Printers Configured</h3>
+          <h3 className="text-lg font-semibold text-white mb-2">{t('kProfiles.noPrintersConfigured')}</h3>
           <p className="text-bambu-gray">
-            Add a printer in Settings to manage K-profiles
+            {t('kProfiles.addPrinterHint')}
           </p>
         </CardContent>
       </Card>
@@ -1085,9 +1089,9 @@ export function KProfilesView() {
       <Card>
         <CardContent className="py-12 text-center">
           <Printer className="w-12 h-12 text-bambu-gray mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-white mb-2">No Active Printers</h3>
+          <h3 className="text-lg font-semibold text-white mb-2">{t('kProfiles.noActivePrinters')}</h3>
           <p className="text-bambu-gray">
-            Enable a printer connection to view its K-profiles
+            {t('kProfiles.enablePrinterHint')}
           </p>
         </CardContent>
       </Card>
@@ -1100,14 +1104,14 @@ export function KProfilesView() {
       {isFetching && !kprofilesLoading && (
         <div className="fixed inset-0 bg-black/50 flex flex-col items-center justify-center z-40">
           <Loader2 className="w-10 h-10 text-bambu-green animate-spin mb-3" />
-          <p className="text-white font-medium">Loading K-Profiles...</p>
+          <p className="text-white font-medium">{t('kProfiles.loadingProfiles')}</p>
         </div>
       )}
 
       {/* Printer & Nozzle Selector */}
       <div className="flex flex-wrap gap-4 mb-6">
         <div className="flex-1 min-w-48">
-          <label className="block text-sm text-bambu-gray mb-1">Printer</label>
+          <label className="block text-sm text-bambu-gray mb-1">{t('common.printer')}</label>
           <select
             value={selectedPrinter || ''}
             onChange={(e) => setSelectedPrinter(parseInt(e.target.value))}
@@ -1122,7 +1126,7 @@ export function KProfilesView() {
         </div>
 
         <div className="w-32">
-          <label className="block text-sm text-bambu-gray mb-1">Nozzle</label>
+          <label className="block text-sm text-bambu-gray mb-1">{t('kProfiles.nozzle')}</label>
           <select
             value={nozzleDiameter}
             onChange={(e) => setNozzleDiameter(e.target.value)}
@@ -1142,11 +1146,11 @@ export function KProfilesView() {
             disabled={isFetching}
           >
             <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
-            Refresh
+            {t('common.refresh')}
           </Button>
           <Button onClick={() => setShowAddModal(true)}>
             <Plus className="w-4 h-4" />
-            Add Profile
+            {t('kProfiles.addProfile')}
           </Button>
         </div>
       </div>
@@ -1159,7 +1163,7 @@ export function KProfilesView() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by name or filament..."
+            placeholder={t('kProfiles.searchPlaceholder')}
             className="w-full pl-10 pr-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
           />
         </div>
@@ -1170,9 +1174,9 @@ export function KProfilesView() {
               onChange={(e) => setExtruderFilter(e.target.value as ExtruderFilter)}
               className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
             >
-              <option value="all">All Extruders</option>
-              <option value="left">Left Only</option>
-              <option value="right">Right Only</option>
+              <option value="all">{t('kProfiles.allExtruders')}</option>
+              <option value="left">{t('kProfiles.leftOnly')}</option>
+              <option value="right">{t('kProfiles.rightOnly')}</option>
             </select>
           </div>
         )}
@@ -1182,9 +1186,9 @@ export function KProfilesView() {
             onChange={(e) => setFlowTypeFilter(e.target.value as FlowTypeFilter)}
             className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
           >
-            <option value="all">All Flow</option>
-            <option value="hf">HF Only</option>
-            <option value="s">S Only</option>
+            <option value="all">{t('kProfiles.allFlow')}</option>
+            <option value="hf">{t('kProfiles.hfOnly')}</option>
+            <option value="s">{t('kProfiles.sOnly')}</option>
           </select>
         </div>
         <div className="w-32">
@@ -1193,9 +1197,9 @@ export function KProfilesView() {
             onChange={(e) => setSortOption(e.target.value as SortOption)}
             className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
           >
-            <option value="name">Sort: Name</option>
-            <option value="k_value">Sort: K-Value</option>
-            <option value="filament">Sort: Filament</option>
+            <option value="name">{t('kProfiles.sortName')}</option>
+            <option value="k_value">{t('kProfiles.sortKValue')}</option>
+            <option value="filament">{t('kProfiles.sortFilament')}</option>
           </select>
         </div>
       </div>
@@ -1206,18 +1210,18 @@ export function KProfilesView() {
           variant="secondary"
           onClick={handleExport}
           disabled={!kprofiles?.profiles?.length}
-          title="Export profiles to JSON"
+          title={t('kProfiles.exportToJson')}
         >
           <Download className="w-4 h-4" />
-          Export
+          {t('common.export')}
         </Button>
         <Button
           variant="secondary"
           onClick={handleImport}
-          title="Import profiles from JSON"
+          title={t('kProfiles.importFromJson')}
         >
           <Upload className="w-4 h-4" />
-          Import
+          {t('common.import')}
         </Button>
         <div className="flex-1" />
         {selectionMode ? (
@@ -1225,10 +1229,10 @@ export function KProfilesView() {
             <Button
               variant="secondary"
               onClick={selectAllProfiles}
-              title="Select all visible profiles"
+              title={t('kProfiles.selectAllVisible')}
             >
               <CheckSquare className="w-4 h-4" />
-              Select All
+              {t('kProfiles.selectAll')}
             </Button>
             <Button
               variant="secondary"
@@ -1238,7 +1242,7 @@ export function KProfilesView() {
               title={`Delete ${selectedProfiles.size} selected profiles`}
             >
               <Trash2 className="w-4 h-4" />
-              Delete ({selectedProfiles.size})
+              {t('common.delete')} ({selectedProfiles.size})
             </Button>
             <Button
               variant="secondary"
@@ -1248,7 +1252,7 @@ export function KProfilesView() {
               }}
             >
               <X className="w-4 h-4" />
-              Cancel
+              {t('common.cancel')}
             </Button>
           </>
         ) : (
@@ -1256,10 +1260,10 @@ export function KProfilesView() {
             variant="secondary"
             onClick={() => setSelectionMode(true)}
             disabled={!filteredProfiles.length}
-            title="Enter selection mode for bulk delete"
+            title={t('kProfiles.enterSelectionMode')}
           >
             <CheckSquare className="w-4 h-4" />
-            Select
+            {t('kProfiles.select')}
           </Button>
         )}
       </div>
@@ -1273,13 +1277,13 @@ export function KProfilesView() {
         <Card>
           <CardContent className="py-12 text-center">
             <WifiOff className="w-12 h-12 text-bambu-gray mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-white mb-2">Printer Offline</h3>
+            <h3 className="text-lg font-semibold text-white mb-2">{t('kProfiles.printerOffline')}</h3>
             <p className="text-bambu-gray mb-4">
-              The selected printer is not connected. Power it on to view K-profiles.
+              {t('kProfiles.printerOfflineHint')}
             </p>
             <Button variant="secondary" onClick={() => refetchProfiles()}>
               <RefreshCw className="w-4 h-4" />
-              Retry
+              {t('common.retry')}
             </Button>
           </CardContent>
         </Card>
@@ -1289,7 +1293,7 @@ export function KProfilesView() {
           <div className="grid grid-cols-2 gap-4">
             {/* Left Extruder (extruder_id 1 on Bambu) */}
             <div>
-              <h3 className="text-sm font-medium text-bambu-gray mb-2 px-1">Left Extruder</h3>
+              <h3 className="text-sm font-medium text-bambu-gray mb-2 px-1">{t('kProfiles.leftExtruder')}</h3>
               <div className="space-y-1">
                 {filteredProfiles
                   .filter((p) => p.extruder_id === 1)
@@ -1309,7 +1313,7 @@ export function KProfilesView() {
             </div>
             {/* Right Extruder (extruder_id 0 on Bambu) */}
             <div>
-              <h3 className="text-sm font-medium text-bambu-gray mb-2 px-1">Right Extruder</h3>
+              <h3 className="text-sm font-medium text-bambu-gray mb-2 px-1">{t('kProfiles.rightExtruder')}</h3>
               <div className="space-y-1">
                 {filteredProfiles
                   .filter((p) => p.extruder_id === 0)
@@ -1349,9 +1353,9 @@ export function KProfilesView() {
         <Card>
           <CardContent className="py-12 text-center">
             <Search className="w-12 h-12 text-bambu-gray mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-white mb-2">No Matching Profiles</h3>
+            <h3 className="text-lg font-semibold text-white mb-2">{t('kProfiles.noMatchingProfiles')}</h3>
             <p className="text-bambu-gray">
-              No profiles match your search criteria
+              {t('kProfiles.noProfilesMatch')}
             </p>
           </CardContent>
         </Card>
@@ -1359,13 +1363,13 @@ export function KProfilesView() {
         <Card>
           <CardContent className="py-12 text-center">
             <Gauge className="w-12 h-12 text-bambu-gray mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-white mb-2">No K-Profiles</h3>
+            <h3 className="text-lg font-semibold text-white mb-2">{t('kProfiles.noKProfiles')}</h3>
             <p className="text-bambu-gray mb-4">
-              No pressure advance profiles found for {nozzleDiameter}mm nozzle
+              {t('kProfiles.noProfilesForNozzle', { diameter: nozzleDiameter })}
             </p>
             <Button onClick={() => setShowAddModal(true)}>
               <Plus className="w-4 h-4" />
-              Create First Profile
+              {t('kProfiles.createFirstProfile')}
             </Button>
           </CardContent>
         </Card>
@@ -1451,12 +1455,12 @@ export function KProfilesView() {
                   <Trash2 className="w-5 h-5 text-red-500" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-white">Delete Profiles</h3>
-                  <p className="text-sm text-bambu-gray">This cannot be undone</p>
+                  <h3 className="text-lg font-semibold text-white">{t('kProfiles.deleteProfiles')}</h3>
+                  <p className="text-sm text-bambu-gray">{t('kProfiles.cannotBeUndone')}</p>
                 </div>
               </div>
               <p className="text-bambu-gray mb-6">
-                Are you sure you want to delete <span className="text-white font-medium">{selectedProfiles.size}</span> selected profiles from the printer?
+                {t('kProfiles.confirmBulkDelete', { count: selectedProfiles.size })}
               </p>
               <div className="flex gap-3">
                 <Button
@@ -1465,7 +1469,7 @@ export function KProfilesView() {
                   disabled={bulkDeleteInProgress}
                   className="flex-1"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button
                   onClick={executeBulkDelete}
@@ -1477,7 +1481,7 @@ export function KProfilesView() {
                   ) : (
                     <Trash2 className="w-4 h-4" />
                   )}
-                  Delete
+                  {t('common.delete')}
                 </Button>
               </div>
             </CardContent>

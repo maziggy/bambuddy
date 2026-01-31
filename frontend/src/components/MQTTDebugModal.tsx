@@ -3,6 +3,7 @@ import { X, Play, Square, Trash2, RefreshCw, ArrowDown, ArrowUp, Search } from '
 import { api, type MQTTLogEntry } from '../api/client';
 import { Button } from './Button';
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface MQTTDebugModalProps {
   printerId: number;
@@ -12,6 +13,7 @@ interface MQTTDebugModalProps {
 
 export function MQTTDebugModal({ printerId, printerName, onClose }: MQTTDebugModalProps) {
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
   const [autoScroll, setAutoScroll] = useState(true);
   const [expandedLogs, setExpandedLogs] = useState<Set<number>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
@@ -80,7 +82,7 @@ export function MQTTDebugModal({ printerId, printerName, onClose }: MQTTDebugMod
 
   const formatPayload = (payload: unknown, expanded: boolean): string => {
     if (payload === undefined || payload === null) {
-      return '<empty>';
+      return t('mqttDebug.empty');
     }
     // If payload is already a string, parse it first to format nicely
     const obj = typeof payload === 'string' ? JSON.parse(payload) : payload;
@@ -119,7 +121,7 @@ export function MQTTDebugModal({ printerId, printerName, onClose }: MQTTDebugMod
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
           <div>
-            <h2 className="text-lg font-semibold text-white">MQTT Debug Log</h2>
+            <h2 className="text-lg font-semibold text-white">{t('mqttDebug.title')}</h2>
             <p className="text-sm text-bambu-gray">{printerName}</p>
           </div>
           <button
@@ -141,7 +143,7 @@ export function MQTTDebugModal({ printerId, printerName, onClose }: MQTTDebugMod
                 disabled={disableMutation.isPending}
               >
                 <Square className="w-4 h-4" />
-                Stop
+                {t('logViewer.stop')}
               </Button>
             ) : (
               <Button
@@ -150,7 +152,7 @@ export function MQTTDebugModal({ printerId, printerName, onClose }: MQTTDebugMod
                 disabled={enableMutation.isPending}
               >
                 <Play className="w-4 h-4" />
-                Start Logging
+                {t('mqttDebug.startLogging')}
               </Button>
             )}
             <Button
@@ -160,7 +162,7 @@ export function MQTTDebugModal({ printerId, printerName, onClose }: MQTTDebugMod
               disabled={clearMutation.isPending || logs.length === 0}
             >
               <Trash2 className="w-4 h-4" />
-              Clear
+              {t('logViewer.clear')}
             </Button>
             <Button
               size="sm"
@@ -178,7 +180,7 @@ export function MQTTDebugModal({ printerId, printerName, onClose }: MQTTDebugMod
                 onChange={(e) => setAutoScroll(e.target.checked)}
                 className="rounded border-bambu-dark-tertiary"
               />
-              Auto-scroll
+              {t('logViewer.autoScroll')}
             </label>
             <span className="text-sm text-bambu-gray">
               {filteredLogs.length}/{logs.length}
@@ -191,7 +193,7 @@ export function MQTTDebugModal({ printerId, printerName, onClose }: MQTTDebugMod
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray" />
               <input
                 type="text"
-                placeholder="Search topic or payload..."
+                placeholder={t('mqttDebug.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-8 pr-3 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
@@ -214,7 +216,7 @@ export function MQTTDebugModal({ printerId, printerName, onClose }: MQTTDebugMod
                     : 'text-bambu-gray hover:text-white'
                 }`}
               >
-                All
+                {t('common.all')}
               </button>
               <button
                 onClick={() => setDirectionFilter('in')}
@@ -225,7 +227,7 @@ export function MQTTDebugModal({ printerId, printerName, onClose }: MQTTDebugMod
                 }`}
               >
                 <ArrowDown className="w-3 h-3" />
-                In
+                {t('mqttDebug.incoming')}
               </button>
               <button
                 onClick={() => setDirectionFilter('out')}
@@ -236,7 +238,7 @@ export function MQTTDebugModal({ printerId, printerName, onClose }: MQTTDebugMod
                 }`}
               >
                 <ArrowUp className="w-3 h-3" />
-                Out
+                {t('mqttDebug.outgoing')}
               </button>
             </div>
           </div>
@@ -249,15 +251,15 @@ export function MQTTDebugModal({ printerId, printerName, onClose }: MQTTDebugMod
         >
           {logs.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-bambu-gray">
-              <p className="mb-2">No messages logged yet</p>
+              <p className="mb-2">{t('mqttDebug.noMessages')}</p>
               {!loggingEnabled && (
-                <p className="text-sm">Click "Start Logging" to begin capturing MQTT messages</p>
+                <p className="text-sm">{t('mqttDebug.clickStart')}</p>
               )}
             </div>
           ) : filteredLogs.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-bambu-gray">
-              <p className="mb-2">No messages match your filter</p>
-              <p className="text-sm">Try adjusting your search or filter criteria</p>
+              <p className="mb-2">{t('mqttDebug.noMatch')}</p>
+              <p className="text-sm">{t('mqttDebug.adjustFilter')}</p>
             </div>
           ) : (
             <div className="space-y-1">
@@ -281,7 +283,7 @@ export function MQTTDebugModal({ printerId, printerName, onClose }: MQTTDebugMod
                         className={`shrink-0 ${
                           isIncoming ? 'text-blue-400' : 'text-green-400'
                         }`}
-                        title={isIncoming ? 'Incoming' : 'Outgoing'}
+                        title={isIncoming ? t('mqttDebug.incoming') : t('mqttDebug.outgoing')}
                       >
                         {isIncoming ? (
                           <ArrowDown className="w-3 h-3" />
@@ -313,14 +315,14 @@ export function MQTTDebugModal({ printerId, printerName, onClose }: MQTTDebugMod
             {loggingEnabled ? (
               <span className="flex items-center gap-2">
                 <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                Logging active - messages will auto-refresh
+                {t('mqttDebug.loggingActive')}
               </span>
             ) : (
-              <span>Logging stopped</span>
+              <span>{t('mqttDebug.loggingStopped')}</span>
             )}
           </div>
           <Button variant="secondary" onClick={onClose}>
-            Close
+            {t('common.close')}
           </Button>
         </div>
       </div>

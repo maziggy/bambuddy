@@ -8,6 +8,7 @@ import { render } from '../utils';
 import { StatsPage } from '../../pages/StatsPage';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+import i18n from '../../i18n';
 
 // Complete mock stats matching ArchiveStats interface
 const mockStats = {
@@ -66,7 +67,8 @@ const mockFailureAnalysis = {
 };
 
 describe('StatsPage', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('en');
     server.use(
       http.get('/api/v1/archives/stats', () => {
         return HttpResponse.json(mockStats);
@@ -91,7 +93,7 @@ describe('StatsPage', () => {
       render(<StatsPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Dashboard')).toBeInTheDocument();
+        expect(screen.getByText(i18n.t('stats.dashboard'))).toBeInTheDocument();
       });
     });
 
@@ -99,7 +101,7 @@ describe('StatsPage', () => {
       render(<StatsPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Quick Stats')).toBeInTheDocument();
+        expect(screen.getByText(i18n.t('stats.quickStats'))).toBeInTheDocument();
       });
     });
 
@@ -107,7 +109,7 @@ describe('StatsPage', () => {
       render(<StatsPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Total Prints')).toBeInTheDocument();
+        expect(screen.getByText(i18n.t('stats.totalPrints'))).toBeInTheDocument();
         expect(screen.getByText('150')).toBeInTheDocument();
       });
     });
@@ -116,7 +118,7 @@ describe('StatsPage', () => {
       render(<StatsPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Print Time')).toBeInTheDocument();
+        expect(screen.getByText(i18n.t('stats.printTime'))).toBeInTheDocument();
         expect(screen.getByText('500.5h')).toBeInTheDocument();
       });
     });
@@ -125,7 +127,7 @@ describe('StatsPage', () => {
       render(<StatsPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Filament Used')).toBeInTheDocument();
+        expect(screen.getByText(i18n.t('stats.filamentUsed'))).toBeInTheDocument();
         expect(screen.getByText('5.50kg')).toBeInTheDocument();
       });
     });
@@ -136,7 +138,7 @@ describe('StatsPage', () => {
       render(<StatsPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Success Rate')).toBeInTheDocument();
+        expect(screen.getByText(i18n.t('stats.successRate'))).toBeInTheDocument();
         // Success rate should be calculated: 140/150 = 93%
         expect(screen.getByText('93%')).toBeInTheDocument();
       });
@@ -148,7 +150,7 @@ describe('StatsPage', () => {
       render(<StatsPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Filament Cost')).toBeInTheDocument();
+        expect(screen.getByText(i18n.t('stats.filamentCost'))).toBeInTheDocument();
       });
     });
 
@@ -156,7 +158,7 @@ describe('StatsPage', () => {
       render(<StatsPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Energy Cost')).toBeInTheDocument();
+        expect(screen.getByText(i18n.t('stats.energyCost'))).toBeInTheDocument();
       });
     });
   });
@@ -166,7 +168,7 @@ describe('StatsPage', () => {
       render(<StatsPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Filament Types')).toBeInTheDocument();
+        expect(screen.getByText(i18n.t('stats.filamentTypes'))).toBeInTheDocument();
       });
     });
 
@@ -174,7 +176,7 @@ describe('StatsPage', () => {
       render(<StatsPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Time Accuracy')).toBeInTheDocument();
+        expect(screen.getByText(i18n.t('stats.timeAccuracy'))).toBeInTheDocument();
       });
     });
 
@@ -182,7 +184,7 @@ describe('StatsPage', () => {
       render(<StatsPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Print Activity')).toBeInTheDocument();
+        expect(screen.getByText(i18n.t('stats.printActivity'))).toBeInTheDocument();
       });
     });
   });
@@ -192,7 +194,7 @@ describe('StatsPage', () => {
       render(<StatsPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Export Stats')).toBeInTheDocument();
+        expect(screen.getByText(i18n.t('stats.exportStats'))).toBeInTheDocument();
       });
     });
   });

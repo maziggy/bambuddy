@@ -7,6 +7,7 @@ import { Card, CardContent } from './Card';
 import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
 import { useToast } from '../contexts/ToastContext';
+import { useTranslation } from 'react-i18next';
 
 interface SmartPlugCardProps {
   plug: SmartPlug;
@@ -14,6 +15,7 @@ interface SmartPlugCardProps {
 }
 
 export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -60,7 +62,7 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
       if (context?.previousStatus) {
         queryClient.setQueryData(['smart-plug-status', plug.id], context.previousStatus);
       }
-      showToast(`Failed to turn ${action} "${plug.name}"`, 'error');
+      showToast(t('smartPlug.controlFailed', { action, name: plug.name }), 'error');
     },
     onSettled: () => {
       // Refetch after a short delay to get actual state
@@ -142,7 +144,7 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
               ) : (
                 <div className="flex items-center gap-1 text-sm text-red-400">
                   <WifiOff className="w-4 h-4" />
-                  <span>Offline</span>
+                  <span>{t('smartPlug.offline')}</span>
                 </div>
               )}
               {/* Admin page link - only for Tasmota */}
@@ -152,10 +154,10 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-1 px-2 py-0.5 bg-bambu-dark hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white text-xs rounded-full transition-colors"
-                  title="Open plug admin page"
+                  title={t('smartPlug.openAdminPage')}
                 >
                   <ExternalLink className="w-3 h-3" />
-                  Admin
+                  {t('smartPlug.admin')}
                 </a>
               )}
             </div>
@@ -164,7 +166,7 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
           {/* Linked Printer */}
           {linkedPrinter && (
             <div className="mb-3 px-2 py-1.5 bg-bambu-dark rounded-lg">
-              <span className="text-xs text-bambu-gray">Linked to: </span>
+              <span className="text-xs text-bambu-gray">{t('smartPlug.linkedTo')} </span>
               <span className="text-sm text-white">{linkedPrinter.name}</span>
             </div>
           )}
@@ -175,7 +177,7 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
               {plug.power_alert_enabled && (
                 <span className="flex items-center gap-1 px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-xs rounded-full">
                   <Bell className="w-3 h-3" />
-                  Alerts
+                  {t('smartPlug.alerts')}
                 </span>
               )}
               {plug.schedule_enabled && (
@@ -201,7 +203,7 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
               className="flex-1"
             >
               {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Power className="w-4 h-4" />}
-              On
+              {t('common.on')}
             </Button>
             <Button
               size="sm"
@@ -211,7 +213,7 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
               className="flex-1"
             >
               {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <PowerOff className="w-4 h-4" />}
-              Off
+              {t('common.off')}
             </Button>
           </div>
 
@@ -222,7 +224,7 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
           >
             <span className="flex items-center gap-2">
               <Settings2 className="w-4 h-4" />
-              Automation Settings
+              {t('smartPlug.automationSettings')}
             </span>
             <span>{isExpanded ? '-' : '+'}</span>
           </button>
@@ -235,8 +237,8 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
                 <div className="flex items-center gap-2">
                   <LayoutGrid className="w-4 h-4 text-bambu-green" />
                   <div>
-                    <p className="text-sm text-white">Show in Switchbar</p>
-                    <p className="text-xs text-bambu-gray">Quick access from sidebar</p>
+                    <p className="text-sm text-white">{t('smartPlug.showInSwitchbar')}</p>
+                    <p className="text-xs text-bambu-gray">{t('smartPlug.switchbarDesc')}</p>
                   </div>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -253,8 +255,8 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
               {/* Enabled Toggle */}
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-white">Enabled</p>
-                  <p className="text-xs text-bambu-gray">Enable automation for this plug</p>
+                  <p className="text-sm text-white">{t('common.enabled')}</p>
+                  <p className="text-xs text-bambu-gray">{t('smartPlug.enabledDesc')}</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
@@ -270,8 +272,8 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
               {/* Auto On */}
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-white">Auto On</p>
-                  <p className="text-xs text-bambu-gray">Turn on when print starts</p>
+                  <p className="text-sm text-white">{t('settings.smartPlug.autoOn')}</p>
+                  <p className="text-xs text-bambu-gray">{t('settings.smartPlug.autoOnDescription')}</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
@@ -287,8 +289,8 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
               {/* Auto Off */}
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-white">Auto Off</p>
-                  <p className="text-xs text-bambu-gray">Turn off when print completes (one-shot)</p>
+                  <p className="text-sm text-white">{t('settings.smartPlug.autoOff')}</p>
+                  <p className="text-xs text-bambu-gray">{t('smartPlug.autoOffDesc')}</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
@@ -305,7 +307,7 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
               {plug.auto_off && (
                 <div className="space-y-3 pl-4 border-l-2 border-bambu-dark-tertiary">
                   <div>
-                    <p className="text-sm text-white mb-2">Turn Off Delay Mode</p>
+                    <p className="text-sm text-white mb-2">{t('smartPlug.delayMode')}</p>
                     <div className="flex gap-2">
                       <button
                         onClick={() => updateMutation.mutate({ off_delay_mode: 'time' })}
@@ -316,7 +318,7 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
                         }`}
                       >
                         <Clock className="w-4 h-4" />
-                        Time
+                        {t('common.time')}
                       </button>
                       <button
                         onClick={() => updateMutation.mutate({ off_delay_mode: 'temperature' })}
@@ -327,14 +329,14 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
                         }`}
                       >
                         <Thermometer className="w-4 h-4" />
-                        Temp
+                        {t('smartPlug.temp')}
                       </button>
                     </div>
                   </div>
 
                   {plug.off_delay_mode === 'time' ? (
                     <div>
-                      <label className="block text-xs text-bambu-gray mb-1">Delay (minutes)</label>
+                      <label className="block text-xs text-bambu-gray mb-1">{t('smartPlug.delayMinutes')}</label>
                       <input
                         type="number"
                         min="1"
@@ -346,7 +348,7 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
                     </div>
                   ) : (
                     <div>
-                      <label className="block text-xs text-bambu-gray mb-1">Temperature threshold (C)</label>
+                      <label className="block text-xs text-bambu-gray mb-1">{t('smartPlug.tempThreshold')}</label>
                       <input
                         type="number"
                         min="30"
@@ -355,7 +357,7 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
                         onChange={(e) => updateMutation.mutate({ off_temp_threshold: parseInt(e.target.value) || 70 })}
                         className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none"
                       />
-                      <p className="text-xs text-bambu-gray mt-1">Turns off when nozzle cools below this temperature</p>
+                      <p className="text-xs text-bambu-gray mt-1">{t('smartPlug.tempThresholdDesc')}</p>
                     </div>
                   )}
                 </div>
@@ -370,7 +372,7 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
                   className="flex-1"
                 >
                   <Edit2 className="w-4 h-4" />
-                  Edit
+                  {t('common.edit')}
                 </Button>
                 <Button
                   size="sm"
@@ -389,9 +391,9 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
       {/* Delete Confirmation */}
       {showDeleteConfirm && (
         <ConfirmModal
-          title="Delete Smart Plug"
-          message={`Are you sure you want to delete "${plug.name}"? This cannot be undone.`}
-          confirmText="Delete"
+          title={t('smartPlug.deleteTitle')}
+          message={t('smartPlug.deleteConfirm', { name: plug.name })}
+          confirmText={t('common.delete')}
           variant="danger"
           onConfirm={() => {
             deleteMutation.mutate();
@@ -404,9 +406,9 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
       {/* Power On Confirmation */}
       {showPowerOnConfirm && (
         <ConfirmModal
-          title="Turn On Smart Plug"
-          message={`Are you sure you want to turn on "${plug.name}"?`}
-          confirmText="Turn On"
+          title={t('smartPlug.turnOnTitle')}
+          message={t('smartPlug.turnOnConfirm', { name: plug.name })}
+          confirmText={t('smartPlug.turnOn')}
           variant="default"
           onConfirm={() => {
             controlMutation.mutate('on');
@@ -419,9 +421,9 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
       {/* Power Off Confirmation */}
       {showPowerOffConfirm && (
         <ConfirmModal
-          title="Turn Off Smart Plug"
-          message={`Are you sure you want to turn off "${plug.name}"? This will cut power to the connected device.`}
-          confirmText="Turn Off"
+          title={t('smartPlug.turnOffTitle')}
+          message={t('smartPlug.turnOffConfirm', { name: plug.name })}
+          confirmText={t('smartPlug.turnOff')}
           variant="danger"
           onConfirm={() => {
             controlMutation.mutate('off');

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, Download, Film, Play, Pause, SkipBack, SkipForward, Pencil } from 'lucide-react';
 import { Button } from './Button';
 import { TimelapseEditorModal } from './TimelapseEditorModal';
@@ -22,6 +23,7 @@ export function TimelapseViewer({
   onClose,
   onEdit,
 }: TimelapseViewerProps) {
+  const { t } = useTranslation();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const [playbackRate, setPlaybackRate] = useState(1); // Default to 1x
@@ -179,7 +181,7 @@ export function TimelapseViewer({
                 <button
                   onClick={skipBackward}
                   className="p-2 hover:bg-bambu-dark-tertiary rounded-lg transition-colors"
-                  title="Skip back 5s"
+                  title={t('camera.skipBack')}
                 >
                   <SkipBack className="w-5 h-5 text-bambu-gray" />
                 </button>
@@ -196,7 +198,7 @@ export function TimelapseViewer({
                 <button
                   onClick={skipForward}
                   className="p-2 hover:bg-bambu-dark-tertiary rounded-lg transition-colors"
-                  title="Skip forward 5s"
+                  title={t('camera.skipForward')}
                 >
                   <SkipForward className="w-5 h-5 text-bambu-gray" />
                 </button>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { RefreshCw, AlertTriangle, Camera, Maximize, Minimize, WifiOff, ZoomIn, ZoomOut } from 'lucide-react';
 import { api } from '../api/client';
 
@@ -10,6 +11,7 @@ const MAX_RECONNECT_DELAY = 30000; // 30 seconds
 const STALL_CHECK_INTERVAL = 5000; // Check every 5 seconds
 
 export function CameraPage() {
+  const { t } = useTranslation();
   const { printerId } = useParams<{ printerId: string }>();
   const id = parseInt(printerId || '0', 10);
 
@@ -42,7 +44,7 @@ export function CameraPage() {
   // Update document title
   useEffect(() => {
     if (printer) {
-      document.title = `${printer.name} - Camera`;
+      document.title = `${printer.name} - ${t('camera.camera')}`;
     }
     return () => {
       document.title = 'Bambuddy';
@@ -441,7 +443,7 @@ export function CameraPage() {
   if (!id) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
-        <p className="text-white">Invalid printer ID</p>
+        <p className="text-white">{t('camera.invalidPrinterId')}</p>
       </div>
     );
   }
@@ -452,7 +454,7 @@ export function CameraPage() {
       <div className="flex items-center justify-between px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary">
         <h1 className="text-sm font-medium text-white flex items-center gap-2">
           <Camera className="w-4 h-4" />
-          {printer?.name || `Printer ${id}`}
+          {printer?.name || t('camera.printerFallback', { id })}
         </h1>
         <div className="flex items-center gap-2">
           {/* Mode toggle */}
@@ -466,7 +468,7 @@ export function CameraPage() {
                   : 'text-bambu-gray hover:text-white disabled:opacity-50'
               }`}
             >
-              Live
+              {t('camera.live')}
             </button>
             <button
               onClick={() => switchToMode('snapshot')}
@@ -477,21 +479,21 @@ export function CameraPage() {
                   : 'text-bambu-gray hover:text-white disabled:opacity-50'
               }`}
             >
-              Snapshot
+              {t('camera.snapshot')}
             </button>
           </div>
           <button
             onClick={refresh}
             disabled={isDisabled}
             className="p-1.5 hover:bg-bambu-dark-tertiary rounded disabled:opacity-50"
-            title={streamMode === 'stream' ? 'Restart stream' : 'Refresh snapshot'}
+            title={streamMode === 'stream' ? t('camera.restartStream') : t('camera.refreshSnapshot')}
           >
             <RefreshCw className={`w-4 h-4 text-bambu-gray ${isDisabled ? 'animate-spin' : ''}`} />
           </button>
           <button
             onClick={toggleFullscreen}
             className="p-1.5 hover:bg-bambu-dark-tertiary rounded"
-            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            title={isFullscreen ? t('camera.exitFullscreen') : t('camera.fullscreen')}
           >
             {isFullscreen ? (
               <Minimize className="w-4 h-4 text-bambu-gray" />
@@ -516,7 +518,7 @@ export function CameraPage() {
               <div className="text-center">
                 <RefreshCw className="w-8 h-8 text-bambu-gray animate-spin mx-auto mb-2" />
                 <p className="text-sm text-bambu-gray">
-                  {streamMode === 'stream' ? 'Connecting to camera...' : 'Capturing snapshot...'}
+                  {streamMode === 'stream' ? t('camera.connectingToCamera') : t('camera.capturingSnapshot')}
                 </p>
               </div>
             </div>
@@ -525,15 +527,15 @@ export function CameraPage() {
             <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-10">
               <div className="text-center p-4">
                 <WifiOff className="w-10 h-10 text-orange-400 mx-auto mb-3" />
-                <p className="text-white mb-2">Connection lost</p>
+                <p className="text-white mb-2">{t('camera.connectionLost')}</p>
                 <p className="text-sm text-bambu-gray mb-3">
-                  Reconnecting in {reconnectCountdown}s... (attempt {reconnectAttempts + 1}/{MAX_RECONNECT_ATTEMPTS})
+                  {t('camera.reconnectingIn', { seconds: reconnectCountdown, attempt: reconnectAttempts + 1, maxAttempts: MAX_RECONNECT_ATTEMPTS })}
                 </p>
                 <button
                   onClick={refresh}
                   className="px-4 py-2 bg-bambu-green text-white text-sm rounded hover:bg-bambu-green/80 transition-colors"
                 >
-                  Reconnect now
+                  {t('camera.reconnectNow')}
                 </button>
               </div>
             </div>
@@ -542,15 +544,15 @@ export function CameraPage() {
             <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
               <div className="text-center p-4">
                 <AlertTriangle className="w-12 h-12 text-orange-400 mx-auto mb-3" />
-                <p className="text-white mb-2">Camera unavailable</p>
+                <p className="text-white mb-2">{t('camera.cameraUnavailable')}</p>
                 <p className="text-xs text-bambu-gray mb-4 max-w-md">
-                  Make sure the printer is powered on and connected.
+                  {t('camera.makeSurePrinterConnected')}
                 </p>
                 <button
                   onClick={refresh}
                   className="px-4 py-2 bg-bambu-green text-white rounded hover:bg-bambu-green/80 transition-colors"
                 >
-                  Retry
+                  {t('camera.retry')}
                 </button>
               </div>
             </div>
@@ -559,7 +561,7 @@ export function CameraPage() {
             ref={imgRef}
             key={imageKey}
             src={currentUrl}
-            alt="Camera stream"
+            alt={t('camera.cameraStream')}
             className="max-w-full max-h-full object-contain select-none"
             style={{
               transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px)`,
@@ -577,14 +579,14 @@ export function CameraPage() {
               onClick={handleZoomOut}
               disabled={zoomLevel <= 1}
               className="p-1.5 hover:bg-white/10 rounded disabled:opacity-30"
-              title="Zoom out"
+              title={t('camera.zoomOut')}
             >
               <ZoomOut className="w-4 h-4 text-white" />
             </button>
             <button
               onClick={resetZoom}
               className="px-2 py-1 text-sm text-white hover:bg-white/10 rounded min-w-[48px]"
-              title="Reset zoom"
+              title={t('camera.resetZoom')}
             >
               {Math.round(zoomLevel * 100)}%
             </button>
@@ -592,7 +594,7 @@ export function CameraPage() {
               onClick={handleZoomIn}
               disabled={zoomLevel >= 4}
               className="p-1.5 hover:bg-white/10 rounded disabled:opacity-30"
-              title="Zoom in"
+              title={t('camera.zoomIn')}
             >
               <ZoomIn className="w-4 h-4 text-white" />
             </button>

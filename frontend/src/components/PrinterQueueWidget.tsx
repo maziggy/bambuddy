@@ -1,28 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { Clock, Calendar, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
-import { parseUTCDate } from '../utils/date';
+import { formatRelativeTime } from '../utils/relativeTime';
 
 interface PrinterQueueWidgetProps {
   printerId: number;
 }
 
-function formatRelativeTime(dateString: string | null): string {
-  if (!dateString) return 'ASAP';
-  const date = parseUTCDate(dateString);
-  if (!date) return 'ASAP';
-  const now = new Date();
-  const diff = date.getTime() - now.getTime();
-
-  if (diff < 0) return 'Now';
-  if (diff < 60000) return 'In <1 min';
-  if (diff < 3600000) return `In ${Math.round(diff / 60000)} min`;
-  if (diff < 86400000) return `In ${Math.round(diff / 3600000)}h`;
-  return date.toLocaleDateString();
-}
-
 export function PrinterQueueWidget({ printerId }: PrinterQueueWidgetProps) {
+  const { t } = useTranslation();
   const { data: queue } = useQuery({
     queryKey: ['queue', printerId, 'pending'],
     queryFn: () => api.getQueue(printerId, 'pending'),
@@ -45,7 +33,7 @@ export function PrinterQueueWidget({ printerId }: PrinterQueueWidgetProps) {
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <Calendar className="w-5 h-5 text-yellow-400 flex-shrink-0" />
           <div className="min-w-0 flex-1">
-            <p className="text-xs text-bambu-gray">Next in queue</p>
+            <p className="text-xs text-bambu-gray">{t('printerQueue.nextInQueue')}</p>
             <p className="text-sm text-white truncate">
               {nextItem?.archive_name || `Archive #${nextItem?.archive_id}`}
             </p>
@@ -54,7 +42,7 @@ export function PrinterQueueWidget({ printerId }: PrinterQueueWidgetProps) {
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-xs text-bambu-gray flex items-center gap-1">
             <Clock className="w-3 h-3" />
-            {formatRelativeTime(nextItem?.scheduled_time || null)}
+            {formatRelativeTime(nextItem?.scheduled_time || null, { t })}
           </span>
           {totalPending > 1 && (
             <span className="text-xs px-1.5 py-0.5 bg-yellow-400/20 text-yellow-400 rounded">

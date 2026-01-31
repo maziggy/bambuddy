@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   AreaChart,
   Area,
@@ -43,6 +44,7 @@ function getDateRange(range: TimeRange): Date {
 }
 
 export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps) {
+  const { t } = useTranslation();
   const [timeRange, setTimeRange] = useState<TimeRange>('30d');
 
   // Filter archives by time range
@@ -231,7 +233,7 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
                   borderRadius: '8px',
                 }}
                 labelStyle={{ color: '#fff' }}
-                formatter={(value: number) => [`${value.toFixed(0)}g`, 'Filament']}
+                formatter={(value: number) => [`${value.toFixed(0)}g`, t('stats.filament')]}
               />
               <Area
                 type="monotone"
@@ -322,11 +324,11 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
                 }}
                 formatter={(value: number, name: string) => [
                   name === 'filament' ? `${value}g` : name === 'cost' ? `${currency}${value.toFixed(2)}` : value,
-                  name === 'filament' ? 'Filament' : name === 'cost' ? 'Cost' : 'Prints'
+                  name === 'filament' ? t('stats.filament') : name === 'cost' ? t('stats.cost') : t('stats.prints')
                 ]}
               />
               <Legend />
-              <Bar dataKey="filament" name="Filament (g)" fill="#00ae42" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="filament" name={t('stats.filamentGrams')} fill="#00ae42" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

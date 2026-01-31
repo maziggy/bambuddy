@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { X, Save, Loader2, Wifi, WifiOff, CheckCircle, Bell, Clock, LayoutGrid, Search, Plug, Power, Home } from 'lucide-react';
 import { api } from '../api/client';
 import type { SmartPlug, SmartPlugCreate, SmartPlugUpdate, DiscoveredTasmotaDevice } from '../api/client';
@@ -11,6 +12,7 @@ interface AddSmartPlugModalProps {
 }
 
 export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const isEditing = !!plug;
 
@@ -188,7 +190,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
     } catch (err) {
       setIsScanning(false);
       const errorMsg = err instanceof Error ? err.message : (typeof err === 'string' ? err : JSON.stringify(err));
-      setError(errorMsg || 'Failed to start scan');
+      setError(errorMsg || t('addSmartPlug.failedToStartScan'));
     }
   };
 
@@ -265,17 +267,17 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
     setError(null);
 
     if (!name.trim()) {
-      setError('Name is required');
+      setError(t('addSmartPlug.nameRequired'));
       return;
     }
 
     if (plugType === 'tasmota' && !ipAddress.trim()) {
-      setError('IP address is required for Tasmota plugs');
+      setError(t('addSmartPlug.ipRequired'));
       return;
     }
 
     if (plugType === 'homeassistant' && !haEntityId) {
-      setError('Entity is required for Home Assistant plugs');
+      setError(t('addSmartPlug.entityRequired'));
       return;
     }
 
@@ -324,7 +326,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-bambu-dark-tertiary flex-shrink-0">
           <h2 className="text-lg font-semibold text-white">
-            {isEditing ? 'Edit Smart Plug' : 'Add Smart Plug'}
+            {isEditing ? t('addSmartPlug.editTitle') : t('addSmartPlug.addTitle')}
           </h2>
           <button
             onClick={onClose}
@@ -359,7 +361,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                 }`}
               >
                 <Plug className="w-4 h-4" />
-                Tasmota
+                {t('addSmartPlug.tasmota')}
               </button>
               <button
                 type="button"
@@ -375,7 +377,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                 }`}
               >
                 <Home className="w-4 h-4" />
-                Home Assistant
+                {t('addSmartPlug.homeAssistant')}
               </button>
             </div>
           )}
@@ -387,12 +389,12 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
               {isScanning ? (
                 <Button type="button" variant="secondary" onClick={stopScan} className="w-full">
                   <X className="w-4 h-4" />
-                  Stop Scanning
+                  {t('addSmartPlug.stopScanning')}
                 </Button>
               ) : (
                 <Button type="button" variant="primary" onClick={startScan} className="w-full">
                   <Search className="w-4 h-4" />
-                  Discover Tasmota Devices
+                  {t('addSmartPlug.discoverDevices')}
                 </Button>
               )}
 
@@ -400,7 +402,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
               {isScanning && scanProgress.total > 0 && (
                 <div className="space-y-1">
                   <div className="flex justify-between text-xs text-bambu-gray">
-                    <span>Scanning network...</span>
+                    <span>{t('addSmartPlug.scanningNetwork')}</span>
                     <span>{scanProgress.scanned} / {scanProgress.total}</span>
                   </div>
                   <div className="w-full bg-bambu-dark-tertiary rounded-full h-2">
@@ -415,7 +417,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
               {/* Discovered devices */}
               {discoveredDevices.length > 0 && (
                 <div className="space-y-2">
-                  <p className="text-xs text-bambu-gray">Found {discoveredDevices.length} device(s) - click to select:</p>
+                  <p className="text-xs text-bambu-gray">{t('addSmartPlug.foundDevices', { count: discoveredDevices.length })}</p>
                   <div className="max-h-40 overflow-y-auto space-y-1">
                     {discoveredDevices.map((device) => (
                       <button
@@ -447,7 +449,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
 
               {!isScanning && discoveredDevices.length === 0 && scanProgress.total > 0 && (
                 <p className="text-xs text-bambu-gray text-center py-2">
-                  No Tasmota devices found on your network
+                  {t('addSmartPlug.noDevicesFound')}
                 </p>
               )}
             </div>
@@ -460,16 +462,16 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
               {!haConfigured && (
                 <div className="space-y-3">
                   <div className="p-3 bg-yellow-500/20 border border-yellow-500/50 rounded-lg text-sm text-yellow-400">
-                    Home Assistant is not configured. Set it up in{' '}
-                    <span className="font-medium">Settings → Network → Home Assistant</span>
+                    {t('addSmartPlug.haNotConfigured')}{' '}
+                    <span className="font-medium">{t('addSmartPlug.haNotConfiguredPath')}</span>
                   </div>
                   <div>
-                    <label className="block text-sm text-bambu-gray mb-1 opacity-50">Select Entity *</label>
+                    <label className="block text-sm text-bambu-gray mb-1 opacity-50">{t('addSmartPlug.selectEntity')} *</label>
                     <select
                       disabled
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-bambu-gray cursor-not-allowed opacity-50"
                     >
-                      <option>Choose an entity...</option>
+                      <option>{t('addSmartPlug.chooseEntity')}</option>
                     </select>
                   </div>
                 </div>
@@ -481,13 +483,13 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                   {haEntitiesLoading && (
                     <div className="flex items-center justify-center py-4 text-bambu-gray">
                       <Loader2 className="w-5 h-5 animate-spin mr-2" />
-                      Loading entities...
+                      {t('addSmartPlug.loadingEntities')}
                     </div>
                   )}
 
                   {haEntitiesError && (
                     <div className="p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-sm text-red-400">
-                      Failed to load entities: {(haEntitiesError as Error).message}
+                      {t('addSmartPlug.failedToLoadEntities', { error: (haEntitiesError as Error).message })}
                     </div>
                   )}
 
@@ -502,7 +504,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
 
                     return (
                       <div ref={entityDropdownRef} className="relative">
-                        <label className="block text-sm text-bambu-gray mb-1">Select Entity *</label>
+                        <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.selectEntity')} *</label>
                         <div className="relative">
                           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
                           <input
@@ -516,7 +518,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                               setIsEntityDropdownOpen(true);
                               setHaEntitySearch('');
                             }}
-                            placeholder="Search entities..."
+                            placeholder={t('addSmartPlug.searchEntities')}
                             className="w-full pl-9 pr-8 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
                           />
                           {haEntityId && !isEntityDropdownOpen && (
@@ -542,14 +544,14 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                             {haEntitiesLoading && (
                               <div className="px-3 py-2 text-sm text-bambu-gray flex items-center gap-2">
                                 <Loader2 className="w-4 h-4 animate-spin" />
-                                Loading...
+                                {t('common.loading')}
                               </div>
                             )}
                             {!haEntitiesLoading && availableEntities.length === 0 && (
                               <div className="px-3 py-2 text-sm text-bambu-gray">
                                 {debouncedSearch
-                                  ? `No entities found matching "${debouncedSearch}"`
-                                  : 'No entities available'}
+                                  ? t('addSmartPlug.noEntitiesMatching', { search: debouncedSearch })
+                                  : t('addSmartPlug.noEntitiesAvailable')}
                               </div>
                             )}
                             {!haEntitiesLoading && availableEntities.map((entity) => (
@@ -581,8 +583,8 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
 
                         <p className="text-xs text-bambu-gray mt-1">
                           {debouncedSearch
-                            ? `Searching all entities (${availableEntities.length} found)`
-                            : `Showing switch, light, input_boolean (${availableEntities.length} available)`}
+                            ? t('addSmartPlug.searchingEntities', { count: availableEntities.length })
+                            : t('addSmartPlug.showingEntities', { count: availableEntities.length })}
                         </p>
                       </div>
                     );
@@ -593,9 +595,9 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                   {haEntityId && haSensorEntities && haSensorEntities.length > 0 && (
                     <div className="border-t border-bambu-dark-tertiary pt-4 mt-4 space-y-3">
                       <div>
-                        <p className="text-white font-medium mb-1">Energy Monitoring (Optional)</p>
+                        <p className="text-white font-medium mb-1">{t('addSmartPlug.energyMonitoring')}</p>
                         <p className="text-xs text-bambu-gray mb-3">
-                          Search and select sensors that provide power/energy data.
+                          {t('addSmartPlug.energyMonitoringDescription')}
                         </p>
                       </div>
 
@@ -614,7 +616,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
 
                         return (
                           <div ref={powerDropdownRef} className="relative">
-                            <label className="block text-sm text-bambu-gray mb-1">Power Sensor (W)</label>
+                            <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.powerSensor')}</label>
                             <div className="relative">
                               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
                               <input
@@ -628,7 +630,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                                   setIsPowerDropdownOpen(true);
                                   setPowerSensorSearch('');
                                 }}
-                                placeholder="Search power sensors..."
+                                placeholder={t('addSmartPlug.searchPowerSensors')}
                                 className="w-full pl-9 pr-8 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
                               />
                               {haPowerEntity && !isPowerDropdownOpen && (
@@ -655,7 +657,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                                   }}
                                   className="w-full px-3 py-2 text-left text-sm text-bambu-gray hover:bg-bambu-dark-tertiary"
                                 >
-                                  None
+                                  {t('common.none')}
                                 </button>
                                 {filteredPowerSensors.map((sensor) => (
                                   <button
@@ -675,7 +677,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                                   </button>
                                 ))}
                                 {filteredPowerSensors.length === 0 && (
-                                  <div className="px-3 py-2 text-sm text-bambu-gray">No matching sensors</div>
+                                  <div className="px-3 py-2 text-sm text-bambu-gray">{t('addSmartPlug.noMatchingSensors')}</div>
                                 )}
                               </div>
                             )}
@@ -698,7 +700,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
 
                         return (
                           <div ref={energyTodayDropdownRef} className="relative">
-                            <label className="block text-sm text-bambu-gray mb-1">Energy Today (kWh)</label>
+                            <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.energyToday')}</label>
                             <div className="relative">
                               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
                               <input
@@ -712,7 +714,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                                   setIsEnergyTodayDropdownOpen(true);
                                   setEnergyTodaySearch('');
                                 }}
-                                placeholder="Search energy sensors..."
+                                placeholder={t('addSmartPlug.searchEnergySensors')}
                                 className="w-full pl-9 pr-8 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
                               />
                               {haEnergyTodayEntity && !isEnergyTodayDropdownOpen && (
@@ -739,7 +741,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                                   }}
                                   className="w-full px-3 py-2 text-left text-sm text-bambu-gray hover:bg-bambu-dark-tertiary"
                                 >
-                                  None
+                                  {t('common.none')}
                                 </button>
                                 {filteredEnergySensors.map((sensor) => (
                                   <button
@@ -759,7 +761,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                                   </button>
                                 ))}
                                 {filteredEnergySensors.length === 0 && (
-                                  <div className="px-3 py-2 text-sm text-bambu-gray">No matching sensors</div>
+                                  <div className="px-3 py-2 text-sm text-bambu-gray">{t('addSmartPlug.noMatchingSensors')}</div>
                                 )}
                               </div>
                             )}
@@ -782,7 +784,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
 
                         return (
                           <div ref={energyTotalDropdownRef} className="relative">
-                            <label className="block text-sm text-bambu-gray mb-1">Total Energy (kWh)</label>
+                            <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.totalEnergy')}</label>
                             <div className="relative">
                               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
                               <input
@@ -796,7 +798,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                                   setIsEnergyTotalDropdownOpen(true);
                                   setEnergyTotalSearch('');
                                 }}
-                                placeholder="Search energy sensors..."
+                                placeholder={t('addSmartPlug.searchEnergySensors')}
                                 className="w-full pl-9 pr-8 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
                               />
                               {haEnergyTotalEntity && !isEnergyTotalDropdownOpen && (
@@ -823,7 +825,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                                   }}
                                   className="w-full px-3 py-2 text-left text-sm text-bambu-gray hover:bg-bambu-dark-tertiary"
                                 >
-                                  None
+                                  {t('common.none')}
                                 </button>
                                 {filteredEnergySensors.map((sensor) => (
                                   <button
@@ -843,7 +845,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                                   </button>
                                 ))}
                                 {filteredEnergySensors.length === 0 && (
-                                  <div className="px-3 py-2 text-sm text-bambu-gray">No matching sensors</div>
+                                  <div className="px-3 py-2 text-sm text-bambu-gray">{t('addSmartPlug.noMatchingSensors')}</div>
                                 )}
                               </div>
                             )}
@@ -860,7 +862,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
           {/* IP Address - only show for Tasmota */}
           {plugType === 'tasmota' && (
             <div>
-              <label className="block text-sm text-bambu-gray mb-1">IP Address *</label>
+              <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.ipAddress')} *</label>
               <div className="flex gap-2">
                 <input
                   type="text"
@@ -869,7 +871,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                     setIpAddress(e.target.value);
                     setTestResult(null);
                   }}
-                  placeholder="192.168.1.100"
+                  placeholder={t('addSmartPlug.ipAddressPlaceholder')}
                   className="flex-1 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 />
                 <Button
@@ -883,7 +885,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                   ) : (
                     <Wifi className="w-4 h-4" />
                   )}
-                  Test
+                  {t('addSmartPlug.test')}
                 </Button>
               </div>
             </div>
@@ -900,17 +902,17 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                 <>
                   <CheckCircle className="w-5 h-5" />
                   <div>
-                    <p className="font-medium">Connected!</p>
+                    <p className="font-medium">{t('addSmartPlug.connected')}</p>
                     <p className="text-sm opacity-80">
-                      {testResult.device_name && `Device: ${testResult.device_name} - `}
-                      State: {testResult.state}
+                      {testResult.device_name && `${t('addSmartPlug.device')}: ${testResult.device_name} - `}
+                      {t('addSmartPlug.state')}: {testResult.state}
                     </p>
                   </div>
                 </>
               ) : (
                 <>
                   <WifiOff className="w-5 h-5" />
-                  <span>Connection failed</span>
+                  <span>{t('addSmartPlug.connectionFailed')}</span>
                 </>
               )}
             </div>
@@ -918,12 +920,12 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
 
           {/* Name */}
           <div>
-            <label className="block text-sm text-bambu-gray mb-1">Name *</label>
+            <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.name')} *</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Living Room Plug"
+              placeholder={t('addSmartPlug.namePlaceholder')}
               className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
             />
           </div>
@@ -933,41 +935,41 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
             <>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm text-bambu-gray mb-1">Username</label>
+                  <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.username')}</label>
                   <input
                     type="text"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="admin"
+                    placeholder={t('addSmartPlug.usernamePlaceholder')}
                     className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-bambu-gray mb-1">Password</label>
+                  <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.password')}</label>
                   <input
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="********"
+                    placeholder={t('addSmartPlug.passwordPlaceholder')}
                     className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                   />
                 </div>
               </div>
               <p className="text-xs text-bambu-gray -mt-2">
-                Leave empty if your Tasmota device doesn't require authentication
+                {t('addSmartPlug.authHint')}
               </p>
             </>
           )}
 
           {/* Link to Printer */}
           <div>
-            <label className="block text-sm text-bambu-gray mb-1">Link to Printer</label>
+            <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.linkToPrinter')}</label>
             <select
               value={printerId ?? ''}
               onChange={(e) => setPrinterId(e.target.value ? Number(e.target.value) : null)}
               className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
             >
-              <option value="">No printer (manual control only)</option>
+              <option value="">{t('addSmartPlug.noPrinterOption')}</option>
               {availablePrinters?.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -975,7 +977,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
               ))}
             </select>
             <p className="text-xs text-bambu-gray mt-1">
-              Linking enables automatic on/off when prints start/complete
+              {t('addSmartPlug.linkToPrinterHint')}
             </p>
           </div>
 
@@ -984,7 +986,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Bell className="w-4 h-4 text-bambu-green" />
-                <span className="text-white font-medium">Power Alerts</span>
+                <span className="text-white font-medium">{t('addSmartPlug.powerAlerts')}</span>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
                 <input
@@ -1000,24 +1002,24 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm text-bambu-gray mb-1">Alert if above (W)</label>
+                    <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.alertAbove')}</label>
                     <input
                       type="number"
                       value={powerAlertHigh}
                       onChange={(e) => setPowerAlertHigh(e.target.value)}
-                      placeholder="e.g. 200"
+                      placeholder={t('addSmartPlug.alertAbovePlaceholder')}
                       min="0"
                       max="5000"
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-bambu-gray mb-1">Alert if below (W)</label>
+                    <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.alertBelow')}</label>
                     <input
                       type="number"
                       value={powerAlertLow}
                       onChange={(e) => setPowerAlertLow(e.target.value)}
-                      placeholder="e.g. 10"
+                      placeholder={t('addSmartPlug.alertBelowPlaceholder')}
                       min="0"
                       max="5000"
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
@@ -1025,7 +1027,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                   </div>
                 </div>
                 <p className="text-xs text-bambu-gray">
-                  Get notified when power consumption crosses these thresholds. Leave empty to disable that direction.
+                  {t('addSmartPlug.powerAlertHint')}
                 </p>
               </div>
             )}
@@ -1036,7 +1038,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-bambu-green" />
-                <span className="text-white font-medium">Daily Schedule</span>
+                <span className="text-white font-medium">{t('addSmartPlug.dailySchedule')}</span>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
                 <input
@@ -1052,7 +1054,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm text-bambu-gray mb-1">Turn On at</label>
+                    <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.turnOnAt')}</label>
                     <input
                       type="time"
                       value={scheduleOnTime}
@@ -1061,7 +1063,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-bambu-gray mb-1">Turn Off at</label>
+                    <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.turnOffAt')}</label>
                     <input
                       type="time"
                       value={scheduleOffTime}
@@ -1071,7 +1073,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                   </div>
                 </div>
                 <p className="text-xs text-bambu-gray">
-                  Automatically turn the plug on/off at these times daily. Leave empty to skip that action.
+                  {t('addSmartPlug.scheduleHint')}
                 </p>
               </div>
             )}
@@ -1083,8 +1085,8 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
               <div className="flex items-center gap-2">
                 <LayoutGrid className="w-4 h-4 text-bambu-green" />
                 <div>
-                  <span className="text-white font-medium">Show in Switchbar</span>
-                  <p className="text-xs text-bambu-gray">Quick access from sidebar</p>
+                  <span className="text-white font-medium">{t('addSmartPlug.showInSwitchbar')}</span>
+                  <p className="text-xs text-bambu-gray">{t('addSmartPlug.showInSwitchbarHint')}</p>
                 </div>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
@@ -1107,7 +1109,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
               onClick={onClose}
               className="flex-1"
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               type="submit"
@@ -1119,7 +1121,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
               ) : (
                 <Save className="w-4 h-4" />
               )}
-              {isEditing ? 'Save' : 'Add'}
+              {isEditing ? t('common.save') : t('common.add')}
             </Button>
           </div>
         </form>

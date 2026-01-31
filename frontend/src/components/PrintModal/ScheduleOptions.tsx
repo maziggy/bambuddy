@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Calendar, Clock, Hand, Power } from 'lucide-react';
 import { getMinDateTime } from '../../utils/amsHelpers';
 import type { ScheduleOptionsProps, ScheduleType } from './types';
@@ -8,6 +9,7 @@ import type { ScheduleOptionsProps, ScheduleType } from './types';
  * and options for require previous success and auto power off.
  */
 export function ScheduleOptionsPanel({ options, onChange }: ScheduleOptionsProps) {
+  const { t } = useTranslation();
   const handleScheduleTypeChange = (scheduleType: ScheduleType) => {
     onChange({ ...options, scheduleType });
   };
@@ -97,17 +99,17 @@ export function ScheduleOptionsPanel({ options, onChange }: ScheduleOptionsProps
         />
         <label htmlFor="autoOffAfter" className="text-sm text-bambu-gray flex items-center gap-1">
           <Power className="w-3.5 h-3.5" />
-          Power off printer when done
+          {t('printModal.powerOffWhenDone')}
         </label>
       </div>
 
       {/* Help text */}
       <p className="text-xs text-bambu-gray">
         {options.scheduleType === 'asap'
-          ? 'Print will start as soon as the printer is idle.'
+          ? t('printModal.immediateHelp')
           : options.scheduleType === 'scheduled'
-          ? 'Print will start at the scheduled time if the printer is idle. If busy, it will wait until the printer becomes available.'
-          : "Print will be staged but won't start automatically. Use the Start button to release it to the queue."}
+          ? t('printModal.scheduledHelp')
+          : t('printModal.stagedHelp')}
       </p>
     </div>
   );

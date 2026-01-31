@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { X, Loader2, Settings2, ChevronDown, CheckCircle2, RotateCcw } from 'lucide-react';
 import { api } from '../api/client';
 import type { KProfile } from '../api/client';
@@ -216,6 +217,7 @@ export function ConfigureAmsSlotModal({
   nozzleDiameter = '0.4',
   onSuccess,
 }: ConfigureAmsSlotModalProps) {
+  const { t } = useTranslation();
   const [selectedPresetId, setSelectedPresetId] = useState<string>('');
   const [selectedKProfile, setSelectedKProfile] = useState<KProfile | null>(null);
   const [colorHex, setColorHex] = useState<string>(''); // Just the 6-char hex, no alpha
@@ -607,7 +609,7 @@ export function ConfigureAmsSlotModal({
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="Search presets..."
+                    placeholder={t('printers.searchPresets')}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white placeholder:text-bambu-gray focus:border-bambu-green focus:outline-none mb-2"
@@ -616,8 +618,8 @@ export function ConfigureAmsSlotModal({
                     {filteredPresets.length === 0 ? (
                       <p className="text-center py-4 text-bambu-gray">
                         {cloudSettings?.filament?.length === 0
-                          ? 'No cloud presets. Login to Bambu Cloud to sync.'
-                          : 'No matching presets found.'}
+                          ? t('printers.noCloudPresets')
+                          : t('printers.noMatchingPresets')}
                       </p>
                     ) : (
                       filteredPresets.map((preset) => (
@@ -750,7 +752,7 @@ export function ConfigureAmsSlotModal({
                   />
                   <input
                     type="text"
-                    placeholder="Color name or hex (e.g., brown, FF8800)"
+                    placeholder={t('printers.colorNamePlaceholder')}
                     value={colorInput}
                     onChange={(e) => {
                       const input = e.target.value;
@@ -780,7 +782,7 @@ export function ConfigureAmsSlotModal({
                         setColorInput('');
                       }}
                       className="px-2 py-1 text-xs text-bambu-gray hover:text-white bg-bambu-dark-tertiary rounded"
-                      title="Clear custom color"
+                      title={t('printers.clearCustomColor')}
                     >
                       Clear
                     </button>

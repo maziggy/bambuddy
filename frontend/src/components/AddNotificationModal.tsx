@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { X, Save, Loader2, Send, CheckCircle, XCircle } from 'lucide-react';
 import { api } from '../api/client';
@@ -11,17 +12,10 @@ interface AddNotificationModalProps {
   onClose: () => void;
 }
 
-const PROVIDER_OPTIONS: { value: ProviderType; label: string; description: string }[] = [
-  { value: 'email', label: 'Email', description: 'SMTP email notifications' },
-  { value: 'telegram', label: 'Telegram', description: 'Notifications via Telegram bot' },
-  { value: 'discord', label: 'Discord', description: 'Send to Discord channel via webhook' },
-  { value: 'ntfy', label: 'ntfy', description: 'Free, self-hostable push notifications' },
-  { value: 'pushover', label: 'Pushover', description: 'Simple, reliable push notifications' },
-  { value: 'callmebot', label: 'CallMeBot/WhatsApp', description: 'Free WhatsApp notifications via CallMeBot' },
-  { value: 'webhook', label: 'Webhook', description: 'Generic HTTP POST to any URL' },
-];
+const PROVIDER_TYPES: ProviderType[] = ['email', 'telegram', 'discord', 'ntfy', 'pushover', 'callmebot', 'webhook'];
 
 export function AddNotificationModal({ provider, onClose }: AddNotificationModalProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const isEditing = !!provider;
 
@@ -111,7 +105,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
     setError(null);
 
     if (!name.trim()) {
-      setError('Name is required');
+      setError(t('addNotification.nameRequired'));
       return;
     }
 
@@ -119,7 +113,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
     const requiredFields = getRequiredFields(providerType);
     for (const field of requiredFields) {
       if (!config[field.key]?.trim()) {
-        setError(`${field.label} is required`);
+        setError(t('addNotification.fieldRequired', { field: field.label }));
         return;
       }
     }
@@ -161,58 +155,58 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
     switch (type) {
       case 'callmebot':
         return [
-          { key: 'phone', label: 'Phone Number', placeholder: '+1234567890', type: 'text', required: true },
-          { key: 'apikey', label: 'API Key', placeholder: 'Your CallMeBot API key', type: 'text', required: true },
+          { key: 'phone', label: t('addNotification.config.callmebot.phoneNumber'), placeholder: '+1234567890', type: 'text', required: true },
+          { key: 'apikey', label: t('addNotification.config.callmebot.apiKey'), placeholder: t('addNotification.config.callmebot.apiKeyPlaceholder'), type: 'text', required: true },
         ];
       case 'ntfy':
         return [
-          { key: 'server', label: 'Server URL', placeholder: 'https://ntfy.sh', type: 'text', required: false },
-          { key: 'topic', label: 'Topic', placeholder: 'my-bambuddy', type: 'text', required: true },
-          { key: 'auth_token', label: 'Auth Token', placeholder: 'Optional authentication', type: 'password', required: false },
+          { key: 'server', label: t('addNotification.config.ntfy.serverUrl'), placeholder: 'https://ntfy.sh', type: 'text', required: false },
+          { key: 'topic', label: t('addNotification.config.ntfy.topic'), placeholder: 'my-bambuddy', type: 'text', required: true },
+          { key: 'auth_token', label: t('addNotification.config.ntfy.authToken'), placeholder: t('addNotification.config.ntfy.authTokenPlaceholder'), type: 'password', required: false },
         ];
       case 'pushover':
         return [
-          { key: 'user_key', label: 'User Key', placeholder: 'Your Pushover user key', type: 'text', required: true },
-          { key: 'app_token', label: 'App Token', placeholder: 'Your Pushover app token', type: 'text', required: true },
-          { key: 'priority', label: 'Priority', placeholder: '0 (normal)', type: 'number', required: false },
+          { key: 'user_key', label: t('addNotification.config.pushover.userKey'), placeholder: t('addNotification.config.pushover.userKeyPlaceholder'), type: 'text', required: true },
+          { key: 'app_token', label: t('addNotification.config.pushover.appToken'), placeholder: t('addNotification.config.pushover.appTokenPlaceholder'), type: 'text', required: true },
+          { key: 'priority', label: t('addNotification.config.pushover.priority'), placeholder: t('addNotification.config.pushover.priorityPlaceholder'), type: 'number', required: false },
         ];
       case 'telegram':
         return [
-          { key: 'bot_token', label: 'Bot Token', placeholder: 'Bot token from @BotFather', type: 'password', required: true },
-          { key: 'chat_id', label: 'Chat ID', placeholder: 'Your chat or group ID', type: 'text', required: true },
+          { key: 'bot_token', label: t('addNotification.config.telegram.botToken'), placeholder: t('addNotification.config.telegram.botTokenPlaceholder'), type: 'password', required: true },
+          { key: 'chat_id', label: t('addNotification.config.telegram.chatId'), placeholder: t('addNotification.config.telegram.chatIdPlaceholder'), type: 'text', required: true },
         ];
       case 'email':
         return [
-          { key: 'smtp_server', label: 'SMTP Server', placeholder: 'smtp.gmail.com', type: 'text', required: true },
-          { key: 'smtp_port', label: 'SMTP Port', placeholder: '587', type: 'number', required: false },
-          { key: 'security', label: 'Security', type: 'select', required: false, options: [
-            { value: 'starttls', label: 'STARTTLS (Port 587)' },
-            { value: 'ssl', label: 'SSL/TLS (Port 465)' },
-            { value: 'none', label: 'None (Port 25)' },
+          { key: 'smtp_server', label: t('addNotification.config.email.smtpServer'), placeholder: 'smtp.gmail.com', type: 'text', required: true },
+          { key: 'smtp_port', label: t('addNotification.config.email.smtpPort'), placeholder: '587', type: 'number', required: false },
+          { key: 'security', label: t('addNotification.config.email.security'), type: 'select', required: false, options: [
+            { value: 'starttls', label: t('addNotification.config.email.starttls') },
+            { value: 'ssl', label: t('addNotification.config.email.ssl') },
+            { value: 'none', label: t('addNotification.config.email.securityNone') },
           ]},
-          { key: 'auth_enabled', label: 'Authentication', type: 'select', required: false, options: [
-            { value: 'true', label: 'Enabled' },
-            { value: 'false', label: 'Disabled' },
+          { key: 'auth_enabled', label: t('addNotification.config.email.authentication'), type: 'select', required: false, options: [
+            { value: 'true', label: t('common.enabled') },
+            { value: 'false', label: t('common.disabled') },
           ]},
-          { key: 'username', label: 'Username', placeholder: 'your@email.com', type: 'text', required: false },
-          { key: 'password', label: 'Password', placeholder: 'App password', type: 'password', required: false },
-          { key: 'from_email', label: 'From Email', placeholder: 'your@email.com', type: 'text', required: true },
-          { key: 'to_email', label: 'To Email', placeholder: 'recipient@email.com', type: 'text', required: true },
+          { key: 'username', label: t('addNotification.config.email.username'), placeholder: 'your@email.com', type: 'text', required: false },
+          { key: 'password', label: t('addNotification.config.email.password'), placeholder: t('addNotification.config.email.passwordPlaceholder'), type: 'password', required: false },
+          { key: 'from_email', label: t('addNotification.config.email.fromEmail'), placeholder: 'your@email.com', type: 'text', required: true },
+          { key: 'to_email', label: t('addNotification.config.email.toEmail'), placeholder: 'recipient@email.com', type: 'text', required: true },
         ];
       case 'discord':
         return [
-          { key: 'webhook_url', label: 'Webhook URL', placeholder: 'https://discord.com/api/webhooks/...', type: 'text', required: true },
+          { key: 'webhook_url', label: t('addNotification.config.discord.webhookUrl'), placeholder: 'https://discord.com/api/webhooks/...', type: 'text', required: true },
         ];
       case 'webhook':
         return [
-          { key: 'webhook_url', label: 'Webhook URL', placeholder: 'https://example.com/webhook', type: 'text', required: true },
-          { key: 'payload_format', label: 'Payload Format', type: 'select', required: false, options: [
-            { value: 'generic', label: 'Generic JSON' },
-            { value: 'slack', label: 'Slack / Mattermost' },
+          { key: 'webhook_url', label: t('addNotification.config.webhook.webhookUrl'), placeholder: 'https://example.com/webhook', type: 'text', required: true },
+          { key: 'payload_format', label: t('addNotification.config.webhook.payloadFormat'), type: 'select', required: false, options: [
+            { value: 'generic', label: t('addNotification.config.webhook.genericJson') },
+            { value: 'slack', label: t('addNotification.config.webhook.slackMattermost') },
           ]},
-          { key: 'auth_header', label: 'Authorization', placeholder: 'Bearer token (optional)', type: 'password', required: false },
-          { key: 'field_title', label: 'Title Field Name', placeholder: 'title', type: 'text', required: false, showIf: (cfg: Record<string, string>) => cfg.payload_format !== 'slack' },
-          { key: 'field_message', label: 'Message Field Name', placeholder: 'message', type: 'text', required: false, showIf: (cfg: Record<string, string>) => cfg.payload_format !== 'slack' },
+          { key: 'auth_header', label: t('addNotification.config.webhook.authorization'), placeholder: t('addNotification.config.webhook.authorizationPlaceholder'), type: 'password', required: false },
+          { key: 'field_title', label: t('addNotification.config.webhook.titleFieldName'), placeholder: 'title', type: 'text', required: false, showIf: (cfg: Record<string, string>) => cfg.payload_format !== 'slack' },
+          { key: 'field_message', label: t('addNotification.config.webhook.messageFieldName'), placeholder: 'message', type: 'text', required: false, showIf: (cfg: Record<string, string>) => cfg.payload_format !== 'slack' },
         ];
       default:
         return [];
@@ -237,7 +231,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-bambu-dark-tertiary">
           <h2 className="text-lg font-semibold text-white">
-            {isEditing ? 'Edit Notification Provider' : 'Add Notification Provider'}
+            {isEditing ? t('addNotification.editTitle') : t('addNotification.addTitle')}
           </h2>
           <button
             onClick={onClose}
@@ -257,19 +251,19 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
 
           {/* Name */}
           <div>
-            <label className="block text-sm text-bambu-gray mb-1">Name *</label>
+            <label className="block text-sm text-bambu-gray mb-1">{t('common.name')} *</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="My Notifications"
+              placeholder={t('addNotification.namePlaceholder')}
               className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
             />
           </div>
 
           {/* Provider Type */}
           <div>
-            <label className="block text-sm text-bambu-gray mb-1">Provider Type *</label>
+            <label className="block text-sm text-bambu-gray mb-1">{t('addNotification.providerType')} *</label>
             <select
               value={providerType}
               onChange={(e) => {
@@ -280,20 +274,20 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
               disabled={isEditing}
               className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none disabled:opacity-50"
             >
-              {PROVIDER_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
+              {PROVIDER_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {t(`providers.${type}`, type)}
                 </option>
               ))}
             </select>
             <p className="text-xs text-bambu-gray mt-1">
-              {PROVIDER_OPTIONS.find(o => o.value === providerType)?.description}
+              {t(`providers.descriptions.${providerType}`)}
             </p>
           </div>
 
           {/* Provider-specific configuration */}
           <div className="space-y-3">
-            <p className="text-sm text-bambu-gray">Configuration</p>
+            <p className="text-sm text-bambu-gray">{t('addNotification.configuration')}</p>
             {configFields
               .filter((field) => !('showIf' in field) || (field as { showIf?: (cfg: Record<string, string>) => boolean }).showIf?.(config) !== false)
               .map((field) => (
@@ -349,7 +343,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
               ) : (
                 <Send className="w-4 h-4" />
               )}
-              Test Configuration
+              {t('addNotification.testConfiguration')}
             </Button>
           </div>
 
@@ -376,13 +370,13 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
 
           {/* Link to Printer */}
           <div>
-            <label className="block text-sm text-bambu-gray mb-1">Printer Filter</label>
+            <label className="block text-sm text-bambu-gray mb-1">{t('addNotification.printerFilter')}</label>
             <select
               value={printerId ?? ''}
               onChange={(e) => setPrinterId(e.target.value ? Number(e.target.value) : null)}
               className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
             >
-              <option value="">All printers</option>
+              <option value="">{t('addNotification.allPrinters')}</option>
               {printers?.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -390,14 +384,14 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
               ))}
             </select>
             <p className="text-xs text-bambu-gray mt-1">
-              Only send notifications for events from this printer
+              {t('addNotification.printerFilterDesc')}
             </p>
           </div>
 
           {/* Quiet Hours */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-sm text-white">Quiet Hours (Do Not Disturb)</label>
+              <label className="text-sm text-white">{t('addNotification.quietHours')}</label>
               <Toggle
                 checked={quietHoursEnabled}
                 onChange={setQuietHoursEnabled}
@@ -406,7 +400,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
             {quietHoursEnabled && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-bambu-gray mb-1">Start</label>
+                  <label className="block text-xs text-bambu-gray mb-1">{t('addNotification.start')}</label>
                   <input
                     type="time"
                     value={quietHoursStart}
@@ -415,7 +409,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-bambu-gray mb-1">End</label>
+                  <label className="block text-xs text-bambu-gray mb-1">{t('addNotification.end')}</label>
                   <input
                     type="time"
                     value={quietHoursEnd}
@@ -431,8 +425,8 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <div>
-                <label className="text-sm text-white">Daily Digest</label>
-                <p className="text-xs text-bambu-gray">Batch notifications into a single daily summary</p>
+                <label className="text-sm text-white">{t('addNotification.dailyDigest')}</label>
+                <p className="text-xs text-bambu-gray">{t('addNotification.dailyDigestDesc')}</p>
               </div>
               <Toggle
                 checked={dailyDigestEnabled}
@@ -441,7 +435,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
             </div>
             {dailyDigestEnabled && (
               <div>
-                <label className="block text-xs text-bambu-gray mb-1">Send digest at</label>
+                <label className="block text-xs text-bambu-gray mb-1">{t('addNotification.sendDigestAt')}</label>
                 <input
                   type="time"
                   value={dailyDigestTime}
@@ -449,7 +443,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
                   className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 />
                 <p className="text-xs text-bambu-gray mt-1">
-                  Events will be collected and sent as a single summary at this time
+                  {t('addNotification.digestDescription')}
                 </p>
               </div>
             )}
@@ -457,31 +451,31 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
 
           {/* Event Toggles */}
           <div className="space-y-3">
-            <p className="text-sm text-bambu-gray">Notification Events</p>
+            <p className="text-sm text-bambu-gray">{t('addNotification.notificationEvents')}</p>
 
             {/* Print Events */}
             <div className="space-y-2 p-3 bg-bambu-dark rounded-lg">
-              <p className="text-xs text-bambu-gray uppercase tracking-wide mb-2">Print Events</p>
+              <p className="text-xs text-bambu-gray uppercase tracking-wide mb-2">{t('addNotification.printEvents')}</p>
               <div className="grid grid-cols-2 gap-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-white">Start</span>
+                  <span className="text-sm text-white">{t('addNotification.events.start')}</span>
                   <Toggle checked={onPrintStart} onChange={setOnPrintStart} />
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-white">Complete</span>
+                  <span className="text-sm text-white">{t('addNotification.events.complete')}</span>
                   <Toggle checked={onPrintComplete} onChange={setOnPrintComplete} />
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-white">Failed</span>
+                  <span className="text-sm text-white">{t('addNotification.events.failed')}</span>
                   <Toggle checked={onPrintFailed} onChange={setOnPrintFailed} />
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-white">Stopped</span>
+                  <span className="text-sm text-white">{t('addNotification.events.stopped')}</span>
                   <Toggle checked={onPrintStopped} onChange={setOnPrintStopped} />
                 </div>
                 <div className="flex items-center justify-between col-span-2">
                   <div>
-                    <span className="text-sm text-white">Progress</span>
+                    <span className="text-sm text-white">{t('addNotification.events.progress')}</span>
                     <span className="text-xs text-bambu-gray ml-1">(25%, 50%, 75%)</span>
                   </div>
                   <Toggle checked={onPrintProgress} onChange={setOnPrintProgress} />
@@ -491,22 +485,22 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
 
             {/* Printer Status Events */}
             <div className="space-y-2 p-3 bg-bambu-dark rounded-lg">
-              <p className="text-xs text-bambu-gray uppercase tracking-wide mb-2">Printer Status</p>
+              <p className="text-xs text-bambu-gray uppercase tracking-wide mb-2">{t('addNotification.printerStatus')}</p>
               <div className="grid grid-cols-2 gap-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-white">Offline</span>
+                  <span className="text-sm text-white">{t('addNotification.events.offline')}</span>
                   <Toggle checked={onPrinterOffline} onChange={setOnPrinterOffline} />
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-white">Error</span>
+                  <span className="text-sm text-white">{t('addNotification.events.error')}</span>
                   <Toggle checked={onPrinterError} onChange={setOnPrinterError} />
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-white">Low Filament</span>
+                  <span className="text-sm text-white">{t('addNotification.events.lowFilament')}</span>
                   <Toggle checked={onFilamentLow} onChange={setOnFilamentLow} />
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-white">Maintenance</span>
+                  <span className="text-sm text-white">{t('addNotification.events.maintenance')}</span>
                   <Toggle checked={onMaintenanceDue} onChange={setOnMaintenanceDue} />
                 </div>
               </div>
@@ -521,7 +515,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
               onClick={onClose}
               className="flex-1"
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               type="submit"
@@ -533,7 +527,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
               ) : (
                 <Save className="w-4 h-4" />
               )}
-              {isEditing ? 'Save' : 'Add'}
+              {isEditing ? t('common.save') : t('common.add')}
             </Button>
           </div>
         </form>

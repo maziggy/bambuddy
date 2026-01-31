@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useMemo, useEffect, type DragEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -80,6 +81,7 @@ interface NewFolderModalProps {
 
 function NewFolderModal({ parentId, onClose, onSave, isLoading }: NewFolderModalProps) {
   const [name, setName] = useState('');
+  const { t } = useTranslation();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,29 +92,29 @@ function NewFolderModal({ parentId, onClose, onSave, isLoading }: NewFolderModal
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
       <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-sm border border-bambu-dark-tertiary">
         <div className="p-4 border-b border-bambu-dark-tertiary">
-          <h2 className="text-lg font-semibold text-white">New Folder</h2>
+          <h2 className="text-lg font-semibold text-white">{t('files.newFolder')}</h2>
         </div>
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           <div>
             <label className="block text-sm font-medium text-white mb-1">
-              Folder Name
+              {t('files.folderName')}
             </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-              placeholder="e.g., Functional Parts"
+              placeholder={t('files.folderNamePlaceholder')}
               autoFocus
               required
             />
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={onClose}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button type="submit" disabled={!name.trim() || isLoading}>
-              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create'}
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('common.create')}
             </Button>
           </div>
         </form>
@@ -132,6 +134,7 @@ interface RenameModalProps {
 
 function RenameModal({ type, currentName, onClose, onSave, isLoading }: RenameModalProps) {
   const [name, setName] = useState(currentName);
+  const { t } = useTranslation();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -144,12 +147,12 @@ function RenameModal({ type, currentName, onClose, onSave, isLoading }: RenameMo
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
       <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-sm border border-bambu-dark-tertiary">
         <div className="p-4 border-b border-bambu-dark-tertiary">
-          <h2 className="text-lg font-semibold text-white">Rename {type === 'file' ? 'File' : 'Folder'}</h2>
+          <h2 className="text-lg font-semibold text-white">{type === 'file' ? t('files.renameFile') : t('files.renameFolder')}</h2>
         </div>
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           <div>
             <label className="block text-sm font-medium text-white mb-1">
-              Name
+              {t('common.name')}
             </label>
             <input
               type="text"
@@ -162,10 +165,10 @@ function RenameModal({ type, currentName, onClose, onSave, isLoading }: RenameMo
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={onClose}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button type="submit" disabled={!name.trim() || name.trim() === currentName || isLoading}>
-              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Rename'}
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('files.rename')}
             </Button>
           </div>
         </form>
@@ -186,6 +189,7 @@ interface MoveFilesModalProps {
 
 function MoveFilesModal({ folders, selectedFiles, currentFolderId, onClose, onMove, isLoading }: MoveFilesModalProps) {
   const [targetFolder, setTargetFolder] = useState<number | null>(null);
+  const { t } = useTranslation();
 
   const flattenFolders = (items: LibraryFolderTree[], depth = 0): { id: number | null; name: string; depth: number }[] => {
     const result: { id: number | null; name: string; depth: number }[] = [];
@@ -198,13 +202,13 @@ function MoveFilesModal({ folders, selectedFiles, currentFolderId, onClose, onMo
     return result;
   };
 
-  const flatFolders = [{ id: null, name: 'Root (No Folder)', depth: 0 }, ...flattenFolders(folders)];
+  const flatFolders = [{ id: null, name: t('files.rootNoFolder'), depth: 0 }, ...flattenFolders(folders)];
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
       <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-sm border border-bambu-dark-tertiary">
         <div className="p-4 border-b border-bambu-dark-tertiary">
-          <h2 className="text-lg font-semibold text-white">Move {selectedFiles.length} File(s)</h2>
+          <h2 className="text-lg font-semibold text-white">{t('files.moveFilesCount', { count: selectedFiles.length })}</h2>
         </div>
         <div className="p-4 space-y-4">
           <div className="max-h-64 overflow-y-auto space-y-1">
@@ -224,16 +228,16 @@ function MoveFilesModal({ folders, selectedFiles, currentFolderId, onClose, onMo
               >
                 <FolderOpen className="w-4 h-4" />
                 {folder.name}
-                {folder.id === currentFolderId && <span className="text-xs text-bambu-gray ml-auto">(current)</span>}
+                {folder.id === currentFolderId && <span className="text-xs text-bambu-gray ml-auto">{t('files.current')}</span>}
               </button>
             ))}
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={onClose}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onClick={() => onMove(targetFolder)} disabled={isLoading}>
-              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Move'}
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('files.move')}
             </Button>
           </div>
         </div>
@@ -255,6 +259,7 @@ function LinkFolderModal({ folder, onClose, onLink, isLoading }: LinkFolderModal
   const [selectedId, setSelectedId] = useState<number | null>(
     folder.project_id || folder.archive_id || null
   );
+  const { t } = useTranslation();
 
   // Initialize linkType based on existing link
   useState(() => {
@@ -300,7 +305,7 @@ function LinkFolderModal({ folder, onClose, onLink, isLoading }: LinkFolderModal
         <div className="p-4 border-b border-bambu-dark-tertiary flex items-center justify-between">
           <h2 className="text-lg font-semibold text-white flex items-center gap-2">
             <Link2 className="w-5 h-5 text-bambu-green" />
-            Link Folder
+            {t('files.linkFolder')}
           </h2>
           <button onClick={onClose} className="p-1 hover:bg-bambu-dark rounded">
             <X className="w-5 h-5 text-bambu-gray" />
@@ -309,7 +314,7 @@ function LinkFolderModal({ folder, onClose, onLink, isLoading }: LinkFolderModal
 
         <div className="p-4 space-y-4">
           <p className="text-sm text-bambu-gray">
-            Link "<span className="text-white">{folder.name}</span>" to a project or archive for quick access.
+            {t('files.linkFolderDescription', { name: folder.name })}
           </p>
 
           {/* Link type selector */}
@@ -323,7 +328,7 @@ function LinkFolderModal({ folder, onClose, onLink, isLoading }: LinkFolderModal
               }`}
             >
               <Briefcase className="w-4 h-4" />
-              Project
+              {t('common.project')}
             </button>
             <button
               onClick={() => { setLinkType('archive'); setSelectedId(null); }}
@@ -334,7 +339,7 @@ function LinkFolderModal({ folder, onClose, onLink, isLoading }: LinkFolderModal
               }`}
             >
               <ArchiveIcon className="w-4 h-4" />
-              Archive
+              {t('common.archive')}
             </button>
           </div>
 
@@ -360,7 +365,7 @@ function LinkFolderModal({ folder, onClose, onLink, isLoading }: LinkFolderModal
                   </button>
                 ))
               ) : (
-                <p className="text-sm text-bambu-gray text-center py-4">No projects found</p>
+                <p className="text-sm text-bambu-gray text-center py-4">{t('files.noProjectsFound')}</p>
               )
             ) : (
               archives && archives.length > 0 ? (
@@ -379,7 +384,7 @@ function LinkFolderModal({ folder, onClose, onLink, isLoading }: LinkFolderModal
                   </button>
                 ))
               ) : (
-                <p className="text-sm text-bambu-gray text-center py-4">No archives found</p>
+                <p className="text-sm text-bambu-gray text-center py-4">{t('files.noArchivesFound')}</p>
               )
             )}
           </div>
@@ -389,15 +394,15 @@ function LinkFolderModal({ folder, onClose, onLink, isLoading }: LinkFolderModal
           {isLinked && (
             <Button variant="danger" onClick={handleUnlink} disabled={isLoading}>
               <Unlink className="w-4 h-4 mr-2" />
-              Unlink
+              {t('files.unlink')}
             </Button>
           )}
           <div className={`flex gap-2 ${!isLinked ? 'ml-auto' : ''}`}>
             <Button variant="secondary" onClick={onClose}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleSave} disabled={!selectedId || isLoading}>
-              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Link'}
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('files.link')}
             </Button>
           </div>
         </div>
@@ -426,6 +431,7 @@ function UploadModal({ folderId, onClose, onUploadComplete }: UploadModalProps) 
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [preserveZipStructure, setPreserveZipStructure] = useState(true);
+  const { t } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
@@ -489,7 +495,7 @@ function UploadModal({ folderId, onClose, onUploadComplete }: UploadModalProps) 
                     ...f,
                     status: result.errors.length > 0 && result.extracted === 0 ? 'error' : 'success',
                     extractedCount: result.extracted,
-                    error: result.errors.length > 0 ? `${result.errors.length} files failed` : undefined,
+                    error: result.errors.length > 0 ? t('files.filesFailed', { count: result.errors.length }) : undefined,
                   }
                 : f
             )
@@ -505,7 +511,7 @@ function UploadModal({ folderId, onClose, onUploadComplete }: UploadModalProps) 
         setFiles((prev) =>
           prev.map((f, idx) =>
             idx === i
-              ? { ...f, status: 'error', error: err instanceof Error ? err.message : 'Upload failed' }
+              ? { ...f, status: 'error', error: err instanceof Error ? err.message : t('files.uploadFailed') }
               : f
           )
         );
@@ -527,7 +533,7 @@ function UploadModal({ folderId, onClose, onUploadComplete }: UploadModalProps) 
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
       <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-lg border border-bambu-dark-tertiary">
         <div className="p-4 border-b border-bambu-dark-tertiary flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">Upload Files</h2>
+          <h2 className="text-lg font-semibold text-white">{t('files.uploadFiles')}</h2>
           <button onClick={onClose} className="p-1 hover:bg-bambu-dark rounded">
             <X className="w-5 h-5 text-bambu-gray" />
           </button>
@@ -548,10 +554,10 @@ function UploadModal({ folderId, onClose, onUploadComplete }: UploadModalProps) 
           >
             <Upload className={`w-10 h-10 mx-auto mb-3 ${isDragging ? 'text-bambu-green' : 'text-bambu-gray'}`} />
             <p className="text-white font-medium">
-              {isDragging ? 'Drop files here' : 'Drag & drop files here'}
+              {isDragging ? t('files.dropFilesHere') : t('files.dragAndDropFiles')}
             </p>
-            <p className="text-sm text-bambu-gray mt-1">or click to browse</p>
-            <p className="text-xs text-bambu-gray/70 mt-2">ZIP files will be automatically extracted</p>
+            <p className="text-sm text-bambu-gray mt-1">{t('files.orClickToBrowse')}</p>
+            <p className="text-xs text-bambu-gray/70 mt-2">{t('files.zipAutoExtract')}</p>
           </div>
 
           <input
@@ -569,9 +575,9 @@ function UploadModal({ folderId, onClose, onUploadComplete }: UploadModalProps) 
               <div className="flex items-start gap-3">
                 <ArchiveIcon className="w-5 h-5 text-blue-400 mt-0.5 flex-shrink-0" />
                 <div className="flex-1">
-                  <p className="text-sm text-blue-300 font-medium">ZIP files detected</p>
+                  <p className="text-sm text-blue-300 font-medium">{t('files.zipFilesDetected')}</p>
                   <p className="text-xs text-blue-300/70 mt-1">
-                    ZIP files will be extracted. Choose how to handle folder structure:
+                    {t('files.zipChooseHandling')}
                   </p>
                   <label className="flex items-center gap-2 mt-2 cursor-pointer">
                     <input
@@ -580,7 +586,7 @@ function UploadModal({ folderId, onClose, onUploadComplete }: UploadModalProps) 
                       onChange={(e) => setPreserveZipStructure(e.target.checked)}
                       className="w-4 h-4 rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
                     />
-                    <span className="text-sm text-white">Preserve folder structure from ZIP</span>
+                    <span className="text-sm text-white">{t('files.preserveZipStructure')}</span>
                   </label>
                 </div>
               </div>
@@ -605,10 +611,10 @@ function UploadModal({ folderId, onClose, onUploadComplete }: UploadModalProps) 
                     <p className="text-xs text-bambu-gray">
                       {(uploadFile.file.size / 1024 / 1024).toFixed(2)} MB
                       {uploadFile.isZip && uploadFile.status === 'pending' && (
-                        <span className="text-blue-400 ml-2">• Will be extracted</span>
+                        <span className="text-blue-400 ml-2">{t('files.willBeExtracted')}</span>
                       )}
                       {uploadFile.extractedCount !== undefined && (
-                        <span className="text-green-400 ml-2">• {uploadFile.extractedCount} files extracted</span>
+                        <span className="text-green-400 ml-2">{t('files.filesExtracted', { count: uploadFile.extractedCount })}</span>
                       )}
                     </p>
                   </div>
@@ -640,8 +646,8 @@ function UploadModal({ folderId, onClose, onUploadComplete }: UploadModalProps) 
           {allDone && (
             <div className="p-3 bg-bambu-dark rounded-lg">
               <p className="text-sm text-white">
-                Upload complete: {successCount} succeeded
-                {errorCount > 0 && <span className="text-red-400">, {errorCount} failed</span>}
+                {t('files.uploadComplete', { count: successCount })}
+                {errorCount > 0 && <span className="text-red-400">{t('files.uploadErrorCount', { count: errorCount })}</span>}
               </p>
             </div>
           )}
@@ -649,7 +655,7 @@ function UploadModal({ folderId, onClose, onUploadComplete }: UploadModalProps) 
 
         <div className="p-4 border-t border-bambu-dark-tertiary flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>
-            {allDone ? 'Close' : 'Cancel'}
+            {allDone ? t('common.close') : t('common.cancel')}
           </Button>
           {!allDone && (
             <Button
@@ -659,12 +665,12 @@ function UploadModal({ folderId, onClose, onUploadComplete }: UploadModalProps) 
               {isUploading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Uploading...
+                  {t('files.uploading')}
                 </>
               ) : (
                 <>
                   <Upload className="w-4 h-4 mr-2" />
-                  Upload {pendingCount > 0 ? `(${pendingCount})` : ''}
+                  {t('common.upload')} {pendingCount > 0 ? `(${pendingCount})` : ''}
                 </>
               )}
             </Button>
@@ -690,6 +696,7 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
   const [expanded, setExpanded] = useState(true);
   const [showActions, setShowActions] = useState(false);
   const hasChildren = folder.children.length > 0;
+  const { t } = useTranslation();
   const isLinked = folder.project_id || folder.archive_id;
 
   return (
@@ -741,7 +748,7 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
           <button
             onClick={(e) => { e.stopPropagation(); onLink(folder); }}
             className="p-1 rounded hover:bg-bambu-dark-tertiary"
-            title="Link to project or archive"
+            title={t('files.linkToProjectOrArchive')}
           >
             <Link2 className="w-3.5 h-3.5 text-bambu-gray hover:text-bambu-green" />
           </button>
@@ -763,21 +770,21 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
                   onClick={() => { onRename(folder); setShowActions(false); }}
                 >
                   <Pencil className="w-3.5 h-3.5" />
-                  Rename
+                  {t('files.rename')}
                 </button>
                 <button
                   className="w-full px-3 py-1.5 text-left text-sm text-white hover:bg-bambu-dark flex items-center gap-2"
                   onClick={() => { onLink(folder); setShowActions(false); }}
                 >
                   <Link2 className="w-3.5 h-3.5" />
-                  {isLinked ? 'Change Link...' : 'Link to...'}
+                  {isLinked ? t('files.changeLink') : t('files.linkTo')}
                 </button>
                 <button
                   className="w-full px-3 py-1.5 text-left text-sm text-red-400 hover:bg-bambu-dark flex items-center gap-2"
                   onClick={() => { onDelete(folder.id); setShowActions(false); }}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  Delete
+                  {t('common.delete')}
                 </button>
               </div>
               </>
@@ -825,6 +832,7 @@ interface FileCardProps {
 
 function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onAddToQueue, onPrint, onRename }: FileCardProps) {
   const [showActions, setShowActions] = useState(false);
+  const { t } = useTranslation();
 
   return (
     <div
@@ -873,7 +881,7 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onAddToQue
         </div>
         {file.print_count > 0 && (
           <div className="mt-1 text-xs text-bambu-green">
-            Printed {file.print_count}x
+            {t('files.printedCount', { count: file.print_count })}
           </div>
         )}
       </div>
@@ -896,7 +904,7 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onAddToQue
                   onClick={() => { onPrint(file); setShowActions(false); }}
                 >
                   <Printer className="w-3.5 h-3.5" />
-                  Print
+                  {t('common.print')}
                 </button>
               )}
               {onAddToQueue && isSlicedFilename(file.filename) && (
@@ -905,7 +913,7 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onAddToQue
                   onClick={() => { onAddToQueue(file.id); setShowActions(false); }}
                 >
                   <Clock className="w-3.5 h-3.5" />
-                  Add to Queue
+                  {t('files.addToQueue')}
                 </button>
               )}
               <button
@@ -913,7 +921,7 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onAddToQue
                 onClick={() => { onDownload(file.id); setShowActions(false); }}
               >
                 <Download className="w-3.5 h-3.5" />
-                Download
+                {t('common.download')}
               </button>
               {onRename && (
                 <button
@@ -921,7 +929,7 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onAddToQue
                   onClick={() => { onRename(file); setShowActions(false); }}
                 >
                   <Pencil className="w-3.5 h-3.5" />
-                  Rename
+                  {t('files.rename')}
                 </button>
               )}
               <button
@@ -929,7 +937,7 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onAddToQue
                 onClick={() => { onDelete(file.id); setShowActions(false); }}
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                Delete
+                {t('common.delete')}
               </button>
             </div>
           </>
@@ -949,6 +957,7 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onAddToQue
 }
 
 export function FileManagerPage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [searchParams] = useSearchParams();
@@ -1074,7 +1083,7 @@ export function FileManagerPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['library-folders'] });
       setShowNewFolderModal(false);
-      showToast('Folder created', 'success');
+      showToast(t('files.folderCreated'), 'success');
     },
     onError: (error: Error) => showToast(error.message, 'error'),
   });
@@ -1089,7 +1098,7 @@ export function FileManagerPage() {
         setSelectedFolderId(null);
       }
       setDeleteConfirm(null);
-      showToast('Folder deleted', 'success');
+      showToast(t('files.folderDeleted'), 'success');
     },
     onError: (error: Error) => {
       setDeleteConfirm(null);
@@ -1105,7 +1114,7 @@ export function FileManagerPage() {
       queryClient.invalidateQueries({ queryKey: ['library-stats'] });
       setSelectedFiles((prev) => prev.filter((id) => id !== deleteConfirm?.id));
       setDeleteConfirm(null);
-      showToast('File deleted', 'success');
+      showToast(t('files.fileDeleted'), 'success');
     },
     onError: (error: Error) => {
       setDeleteConfirm(null);
@@ -1119,7 +1128,7 @@ export function FileManagerPage() {
       queryClient.invalidateQueries({ queryKey: ['library-files'] });
       queryClient.invalidateQueries({ queryKey: ['library-folders'] });
       queryClient.invalidateQueries({ queryKey: ['library-stats'] });
-      showToast(`Deleted ${fileIds.length} files`, 'success');
+      showToast(t('files.deletedFiles', { count: fileIds.length }), 'success');
       setSelectedFiles([]);
       setDeleteConfirm(null);
     },
@@ -1137,7 +1146,7 @@ export function FileManagerPage() {
       queryClient.invalidateQueries({ queryKey: ['library-folders'] });
       setSelectedFiles([]);
       setShowMoveModal(false);
-      showToast('Files moved', 'success');
+      showToast(t('files.filesMoved'), 'success');
     },
     onError: (error: Error) => showToast(error.message, 'error'),
   });
@@ -1152,7 +1161,7 @@ export function FileManagerPage() {
       queryClient.invalidateQueries({ queryKey: ['archive-folders'] });
       setLinkFolder(null);
       const isUnlink = variables.data.project_id === 0 && variables.data.archive_id === 0;
-      showToast(isUnlink ? 'Folder unlinked' : 'Folder linked', 'success');
+      showToast(isUnlink ? t('files.folderUnlinked') : t('files.folderLinked'), 'success');
     },
     onError: (error: Error) => showToast(error.message, 'error'),
   });
@@ -1167,16 +1176,16 @@ export function FileManagerPage() {
 
       if (result.added.length > 0 && result.errors.length === 0) {
         showToast(
-          `Added ${result.added.length} file${result.added.length > 1 ? 's' : ''} to queue`,
+          t('files.addedToQueue', { count: result.added.length }),
           'success'
         );
       } else if (result.added.length > 0 && result.errors.length > 0) {
         showToast(
-          `Added ${result.added.length} file${result.added.length > 1 ? 's' : ''}, ${result.errors.length} failed`,
+          t('files.addedToQueueWithErrors', { added: result.added.length, errors: result.errors.length }),
           'success'
         );
       } else {
-        showToast(`Failed to add files: ${result.errors[0]?.error || 'Unknown error'}`, 'error');
+        showToast(t('files.failedToAddFiles', { error: result.errors[0]?.error || t('common.unknownError') }), 'error');
       }
     },
     onError: (error: Error) => showToast(error.message, 'error'),
@@ -1188,7 +1197,7 @@ export function FileManagerPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['library-files'] });
       setRenameItem(null);
-      showToast('File renamed', 'success');
+      showToast(t('files.fileRenamed'), 'success');
     },
     onError: (error: Error) => {
       setRenameItem(null);
@@ -1204,7 +1213,7 @@ export function FileManagerPage() {
       queryClient.invalidateQueries({ queryKey: ['library-folders'] });
       queryClient.invalidateQueries({ queryKey: ['library-files'] });
       setRenameItem(null);
-      showToast('Folder renamed', 'success');
+      showToast(t('files.folderRenamed'), 'success');
     },
     onError: (error: Error) => {
       setRenameItem(null);
@@ -1281,10 +1290,10 @@ export function FileManagerPage() {
             <div className="p-2.5 bg-bambu-green/10 rounded-xl">
               <FolderOpen className="w-6 h-6 text-bambu-green" />
             </div>
-            File Manager
+            {t('files.fileManager')}
           </h1>
           <p className="text-sm text-bambu-gray mt-2 ml-14">
-            Organize and manage your print files
+            {t('files.pageDescription')}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -1295,7 +1304,7 @@ export function FileManagerPage() {
               className={`p-1.5 rounded transition-colors ${
                 viewMode === 'grid' ? 'bg-bambu-card text-white' : 'text-bambu-gray hover:text-white'
               }`}
-              title="Grid view"
+              title={t('files.gridView')}
             >
               <LayoutGrid className="w-4 h-4" />
             </button>
@@ -1304,18 +1313,18 @@ export function FileManagerPage() {
               className={`p-1.5 rounded transition-colors ${
                 viewMode === 'list' ? 'bg-bambu-card text-white' : 'text-bambu-gray hover:text-white'
               }`}
-              title="List view"
+              title={t('files.listView')}
             >
               <List className="w-4 h-4" />
             </button>
           </div>
           <Button variant="secondary" onClick={() => setShowNewFolderModal(true)}>
             <FolderPlus className="w-4 h-4 mr-2" />
-            New Folder
+            {t('files.newFolder')}
           </Button>
           <Button onClick={() => setShowUploadModal(true)}>
             <Upload className="w-4 h-4 mr-2" />
-            Upload
+            {t('common.upload')}
           </Button>
         </div>
       </div>
@@ -1325,10 +1334,9 @@ export function FileManagerPage() {
         <div className="flex items-center gap-3 mb-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
           <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
           <div className="flex-1">
-            <p className="text-sm text-amber-500 font-medium">Low disk space warning</p>
+            <p className="text-sm text-amber-500 font-medium">{t('files.lowDiskSpaceWarning')}</p>
             <p className="text-xs text-amber-500/80">
-              Only {formatFileSize(stats.disk_free_bytes)} free of {formatFileSize(stats.disk_total_bytes)} total.
-              Threshold is set to {settings.library_disk_warning_gb} GB in settings.
+              {t('files.lowDiskSpaceDescription', { free: formatFileSize(stats.disk_free_bytes), total: formatFileSize(stats.disk_total_bytes), threshold: settings.library_disk_warning_gb })}
             </p>
           </div>
         </div>
@@ -1339,21 +1347,21 @@ export function FileManagerPage() {
         <div className="flex items-center gap-6 mb-6 p-3 bg-bambu-card rounded-lg border border-bambu-dark-tertiary">
           <div className="flex items-center gap-2 text-sm">
             <File className="w-4 h-4 text-bambu-green" />
-            <span className="text-bambu-gray">Files:</span>
+            <span className="text-bambu-gray">{t('files.filesLabel')}</span>
             <span className="text-white font-medium">{stats.total_files}</span>
           </div>
           <div className="flex items-center gap-2 text-sm">
             <FolderOpen className="w-4 h-4 text-blue-400" />
-            <span className="text-bambu-gray">Folders:</span>
+            <span className="text-bambu-gray">{t('files.foldersLabel')}</span>
             <span className="text-white font-medium">{stats.total_folders}</span>
           </div>
           <div className="flex items-center gap-2 text-sm">
             <HardDrive className="w-4 h-4 text-amber-400" />
-            <span className="text-bambu-gray">Size:</span>
+            <span className="text-bambu-gray">{t('files.sizeLabel')}</span>
             <span className="text-white font-medium">{formatFileSize(stats.total_size_bytes)}</span>
           </div>
           <div className="flex items-center gap-2 text-sm ml-auto">
-            <span className="text-bambu-gray">Free:</span>
+            <span className="text-bambu-gray">{t('files.freeLabel')}</span>
             <span className={`font-medium ${isDiskSpaceLow ? 'text-amber-500' : 'text-white'}`}>
               {formatFileSize(stats.disk_free_bytes)}
             </span>
@@ -1366,7 +1374,7 @@ export function FileManagerPage() {
         {/* Folder sidebar */}
         <div className="w-64 flex-shrink-0 bg-bambu-card rounded-lg border border-bambu-dark-tertiary overflow-hidden flex flex-col">
           <div className="p-3 border-b border-bambu-dark-tertiary">
-            <h2 className="text-sm font-medium text-white">Folders</h2>
+            <h2 className="text-sm font-medium text-white">{t('files.folders')}</h2>
           </div>
           <div className="flex-1 overflow-y-auto p-2">
             {/* All Files (root) */}
@@ -1379,7 +1387,7 @@ export function FileManagerPage() {
               onClick={() => setSelectedFolderId(null)}
             >
               <FileBox className="w-4 h-4" />
-              <span className="text-sm">All Files</span>
+              <span className="text-sm">{t('files.allFiles')}</span>
             </div>
 
             {/* Folder tree */}
@@ -1407,7 +1415,7 @@ export function FileManagerPage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray" />
                 <input
                   type="text"
-                  placeholder="Search files..."
+                  placeholder={t('files.searchFiles')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-9 pr-3 py-1.5 bg-bambu-dark border border-bambu-dark-tertiary rounded text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
@@ -1422,7 +1430,7 @@ export function FileManagerPage() {
                   onChange={(e) => setFilterType(e.target.value)}
                   className="bg-bambu-dark border border-bambu-dark-tertiary rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-bambu-green"
                 >
-                  <option value="all">All types</option>
+                  <option value="all">{t('files.allTypes')}</option>
                   {fileTypes.map((type) => (
                     <option key={type} value={type}>
                       {type.toUpperCase()}
@@ -1438,16 +1446,16 @@ export function FileManagerPage() {
                   onChange={(e) => setSortField(e.target.value as SortField)}
                   className="bg-bambu-dark border border-bambu-dark-tertiary rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-bambu-green"
                 >
-                  <option value="date">Date</option>
-                  <option value="name">Name</option>
-                  <option value="size">Size</option>
-                  <option value="type">Type</option>
-                  <option value="prints">Prints</option>
+                  <option value="date">{t('files.date')}</option>
+                  <option value="name">{t('common.name')}</option>
+                  <option value="size">{t('files.size')}</option>
+                  <option value="type">{t('files.type')}</option>
+                  <option value="prints">{t('files.prints')}</option>
                 </select>
                 <button
                   onClick={() => setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'))}
                   className="p-1.5 rounded bg-bambu-dark border border-bambu-dark-tertiary hover:border-bambu-green transition-colors"
-                  title={sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+                  title={sortDirection === 'asc' ? t('files.ascending') : t('files.descending')}
                 >
                   {sortDirection === 'asc' ? (
                     <SortAsc className="w-4 h-4 text-white" />
@@ -1460,7 +1468,7 @@ export function FileManagerPage() {
               {/* Results count */}
               {(searchQuery || filterType !== 'all') && (
                 <span className="text-sm text-bambu-gray">
-                  {filteredAndSortedFiles.length} of {files.length} files
+                  {t('files.filteredCount', { filtered: filteredAndSortedFiles.length, total: files.length })}
                 </span>
               )}
             </div>
@@ -1477,7 +1485,7 @@ export function FileManagerPage() {
                   onClick={handleDeselectAll}
                 >
                   <Square className="w-4 h-4 mr-1" />
-                  Deselect All
+                  {t('files.deselectAll')}
                 </Button>
               ) : (
                 <Button
@@ -1486,14 +1494,14 @@ export function FileManagerPage() {
                   onClick={handleSelectAll}
                 >
                   <CheckSquare className="w-4 h-4 mr-1" />
-                  Select All
+                  {t('files.selectAll')}
                 </Button>
               )}
 
               {selectedFiles.length > 0 && (
                 <>
                   <span className="text-sm text-bambu-gray ml-2">
-                    {selectedFiles.length} selected
+                    {t('files.selectedCount', { count: selectedFiles.length })}
                   </span>
                   <div className="flex-1" />
                   {selectedSlicedFiles.length === 1 && (
@@ -1503,7 +1511,7 @@ export function FileManagerPage() {
                       onClick={() => setPrintMultiFile(selectedSlicedFiles[0])}
                     >
                       <Play className="w-4 h-4 mr-1" />
-                      Print
+                      {t('common.print')}
                     </Button>
                   )}
                   {selectedSlicedFiles.length > 0 && (
@@ -1514,7 +1522,7 @@ export function FileManagerPage() {
                       disabled={addToQueueMutation.isPending}
                     >
                       <Clock className="w-4 h-4 mr-1" />
-                      {addToQueueMutation.isPending ? 'Adding...' : `Add to Queue${selectedSlicedFiles.length < selectedFiles.length ? ` (${selectedSlicedFiles.length})` : ''}`}
+                      {addToQueueMutation.isPending ? t('files.adding') : `${t('files.addToQueue')}${selectedSlicedFiles.length < selectedFiles.length ? ` (${selectedSlicedFiles.length})` : ''}`}
                     </Button>
                   )}
                   <Button
@@ -1523,7 +1531,7 @@ export function FileManagerPage() {
                     onClick={() => setShowMoveModal(true)}
                   >
                     <MoveRight className="w-4 h-4 mr-1" />
-                    Move
+                    {t('files.move')}
                   </Button>
                   <Button
                     variant="danger"
@@ -1537,14 +1545,14 @@ export function FileManagerPage() {
                     }}
                   >
                     <Trash2 className="w-4 h-4 mr-1" />
-                    Delete
+                    {t('common.delete')}
                   </Button>
                   <Button
                     variant="secondary"
                     size="sm"
                     onClick={handleDeselectAll}
                   >
-                    Clear
+                    {t('common.clear')}
                   </Button>
                 </>
               )}
@@ -1556,7 +1564,7 @@ export function FileManagerPage() {
             <div className="flex-1 flex items-center justify-center">
               <div className="flex flex-col items-center gap-3">
                 <Loader2 className="w-8 h-8 animate-spin text-bambu-green" />
-                <p className="text-sm text-bambu-gray">Loading files...</p>
+                <p className="text-sm text-bambu-gray">{t('files.loadingFiles')}</p>
               </div>
             </div>
           ) : files?.length === 0 ? (
@@ -1565,16 +1573,16 @@ export function FileManagerPage() {
                 <FileBox className="w-12 h-12 text-bambu-gray/50" />
               </div>
               <h3 className="text-lg font-medium text-white mb-2">
-                {selectedFolderId !== null ? 'Folder is empty' : 'No files yet'}
+                {selectedFolderId !== null ? t('files.folderEmpty') : t('files.noFilesYet')}
               </h3>
               <p className="text-bambu-gray text-center max-w-md mb-6">
                 {selectedFolderId !== null
-                  ? 'Upload files or move files into this folder to get started.'
-                  : 'Upload files to start organizing your print-related files.'}
+                  ? t('files.emptyFolderDescription')
+                  : t('files.emptyRootDescription')}
               </p>
               <Button onClick={() => setShowUploadModal(true)}>
                 <Plus className="w-4 h-4 mr-2" />
-                Upload Files
+                {t('files.uploadFiles')}
               </Button>
             </div>
           ) : filteredAndSortedFiles.length === 0 ? (
@@ -1582,12 +1590,12 @@ export function FileManagerPage() {
               <div className="p-4 bg-bambu-dark rounded-2xl mb-4">
                 <Search className="w-12 h-12 text-bambu-gray/50" />
               </div>
-              <h3 className="text-lg font-medium text-white mb-2">No matching files</h3>
+              <h3 className="text-lg font-medium text-white mb-2">{t('files.noMatchingFiles')}</h3>
               <p className="text-bambu-gray text-center max-w-md mb-6">
-                No files match your current search or filter criteria.
+                {t('files.noMatchingFilesDescription')}
               </p>
               <Button variant="secondary" onClick={() => { setSearchQuery(''); setFilterType('all'); }}>
-                Clear filters
+                {t('files.clearFilters')}
               </Button>
             </div>
           ) : viewMode === 'grid' ? (
@@ -1614,10 +1622,10 @@ export function FileManagerPage() {
                 {/* List header */}
                 <div className="grid grid-cols-[auto_1fr_100px_100px_100px_80px] gap-4 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium">
                   <div className="w-6" />
-                  <div>Name</div>
-                  <div>Type</div>
-                  <div>Size</div>
-                  <div>Prints</div>
+                  <div>{t('common.name')}</div>
+                  <div>{t('files.type')}</div>
+                  <div>{t('files.size')}</div>
+                  <div>{t('files.prints')}</div>
                   <div />
                 </div>
                 {/* List rows */}
@@ -1692,14 +1700,14 @@ export function FileManagerPage() {
                           <button
                             onClick={() => setPrintFile(file)}
                             className="p-1.5 rounded hover:bg-bambu-dark text-bambu-gray hover:text-bambu-green transition-colors"
-                            title="Print"
+                            title={t('common.print')}
                           >
                             <Printer className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => addToQueueMutation.mutate([file.id])}
                             className="p-1.5 rounded hover:bg-bambu-dark text-bambu-gray hover:text-white transition-colors"
-                            title="Add to Queue"
+                            title={t('files.addToQueue')}
                             disabled={addToQueueMutation.isPending}
                           >
                             <Clock className="w-4 h-4" />
@@ -1709,21 +1717,21 @@ export function FileManagerPage() {
                       <button
                         onClick={() => handleDownload(file.id)}
                         className="p-1.5 rounded hover:bg-bambu-dark text-bambu-gray hover:text-white transition-colors"
-                        title="Download"
+                        title={t('common.download')}
                       >
                         <Download className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => setRenameItem({ type: 'file', id: file.id, name: file.filename })}
                         className="p-1.5 rounded hover:bg-bambu-dark text-bambu-gray hover:text-white transition-colors"
-                        title="Rename"
+                        title={t('files.rename')}
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => setDeleteConfirm({ type: 'file', id: file.id })}
                         className="p-1.5 rounded hover:bg-bambu-dark text-bambu-gray hover:text-red-400 transition-colors"
-                        title="Delete"
+                        title={t('common.delete')}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -1778,22 +1786,22 @@ export function FileManagerPage() {
         <ConfirmModal
           title={
             deleteConfirm.type === 'folder'
-              ? 'Delete Folder'
+              ? t('files.deleteFolder')
               : deleteConfirm.type === 'bulk'
-              ? `Delete ${deleteConfirm.count} Files`
-              : 'Delete File'
+              ? t('files.deleteBulkTitle', { count: deleteConfirm.count })
+              : t('files.deleteFile')
           }
           message={
             deleteConfirm.type === 'folder'
-              ? 'Are you sure you want to delete this folder? All files inside will also be deleted.'
+              ? t('files.deleteFolderConfirm')
               : deleteConfirm.type === 'bulk'
-              ? `Are you sure you want to delete ${deleteConfirm.count} selected files? This action cannot be undone.`
-              : 'Are you sure you want to delete this file?'
+              ? t('files.deleteMultipleConfirm', { count: deleteConfirm.count })
+              : t('files.deleteFileConfirm')
           }
-          confirmText="Delete"
+          confirmText={t('common.delete')}
           variant="danger"
           isLoading={isDeleting}
-          loadingText="Deleting..."
+          loadingText={t('files.deleting')}
           onConfirm={handleDeleteConfirm}
           onCancel={() => setDeleteConfirm(null)}
         />

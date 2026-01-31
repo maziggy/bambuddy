@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { History, CheckCircle, XCircle, Loader2, Trash2, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../api/client';
@@ -6,19 +7,6 @@ import { parseUTCDate, formatTimeOnly, formatDateTime, type TimeFormat } from '.
 import type { NotificationLogEntry } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
-
-const EVENT_LABELS: Record<string, string> = {
-  print_start: 'Print Started',
-  print_complete: 'Print Complete',
-  print_failed: 'Print Failed',
-  print_stopped: 'Print Stopped',
-  print_progress: 'Progress',
-  printer_offline: 'Printer Offline',
-  printer_error: 'Printer Error',
-  filament_low: 'Low Filament',
-  maintenance_due: 'Maintenance Due',
-  test: 'Test',
-};
 
 const EVENT_COLORS: Record<string, string> = {
   print_start: 'text-blue-400',
@@ -38,6 +26,7 @@ interface NotificationLogViewerProps {
 }
 
 export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [days, setDays] = useState(7);
@@ -73,7 +62,7 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
       queryClient.invalidateQueries({ queryKey: ['notification-log-stats'] });
     },
     onError: (error: Error) => {
-      showToast(`Failed to clear logs: ${error.message}`, 'error');
+      showToast(t('notificationLog.clearLogsFailed', { error: error.message }), 'error');
     },
   });
 
@@ -83,9 +72,9 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
     const now = new Date();
     const diff = now.getTime() - date.getTime();
 
-    if (diff < 60000) return 'Just now';
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    if (diff < 60000) return t('pendingUploads.justNow');
+    if (diff < 3600000) return t('pendingUploads.minutesAgo', { count: Math.floor(diff / 60000) });
+    if (diff < 86400000) return t('pendingUploads.hoursAgo', { count: Math.floor(diff / 3600000) });
 
     return date.toLocaleDateString() + ' ' + formatTimeOnly(date, timeFormat);
   };
@@ -97,7 +86,7 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
         <div className="p-4 border-b border-bambu-dark-tertiary flex items-center justify-between">
           <div className="flex items-center gap-3">
             <History className="w-5 h-5 text-bambu-green" />
-            <h2 className="text-lg font-semibold text-white">Notification Log</h2>
+            <h2 className="text-lg font-semibold text-white">{t('notificationLog.title')}</h2>
           </div>
           <button
             onClick={onClose}
@@ -112,16 +101,16 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
           <div className="px-4 py-3 border-b border-bambu-dark-tertiary bg-bambu-dark/50">
             <div className="flex items-center gap-6 text-sm">
               <span className="text-bambu-gray">
-                Last {days} days: <span className="text-white font-medium">{stats.total}</span> notifications
+                {t('notificationLog.lastDays', { days })} <span className="text-white font-medium">{stats.total}</span> {t('notificationLog.notifications')}
               </span>
               <span className="flex items-center gap-1 text-bambu-green">
                 <CheckCircle className="w-4 h-4" />
-                {stats.success_count} sent
+                {stats.success_count} {t('notificationLog.sent')}
               </span>
               {stats.failure_count > 0 && (
                 <span className="flex items-center gap-1 text-red-400">
                   <XCircle className="w-4 h-4" />
-                  {stats.failure_count} failed
+                  {stats.failure_count} {t('notificationLog.failed')}
                 </span>
               )}
             </div>
@@ -135,10 +124,10 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
             onChange={(e) => setDays(Number(e.target.value))}
             className="px-3 py-1.5 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-bambu-green"
           >
-            <option value={1}>Last 24 hours</option>
-            <option value={7}>Last 7 days</option>
-            <option value={30}>Last 30 days</option>
-            <option value={90}>Last 90 days</option>
+            <option value={1}>{t('notificationLog.last24Hours')}</option>
+            <option value={7}>{t('stats.last7Days')}</option>
+            <option value={30}>{t('stats.last30Days')}</option>
+            <option value={90}>{t('stats.last90Days')}</option>
           </select>
 
           <label className="flex items-center gap-2 text-sm text-bambu-gray cursor-pointer">
@@ -148,7 +137,7 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
               onChange={(e) => setShowFailedOnly(e.target.checked)}
               className="rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
             />
-            Show failed only
+            {t('notificationLog.showFailedOnly')}
           </label>
 
           <div className="flex-1" />
@@ -164,7 +153,7 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
             ) : (
               <RefreshCw className="w-4 h-4" />
             )}
-            Refresh
+            {t('common.refresh')}
           </Button>
 
           <Button
@@ -179,7 +168,7 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
             ) : (
               <Trash2 className="w-4 h-4" />
             )}
-            Clear Old
+            {t('notificationLog.clearOld')}
           </Button>
         </div>
 
@@ -206,7 +195,7 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
             <div className="text-center py-12 text-bambu-gray">
               <History className="w-12 h-12 mx-auto mb-3 opacity-30" />
               <p className="text-sm">
-                {showFailedOnly ? 'No failed notifications' : 'No notifications logged'}
+                {showFailedOnly ? t('notificationLog.noFailedNotifications') : t('notificationLog.noNotificationsLogged')}
               </p>
             </div>
           )}
@@ -229,6 +218,7 @@ function LogEntry({
   formatDate: (date: string) => string;
   formatFullDate: (date: string) => string;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       className={`border rounded-lg overflow-hidden transition-colors ${
@@ -248,11 +238,11 @@ function LogEntry({
         )}
 
         <span className={`text-xs font-medium ${EVENT_COLORS[log.event_type] || 'text-bambu-gray'}`}>
-          {EVENT_LABELS[log.event_type] || log.event_type}
+          {t(`notificationLog.events.${log.event_type}`, log.event_type)}
         </span>
 
         <span className="text-sm text-white truncate flex-1">
-          {log.provider_name || 'Unknown Provider'}
+          {log.provider_name || t('notificationLog.unknownProvider')}
         </span>
 
         {log.printer_name && (
@@ -275,22 +265,22 @@ function LogEntry({
       {isExpanded && (
         <div className="px-3 py-2 border-t border-bambu-dark-tertiary bg-bambu-dark/20 space-y-2">
           <div>
-            <p className="text-xs text-bambu-gray mb-1">Title</p>
+            <p className="text-xs text-bambu-gray mb-1">{t('notificationLog.titleLabel')}</p>
             <p className="text-sm text-white">{log.title}</p>
           </div>
           <div>
-            <p className="text-xs text-bambu-gray mb-1">Message</p>
+            <p className="text-xs text-bambu-gray mb-1">{t('notificationLog.messageLabel')}</p>
             <p className="text-sm text-white whitespace-pre-wrap">{log.message}</p>
           </div>
           {!log.success && log.error_message && (
             <div>
-              <p className="text-xs text-red-400 mb-1">Error</p>
+              <p className="text-xs text-red-400 mb-1">{t('notificationLog.errorLabel')}</p>
               <p className="text-sm text-red-300">{log.error_message}</p>
             </div>
           )}
           <div className="flex gap-4 text-xs text-bambu-gray pt-1">
-            <span>Provider: {log.provider_type}</span>
-            <span>Time: {formatFullDate(log.created_at)}</span>
+            <span>{t('notificationLog.provider')} {log.provider_type}</span>
+            <span>{t('notificationLog.time')} {formatFullDate(log.created_at)}</span>
           </div>
         </div>
       )}

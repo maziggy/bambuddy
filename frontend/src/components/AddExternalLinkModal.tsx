@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Save, Loader2, Upload, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { ExternalLink, ExternalLinkCreate, ExternalLinkUpdate } from '../api/client';
 import { Button } from './Button';
@@ -13,6 +14,7 @@ interface AddExternalLinkModalProps {
 }
 
 export function AddExternalLinkModal({ link, onClose }: AddExternalLinkModalProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { mode } = useTheme();
   const isEditing = !!link;
@@ -85,13 +87,13 @@ export function AddExternalLinkModal({ link, onClose }: AddExternalLinkModalProp
       // Validate file type
       const validTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/svg+xml', 'image/webp', 'image/x-icon'];
       if (!validTypes.includes(file.type)) {
-        setError('Please select a valid image file (PNG, JPG, GIF, SVG, WebP, or ICO)');
+        setError(t('settings.linkInvalidImageType'));
         return;
       }
 
       // Validate file size (max 1MB)
       if (file.size > 1024 * 1024) {
-        setError('Image file must be less than 1MB');
+        setError(t('settings.linkImageTooLarge'));
         return;
       }
 
@@ -121,18 +123,18 @@ export function AddExternalLinkModal({ link, onClose }: AddExternalLinkModalProp
     setError(null);
 
     if (!name.trim()) {
-      setError('Name is required');
+      setError(t('settings.linkNameRequired'));
       return;
     }
 
     if (!url.trim()) {
-      setError('URL is required');
+      setError(t('settings.linkUrlRequired'));
       return;
     }
 
     // Validate URL
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      setError('URL must start with http:// or https://');
+      setError(t('settings.linkUrlInvalid'));
       return;
     }
 
@@ -172,7 +174,7 @@ export function AddExternalLinkModal({ link, onClose }: AddExternalLinkModalProp
               )}
             </div>
             <h2 className="text-lg font-semibold text-white">
-              {isEditing ? 'Edit Link' : 'Add External Link'}
+              {isEditing ? t('settings.editLink') : t('settings.addExternalLink')}
             </h2>
           </div>
           <button
@@ -193,12 +195,12 @@ export function AddExternalLinkModal({ link, onClose }: AddExternalLinkModalProp
 
           {/* Name */}
           <div>
-            <label className="block text-sm text-bambu-gray mb-1">Name *</label>
+            <label className="block text-sm text-bambu-gray mb-1">{t('settings.linkNameLabel')} *</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="My Link"
+              placeholder={t('settings.linkNamePlaceholder')}
               maxLength={50}
               className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
             />
@@ -206,7 +208,7 @@ export function AddExternalLinkModal({ link, onClose }: AddExternalLinkModalProp
 
           {/* URL */}
           <div>
-            <label className="block text-sm text-bambu-gray mb-1">URL *</label>
+            <label className="block text-sm text-bambu-gray mb-1">{t('settings.linkUrlLabel')} *</label>
             <input
               type="text"
               value={url}
@@ -218,12 +220,12 @@ export function AddExternalLinkModal({ link, onClose }: AddExternalLinkModalProp
 
           {/* Icon Section */}
           <div className="space-y-3">
-            <label className="block text-sm text-bambu-gray">Icon</label>
+            <label className="block text-sm text-bambu-gray">{t('settings.linkIconLabel')}</label>
 
             {/* Custom Icon Upload */}
             <div className="p-3 rounded-lg bg-bambu-dark border border-bambu-dark-tertiary">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-white">Custom Icon</span>
+                <span className="text-sm text-white">{t('settings.linkCustomIcon')}</span>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -238,7 +240,7 @@ export function AddExternalLinkModal({ link, onClose }: AddExternalLinkModalProp
                       type="button"
                       onClick={handleRemoveCustomIcon}
                       className="p-1 text-red-400 hover:text-red-300 transition-colors"
-                      title="Remove custom icon"
+                      title={t('settings.removeCustomIcon')}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -251,19 +253,19 @@ export function AddExternalLinkModal({ link, onClose }: AddExternalLinkModalProp
                     onClick={() => fileInputRef.current?.click()}
                   >
                     <Upload className="w-4 h-4" />
-                    Upload
+                    {t('common.upload')}
                   </Button>
                 )}
               </div>
               <p className="text-xs text-bambu-gray">
-                PNG, JPG, GIF, SVG, WebP, or ICO. Max 1MB.
+                {t('settings.linkCustomIconHint')}
               </p>
             </div>
 
             {/* Preset Icon Picker */}
             {!useCustomIcon && (
               <div>
-                <span className="text-sm text-bambu-gray block mb-2">Or choose a preset icon</span>
+                <span className="text-sm text-bambu-gray block mb-2">{t('settings.linkChoosePresetIcon')}</span>
                 <IconPicker value={icon} onChange={setIcon} />
               </div>
             )}
@@ -277,7 +279,7 @@ export function AddExternalLinkModal({ link, onClose }: AddExternalLinkModalProp
               onClick={onClose}
               className="flex-1"
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               type="submit"
@@ -289,7 +291,7 @@ export function AddExternalLinkModal({ link, onClose }: AddExternalLinkModalProp
               ) : (
                 <Save className="w-4 h-4" />
               )}
-              {isEditing ? 'Save' : 'Add'}
+              {isEditing ? t('common.save') : t('common.add')}
             </Button>
           </div>
         </form>

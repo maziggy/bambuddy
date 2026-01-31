@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Printer as PrinterIcon,
@@ -43,6 +44,7 @@ function InlineMappingEditor({
   filamentReqs: FilamentRequirement[];
   onUpdateConfig: (config: Partial<PerPrinterConfig>) => void;
 }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -182,11 +184,11 @@ function InlineMappingEditor({
           {status === 'match' ? (
             <Check className="w-3 h-3 text-bambu-green" />
           ) : status === 'type_only' ? (
-            <span title="Same type, different color">
+            <span title={t('printModal.sameTypeDifferentColor')}>
               <AlertTriangle className="w-3 h-3 text-yellow-400" />
             </span>
           ) : (
-            <span title="Filament type not loaded">
+            <span title={t('printModal.filamentTypeNotLoaded')}>
               <AlertTriangle className="w-3 h-3 text-orange-400" />
             </span>
           )}

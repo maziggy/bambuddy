@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -57,6 +58,7 @@ function formatFilament(grams: number): string {
 }
 
 function StatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation();
   const colors = {
     active: 'bg-bambu-green/20 text-bambu-green',
     completed: 'bg-blue-500/20 text-blue-400',
@@ -64,9 +66,15 @@ function StatusBadge({ status }: { status: string }) {
   };
   const color = colors[status as keyof typeof colors] || colors.active;
 
+  const labels: Record<string, string> = {
+    active: t('projectDetail.statusActive'),
+    completed: t('projectDetail.statusCompleted'),
+    archived: t('projectDetail.statusArchived'),
+  };
+
   return (
     <span className={`px-2 py-1 rounded text-sm font-medium ${color}`}>
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+      {labels[status] || (status.charAt(0).toUpperCase() + status.slice(1))}
     </span>
   );
 }
@@ -105,11 +113,12 @@ function StatCard({
 }
 
 function ArchiveGrid({ archives }: { archives: Archive[] }) {
+  const { t } = useTranslation();
   if (archives.length === 0) {
     return (
       <div className="text-center py-8 text-bambu-gray">
         <Package className="w-12 h-12 mx-auto mb-2 opacity-50" />
-        <p>No prints in this project yet</p>
+        <p>{t('projectDetail.noPrintsYet')}</p>
       </div>
     );
   }
@@ -125,7 +134,7 @@ function ArchiveGrid({ archives }: { archives: Archive[] }) {
           {archive.thumbnail_path ? (
             <img
               src={api.getArchiveThumbnail(archive.id)}
-              alt={archive.print_name || 'Print'}
+              alt={archive.print_name || t('projectDetail.print')}
               className="w-full h-full object-cover"
             />
           ) : (
@@ -148,7 +157,7 @@ function ArchiveGrid({ archives }: { archives: Archive[] }) {
 
           {/* Name overlay on hover */}
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <p className="text-xs text-white truncate">{archive.print_name || 'Unknown'}</p>
+            <p className="text-xs text-white truncate">{archive.print_name || t('projectDetail.unknown')}</p>
           </div>
         </Link>
       ))}
@@ -157,11 +166,12 @@ function ArchiveGrid({ archives }: { archives: Archive[] }) {
 }
 
 function PriorityBadge({ priority }: { priority: string }) {
+  const { t } = useTranslation();
   const config = {
-    low: { color: 'bg-gray-500/20 text-gray-400', label: 'Low' },
-    normal: { color: 'bg-blue-500/20 text-blue-400', label: 'Normal' },
-    high: { color: 'bg-orange-500/20 text-orange-400', label: 'High' },
-    urgent: { color: 'bg-red-500/20 text-red-400', label: 'Urgent' },
+    low: { color: 'bg-gray-500/20 text-gray-400', label: t('projectDetail.priorityLow') },
+    normal: { color: 'bg-blue-500/20 text-blue-400', label: t('projectDetail.priorityNormal') },
+    high: { color: 'bg-orange-500/20 text-orange-400', label: t('projectDetail.priorityHigh') },
+    urgent: { color: 'bg-red-500/20 text-red-400', label: t('projectDetail.priorityUrgent') },
   };
   const { color, label } = config[priority as keyof typeof config] || config.normal;
 
@@ -178,22 +188,23 @@ function formatDate(dateString: string | null): string {
   return formatDateOnly(dateString, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-function getDueDateStatus(dateString: string | null): { color: string; label: string } | null {
+function getDueDateStatus(dateString: string | null, t: (key: string, options?: Record<string, unknown>) => string): { color: string; label: string } | null {
   if (!dateString) return null;
   const dueDate = parseUTCDate(dateString);
   if (!dueDate) return null;
   const now = new Date();
   const diffDays = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
-  if (diffDays < 0) return { color: 'text-red-400', label: 'Overdue' };
-  if (diffDays === 0) return { color: 'text-orange-400', label: 'Due today' };
-  if (diffDays <= 3) return { color: 'text-yellow-400', label: `${diffDays} days left` };
-  return { color: 'text-bambu-gray', label: `${diffDays} days left` };
+  if (diffDays < 0) return { color: 'text-red-400', label: t('projectDetail.overdue') };
+  if (diffDays === 0) return { color: 'text-orange-400', label: t('projectDetail.dueToday') };
+  if (diffDays <= 3) return { color: 'text-yellow-400', label: t('projectDetail.daysLeft', { count: diffDays }) };
+  return { color: 'text-bambu-gray', label: t('projectDetail.daysLeft', { count: diffDays }) };
 }
 
 export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [showEditModal, setShowEditModal] = useState(false);
@@ -247,7 +258,7 @@ export function ProjectDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       setShowEditModal(false);
       setEditingNotes(false);
-      showToast('Project updated', 'success');
+      showToast(t('projectDetail.projectUpdated'), 'success');
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
@@ -296,7 +307,7 @@ export function ProjectDetailPage() {
       setNewBomUrl('');
       setNewBomRemarks('');
       setShowBomForm(false);
-      showToast('Part added', 'success');
+      showToast(t('projectDetail.partAdded'), 'success');
     },
     onError: (error: Error) => showToast(error.message, 'error'),
   });
@@ -316,7 +327,7 @@ export function ProjectDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project-bom', projectId] });
       queryClient.invalidateQueries({ queryKey: ['project', projectId] });
-      showToast('Part removed', 'success');
+      showToast(t('projectDetail.partRemoved'), 'success');
     },
     onError: (error: Error) => showToast(error.message, 'error'),
   });
@@ -344,8 +355,8 @@ export function ProjectDetailPage() {
   const handleDeleteBomItem = (itemId: number, itemName: string) => {
     setConfirmModal({
       isOpen: true,
-      title: 'Delete Part',
-      message: `Are you sure you want to delete "${itemName}"?`,
+      title: t('projectDetail.deletePart'),
+      message: t('projectDetail.deletePartConfirm', { name: itemName }),
       onConfirm: () => {
         setConfirmModal(prev => ({ ...prev, isOpen: false }));
         deleteBomMutation.mutate(itemId);
@@ -358,7 +369,7 @@ export function ProjectDetailPage() {
     mutationFn: () => api.createTemplateFromProject(projectId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
-      showToast('Template created', 'success');
+      showToast(t('projectDetail.templateCreated'), 'success');
     },
     onError: (error: Error) => showToast(error.message, 'error'),
   });
@@ -384,10 +395,10 @@ export function ProjectDetailPage() {
     return (
       <div className="text-center py-24">
         <p className="text-bambu-gray">
-          {projectError ? `Error: ${(projectError as Error).message}` : 'Project not found'}
+          {projectError ? `${t('projectDetail.error')}: ${(projectError as Error).message}` : t('projectDetail.projectNotFound')}
         </p>
         <Button variant="secondary" className="mt-4" onClick={() => navigate('/projects')}>
-          Back to Projects
+          {t('projectDetail.backToProjects')}
         </Button>
       </div>
     );
@@ -404,7 +415,7 @@ export function ProjectDetailPage() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-bambu-gray">
         <Link to="/projects" className="hover:text-white transition-colors">
-          Projects
+          {t('projectDetail.projects')}
         </Link>
         <ChevronRight className="w-4 h-4" />
         <span className="text-white">{project.name}</span>
@@ -435,7 +446,7 @@ export function ProjectDetailPage() {
         </div>
         <Button onClick={() => setShowEditModal(true)}>
           <Edit3 className="w-4 h-4 mr-2" />
-          Edit
+          {t('projectDetail.edit')}
         </Button>
       </div>
 
@@ -447,9 +458,9 @@ export function ProjectDetailPage() {
             {project.target_count && (
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-bambu-gray">Plates Progress</span>
+                  <span className="text-sm text-bambu-gray">{t('projectDetail.platesProgress')}</span>
                   <span className="text-sm font-medium text-white">
-                    {stats?.total_archives || 0} / {project.target_count} print jobs
+                    {stats?.total_archives || 0} / {project.target_count} {t('projectDetail.printJobs')}
                   </span>
                 </div>
                 <div className="h-3 bg-bambu-dark rounded-full overflow-hidden">
@@ -463,11 +474,11 @@ export function ProjectDetailPage() {
                 </div>
                 <div className="flex justify-between mt-1">
                   <span className="text-xs text-bambu-gray/70">
-                    {platesProgressPercent.toFixed(0)}% complete
+                    {platesProgressPercent.toFixed(0)}{t('projectDetail.percentComplete')}
                   </span>
                   {stats?.remaining_prints != null && stats.remaining_prints > 0 && (
                     <span className="text-xs text-bambu-gray/70">
-                      {stats.remaining_prints} remaining
+                      {stats.remaining_prints} {t('projectDetail.remaining')}
                     </span>
                   )}
                 </div>
@@ -477,9 +488,9 @@ export function ProjectDetailPage() {
             {project.target_parts_count && (
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-bambu-gray">Parts Progress</span>
+                  <span className="text-sm text-bambu-gray">{t('projectDetail.partsProgress')}</span>
                   <span className="text-sm font-medium text-white">
-                    {stats?.completed_prints || 0} / {project.target_parts_count} parts
+                    {stats?.completed_prints || 0} / {project.target_parts_count} {t('projectDetail.parts')}
                   </span>
                 </div>
                 <div className="h-3 bg-bambu-dark rounded-full overflow-hidden">
@@ -493,11 +504,11 @@ export function ProjectDetailPage() {
                 </div>
                 <div className="flex justify-between mt-1">
                   <span className="text-xs text-bambu-gray/70">
-                    {partsProgressPercent.toFixed(0)}% complete
+                    {partsProgressPercent.toFixed(0)}{t('projectDetail.percentComplete')}
                   </span>
                   {stats?.remaining_parts != null && stats.remaining_parts > 0 && (
                     <span className="text-xs text-bambu-gray/70">
-                      {stats.remaining_parts} remaining
+                      {stats.remaining_parts} {t('projectDetail.remaining')}
                     </span>
                   )}
                 </div>
@@ -517,25 +528,25 @@ export function ProjectDetailPage() {
                   <Package className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="text-sm text-bambu-gray">Print Jobs</p>
-                  <p className="text-xl font-semibold text-white">{stats.total_archives} <span className="text-sm font-normal text-bambu-gray">total</span></p>
+                  <p className="text-sm text-bambu-gray">{t('projectDetail.printJobsCard')}</p>
+                  <p className="text-xl font-semibold text-white">{stats.total_archives} <span className="text-sm font-normal text-bambu-gray">{t('projectDetail.total')}</span></p>
                   {stats.failed_prints > 0 && (
-                    <p className="text-sm text-red-400">{stats.failed_prints} failed</p>
+                    <p className="text-sm text-red-400">{stats.failed_prints} {t('projectDetail.failed')}</p>
                   )}
-                  <p className="text-sm text-bambu-gray">{stats.completed_prints} parts printed</p>
+                  <p className="text-sm text-bambu-gray">{stats.completed_prints} {t('projectDetail.partsPrinted')}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
           <StatCard
             icon={Clock}
-            label="Print Time"
+            label={t('projectDetail.printTime')}
             value={formatDuration(stats.total_print_time_hours)}
             color="text-yellow-400"
           />
           <StatCard
             icon={Printer}
-            label="Filament Used"
+            label={t('projectDetail.filamentUsed')}
             value={formatFilament(stats.total_filament_grams)}
             color="text-purple-400"
           />
@@ -547,18 +558,18 @@ export function ProjectDetailPage() {
         <Card>
           <CardContent className="p-4">
             <h2 className="text-lg font-semibold text-white mb-3">
-              Cost Tracking
+              {t('projectDetail.costTracking')}
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
-                <p className="text-xs text-bambu-gray uppercase">Filament Cost</p>
+                <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.filamentCost')}</p>
                 <p className="text-lg font-semibold text-white">
                   {currency}{stats.estimated_cost.toFixed(2)}
                 </p>
               </div>
               {stats.total_energy_kwh > 0 && (
                 <div>
-                  <p className="text-xs text-bambu-gray uppercase">Energy</p>
+                  <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.energy')}</p>
                   <p className="text-lg font-semibold text-white">
                     {stats.total_energy_kwh.toFixed(2)} kWh
                     {stats.total_energy_cost > 0 && (
@@ -572,11 +583,11 @@ export function ProjectDetailPage() {
               {project.budget && (
                 <>
                   <div>
-                    <p className="text-xs text-bambu-gray uppercase">Budget</p>
+                    <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.budget')}</p>
                     <p className="text-lg font-semibold text-white">{currency}{project.budget.toFixed(2)}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-bambu-gray uppercase">Remaining</p>
+                    <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.budgetRemaining')}</p>
                     <p className={`text-lg font-semibold ${project.budget - stats.estimated_cost >= 0 ? 'text-bambu-green' : 'text-red-400'}`}>
                       {currency}{(project.budget - stats.estimated_cost).toFixed(2)}
                     </p>
@@ -594,7 +605,7 @@ export function ProjectDetailPage() {
           <CardContent className="p-4">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-3">
               <FolderTree className="w-5 h-5" />
-              Sub-projects ({project.children.length})
+              {t('projectDetail.subProjects', { count: project.children.length })}
             </h2>
             <div className="space-y-2">
               {project.children.map((child) => (
@@ -614,7 +625,10 @@ export function ProjectDetailPage() {
                       child.status === 'archived' ? 'bg-bambu-gray/20 text-bambu-gray' :
                       'bg-blue-500/20 text-blue-400'
                     }`}>
-                      {child.status}
+                      {child.status === 'active' ? t('projectDetail.statusActive') :
+                       child.status === 'completed' ? t('projectDetail.statusCompleted') :
+                       child.status === 'archived' ? t('projectDetail.statusArchived') :
+                       child.status}
                     </span>
                   </div>
                   {child.progress_percent !== null && (
@@ -633,7 +647,7 @@ export function ProjectDetailPage() {
       {project.parent_id && project.parent_name && (
         <div className="flex items-center gap-2 text-sm">
           <Layers className="w-4 h-4 text-bambu-gray" />
-          <span className="text-bambu-gray">Part of:</span>
+          <span className="text-bambu-gray">{t('projectDetail.partOf')}</span>
           <Link
             to={`/projects/${project.parent_id}`}
             className="text-bambu-green hover:underline"
@@ -649,7 +663,7 @@ export function ProjectDetailPage() {
           {/* Priority */}
           {project.priority && project.priority !== 'normal' && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-bambu-gray uppercase">Priority:</span>
+              <span className="text-xs text-bambu-gray uppercase">{t('projectDetail.priority')}:</span>
               <PriorityBadge priority={project.priority} />
             </div>
           )}
@@ -659,9 +673,9 @@ export function ProjectDetailPage() {
             <div className="flex items-center gap-2">
               <Calendar className="w-4 h-4 text-bambu-gray" />
               <span className="text-sm text-white">{formatDate(project.due_date)}</span>
-              {getDueDateStatus(project.due_date) && (
-                <span className={`text-xs ${getDueDateStatus(project.due_date)!.color}`}>
-                  ({getDueDateStatus(project.due_date)!.label})
+              {getDueDateStatus(project.due_date, t) && (
+                <span className={`text-xs ${getDueDateStatus(project.due_date, t)!.color}`}>
+                  ({getDueDateStatus(project.due_date, t)!.label})
                 </span>
               )}
             </div>
@@ -692,12 +706,12 @@ export function ProjectDetailPage() {
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
               <FileText className="w-5 h-5" />
-              Notes
+              {t('projectDetail.notes')}
             </h2>
             {!editingNotes ? (
               <Button variant="secondary" size="sm" onClick={handleStartEditNotes}>
                 <Edit3 className="w-4 h-4 mr-1" />
-                Edit
+                {t('projectDetail.edit')}
               </Button>
             ) : (
               <div className="flex gap-2">
@@ -708,7 +722,7 @@ export function ProjectDetailPage() {
                   disabled={updateMutation.isPending}
                 >
                   <X className="w-4 h-4 mr-1" />
-                  Cancel
+                  {t('projectDetail.cancel')}
                 </Button>
                 <Button
                   size="sm"
@@ -720,7 +734,7 @@ export function ProjectDetailPage() {
                   ) : (
                     <Save className="w-4 h-4 mr-1" />
                   )}
-                  Save
+                  {t('projectDetail.save')}
                 </Button>
               </div>
             )}
@@ -730,7 +744,7 @@ export function ProjectDetailPage() {
             <RichTextEditor
               content={notesContent}
               onChange={setNotesContent}
-              placeholder="Add notes about this project..."
+              placeholder={t('projectDetail.notesPlaceholder')}
             />
           ) : project.notes ? (
             <div
@@ -739,7 +753,7 @@ export function ProjectDetailPage() {
             />
           ) : (
             <p className="text-bambu-gray/70 text-sm italic">
-              No notes yet. Click Edit to add notes.
+              {t('projectDetail.noNotesYet')}
             </p>
           )}
         </CardContent>
@@ -751,15 +765,15 @@ export function ProjectDetailPage() {
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
               <FolderOpen className="w-5 h-5" />
-              Files
+              {t('projectDetail.files')}
             </h2>
           </div>
 
           <p className="text-xs text-bambu-gray mb-3">
             <Link to="/files" className="text-bambu-green hover:underline">
-              Link folders from the File Manager
+              {t('projectDetail.linkFoldersFromFileManager')}
             </Link>
-            {' '}to this project for quick access.
+            {' '}{t('projectDetail.toThisProjectForQuickAccess')}
           </p>
 
           {linkedFolders && linkedFolders.length > 0 ? (
@@ -777,7 +791,7 @@ export function ProjectDetailPage() {
                         {folder.name}
                       </p>
                       <p className="text-xs text-bambu-gray">
-                        {folder.file_count} file{folder.file_count !== 1 ? 's' : ''}
+                        {t('projectDetail.fileCount', { count: folder.file_count })}
                       </p>
                     </div>
                   </div>
@@ -787,7 +801,7 @@ export function ProjectDetailPage() {
             </div>
           ) : (
             <p className="text-bambu-gray/70 text-sm italic">
-              No folders linked. Go to File Manager and link a folder to this project.
+              {t('projectDetail.noFoldersLinked')}
             </p>
           )}
         </CardContent>
@@ -799,10 +813,10 @@ export function ProjectDetailPage() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
               <ShoppingCart className="w-5 h-5" />
-              Bill of Materials
+              {t('projectDetail.billOfMaterials')}
               {stats && stats.bom_total_items > 0 && (
                 <span className="text-sm font-normal text-bambu-gray">
-                  ({stats.bom_completed_items}/{stats.bom_total_items} acquired)
+                  ({t('projectDetail.bomAcquired', { completed: stats.bom_completed_items, total: stats.bom_total_items })})
                 </span>
               )}
             </h2>
@@ -816,13 +830,13 @@ export function ProjectDetailPage() {
                       : 'bg-bambu-dark text-bambu-gray hover:text-white'
                   }`}
                 >
-                  {hideBomCompleted ? 'Show all' : 'Hide done'}
+                  {hideBomCompleted ? t('projectDetail.showAll') : t('projectDetail.hideDone')}
                 </button>
               )}
               {!showBomForm && (
                 <Button variant="secondary" size="sm" onClick={() => setShowBomForm(true)}>
                   <Plus className="w-4 h-4 mr-1" />
-                  Add Part
+                  {t('projectDetail.addPart')}
                 </Button>
               )}
             </div>
@@ -837,7 +851,7 @@ export function ProjectDetailPage() {
                   value={newBomName}
                   onChange={(e) => setNewBomName(e.target.value)}
                   className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                  placeholder="Part name (e.g., M3x8 screws)"
+                  placeholder={t('projectDetail.partNamePlaceholder')}
                   autoFocus
                 />
                 <div className="flex gap-2">
@@ -847,7 +861,7 @@ export function ProjectDetailPage() {
                     onChange={(e) => setNewBomQty(parseInt(e.target.value) || 1)}
                     className="w-20 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-bambu-green"
                     min="1"
-                    placeholder="Qty"
+                    placeholder={t('projectDetail.qty')}
                   />
                   <input
                     type="number"
@@ -855,7 +869,7 @@ export function ProjectDetailPage() {
                     value={newBomPrice}
                     onChange={(e) => setNewBomPrice(e.target.value)}
                     className="flex-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                    placeholder={`Price (${currency})`}
+                    placeholder={t('projectDetail.pricePlaceholder', { currency })}
                   />
                 </div>
               </div>
@@ -864,24 +878,24 @@ export function ProjectDetailPage() {
                 value={newBomUrl}
                 onChange={(e) => setNewBomUrl(e.target.value)}
                 className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                placeholder="Sourcing URL (optional)"
+                placeholder={t('projectDetail.sourcingUrlPlaceholder')}
               />
               <input
                 type="text"
                 value={newBomRemarks}
                 onChange={(e) => setNewBomRemarks(e.target.value)}
                 className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                placeholder="Remarks (optional)"
+                placeholder={t('projectDetail.remarksPlaceholder')}
               />
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="secondary" size="sm" onClick={() => setShowBomForm(false)}>
-                  Cancel
+                  {t('projectDetail.cancel')}
                 </Button>
                 <Button type="submit" size="sm" disabled={!newBomName.trim() || createBomMutation.isPending}>
                   {createBomMutation.isPending ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    'Add Part'
+                    t('projectDetail.addPart')
                   )}
                 </Button>
               </div>
@@ -933,7 +947,7 @@ export function ProjectDetailPage() {
                         <button
                           onClick={() => handleDeleteBomItem(item.id, item.name)}
                           className="p-1 rounded hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-red-400 transition-colors flex-shrink-0"
-                          title="Delete"
+                          title={t('projectDetail.delete')}
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -972,7 +986,7 @@ export function ProjectDetailPage() {
               {/* BOM Total */}
               {bomItems.some(item => item.unit_price !== null) && (
                 <div className="pt-2 mt-2 border-t border-bambu-dark-tertiary flex justify-between text-sm">
-                  <span className="text-bambu-gray">Total cost:</span>
+                  <span className="text-bambu-gray">{t('projectDetail.totalCost')}:</span>
                   <span className="text-white font-medium">
                     {currency}{bomItems.reduce((sum, item) => sum + (item.unit_price || 0) * item.quantity_needed, 0).toFixed(2)}
                   </span>
@@ -981,7 +995,7 @@ export function ProjectDetailPage() {
             </div>
           ) : (
             <p className="text-bambu-gray/70 text-sm italic">
-              No parts in the bill of materials. Add hardware, electronics, or other components to track what needs to be sourced.
+              {t('projectDetail.noBomParts')}
             </p>
           )}
         </CardContent>
@@ -993,7 +1007,7 @@ export function ProjectDetailPage() {
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
               <History className="w-5 h-5" />
-              Activity Timeline
+              {t('projectDetail.activityTimeline')}
             </h2>
           </div>
 
@@ -1018,7 +1032,7 @@ export function ProjectDetailPage() {
                     {event.event_type === 'project_created' && <Plus className="w-4 h-4" />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-white">{event.title}</p>
+                    <p className="text-sm text-white">{t(`projectDetail.timelineEvents.${event.event_type}`, { defaultValue: event.title })}</p>
                     {event.description && (
                       <p className="text-xs text-bambu-gray truncate">{event.description}</p>
                     )}
@@ -1029,7 +1043,7 @@ export function ProjectDetailPage() {
             </div>
           ) : (
             <p className="text-bambu-gray/70 text-sm italic">
-              No activity yet.
+              {t('projectDetail.noActivityYet')}
             </p>
           )}
         </CardContent>
@@ -1049,7 +1063,7 @@ export function ProjectDetailPage() {
             ) : (
               <Copy className="w-4 h-4 mr-2" />
             )}
-            Save as Template
+            {t('projectDetail.saveAsTemplate')}
           </Button>
         </div>
       )}
@@ -1061,24 +1075,24 @@ export function ProjectDetailPage() {
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                 <ListTodo className="w-5 h-5" />
-                Queue
+                {t('projectDetail.queue')}
               </h2>
               <Link
                 to={`/queue?project=${projectId}`}
                 className="text-sm text-bambu-green hover:underline"
               >
-                View all
+                {t('projectDetail.viewAll')}
               </Link>
             </div>
             <div className="flex items-center gap-4 text-sm">
               {stats.in_progress_prints > 0 && (
                 <span className="text-yellow-400">
-                  {stats.in_progress_prints} printing
+                  {stats.in_progress_prints} {t('projectDetail.printing')}
                 </span>
               )}
               {stats.queued_prints > 0 && (
                 <span className="text-bambu-gray">
-                  {stats.queued_prints} queued
+                  {stats.queued_prints} {t('projectDetail.queued')}
                 </span>
               )}
             </div>
@@ -1091,7 +1105,7 @@ export function ProjectDetailPage() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-white flex items-center gap-2">
             <Package className="w-5 h-5" />
-            Prints ({archives?.length || 0})
+            {t('projectDetail.prints', { count: archives?.length || 0 })}
           </h2>
         </div>
         {archivesLoading ? (
@@ -1127,7 +1141,7 @@ export function ProjectDetailPage() {
         <ConfirmModal
           title={confirmModal.title}
           message={confirmModal.message}
-          confirmText="Delete"
+          confirmText={t('projectDetail.delete')}
           variant="danger"
           onConfirm={confirmModal.onConfirm}
           onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}

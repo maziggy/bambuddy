@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { X, Plus, Edit2, Trash2, Save, Loader2, Users as UsersIcon, Shield, ArrowLeft } from 'lucide-react';
 import { api } from '../api/client';
 import type { UserCreate, UserUpdate } from '../api/client';
@@ -11,6 +12,7 @@ import { Card, CardContent, CardHeader } from '../components/Card';
 import { ConfirmModal } from '../components/ConfirmModal';
 
 export function UsersPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
   const { showToast } = useToast();
@@ -47,7 +49,7 @@ export function UsersPage() {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setShowCreateModal(false);
       setFormData({ username: '', password: '', role: 'user' });
-      showToast('User created successfully');
+      showToast(t('users.toast.userCreated'));
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
@@ -60,7 +62,7 @@ export function UsersPage() {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setEditingUser(null);
       setFormData({ username: '', password: '', role: 'user' });
-      showToast('User updated successfully');
+      showToast(t('users.toast.userUpdated'));
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
@@ -71,7 +73,7 @@ export function UsersPage() {
     mutationFn: (id: number) => api.deleteUser(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
-      showToast('User deleted successfully');
+      showToast(t('users.toast.userDeleted'));
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
@@ -80,7 +82,7 @@ export function UsersPage() {
 
   const handleCreate = () => {
     if (!formData.username || !formData.password) {
-      showToast('Please fill in all required fields', 'error');
+      showToast(t('users.toast.fillRequiredFields'), 'error');
       return;
     }
     createMutation.mutate(formData);
@@ -119,7 +121,7 @@ export function UsersPage() {
           <CardContent className="py-6">
             <div className="flex items-center gap-3 text-red-400">
               <Shield className="w-5 h-5" />
-              <p className="text-white">You do not have permission to access this page.</p>
+              <p className="text-white">{t('users.noPermission')}</p>
             </div>
           </CardContent>
         </Card>
@@ -134,17 +136,17 @@ export function UsersPage() {
           <button
             onClick={() => navigate('/settings?tab=users')}
             className="p-2 rounded-lg bg-bambu-dark-secondary hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white transition-colors"
-            title="Back to Settings"
+            title={t('users.backToSettings')}
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
             <h1 className="text-2xl font-bold text-white flex items-center gap-2">
               <UsersIcon className="w-6 h-6 text-bambu-green" />
-              User Management
+              {t('users.title')}
             </h1>
             <p className="text-sm text-bambu-gray mt-1">
-              Manage users and their access to your Bambuddy instance
+              {t('users.description')}
             </p>
           </div>
         </div>
@@ -155,7 +157,7 @@ export function UsersPage() {
           }}
         >
           <Plus className="w-4 h-4" />
-          Create User
+          {t('users.createUser')}
         </Button>
       </div>
 
@@ -170,16 +172,16 @@ export function UsersPage() {
               <thead>
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wider">
-                    Username
+                    {t('users.table.username')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wider">
-                    Role
+                    {t('users.table.role')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wider">
-                    Status
+                    {t('users.table.status')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wider">
-                    Actions
+                    {t('users.table.actions')}
                   </th>
                 </tr>
               </thead>
@@ -205,8 +207,8 @@ export function UsersPage() {
                           onChange={(e) => setFormData({ ...formData, role: e.target.value as 'admin' | 'user' })}
                           className="px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green"
                         >
-                          <option value="user">User</option>
-                          <option value="admin">Admin</option>
+                          <option value="user">{t('users.roleUser')}</option>
+                          <option value="admin">{t('users.roleAdmin')}</option>
                         </select>
                       ) : (
                         <span className={`px-3 py-1 rounded-full text-xs font-medium ${
@@ -224,7 +226,7 @@ export function UsersPage() {
                           ? 'bg-bambu-green/20 text-bambu-green'
                           : 'bg-red-500/20 text-red-400'
                       }`}>
-                        {user.is_active ? 'Active' : 'Inactive'}
+                        {user.is_active ? t('users.statusActive') : t('users.statusInactive')}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -240,7 +242,7 @@ export function UsersPage() {
                             ) : (
                               <Save className="w-4 h-4" />
                             )}
-                            Save
+                            {t('users.save')}
                           </Button>
                           <Button
                             size="sm"
@@ -250,7 +252,7 @@ export function UsersPage() {
                               setFormData({ username: '', password: '', role: 'user' });
                             }}
                           >
-                            Cancel
+                            {t('users.cancel')}
                           </Button>
                         </div>
                       ) : (
@@ -261,7 +263,7 @@ export function UsersPage() {
                             onClick={() => startEdit(user)}
                           >
                             <Edit2 className="w-4 h-4" />
-                            Edit
+                            {t('users.edit')}
                           </Button>
                           {user.id !== currentUser?.id && (
                             <Button
@@ -270,7 +272,7 @@ export function UsersPage() {
                               onClick={() => handleDelete(user.id)}
                             >
                               <Trash2 className="w-4 h-4" />
-                              Delete
+                              {t('users.delete')}
                             </Button>
                           )}
                         </div>
@@ -301,7 +303,7 @@ export function UsersPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <UsersIcon className="w-5 h-5 text-bambu-green" />
-                  <h2 className="text-lg font-semibold text-white">Create User</h2>
+                  <h2 className="text-lg font-semibold text-white">{t('users.createUser')}</h2>
                 </div>
                 <Button
                   variant="ghost"
@@ -319,42 +321,42 @@ export function UsersPage() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    Username
+                    {t('users.table.username')}
                   </label>
                   <input
                     type="text"
                     value={formData.username}
                     onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                     className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                    placeholder="Enter username"
+                    placeholder={t('users.placeholderUsername')}
                     autoComplete="username"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    Password
+                    {t('users.password')}
                   </label>
                   <input
                     type="password"
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                     className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                    placeholder="Enter password"
+                    placeholder={t('users.placeholderPassword')}
                     autoComplete="new-password"
                     minLength={6}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    Role
+                    {t('users.table.role')}
                   </label>
                   <select
                     value={formData.role}
                     onChange={(e) => setFormData({ ...formData, role: e.target.value as 'admin' | 'user' })}
                     className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
                   >
-                    <option value="user">User</option>
-                    <option value="admin">Admin</option>
+                    <option value="user">{t('users.roleUser')}</option>
+                    <option value="admin">{t('users.roleAdmin')}</option>
                   </select>
                 </div>
               </div>
@@ -366,7 +368,7 @@ export function UsersPage() {
                     setFormData({ username: '', password: '', role: 'user' });
                   }}
                 >
-                  Cancel
+                  {t('users.cancel')}
                 </Button>
                 <Button
                   onClick={handleCreate}
@@ -375,12 +377,12 @@ export function UsersPage() {
                   {createMutation.isPending ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Creating...
+                      {t('users.creating')}
                     </>
                   ) : (
                     <>
                       <Plus className="w-4 h-4" />
-                      Create User
+                      {t('users.createUser')}
                     </>
                   )}
                 </Button>
@@ -393,9 +395,9 @@ export function UsersPage() {
       {/* Delete Confirmation Modal */}
       {deleteUserId !== null && (
         <ConfirmModal
-          title="Delete User"
-          message={`Are you sure you want to delete this user? This action cannot be undone.`}
-          confirmText="Delete User"
+          title={t('users.deleteUser')}
+          message={t('users.deleteConfirmMessage')}
+          confirmText={t('users.deleteUser')}
           variant="danger"
           onConfirm={() => {
             deleteMutation.mutate(deleteUserId);

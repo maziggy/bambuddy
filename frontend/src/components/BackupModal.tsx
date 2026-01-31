@@ -11,6 +11,7 @@ interface BackupCategory {
   defaultLabel: string;
   icon: React.ReactNode;
   default: boolean;
+  descriptionKey: string;
   description: string;
 }
 
@@ -18,97 +19,109 @@ const BACKUP_CATEGORIES: BackupCategory[] = [
   {
     id: 'settings',
     labelKey: 'backup.categories.settings',
-    defaultLabel: 'App Settings',
+    defaultLabel: 'Settings',
     icon: <Settings className="w-4 h-4" />,
     default: true,
+    descriptionKey: 'backup.settingsDescription',
     description: 'Language, theme, update preferences',
   },
   {
     id: 'notifications',
-    labelKey: 'backup.categories.notifications',
+    labelKey: 'backup.notificationProviders',
     defaultLabel: 'Notification Providers',
     icon: <Bell className="w-4 h-4" />,
     default: true,
+    descriptionKey: 'backup.notificationProvidersDescription',
     description: 'ntfy, Pushover, Discord, etc.',
   },
   {
     id: 'templates',
-    labelKey: 'backup.categories.templates',
+    labelKey: 'backup.notificationTemplates',
     defaultLabel: 'Notification Templates',
     icon: <FileText className="w-4 h-4" />,
     default: true,
+    descriptionKey: 'backup.notificationTemplatesDescription',
     description: 'Custom message templates',
   },
   {
     id: 'smart_plugs',
-    labelKey: 'backup.categories.smartPlugs',
+    labelKey: 'backup.categories.smart_plugs',
     defaultLabel: 'Smart Plugs',
     icon: <Plug className="w-4 h-4" />,
     default: true,
+    descriptionKey: 'backup.smartPlugsDescription',
     description: 'Tasmota plug configurations',
   },
   {
     id: 'external_links',
-    labelKey: 'backup.categories.externalLinks',
+    labelKey: 'backup.externalLinks',
     defaultLabel: 'External Links',
     icon: <Link className="w-4 h-4" />,
     default: true,
+    descriptionKey: 'backup.externalLinksDescription',
     description: 'Sidebar links to external services',
   },
   {
     id: 'printers',
-    labelKey: 'backup.categories.printers',
+    labelKey: 'backup.printers',
     defaultLabel: 'Printers',
     icon: <Printer className="w-4 h-4" />,
     default: false,
+    descriptionKey: 'backup.printersDescription',
     description: 'Printer info (access codes excluded)',
   },
   {
     id: 'filaments',
-    labelKey: 'backup.categories.filaments',
+    labelKey: 'backup.filamentInventory',
     defaultLabel: 'Filament Inventory',
     icon: <Palette className="w-4 h-4" />,
     default: false,
+    descriptionKey: 'backup.filamentInventoryDescription',
     description: 'Filament types and costs',
   },
   {
     id: 'maintenance',
-    labelKey: 'backup.categories.maintenance',
+    labelKey: 'backup.maintenanceTypes',
     defaultLabel: 'Maintenance Types',
     icon: <Wrench className="w-4 h-4" />,
     default: false,
+    descriptionKey: 'backup.maintenanceDescription',
     description: 'Custom maintenance schedules',
   },
   {
     id: 'archives',
-    labelKey: 'backup.categories.archives',
+    labelKey: 'backup.printArchives',
     defaultLabel: 'Print Archives',
     icon: <Archive className="w-4 h-4" />,
     default: false,
+    descriptionKey: 'backup.printArchivesDescription',
     description: 'All print data + files (3MF, thumbnails, photos)',
   },
   {
     id: 'projects',
-    labelKey: 'backup.categories.projects',
+    labelKey: 'backup.projects',
     defaultLabel: 'Projects',
     icon: <FolderKanban className="w-4 h-4" />,
     default: false,
+    descriptionKey: 'backup.projectsDescription',
     description: 'Projects, BOM items, and attachments',
   },
   {
     id: 'pending_uploads',
-    labelKey: 'backup.categories.pendingUploads',
+    labelKey: 'backup.pendingUploads',
     defaultLabel: 'Pending Uploads',
     icon: <Upload className="w-4 h-4" />,
     default: false,
+    descriptionKey: 'backup.pendingUploadsDescription',
     description: 'Virtual printer uploads awaiting review',
   },
   {
     id: 'api_keys',
-    labelKey: 'backup.categories.apiKeys',
+    labelKey: 'backup.apiKeys',
     defaultLabel: 'API Keys',
     icon: <Key className="w-4 h-4" />,
     default: false,
+    descriptionKey: 'backup.apiKeysDescription',
     description: 'Webhook API keys (new keys generated on import)',
   },
 ];
@@ -244,7 +257,7 @@ export function BackupModal({ onClose, onExport }: BackupModalProps) {
                   <div className="text-white text-sm font-medium">
                     {t(category.labelKey, { defaultValue: category.defaultLabel })}
                   </div>
-                  <div className="text-xs text-bambu-gray">{category.description}</div>
+                  <div className="text-xs text-bambu-gray">{t(category.descriptionKey, { defaultValue: category.description })}</div>
                 </div>
               </label>
             ))}

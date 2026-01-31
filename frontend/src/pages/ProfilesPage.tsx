@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Cloud,
@@ -86,7 +87,7 @@ function isUserPreset(settingId: string): boolean {
 }
 
 // Format relative time
-function formatRelativeTime(dateStr: string): string {
+function formatRelativeTime(dateStr: string, t: (key: string, opts?: Record<string, unknown>) => string): string {
   const date = parseUTCDate(dateStr);
   if (!date) return '';
   const now = new Date();
@@ -95,10 +96,10 @@ function formatRelativeTime(dateStr: string): string {
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
 
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffMins < 1) return t('profiles.justNow');
+  if (diffMins < 60) return t('profiles.minutesAgo', { count: diffMins });
+  if (diffHours < 24) return t('profiles.hoursAgo', { count: diffHours });
+  if (diffDays < 7) return t('profiles.daysAgo', { count: diffDays });
   return date.toLocaleDateString();
 }
 
@@ -107,6 +108,7 @@ function formatRelativeTime(dateStr: string): string {
 // ============================================================================
 
 function LoginForm({ onSuccess }: { onSuccess: () => void }) {
+  const { t } = useTranslation();
   const { showToast } = useToast();
   const [step, setStep] = useState<LoginStep>('email');
   const [email, setEmail] = useState('');
@@ -119,10 +121,10 @@ function LoginForm({ onSuccess }: { onSuccess: () => void }) {
     mutationFn: () => api.cloudLogin(email, password, region),
     onSuccess: (result) => {
       if (result.success) {
-        showToast('Logged in successfully');
+        showToast(t('profiles.loggedIn'));
         onSuccess();
       } else if (result.needs_verification) {
-        showToast('Verification code sent to your email');
+        showToast(t('profiles.verificationSent'));
         setStep('code');
       } else {
         showToast(result.message, 'error');
@@ -135,7 +137,7 @@ function LoginForm({ onSuccess }: { onSuccess: () => void }) {
     mutationFn: () => api.cloudVerify(email, code),
     onSuccess: (result) => {
       if (result.success) {
-        showToast('Logged in successfully');
+        showToast(t('profiles.loggedIn'));
         onSuccess();
       } else {
         showToast(result.message, 'error');
@@ -147,7 +149,7 @@ function LoginForm({ onSuccess }: { onSuccess: () => void }) {
   const tokenMutation = useMutation({
     mutationFn: () => api.cloudSetToken(token),
     onSuccess: () => {
-      showToast('Token set successfully');
+      showToast(t('profiles.tokenSet'));
       onSuccess();
     },
     onError: (error: Error) => showToast(error.message, 'error'),
@@ -169,15 +171,15 @@ function LoginForm({ onSuccess }: { onSuccess: () => void }) {
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-bambu-green/20 mb-3">
             <Cloud className="w-6 h-6 text-bambu-green" />
           </div>
-          <h2 className="text-xl font-semibold text-white">Connect to Bambu Cloud</h2>
-          <p className="text-sm text-bambu-gray mt-1">Sync your slicer presets across devices</p>
+          <h2 className="text-xl font-semibold text-white">{t('profiles.connectToCloud')}</h2>
+          <p className="text-sm text-bambu-gray mt-1">{t('profiles.syncDescription')}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {step === 'email' && (
             <>
               <div>
-                <label className="block text-sm text-bambu-gray mb-1">Email</label>
+                <label className="block text-sm text-bambu-gray mb-1">{t('profiles.email')}</label>
                 <input
                   type="email"
                   value={email}
@@ -188,7 +190,7 @@ function LoginForm({ onSuccess }: { onSuccess: () => void }) {
                 />
               </div>
               <div>
-                <label className="block text-sm text-bambu-gray mb-1">Password</label>
+                <label className="block text-sm text-bambu-gray mb-1">{t('profiles.password')}</label>
                 <input
                   type="password"
                   value={password}
@@ -199,14 +201,14 @@ function LoginForm({ onSuccess }: { onSuccess: () => void }) {
                 />
               </div>
               <div>
-                <label className="block text-sm text-bambu-gray mb-1">Region</label>
+                <label className="block text-sm text-bambu-gray mb-1">{t('profiles.region')}</label>
                 <select
                   value={region}
                   onChange={(e) => setRegion(e.target.value)}
                   className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 >
-                  <option value="global">Global</option>
-                  <option value="china">China</option>
+                  <option value="global">{t('profiles.regionGlobal')}</option>
+                  <option value="china">{t('profiles.regionChina')}</option>
                 </select>
               </div>
             </>
@@ -214,8 +216,8 @@ function LoginForm({ onSuccess }: { onSuccess: () => void }) {
 
           {step === 'code' && (
             <div>
-              <label className="block text-sm text-bambu-gray mb-1">Verification Code</label>
-              <p className="text-xs text-bambu-gray mb-2">Check your email ({email}) for a 6-digit code</p>
+              <label className="block text-sm text-bambu-gray mb-1">{t('profiles.verificationCode')}</label>
+              <p className="text-xs text-bambu-gray mb-2">{t('profiles.checkEmail', { email })}</p>
               <input
                 type="text"
                 value={code}
@@ -230,8 +232,8 @@ function LoginForm({ onSuccess }: { onSuccess: () => void }) {
 
           {step === 'token' && (
             <div>
-              <label className="block text-sm text-bambu-gray mb-1">Access Token</label>
-              <p className="text-xs text-bambu-gray mb-2">Paste your Bambu Lab access token (from Bambu Studio)</p>
+              <label className="block text-sm text-bambu-gray mb-1">{t('profiles.accessToken')}</label>
+              <p className="text-xs text-bambu-gray mb-2">{t('profiles.accessTokenHint')}</p>
               <textarea
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
@@ -246,12 +248,12 @@ function LoginForm({ onSuccess }: { onSuccess: () => void }) {
           <div className="flex gap-2">
             {step === 'code' && (
               <Button type="button" variant="secondary" onClick={() => setStep('email')} className="flex-1">
-                Back
+                {t('common.back')}
               </Button>
             )}
             <Button type="submit" disabled={isPending} className="flex-1">
               {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
-              {step === 'email' ? 'Login' : step === 'code' ? 'Verify' : 'Set Token'}
+              {step === 'email' ? t('profiles.login') : step === 'code' ? t('profiles.verify') : t('profiles.setToken')}
             </Button>
           </div>
 
@@ -263,7 +265,7 @@ function LoginForm({ onSuccess }: { onSuccess: () => void }) {
                 className="text-sm text-bambu-gray hover:text-white flex items-center gap-2 transition-colors"
               >
                 <Key className="w-4 h-4" />
-                Use access token instead
+                {t('profiles.useTokenInstead')}
               </button>
             </div>
           )}
@@ -276,7 +278,7 @@ function LoginForm({ onSuccess }: { onSuccess: () => void }) {
                 className="text-sm text-bambu-gray hover:text-white flex items-center gap-2 transition-colors"
               >
                 <LogIn className="w-4 h-4" />
-                Login with email instead
+                {t('profiles.loginWithEmail')}
               </button>
             </div>
           )}
@@ -301,6 +303,7 @@ function FilterDropdown({
   options: { value: string; label: string; count?: number }[];
   onChange: (value: string) => void;
 }) {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const selectedOption = options.find(o => o.value === value);
 
@@ -311,7 +314,7 @@ function FilterDropdown({
         className="flex items-center gap-2 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-sm text-white hover:border-bambu-gray-dark transition-colors"
       >
         <span className="text-bambu-gray">{label}:</span>
-        <span>{selectedOption?.label || 'All'}</span>
+        <span>{selectedOption?.label || t('common.all')}</span>
         <ChevronDown className={`w-4 h-4 text-bambu-gray transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
@@ -345,6 +348,7 @@ function FilterDropdown({
 // ============================================================================
 
 function ScrollToTop() {
+  const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
@@ -366,7 +370,7 @@ function ScrollToTop() {
     <button
       onClick={scrollToTop}
       className="fixed bottom-6 right-6 p-3 bg-bambu-green hover:bg-bambu-green-light text-white rounded-full shadow-lg shadow-bambu-green/25 transition-all z-40"
-      aria-label="Scroll to top"
+      aria-label={t('profiles.scrollToTop')}
     >
       <ArrowUp className="w-5 h-5" />
     </button>
@@ -394,6 +398,7 @@ function PresetListItem({
   compareIndex?: number;
   compareDisabled?: boolean;
 }) {
+  const { t } = useTranslation();
   const metadata = extractMetadata(setting.name);
   const isEditable = isUserPreset(setting.setting_id);
 
@@ -417,7 +422,7 @@ function PresetListItem({
             </span>
           )}
           {!isCompareSelected && isEditable && (
-            <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-bambu-green" title="My preset (editable)" />
+            <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-bambu-green" title={t('profiles.myPresetEditable')} />
           )}
           <span className="text-white text-sm truncate flex-1" title={setting.name}>
             {setting.name}
@@ -443,7 +448,7 @@ function PresetListItem({
       <button
         onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
         className="opacity-0 group-hover:opacity-100 text-bambu-gray hover:text-white transition-all p-1"
-        title="Duplicate"
+        title={t('profiles.duplicate')}
       >
         <Copy className="w-4 h-4" />
       </button>
@@ -513,6 +518,7 @@ function PresetDetailModal({
   onDuplicate: () => void;
   onEdit: () => void;
 }) {
+  const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -525,7 +531,7 @@ function PresetDetailModal({
   const deleteMutation = useMutation({
     mutationFn: () => api.deleteCloudSetting(setting.setting_id),
     onSuccess: () => {
-      showToast('Preset deleted');
+      showToast(t('profiles.presetDeleted'));
       queryClient.invalidateQueries({ queryKey: ['cloudSettings'] });
       onDeleted();
     },
@@ -546,12 +552,12 @@ function PresetDetailModal({
                 <h2 className="text-xl font-semibold text-white truncate">{setting.name}</h2>
                 {isEditable && (
                   <span className="px-2 py-0.5 text-xs font-medium bg-bambu-green/20 text-bambu-green rounded-full">
-                    Editable
+                    {t('profiles.editable')}
                   </span>
                 )}
               </div>
               <div className="flex items-center gap-2 mt-1 text-sm text-bambu-gray">
-                <span className="capitalize">{setting.type} preset</span>
+                <span className="capitalize">{t('profiles.typePreset', { type: setting.type })}</span>
                 {metadata.printer && <><span>•</span><span>{metadata.printer}</span></>}
               </div>
             </div>
@@ -571,7 +577,7 @@ function PresetDetailModal({
                 {formatJsonForDisplay(detail)}
               </pre>
             ) : (
-              <div className="text-center py-16 text-bambu-gray">Failed to load preset details</div>
+              <div className="text-center py-16 text-bambu-gray">{t('profiles.failedToLoadDetails')}</div>
             )}
           </div>
 
@@ -580,34 +586,34 @@ function PresetDetailModal({
             <div className="flex-shrink-0 p-4 border-t border-bambu-dark-tertiary bg-red-500/5">
               <div className="flex items-center gap-2 mb-3 text-red-400">
                 <AlertTriangle className="w-5 h-5" />
-                <span className="font-medium">Delete this preset?</span>
+                <span className="font-medium">{t('profiles.deletePresetConfirm')}</span>
               </div>
               <p className="text-sm text-bambu-gray mb-4">
-                This will permanently delete "{setting.name}" from Bambu Cloud. This cannot be undone.
+                {t('profiles.deletePresetWarning', { name: setting.name })}
               </p>
               <div className="flex gap-2">
                 <Button variant="secondary" onClick={() => setShowDeleteConfirm(false)} disabled={deleteMutation.isPending} className="flex-1">
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button variant="danger" onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending} className="flex-1">
                   {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                  Delete
+                  {t('common.delete')}
                 </Button>
               </div>
             </div>
           ) : (
             <div className="flex-shrink-0 p-4 border-t border-bambu-dark-tertiary">
               <div className="flex gap-2">
-                <Button variant="secondary" onClick={onClose} className="flex-1">Close</Button>
+                <Button variant="secondary" onClick={onClose} className="flex-1">{t('common.close')}</Button>
                 <Button variant="secondary" onClick={onDuplicate}>
                   <Copy className="w-4 h-4" />
-                  Duplicate
+                  {t('profiles.duplicate')}
                 </Button>
                 {isEditable && (
                   <>
                     <Button variant="secondary" onClick={onEdit} disabled={isLoading || !detail}>
                       <Pencil className="w-4 h-4" />
-                      Edit
+                      {t('common.edit')}
                     </Button>
                     <Button variant="danger" onClick={() => setShowDeleteConfirm(true)}>
                       <Trash2 className="w-4 h-4" />
@@ -664,6 +670,7 @@ function TemplatesModal({
   onClose: () => void;
   onApply: (template: CustomTemplate) => void;
 }) {
+  const { t } = useTranslation();
   const { showToast } = useToast();
   const [templates, setTemplates] = useState<CustomTemplate[]>(loadCustomTemplates);
   const [filterType, setFilterType] = useState<'all' | 'filament' | 'print' | 'printer'>('all');
@@ -687,7 +694,7 @@ function TemplatesModal({
     const updated = templates.filter(t => t.id !== id);
     saveTemplates(updated);
     setDeleteConfirmId(null);
-    showToast('Template deleted');
+    showToast(t('profiles.templateDeleted'));
   };
 
   const handleEdit = (template: CustomTemplate) => {
@@ -709,7 +716,7 @@ function TemplatesModal({
       );
       saveTemplates(updated);
       setEditingId(null);
-      showToast('Template updated');
+      showToast(t('profiles.templateUpdated'));
     } catch (e) {
       setEditSettingsError((e as Error).message);
     }
@@ -731,9 +738,9 @@ function TemplatesModal({
   };
 
   const typeLabels = {
-    filament: { label: 'Filament', icon: Droplet, color: 'text-amber-400' },
-    print: { label: 'Process', icon: Settings2, color: 'text-blue-400' },
-    printer: { label: 'Printer', icon: PrinterIcon, color: 'text-purple-400' },
+    filament: { label: t('profiles.filament'), icon: Droplet, color: 'text-amber-400' },
+    print: { label: t('profiles.process'), icon: Settings2, color: 'text-blue-400' },
+    printer: { label: t('profiles.printer'), icon: PrinterIcon, color: 'text-purple-400' },
   };
 
   const templateToDelete = deleteConfirmId ? templates.find(t => t.id === deleteConfirmId) : null;
@@ -767,20 +774,20 @@ function TemplatesModal({
                   <AlertTriangle className="w-6 h-6 text-red-400" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-white">Delete Template</h3>
-                  <p className="text-sm text-bambu-gray">This action cannot be undone</p>
+                  <h3 className="text-lg font-semibold text-white">{t('profiles.deleteTemplate')}</h3>
+                  <p className="text-sm text-bambu-gray">{t('profiles.actionCannotBeUndone')}</p>
                 </div>
               </div>
               <p className="text-white mb-6">
-                Are you sure you want to delete "<span className="font-medium">{templateToDelete.name}</span>"?
+                {t('profiles.confirmDeleteTemplate', { name: templateToDelete.name })}
               </p>
               <div className="flex gap-2">
                 <Button variant="secondary" onClick={() => setDeleteConfirmId(null)} className="flex-1">
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button onClick={() => handleDelete(deleteConfirmId!)} className="flex-1 bg-red-500 hover:bg-red-600">
                   <Trash2 className="w-4 h-4" />
-                  Delete
+                  {t('common.delete')}
                 </Button>
               </div>
             </CardContent>
@@ -794,7 +801,7 @@ function TemplatesModal({
           <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-amber-400" />
-              Quick Templates
+              {t('profiles.quickTemplates')}
             </h2>
             <button onClick={onClose} className="text-bambu-gray hover:text-white">
               <X className="w-5 h-5" />
@@ -803,7 +810,7 @@ function TemplatesModal({
 
           {/* Filter row */}
           <div className="flex items-center gap-2 p-4 border-b border-bambu-dark-tertiary">
-            <span className="text-sm text-bambu-gray">Type:</span>
+            <span className="text-sm text-bambu-gray">{t('profiles.typeFilter')}</span>
             {(['all', 'filament', 'print', 'printer'] as const).map((type) => (
               <button
                 key={type}
@@ -814,7 +821,7 @@ function TemplatesModal({
                     : 'bg-bambu-dark text-bambu-gray hover:text-white'
                 }`}
               >
-                {type === 'all' ? 'All' : typeLabels[type].label}
+                {type === 'all' ? t('common.all') : typeLabels[type].label}
               </button>
             ))}
           </div>
@@ -824,8 +831,8 @@ function TemplatesModal({
             {filteredTemplates.length === 0 ? (
               <div className="text-center py-12 text-bambu-gray">
                 <Sparkles className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                <p>No templates yet</p>
-                <p className="text-sm mt-1">Create templates from the preset editor</p>
+                <p>{t('profiles.noTemplatesYet')}</p>
+                <p className="text-sm mt-1">{t('profiles.createTemplatesHint')}</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -844,7 +851,7 @@ function TemplatesModal({
                             type="text"
                             value={editName}
                             onChange={(e) => setEditName(e.target.value)}
-                            placeholder="Template name"
+                            placeholder={t('profiles.templateName')}
                             className="px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
                             autoFocus
                           />
@@ -852,12 +859,12 @@ function TemplatesModal({
                             type="text"
                             value={editDesc}
                             onChange={(e) => setEditDesc(e.target.value)}
-                            placeholder="Description"
+                            placeholder={t('common.description')}
                             className="px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
                           />
                         </div>
                         <div className="mb-3">
-                          <label className="text-xs text-bambu-gray mb-1 block">Settings (JSON)</label>
+                          <label className="text-xs text-bambu-gray mb-1 block">{t('profiles.settingsJson')}</label>
                           <textarea
                             value={editSettings}
                             onChange={(e) => {
@@ -876,10 +883,10 @@ function TemplatesModal({
                         <div className="flex gap-2">
                           <Button size="sm" onClick={handleSaveEdit} disabled={!editName.trim()}>
                             <Save className="w-4 h-4" />
-                            Save
+                            {t('common.save')}
                           </Button>
                           <Button size="sm" variant="secondary" onClick={handleCancelEdit}>
-                            Cancel
+                            {t('common.cancel')}
                           </Button>
                         </div>
                       </div>
@@ -897,7 +904,7 @@ function TemplatesModal({
                         <p className="text-xs text-bambu-gray truncate">{template.description}</p>
                       </div>
                       <span className="text-xs text-bambu-gray-dark px-2 py-1 bg-bambu-dark-secondary rounded">
-                        {Object.keys(template.settings).length} fields
+                        {t('profiles.fieldsCount', { count: Object.keys(template.settings).length })}
                       </span>
                       <button
                         onClick={() => toggleShowInModal(template.id)}
@@ -906,7 +913,7 @@ function TemplatesModal({
                             ? 'text-bambu-green hover:text-bambu-green/70'
                             : 'text-bambu-gray hover:text-white'
                         }`}
-                        title={template.showInModal ? 'Shown in modals' : 'Hidden in modals'}
+                        title={template.showInModal ? t('profiles.shownInModals') : t('profiles.hiddenInModals')}
                       >
                         {template.showInModal ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                       </button>
@@ -914,19 +921,19 @@ function TemplatesModal({
                         onClick={() => onApply(template)}
                         className="px-3 py-1 text-xs bg-bambu-green/20 text-bambu-green rounded hover:bg-bambu-green/30 transition-colors"
                       >
-                        Apply
+                        {t('profiles.apply')}
                       </button>
                       <button
                         onClick={() => handleEdit(template)}
                         className="p-1 text-bambu-gray hover:text-white"
-                        title="Edit"
+                        title={t('common.edit')}
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => setDeleteConfirmId(template.id)}
                         className="p-1 text-bambu-gray hover:text-red-400"
-                        title="Delete"
+                        title={t('common.delete')}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -966,6 +973,7 @@ function DiffModal({
   leftLabel: string;
   rightLabel: string;
 }) {
+  const { t } = useTranslation();
   const [filterMode, setFilterMode] = useState<'changes' | 'all'>('changes');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -1077,7 +1085,7 @@ function DiffModal({
           <div className="flex-shrink-0 flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
               <GitCompare className="w-5 h-5 text-blue-400" />
-              Compare Presets
+              {t('profiles.comparePresets')}
             </h2>
             <button onClick={onClose} className="text-bambu-gray hover:text-white">
               <X className="w-5 h-5" />
@@ -1087,11 +1095,11 @@ function DiffModal({
           {/* Preset labels */}
           <div className="flex-shrink-0 grid grid-cols-2 gap-4 p-4 border-b border-bambu-dark-tertiary bg-bambu-dark">
             <div className="text-center">
-              <span className="text-sm text-bambu-gray">Left:</span>
+              <span className="text-sm text-bambu-gray">{t('profiles.left')}</span>
               <p className="text-white font-medium truncate">{leftLabel}</p>
             </div>
             <div className="text-center">
-              <span className="text-sm text-bambu-gray">Right:</span>
+              <span className="text-sm text-bambu-gray">{t('profiles.right')}</span>
               <p className="text-white font-medium truncate">{rightLabel}</p>
             </div>
           </div>
@@ -1101,19 +1109,19 @@ function DiffModal({
             <div className="flex items-center gap-4 text-sm">
               <span className="flex items-center gap-1 text-green-400">
                 <PlusIcon className="w-3.5 h-3.5" />
-                {stats.added} added
+                {t('profiles.addedCount', { count: stats.added })}
               </span>
               <span className="flex items-center gap-1 text-red-400">
                 <MinusIcon className="w-3.5 h-3.5" />
-                {stats.removed} removed
+                {t('profiles.removedCount', { count: stats.removed })}
               </span>
               <span className="flex items-center gap-1 text-amber-400">
                 <ArrowRight className="w-3.5 h-3.5" />
-                {stats.changed} changed
+                {t('profiles.changedCount', { count: stats.changed })}
               </span>
               <span className="flex items-center gap-1 text-bambu-gray">
                 <Equal className="w-3.5 h-3.5" />
-                {stats.same} same
+                {t('profiles.sameCount', { count: stats.same })}
               </span>
             </div>
             <div className="flex items-center gap-3">
@@ -1123,7 +1131,7 @@ function DiffModal({
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search fields..."
+                  placeholder={t('profiles.searchFields')}
                   className="pl-8 pr-3 py-1.5 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none w-48"
                 />
               </div>
@@ -1137,7 +1145,7 @@ function DiffModal({
                         : 'bg-bambu-dark text-bambu-gray hover:text-white'
                     }`}
                   >
-                    Changes
+                    {t('profiles.changes')}
                   </button>
                   <button
                     onClick={() => setFilterMode('all')}
@@ -1147,7 +1155,7 @@ function DiffModal({
                         : 'bg-bambu-dark text-bambu-gray hover:text-white'
                     }`}
                   >
-                    All
+                    {t('common.all')}
                   </button>
                 </div>
               )}
@@ -1159,13 +1167,13 @@ function DiffModal({
             {filteredEntries.length === 0 ? (
               <div className="text-center py-12 text-bambu-gray">
                 <Equal className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                <p>{filterMode === 'changes' ? 'No differences found' : 'No fields match the search'}</p>
+                <p>{filterMode === 'changes' ? t('profiles.noDifferences') : t('profiles.noFieldsMatch')}</p>
               </div>
             ) : (
               <table className="w-full">
                 <thead className="sticky top-0 bg-bambu-dark-secondary">
                   <tr className="text-sm text-bambu-gray border-b border-bambu-dark-tertiary">
-                    <th className="text-left p-3 w-1/3">Field</th>
+                    <th className="text-left p-3 w-1/3">{t('profiles.field')}</th>
                     <th className="text-left p-3 w-1/3">{leftLabel}</th>
                     <th className="text-left p-3 w-1/3">{rightLabel}</th>
                   </tr>
@@ -1236,6 +1244,7 @@ function CreatePresetModal({
   initialData?: { type: string; name: string; base_id: string; setting: Record<string, unknown>; setting_id?: string };
   allPresets: SlicerSettingsResponse;
 }) {
+  const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
@@ -1421,7 +1430,7 @@ function CreatePresetModal({
       updateField(key, '');
       setCustomFieldKey('');
       setShowCustomFieldInput(false);
-      showToast(`Field "${key}" added`);
+      showToast(t('profiles.fieldAdded', { key }));
     }
   };
 
@@ -1442,7 +1451,7 @@ function CreatePresetModal({
   const applyTemplate = (template: { name: string; settings: Record<string, unknown> }) => {
     setSettingsObj(prev => ({ ...prev, ...template.settings }));
     setAppliedTemplateName(template.name);
-    showToast('Template applied');
+    showToast(t('profiles.templateApplied'));
   };
 
   // Save current settings as a template
@@ -1451,13 +1460,13 @@ function CreatePresetModal({
     const overrides = { ...settingsObj };
     delete overrides.inherits;
     if (Object.keys(overrides).length === 0) {
-      showToast('No overrides to save', 'error');
+      showToast(t('profiles.noOverridesToSave'), 'error');
       return;
     }
     const newTemplate: CustomTemplate = {
       id: Date.now().toString(),
       name: newTemplateName.trim(),
-      description: newTemplateDesc.trim() || 'Custom template',
+      description: newTemplateDesc.trim() || t('profiles.customTemplate'),
       type: presetType,
       settings: overrides,
       showInModal: newTemplateShowInModal,
@@ -1469,7 +1478,7 @@ function CreatePresetModal({
     setNewTemplateName('');
     setNewTemplateDesc('');
     setNewTemplateShowInModal(true);
-    showToast('Template saved');
+    showToast(t('profiles.templateSaved'));
   };
 
   // Get templates for current type (only those marked to show in modals)
@@ -1504,9 +1513,9 @@ function CreatePresetModal({
           const settings = parsed.setting || parsed;
           setSettingsObj(prev => ({ ...prev, ...settings }));
           setJsonText(JSON.stringify({ ...settingsObj, ...settings }, null, 2));
-          showToast('File imported successfully');
+          showToast(t('profiles.fileImportedSuccess'));
         } catch {
-          showToast('Invalid JSON file', 'error');
+          showToast(t('profiles.invalidJson'), 'error');
         }
       };
       reader.readAsText(file);
@@ -1524,7 +1533,7 @@ function CreatePresetModal({
       return api.createCloudSetting(data);
     },
     onSuccess: async () => {
-      showToast('Preset created successfully');
+      showToast(t('profiles.presetCreated'));
       // Force immediate refetch of the settings list
       await queryClient.refetchQueries({ queryKey: ['cloudSettings'] });
       onClose();
@@ -1538,7 +1547,7 @@ function CreatePresetModal({
       return api.updateCloudSetting(initialData.setting_id, { name, setting: settingsObj });
     },
     onSuccess: async () => {
-      showToast('Preset updated successfully');
+      showToast(t('profiles.presetUpdated'));
       // Clear all detail caches to ensure fresh data
       queryClient.removeQueries({ queryKey: ['cloudSettingDetail'] });
       // Force immediate refetch of the settings list
@@ -1603,7 +1612,7 @@ function CreatePresetModal({
     const formattedBaseValue = formatValue(baseValue);
     // Always show base value as placeholder when available
     const placeholder = isLoadingBasePreset
-      ? 'Loading...'
+      ? t('common.loading')
       : (formattedBaseValue || '');
     const baseClass = "w-full px-3 py-1.5 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none";
 
@@ -1682,10 +1691,10 @@ function CreatePresetModal({
           <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
             <div>
               <h2 className="text-xl font-semibold text-white">
-                {isEditMode ? 'Edit Preset' : (initialData ? 'Duplicate Preset' : 'Create New Preset')}
+                {isEditMode ? t('profiles.editPreset') : (initialData ? t('profiles.duplicatePreset') : t('profiles.createNewPreset'))}
               </h2>
               <p className="text-sm text-bambu-gray mt-1">
-                Customize settings for your new preset
+                {t('profiles.customizeSettings')}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -1693,10 +1702,10 @@ function CreatePresetModal({
                 <button
                   onClick={() => setShowDiffModal(true)}
                   className="flex items-center gap-2 px-3 py-2 text-sm text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary rounded-lg transition-colors"
-                  title="Compare with base preset"
+                  title={t('profiles.compareWithBase')}
                 >
                   <GitCompare className="w-4 h-4" />
-                  Compare
+                  {t('profiles.compare')}
                 </button>
               )}
               <button onClick={onClose} className="p-2 text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary rounded-lg transition-colors">
@@ -1710,7 +1719,7 @@ function CreatePresetModal({
             <div className="absolute inset-0 bg-bambu-green/10 border-2 border-dashed border-bambu-green rounded-lg flex items-center justify-center z-10">
               <div className="text-center">
                 <Upload className="w-12 h-12 text-bambu-green mx-auto mb-2" />
-                <p className="text-bambu-green font-medium">Drop JSON file to import</p>
+                <p className="text-bambu-green font-medium">{t('profiles.dropJsonToImport')}</p>
               </div>
             </div>
           )}
@@ -1719,38 +1728,38 @@ function CreatePresetModal({
           <div className="p-4 border-b border-bambu-dark-tertiary space-y-3">
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm text-bambu-gray mb-1">Type</label>
+                <label className="block text-sm text-bambu-gray mb-1">{t('profiles.typeLabel')}</label>
                 <select
                   value={presetType}
                   onChange={(e) => { setPresetType(e.target.value as 'filament' | 'print' | 'printer'); setBaseId(''); }}
                   className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 >
-                  <option value="filament">Filament</option>
-                  <option value="print">Process</option>
-                  <option value="printer">Printer</option>
+                  <option value="filament">{t('profiles.filament')}</option>
+                  <option value="print">{t('profiles.process')}</option>
+                  <option value="printer">{t('profiles.printer')}</option>
                 </select>
               </div>
               <div>
-                <label className="block text-sm text-bambu-gray mb-1">Base Preset</label>
+                <label className="block text-sm text-bambu-gray mb-1">{t('profiles.basePreset')}</label>
                 <select
                   value={baseId}
                   onChange={(e) => setBaseId(e.target.value)}
                   className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none"
                 >
-                  <option value="">Select base preset...</option>
+                  <option value="">{t('profiles.selectBasePreset')}</option>
                   {availableBasePresets.map((preset) => (
                     <option key={preset.setting_id} value={preset.setting_id}>{preset.name}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-sm text-bambu-gray mb-1">Preset Name</label>
+                <label className="block text-sm text-bambu-gray mb-1">{t('profiles.presetName')}</label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                  placeholder="My Custom Preset"
+                  placeholder={t('profiles.presetNamePlaceholder')}
                 />
               </div>
             </div>
@@ -1758,7 +1767,7 @@ function CreatePresetModal({
               <div className="text-xs text-bambu-gray">
                 <p className="flex items-center gap-1">
                   <Check className="w-3 h-3 text-bambu-green" />
-                  Inherits from: <span className="text-white">{baseName}</span>
+                  {t('profiles.inheritsFrom')} <span className="text-white">{baseName}</span>
                   {isLoadingBasePreset && (
                     <Loader2 className="w-3 h-3 animate-spin ml-1" />
                   )}
@@ -1776,7 +1785,7 @@ function CreatePresetModal({
               }`}
             >
               <Sliders className="w-4 h-4" />
-              Common
+              {t('profiles.commonTab')}
             </button>
             <button
               onClick={() => setActiveTab('fields')}
@@ -1785,7 +1794,7 @@ function CreatePresetModal({
               }`}
             >
               <List className="w-4 h-4" />
-              All Fields
+              {t('profiles.allFieldsTab')}
             </button>
             <button
               onClick={() => setActiveTab('json')}
@@ -1794,7 +1803,7 @@ function CreatePresetModal({
               }`}
             >
               <Code className="w-4 h-4" />
-              JSON
+              {t('profiles.jsonTab')}
               {jsonError && <AlertCircle className="w-3 h-3 text-red-400" />}
             </button>
             <div className="flex-1" />
@@ -1815,21 +1824,21 @@ function CreatePresetModal({
                 a.click();
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
-                showToast('Preset exported');
+                showToast(t('profiles.presetExported'));
               }}
               className="flex items-center gap-2 px-4 py-3 text-sm text-bambu-gray hover:text-white transition-colors"
-              title="Export current settings to JSON file"
+              title={t('profiles.exportToJsonFile')}
             >
               <Download className="w-4 h-4" />
-              Export
+              {t('common.export')}
             </button>
             <button
               onClick={() => document.getElementById('file-import')?.click()}
               className="flex items-center gap-2 px-4 py-3 text-sm text-bambu-gray hover:text-white transition-colors"
-              title="Import settings from JSON file"
+              title={t('profiles.importFromJsonFile')}
             >
               <Upload className="w-4 h-4" />
-              Import
+              {t('common.import')}
             </button>
             <input
               id="file-import"
@@ -1845,9 +1854,9 @@ function CreatePresetModal({
                       const parsed = JSON.parse(event.target?.result as string);
                       const settings = parsed.setting || parsed;
                       setSettingsObj(prev => ({ ...prev, ...settings }));
-                      showToast('File imported');
+                      showToast(t('profiles.fileImported'));
                     } catch {
-                      showToast('Invalid JSON', 'error');
+                      showToast(t('profiles.invalidJson'), 'error');
                     }
                   };
                   reader.readAsText(file);
@@ -1865,7 +1874,7 @@ function CreatePresetModal({
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-medium text-white flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-amber-400" />
-                      Quick Templates
+                      {t('profiles.quickTemplates')}
                     </h3>
                     {Object.keys(settingsObj).filter(k => k !== 'inherits').length > 0 && (
                       <button
@@ -1873,7 +1882,7 @@ function CreatePresetModal({
                         className="text-xs text-bambu-gray hover:text-white flex items-center gap-1 transition-colors"
                       >
                         <Save className="w-3 h-3" />
-                        Save as template
+                        {t('profiles.saveAsTemplate')}
                       </button>
                     )}
                   </div>
@@ -1885,7 +1894,7 @@ function CreatePresetModal({
                           type="text"
                           value={newTemplateName}
                           onChange={(e) => setNewTemplateName(e.target.value)}
-                          placeholder="Template name"
+                          placeholder={t('profiles.templateName')}
                           className="px-3 py-1.5 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
                           autoFocus
                         />
@@ -1893,7 +1902,7 @@ function CreatePresetModal({
                           type="text"
                           value={newTemplateDesc}
                           onChange={(e) => setNewTemplateDesc(e.target.value)}
-                          placeholder="Description (optional)"
+                          placeholder={t('profiles.descriptionOptional')}
                           className="px-3 py-1.5 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
                         />
                       </div>
@@ -1901,10 +1910,10 @@ function CreatePresetModal({
                         <div className="flex gap-2">
                           <Button size="sm" onClick={saveAsTemplate} disabled={!newTemplateName.trim()}>
                             <Save className="w-3 h-3" />
-                            Save
+                            {t('common.save')}
                           </Button>
                           <Button size="sm" variant="secondary" onClick={() => setShowSaveTemplate(false)}>
-                            Cancel
+                            {t('common.cancel')}
                           </Button>
                         </div>
                         <button
@@ -1914,7 +1923,7 @@ function CreatePresetModal({
                           }`}
                         >
                           {newTemplateShowInModal ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                          {newTemplateShowInModal ? 'Show in modals' : 'Hidden in modals'}
+                          {newTemplateShowInModal ? t('profiles.shownInModals') : t('profiles.hiddenInModals')}
                         </button>
                       </div>
                     </div>
@@ -1924,7 +1933,7 @@ function CreatePresetModal({
                   {appliedTemplateName && (
                     <div className="mb-3 px-3 py-2 bg-bambu-green/10 border border-bambu-green/30 rounded-lg flex items-center gap-2">
                       <Check className="w-4 h-4 text-bambu-green" />
-                      <span className="text-sm text-bambu-green">Template applied: <span className="font-medium">{appliedTemplateName}</span></span>
+                      <span className="text-sm text-bambu-green">{t('profiles.templateAppliedName', { name: appliedTemplateName })}</span>
                       <button
                         onClick={() => setAppliedTemplateName(null)}
                         className="ml-auto text-bambu-green/70 hover:text-bambu-green"
@@ -1947,20 +1956,20 @@ function CreatePresetModal({
                     ))}
                     {templatesForType.length === 0 && (
                       <p className="col-span-3 text-center text-bambu-gray text-sm py-4">
-                        No templates selected. Use the Templates button to enable templates for quick access.
+                        {t('profiles.noTemplatesSelected')}
                       </p>
                     )}
                   </div>
 
                   {/* Note about template management */}
                   <p className="text-xs text-bambu-gray-dark mt-2 text-center">
-                    Manage templates via the Templates button on the main page
+                    {t('profiles.manageTemplatesHint')}
                   </p>
                 </div>
 
                 {/* Common Fields */}
                 <div>
-                  <h3 className="text-sm font-medium text-white mb-3">Common Settings</h3>
+                  <h3 className="text-sm font-medium text-white mb-3">{t('profiles.commonSettings')}</h3>
                   <div className="grid grid-cols-2 gap-x-6 gap-y-3">
                     {dynamicFields.slice(0, 10).map(field => (
                       <div key={field.key} className="flex items-center justify-between gap-4">
@@ -1974,7 +1983,7 @@ function CreatePresetModal({
                 {/* Current overrides */}
                 {Object.keys(settingsObj).length > 1 && (
                   <div>
-                    <h3 className="text-sm font-medium text-white mb-3">Current Overrides</h3>
+                    <h3 className="text-sm font-medium text-white mb-3">{t('profiles.currentOverrides')}</h3>
                     <div className="flex flex-wrap gap-2">
                       {Object.entries(settingsObj)
                         .filter(([k]) => k !== 'inherits')
@@ -1997,11 +2006,11 @@ function CreatePresetModal({
                 {/* Left: Available Fields */}
                 <div className="flex flex-col h-full overflow-hidden">
                   <div className="flex items-center justify-between mb-3 flex-shrink-0">
-                    <h3 className="text-sm font-medium text-white">Available Fields</h3>
+                    <h3 className="text-sm font-medium text-white">{t('profiles.availableFields')}</h3>
                     <span className="text-xs text-bambu-gray">
                       {allPresetDetails
-                        ? `${dynamicFields.length} fields`
-                        : 'Loading...'}
+                        ? t('profiles.fieldsCount', { count: dynamicFields.length })
+                        : t('common.loading')}
                     </span>
                   </div>
 
@@ -2011,7 +2020,7 @@ function CreatePresetModal({
                       type="text"
                       value={fieldSearch}
                       onChange={(e) => setFieldSearch(e.target.value)}
-                      placeholder="Search fields..."
+                      placeholder={t('profiles.searchFields')}
                       className="w-full pl-10 pr-4 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder-bambu-gray-dark focus:border-bambu-green focus:outline-none"
                     />
                   </div>
@@ -2051,7 +2060,7 @@ function CreatePresetModal({
 
                     {filteredFields.filter(f => !(f.key in settingsObj)).length === 0 && (
                       <p className="text-center text-bambu-gray py-4 text-sm">
-                        {fieldSearch ? 'No matching fields' : 'All fields added'}
+                        {fieldSearch ? t('profiles.noMatchingFields') : t('profiles.allFieldsAdded')}
                       </p>
                     )}
                   </div>
@@ -2082,7 +2091,7 @@ function CreatePresetModal({
                         className="w-full flex items-center justify-center gap-2 p-2 text-sm text-bambu-gray hover:text-white border border-dashed border-bambu-dark-tertiary hover:border-bambu-gray-dark rounded-lg transition-colors"
                       >
                         <Plus className="w-4 h-4" />
-                        Add custom field
+                        {t('profiles.addCustomField')}
                       </button>
                     )}
                   </div>
@@ -2091,9 +2100,9 @@ function CreatePresetModal({
                 {/* Right: Added Fields */}
                 <div className="flex flex-col h-full overflow-hidden">
                   <div className="flex items-center justify-between mb-3 flex-shrink-0">
-                    <h3 className="text-sm font-medium text-white">Your Overrides</h3>
+                    <h3 className="text-sm font-medium text-white">{t('profiles.yourOverrides')}</h3>
                     <span className="text-xs text-bambu-gray">
-                      {Object.keys(settingsObj).filter(k => k !== 'inherits').length} fields
+                      {t('profiles.fieldsCount', { count: Object.keys(settingsObj).filter(k => k !== 'inherits').length })}
                     </span>
                   </div>
 
@@ -2133,8 +2142,8 @@ function CreatePresetModal({
                     {Object.keys(settingsObj).filter(k => k !== 'inherits').length === 0 && (
                       <div className="text-center py-8 text-bambu-gray">
                         <Sliders className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">No overrides yet</p>
-                        <p className="text-xs mt-1">Click fields on the left to add them</p>
+                        <p className="text-sm">{t('profiles.noOverridesYet')}</p>
+                        <p className="text-xs mt-1">{t('profiles.clickFieldsToAdd')}</p>
                       </div>
                     )}
                   </div>
@@ -2147,7 +2156,7 @@ function CreatePresetModal({
                         className="w-full flex items-center justify-center gap-2 p-2 text-sm text-bambu-gray hover:text-white border border-dashed border-bambu-dark-tertiary hover:border-bambu-gray-dark rounded-lg transition-colors"
                       >
                         <Save className="w-4 h-4" />
-                        Save as template
+                        {t('profiles.saveAsTemplate')}
                       </button>
                     </div>
                   )}
@@ -2172,7 +2181,7 @@ function CreatePresetModal({
                   spellCheck={false}
                 />
                 <p className="text-xs text-bambu-gray">
-                  Tip: Drag & drop a .json file anywhere on this modal to import settings
+                  {t('profiles.dragDropTip')}
                 </p>
               </div>
             )}
@@ -2180,14 +2189,14 @@ function CreatePresetModal({
 
           {/* Footer */}
           <div className="p-4 border-t border-bambu-dark-tertiary flex gap-2">
-            <Button variant="secondary" onClick={onClose} className="flex-1">Cancel</Button>
+            <Button variant="secondary" onClick={onClose} className="flex-1">{t('common.cancel')}</Button>
             <Button
               onClick={() => saveMutation.mutate()}
               disabled={saveMutation.isPending || !name.trim() || (!isEditMode && !baseId) || !!jsonError}
               className="flex-1"
             >
               {saveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : (isEditMode ? <Save className="w-4 h-4" /> : <Plus className="w-4 h-4" />)}
-              {isEditMode ? 'Save' : (initialData ? 'Duplicate' : 'Create')}
+              {isEditMode ? t('common.save') : (initialData ? t('profiles.duplicate') : t('common.create'))}
             </Button>
           </div>
         </CardContent>
@@ -2213,6 +2222,7 @@ function CloudProfilesView({
   isRefreshing: boolean;
   printers: Printer[];
 }) {
+  const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<PresetType>('all');
   const [filterOwner, setFilterOwner] = useState<'all' | 'custom' | 'builtin'>('all');
@@ -2404,7 +2414,7 @@ function CloudProfilesView({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search presets..."
+              placeholder={t('profiles.searchPresets')}
               className="w-full pl-10 pr-4 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray-dark focus:border-bambu-green focus:outline-none"
             />
           </div>
@@ -2422,19 +2432,19 @@ function CloudProfilesView({
               }}
             >
               <GitCompare className="w-4 h-4" />
-              {compareMode ? 'Cancel' : 'Compare'}
+              {compareMode ? t('common.cancel') : t('profiles.compare')}
             </Button>
             <Button variant="secondary" onClick={() => setShowTemplatesModal(true)}>
               <Sparkles className="w-4 h-4" />
-              Templates
+              {t('profiles.templates')}
             </Button>
             <Button variant="secondary" onClick={onRefresh} disabled={isRefreshing}>
               <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-              Refresh
+              {t('common.refresh')}
             </Button>
             <Button onClick={() => setShowCreateModal(true)}>
               <Plus className="w-4 h-4" />
-              New Preset
+              {t('profiles.newPreset')}
             </Button>
           </div>
         </div>
@@ -2444,34 +2454,34 @@ function CloudProfilesView({
           <Filter className="w-4 h-4 text-bambu-gray" />
 
           <FilterDropdown
-            label="Type"
+            label={t('profiles.typeLabel')}
             value={filterType}
             options={[
-              { value: 'all', label: 'All', count: totalCount },
-              { value: 'filament', label: 'Filament', count: settings.filament.length },
-              { value: 'printer', label: 'Printer', count: settings.printer.length },
-              { value: 'process', label: 'Process', count: settings.process.length },
+              { value: 'all', label: t('common.all'), count: totalCount },
+              { value: 'filament', label: t('profiles.filament'), count: settings.filament.length },
+              { value: 'printer', label: t('profiles.printer'), count: settings.printer.length },
+              { value: 'process', label: t('profiles.process'), count: settings.process.length },
             ]}
             onChange={(v) => setFilterType(v as PresetType)}
           />
 
           <FilterDropdown
-            label="Owner"
+            label={t('profiles.owner')}
             value={filterOwner}
             options={[
-              { value: 'all', label: 'All' },
-              { value: 'custom', label: 'My Presets' },
-              { value: 'builtin', label: 'Built-in' },
+              { value: 'all', label: t('common.all') },
+              { value: 'custom', label: t('profiles.myPresets') },
+              { value: 'builtin', label: t('profiles.builtIn') },
             ]}
             onChange={(v) => setFilterOwner(v as 'all' | 'custom' | 'builtin')}
           />
 
           {filterOptions.printers.length > 0 && (
             <FilterDropdown
-              label="Printer"
+              label={t('common.printer')}
               value={filterPrinter}
               options={[
-                { value: 'all', label: 'All' },
+                { value: 'all', label: t('common.all') },
                 ...filterOptions.printers.map(p => ({ value: p.id, label: p.name })),
               ]}
               onChange={setFilterPrinter}
@@ -2480,10 +2490,10 @@ function CloudProfilesView({
 
           {filterOptions.nozzles.length > 0 && (
             <FilterDropdown
-              label="Nozzle"
+              label={t('profiles.nozzle')}
               value={filterNozzle}
               options={[
-                { value: 'all', label: 'All' },
+                { value: 'all', label: t('common.all') },
                 ...filterOptions.nozzles.map(n => ({ value: n, label: n })),
               ]}
               onChange={setFilterNozzle}
@@ -2492,10 +2502,10 @@ function CloudProfilesView({
 
           {filterOptions.filaments.length > 0 && (filterType === 'all' || filterType === 'filament') && (
             <FilterDropdown
-              label="Filament"
+              label={t('profiles.filament')}
               value={filterFilament}
               options={[
-                { value: 'all', label: 'All' },
+                { value: 'all', label: t('common.all') },
                 ...filterOptions.filaments.map(f => ({ value: f, label: f })),
               ]}
               onChange={setFilterFilament}
@@ -2504,10 +2514,10 @@ function CloudProfilesView({
 
           {filterOptions.layerHeights.length > 0 && (filterType === 'all' || filterType === 'process') && (
             <FilterDropdown
-              label="Layer"
+              label={t('profiles.layer')}
               value={filterLayerHeight}
               options={[
-                { value: 'all', label: 'All' },
+                { value: 'all', label: t('common.all') },
                 ...filterOptions.layerHeights.map(l => ({ value: l, label: l })),
               ]}
               onChange={setFilterLayerHeight}
@@ -2519,7 +2529,7 @@ function CloudProfilesView({
               onClick={clearFilters}
               className="px-3 py-2 text-sm text-bambu-gray hover:text-white transition-colors"
             >
-              Clear filters
+              {t('profiles.clearFilters')}
             </button>
           )}
         </div>
@@ -2531,21 +2541,21 @@ function CloudProfilesView({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <GitCompare className="w-5 h-5 text-blue-400" />
-              <span className="text-white font-medium">Compare Mode</span>
+              <span className="text-white font-medium">{t('profiles.compareMode')}</span>
               <span className="text-bambu-gray">
                 {compareSelection[0]
-                  ? `Select another ${compareSelection[0].type} preset`
-                  : 'Click two presets of the same type to compare'}
+                  ? t('profiles.selectAnotherPreset', { type: compareSelection[0].type })
+                  : t('profiles.clickTwoPresets')}
               </span>
             </div>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
                 <span className={`px-2 py-1 text-sm rounded truncate max-w-[200px] ${compareSelection[0] ? 'bg-blue-500/30 text-blue-700 dark:text-blue-300' : 'bg-bambu-dark text-bambu-gray'}`}>
-                  {compareSelection[0] ? compareSelection[0].name : '1. Select first'}
+                  {compareSelection[0] ? compareSelection[0].name : t('profiles.selectFirst')}
                 </span>
                 <ArrowRight className="w-4 h-4 text-bambu-gray" />
                 <span className={`px-2 py-1 text-sm rounded truncate max-w-[200px] ${compareSelection[1] ? 'bg-blue-500/30 text-blue-700 dark:text-blue-300' : 'bg-bambu-dark text-bambu-gray'}`}>
-                  {compareSelection[1] ? compareSelection[1].name : '2. Select second'}
+                  {compareSelection[1] ? compareSelection[1].name : t('profiles.selectSecond')}
                 </span>
               </div>
               {compareSelection[0] && compareSelection[1] && (
@@ -2568,7 +2578,7 @@ function CloudProfilesView({
                   }}
                 >
                   <GitCompare className="w-4 h-4" />
-                  Compare Now
+                  {t('profiles.compareNow')}
                 </Button>
               )}
             </div>
@@ -2581,13 +2591,13 @@ function CloudProfilesView({
         {lastSyncTime && (
           <div className="flex items-center gap-1">
             <Clock className="w-3 h-3" />
-            Last synced: {formatRelativeTime(lastSyncTime.toISOString())}
+            {t('profiles.lastSynced')} {formatRelativeTime(lastSyncTime.toISOString(), t)}
           </div>
         )}
-        <span>Showing {filteredPresets.length} of {totalCount} presets</span>
+        <span>{t('profiles.showingPresets', { count: filteredPresets.length, total: totalCount })}</span>
         <div className="flex items-center gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-bambu-green" />
-          <span>= My preset (editable)</span>
+          <span>{t('profiles.myPresetLegend')}</span>
         </div>
       </div>
 
@@ -2595,10 +2605,10 @@ function CloudProfilesView({
       {filteredPresets.length === 0 ? (
         <div className="text-center py-16">
           <Layers className="w-12 h-12 text-bambu-gray-dark mx-auto mb-4" />
-          <p className="text-bambu-gray">No presets found</p>
+          <p className="text-bambu-gray">{t('profiles.noPresetsFound')}</p>
           {hasActiveFilters && (
             <button onClick={clearFilters} className="mt-2 text-sm text-bambu-green hover:text-bambu-green-light">
-              Clear filters
+              {t('profiles.clearFilters')}
             </button>
           )}
         </div>
@@ -2608,7 +2618,7 @@ function CloudProfilesView({
           <div>
             <div className="flex items-center gap-2 mb-3 px-1">
               <Droplet className="w-4 h-4 text-amber-400" />
-              <h3 className="text-sm font-medium text-bambu-gray">Filament</h3>
+              <h3 className="text-sm font-medium text-bambu-gray">{t('profiles.filament')}</h3>
               <span className="text-xs text-bambu-gray-dark">
                 ({filteredPresets.filter(p => p.type === 'filament').length})
               </span>
@@ -2629,7 +2639,7 @@ function CloudProfilesView({
                   />
                 ))}
               {filteredPresets.filter(p => p.type === 'filament').length === 0 && (
-                <p className="text-xs text-bambu-gray-dark px-3 py-2">No filament presets</p>
+                <p className="text-xs text-bambu-gray-dark px-3 py-2">{t('profiles.noFilamentPresets')}</p>
               )}
             </div>
           </div>
@@ -2638,7 +2648,7 @@ function CloudProfilesView({
           <div>
             <div className="flex items-center gap-2 mb-3 px-1">
               <Settings2 className="w-4 h-4 text-blue-400" />
-              <h3 className="text-sm font-medium text-bambu-gray">Process</h3>
+              <h3 className="text-sm font-medium text-bambu-gray">{t('profiles.process')}</h3>
               <span className="text-xs text-bambu-gray-dark">
                 ({filteredPresets.filter(p => p.type === 'process').length})
               </span>
@@ -2659,7 +2669,7 @@ function CloudProfilesView({
                   />
                 ))}
               {filteredPresets.filter(p => p.type === 'process').length === 0 && (
-                <p className="text-xs text-bambu-gray-dark px-3 py-2">No process presets</p>
+                <p className="text-xs text-bambu-gray-dark px-3 py-2">{t('profiles.noProcessPresets')}</p>
               )}
             </div>
           </div>
@@ -2668,7 +2678,7 @@ function CloudProfilesView({
           <div>
             <div className="flex items-center gap-2 mb-3 px-1">
               <PrinterIcon className="w-4 h-4 text-purple-400" />
-              <h3 className="text-sm font-medium text-bambu-gray">Printer</h3>
+              <h3 className="text-sm font-medium text-bambu-gray">{t('profiles.printer')}</h3>
               <span className="text-xs text-bambu-gray-dark">
                 ({filteredPresets.filter(p => p.type === 'printer').length})
               </span>
@@ -2689,7 +2699,7 @@ function CloudProfilesView({
                   />
                 ))}
               {filteredPresets.filter(p => p.type === 'printer').length === 0 && (
-                <p className="text-xs text-bambu-gray-dark px-3 py-2">No printer presets</p>
+                <p className="text-xs text-bambu-gray-dark px-3 py-2">{t('profiles.noPrinterPresets')}</p>
               )}
             </div>
           </div>
@@ -2746,6 +2756,7 @@ function CloudProfilesView({
 // ============================================================================
 
 export function ProfilesPage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<ProfileTab>('cloud');
@@ -2780,7 +2791,7 @@ export function ProfilesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cloudStatus'] });
       queryClient.removeQueries({ queryKey: ['cloudSettings'] });
-      showToast('Logged out');
+      showToast(t('profiles.loggedOut'));
     },
   });
 
@@ -2800,8 +2811,8 @@ export function ProfilesPage() {
     <div className="p-6 lg:p-8">
       {/* Page Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Profiles</h1>
-        <p className="text-bambu-gray">Manage your slicer presets and pressure advance calibrations</p>
+        <h1 className="text-2xl font-bold text-white">{t('profiles.pageTitle')}</h1>
+        <p className="text-bambu-gray">{t('profiles.pageDescription')}</p>
       </div>
 
       {/* Tab Navigation */}
@@ -2815,7 +2826,7 @@ export function ProfilesPage() {
           }`}
         >
           <Cloud className="w-4 h-4" />
-          Cloud Profiles
+          {t('profiles.cloudProfiles')}
         </button>
         <button
           onClick={() => setActiveTab('kprofiles')}
@@ -2826,7 +2837,7 @@ export function ProfilesPage() {
           }`}
         >
           <Gauge className="w-4 h-4" />
-          K-Profiles
+          {t('profiles.kProfiles')}
         </button>
       </div>
 
@@ -2839,7 +2850,7 @@ export function ProfilesPage() {
               <div className="flex items-center gap-3">
                 <div className="w-2 h-2 rounded-full bg-bambu-green animate-pulse" />
                 <span className="text-sm text-bambu-gray">
-                  Connected as <span className="text-white">{status.email}</span>
+                  {t('profiles.connectedAs')} <span className="text-white">{status.email}</span>
                 </span>
               </div>
               <Button
@@ -2849,7 +2860,7 @@ export function ProfilesPage() {
                 disabled={logoutMutation.isPending}
               >
                 <LogOut className="w-4 h-4" />
-                Logout
+                {t('profiles.logout')}
               </Button>
             </div>
           )}
@@ -2870,8 +2881,8 @@ export function ProfilesPage() {
             />
           ) : (
             <div className="text-center py-16">
-              <p className="text-bambu-gray mb-4">Failed to load profiles</p>
-              <Button onClick={() => refetchSettings()}>Retry</Button>
+              <p className="text-bambu-gray mb-4">{t('profiles.failedToLoadProfiles')}</p>
+              <Button onClick={() => refetchSettings()}>{t('common.retry')}</Button>
             </div>
           )}
         </>

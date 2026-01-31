@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { X, FolderKanban, Loader2, XCircle } from 'lucide-react';
 import { api } from '../api/client';
@@ -12,6 +13,7 @@ interface BatchProjectModalProps {
 }
 
 export function BatchProjectModal({ selectedIds, onClose }: BatchProjectModalProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
@@ -47,11 +49,11 @@ export function BatchProjectModal({ selectedIds, onClose }: BatchProjectModalPro
     onSuccess: (projectId) => {
       const project = projects?.find(p => p.id === projectId);
       invalidateProjectQueries();
-      showToast(`Added ${selectedIds.length} archive${selectedIds.length !== 1 ? 's' : ''} to "${project?.name}"`);
+      showToast(t('batchProject.addedToProject', { count: selectedIds.length, project: project?.name }));
       onClose();
     },
     onError: () => {
-      showToast('Failed to assign project', 'error');
+      showToast(t('batchProject.assignFailed'), 'error');
     },
   });
 
@@ -65,11 +67,11 @@ export function BatchProjectModal({ selectedIds, onClose }: BatchProjectModalPro
     },
     onSuccess: (count) => {
       invalidateProjectQueries();
-      showToast(`Removed ${count} archive${count !== 1 ? 's' : ''} from project`);
+      showToast(t('batchProject.removedFromProject', { count }));
       onClose();
     },
     onError: () => {
-      showToast('Failed to remove from project', 'error');
+      showToast(t('batchProject.removeFailed'), 'error');
     },
   });
 
@@ -84,7 +86,7 @@ export function BatchProjectModal({ selectedIds, onClose }: BatchProjectModalPro
             <div className="flex items-center gap-2">
               <FolderKanban className="w-5 h-5 text-bambu-green" />
               <h2 className="text-xl font-semibold text-white">
-                Assign to Project
+                {t('batchProject.assignTitle')}
               </h2>
             </div>
             <button
@@ -99,7 +101,7 @@ export function BatchProjectModal({ selectedIds, onClose }: BatchProjectModalPro
           {/* Content */}
           <div className="p-4 space-y-3 overflow-y-auto min-h-0">
             <p className="text-sm text-bambu-gray">
-              Assign {selectedIds.length} selected archive{selectedIds.length !== 1 ? 's' : ''} to a project
+              {t('batchProject.assignDescription', { count: selectedIds.length })}
             </p>
 
             {isLoading ? (
@@ -118,8 +120,8 @@ export function BatchProjectModal({ selectedIds, onClose }: BatchProjectModalPro
                     <XCircle className="w-4 h-4 text-red-400" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-white font-medium">Remove from project</p>
-                    <p className="text-sm text-bambu-gray truncate">Clear project assignment</p>
+                    <p className="text-white font-medium">{t('batchProject.removeFromProject')}</p>
+                    <p className="text-sm text-bambu-gray truncate">{t('batchProject.clearAssignment')}</p>
                   </div>
                   {removeMutation.isPending && (
                     <Loader2 className="w-4 h-4 animate-spin text-bambu-gray shrink-0" />
@@ -130,7 +132,7 @@ export function BatchProjectModal({ selectedIds, onClose }: BatchProjectModalPro
                 {projects && projects.length > 0 && (
                   <div className="flex items-center gap-2 py-2">
                     <div className="flex-1 h-px bg-bambu-dark-tertiary" />
-                    <span className="text-xs text-bambu-gray">or assign to</span>
+                    <span className="text-xs text-bambu-gray">{t('batchProject.orAssignTo')}</span>
                     <div className="flex-1 h-px bg-bambu-dark-tertiary" />
                   </div>
                 )}
@@ -155,7 +157,7 @@ export function BatchProjectModal({ selectedIds, onClose }: BatchProjectModalPro
                     <div className="min-w-0 flex-1">
                       <p className="text-white font-medium truncate">{project.name}</p>
                       <p className="text-sm text-bambu-gray truncate">
-                        {project.archive_count} archive{project.archive_count !== 1 ? 's' : ''}
+                        {t('batchProject.archiveCount', { count: project.archive_count })}
                         {project.status && ` • ${project.status}`}
                       </p>
                     </div>
@@ -167,7 +169,7 @@ export function BatchProjectModal({ selectedIds, onClose }: BatchProjectModalPro
 
                 {(!projects || projects.length === 0) && (
                   <p className="text-center text-bambu-gray py-4">
-                    No projects yet. Create one from the Projects page.
+                    {t('batchProject.noProjects')}
                   </p>
                 )}
               </div>
@@ -177,7 +179,7 @@ export function BatchProjectModal({ selectedIds, onClose }: BatchProjectModalPro
           {/* Footer */}
           <div className="flex gap-3 p-4 border-t border-bambu-dark-tertiary shrink-0">
             <Button variant="secondary" onClick={onClose} className="flex-1" disabled={isPending}>
-              Cancel
+              {t('common.cancel')}
             </Button>
           </div>
         </CardContent>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Tag, Plus, Loader2 } from 'lucide-react';
 import { api } from '../api/client';
@@ -13,6 +14,7 @@ interface BatchTagModalProps {
 }
 
 export function BatchTagModal({ selectedIds, existingTags, onClose }: BatchTagModalProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [newTag, setNewTag] = useState('');
@@ -142,7 +144,7 @@ export function BatchTagModal({ selectedIds, existingTags, onClose }: BatchTagMo
               <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="Enter new tag..."
+                  placeholder={t('archives.enterNewTag')}
                   className="flex-1 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none"
                   value={newTag}
                   onChange={(e) => setNewTag(e.target.value)}

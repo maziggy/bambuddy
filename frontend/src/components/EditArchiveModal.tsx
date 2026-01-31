@@ -1,30 +1,31 @@
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { X, Save, Tag, Camera, Trash2, Loader2, Plus, FolderKanban, Hash } from 'lucide-react';
 import { api } from '../api/client';
 import type { Archive } from '../api/client';
 import { Button } from './Button';
 
-const FAILURE_REASONS = [
-  'Adhesion failure',
-  'Spaghetti / Detached',
-  'Layer shift',
-  'Clogged nozzle',
-  'Filament runout',
-  'Warping',
-  'Stringing',
-  'Under-extrusion',
-  'Power failure',
-  'User cancelled',
-  'Other',
-];
+const FAILURE_REASON_KEYS = [
+  'adhesionFailure',
+  'spaghettiDetached',
+  'layerShift',
+  'cloggedNozzle',
+  'filamentRunout',
+  'warping',
+  'stringing',
+  'underExtrusion',
+  'powerFailure',
+  'userCancelled',
+  'other',
+] as const;
 
-const ARCHIVE_STATUSES = [
-  { value: 'completed', label: 'Completed' },
-  { value: 'failed', label: 'Failed' },
-  { value: 'aborted', label: 'Cancelled' },
-  { value: 'printing', label: 'Printing' },
-];
+const ARCHIVE_STATUS_KEYS = [
+  { value: 'completed', key: 'statusCompleted' },
+  { value: 'failed', key: 'statusFailed' },
+  { value: 'aborted', key: 'statusCancelled' },
+  { value: 'printing', key: 'statusPrinting' },
+] as const;
 
 interface EditArchiveModalProps {
   archive: Archive;
@@ -33,6 +34,7 @@ interface EditArchiveModalProps {
 }
 
 export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditArchiveModalProps) {
+  const { t } = useTranslation();
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -184,7 +186,7 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-bambu-dark-tertiary">
-          <h2 className="text-lg font-semibold text-white">Edit Archive</h2>
+          <h2 className="text-lg font-semibold text-white">{t('editArchive.title')}</h2>
           <button
             onClick={onClose}
             className="text-bambu-gray hover:text-white transition-colors"
@@ -197,25 +199,25 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
           {/* Print Name */}
           <div>
-            <label className="block text-sm text-bambu-gray mb-1">Name</label>
+            <label className="block text-sm text-bambu-gray mb-1">{t('editArchive.name')}</label>
             <input
               type="text"
               value={printName}
               onChange={(e) => setPrintName(e.target.value)}
               className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-              placeholder="Print name"
+              placeholder={t('editArchive.printNamePlaceholder')}
             />
           </div>
 
           {/* Printer */}
           <div>
-            <label className="block text-sm text-bambu-gray mb-1">Printer</label>
+            <label className="block text-sm text-bambu-gray mb-1">{t('editArchive.printer')}</label>
             <select
               value={printerId ?? ''}
               onChange={(e) => setPrinterId(e.target.value ? Number(e.target.value) : null)}
               className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
             >
-              <option value="">No printer</option>
+              <option value="">{t('editArchive.noPrinter')}</option>
               {printers?.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -228,14 +230,14 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
           <div>
             <label className="block text-sm text-bambu-gray mb-1">
               <FolderKanban className="w-4 h-4 inline mr-1" />
-              Project
+              {t('editArchive.project')}
             </label>
             <select
               value={projectId ?? ''}
               onChange={(e) => setProjectId(e.target.value ? Number(e.target.value) : null)}
               className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
             >
-              <option value="">No project</option>
+              <option value="">{t('editArchive.noProject')}</option>
               {projects?.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -248,7 +250,7 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
           <div>
             <label className="block text-sm text-bambu-gray mb-1">
               <Hash className="w-4 h-4 inline mr-1" />
-              Items Printed
+              {t('editArchive.itemsPrinted')}
             </label>
             <input
               type="number"
@@ -259,25 +261,25 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
               placeholder="1"
             />
             <p className="text-xs text-bambu-gray mt-1">
-              Number of items produced in this print job
+              {t('editArchive.itemsPrintedDescription')}
             </p>
           </div>
 
           {/* Notes */}
           <div>
-            <label className="block text-sm text-bambu-gray mb-1">Notes</label>
+            <label className="block text-sm text-bambu-gray mb-1">{t('editArchive.notes')}</label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
               className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none resize-none"
-              placeholder="Add notes about this print..."
+              placeholder={t('editArchive.notesPlaceholder')}
             />
           </div>
 
           {/* Tags */}
           <div>
-            <label className="block text-sm text-bambu-gray mb-1">Tags</label>
+            <label className="block text-sm text-bambu-gray mb-1">{t('editArchive.tags')}</label>
             {/* Current tags as chips */}
             {currentTags.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-2">
@@ -316,13 +318,13 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
                   blurTimeoutRef.current = window.setTimeout(() => setShowTagSuggestions(false), 200);
                 }}
                 className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                placeholder={currentTags.length > 0 ? "Add more tags..." : "Add tags..."}
+                placeholder={currentTags.length > 0 ? t('editArchive.addMoreTags') : t('editArchive.addTags')}
               />
               {/* Suggestions dropdown */}
               {showTagSuggestions && tagSuggestions.length > 0 && (
                 <div className="absolute top-full left-0 right-0 mt-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg z-10 max-h-40 overflow-y-auto">
                   <div className="p-2 text-xs text-bambu-gray border-b border-bambu-dark-tertiary">
-                    Existing tags (click to add)
+                    {t('editArchive.existingTagsHint')}
                   </div>
                   <div className="p-2 flex flex-wrap gap-1.5">
                     {tagSuggestions.map((tag) => (
@@ -343,7 +345,7 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
 
           {/* Status */}
           <div>
-            <label className="block text-sm text-bambu-gray mb-1">Status</label>
+            <label className="block text-sm text-bambu-gray mb-1">{t('editArchive.status')}</label>
             <select
               value={status}
               onChange={(e) => {
@@ -355,9 +357,9 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
               }}
               className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
             >
-              {ARCHIVE_STATUSES.map((s) => (
+              {ARCHIVE_STATUS_KEYS.map((s) => (
                 <option key={s.value} value={s.value}>
-                  {s.label}
+                  {t(`editArchive.${s.key}`)}
                 </option>
               ))}
             </select>
@@ -366,16 +368,16 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
           {/* Failure Reason - only show for failed/aborted prints */}
           {(status === 'failed' || status === 'aborted') && (
             <div>
-              <label className="block text-sm text-bambu-gray mb-1">Failure Reason</label>
+              <label className="block text-sm text-bambu-gray mb-1">{t('editArchive.failureReason')}</label>
               <select
                 value={failureReason}
                 onChange={(e) => setFailureReason(e.target.value)}
                 className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
               >
-                <option value="">Select reason...</option>
-                {FAILURE_REASONS.map((reason) => (
-                  <option key={reason} value={reason}>
-                    {reason}
+                <option value="">{t('editArchive.selectReason')}</option>
+                {FAILURE_REASON_KEYS.map((key) => (
+                  <option key={key} value={t(`editArchive.failureReasons.${key}`)}>
+                    {t(`editArchive.failureReasons.${key}`)}
                   </option>
                 ))}
               </select>
@@ -386,7 +388,7 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
           <div>
             <label className="block text-sm text-bambu-gray mb-1">
               <Camera className="w-4 h-4 inline mr-1" />
-              Photos of Printed Result
+              {t('editArchive.photos')}
             </label>
             {/* Photo grid */}
             <div className="flex flex-wrap gap-2 mb-2">
@@ -394,7 +396,7 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
                 <div key={filename} className="relative group">
                   <img
                     src={api.getArchivePhotoUrl(archive.id, filename)}
-                    alt="Print result"
+                    alt={t('editArchive.printResult')}
                     className="w-20 h-20 object-cover rounded-lg border border-bambu-dark-tertiary"
                   />
                   <button
@@ -423,7 +425,7 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
                 )}
               </label>
             </div>
-            <p className="text-xs text-bambu-gray">Click + to add photos of your printed result</p>
+            <p className="text-xs text-bambu-gray">{t('editArchive.photosDescription')}</p>
           </div>
 
           {/* Actions */}
@@ -434,7 +436,7 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
               onClick={onClose}
               className="flex-1"
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               type="submit"
@@ -442,7 +444,7 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
               className="flex-1"
             >
               <Save className="w-4 h-4" />
-              {updateMutation.isPending ? 'Saving...' : 'Save'}
+              {updateMutation.isPending ? t('editArchive.saving') : t('common.save')}
             </Button>
           </div>
         </form>

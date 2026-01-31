@@ -5,10 +5,12 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 // Import translations directly for bundling
 import en from './locales/en';
 import de from './locales/de';
+import ja from './locales/ja';
 
 const resources = {
   en: { translation: en },
   de: { translation: de },
+  ja: { translation: ja },
 };
 
 i18n
@@ -17,7 +19,7 @@ i18n
   .init({
     resources,
     fallbackLng: 'en',
-    supportedLngs: ['en', 'de'],
+    supportedLngs: ['en', 'de', 'ja'],
 
     detection: {
       // Order of detection methods
@@ -43,4 +45,5 @@ export default i18n;
 export const availableLanguages = [
   { code: 'en', name: 'English', nativeName: 'English' },
   { code: 'de', name: 'German', nativeName: 'Deutsch' },
+  { code: 'ja', name: 'Japanese', nativeName: '日本語' },
 ];

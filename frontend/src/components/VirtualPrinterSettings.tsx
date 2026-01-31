@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Check, AlertTriangle, Printer, Eye, EyeOff, Info, ChevronDown, ExternalLink } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { virtualPrinterApi } from '../api/client';
 import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 
 export function VirtualPrinterSettings() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
@@ -50,11 +52,11 @@ export function VirtualPrinterSettings() {
       virtualPrinterApi.updateSettings(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['virtual-printer-settings'] });
-      showToast('Virtual printer settings updated');
+      showToast(t('settings.virtualPrinterUpdated'));
       setPendingAction(null);
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Failed to update settings', 'error');
+      showToast(error.message || t('settings.saveFailed'), 'error');
       // Revert local state on error
       if (settings) {
         setLocalEnabled(settings.enabled);
@@ -72,7 +74,7 @@ export function VirtualPrinterSettings() {
 
     // If enabling, must have access code
     if (newEnabled && !localAccessCode && !settings?.access_code_set) {
-      showToast('Please set an access code first', 'error');
+      showToast(t('settings.vp.accessCodeRequired'), 'error');
       return;
     }
 
@@ -87,12 +89,12 @@ export function VirtualPrinterSettings() {
 
   const handleAccessCodeChange = () => {
     if (!localAccessCode) {
-      showToast('Access code cannot be empty', 'error');
+      showToast(t('settings.vp.accessCodeEmpty'), 'error');
       return;
     }
 
     if (localAccessCode.length !== 8) {
-      showToast('Access code must be exactly 8 characters', 'error');
+      showToast(t('settings.vp.accessCodeLength'), 'error');
       return;
     }
 
@@ -137,28 +139,27 @@ export function VirtualPrinterSettings() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Printer className="w-5 h-5 text-bambu-green" />
-              <h2 className="text-lg font-semibold text-white">Virtual Printer</h2>
+              <h2 className="text-lg font-semibold text-white">{t('settings.vp.title')}</h2>
             </div>
             {status && (
               <div className={`flex items-center gap-2 text-sm ${isRunning ? 'text-green-400' : 'text-bambu-gray'}`}>
                 <span className={`w-2 h-2 rounded-full ${isRunning ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`} />
-                {isRunning ? 'Running' : 'Stopped'}
+                {isRunning ? t('settings.vp.running') : t('settings.vp.stopped')}
               </div>
             )}
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-bambu-gray">
-            Enable a virtual printer that appears in Bambu Studio and OrcaSlicer. Files sent to this printer
-            will be archived directly without printing.
+            {t('settings.vp.description')}
           </p>
 
           {/* Enable/Disable Toggle */}
           <div className="flex items-center justify-between py-3 border-t border-bambu-dark-tertiary">
             <div>
-              <div className="text-white font-medium">Enable Virtual Printer</div>
+              <div className="text-white font-medium">{t('settings.vp.enable')}</div>
               <div className="text-sm text-bambu-gray">
-                {isRunning ? 'Visible as "Bambuddy" in slicer discovery' : 'Not visible to slicers'}
+                {isRunning ? t('settings.vp.visibleInSlicer') : t('settings.vp.notVisible')}
               </div>
             </div>
             <button
@@ -178,9 +179,9 @@ export function VirtualPrinterSettings() {
 
           {/* Printer Model */}
           <div className="py-3 border-t border-bambu-dark-tertiary">
-            <div className="text-white font-medium mb-2">Printer Model</div>
+            <div className="text-white font-medium mb-2">{t('settings.vp.printerModel')}</div>
             <div className="text-sm text-bambu-gray mb-3">
-              Select which printer model to emulate.
+              {t('settings.vp.printerModelDescription')}
             </div>
             <div className="relative">
               <select
@@ -202,24 +203,24 @@ export function VirtualPrinterSettings() {
             {localEnabled && isRunning && (
               <p className="text-xs text-bambu-gray mt-2">
                 <Info className="w-3 h-3 inline mr-1" />
-                Changing the model will restart the virtual printer
+                {t('settings.vp.modelRestartWarning')}
               </p>
             )}
           </div>
 
           {/* Access Code */}
           <div className="py-3 border-t border-bambu-dark-tertiary">
-            <div className="text-white font-medium mb-2">Access Code</div>
+            <div className="text-white font-medium mb-2">{t('settings.vp.accessCode')}</div>
             <div className="text-sm text-bambu-gray mb-3">
               {settings?.access_code_set ? (
                 <span className="flex items-center gap-1 text-green-400">
                   <Check className="w-4 h-4" />
-                  Access code is set
+                  {t('settings.vp.accessCodeSet')}
                 </span>
               ) : (
                 <span className="flex items-center gap-1 text-yellow-400">
                   <AlertTriangle className="w-4 h-4" />
-                  No access code set - required to enable
+                  {t('settings.vp.noAccessCode')}
                 </span>
               )}
             </div>
@@ -229,7 +230,7 @@ export function VirtualPrinterSettings() {
                   type={showAccessCode ? 'text' : 'password'}
                   value={localAccessCode}
                   onChange={(e) => setLocalAccessCode(e.target.value)}
-                  placeholder={settings?.access_code_set ? 'Enter new code to change' : 'Enter 8-char code'}
+                  placeholder={settings?.access_code_set ? t('settings.enterNewCodeToChange') : t('settings.enter8CharCode')}
                   maxLength={8}
                   className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-md px-3 py-2 text-white placeholder-bambu-gray pr-10 font-mono"
                 />
@@ -245,11 +246,11 @@ export function VirtualPrinterSettings() {
                 disabled={!localAccessCode || pendingAction === 'accessCode'}
                 variant="primary"
               >
-                {pendingAction === 'accessCode' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save'}
+                {pendingAction === 'accessCode' ? <Loader2 className="w-4 h-4 animate-spin" /> : t('common.save')}
               </Button>
             </div>
             <p className="text-xs text-bambu-gray mt-2">
-              Must be exactly 8 characters. Used by slicers to authenticate.
+              {t('settings.vp.accessCodeHint')}
               {localAccessCode && (
                 <span className={localAccessCode.length === 8 ? 'text-green-400' : 'text-yellow-400'}>
                   {' '}({localAccessCode.length}/8)
@@ -260,7 +261,7 @@ export function VirtualPrinterSettings() {
 
           {/* Mode */}
           <div className="py-3 border-t border-bambu-dark-tertiary">
-            <div className="text-white font-medium mb-2">Mode</div>
+            <div className="text-white font-medium mb-2">{t('settings.vp.mode')}</div>
             <div className="grid grid-cols-3 gap-3">
               <button
                 onClick={() => handleModeChange('immediate')}
@@ -271,8 +272,8 @@ export function VirtualPrinterSettings() {
                     : 'border-bambu-dark-tertiary hover:border-bambu-gray'
                 }`}
               >
-                <div className="text-white font-medium">Archive</div>
-                <div className="text-xs text-bambu-gray">Archive files immediately</div>
+                <div className="text-white font-medium">{t('settings.vp.modeArchive')}</div>
+                <div className="text-xs text-bambu-gray">{t('settings.vp.modeArchiveDesc')}</div>
               </button>
               <button
                 onClick={() => handleModeChange('review')}
@@ -283,8 +284,8 @@ export function VirtualPrinterSettings() {
                     : 'border-bambu-dark-tertiary hover:border-bambu-gray'
                 }`}
               >
-                <div className="text-white font-medium">Review</div>
-                <div className="text-xs text-bambu-gray">Review and tag before archiving</div>
+                <div className="text-white font-medium">{t('settings.vp.modeReview')}</div>
+                <div className="text-xs text-bambu-gray">{t('settings.vp.modeReviewDesc')}</div>
               </button>
               <button
                 onClick={() => handleModeChange('print_queue')}
@@ -295,8 +296,8 @@ export function VirtualPrinterSettings() {
                     : 'border-bambu-dark-tertiary hover:border-bambu-gray'
                 }`}
               >
-                <div className="text-white font-medium">Queue</div>
-                <div className="text-xs text-bambu-gray">Archive and add to print queue</div>
+                <div className="text-white font-medium">{t('settings.vp.modeQueue')}</div>
+                <div className="text-xs text-bambu-gray">{t('settings.vp.modeQueueDesc')}</div>
               </button>
             </div>
           </div>
@@ -313,11 +314,10 @@ export function VirtualPrinterSettings() {
               <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />
               <div className="text-sm">
                 <p className="text-white font-medium mb-2">
-                  Setup Required
+                  {t('settings.vp.setupRequired')}
                 </p>
                 <p className="text-bambu-gray mb-3">
-                  The virtual printer feature requires additional system configuration before it will work.
-                  This includes port forwarding, firewall rules, and platform-specific settings.
+                  {t('settings.vp.setupDescription')}
                 </p>
                 <a
                   href="https://wiki.bambuddy.cool/features/virtual-printer/"
@@ -326,7 +326,7 @@ export function VirtualPrinterSettings() {
                   className="inline-flex items-center gap-2 px-4 py-2 bg-yellow-500/20 border border-yellow-500/50 rounded-md text-yellow-400 hover:bg-yellow-500/30 transition-colors"
                 >
                   <ExternalLink className="w-4 h-4" />
-                  Read the setup guide before enabling
+                  {t('settings.vp.readSetupGuide')}
                 </a>
               </div>
             </div>
@@ -340,15 +340,15 @@ export function VirtualPrinterSettings() {
               <Info className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
               <div className="text-sm text-bambu-gray">
                 <p className="mb-2">
-                  <strong className="text-white">How it works:</strong>
+                  <strong className="text-white">{t('settings.vp.howItWorks')}</strong>
                 </p>
                 <ol className="list-decimal list-inside space-y-1">
-                  <li>Complete the setup guide for your platform</li>
-                  <li>Enable the virtual printer and set an access code</li>
-                  <li>In Bambu Studio or OrcaSlicer, go to "Add Printer"</li>
-                  <li>The "Bambuddy" printer should appear in the discovery list</li>
-                  <li>Connect using the access code you set</li>
-                  <li>When you "print" to Bambuddy, the 3MF file is archived instead</li>
+                  <li>{t('settings.vp.step1')}</li>
+                  <li>{t('settings.vp.step2')}</li>
+                  <li>{t('settings.vp.step3')}</li>
+                  <li>{t('settings.vp.step4')}</li>
+                  <li>{t('settings.vp.step5')}</li>
+                  <li>{t('settings.vp.step6')}</li>
                 </ol>
               </div>
             </div>
@@ -359,28 +359,28 @@ export function VirtualPrinterSettings() {
         {status && isRunning && (
           <Card>
             <CardHeader>
-              <h3 className="text-md font-semibold text-white">Status Details</h3>
+              <h3 className="text-md font-semibold text-white">{t('settings.vp.statusDetails')}</h3>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <div className="text-bambu-gray">Printer Name</div>
+                  <div className="text-bambu-gray">{t('settings.vp.printerName')}</div>
                   <div className="text-white">{status.name}</div>
                 </div>
                 <div>
-                  <div className="text-bambu-gray">Model</div>
+                  <div className="text-bambu-gray">{t('settings.vp.model')}</div>
                   <div className="text-white">{status.model_name || status.model}</div>
                 </div>
                 <div>
-                  <div className="text-bambu-gray">Serial Number</div>
+                  <div className="text-bambu-gray">{t('settings.vp.serialNumber')}</div>
                   <div className="text-white font-mono">{status.serial}</div>
                 </div>
                 <div>
-                  <div className="text-bambu-gray">Mode</div>
+                  <div className="text-bambu-gray">{t('settings.vp.mode')}</div>
                   <div className="text-white capitalize">{status.mode}</div>
                 </div>
                 <div>
-                  <div className="text-bambu-gray">Pending Files</div>
+                  <div className="text-bambu-gray">{t('settings.vp.pendingFiles')}</div>
                   <div className="text-white">{status.pending_files}</div>
                 </div>
               </div>

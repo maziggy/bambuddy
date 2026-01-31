@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plug, Power, PowerOff, Loader2, Wifi, WifiOff, Zap } from 'lucide-react';
 import { api } from '../api/client';
@@ -10,6 +11,7 @@ interface SwitchbarPopoverProps {
 }
 
 function SwitchItem({ plug }: { plug: SmartPlug }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [confirmAction, setConfirmAction] = useState<'on' | 'off' | null>(null);
 
@@ -82,7 +84,7 @@ function SwitchItem({ plug }: { plug: SmartPlug }) {
                 ? 'bg-bambu-green text-white'
                 : 'bg-bambu-dark text-bambu-gray hover:text-white'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
-            title="Turn On"
+            title={t('common.turnOn')}
           >
             {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Power className="w-4 h-4" />}
           </button>
@@ -94,7 +96,7 @@ function SwitchItem({ plug }: { plug: SmartPlug }) {
                 ? 'bg-bambu-dark-tertiary text-white'
                 : 'bg-bambu-dark text-bambu-gray hover:text-white'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
-            title="Turn Off"
+            title={t('common.turnOff')}
           >
             {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <PowerOff className="w-4 h-4" />}
           </button>
@@ -105,7 +107,7 @@ function SwitchItem({ plug }: { plug: SmartPlug }) {
         <ConfirmModal
           title={`Turn ${confirmAction === 'on' ? 'On' : 'Off'} Smart Plug`}
           message={`Are you sure you want to turn ${confirmAction === 'on' ? 'on' : 'off'} "${plug.name}"?`}
-          confirmText={confirmAction === 'on' ? 'Turn On' : 'Turn Off'}
+          confirmText={confirmAction === 'on' ? t('common.turnOn') : t('common.turnOff')}
           variant={confirmAction === 'off' ? 'warning' : 'default'}
           onConfirm={handleConfirm}
           onCancel={() => setConfirmAction(null)}

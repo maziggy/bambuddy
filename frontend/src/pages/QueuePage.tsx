@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import {
   DndContext,
@@ -59,29 +60,30 @@ function formatDuration(seconds: number | null | undefined): string {
   return `${minutes}m`;
 }
 
-function formatRelativeTime(dateString: string | null, timeFormat: TimeFormat = 'system'): string {
-  if (!dateString) return 'ASAP';
+function formatRelativeTime(dateString: string | null, timeFormat: TimeFormat = 'system', t?: (key: string, options?: Record<string, unknown>) => string): string {
+  if (!dateString) return t ? t('printerQueue.asap') : 'ASAP';
   const date = parseUTCDate(dateString);
-  if (!date) return 'ASAP';
+  if (!date) return t ? t('printerQueue.asap') : 'ASAP';
   const now = new Date();
   const diff = date.getTime() - now.getTime();
 
-  if (diff < -60000) return 'Overdue';
-  if (diff < 0) return 'Now';
-  if (diff < 60000) return 'In less than a minute';
-  if (diff < 3600000) return `In ${Math.round(diff / 60000)} min`;
-  if (diff < 86400000) return `In ${Math.round(diff / 3600000)} hours`;
+  if (diff < -60000) return t ? t('queue.overdue') : 'Overdue';
+  if (diff < 0) return t ? t('printerQueue.now') : 'Now';
+  if (diff < 60000) return t ? t('printerQueue.inLessThanMin') : 'In less than a minute';
+  if (diff < 3600000) return t ? t('printerQueue.inMinutes', { count: Math.round(diff / 60000) }) : `In ${Math.round(diff / 60000)} min`;
+  if (diff < 86400000) return t ? t('printerQueue.inHours', { count: Math.round(diff / 3600000) }) : `In ${Math.round(diff / 3600000)} hours`;
   return formatDateTime(dateString, timeFormat);
 }
 
 function StatusBadge({ status }: { status: PrintQueueItem['status'] }) {
+  const { t } = useTranslation();
   const config = {
-    pending: { icon: Clock, color: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20', label: 'Pending' },
-    printing: { icon: Play, color: 'text-blue-400 bg-blue-400/10 border-blue-400/20', label: 'Printing' },
-    completed: { icon: CheckCircle, color: 'text-green-400 bg-green-400/10 border-green-400/20', label: 'Completed' },
-    failed: { icon: XCircle, color: 'text-red-400 bg-red-400/10 border-red-400/20', label: 'Failed' },
-    skipped: { icon: SkipForward, color: 'text-orange-400 bg-orange-400/10 border-orange-400/20', label: 'Skipped' },
-    cancelled: { icon: X, color: 'text-gray-400 bg-gray-400/10 border-gray-400/20', label: 'Cancelled' },
+    pending: { icon: Clock, color: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20', label: t('queue.status.pending') },
+    printing: { icon: Play, color: 'text-blue-400 bg-blue-400/10 border-blue-400/20', label: t('queue.status.printing') },
+    completed: { icon: CheckCircle, color: 'text-green-400 bg-green-400/10 border-green-400/20', label: t('queue.status.completed') },
+    failed: { icon: XCircle, color: 'text-red-400 bg-red-400/10 border-red-400/20', label: t('queue.status.failed') },
+    skipped: { icon: SkipForward, color: 'text-orange-400 bg-orange-400/10 border-orange-400/20', label: t('queue.status.skipped') },
+    cancelled: { icon: X, color: 'text-gray-400 bg-gray-400/10 border-gray-400/20', label: t('queue.status.cancelled') },
   };
 
   const { icon: Icon, color, label } = config[status];
@@ -116,6 +118,7 @@ function SortableQueueItem({
   onStart: () => void;
   timeFormat?: TimeFormat;
 }) {
+  const { t } = useTranslation();
   const {
     attributes,
     listeners,
@@ -194,7 +197,7 @@ function SortableQueueItem({
               <Link
                 to={`/archives?highlight=${item.archive_id}`}
                 className="text-bambu-gray hover:text-bambu-green transition-colors flex-shrink-0"
-                title="View archive"
+                title={t('queue.viewArchive')}
               >
                 <ExternalLink className="w-3.5 h-3.5" />
               </Link>
@@ -202,7 +205,7 @@ function SortableQueueItem({
               <Link
                 to={`/library?highlight=${item.library_file_id}`}
                 className="text-bambu-gray hover:text-bambu-green transition-colors flex-shrink-0"
-                title="View in File Manager"
+                title={t('queue.viewInFileManager')}
               >
                 <ExternalLink className="w-3.5 h-3.5" />
               </Link>
@@ -212,7 +215,7 @@ function SortableQueueItem({
           <div className="flex items-center gap-3 text-sm text-bambu-gray">
             <span className={`flex items-center gap-1.5 ${item.printer_id === null ? 'text-orange-400' : ''}`}>
               <Printer className="w-3.5 h-3.5" />
-              {item.printer_id === null ? 'Unassigned' : (item.printer_name || `Printer #${item.printer_id}`)}
+              {item.printer_id === null ? t('queue.unassigned') : (item.printer_name || t('queue.printerNumber', { id: item.printer_id }))}
             </span>
             {item.print_time_seconds && (
               <span className="flex items-center gap-1.5">
@@ -223,7 +226,7 @@ function SortableQueueItem({
             {isPending && !item.manual_start && (
               <span className="flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5" />
-                {formatRelativeTime(item.scheduled_time, timeFormat)}
+                {formatRelativeTime(item.scheduled_time, timeFormat, t)}
               </span>
             )}
           </div>
@@ -233,18 +236,18 @@ function SortableQueueItem({
             {item.manual_start && (
               <span className="text-xs px-2 py-0.5 bg-purple-500/10 text-purple-400 rounded-full border border-purple-500/20 flex items-center gap-1">
                 <Hand className="w-3 h-3" />
-                Staged
+                {t('queue.staged')}
               </span>
             )}
             {item.require_previous_success && (
               <span className="text-xs px-2 py-0.5 bg-orange-500/10 text-orange-400 rounded-full border border-orange-500/20">
-                Requires previous success
+                {t('queue.requiresPreviousSuccess')}
               </span>
             )}
             {item.auto_off_after && (
               <span className="text-xs px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded-full border border-blue-500/20 flex items-center gap-1">
                 <Power className="w-3 h-3" />
-                Auto power off
+                {t('queue.autoPowerOff')}
               </span>
             )}
           </div>
@@ -255,7 +258,7 @@ function SortableQueueItem({
               <div className="h-2 bg-bambu-dark rounded-full overflow-hidden">
                 <div className="h-full bg-gradient-to-r from-blue-500 to-blue-400 animate-pulse w-full opacity-50" />
               </div>
-              <p className="text-xs text-bambu-gray mt-1">Printing in progress...</p>
+              <p className="text-xs text-bambu-gray mt-1">{t('queue.printingInProgress')}</p>
             </div>
           )}
 
@@ -278,7 +281,7 @@ function SortableQueueItem({
               variant="ghost"
               size="sm"
               onClick={onStop}
-              title="Stop Print"
+              title={t('queue.stopPrint')}
               className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
             >
               <StopCircle className="w-4 h-4" />
@@ -291,7 +294,7 @@ function SortableQueueItem({
                   variant="ghost"
                   size="sm"
                   onClick={onStart}
-                  title="Start Print"
+                  title={t('queue.startPrint')}
                   className="text-bambu-green hover:text-bambu-green-light hover:bg-bambu-green/10"
                 >
                   <Play className="w-4 h-4" />
@@ -301,7 +304,7 @@ function SortableQueueItem({
                 variant="ghost"
                 size="sm"
                 onClick={onEdit}
-                title="Edit"
+                title={t('common.edit')}
               >
                 <Pencil className="w-4 h-4" />
               </Button>
@@ -309,7 +312,7 @@ function SortableQueueItem({
                 variant="ghost"
                 size="sm"
                 onClick={onCancel}
-                title="Cancel"
+                title={t('common.cancel')}
                 className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
               >
                 <X className="w-4 h-4" />
@@ -322,7 +325,7 @@ function SortableQueueItem({
                 variant="ghost"
                 size="sm"
                 onClick={onRequeue}
-                title="Re-queue"
+                title={t('queue.requeue')}
                 className="text-bambu-green hover:text-bambu-green/80 hover:bg-bambu-green/10"
               >
                 <RefreshCw className="w-4 h-4" />
@@ -331,7 +334,7 @@ function SortableQueueItem({
                 variant="ghost"
                 size="sm"
                 onClick={onRemove}
-                title="Remove"
+                title={t('queue.remove')}
               >
                 <Trash2 className="w-4 h-4" />
               </Button>
@@ -344,6 +347,7 @@ function SortableQueueItem({
 }
 
 export function QueuePage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [filterPrinter, setFilterPrinter] = useState<number | null>(null);
@@ -416,36 +420,36 @@ export function QueuePage() {
     mutationFn: (id: number) => api.cancelQueueItem(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
-      showToast('Queue item cancelled');
+      showToast(t('queue.toast.itemCancelled'));
     },
-    onError: () => showToast('Failed to cancel item', 'error'),
+    onError: () => showToast(t('queue.toast.failedToCancel'), 'error'),
   });
 
   const removeMutation = useMutation({
     mutationFn: (id: number) => api.removeFromQueue(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
-      showToast('Queue item removed');
+      showToast(t('queue.toast.itemRemoved'));
     },
-    onError: () => showToast('Failed to remove item', 'error'),
+    onError: () => showToast(t('queue.toast.failedToRemove'), 'error'),
   });
 
   const stopMutation = useMutation({
     mutationFn: (id: number) => api.stopQueueItem(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
-      showToast('Print stopped');
+      showToast(t('queue.toast.printStopped'));
     },
-    onError: () => showToast('Failed to stop print', 'error'),
+    onError: () => showToast(t('queue.toast.failedToStop'), 'error'),
   });
 
   const startMutation = useMutation({
     mutationFn: (id: number) => api.startQueueItem(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
-      showToast('Print released to queue');
+      showToast(t('queue.toast.printReleased'));
     },
-    onError: () => showToast('Failed to start print', 'error'),
+    onError: () => showToast(t('queue.toast.failedToStart'), 'error'),
   });
 
   const reorderMutation = useMutation({
@@ -453,7 +457,7 @@ export function QueuePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
     },
-    onError: () => showToast('Failed to reorder queue', 'error'),
+    onError: () => showToast(t('queue.toast.failedToReorder'), 'error'),
   });
 
   const clearHistoryMutation = useMutation({
@@ -468,9 +472,9 @@ export function QueuePage() {
     },
     onSuccess: (count) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
-      showToast(`Cleared ${count} history item${count !== 1 ? 's' : ''}`);
+      showToast(t('queue.toast.clearedHistory', { count }));
     },
-    onError: () => showToast('Failed to clear history', 'error'),
+    onError: () => showToast(t('queue.toast.failedToClear'), 'error'),
   });
 
   const pendingItems = useMemo(() => {
@@ -550,9 +554,9 @@ export function QueuePage() {
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
             <ListOrdered className="w-7 h-7 text-bambu-green" />
-            Print Queue
+            {t('queue.title')}
           </h1>
-          <p className="text-bambu-gray mt-1">Schedule and manage your print jobs</p>
+          <p className="text-bambu-gray mt-1">{t('queue.description')}</p>
         </div>
       </div>
 
@@ -566,7 +570,7 @@ export function QueuePage() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-white">{activeItems.length}</p>
-                <p className="text-sm text-bambu-gray">Printing</p>
+                <p className="text-sm text-bambu-gray">{t('queue.summary.printing')}</p>
               </div>
             </div>
           </CardContent>
@@ -580,7 +584,7 @@ export function QueuePage() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-white">{pendingItems.length}</p>
-                <p className="text-sm text-bambu-gray">Queued</p>
+                <p className="text-sm text-bambu-gray">{t('queue.summary.queued')}</p>
               </div>
             </div>
           </CardContent>
@@ -594,7 +598,7 @@ export function QueuePage() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-white">{formatDuration(totalQueueTime)}</p>
-                <p className="text-sm text-bambu-gray">Total Queue Time</p>
+                <p className="text-sm text-bambu-gray">{t('queue.summary.totalQueueTime')}</p>
               </div>
             </div>
           </CardContent>
@@ -608,7 +612,7 @@ export function QueuePage() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-white">{historyItems.length}</p>
-                <p className="text-sm text-bambu-gray">History</p>
+                <p className="text-sm text-bambu-gray">{t('queue.summary.history')}</p>
               </div>
             </div>
           </CardContent>
@@ -627,8 +631,8 @@ export function QueuePage() {
             else setFilterPrinter(Number(val));
           }}
         >
-          <option value="">All Printers</option>
-          <option value="unassigned">Unassigned</option>
+          <option value="">{t('queue.filters.allPrinters')}</option>
+          <option value="unassigned">{t('queue.unassigned')}</option>
           {printers?.map((p) => (
             <option key={p.id} value={p.id}>{p.name}</option>
           ))}
@@ -639,13 +643,13 @@ export function QueuePage() {
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
         >
-          <option value="">All Status</option>
-          <option value="pending">Pending</option>
-          <option value="printing">Printing</option>
-          <option value="completed">Completed</option>
-          <option value="failed">Failed</option>
-          <option value="skipped">Skipped</option>
-          <option value="cancelled">Cancelled</option>
+          <option value="">{t('queue.filters.allStatus')}</option>
+          <option value="pending">{t('queue.status.pending')}</option>
+          <option value="printing">{t('queue.status.printing')}</option>
+          <option value="completed">{t('queue.status.completed')}</option>
+          <option value="failed">{t('queue.status.failed')}</option>
+          <option value="skipped">{t('queue.status.skipped')}</option>
+          <option value="cancelled">{t('queue.status.cancelled')}</option>
         </select>
 
         <div className="flex-1" />
@@ -657,20 +661,19 @@ export function QueuePage() {
             onClick={() => setShowClearHistoryConfirm(true)}
           >
             <Trash2 className="w-4 h-4" />
-            Clear History
+            {t('queue.clearHistory')}
           </Button>
         )}
       </div>
 
       {isLoading ? (
-        <div className="text-center py-12 text-bambu-gray">Loading...</div>
+        <div className="text-center py-12 text-bambu-gray">{t('common.loading')}</div>
       ) : queue?.length === 0 ? (
         <Card className="p-12 text-center border-dashed">
           <Calendar className="w-16 h-16 text-bambu-gray mx-auto mb-4 opacity-50" />
-          <h3 className="text-xl font-medium text-white mb-2">No prints scheduled</h3>
+          <h3 className="text-xl font-medium text-white mb-2">{t('queue.empty.title')}</h3>
           <p className="text-bambu-gray max-w-md mx-auto">
-            Schedule a print from the Archives page using the "Schedule" option in the context menu,
-            or drag and drop files to get started.
+            {t('queue.empty.description')}
           </p>
         </Card>
       ) : (
@@ -680,7 +683,7 @@ export function QueuePage() {
             <div>
               <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-                Currently Printing
+                {t('queue.currentlyPrinting')}
               </h2>
               <div className="space-y-3">
                 {activeItems.map((item) => (
@@ -706,12 +709,12 @@ export function QueuePage() {
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                   <Clock className="w-5 h-5 text-yellow-400" />
-                  Queued
+                  {t('queue.summary.queued')}
                   <span className="text-sm font-normal text-bambu-gray">
-                    ({pendingItems.length} item{pendingItems.length !== 1 ? 's' : ''})
+                    ({t('queue.itemCount', { count: pendingItems.length })})
                   </span>
-                  <span className="text-xs text-bambu-gray ml-2" title="Position only affects ASAP items. Scheduled items run at their set time.">
-                    Drag to reorder (ASAP only)
+                  <span className="text-xs text-bambu-gray ml-2" title={t('queue.dragReorderTooltip')}>
+                    {t('queue.dragToReorder')}
                   </span>
                 </h2>
                 <div className="flex items-center gap-2">
@@ -720,16 +723,16 @@ export function QueuePage() {
                     value={pendingSortBy}
                     onChange={(e) => setPendingSortBy(e.target.value as 'position' | 'name' | 'printer' | 'time')}
                   >
-                    <option value="position">Sort by Position</option>
-                    <option value="name">Sort by Name</option>
-                    <option value="printer">Sort by Printer</option>
-                    <option value="time">Sort by Schedule</option>
+                    <option value="position">{t('queue.sort.byPosition')}</option>
+                    <option value="name">{t('queue.sort.byName')}</option>
+                    <option value="printer">{t('queue.sort.byPrinter')}</option>
+                    <option value="time">{t('queue.sort.bySchedule')}</option>
                   </select>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => setPendingSortAsc(!pendingSortAsc)}
-                    title={pendingSortAsc ? 'Ascending' : 'Descending'}
+                    title={pendingSortAsc ? t('queue.sort.ascending') : t('queue.sort.descending')}
                     className="px-2"
                   >
                     {pendingSortAsc ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
@@ -772,9 +775,9 @@ export function QueuePage() {
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                   <CheckCircle className="w-5 h-5 text-bambu-gray" />
-                  History
+                  {t('queue.summary.history')}
                   <span className="text-sm font-normal text-bambu-gray">
-                    ({historyItems.length} item{historyItems.length !== 1 ? 's' : ''})
+                    ({t('queue.itemCount', { count: historyItems.length })})
                   </span>
                 </h2>
                 <div className="flex items-center gap-2">
@@ -783,15 +786,15 @@ export function QueuePage() {
                     value={historySortBy}
                     onChange={(e) => setHistorySortBy(e.target.value as 'date' | 'name' | 'printer')}
                   >
-                    <option value="date">Sort by Date</option>
-                    <option value="name">Sort by Name</option>
-                    <option value="printer">Sort by Printer</option>
+                    <option value="date">{t('queue.sort.byDate')}</option>
+                    <option value="name">{t('queue.sort.byName')}</option>
+                    <option value="printer">{t('queue.sort.byPrinter')}</option>
                   </select>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => setHistorySortAsc(!historySortAsc)}
-                    title={historySortAsc ? 'Ascending (oldest first)' : 'Descending (newest first)'}
+                    title={historySortAsc ? t('queue.sort.ascendingOldest') : t('queue.sort.descendingNewest')}
                     className="px-2"
                   >
                     {historySortAsc ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
@@ -846,21 +849,21 @@ export function QueuePage() {
       {confirmAction && (
         <ConfirmModal
           title={
-            confirmAction.type === 'cancel' ? 'Cancel Scheduled Print' :
-            confirmAction.type === 'stop' ? 'Stop Print' :
-            'Remove from History'
+            confirmAction.type === 'cancel' ? t('queue.confirm.cancelTitle') :
+            confirmAction.type === 'stop' ? t('queue.confirm.stopTitle') :
+            t('queue.confirm.removeTitle')
           }
           message={
             confirmAction.type === 'cancel'
-              ? `Are you sure you want to cancel "${confirmAction.item.archive_name || confirmAction.item.library_file_name || 'this print'}"?`
+              ? t('queue.confirm.cancelMessage', { name: confirmAction.item.archive_name || confirmAction.item.library_file_name || t('queue.confirm.thisPrint') })
               : confirmAction.type === 'stop'
-              ? `Are you sure you want to stop the current print "${confirmAction.item.archive_name || confirmAction.item.library_file_name || 'this print'}"? This will cancel the print job on the printer.`
-              : `Are you sure you want to remove "${confirmAction.item.archive_name || confirmAction.item.library_file_name || 'this item'}" from the queue history?`
+              ? t('queue.confirm.stopMessage', { name: confirmAction.item.archive_name || confirmAction.item.library_file_name || t('queue.confirm.thisPrint') })
+              : t('queue.confirm.removeMessage', { name: confirmAction.item.archive_name || confirmAction.item.library_file_name || t('queue.confirm.thisItem') })
           }
           confirmText={
-            confirmAction.type === 'cancel' ? 'Cancel Print' :
-            confirmAction.type === 'stop' ? 'Stop Print' :
-            'Remove'
+            confirmAction.type === 'cancel' ? t('queue.confirm.cancelButton') :
+            confirmAction.type === 'stop' ? t('queue.confirm.stopButton') :
+            t('queue.remove')
           }
           variant="danger"
           onConfirm={() => {
@@ -880,9 +883,9 @@ export function QueuePage() {
       {/* Clear History Confirm Modal */}
       {showClearHistoryConfirm && (
         <ConfirmModal
-          title="Clear History"
-          message={`Are you sure you want to remove all ${historyItems.length} item${historyItems.length !== 1 ? 's' : ''} from the history?`}
-          confirmText="Clear History"
+          title={t('queue.clearHistory')}
+          message={t('queue.confirm.clearHistoryMessage', { count: historyItems.length })}
+          confirmText={t('queue.clearHistory')}
           variant="danger"
           onConfirm={() => {
             clearHistoryMutation.mutate();

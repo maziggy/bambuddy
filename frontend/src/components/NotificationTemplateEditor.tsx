@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { X, Save, Loader2, RotateCcw, Plus, Eye } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { NotificationTemplate, NotificationTemplateUpdate } from '../api/client';
 import { Button } from './Button';
@@ -11,6 +12,7 @@ interface NotificationTemplateEditorProps {
 }
 
 export function NotificationTemplateEditor({ template, onClose }: NotificationTemplateEditorProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const bodyRef = useRef<HTMLTextAreaElement>(null);
 
@@ -78,11 +80,11 @@ export function NotificationTemplateEditor({ template, onClose }: NotificationTe
     setError(null);
 
     if (!titleTemplate.trim()) {
-      setError('Title is required');
+      setError(t('settings.templateTitleRequired'));
       return;
     }
     if (!bodyTemplate.trim()) {
-      setError('Body is required');
+      setError(t('settings.templateBodyRequired'));
       return;
     }
 
@@ -121,7 +123,7 @@ export function NotificationTemplateEditor({ template, onClose }: NotificationTe
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary shrink-0">
           <h2 className="text-lg font-semibold text-white">
-            Edit Template: {template.name}
+            {t('settings.editTemplate', { name: t(`notificationLog.events.${template.event_type}`, { defaultValue: template.name }) })}
           </h2>
           <button
             onClick={onClose}
@@ -142,21 +144,21 @@ export function NotificationTemplateEditor({ template, onClose }: NotificationTe
           {/* Title */}
           <div>
             <label className="block text-sm font-medium text-bambu-gray mb-1">
-              Title
+              {t('settings.templateTitle')}
             </label>
             <input
               type="text"
               value={titleTemplate}
               onChange={(e) => setTitleTemplate(e.target.value)}
               className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white focus:outline-none focus:ring-1 focus:ring-bambu-green"
-              placeholder="Notification title..."
+              placeholder={t('settings.notificationTitlePlaceholder')}
             />
           </div>
 
           {/* Body */}
           <div>
             <label className="block text-sm font-medium text-bambu-gray mb-1">
-              Body
+              {t('settings.templateBody')}
             </label>
             <textarea
               ref={bodyRef}
@@ -164,7 +166,7 @@ export function NotificationTemplateEditor({ template, onClose }: NotificationTe
               onChange={(e) => setBodyTemplate(e.target.value)}
               rows={4}
               className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white focus:outline-none focus:ring-1 focus:ring-bambu-green font-mono text-sm resize-none"
-              placeholder="Notification body..."
+              placeholder={t('settings.notificationBodyPlaceholder')}
             />
           </div>
 
@@ -172,7 +174,7 @@ export function NotificationTemplateEditor({ template, onClose }: NotificationTe
           {eventVariables && (
             <div>
               <label className="block text-sm font-medium text-bambu-gray mb-2">
-                Available Variables
+                {t('settings.availableVariables')}
               </label>
               <div className="flex flex-wrap gap-2">
                 {eventVariables.variables.map((variable) => (
@@ -188,7 +190,7 @@ export function NotificationTemplateEditor({ template, onClose }: NotificationTe
                 ))}
               </div>
               <p className="text-xs text-bambu-gray/60 mt-1">
-                Click to insert at cursor position in body
+                {t('settings.insertVariableHint')}
               </p>
             </div>
           )}
@@ -198,14 +200,14 @@ export function NotificationTemplateEditor({ template, onClose }: NotificationTe
             <div className="flex items-center justify-between mb-2">
               <label className="text-sm font-medium text-bambu-gray flex items-center gap-2">
                 <Eye className="w-4 h-4" />
-                Live Preview
+                {t('settings.livePreview')}
               </label>
               <button
                 type="button"
                 onClick={() => setShowPreview(!showPreview)}
                 className="text-xs text-bambu-green hover:text-bambu-green-light"
               >
-                {showPreview ? 'Hide' : 'Show'}
+                {showPreview ? t('common.hide') : t('common.show')}
               </button>
             </div>
             {showPreview && (
@@ -213,22 +215,22 @@ export function NotificationTemplateEditor({ template, onClose }: NotificationTe
                 {previewLoading ? (
                   <div className="flex items-center gap-2 text-bambu-gray text-sm">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Loading preview...
+                    {t('settings.loadingPreview')}
                   </div>
                 ) : preview ? (
                   <>
                     <div>
-                      <span className="text-xs text-bambu-gray">Title:</span>
+                      <span className="text-xs text-bambu-gray">{t('settings.previewTitle')}</span>
                       <div className="text-white font-medium">{preview.title}</div>
                     </div>
                     <div>
-                      <span className="text-xs text-bambu-gray">Body:</span>
+                      <span className="text-xs text-bambu-gray">{t('settings.previewBody')}</span>
                       <div className="text-white whitespace-pre-wrap text-sm">{preview.body}</div>
                     </div>
                   </>
                 ) : (
                   <div className="text-bambu-gray text-sm">
-                    Enter template content to see preview
+                    {t('settings.enterTemplateToPreview')}
                   </div>
                 )}
               </div>
@@ -250,12 +252,12 @@ export function NotificationTemplateEditor({ template, onClose }: NotificationTe
             ) : (
               <RotateCcw className="w-4 h-4 mr-2" />
             )}
-            Reset to Default
+            {t('settings.resetToDefault')}
           </Button>
 
           <div className="flex gap-2">
             <Button type="button" variant="secondary" onClick={onClose}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               onClick={handleSubmit}
@@ -266,7 +268,7 @@ export function NotificationTemplateEditor({ template, onClose }: NotificationTe
               ) : (
                 <Save className="w-4 h-4 mr-2" />
               )}
-              Save
+              {t('common.save')}
             </Button>
           </div>
         </div>

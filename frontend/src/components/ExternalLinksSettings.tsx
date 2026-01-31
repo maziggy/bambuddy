@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link2, Plus, Pencil, Trash2, GripVertical, Loader2, ExternalLink as ExternalLinkIcon } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { ExternalLink } from '../api/client';
 import { Card, CardContent, CardHeader } from './Card';
@@ -10,6 +11,7 @@ import { ConfirmModal } from './ConfirmModal';
 import { getIconByName } from './IconPicker';
 
 export function ExternalLinksSettings() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingLink, setEditingLink] = useState<ExternalLink | null>(null);
@@ -85,17 +87,17 @@ export function ExternalLinksSettings() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Link2 className="w-5 h-5 text-bambu-green" />
-              <h2 className="text-lg font-semibold text-white">Sidebar Links</h2>
+              <h2 className="text-lg font-semibold text-white">{t('settings.sidebarLinks')}</h2>
             </div>
             <Button size="sm" onClick={() => setShowAddModal(true)}>
               <Plus className="w-4 h-4" />
-              Add Link
+              {t('settings.addLink')}
             </Button>
           </div>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-bambu-gray mb-4">
-            Add external links to the sidebar navigation. Drag to reorder.
+            {t('settings.sidebarLinksDescription')}
           </p>
 
           {isLoading ? (
@@ -132,7 +134,7 @@ export function ExternalLinksSettings() {
                       <button
                         onClick={() => setEditingLink(link)}
                         className="p-2 rounded-lg hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white transition-colors"
-                        title="Edit"
+                        title={t('common.edit')}
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
@@ -140,7 +142,7 @@ export function ExternalLinksSettings() {
                         onClick={() => handleDelete(link)}
                         disabled={deleteMutation.isPending}
                         className="p-2 rounded-lg hover:bg-red-500/20 text-bambu-gray hover:text-red-400 transition-colors disabled:opacity-50"
-                        title="Delete"
+                        title={t('common.delete')}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -152,8 +154,8 @@ export function ExternalLinksSettings() {
           ) : (
             <div className="text-center py-8 text-bambu-gray">
               <Link2 className="w-8 h-8 mx-auto mb-2 opacity-50" />
-              <p>No external links configured</p>
-              <p className="text-sm">Click "Add Link" to add one</p>
+              <p>{t('settings.noExternalLinks')}</p>
+              <p className="text-sm">{t('settings.clickAddLink')}</p>
             </div>
           )}
         </CardContent>
@@ -173,10 +175,10 @@ export function ExternalLinksSettings() {
       {/* Delete Confirmation Modal */}
       {deletingLink && (
         <ConfirmModal
-          title="Delete Link"
-          message={`Are you sure you want to delete "${deletingLink.name}"? This action cannot be undone.`}
-          confirmText="Delete"
-          cancelText="Cancel"
+          title={t('settings.deleteLink')}
+          message={t('settings.deleteLinkConfirm', { name: deletingLink.name })}
+          confirmText={t('common.delete')}
+          cancelText={t('common.cancel')}
           variant="danger"
           onConfirm={confirmDelete}
           onCancel={() => setDeletingLink(null)}

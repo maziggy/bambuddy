@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Check, X, RefreshCw, Link2, Link2Off, Database, ChevronDown, Info, AlertTriangle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { SpoolmanSyncResult, Printer } from '../api/client';
 import { Card, CardContent, CardHeader } from './Card';
@@ -33,6 +34,7 @@ async function updateSpoolmanSettings(data: Partial<SpoolmanSettingsData>): Prom
 }
 
 export function SpoolmanSettings() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [localEnabled, setLocalEnabled] = useState(false);
   const [localUrl, setLocalUrl] = useState('');
@@ -162,7 +164,7 @@ export function SpoolmanSettings() {
         <CardHeader>
           <div className="flex items-center gap-2">
             <Database className="w-5 h-5 text-bambu-green" />
-            <h2 className="text-lg font-semibold text-white">Spoolman Integration</h2>
+            <h2 className="text-lg font-semibold text-white">{t('settings.spoolman.title')}</h2>
           </div>
         </CardHeader>
         <CardContent>
@@ -180,7 +182,7 @@ export function SpoolmanSettings() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Database className="w-5 h-5 text-bambu-green" />
-            <h2 className="text-lg font-semibold text-white">Spoolman Integration</h2>
+            <h2 className="text-lg font-semibold text-white">{t('settings.spoolman.title')}</h2>
           </div>
           {saveMutation.isPending && (
             <Loader2 className="w-4 h-4 text-bambu-green animate-spin" />
@@ -192,7 +194,7 @@ export function SpoolmanSettings() {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-bambu-gray">
-          Connect to Spoolman for filament inventory tracking. AMS data will sync automatically.
+          {t('settings.spoolman.description')}
         </p>
 
         {/* Info banner about sync requirements */}
@@ -200,15 +202,15 @@ export function SpoolmanSettings() {
           <div className="flex gap-2">
             <Info className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
             <div className="text-xs text-blue-300">
-              <p className="font-medium mb-1">How Sync Works</p>
+              <p className="font-medium mb-1">{t('settings.spoolman.howSyncWorks')}</p>
               <ul className="list-disc list-inside space-y-0.5 text-blue-300/80">
-                <li>Only official Bambu Lab spools with RFID are synced</li>
-                <li>New spools are auto-created in Spoolman on first sync</li>
-                <li>Non-Bambu Lab spools (third-party, refilled) are skipped</li>
+                <li>{t('settings.spoolman.syncInfo1')}</li>
+                <li>{t('settings.spoolman.syncInfo2')}</li>
+                <li>{t('settings.spoolman.syncInfo3')}</li>
               </ul>
-              <p className="font-medium mt-2 mb-1">Linking Existing Spools</p>
+              <p className="font-medium mt-2 mb-1">{t('settings.spoolman.linkingExisting')}</p>
               <p className="text-blue-300/80">
-                To link existing Spoolman spools to your AMS, hover over an AMS slot and click "Link to Spoolman".
+                {t('settings.spoolman.linkingExistingDesc')}
               </p>
             </div>
           </div>
@@ -217,9 +219,9 @@ export function SpoolmanSettings() {
         {/* Enable toggle */}
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-white">Enable Spoolman</p>
+            <p className="text-white">{t('settings.spoolman.enable')}</p>
             <p className="text-sm text-bambu-gray">
-              Sync filament data with Spoolman server
+              {t('settings.spoolman.enableDesc')}
             </p>
           </div>
           <label className="relative inline-flex items-center cursor-pointer">
@@ -236,7 +238,7 @@ export function SpoolmanSettings() {
         {/* URL input */}
         <div>
           <label className="block text-sm text-bambu-gray mb-1">
-            Spoolman URL
+            {t('settings.spoolman.url')}
           </label>
           <input
             type="text"
@@ -247,14 +249,14 @@ export function SpoolmanSettings() {
             className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray/50 focus:border-bambu-green focus:outline-none disabled:opacity-50"
           />
           <p className="text-xs text-bambu-gray mt-1">
-            URL of your Spoolman server (e.g., http://localhost:7912)
+            {t('settings.spoolman.urlHint')}
           </p>
         </div>
 
         {/* Sync mode */}
         <div>
           <label className="block text-sm text-bambu-gray mb-1">
-            Sync Mode
+            {t('settings.spoolman.syncMode')}
           </label>
           <select
             value={localSyncMode}
@@ -262,13 +264,13 @@ export function SpoolmanSettings() {
             disabled={!localEnabled}
             className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none disabled:opacity-50"
           >
-            <option value="auto">Automatic</option>
-            <option value="manual">Manual Only</option>
+            <option value="auto">{t('settings.spoolman.syncModeAuto')}</option>
+            <option value="manual">{t('settings.spoolman.syncModeManual')}</option>
           </select>
           <p className="text-xs text-bambu-gray mt-1">
             {localSyncMode === 'auto'
-              ? 'AMS data syncs automatically when changes are detected'
-              : 'Only sync when manually triggered'}
+              ? t('settings.spoolman.syncModeAutoDesc')
+              : t('settings.spoolman.syncModeManualDesc')}
           </p>
         </div>
 
@@ -277,18 +279,18 @@ export function SpoolmanSettings() {
           <div className="pt-2 border-t border-bambu-dark-tertiary">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <span className="text-sm text-bambu-gray">Status:</span>
+                <span className="text-sm text-bambu-gray">{t('settings.spoolman.statusLabel')}</span>
                 {statusLoading ? (
                   <Loader2 className="w-4 h-4 text-bambu-gray animate-spin" />
                 ) : status?.connected ? (
                   <span className="flex items-center gap-1 text-sm text-green-500">
                     <Check className="w-4 h-4" />
-                    Connected
+                    {t('settings.spoolman.connected')}
                   </span>
                 ) : (
                   <span className="flex items-center gap-1 text-sm text-red-500">
                     <X className="w-4 h-4" />
-                    Disconnected
+                    {t('settings.spoolman.disconnected')}
                   </span>
                 )}
               </div>
@@ -305,7 +307,7 @@ export function SpoolmanSettings() {
                     ) : (
                       <Link2Off className="w-4 h-4" />
                     )}
-                    Disconnect
+                    {t('settings.spoolman.disconnect')}
                   </Button>
                 ) : (
                   <Button
@@ -318,7 +320,7 @@ export function SpoolmanSettings() {
                     ) : (
                       <Link2 className="w-4 h-4" />
                     )}
-                    Connect
+                    {t('settings.spoolman.connect')}
                   </Button>
                 )}
               </div>
@@ -335,9 +337,9 @@ export function SpoolmanSettings() {
             {status?.connected && (
               <div className="space-y-3">
                 <div>
-                  <p className="text-sm text-white">Sync AMS Data</p>
+                  <p className="text-sm text-white">{t('settings.spoolman.syncAmsData')}</p>
                   <p className="text-xs text-bambu-gray">
-                    Manually sync printer AMS data to Spoolman
+                    {t('settings.spoolman.syncAmsDataDesc')}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -348,7 +350,7 @@ export function SpoolmanSettings() {
                       onChange={(e) => setSelectedPrinterId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
                       className="w-full px-3 py-2 pr-8 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
                     >
-                      <option value="all">All Printers</option>
+                      <option value="all">{t('settings.spoolman.allPrinters')}</option>
                       {printers?.map((printer: Printer) => (
                         <option key={printer.id} value={printer.id}>
                           {printer.name}
@@ -369,7 +371,7 @@ export function SpoolmanSettings() {
                     ) : (
                       <RefreshCw className="w-4 h-4" />
                     )}
-                    Sync
+                    {t('settings.spoolman.sync')}
                   </Button>
                 </div>
               </div>
@@ -387,8 +389,8 @@ export function SpoolmanSettings() {
                   }`}
                 >
                   {syncResult.success
-                    ? `Synced ${syncResult.synced_count} spool${syncResult.synced_count !== 1 ? 's' : ''} successfully`
-                    : `Synced ${syncResult.synced_count} spool${syncResult.synced_count !== 1 ? 's' : ''} with ${syncResult.errors.length} error${syncResult.errors.length !== 1 ? 's' : ''}`}
+                    ? t('settings.spoolman.syncSuccess', { count: syncResult.synced_count })
+                    : t('settings.spoolman.syncWithErrors', { count: syncResult.synced_count, errorCount: syncResult.errors.length })}
                 </div>
 
                 {/* Skipped spools */}
@@ -398,7 +400,7 @@ export function SpoolmanSettings() {
                       <div className="flex items-center gap-1.5">
                         <AlertTriangle className="w-3.5 h-3.5" />
                         <span className="font-medium">
-                          {syncResult.skipped_count} spool{syncResult.skipped_count !== 1 ? 's' : ''} skipped
+                          {t('settings.spoolman.spoolsSkipped', { count: syncResult.skipped_count })}
                         </span>
                       </div>
                       {syncResult.skipped_count > 5 && (
@@ -406,7 +408,7 @@ export function SpoolmanSettings() {
                           onClick={() => setShowAllSkipped(!showAllSkipped)}
                           className="text-xs text-amber-400 hover:text-amber-300 underline"
                         >
-                          {showAllSkipped ? 'Show less' : 'Show all'}
+                          {showAllSkipped ? t('settings.spoolman.showLess') : t('settings.spoolman.showAll')}
                         </button>
                       )}
                     </div>
@@ -425,7 +427,7 @@ export function SpoolmanSettings() {
                       ))}
                       {!showAllSkipped && syncResult.skipped_count > 5 && (
                         <li className="text-amber-300/60 italic">
-                          ...and {syncResult.skipped_count - 5} more
+                          {t('settings.spoolman.andMore', { count: syncResult.skipped_count - 5 })}
                         </li>
                       )}
                     </ul>
@@ -435,7 +437,7 @@ export function SpoolmanSettings() {
                 {/* Errors */}
                 {syncResult.errors.length > 0 && (
                   <div className="p-2 bg-red-500/10 border border-red-500/30 rounded text-sm">
-                    <div className="text-red-400 font-medium mb-1">Errors:</div>
+                    <div className="text-red-400 font-medium mb-1">{t('settings.spoolman.errors')}</div>
                     <ul className="text-xs text-red-300/80 space-y-0.5">
                       {syncResult.errors.map((err, i) => (
                         <li key={i}>{err}</li>

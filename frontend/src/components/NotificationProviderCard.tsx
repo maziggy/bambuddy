@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { Bell, Trash2, Settings2, Edit2, Send, Loader2, CheckCircle, XCircle, Moon, Clock, ChevronDown, ChevronUp, Calendar } from 'lucide-react';
 import { api } from '../api/client';
@@ -14,17 +15,8 @@ interface NotificationProviderCardProps {
   onEdit: (provider: NotificationProvider) => void;
 }
 
-const PROVIDER_LABELS: Record<string, string> = {
-  callmebot: 'CallMeBot/WhatsApp',
-  ntfy: 'ntfy',
-  pushover: 'Pushover',
-  telegram: 'Telegram',
-  email: 'Email',
-  discord: 'Discord',
-  webhook: 'Webhook',
-};
-
 export function NotificationProviderCard({ provider, onEdit }: NotificationProviderCardProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -84,20 +76,20 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
               </div>
               <div>
                 <h3 className="font-medium text-white">{provider.name}</h3>
-                <p className="text-sm text-bambu-gray">{PROVIDER_LABELS[provider.provider_type] || provider.provider_type}</p>
+                <p className="text-sm text-bambu-gray">{t(`providers.${provider.provider_type}`, provider.provider_type)}</p>
               </div>
             </div>
 
             {/* Quick enable/disable toggle + Status indicator */}
             <div className="flex items-center gap-3">
               {provider.last_success && (
-                <span className="text-xs text-bambu-green hidden sm:inline">Last: {formatDateOnly(provider.last_success)}</span>
+                <span className="text-xs text-bambu-green hidden sm:inline">{t('providerCard.last')}{formatDateOnly(provider.last_success)}</span>
               )}
               {/* Only show error if it's more recent than last success */}
               {provider.last_error && provider.last_error_at && (
                 !provider.last_success || (parseUTCDate(provider.last_error_at)?.getTime() || 0) > (parseUTCDate(provider.last_success)?.getTime() || 0)
               ) && (
-                <span className="text-xs text-red-400" title={provider.last_error}>Error</span>
+                <span className="text-xs text-red-400" title={provider.last_error}>{t('common.error')}</span>
               )}
               <Toggle
                 checked={provider.enabled}
@@ -109,67 +101,67 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
           {/* Linked Printer */}
           {linkedPrinter && (
             <div className="mb-3 px-2 py-1.5 bg-bambu-dark rounded-lg">
-              <span className="text-xs text-bambu-gray">Printer: </span>
+              <span className="text-xs text-bambu-gray">{t('providerCard.printer')}</span>
               <span className="text-sm text-white">{linkedPrinter.name}</span>
             </div>
           )}
           {!linkedPrinter && !provider.printer_id && (
             <div className="mb-3 px-2 py-1.5 bg-bambu-dark rounded-lg">
-              <span className="text-xs text-bambu-gray">All printers</span>
+              <span className="text-xs text-bambu-gray">{t('providerCard.allPrinters')}</span>
             </div>
           )}
 
           {/* Event summary - show all event tags */}
           <div className="mb-3 flex flex-wrap gap-1">
             {provider.on_print_start && (
-              <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-xs rounded">Start</span>
+              <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-xs rounded">{t('providerCard.tagStart')}</span>
             )}
             {provider.on_print_complete && (
-              <span className="px-2 py-0.5 bg-bambu-green/20 text-bambu-green text-xs rounded">Complete</span>
+              <span className="px-2 py-0.5 bg-bambu-green/20 text-bambu-green text-xs rounded">{t('providerCard.tagComplete')}</span>
             )}
             {provider.on_print_failed && (
-              <span className="px-2 py-0.5 bg-red-500/20 text-red-400 text-xs rounded">Failed</span>
+              <span className="px-2 py-0.5 bg-red-500/20 text-red-400 text-xs rounded">{t('providerCard.tagFailed')}</span>
             )}
             {provider.on_print_stopped && (
-              <span className="px-2 py-0.5 bg-orange-500/20 text-orange-400 text-xs rounded">Stopped</span>
+              <span className="px-2 py-0.5 bg-orange-500/20 text-orange-400 text-xs rounded">{t('providerCard.tagStopped')}</span>
             )}
             {provider.on_print_progress && (
-              <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-xs rounded">Progress</span>
+              <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-xs rounded">{t('providerCard.tagProgress')}</span>
             )}
             {provider.on_printer_offline && (
-              <span className="px-2 py-0.5 bg-gray-500/20 text-gray-400 text-xs rounded">Offline</span>
+              <span className="px-2 py-0.5 bg-gray-500/20 text-gray-400 text-xs rounded">{t('providerCard.tagOffline')}</span>
             )}
             {provider.on_printer_error && (
-              <span className="px-2 py-0.5 bg-rose-500/20 text-rose-400 text-xs rounded">Error</span>
+              <span className="px-2 py-0.5 bg-rose-500/20 text-rose-400 text-xs rounded">{t('common.error')}</span>
             )}
             {provider.on_filament_low && (
-              <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-400 text-xs rounded">Low Filament</span>
+              <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-400 text-xs rounded">{t('providerCard.tagLowFilament')}</span>
             )}
             {provider.on_maintenance_due && (
-              <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 text-xs rounded">Maintenance</span>
+              <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 text-xs rounded">{t('providerCard.tagMaintenance')}</span>
             )}
             {provider.on_ams_humidity_high && (
-              <span className="px-2 py-0.5 bg-blue-600/20 text-blue-300 text-xs rounded">AMS Humidity</span>
+              <span className="px-2 py-0.5 bg-blue-600/20 text-blue-300 text-xs rounded">{t('providerCard.tagAmsHumidity')}</span>
             )}
             {provider.on_ams_temperature_high && (
-              <span className="px-2 py-0.5 bg-orange-600/20 text-orange-300 text-xs rounded">AMS Temp</span>
+              <span className="px-2 py-0.5 bg-orange-600/20 text-orange-300 text-xs rounded">{t('providerCard.tagAmsTemp')}</span>
             )}
             {provider.on_ams_ht_humidity_high && (
-              <span className="px-2 py-0.5 bg-cyan-600/20 text-cyan-300 text-xs rounded">AMS-HT Humidity</span>
+              <span className="px-2 py-0.5 bg-cyan-600/20 text-cyan-300 text-xs rounded">{t('providerCard.tagAmsHtHumidity')}</span>
             )}
             {provider.on_ams_ht_temperature_high && (
-              <span className="px-2 py-0.5 bg-amber-600/20 text-amber-300 text-xs rounded">AMS-HT Temp</span>
+              <span className="px-2 py-0.5 bg-amber-600/20 text-amber-300 text-xs rounded">{t('providerCard.tagAmsHtTemp')}</span>
             )}
             {provider.quiet_hours_enabled && (
               <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-400 text-xs rounded flex items-center gap-1">
                 <Moon className="w-3 h-3" />
-                Quiet
+                {t('providerCard.quiet')}
               </span>
             )}
             {provider.daily_digest_enabled && (
               <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 text-xs rounded flex items-center gap-1">
                 <Calendar className="w-3 h-3" />
-                Digest {provider.daily_digest_time}
+                {t('providerCard.digest')}{provider.daily_digest_time}
               </span>
             )}
           </div>
@@ -191,7 +183,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
               ) : (
                 <Send className="w-4 h-4" />
               )}
-              Send Test Notification
+              {t('providerCard.sendTest')}
             </Button>
           </div>
 
@@ -218,7 +210,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
           >
             <span className="flex items-center gap-2">
               <Settings2 className="w-4 h-4" />
-              Event Settings
+              {t('providerCard.eventSettings')}
             </span>
             {isExpanded ? (
               <ChevronUp className="w-4 h-4" />
@@ -233,8 +225,8 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
               {/* Enabled Toggle */}
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-white">Enabled</p>
-                  <p className="text-xs text-bambu-gray">Send notifications from this provider</p>
+                  <p className="text-sm text-white">{t('common.enabled')}</p>
+                  <p className="text-xs text-bambu-gray">{t('providerCard.sendNotifications')}</p>
                 </div>
                 <Toggle
                   checked={provider.enabled}
@@ -244,10 +236,10 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
               {/* Print Lifecycle Events */}
               <div className="space-y-2">
-                <p className="text-xs text-bambu-gray uppercase tracking-wide">Print Events</p>
+                <p className="text-xs text-bambu-gray uppercase tracking-wide">{t('providerCard.printEvents')}</p>
 
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-white">Print Started</p>
+                  <p className="text-sm text-white">{t('settings.events.printStart')}</p>
                   <Toggle
                     checked={provider.on_print_start}
                     onChange={(checked) => updateMutation.mutate({ on_print_start: checked })}
@@ -255,7 +247,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-white">Print Completed</p>
+                  <p className="text-sm text-white">{t('settings.events.printComplete')}</p>
                   <Toggle
                     checked={provider.on_print_complete}
                     onChange={(checked) => updateMutation.mutate({ on_print_complete: checked })}
@@ -263,7 +255,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-white">Print Failed</p>
+                  <p className="text-sm text-white">{t('settings.events.printFailed')}</p>
                   <Toggle
                     checked={provider.on_print_failed}
                     onChange={(checked) => updateMutation.mutate({ on_print_failed: checked })}
@@ -271,7 +263,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-white">Print Stopped</p>
+                  <p className="text-sm text-white">{t('settings.events.printStopped')}</p>
                   <Toggle
                     checked={provider.on_print_stopped}
                     onChange={(checked) => updateMutation.mutate({ on_print_stopped: checked })}
@@ -280,8 +272,8 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-white">Progress Milestones</p>
-                    <p className="text-xs text-bambu-gray">Notify at 25%, 50%, 75%</p>
+                    <p className="text-sm text-white">{t('settings.events.printProgress')}</p>
+                    <p className="text-xs text-bambu-gray">{t('settings.events.printProgressDescription')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_print_progress}
@@ -292,10 +284,10 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
               {/* Printer Status Events */}
               <div className="space-y-2">
-                <p className="text-xs text-bambu-gray uppercase tracking-wide">Printer Status</p>
+                <p className="text-xs text-bambu-gray uppercase tracking-wide">{t('providerCard.printerStatus')}</p>
 
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-white">Printer Offline</p>
+                  <p className="text-sm text-white">{t('settings.events.printerOffline')}</p>
                   <Toggle
                     checked={provider.on_printer_offline}
                     onChange={(checked) => updateMutation.mutate({ on_printer_offline: checked })}
@@ -303,7 +295,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-white">Printer Error</p>
+                  <p className="text-sm text-white">{t('settings.events.printerError')}</p>
                   <Toggle
                     checked={provider.on_printer_error}
                     onChange={(checked) => updateMutation.mutate({ on_printer_error: checked })}
@@ -311,7 +303,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-white">Low Filament</p>
+                  <p className="text-sm text-white">{t('settings.events.filamentLow')}</p>
                   <Toggle
                     checked={provider.on_filament_low}
                     onChange={(checked) => updateMutation.mutate({ on_filament_low: checked })}
@@ -320,8 +312,8 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-white">Maintenance Due</p>
-                    <p className="text-xs text-bambu-gray">Notify when maintenance is needed</p>
+                    <p className="text-sm text-white">{t('settings.events.maintenanceDue')}</p>
+                    <p className="text-xs text-bambu-gray">{t('settings.events.maintenanceDueDescription')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_maintenance_due ?? false}
@@ -332,12 +324,12 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
               {/* AMS Environmental Alarms (regular AMS) */}
               <div className="space-y-2">
-                <p className="text-xs text-bambu-gray uppercase tracking-wide">AMS Alarms</p>
+                <p className="text-xs text-bambu-gray uppercase tracking-wide">{t('providerCard.amsAlarms')}</p>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-white">AMS Humidity High</p>
-                    <p className="text-xs text-bambu-gray">Regular AMS humidity exceeds threshold</p>
+                    <p className="text-sm text-white">{t('providerCard.amsHumidityHigh')}</p>
+                    <p className="text-xs text-bambu-gray">{t('providerCard.amsHumidityHighDesc')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_ams_humidity_high ?? false}
@@ -347,8 +339,8 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-white">AMS Temperature High</p>
-                    <p className="text-xs text-bambu-gray">Regular AMS temperature exceeds threshold</p>
+                    <p className="text-sm text-white">{t('providerCard.amsTempHigh')}</p>
+                    <p className="text-xs text-bambu-gray">{t('providerCard.amsTempHighDesc')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_ams_temperature_high ?? false}
@@ -359,12 +351,12 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
               {/* AMS-HT Environmental Alarms */}
               <div className="space-y-2">
-                <p className="text-xs text-bambu-gray uppercase tracking-wide">AMS-HT Alarms</p>
+                <p className="text-xs text-bambu-gray uppercase tracking-wide">{t('providerCard.amsHtAlarms')}</p>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-white">AMS-HT Humidity High</p>
-                    <p className="text-xs text-bambu-gray">AMS-HT humidity exceeds threshold</p>
+                    <p className="text-sm text-white">{t('providerCard.amsHtHumidityHigh')}</p>
+                    <p className="text-xs text-bambu-gray">{t('providerCard.amsHtHumidityHighDesc')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_ams_ht_humidity_high ?? false}
@@ -374,8 +366,8 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-white">AMS-HT Temperature High</p>
-                    <p className="text-xs text-bambu-gray">AMS-HT temperature exceeds threshold</p>
+                    <p className="text-sm text-white">{t('providerCard.amsHtTempHigh')}</p>
+                    <p className="text-xs text-bambu-gray">{t('providerCard.amsHtTempHighDesc')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_ams_ht_temperature_high ?? false}
@@ -389,7 +381,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Moon className="w-4 h-4 text-purple-400" />
-                    <p className="text-sm text-white">Quiet Hours</p>
+                    <p className="text-sm text-white">{t('settings.quietHours')}</p>
                   </div>
                   <Toggle
                     checked={provider.quiet_hours_enabled}
@@ -399,14 +391,14 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
                 {provider.quiet_hours_enabled && (
                   <div className="pl-4 border-l-2 border-bambu-dark-tertiary space-y-2">
-                    <p className="text-xs text-bambu-gray">No notifications during these hours</p>
+                    <p className="text-xs text-bambu-gray">{t('providerCard.noNotificationsDuring')}</p>
                     <div className="flex items-center gap-2">
                       <Clock className="w-4 h-4 text-bambu-gray" />
                       <span className="text-sm text-white">
                         {formatTime(provider.quiet_hours_start) || '22:00'} - {formatTime(provider.quiet_hours_end) || '07:00'}
                       </span>
                     </div>
-                    <p className="text-xs text-bambu-gray">Edit provider to change quiet hours</p>
+                    <p className="text-xs text-bambu-gray">{t('providerCard.editQuietHours')}</p>
                   </div>
                 )}
               </div>
@@ -416,7 +408,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Calendar className="w-4 h-4 text-emerald-400" />
-                    <p className="text-sm text-white">Daily Digest</p>
+                    <p className="text-sm text-white">{t('providerCard.dailyDigest')}</p>
                   </div>
                   <Toggle
                     checked={provider.daily_digest_enabled}
@@ -426,14 +418,14 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
                 {provider.daily_digest_enabled && (
                   <div className="pl-4 border-l-2 border-bambu-dark-tertiary space-y-2">
-                    <p className="text-xs text-bambu-gray">Batch notifications into a single daily summary</p>
+                    <p className="text-xs text-bambu-gray">{t('providerCard.dailyDigestDesc')}</p>
                     <div className="flex items-center gap-2">
                       <Clock className="w-4 h-4 text-bambu-gray" />
                       <span className="text-sm text-white">
-                        Send at {formatTime(provider.daily_digest_time) || '08:00'}
+                        {t('providerCard.sendAt')} {formatTime(provider.daily_digest_time) || '08:00'}
                       </span>
                     </div>
-                    <p className="text-xs text-bambu-gray">Edit provider to change digest time</p>
+                    <p className="text-xs text-bambu-gray">{t('providerCard.editDigestTime')}</p>
                   </div>
                 )}
               </div>
@@ -447,7 +439,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                   className="flex-1"
                 >
                   <Edit2 className="w-4 h-4" />
-                  Edit
+                  {t('common.edit')}
                 </Button>
                 <Button
                   size="sm"
@@ -466,9 +458,9 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
       {/* Delete Confirmation */}
       {showDeleteConfirm && (
         <ConfirmModal
-          title="Delete Notification Provider"
-          message={`Are you sure you want to delete "${provider.name}"? This cannot be undone.`}
-          confirmText="Delete"
+          title={t('providerCard.deleteTitle')}
+          message={t('providerCard.deleteConfirm', { name: provider.name })}
+          confirmText={t('common.delete')}
           variant="danger"
           onConfirm={() => {
             deleteMutation.mutate();

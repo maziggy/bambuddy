@@ -66,10 +66,43 @@ DE = {
     }
 }
 
+# Japanese translations
+JA = {
+    "notification": {
+        # Print events
+        "print_started": "印刷開始",
+        "print_completed": "印刷完了",
+        "print_failed": "印刷失敗",
+        "print_stopped": "印刷中止",
+        "print_ended": "印刷終了",
+        "print_progress": "印刷 {progress}% 完了",
+        "estimated": "予測",
+        "time": "時間",
+        "filament": "フィラメント",
+        "reason": "原因",
+        "unknown": "不明",
+        # Printer events
+        "printer_offline": "プリンターオフライン",
+        "printer_disconnected": "{printer} が切断されました",
+        "printer_error": "プリンターエラー: {error_type}",
+        # Filament
+        "filament_low": "フィラメント残量低下",
+        "slot_at_percent": "{printer}: スロット {slot} 残量 {percent}%",
+        # Maintenance
+        "maintenance_due": "メンテナンス期限",
+        "overdue": "期限超過",
+        "soon": "まもなく",
+        # Test notification
+        "test_title": "Bambuddy テスト",
+        "test_message": "Bambuddyからのテスト通知です。このメッセージが表示されていれば、通知は正常に動作しています！",
+    }
+}
+
 # All available translations
 TRANSLATIONS = {
     "en": EN,
     "de": DE,
+    "ja": JA,
 }
 
 

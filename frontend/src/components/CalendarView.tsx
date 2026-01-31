@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Archive } from '../api/client';
 import { api } from '../api/client';
@@ -18,14 +19,17 @@ function getFirstDayOfMonth(year: number, month: number): number {
   return new Date(year, month, 1).getDay();
 }
 
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'
-];
+const MONTH_KEYS = [
+  'january', 'february', 'march', 'april', 'may', 'june',
+  'july', 'august', 'september', 'october', 'november', 'december',
+] as const;
 
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 
 export function CalendarView({ archives, onArchiveClick, highlightedArchiveId }: CalendarViewProps) {
+  const { t } = useTranslation();
+  const monthNames = MONTH_KEYS.map(k => t(`calendar.months.${k}`));
+  const dayNames = DAY_KEYS.map(k => t(`calendar.daysShort.${k}`));
   const today = new Date();
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
@@ -104,13 +108,13 @@ export function CalendarView({ archives, onArchiveClick, highlightedArchiveId }:
           </button>
           <div className="flex items-center gap-3">
             <h2 className="text-lg font-semibold text-white">
-              {MONTH_NAMES[currentMonth]} {currentYear}
+              {monthNames[currentMonth]} {currentYear}
             </h2>
             <button
               onClick={goToToday}
               className="px-2 py-1 text-xs bg-bambu-dark-tertiary hover:bg-bambu-green/20 text-bambu-gray hover:text-white rounded transition-colors"
             >
-              Today
+              {t('common.today')}
             </button>
           </div>
           <button
@@ -123,7 +127,7 @@ export function CalendarView({ archives, onArchiveClick, highlightedArchiveId }:
 
         {/* Day headers */}
         <div className="grid grid-cols-7 gap-1 mb-1">
-          {DAY_NAMES.map(day => (
+          {dayNames.map(day => (
             <div key={day} className="text-center text-xs text-bambu-gray py-2">
               {day}
             </div>

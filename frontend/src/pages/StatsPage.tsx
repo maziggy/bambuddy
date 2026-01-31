@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Package,
   Clock,
@@ -41,6 +42,7 @@ function QuickStatsWidget({
   } | undefined;
   currency: string;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
       <div className="flex items-start gap-3">
@@ -48,7 +50,7 @@ function QuickStatsWidget({
           <Package className="w-5 h-5" />
         </div>
         <div>
-          <p className="text-xs text-bambu-gray">Total Prints</p>
+          <p className="text-xs text-bambu-gray">{t('stats.totalPrints')}</p>
           <p className="text-xl font-bold text-white">{stats?.total_prints || 0}</p>
         </div>
       </div>
@@ -57,7 +59,7 @@ function QuickStatsWidget({
           <Clock className="w-5 h-5" />
         </div>
         <div>
-          <p className="text-xs text-bambu-gray">Print Time</p>
+          <p className="text-xs text-bambu-gray">{t('stats.printTime')}</p>
           <p className="text-xl font-bold text-white">{stats?.total_print_time_hours.toFixed(1) || 0}h</p>
         </div>
       </div>
@@ -66,7 +68,7 @@ function QuickStatsWidget({
           <Package className="w-5 h-5" />
         </div>
         <div>
-          <p className="text-xs text-bambu-gray">Filament Used</p>
+          <p className="text-xs text-bambu-gray">{t('stats.filamentUsed')}</p>
           <p className="text-xl font-bold text-white">{((stats?.total_filament_grams || 0) / 1000).toFixed(2)}kg</p>
         </div>
       </div>
@@ -75,7 +77,7 @@ function QuickStatsWidget({
           <DollarSign className="w-5 h-5" />
         </div>
         <div>
-          <p className="text-xs text-bambu-gray">Filament Cost</p>
+          <p className="text-xs text-bambu-gray">{t('stats.filamentCost')}</p>
           <p className="text-xl font-bold text-white">{currency} {stats?.total_cost.toFixed(2) || '0.00'}</p>
         </div>
       </div>
@@ -84,7 +86,7 @@ function QuickStatsWidget({
           <Zap className="w-5 h-5" />
         </div>
         <div>
-          <p className="text-xs text-bambu-gray">Energy Used</p>
+          <p className="text-xs text-bambu-gray">{t('stats.energyUsed')}</p>
           <p className="text-xl font-bold text-white">{stats?.total_energy_kwh.toFixed(2) || '0.00'} kWh</p>
         </div>
       </div>
@@ -93,7 +95,7 @@ function QuickStatsWidget({
           <DollarSign className="w-5 h-5" />
         </div>
         <div>
-          <p className="text-xs text-bambu-gray">Energy Cost</p>
+          <p className="text-xs text-bambu-gray">{t('stats.energyCost')}</p>
           <p className="text-xl font-bold text-white">{currency} {stats?.total_energy_cost.toFixed(2) || '0.00'}</p>
         </div>
       </div>
@@ -115,6 +117,7 @@ function SuccessRateWidget({
   printerMap: Map<string, string>;
   size?: 1 | 2 | 4;
 }) {
+  const { t } = useTranslation();
   const successRate = stats?.total_prints
     ? Math.round((stats.successful_prints / stats.total_prints) * 100)
     : 0;
@@ -155,24 +158,24 @@ function SuccessRateWidget({
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <CheckCircle className="w-4 h-4 text-bambu-green flex-shrink-0" />
-            <span className="text-sm text-bambu-gray">Successful:</span>
+            <span className="text-sm text-bambu-gray">{t('stats.successful')}:</span>
             <span className="text-sm text-white font-medium">{stats?.successful_prints || 0}</span>
           </div>
           <div className="flex items-center gap-2">
             <XCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
-            <span className="text-sm text-bambu-gray">Failed:</span>
+            <span className="text-sm text-bambu-gray">{t('stats.failed')}:</span>
             <span className="text-sm text-white font-medium">{stats?.failed_prints || 0}</span>
           </div>
         </div>
         {/* Show per-printer breakdown when expanded */}
         {size >= 2 && stats?.prints_by_printer && Object.keys(stats.prints_by_printer).length > 0 && (
           <div className="mt-4 pt-4 border-t border-bambu-dark-tertiary">
-            <p className="text-xs text-bambu-gray font-medium mb-2">Prints by Printer</p>
+            <p className="text-xs text-bambu-gray font-medium mb-2">{t('stats.printsByPrinter')}</p>
             <div className={`grid gap-x-6 gap-y-1 ${size === 4 ? 'grid-cols-3' : 'grid-cols-2'}`} style={{ width: 'fit-content' }}>
               {Object.entries(stats.prints_by_printer).map(([printerId, count]) => (
                 <div key={printerId} className="flex items-center gap-3 text-sm">
                   <span className="text-bambu-gray truncate max-w-[120px]">
-                    {printerMap.get(printerId) || `Printer ${printerId}`}
+                    {printerMap.get(printerId) || t('stats.printerFallback', { id: printerId })}
                   </span>
                   <span className="text-white font-medium">{count}</span>
                 </div>
@@ -197,12 +200,13 @@ function TimeAccuracyWidget({
   printerMap: Map<string, string>;
   size?: 1 | 2 | 4;
 }) {
+  const { t } = useTranslation();
   const accuracy = stats?.average_time_accuracy;
 
   if (accuracy === null || accuracy === undefined) {
     return (
       <div className="flex items-center justify-center h-full">
-        <p className="text-bambu-gray text-center py-4">No time accuracy data yet</p>
+        <p className="text-bambu-gray text-center py-4">{t('stats.noTimeAccuracyData')}</p>
       </div>
     );
   }
@@ -265,14 +269,14 @@ function TimeAccuracyWidget({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 text-xs text-bambu-gray">
           <Target className="w-3 h-3 flex-shrink-0" />
-          <span>100% = perfect estimate</span>
+          <span>{t('stats.perfectEstimate')}</span>
         </div>
         {printerEntries.length > 0 && (
           <div className={`mt-2 ${size === 4 ? 'grid grid-cols-3 gap-x-6 gap-y-1' : size === 2 ? 'grid grid-cols-2 gap-x-6 gap-y-1' : 'space-y-1'}`} style={{ width: 'fit-content' }}>
             {printerEntries.map(([printerId, acc]) => (
               <div key={printerId} className="flex items-center gap-2 text-xs">
                 <span className="text-bambu-gray truncate max-w-[100px]">
-                  {printerMap.get(printerId) || `Printer ${printerId}`}
+                  {printerMap.get(printerId) || t('stats.printerFallback', { id: printerId })}
                 </span>
                 <span className={`font-medium ${
                   acc >= 95 && acc <= 105 ? 'text-bambu-green' :
@@ -299,8 +303,9 @@ function FilamentTypesWidget({
   } | undefined;
   size?: 1 | 2 | 4;
 }) {
+  const { t } = useTranslation();
   if (!stats?.prints_by_filament_type || Object.keys(stats.prints_by_filament_type).length === 0) {
-    return <p className="text-bambu-gray text-center py-4">No filament data available</p>;
+    return <p className="text-bambu-gray text-center py-4">{t('stats.noFilamentData')}</p>;
   }
 
   // Sort by print count descending
@@ -346,7 +351,7 @@ function FilamentTypesWidget({
           <div key={type}>
             <div className="flex justify-between text-sm mb-1">
               <span className="text-white">{type}</span>
-              <span className="text-bambu-gray">{count} prints</span>
+              <span className="text-bambu-gray">{t('stats.printsCount', { count })}</span>
             </div>
             <div className="h-2 bg-bambu-dark rounded-full">
               <div
@@ -359,7 +364,7 @@ function FilamentTypesWidget({
       })}
       {hasMore && (
         <p className="text-xs text-bambu-gray text-center pt-1">
-          +{sortedEntries.length - maxEntries} more types
+          {t('stats.moreTypes', { count: sortedEntries.length - maxEntries })}
         </p>
       )}
     </div>
@@ -385,8 +390,9 @@ function PrintsByPrinterWidget({
   stats: { prints_by_printer: Record<string, number> } | undefined;
   printerMap: Map<string, string>;
 }) {
+  const { t } = useTranslation();
   if (!stats?.prints_by_printer || Object.keys(stats.prints_by_printer).length === 0) {
-    return <p className="text-bambu-gray text-center py-4">No printer data available</p>;
+    return <p className="text-bambu-gray text-center py-4">{t('stats.noPrinterData')}</p>;
   }
 
   return (
@@ -398,9 +404,9 @@ function PrintsByPrinterWidget({
           </div>
           <div>
             <p className="text-white font-medium text-sm">
-              {printerMap.get(printerId) || `Printer ${printerId}`}
+              {printerMap.get(printerId) || t('stats.printerFallback', { id: printerId })}
             </p>
-            <p className="text-xs text-bambu-gray">{count} prints</p>
+            <p className="text-xs text-bambu-gray">{t('stats.printsCount', { count })}</p>
           </div>
         </div>
       ))}
@@ -415,13 +421,15 @@ function FilamentTrendsWidget({
   archives: Parameters<typeof FilamentTrends>[0]['archives'];
   currency: string;
 }) {
+  const { t } = useTranslation();
   if (!archives || archives.length === 0) {
-    return <p className="text-bambu-gray text-center py-4">No print data available</p>;
+    return <p className="text-bambu-gray text-center py-4">{t('stats.noPrintData')}</p>;
   }
   return <FilamentTrends archives={archives} currency={currency} />;
 }
 
 function FailureAnalysisWidget({ size = 1 }: { size?: 1 | 2 | 4 }) {
+  const { t } = useTranslation();
   const { data: analysis, isLoading } = useQuery({
     queryKey: ['failureAnalysis'],
     queryFn: () => api.getFailureAnalysis({ days: 30 }),
@@ -436,7 +444,7 @@ function FailureAnalysisWidget({ size = 1 }: { size?: 1 | 2 | 4 }) {
   }
 
   if (!analysis || analysis.total_prints === 0) {
-    return <p className="text-bambu-gray text-center py-4">No print data in the last 30 days</p>;
+    return <p className="text-bambu-gray text-center py-4">{t('stats.noPrintDataLast30Days')}</p>;
   }
 
   // Show more reasons when expanded
@@ -456,7 +464,7 @@ function FailureAnalysisWidget({ size = 1 }: { size?: 1 | 2 | 4 }) {
           </div>
         </div>
         <div className="text-sm text-bambu-gray mt-1">
-          {analysis.failed_prints} / {analysis.total_prints} prints failed
+          {t('stats.printsFailed', { failed: analysis.failed_prints, total: analysis.total_prints })}
         </div>
         {/* Trend indicator */}
         {analysis.trend && analysis.trend.length >= 2 && (
@@ -468,7 +476,7 @@ function FailureAnalysisWidget({ size = 1 }: { size?: 1 | 2 | 4 }) {
                   : 'text-red-400'
               }`} />
               <span className="text-bambu-gray">
-                Last week: {analysis.trend[analysis.trend.length - 1].failure_rate.toFixed(1)}%
+                {t('stats.lastWeek')}: {analysis.trend[analysis.trend.length - 1].failure_rate.toFixed(1)}%
               </span>
             </div>
           </div>
@@ -479,13 +487,13 @@ function FailureAnalysisWidget({ size = 1 }: { size?: 1 | 2 | 4 }) {
       {topReasons.length > 0 && (
         <div className={`flex-1 ${size >= 2 ? 'border-l border-bambu-dark-tertiary pl-8' : 'pt-2'}`}>
           <p className="text-xs text-bambu-gray font-medium mb-2">
-            {size >= 2 ? 'Failure Reasons' : 'Top Failure Reasons'}
+            {size >= 2 ? t('stats.failureReasons') : t('stats.topFailureReasons')}
           </p>
           <div className={`${size === 4 ? 'grid grid-cols-2 gap-x-6 gap-y-1' : 'space-y-1'}`}>
             {topReasons.map(([reason, count]) => (
               <div key={reason} className="flex items-center justify-between text-sm">
                 <span className={`text-white truncate ${size === 4 ? 'max-w-[200px]' : 'max-w-[160px]'}`}>
-                  {reason || 'Unknown'}
+                  {reason || t('stats.unknown')}
                 </span>
                 <span className="text-bambu-gray ml-2">{count}</span>
               </div>
@@ -493,7 +501,7 @@ function FailureAnalysisWidget({ size = 1 }: { size?: 1 | 2 | 4 }) {
           </div>
           {hasMore && (
             <p className="text-xs text-bambu-gray mt-2">
-              +{allReasons.length - maxReasons} more reasons
+              {t('stats.moreReasons', { count: allReasons.length - maxReasons })}
             </p>
           )}
         </div>
@@ -503,6 +511,7 @@ function FailureAnalysisWidget({ size = 1 }: { size?: 1 | 2 | 4 }) {
 }
 
 export function StatsPage() {
+  const { t } = useTranslation();
   const { showToast } = useToast();
   const [isExporting, setIsExporting] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -564,9 +573,9 @@ export function StatsPage() {
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
-      showToast('Export downloaded');
+      showToast(t('stats.exportDownloaded'));
     } catch {
-      showToast('Export failed', 'error');
+      showToast(t('stats.exportFailed'), 'error');
     } finally {
       setIsExporting(false);
     }
@@ -579,7 +588,7 @@ export function StatsPage() {
   if (isLoading) {
     return (
       <div className="p-4 md:p-8">
-        <div className="text-center py-12 text-bambu-gray">Loading statistics...</div>
+        <div className="text-center py-12 text-bambu-gray">{t('stats.loadingStatistics')}</div>
       </div>
     );
   }
@@ -590,49 +599,49 @@ export function StatsPage() {
   const widgets: DashboardWidget[] = [
     {
       id: 'quick-stats',
-      title: 'Quick Stats',
+      title: t('stats.quickStats'),
       component: <QuickStatsWidget stats={stats} currency={currency} />,
       defaultSize: 2,
     },
     {
       id: 'success-rate',
-      title: 'Success Rate',
+      title: t('stats.successRate'),
       component: (size) => <SuccessRateWidget stats={stats} printerMap={printerMap} size={size} />,
       defaultSize: 1,
     },
     {
       id: 'time-accuracy',
-      title: 'Time Accuracy',
+      title: t('stats.timeAccuracy'),
       component: (size) => <TimeAccuracyWidget stats={stats} printerMap={printerMap} size={size} />,
       defaultSize: 1,
     },
     {
       id: 'filament-types',
-      title: 'Filament Types',
+      title: t('stats.filamentTypes'),
       component: (size) => <FilamentTypesWidget stats={stats} size={size} />,
       defaultSize: 1,
     },
     {
       id: 'failure-analysis',
-      title: 'Failure Analysis (30 days)',
+      title: t('stats.failureAnalysis30Days'),
       component: (size) => <FailureAnalysisWidget size={size} />,
       defaultSize: 1,
     },
     {
       id: 'print-activity',
-      title: 'Print Activity',
+      title: t('stats.printActivity'),
       component: (size) => <PrintActivityWidget printDates={printDates} size={size} />,
       defaultSize: 2,
     },
     {
       id: 'prints-by-printer',
-      title: 'Prints by Printer',
+      title: t('stats.printsByPrinter'),
       component: <PrintsByPrinterWidget stats={stats} printerMap={printerMap} />,
       defaultSize: 2,
     },
     {
       id: 'filament-trends',
-      title: 'Filament Usage Trends',
+      title: t('stats.filamentUsageTrends'),
       component: <FilamentTrendsWidget archives={archives || []} currency={currency} />,
       defaultSize: 4,
     },
@@ -643,8 +652,8 @@ export function StatsPage() {
     <div className="p-4 md:p-8">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-          <p className="text-bambu-gray">Drag widgets to rearrange. Click the eye icon to hide.</p>
+          <h1 className="text-2xl font-bold text-white">{t('stats.dashboard')}</h1>
+          <p className="text-bambu-gray">{t('stats.dashboardDescription')}</p>
         </div>
         <div className="flex items-center gap-2">
           {/* Hidden widgets button - toggles panel in Dashboard */}
@@ -657,7 +666,7 @@ export function StatsPage() {
               }}
             >
               <Eye className="w-4 h-4" />
-              {hiddenCount} Hidden
+              {t('stats.hiddenCount', { count: hiddenCount })}
             </Button>
           )}
           {/* Reset Layout */}
@@ -666,11 +675,11 @@ export function StatsPage() {
             onClick={() => {
               localStorage.removeItem('bambusy-dashboard-layout');
               setDashboardKey(prev => prev + 1);
-              showToast('Layout reset');
+              showToast(t('stats.layoutReset'));
             }}
           >
             <RotateCcw className="w-4 h-4" />
-            Reset Layout
+            {t('stats.resetLayout')}
           </Button>
           {/* Export dropdown */}
           <div className="relative">
@@ -684,7 +693,7 @@ export function StatsPage() {
               ) : (
                 <FileSpreadsheet className="w-4 h-4" />
               )}
-              Export Stats
+              {t('stats.exportStats')}
             </Button>
             {showExportMenu && (
               <div className="absolute right-0 top-full mt-1 w-48 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl z-20">
@@ -693,14 +702,14 @@ export function StatsPage() {
                   onClick={() => handleExport('csv')}
                 >
                   <FileText className="w-4 h-4" />
-                  Export as CSV
+                  {t('stats.exportAsCsv')}
                 </button>
                 <button
                   className="w-full px-4 py-2 text-left text-white hover:bg-bambu-dark-tertiary transition-colors flex items-center gap-2 rounded-b-lg"
                   onClick={() => handleExport('xlsx')}
                 >
                   <FileSpreadsheet className="w-4 h-4" />
-                  Export as Excel
+                  {t('stats.exportAsExcel')}
                 </button>
               </div>
             )}

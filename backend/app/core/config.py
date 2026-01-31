@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
@@ -9,7 +10,14 @@ APP_VERSION = "0.1.6b11"
 GITHUB_REPO = "maziggy/bambuddy"
 
 # App directory - where the application is installed (for static files)
-_app_dir = Path(__file__).resolve().parent.parent.parent.parent
+# In PyInstaller frozen mode, bundled files are extracted to sys._MEIPASS
+_app_dir_env = os.environ.get("BAMBUDDY_APP_DIR")
+if _app_dir_env:
+    _app_dir = Path(_app_dir_env)
+elif getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+    _app_dir = Path(sys._MEIPASS)
+else:
+    _app_dir = Path(__file__).resolve().parent.parent.parent.parent
 
 # Data directory - for persistent data (database, archives)
 # Use DATA_DIR env var if set (Docker), otherwise use project root (local dev)

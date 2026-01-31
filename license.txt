@@ -1,0 +1,467 @@
+================================================================================
+  Bambuddy - Third-Party License Notice
+================================================================================
+
+  Version: 0.1.6b11
+  Repository: https://github.com/maziggy/bambuddy
+
+This file lists all third-party libraries bundled in or used by bambuddy.exe,
+along with their respective license information.
+
+Bambuddy is built with:
+  - Python (PSF License) - https://www.python.org/
+  - React (MIT) - https://reactjs.org/
+  - PyInstaller (GPLv2 with bootloader exception) - https://pyinstaller.org/
+
+The PyInstaller bootloader is licensed under the GPL v2 with a special exception
+that permits distribution of non-GPL applications built with PyInstaller.
+
+================================================================================
+  PYTHON DEPENDENCIES
+================================================================================
+
+Name                     Version    License                          URL
+------------------------ ---------- -------------------------------- ----------------------------------------
+aiofiles                 25.1.0     Apache-2.0                       https://github.com/Tinche/aiofiles
+aioftp                   0.27.2     Apache-2.0                       https://github.com/GreyZmeem/aioftp
+aiohappyeyeballs         2.6.1      PSF                              https://github.com/aio-libs/aiohappyeyeballs
+aiohttp                  3.13.3     Apache-2.0 AND MIT               https://github.com/aio-libs/aiohttp
+aiosignal                1.4.0      Apache-2.0                       https://github.com/aio-libs/aiosignal
+aiosqlite                0.22.1     MIT                              https://github.com/omnilib/aiosqlite
+annotated-doc            0.0.4      MIT                              https://github.com/fastapi/annotated-doc
+annotated-types          0.7.0      MIT                              https://github.com/annotated-types/annotated-types
+anyio                    4.12.1     MIT                              https://github.com/agronholm/anyio
+attrs                    25.4.0     MIT                              https://www.attrs.org/
+bcrypt                   5.0.0      Apache-2.0                       https://github.com/pyca/bcrypt/
+certifi                  2026.1.4   MPL-2.0                          https://github.com/certifi/python-certifi
+cffi                     2.0.0      MIT                              https://cffi.readthedocs.io/
+charset-normalizer       3.4.4      MIT                              https://github.com/jawah/charset_normalizer
+click                    8.3.1      BSD-3-Clause                     https://github.com/pallets/click/
+colorama                 0.4.6      BSD-3-Clause                     https://github.com/tartley/colorama
+cryptography             46.0.4     Apache-2.0 OR BSD-3-Clause       https://github.com/pyca/cryptography
+et_xmlfile               2.0.0      MIT                              https://foss.heptapod.net/openpyxl/et_xmlfile
+fastapi                  0.128.0    MIT                              https://github.com/fastapi/fastapi
+frozenlist               1.8.0      Apache-2.0                       https://github.com/aio-libs/frozenlist
+greenlet                 3.3.1      MIT AND Python-2.0               https://greenlet.readthedocs.io
+h11                      0.16.0     MIT                              https://github.com/python-hyper/h11
+http_ece                 1.2.1      MIT                              https://github.com/martinthomson/encrypted-content-encoding
+httpcore                 1.0.9      BSD-3-Clause                     https://www.encode.io/httpcore/
+httptools                0.7.1      MIT                              https://github.com/MagicStack/httptools
+httpx                    0.28.1     BSD-3-Clause                     https://github.com/encode/httpx
+idna                     3.11       BSD-3-Clause                     https://github.com/kjd/idna
+lxml                     6.0.2      BSD-3-Clause                     https://lxml.de/
+multidict                6.7.1      Apache-2.0                       https://github.com/aio-libs/multidict
+openpyxl                 3.1.5      MIT                              https://openpyxl.readthedocs.io
+packaging                26.0       Apache-2.0 OR BSD-2-Clause       https://github.com/pypa/packaging
+paho-mqtt                2.1.0      EPL-2.0 OR BSD-3-Clause          http://eclipse.org/paho
+passlib                  1.7.4      BSD-3-Clause                     https://passlib.readthedocs.io
+pillow                   12.1.0     MIT-CMU                          https://python-pillow.github.io
+propcache                0.4.1      Apache-2.0                       https://github.com/aio-libs/propcache
+psutil                   7.2.2      BSD-3-Clause                     https://github.com/giampaolo/psutil
+py-vapid                 1.9.4      MPL-2.0                          https://github.com/mozilla-services/vapid
+pyasynchat               1.0.5      PSF                              https://github.com/simonrob/pyasynchat
+pyasyncore               1.0.5      PSF                              https://github.com/simonrob/pyasyncore
+pycparser                3.0        BSD-3-Clause                     https://github.com/eliben/pycparser
+pydantic                 2.12.5     MIT                              https://github.com/pydantic/pydantic
+pydantic-settings        2.12.0     MIT                              https://github.com/pydantic/pydantic-settings
+pydantic_core            2.41.5     MIT                              https://github.com/pydantic/pydantic-core
+pyftpdlib                2.1.0      MIT                              https://github.com/giampaolo/pyftpdlib/
+PyJWT                    2.11.0     MIT                              https://github.com/jpadilla/pyjwt
+Pygments                 2.19.2     BSD-2-Clause                     https://pygments.org
+python-dotenv            1.2.1      BSD-3-Clause                     https://github.com/theskumar/python-dotenv
+python-multipart         0.0.22     Apache-2.0                       https://github.com/Kludex/python-multipart
+python-pptx              1.0.2      MIT                              https://github.com/scanny/python-pptx
+pywebpush                2.2.0      MPL-2.0                          https://github.com/web-push-libs/pywebpush
+PyYAML                   6.0.3      MIT                              https://pyyaml.org/
+qrcode                   8.2        BSD-3-Clause                     https://github.com/lincolnloop/python-qrcode
+requests                 2.32.5     Apache-2.0                       https://requests.readthedocs.io
+six                      1.17.0     MIT                              https://github.com/benjaminp/six
+SQLAlchemy               2.0.46     MIT                              https://www.sqlalchemy.org
+starlette                0.50.0     BSD-3-Clause                     https://github.com/Kludex/starlette
+typing-inspection        0.4.2      MIT                              https://github.com/pydantic/typing-inspection
+typing_extensions        4.15.0     PSF-2.0                          https://github.com/python/typing_extensions
+urllib3                  2.6.3      MIT                              https://github.com/urllib3/urllib3
+uvicorn                  0.40.0     BSD-3-Clause                     https://uvicorn.dev/
+watchfiles               1.1.1      MIT                              https://github.com/samuelcolvin/watchfiles
+websockets               16.0       BSD-3-Clause                     https://github.com/python-websockets/websockets
+xlsxwriter               3.2.9      BSD-2-Clause                     https://github.com/jmcnamara/XlsxWriter
+yarl                     1.22.0     Apache-2.0                       https://github.com/aio-libs/yarl
+
+
+================================================================================
+  FRONTEND (JavaScript/TypeScript) DEPENDENCIES
+================================================================================
+
+Name                                    Version    License         Repository
+--------------------------------------- ---------- --------------- ----------------------------------------
+@babel/runtime                          7.28.4     MIT             https://github.com/babel/babel
+@dimforge/rapier3d-compat               0.12.0     Apache-2.0      https://github.com/dimforge/rapier.js
+@dnd-kit/accessibility                  3.1.1      MIT             https://github.com/clauderic/dnd-kit
+@dnd-kit/core                           6.3.1      MIT             https://github.com/clauderic/dnd-kit
+@dnd-kit/sortable                       10.0.0     MIT             https://github.com/clauderic/dnd-kit
+@dnd-kit/utilities                      3.2.2      MIT             https://github.com/clauderic/dnd-kit
+@floating-ui/core                       1.7.3      MIT             https://github.com/floating-ui/floating-ui
+@floating-ui/dom                        1.7.4      MIT             https://github.com/floating-ui/floating-ui
+@floating-ui/utils                      0.2.10     MIT             https://github.com/floating-ui/floating-ui
+@reduxjs/toolkit                        2.11.0     MIT             https://github.com/reduxjs/redux-toolkit
+@remirror/core-constants                3.0.0      MIT             https://github.com/remirror/remirror
+@standard-schema/spec                   1.0.0      MIT             https://github.com/standard-schema/standard-schema
+@standard-schema/utils                  0.3.0      MIT             https://github.com/standard-schema/standard-schema
+@tanstack/query-core                    5.90.11    MIT             https://github.com/TanStack/query
+@tanstack/react-query                   5.90.11    MIT             https://github.com/TanStack/query
+@tiptap/core                            3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-blockquote            3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-bold                  3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-bubble-menu           3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-bullet-list           3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-code                  3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-code-block            3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-color                 3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-document              3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-dropcursor            3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-floating-menu         3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-gapcursor             3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-hard-break            3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-heading               3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-horizontal-rule       3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-image                 3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-italic                3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-link                  3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-list                  3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-list-item             3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-list-keymap           3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-ordered-list          3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-paragraph             3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-strike                3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-text                  3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-text-align            3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-text-style            3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extension-underline             3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/extensions                      3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/pm                              3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/react                           3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tiptap/starter-kit                     3.11.1     MIT             https://github.com/ueberdosis/tiptap
+@tweenjs/tween.js                       23.1.3     MIT             https://github.com/tweenjs/tween.js
+@webgpu/types                           0.1.66     BSD-3-Clause    https://github.com/gpuweb/types
+argparse                                2.0.1      Python-2.0      https://github.com/nodeca/argparse
+clsx                                    2.1.1      MIT             https://github.com/lukeed/clsx
+cookie                                  1.1.1      MIT             https://github.com/jshttp/cookie
+core-util-is                            1.0.3      MIT             https://github.com/isaacs/core-util-is
+crelt                                   1.0.6      MIT             https://github.com/marijnh/crelt
+cross-fetch                             4.0.0      MIT             https://github.com/lquixada/cross-fetch
+csstype                                 3.2.3      MIT             https://github.com/frenic/csstype
+d3-array                                3.2.4      ISC             https://github.com/d3/d3-array
+d3-color                                3.1.0      ISC             https://github.com/d3/d3-color
+d3-ease                                 3.0.1      BSD-3-Clause    https://github.com/d3/d3-ease
+d3-format                               3.1.0      ISC             https://github.com/d3/d3-format
+d3-interpolate                          3.0.1      ISC             https://github.com/d3/d3-interpolate
+d3-path                                 3.1.0      ISC             https://github.com/d3/d3-path
+d3-scale                                4.0.2      ISC             https://github.com/d3/d3-scale
+d3-shape                                3.2.0      ISC             https://github.com/d3/d3-shape
+d3-time                                 3.1.0      ISC             https://github.com/d3/d3-time
+d3-time-format                          4.1.0      ISC             https://github.com/d3/d3-time-format
+d3-timer                                3.0.1      ISC             https://github.com/d3/d3-timer
+decimal.js-light                        2.5.1      MIT             https://github.com/MikeMcl/decimal.js-light
+entities                                4.5.0      BSD-2-Clause    https://github.com/fb55/entities
+es-toolkit                              1.42.0     MIT             https://github.com/toss/es-toolkit
+escape-string-regexp                    4.0.0      MIT             https://github.com/sindresorhus/escape-string-regexp
+eventemitter3                            5.0.1      MIT             https://github.com/primus/eventemitter3
+fast-deep-equal                         3.1.3      MIT             https://github.com/epoberezkin/fast-deep-equal
+fflate                                  0.8.2      MIT             https://github.com/101arrowz/fflate
+gcode-preview                           2.18.0     MIT             https://github.com/remcoder/gcode-preview
+html-parse-stringify                    3.0.1      MIT             https://github.com/henrikjoreteg/html-parse-stringify
+i18next                                 25.6.3     MIT             https://github.com/i18next/i18next
+i18next-browser-languagedetector        8.2.0      MIT             https://github.com/i18next/i18next-browser-languageDetector
+i18next-http-backend                    3.0.2      MIT             https://github.com/i18next/i18next-http-backend
+immediate                               3.0.6      MIT             https://github.com/calvinmetcalf/immediate
+immer                                   10.2.0     MIT             https://github.com/immerjs/immer
+immer                                   11.0.1     MIT             https://github.com/immerjs/immer
+inherits                                2.0.4      ISC             https://github.com/isaacs/inherits
+internmap                               2.0.3      ISC             https://github.com/mbostock/internmap
+isarray                                 1.0.0      MIT             https://github.com/juliangruber/isarray
+jszip                                   3.10.1     MIT OR GPL-3.0+ https://github.com/Stuk/jszip
+lie                                     3.3.0      MIT             https://github.com/calvinmetcalf/lie
+lil-gui                                 0.19.2     MIT             -
+linkify-it                              5.0.0      MIT             https://github.com/markdown-it/linkify-it
+linkifyjs                               4.3.2      MIT             https://github.com/nfrasser/linkifyjs
+lucide-react                            0.555.0    ISC             https://github.com/lucide-icons/lucide
+markdown-it                             14.1.0     MIT             https://github.com/markdown-it/markdown-it
+mdurl                                   2.0.0      MIT             https://github.com/markdown-it/mdurl
+meshoptimizer                           0.22.0     MIT             https://github.com/zeux/meshoptimizer
+node-fetch                              2.7.0      MIT             https://github.com/bitinn/node-fetch
+orderedmap                              2.1.1      MIT             https://github.com/marijnh/orderedmap
+pako                                    1.0.11     MIT AND Zlib    https://github.com/nodeca/pako
+process-nextick-args                    2.0.1      MIT             https://github.com/calvinmetcalf/process-nextick-args
+prosemirror-changeset                   2.3.1      MIT             https://github.com/prosemirror/prosemirror-changeset
+prosemirror-collab                      1.3.1      MIT             https://github.com/prosemirror/prosemirror-collab
+prosemirror-commands                    1.7.1      MIT             https://github.com/prosemirror/prosemirror-commands
+prosemirror-dropcursor                  1.8.2      MIT             https://github.com/prosemirror/prosemirror-dropcursor
+prosemirror-gapcursor                   1.4.0      MIT             https://github.com/prosemirror/prosemirror-gapcursor
+prosemirror-history                     1.5.0      MIT             https://github.com/prosemirror/prosemirror-history
+prosemirror-inputrules                  1.5.1      MIT             https://github.com/prosemirror/prosemirror-inputrules
+prosemirror-keymap                      1.2.3      MIT             https://github.com/prosemirror/prosemirror-keymap
+prosemirror-markdown                    1.13.2     MIT             https://github.com/prosemirror/prosemirror-markdown
+prosemirror-menu                        1.2.5      MIT             https://github.com/prosemirror/prosemirror-menu
+prosemirror-model                       1.25.4     MIT             https://github.com/prosemirror/prosemirror-model
+prosemirror-schema-basic                1.2.4      MIT             https://github.com/prosemirror/prosemirror-schema-basic
+prosemirror-schema-list                 1.5.1      MIT             https://github.com/prosemirror/prosemirror-schema-list
+prosemirror-state                       1.4.4      MIT             https://github.com/prosemirror/prosemirror-state
+prosemirror-tables                      1.8.1      MIT             https://github.com/prosemirror/prosemirror-tables
+prosemirror-trailing-node               3.0.0      MIT             https://github.com/remirror/remirror
+prosemirror-transform                   1.10.5     MIT             https://github.com/prosemirror/prosemirror-transform
+prosemirror-view                        1.41.3     MIT             https://github.com/prosemirror/prosemirror-view
+punycode.js                             2.3.1      MIT             https://github.com/mathiasbynens/punycode.js
+react                                   19.2.0     MIT             https://github.com/facebook/react
+react-dom                               19.2.0     MIT             https://github.com/facebook/react
+react-i18next                           16.3.5     MIT             https://github.com/i18next/react-i18next
+react-is                                19.2.0     MIT             https://github.com/facebook/react
+react-redux                             9.2.0      MIT             https://github.com/reduxjs/react-redux
+react-router                            7.12.0     MIT             https://github.com/remix-run/react-router
+react-router-dom                        7.12.0     MIT             https://github.com/remix-run/react-router
+readable-stream                         2.3.8      MIT             https://github.com/nodejs/readable-stream
+recharts                                3.5.1      MIT             https://github.com/recharts/recharts
+redux                                   5.0.1      MIT             https://github.com/reduxjs/redux
+redux-thunk                             3.1.0      MIT             https://github.com/reduxjs/redux-thunk
+reselect                                5.1.1      MIT             https://github.com/reduxjs/reselect
+rope-sequence                           1.3.4      MIT             https://github.com/marijnh/rope-sequence
+safe-buffer                             5.1.2      MIT             https://github.com/feross/safe-buffer
+scheduler                               0.27.0     MIT             https://github.com/facebook/react
+set-cookie-parser                       2.7.2      MIT             https://github.com/nfriedly/set-cookie-parser
+setimmediate                            1.0.5      MIT             https://github.com/YuzuJS/setImmediate
+string_decoder                          1.1.1      MIT             https://github.com/nodejs/string_decoder
+three                                   0.159.0    MIT             https://github.com/mrdoob/three.js
+three                                   0.181.2    MIT             https://github.com/mrdoob/three.js
+tiny-invariant                          1.3.3      MIT             https://github.com/alexreardon/tiny-invariant
+tr46                                    0.0.3      MIT             https://github.com/Sebmaster/tr46.js
+tslib                                   2.8.1      0BSD            https://github.com/Microsoft/tslib
+uc.micro                                2.1.0      MIT             https://github.com/markdown-it/uc.micro
+use-sync-external-store                 1.6.0      MIT             https://github.com/facebook/react
+util-deprecate                          1.0.2      MIT             https://github.com/TooTallNate/util-deprecate
+victory-vendor                          37.3.6     MIT AND ISC     https://github.com/FormidableLabs/victory
+void-elements                           3.1.0      MIT             https://github.com/pugjs/void-elements
+w3c-keyname                             2.2.8      MIT             https://github.com/marijnh/w3c-keyname
+webidl-conversions                      3.0.1      BSD-2-Clause    https://github.com/jsdom/webidl-conversions
+whatwg-url                              5.0.0      MIT             https://github.com/jsdom/whatwg-url
+
+
+================================================================================
+  LICENSE TEXTS
+================================================================================
+
+
+--- MIT License ---
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+--- BSD 2-Clause License ---
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+--- BSD 3-Clause License ---
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its contributors
+   may be used to endorse or promote products derived from this software
+   without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+--- Apache License, Version 2.0 ---
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+
+--- ISC License ---
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
+
+
+--- Mozilla Public License Version 2.0 (MPL-2.0) ---
+
+This Source Code Form is subject to the terms of the Mozilla Public License,
+v. 2.0. If a copy of the MPL was not distributed with this file, You can
+obtain one at https://mozilla.org/MPL/2.0/.
+
+
+--- Eclipse Public License - v 2.0 (EPL-2.0) ---
+
+This program and the accompanying materials are made available under the terms
+of the Eclipse Public License v. 2.0 which is available at
+http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+v. 1.0 which is available at
+http://www.eclipse.org/org/documents/edl-v10.php.
+
+
+--- Python Software Foundation License Version 2 (PSF-2.0) ---
+
+PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2
+
+1. This LICENSE AGREEMENT is between the Python Software Foundation ("PSF"),
+   and the Individual or Organization ("Licensee") accessing and otherwise
+   using this software ("Python") in source or binary form and its associated
+   documentation.
+
+2. Subject to the terms and conditions of this License Agreement, PSF hereby
+   grants Licensee a nonexclusive, royalty-free, world-wide license to
+   reproduce, analyze, test, perform and/or display publicly, prepare
+   derivative works, distribute, and otherwise use Python alone or in any
+   derivative version, provided, however, that PSF's License Agreement and
+   PSF's notice of copyright, i.e., "Copyright (c) 2001-2025 Python Software
+   Foundation; All Rights Reserved" are retained in Python alone or in any
+   derivative version prepared by Licensee.
+
+3. In the event Licensee prepares a derivative work that is based on or
+   incorporates Python or any part thereof, and wants to make the derivative
+   work available to others as provided herein, then Licensee hereby agrees
+   to include in any such work a brief summary of the changes made to Python.
+
+4. PSF is making Python available to Licensee on an "AS IS" basis. PSF MAKES
+   NO REPRESENTATIONS OR WARRANTIES, EXPRESS OR IMPLIED. BY WAY OF EXAMPLE,
+   BUT NOT LIMITATION, PSF MAKES NO AND DISCLAIMS ANY REPRESENTATION OR
+   WARRANTY OF MERCHANTABILITY OR FITNESS FOR ANY PARTICULAR PURPOSE OR THAT
+   THE USE OF PYTHON WILL NOT INFRINGE ANY THIRD PARTY RIGHTS.
+
+5. PSF SHALL NOT BE LIABLE TO LICENSEE OR ANY OTHER USERS OF PYTHON FOR ANY
+   INCIDENTAL, SPECIAL, OR CONSEQUENTIAL DAMAGES OR LOSS AS A RESULT OF
+   MODIFYING, DISTRIBUTING, OR OTHERWISE USING PYTHON, OR ANY DERIVATIVE
+   THEREOF, EVEN IF ADVISED OF THE POSSIBILITY THEREOF.
+
+6. This License Agreement will automatically terminate upon a material breach
+   of its terms and conditions.
+
+7. Nothing in this License Agreement shall be deemed to create any
+   relationship of agency, partnership, or joint venture between PSF and
+   Licensee. This License Agreement does not grant permission to use PSF
+   trademarks or trade name in a trademark sense to endorse or promote
+   products or services of Licensee, or any third party.
+
+8. By copying, installing or otherwise using Python, Licensee agrees to be
+   bound by the terms and conditions of this License Agreement.
+
+
+--- 0BSD License ---
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
+
+
+--- Zlib License ---
+
+This software is provided 'as-is', without any express or implied warranty.
+In no event will the authors be held liable for any damages arising from the
+use of this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it freely,
+subject to the following restrictions:
+
+1. The origin of this software must not be misrepresented; you must not claim
+   that you wrote the original software. If you use this software in a
+   product, an acknowledgment in the product documentation would be
+   appreciated but is not required.
+2. Altered source versions must be plainly marked as such, and must not be
+   misrepresented as being the original software.
+3. This notice may not be removed or altered from any source distribution.
+
+
+--- Pillow License (MIT-CMU) ---
+
+The Python Imaging Library (PIL) is
+
+    Copyright (c) 1997-2011 by Secret Labs AB
+    Copyright (c) 1995-2011 by Fredrik Lundh and contributors
+
+Pillow is the friendly PIL fork. It is
+
+    Copyright (c) 2010 by Jeffrey A. Clark and contributors
+
+Like PIL, Pillow is licensed under the open source MIT-CMU License.
+
+
+================================================================================
+  END OF THIRD-PARTY LICENSES
+================================================================================

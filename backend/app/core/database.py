@@ -933,6 +933,20 @@ async def run_migrations(conn):
     except Exception:
         pass
 
+    # Migration: Add model-based queue assignment columns to print_queue
+    try:
+        await conn.execute(text("ALTER TABLE print_queue ADD COLUMN target_model VARCHAR(50)"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE print_queue ADD COLUMN required_filament_types TEXT"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE print_queue ADD COLUMN waiting_reason TEXT"))
+    except Exception:
+        pass
+
 
 async def seed_notification_templates():
     """Seed default notification templates if they don't exist."""

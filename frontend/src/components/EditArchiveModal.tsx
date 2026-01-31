@@ -68,30 +68,49 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
     queryFn: () => api.getProjects(),
   });
 
-  // Get all archives to extract existing tags if not provided
-  const { data: archives } = useQuery({
-    queryKey: ['archives'],
-    queryFn: () => api.getArchives(undefined, 1000, 0),
+  // Fetch all tags using the dedicated API
+  const { data: tagsData } = useQuery({
+    queryKey: ['tags'],
+    queryFn: api.getTags,
     enabled: existingTags.length === 0,
   });
 
-  // Extract unique tags from all archives
+  // Use existing tags prop if provided, otherwise use fetched tags
   const allTags = existingTags.length > 0
     ? existingTags
-    : [...new Set(
-        archives?.flatMap(a => a.tags?.split(',').map(t => t.trim()) || []).filter(Boolean) || []
-      )].sort();
+    : (tagsData?.map(t => t.name) || []);
 
   // Get current tags as array
   const currentTags = tags.split(',').map(t => t.trim()).filter(Boolean);
 
-  // Filter suggestions based on what's not already added
-  const tagSuggestions = allTags.filter(t => !currentTags.includes(t));
+  // Get the text being typed after the last comma (for autocomplete filtering)
+  const currentInput = tags.includes(',')
+    ? tags.substring(tags.lastIndexOf(',') + 1).trim().toLowerCase()
+    : tags.trim().toLowerCase();
 
-  // Add a tag
+  // Filter suggestions: not already added AND matches current input (if any)
+  const tagSuggestions = allTags.filter(t =>
+    !currentTags.includes(t) &&
+    (currentInput === '' || t.toLowerCase().includes(currentInput))
+  );
+
+  // Add a tag (replaces any partial input with the selected tag)
   const addTag = (tag: string) => {
-    if (!currentTags.includes(tag)) {
-      const newTags = [...currentTags, tag].join(', ');
+    // If there's partial input being typed, replace it with the selected tag
+    // Otherwise, just append the tag
+    let baseTags: string[];
+    if (currentInput && !allTags.includes(currentInput)) {
+      // User is typing a partial tag - replace it with the selected one
+      baseTags = tags.includes(',')
+        ? tags.substring(0, tags.lastIndexOf(',')).split(',').map(t => t.trim()).filter(Boolean)
+        : [];
+    } else {
+      // No partial input or input is already a complete tag - append
+      baseTags = currentTags;
+    }
+
+    if (!baseTags.includes(tag)) {
+      const newTags = [...baseTags, tag].join(', ');
       setTags(newTags);
     }
     // Clear any pending blur timeout to prevent hiding suggestions
@@ -342,7 +361,7 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
               {showTagSuggestions && tagSuggestions.length > 0 && (
                 <div className="absolute top-full left-0 right-0 mt-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg z-10 max-h-40 overflow-y-auto">
                   <div className="p-2 text-xs text-bambu-gray border-b border-bambu-dark-tertiary">
-                    Existing tags (click to add)
+                    {currentInput ? `Matching "${currentInput}"` : 'Existing tags'} (click to add)
                   </div>
                   <div className="p-2 flex flex-wrap gap-1.5">
                     {tagSuggestions.map((tag) => (

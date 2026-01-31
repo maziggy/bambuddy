@@ -67,6 +67,19 @@ class ThreeMFParser:
                 content = zf.read("Metadata/slice_info.config").decode()
                 root = ET.fromstring(content)
 
+                # Extract printer_model_id from plate metadata
+                # Format: <plate><metadata key="printer_model_id" value="C11" /></plate>
+                for meta in root.findall(".//metadata"):
+                    key = meta.get("key")
+                    value = meta.get("value")
+                    if key == "printer_model_id" and value:
+                        from backend.app.utils.printer_models import normalize_printer_model_id
+
+                        normalized = normalize_printer_model_id(value)
+                        if normalized:
+                            self.metadata["sliced_for_model"] = normalized
+                        break
+
                 # Find the plate element (single-plate exports only have one plate)
                 plate = root.find(".//plate")
 
@@ -156,7 +169,7 @@ class ThreeMFParser:
             pass
 
     def _parse_gcode_header(self, zf: zipfile.ZipFile):
-        """Parse G-code file header for total layer count."""
+        """Parse G-code file header for total layer count and printer model."""
         import re
 
         try:
@@ -165,15 +178,25 @@ class ThreeMFParser:
             if not gcode_files:
                 return
 
-            # Read first 2KB of G-code (header contains the layer count)
+            # Read first 4KB of G-code (header contains metadata)
             gcode_path = gcode_files[0]
             with zf.open(gcode_path) as f:
-                header = f.read(2048).decode("utf-8", errors="ignore")
+                header = f.read(4096).decode("utf-8", errors="ignore")
 
             # Look for "; total layer number: XX" pattern
             match = re.search(r";\s*total\s+layer\s+number[:\s]+(\d+)", header, re.IGNORECASE)
             if match:
                 self.metadata["total_layers"] = int(match.group(1))
+
+            # Look for printer_model in gcode header (fallback if not found in slice_info)
+            # Format: "; printer_model = Bambu Lab X1 Carbon" or "; printer_model = X1C"
+            if "sliced_for_model" not in self.metadata:
+                match = re.search(r";\s*printer_model\s*=\s*(.+)", header, re.IGNORECASE)
+                if match:
+                    from backend.app.utils.printer_models import normalize_printer_model
+
+                    raw_model = match.group(1).strip()
+                    self.metadata["sliced_for_model"] = normalize_printer_model(raw_model)
         except Exception:
             pass
 
@@ -256,6 +279,12 @@ class ThreeMFParser:
                     elif isinstance(val, (int, float, str)):
                         self.metadata["nozzle_temperature"] = int(float(val))
                     break
+
+            # Printer model (extract and normalize)
+            if "printer_model" in data:
+                from backend.app.utils.printer_models import normalize_printer_model
+
+                self.metadata["sliced_for_model"] = normalize_printer_model(data["printer_model"])
         except Exception:
             pass
 
@@ -877,6 +906,7 @@ class ArchiveService:
             nozzle_diameter=metadata.get("nozzle_diameter"),
             bed_temperature=metadata.get("bed_temperature"),
             nozzle_temperature=metadata.get("nozzle_temperature"),
+            sliced_for_model=metadata.get("sliced_for_model"),
             makerworld_url=metadata.get("makerworld_url"),
             designer=metadata.get("designer"),
             status=status,

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -548,14 +548,16 @@ export function SettingsPage() {
   // Local state for camera URL inputs (to avoid saving on every keystroke)
   const [localCameraUrls, setLocalCameraUrls] = useState<Record<number, string>>({});
   const cameraUrlSaveTimeoutRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const initializedPrinterUrlsRef = useRef<Set<number>>(new Set());
 
   // Initialize local camera URLs from printer data
   useEffect(() => {
     if (printers) {
       const urls: Record<number, string> = {};
       printers.forEach(p => {
-        if (p.external_camera_url && localCameraUrls[p.id] === undefined) {
+        if (p.external_camera_url && !initializedPrinterUrlsRef.current.has(p.id)) {
           urls[p.id] = p.external_camera_url;
+          initializedPrinterUrlsRef.current.add(p.id);
         }
       });
       if (Object.keys(urls).length > 0) {
@@ -742,17 +744,20 @@ export function SettingsPage() {
                   <Globe className="w-4 h-4 inline mr-1" />
                   {t('settings.language')}
                 </label>
-                <select
-                  value={i18n.language}
-                  onChange={(e) => i18n.changeLanguage(e.target.value)}
-                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                >
-                  {availableLanguages.map((lang) => (
-                    <option key={lang.code} value={lang.code}>
-                      {lang.nativeName} ({lang.name})
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <select
+                    value={i18n.language}
+                    onChange={(e) => i18n.changeLanguage(e.target.value)}
+                    className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
+                  >
+                    {availableLanguages.map((lang) => (
+                      <option key={lang.code} value={lang.code}>
+                        {lang.nativeName} ({lang.name})
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+                </div>
                 <p className="text-xs text-bambu-gray mt-1">
                   {t('settings.languageDescription')}
                 </p>
@@ -761,17 +766,20 @@ export function SettingsPage() {
                 <label className="block text-sm text-bambu-gray mb-1">
                   {t('settings.defaultView')}
                 </label>
-                <select
-                  value={defaultView}
-                  onChange={(e) => handleDefaultViewChange(e.target.value)}
-                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                >
-                  {defaultNavItems.map((item) => (
-                    <option key={item.id} value={item.to}>
-                      {t(item.labelKey)}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <select
+                    value={defaultView}
+                    onChange={(e) => handleDefaultViewChange(e.target.value)}
+                    className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
+                  >
+                    {defaultNavItems.map((item) => (
+                      <option key={item.id} value={item.to}>
+                        {t(item.labelKey)}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+                </div>
                 <p className="text-xs text-bambu-gray mt-1">
                   {t('settings.defaultViewDescription')}
                 </p>
@@ -781,48 +789,57 @@ export function SettingsPage() {
                   <label className="block text-sm text-bambu-gray mb-1">
                     Date Format
                   </label>
-                  <select
-                    value={localSettings.date_format || 'system'}
-                    onChange={(e) => updateSetting('date_format', e.target.value as 'system' | 'us' | 'eu' | 'iso')}
-                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                  >
-                    <option value="system">System Default</option>
-                    <option value="us">US (MM/DD/YYYY)</option>
-                    <option value="eu">EU (DD/MM/YYYY)</option>
-                    <option value="iso">ISO (YYYY-MM-DD)</option>
-                  </select>
+                  <div className="relative">
+                    <select
+                      value={localSettings.date_format || 'system'}
+                      onChange={(e) => updateSetting('date_format', e.target.value as 'system' | 'us' | 'eu' | 'iso')}
+                      className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
+                    >
+                      <option value="system">System Default</option>
+                      <option value="us">US (MM/DD/YYYY)</option>
+                      <option value="eu">EU (DD/MM/YYYY)</option>
+                      <option value="iso">ISO (YYYY-MM-DD)</option>
+                    </select>
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm text-bambu-gray mb-1">
                     Time Format
                   </label>
-                  <select
-                    value={localSettings.time_format || 'system'}
-                    onChange={(e) => updateSetting('time_format', e.target.value as 'system' | '12h' | '24h')}
-                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                  >
-                    <option value="system">System Default</option>
-                    <option value="12h">12-hour (3:30 PM)</option>
-                    <option value="24h">24-hour (15:30)</option>
-                  </select>
+                  <div className="relative">
+                    <select
+                      value={localSettings.time_format || 'system'}
+                      onChange={(e) => updateSetting('time_format', e.target.value as 'system' | '12h' | '24h')}
+                      className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
+                    >
+                      <option value="system">System Default</option>
+                      <option value="12h">12-hour (3:30 PM)</option>
+                      <option value="24h">24-hour (15:30)</option>
+                    </select>
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+                  </div>
                 </div>
               </div>
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
                   Default Printer
                 </label>
-                <select
-                  value={localSettings.default_printer_id ?? ''}
-                  onChange={(e) => updateSetting('default_printer_id', e.target.value ? Number(e.target.value) : null)}
-                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                >
-                  <option value="">No default (ask each time)</option>
-                  {printers?.map((printer) => (
-                    <option key={printer.id} value={printer.id}>
-                      {printer.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <select
+                    value={localSettings.default_printer_id ?? ''}
+                    onChange={(e) => updateSetting('default_printer_id', e.target.value ? Number(e.target.value) : null)}
+                    className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
+                  >
+                    <option value="">No default (ask each time)</option>
+                    {printers?.map((printer) => (
+                      <option key={printer.id} value={printer.id}>
+                        {printer.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+                </div>
                 <p className="text-xs text-bambu-gray mt-1">
                   Pre-select this printer for uploads, reprints, and other operations.
                 </p>
@@ -1647,7 +1664,7 @@ export function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-bambu-gray">
-                Connect to Home Assistant to control smart plugs via HA's REST API. Supports switch, light, and input_boolean entities.
+                Connect to Home Assistant to control smart plugs via HA's REST API. Supports switch, light, input_boolean, and script entities.
               </p>
 
               <div className="flex items-center justify-between">

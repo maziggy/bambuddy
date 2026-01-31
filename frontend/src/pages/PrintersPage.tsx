@@ -1093,6 +1093,12 @@ function PrinterCard({
     queryFn: () => api.getSmartPlugByPrinter(printer.id),
   });
 
+  // Fetch script plugs for this printer (for multi-device control)
+  const { data: scriptPlugs } = useQuery({
+    queryKey: ['scriptPlugsByPrinter', printer.id],
+    queryFn: () => api.getScriptPlugsByPrinter(printer.id),
+  });
+
   // Fetch smart plug status if plug exists (faster refresh for energy monitoring)
   const { data: plugStatus } = useQuery({
     queryKey: ['smartPlugStatus', smartPlug?.id],
@@ -1153,6 +1159,15 @@ function PrinterCard({
       // Also invalidate the smart-plugs list to keep Settings page in sync
       queryClient.invalidateQueries({ queryKey: ['smart-plugs'] });
     },
+  });
+
+  // Run script mutation
+  const runScriptMutation = useMutation({
+    mutationFn: (scriptId: number) => api.controlSmartPlug(scriptId, 'on'),
+    onSuccess: () => {
+      showToast('Script triggered');
+    },
+    onError: (error: Error) => showToast(error.message || 'Failed to run script', 'error'),
   });
 
   // Print control mutations
@@ -2683,17 +2698,39 @@ function PrinterCard({
                 </button>
               </div>
             </div>
+
+            {/* Script buttons row */}
+            {scriptPlugs && scriptPlugs.length > 0 && (
+              <div className="flex items-center gap-2 mt-2 pt-2 border-t border-bambu-dark-tertiary/50">
+                <Play className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                <span className="text-xs text-bambu-gray">Scripts:</span>
+                <div className="flex flex-wrap gap-1">
+                  {scriptPlugs.map(script => (
+                    <button
+                      key={script.id}
+                      onClick={() => runScriptMutation.mutate(script.id)}
+                      disabled={runScriptMutation.isPending}
+                      title={`Run ${script.ha_entity_id}`}
+                      className="px-2 py-0.5 text-xs bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 rounded transition-colors flex items-center gap-1"
+                    >
+                      <Play className="w-2.5 h-2.5" />
+                      {script.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* Connection Info & Actions - hidden in compact mode */}
         {viewMode === 'expanded' && (
-          <div className="mt-4 pt-4 border-t border-bambu-dark-tertiary flex items-center justify-between">
+          <div className="mt-4 pt-4 border-t border-bambu-dark-tertiary flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="text-xs text-bambu-gray">
               <p>{printer.ip_address}</p>
               <p className="truncate">{printer.serial_number}</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {/* Chamber Light Toggle */}
               <Button
                 variant="secondary"
@@ -4487,12 +4524,12 @@ export function PrintersPage() {
 
   return (
     <div className="p-4 md:p-8">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">Printers</h1>
           <StatusSummaryBar printers={printers} />
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           {/* Sort dropdown */}
           <div className="flex items-center gap-1">
             <select

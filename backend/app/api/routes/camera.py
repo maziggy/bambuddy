@@ -713,13 +713,14 @@ async def check_plate_empty(
     )
     from backend.app.services.printer_manager import printer_manager
 
+    # Check printer exists first (before OpenCV check)
+    printer = await get_printer_or_404(printer_id, db)
+
     if not is_plate_detection_available():
         raise HTTPException(
             status_code=503,
             detail="Plate detection not available. Install opencv-python-headless to enable.",
         )
-
-    printer = await get_printer_or_404(printer_id, db)
 
     # Check chamber light status
     light_warning = False
@@ -818,13 +819,14 @@ async def calibrate_plate_detection(
     )
     from backend.app.services.printer_manager import printer_manager
 
+    # Check printer exists first (before OpenCV check)
+    printer = await get_printer_or_404(printer_id, db)
+
     if not is_plate_detection_available():
         raise HTTPException(
             status_code=503,
             detail="Plate detection not available. Install opencv-python-headless to enable.",
         )
-
-    printer = await get_printer_or_404(printer_id, db)
 
     # Check chamber light - warn but don't block
     state = printer_manager.get_status(printer_id)
@@ -869,14 +871,14 @@ async def delete_plate_calibration(
         is_plate_detection_available,
     )
 
+    # Verify printer exists first (before OpenCV check)
+    await get_printer_or_404(printer_id, db)
+
     if not is_plate_detection_available():
         raise HTTPException(
             status_code=503,
             detail="Plate detection not available. Install opencv-python-headless to enable.",
         )
-
-    # Verify printer exists
-    await get_printer_or_404(printer_id, db)
 
     deleted = delete_calibration(printer_id, plate_type)
     plate_msg = f" for '{plate_type}'" if plate_type else ""
@@ -909,6 +911,9 @@ async def get_plate_detection_status(
     )
     from backend.app.services.printer_manager import printer_manager
 
+    # Verify printer exists first (before OpenCV check)
+    await get_printer_or_404(printer_id, db)
+
     if not is_plate_detection_available():
         return {
             "available": False,
@@ -917,9 +922,6 @@ async def get_plate_detection_status(
             "chamber_light": False,
             "message": "OpenCV not installed",
         }
-
-    # Verify printer exists
-    await get_printer_or_404(printer_id, db)
 
     # Get chamber light status
     state = printer_manager.get_status(printer_id)
@@ -942,10 +944,11 @@ async def get_plate_references(
     """
     from backend.app.services.plate_detection import PlateDetector, is_plate_detection_available
 
+    # Verify printer exists first (before OpenCV check)
+    await get_printer_or_404(printer_id, db)
+
     if not is_plate_detection_available():
         raise HTTPException(503, "Plate detection not available")
-
-    await get_printer_or_404(printer_id, db)
 
     detector = PlateDetector()
     references = detector.get_references(printer_id)
@@ -973,10 +976,11 @@ async def get_reference_thumbnail(
 
     from backend.app.services.plate_detection import PlateDetector, is_plate_detection_available
 
+    # Verify printer exists first (before OpenCV check)
+    await get_printer_or_404(printer_id, db)
+
     if not is_plate_detection_available():
         raise HTTPException(503, "Plate detection not available")
-
-    await get_printer_or_404(printer_id, db)
 
     detector = PlateDetector()
     thumbnail = detector.get_reference_thumbnail(printer_id, index)
@@ -997,10 +1001,11 @@ async def update_reference_label(
     """Update the label for a calibration reference."""
     from backend.app.services.plate_detection import PlateDetector, is_plate_detection_available
 
+    # Verify printer exists first (before OpenCV check)
+    await get_printer_or_404(printer_id, db)
+
     if not is_plate_detection_available():
         raise HTTPException(503, "Plate detection not available")
-
-    await get_printer_or_404(printer_id, db)
 
     detector = PlateDetector()
     success = detector.update_reference_label(printer_id, index, label)
@@ -1020,10 +1025,11 @@ async def delete_reference(
     """Delete a specific calibration reference."""
     from backend.app.services.plate_detection import PlateDetector, is_plate_detection_available
 
+    # Verify printer exists first (before OpenCV check)
+    await get_printer_or_404(printer_id, db)
+
     if not is_plate_detection_available():
         raise HTTPException(503, "Plate detection not available")
-
-    await get_printer_or_404(printer_id, db)
 
     detector = PlateDetector()
     success = detector.delete_reference(printer_id, index)

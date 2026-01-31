@@ -35,6 +35,9 @@ class PrintArchive(Base):
     bed_temperature: Mapped[int | None] = mapped_column(Integer)
     nozzle_temperature: Mapped[int | None] = mapped_column(Integer)
 
+    # Printer model this file was sliced for (extracted from 3MF metadata)
+    sliced_for_model: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
     # Print result
     status: Mapped[str] = mapped_column(String(20), default="completed")
     started_at: Mapped[datetime | None] = mapped_column(DateTime)

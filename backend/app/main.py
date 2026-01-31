@@ -2000,6 +2000,34 @@ async def on_print_complete(printer_id: int, data: dict):
                 except Exception:
                     pass  # Don't fail if MQTT fails
 
+                # Check if queue is now empty and send notification
+                try:
+                    from sqlalchemy import func
+
+                    # Count remaining pending items
+                    count_result = await db.execute(
+                        select(func.count(PrintQueueItem.id)).where(PrintQueueItem.status == "pending")
+                    )
+                    pending_count = count_result.scalar() or 0
+
+                    if pending_count == 0:
+                        # Count how many completed today (rough approximation)
+                        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                        completed_result = await db.execute(
+                            select(func.count(PrintQueueItem.id)).where(
+                                PrintQueueItem.status.in_(["completed", "failed", "skipped"]),
+                                PrintQueueItem.completed_at >= today_start,
+                            )
+                        )
+                        completed_count = completed_result.scalar() or 1
+
+                        await notification_service.on_queue_completed(
+                            completed_count=completed_count,
+                            db=db,
+                        )
+                except Exception:
+                    pass  # Don't fail if notification fails
+
                 # Handle auto_off_after - power off printer if requested (after cooldown)
                 if queue_item.auto_off_after:
                     result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))

@@ -285,6 +285,7 @@ class TestCameraAPI:
         mock_result.difference_percent = 0.5
         mock_result.message = "Plate appears empty"
         mock_result.needs_calibration = False
+        mock_result.debug_image = None
         mock_result.to_dict.return_value = {
             "is_empty": True,
             "confidence": 0.95,
@@ -294,7 +295,16 @@ class TestCameraAPI:
             "needs_calibration": False,
         }
 
-        with patch("backend.app.services.plate_detection.check_plate_empty", new_callable=AsyncMock) as mock_check:
+        # Mock PlateDetector for reference count
+        mock_detector = MagicMock()
+        mock_detector.get_calibration_count.return_value = 0
+        mock_detector.MAX_REFERENCES = 5
+
+        with (
+            patch("backend.app.services.plate_detection.is_plate_detection_available", return_value=True),
+            patch("backend.app.services.plate_detection.check_plate_empty", new_callable=AsyncMock) as mock_check,
+            patch("backend.app.services.plate_detection.PlateDetector", return_value=mock_detector),
+        ):
             mock_check.return_value = mock_result
             response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/check-plate")
 
@@ -319,7 +329,10 @@ class TestCameraAPI:
         printer = await printer_factory()
 
         # Mock calibrate_plate at the source module to avoid camera timeout
-        with patch("backend.app.services.plate_detection.calibrate_plate", new_callable=AsyncMock) as mock_calibrate:
+        with (
+            patch("backend.app.services.plate_detection.is_plate_detection_available", return_value=True),
+            patch("backend.app.services.plate_detection.calibrate_plate", new_callable=AsyncMock) as mock_calibrate,
+        ):
             mock_calibrate.return_value = (True, "Calibration saved (1/5 references)", 0)
             response = await async_client.post(f"/api/v1/printers/{printer.id}/camera/plate-detection/calibrate")
 
@@ -342,7 +355,8 @@ class TestCameraAPI:
         """Verify delete calibration returns proper structure."""
         printer = await printer_factory()
 
-        response = await async_client.delete(f"/api/v1/printers/{printer.id}/camera/plate-detection/calibrate")
+        with patch("backend.app.services.plate_detection.is_plate_detection_available", return_value=True):
+            response = await async_client.delete(f"/api/v1/printers/{printer.id}/camera/plate-detection/calibrate")
 
         assert response.status_code == 200
         result = response.json()
@@ -374,8 +388,16 @@ class TestCameraAPI:
         """Verify get references returns proper structure."""
         printer = await printer_factory()
 
-        # OpenCV is available in test environment, just check the response structure
-        response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/plate-detection/references")
+        # Mock OpenCV availability and PlateDetector
+        mock_detector = MagicMock()
+        mock_detector.get_references.return_value = []
+        mock_detector.MAX_REFERENCES = 5
+
+        with (
+            patch("backend.app.services.plate_detection.is_plate_detection_available", return_value=True),
+            patch("backend.app.services.plate_detection.PlateDetector", return_value=mock_detector),
+        ):
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/plate-detection/references")
 
         assert response.status_code == 200
         result = response.json()

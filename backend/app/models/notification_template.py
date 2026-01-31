@@ -103,4 +103,47 @@ DEFAULT_TEMPLATES = [
         "title_template": "Bambuddy Test",
         "body_template": "This is a test notification. If you see this, notifications are working!",
     },
+    # Queue notifications
+    {
+        "event_type": "queue_job_added",
+        "name": "Queue Job Added",
+        "title_template": "Job Queued",
+        "body_template": "{job_name} added to queue for {target}",
+    },
+    {
+        "event_type": "queue_job_assigned",
+        "name": "Queue Job Assigned",
+        "title_template": "Job Assigned",
+        "body_template": "{job_name} assigned to {printer} (from Any {target_model} queue)",
+    },
+    {
+        "event_type": "queue_job_started",
+        "name": "Queue Job Started",
+        "title_template": "Queue Job Started",
+        "body_template": "{printer}: {job_name}\nEstimated: {estimated_time}",
+    },
+    {
+        "event_type": "queue_job_waiting",
+        "name": "Queue Job Waiting",
+        "title_template": "Job Waiting for Filament",
+        "body_template": "{job_name} waiting for {target_model}\n{waiting_reason}",
+    },
+    {
+        "event_type": "queue_job_skipped",
+        "name": "Queue Job Skipped",
+        "title_template": "Job Skipped",
+        "body_template": "{printer}: {job_name}\nReason: {reason}",
+    },
+    {
+        "event_type": "queue_job_failed",
+        "name": "Queue Job Failed",
+        "title_template": "Job Failed to Start",
+        "body_template": "{printer}: {job_name}\nReason: {reason}",
+    },
+    {
+        "event_type": "queue_completed",
+        "name": "Queue Completed",
+        "title_template": "Queue Complete",
+        "body_template": "All {completed_count} queued jobs have finished",
+    },
 ]

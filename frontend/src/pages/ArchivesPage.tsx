@@ -43,6 +43,7 @@ import {
   FolderKanban,
   ChevronLeft,
   ChevronRight,
+  Settings,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { openInSlicer } from '../utils/slicer';
@@ -66,6 +67,7 @@ import { ProjectPageModal } from '../components/ProjectPageModal';
 import { TimelapseViewer } from '../components/TimelapseViewer';
 import { CompareArchivesModal } from '../components/CompareArchivesModal';
 import { PendingUploadsPanel } from '../components/PendingUploadsPanel';
+import { TagManagementModal } from '../components/TagManagementModal';
 import { useToast } from '../contexts/ToastContext';
 
 function formatFileSize(bytes: number): string {
@@ -795,6 +797,12 @@ function ArchiveCard({
             <div className="flex items-center gap-1.5 text-bambu-gray" title={`${archive.object_count} object${archive.object_count > 1 ? 's' : ''}`}>
               <Box className="w-3 h-3" />
               {archive.object_count} object{archive.object_count > 1 ? 's' : ''}
+            </div>
+          )}
+          {archive.sliced_for_model && (
+            <div className="flex items-center gap-1.5 text-bambu-gray" title={`Sliced for ${archive.sliced_for_model}`}>
+              <Printer className="w-3 h-3" />
+              {archive.sliced_for_model}
             </div>
           )}
           {archive.filament_type && (
@@ -1612,9 +1620,20 @@ function ArchiveListRow({
               </Link>
             )}
           </div>
-          {archive.filament_type && (
+          {(archive.filament_type || archive.sliced_for_model) && (
             <div className="flex items-center gap-1.5 mt-0.5">
-              <span className="text-xs text-bambu-gray">{archive.filament_type}</span>
+              {archive.sliced_for_model && (
+                <span className="text-xs text-bambu-gray flex items-center gap-1" title={`Sliced for ${archive.sliced_for_model}`}>
+                  <Printer className="w-2.5 h-2.5" />
+                  {archive.sliced_for_model}
+                </span>
+              )}
+              {archive.sliced_for_model && archive.filament_type && (
+                <span className="text-bambu-gray/50">·</span>
+              )}
+              {archive.filament_type && (
+                <span className="text-xs text-bambu-gray">{archive.filament_type}</span>
+              )}
               {archive.filament_color && (
                 <div className="flex items-center gap-0.5 flex-wrap">
                   {archive.filament_color.split(',').map((color, i) => (
@@ -1989,6 +2008,7 @@ export function ArchivesPage() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [showCompareModal, setShowCompareModal] = useState(false);
+  const [showTagManagement, setShowTagManagement] = useState(false);
   const [highlightedArchiveId, setHighlightedArchiveId] = useState<number | null>(null);
 
   // Clear highlight after 5 seconds and scroll to highlighted element
@@ -2620,6 +2640,13 @@ export function ArchivesPage() {
                     </option>
                   ))}
                 </select>
+                <button
+                  onClick={() => setShowTagManagement(true)}
+                  className="p-2 rounded-lg bg-bambu-dark border border-bambu-dark-tertiary text-bambu-gray hover:text-white hover:border-bambu-green transition-colors"
+                  title="Manage Tags"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
               </div>
             )}
             <div className="flex items-center gap-2 flex-shrink-0">
@@ -2755,7 +2782,7 @@ export function ArchivesPage() {
             <ArchiveCard
               key={archive.id}
               archive={archive}
-              printerName={archive.printer_id ? printerMap.get(archive.printer_id) || 'Unknown' : 'No Printer'}
+              printerName={archive.printer_id ? printerMap.get(archive.printer_id) || 'Unknown' : (archive.sliced_for_model ? `Sliced for ${archive.sliced_for_model}` : 'No Printer')}
               isSelected={selectedIds.has(archive.id)}
               onSelect={toggleSelect}
               selectionMode={selectionMode}
@@ -2782,7 +2809,7 @@ export function ArchivesPage() {
               <ArchiveListRow
                 key={archive.id}
                 archive={archive}
-                printerName={archive.printer_id ? printerMap.get(archive.printer_id) || 'Unknown' : 'No Printer'}
+                printerName={archive.printer_id ? printerMap.get(archive.printer_id) || 'Unknown' : (archive.sliced_for_model ? `Sliced for ${archive.sliced_for_model}` : 'No Printer')}
                 isSelected={selectedIds.has(archive.id)}
                 onSelect={toggleSelect}
                 selectionMode={selectionMode}
@@ -2847,6 +2874,11 @@ export function ArchivesPage() {
             setIsSelectionMode(false);
           }}
         />
+      )}
+
+      {/* Tag Management Modal */}
+      {showTagManagement && (
+        <TagManagementModal onClose={() => setShowTagManagement(false)} />
       )}
     </div>
   );

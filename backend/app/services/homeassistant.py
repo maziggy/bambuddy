@@ -228,7 +228,7 @@ class HomeAssistantService:
             - domain: str
         """
         # Default domains for smart plug control
-        default_domains = {"switch", "light", "input_boolean"}
+        default_domains = {"switch", "light", "input_boolean", "script"}
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:

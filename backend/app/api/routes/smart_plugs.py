@@ -57,9 +57,21 @@ async def create_smart_plug(
             raise HTTPException(400, "Printer not found")
 
         # Check if printer already has a plug assigned
-        result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == data.printer_id))
-        if result.scalar_one_or_none():
-            raise HTTPException(400, "This printer already has a smart plug assigned")
+        # Scripts can coexist with other plugs (they're for multi-device control, not power on/off)
+        is_script = data.plug_type == "homeassistant" and data.ha_entity_id and data.ha_entity_id.startswith("script.")
+        if not is_script:
+            # For non-script plugs, check there's no other non-script plug assigned
+            result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == data.printer_id))
+            existing = result.scalar_one_or_none()
+            if existing:
+                # Allow if existing plug is a script
+                existing_is_script = (
+                    existing.plug_type == "homeassistant"
+                    and existing.ha_entity_id
+                    and existing.ha_entity_id.startswith("script.")
+                )
+                if not existing_is_script:
+                    raise HTTPException(400, "This printer already has a smart plug assigned")
 
     # For MQTT plugs, ensure MQTT broker is configured and service is connected
     if data.plug_type == "mqtt":
@@ -131,12 +143,48 @@ async def create_smart_plug(
 
 @router.get("/by-printer/{printer_id}", response_model=SmartPlugResponse | None)
 async def get_smart_plug_by_printer(printer_id: int, db: AsyncSession = Depends(get_db)):
-    """Get the smart plug assigned to a printer."""
+    """Get the main smart plug assigned to a printer.
+
+    When multiple plugs are assigned (e.g., a regular plug + script),
+    returns the main (non-script) plug for power control.
+    """
     result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
-    plug = result.scalar_one_or_none()
-    if not plug:
+    plugs = result.scalars().all()
+
+    if not plugs:
         return None
-    return plug
+
+    # If multiple plugs, prefer the non-script one (main power plug)
+    for plug in plugs:
+        is_script = plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script.")
+        if not is_script:
+            return plug
+
+    # All are scripts, return the first one
+    return plugs[0]
+
+
+@router.get("/by-printer/{printer_id}/scripts", response_model=list[SmartPlugResponse])
+async def get_script_plugs_by_printer(printer_id: int, db: AsyncSession = Depends(get_db)):
+    """Get all HA script plugs assigned to a printer.
+
+    Returns only script entities (script.*) for the printer that have
+    show_on_printer_card enabled.
+    Used to display "Run Script" buttons alongside the main power plug.
+    """
+    result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
+    plugs = result.scalars().all()
+
+    # Filter to only scripts with show_on_printer_card enabled
+    scripts = [
+        plug
+        for plug in plugs
+        if plug.plug_type == "homeassistant"
+        and plug.ha_entity_id
+        and plug.ha_entity_id.startswith("script.")
+        and plug.show_on_printer_card
+    ]
+    return scripts
 
 
 # Tasmota Discovery Endpoints
@@ -344,14 +392,29 @@ async def update_smart_plug(
             raise HTTPException(400, "Printer not found")
 
         # Check if that printer already has a different plug assigned
-        result = await db.execute(
-            select(SmartPlug).where(
-                SmartPlug.printer_id == new_printer_id,
-                SmartPlug.id != plug_id,
+        # Scripts can coexist with other plugs
+        # Determine if the plug being updated is/will be a script
+        new_entity_id = update_data.get("ha_entity_id", plug.ha_entity_id)
+        new_plug_type = update_data.get("plug_type", plug.plug_type)
+        is_script = new_plug_type == "homeassistant" and new_entity_id and new_entity_id.startswith("script.")
+
+        if not is_script:
+            result = await db.execute(
+                select(SmartPlug).where(
+                    SmartPlug.printer_id == new_printer_id,
+                    SmartPlug.id != plug_id,
+                )
             )
-        )
-        if result.scalar_one_or_none():
-            raise HTTPException(400, "This printer already has a smart plug assigned")
+            existing = result.scalar_one_or_none()
+            if existing:
+                # Allow if existing plug is a script
+                existing_is_script = (
+                    existing.plug_type == "homeassistant"
+                    and existing.ha_entity_id
+                    and existing.ha_entity_id.startswith("script.")
+                )
+                if not existing_is_script:
+                    raise HTTPException(400, "This printer already has a smart plug assigned")
 
     # Track old MQTT settings for comparison
     old_plug_type = plug.plug_type
@@ -508,6 +571,13 @@ async def control_smart_plug(
     plug.last_checked = datetime.utcnow()
     await db.commit()
 
+    # Trigger associated scripts if this is a main (non-script) plug
+    is_main_plug = not (
+        plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script.")
+    )
+    if is_main_plug and plug.printer_id and expected_state:
+        await trigger_associated_scripts(plug.printer_id, expected_state, db)
+
     # MQTT relay - publish smart plug state change
     if expected_state:
         try:
@@ -531,6 +601,37 @@ async def control_smart_plug(
             pass  # Don't fail if MQTT fails
 
     return {"success": True, "action": control.action}
+
+
+async def trigger_associated_scripts(printer_id: int, plug_state: str, db: AsyncSession):
+    """Trigger scripts linked to a printer based on main plug state change.
+
+    When the main plug turns ON, triggers scripts with auto_on=True.
+    When the main plug turns OFF, triggers scripts with auto_off=True.
+    """
+    result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
+    plugs = result.scalars().all()
+
+    # Find scripts that should be triggered
+    for plug in plugs:
+        is_script = plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script.")
+        if not is_script:
+            continue
+
+        should_trigger = False
+        if plug_state == "ON" and plug.auto_on:
+            should_trigger = True
+            logger.info(f"Auto-triggering script '{plug.name}' on printer power-on")
+        elif plug_state == "OFF" and plug.auto_off:
+            should_trigger = True
+            logger.info(f"Auto-triggering script '{plug.name}' on printer power-off")
+
+        if should_trigger:
+            try:
+                service = await _get_service_for_plug(plug, db)
+                await service.turn_on(plug)  # Scripts are triggered by calling turn_on
+            except Exception as e:
+                logger.error(f"Failed to trigger script '{plug.name}': {e}")
 
 
 @router.get("/{plug_id}/status", response_model=SmartPlugStatus)

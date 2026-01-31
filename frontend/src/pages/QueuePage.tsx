@@ -77,7 +77,17 @@ function formatRelativeTime(dateString: string | null, timeFormat: TimeFormat = 
   return formatDateTime(dateString, timeFormat);
 }
 
-function StatusBadge({ status }: { status: PrintQueueItem['status'] }) {
+function StatusBadge({ status, waitingReason }: { status: PrintQueueItem['status']; waitingReason?: string | null }) {
+  // Special case: pending with waiting_reason shows as "Waiting"
+  if (status === 'pending' && waitingReason) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border text-purple-400 bg-purple-400/10 border-purple-400/20">
+        <Clock className="w-3.5 h-3.5" />
+        Waiting
+      </span>
+    );
+  }
+
   const config = {
     pending: { icon: Clock, color: 'text-status-warning bg-status-warning/10 border-status-warning/20', label: 'Pending' },
     printing: { icon: Play, color: 'text-blue-400 bg-blue-400/10 border-blue-400/20', label: 'Printing' },
@@ -399,9 +409,13 @@ function SortableQueueItem({
           </div>
 
           <div className="flex items-center gap-3 text-sm text-bambu-gray">
-            <span className={`flex items-center gap-1.5 ${item.printer_id === null ? 'text-orange-400' : ''}`}>
+            <span className={`flex items-center gap-1.5 ${item.printer_id === null && !item.target_model ? 'text-orange-400' : ''} ${item.target_model ? 'text-blue-400' : ''}`}>
               <Printer className="w-3.5 h-3.5" />
-              {item.printer_id === null ? 'Unassigned' : (item.printer_name || `Printer #${item.printer_id}`)}
+              {item.target_model
+                ? `Any ${item.target_model}${item.required_filament_types?.length ? ` (${item.required_filament_types.join(', ')})` : ''}`
+                : item.printer_id === null
+                  ? 'Unassigned'
+                  : (item.printer_name || `Printer #${item.printer_id}`)}
             </span>
             {item.print_time_seconds && (
               <span className="flex items-center gap-1.5">
@@ -448,6 +462,14 @@ function SortableQueueItem({
             </div>
           )}
 
+          {/* Waiting reason for model-based assignments */}
+          {item.waiting_reason && item.status === 'pending' && (
+            <p className="text-xs text-purple-400 mt-2 flex items-start gap-1">
+              <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+              <span>{item.waiting_reason}</span>
+            </p>
+          )}
+
           {/* Error message */}
           {item.error_message && (
             <p className="text-xs text-red-400 mt-2 flex items-center gap-1">
@@ -458,7 +480,7 @@ function SortableQueueItem({
         </div>
 
         {/* Status badge */}
-        <StatusBadge status={item.status} />
+        <StatusBadge status={item.status} waitingReason={item.waiting_reason} />
 
         {/* Actions */}
         <div className="flex items-center gap-1">

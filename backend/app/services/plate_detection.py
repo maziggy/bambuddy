@@ -5,6 +5,8 @@ Uses calibration-based difference detection - compares current frame to
 a reference image of the empty plate.
 """
 
+from __future__ import annotations
+
 import logging
 from pathlib import Path
 

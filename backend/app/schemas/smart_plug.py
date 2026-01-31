@@ -14,7 +14,7 @@ class SmartPlugBase(BaseModel):
     password: str | None = None
 
     # Home Assistant fields (required when plug_type="homeassistant")
-    ha_entity_id: str | None = Field(default=None, pattern=r"^(switch|light|input_boolean)\.[a-z0-9_]+$")
+    ha_entity_id: str | None = Field(default=None, pattern=r"^(switch|light|input_boolean|script)\.[a-z0-9_]+$")
     # Home Assistant energy sensor entities (optional, for separate energy sensors)
     ha_power_entity: str | None = Field(default=None, pattern=r"^sensor\.[a-z0-9_]+$")
     ha_energy_today_entity: str | None = Field(default=None, pattern=r"^sensor\.[a-z0-9_]+$")
@@ -59,8 +59,9 @@ class SmartPlugBase(BaseModel):
     schedule_enabled: bool = False
     schedule_on_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")  # HH:MM format
     schedule_off_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")  # HH:MM format
-    # Switchbar visibility
+    # Visibility options
     show_in_switchbar: bool = False
+    show_on_printer_card: bool = True  # For scripts: show on printer card
 
     @model_validator(mode="after")
     def validate_plug_type_fields(self) -> "SmartPlugBase":
@@ -127,8 +128,9 @@ class SmartPlugUpdate(BaseModel):
     schedule_enabled: bool | None = None
     schedule_on_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     schedule_off_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
-    # Switchbar visibility
+    # Visibility options
     show_in_switchbar: bool | None = None
+    show_on_printer_card: bool | None = None
 
 
 class SmartPlugResponse(SmartPlugBase):
@@ -197,7 +199,7 @@ class HAEntity(BaseModel):
     entity_id: str
     friendly_name: str
     state: str | None = None
-    domain: str  # "switch", "light", "input_boolean"
+    domain: str  # "switch", "light", "input_boolean", "script"
 
 
 class HASensorEntity(BaseModel):

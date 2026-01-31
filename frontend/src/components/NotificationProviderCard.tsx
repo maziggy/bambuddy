@@ -398,6 +398,88 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                 </div>
               </div>
 
+              {/* Print Queue Events */}
+              <div className="space-y-2">
+                <p className="text-xs text-bambu-gray uppercase tracking-wide">Print Queue</p>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white">Job Added</p>
+                    <p className="text-xs text-bambu-gray">Job added to queue</p>
+                  </div>
+                  <Toggle
+                    checked={provider.on_queue_job_added ?? false}
+                    onChange={(checked) => updateMutation.mutate({ on_queue_job_added: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white">Job Assigned</p>
+                    <p className="text-xs text-bambu-gray">Model-based job assigned to printer</p>
+                  </div>
+                  <Toggle
+                    checked={provider.on_queue_job_assigned ?? false}
+                    onChange={(checked) => updateMutation.mutate({ on_queue_job_assigned: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white">Job Started</p>
+                    <p className="text-xs text-bambu-gray">Queue job started printing</p>
+                  </div>
+                  <Toggle
+                    checked={provider.on_queue_job_started ?? false}
+                    onChange={(checked) => updateMutation.mutate({ on_queue_job_started: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white">Job Waiting</p>
+                    <p className="text-xs text-bambu-gray">Job waiting for filament</p>
+                  </div>
+                  <Toggle
+                    checked={provider.on_queue_job_waiting ?? true}
+                    onChange={(checked) => updateMutation.mutate({ on_queue_job_waiting: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white">Job Skipped</p>
+                    <p className="text-xs text-bambu-gray">Job skipped (previous failed)</p>
+                  </div>
+                  <Toggle
+                    checked={provider.on_queue_job_skipped ?? true}
+                    onChange={(checked) => updateMutation.mutate({ on_queue_job_skipped: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white">Job Failed</p>
+                    <p className="text-xs text-bambu-gray">Job failed to start</p>
+                  </div>
+                  <Toggle
+                    checked={provider.on_queue_job_failed ?? true}
+                    onChange={(checked) => updateMutation.mutate({ on_queue_job_failed: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white">Queue Complete</p>
+                    <p className="text-xs text-bambu-gray">All queue jobs finished</p>
+                  </div>
+                  <Toggle
+                    checked={provider.on_queue_completed ?? false}
+                    onChange={(checked) => updateMutation.mutate({ on_queue_completed: checked })}
+                  />
+                </div>
+              </div>
+
               {/* Quiet Hours */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">

@@ -78,6 +78,7 @@ def archive_to_response(
         "nozzle_diameter": archive.nozzle_diameter,
         "bed_temperature": archive.bed_temperature,
         "nozzle_temperature": archive.nozzle_temperature,
+        "sliced_for_model": archive.sliced_for_model,
         "status": archive.status,
         "started_at": archive.started_at,
         "completed_at": archive.completed_at,
@@ -561,6 +562,103 @@ async def get_archive_stats(db: AsyncSession = Depends(get_db)):
         total_energy_kwh=round(total_energy_kwh, 3),
         total_energy_cost=round(total_energy_cost, 2),
     )
+
+
+@router.get("/tags")
+async def get_all_tags(db: AsyncSession = Depends(get_db)):
+    """List all unique tags with usage counts.
+
+    Returns a list of tags sorted by count (descending), then by name.
+    """
+    # Query all archives with non-null tags
+    result = await db.execute(select(PrintArchive.tags).where(PrintArchive.tags.isnot(None)))
+    all_tags_rows = result.all()
+
+    # Count occurrences of each tag
+    tag_counts: dict[str, int] = {}
+    for (tags_str,) in all_tags_rows:
+        if tags_str:
+            for tag in tags_str.split(","):
+                tag = tag.strip()
+                if tag:
+                    tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+    # Convert to list and sort by count (desc), then name (asc)
+    tags_list = [{"name": name, "count": count} for name, count in tag_counts.items()]
+    tags_list.sort(key=lambda x: (-x["count"], x["name"].lower()))
+
+    return tags_list
+
+
+@router.put("/tags/{tag_name}")
+async def rename_tag(
+    tag_name: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Rename a tag across all archives.
+
+    Request body should contain {"new_name": "new tag name"}.
+    Returns the count of affected archives.
+    """
+    body = await request.json()
+    new_name = body.get("new_name", "").strip()
+
+    if not new_name:
+        raise HTTPException(400, "new_name is required")
+
+    if new_name == tag_name:
+        return {"affected": 0}
+
+    # Find all archives containing the old tag
+    result = await db.execute(select(PrintArchive).where(PrintArchive.tags.isnot(None)))
+    archives = list(result.scalars().all())
+
+    affected = 0
+    for archive in archives:
+        if not archive.tags:
+            continue
+        tags = [t.strip() for t in archive.tags.split(",")]
+        if tag_name in tags:
+            # Replace old tag with new tag
+            new_tags = [new_name if t == tag_name else t for t in tags]
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_tags = []
+            for t in new_tags:
+                if t not in seen:
+                    seen.add(t)
+                    unique_tags.append(t)
+            archive.tags = ", ".join(unique_tags)
+            affected += 1
+
+    await db.commit()
+    return {"affected": affected}
+
+
+@router.delete("/tags/{tag_name}")
+async def delete_tag(tag_name: str, db: AsyncSession = Depends(get_db)):
+    """Delete a tag from all archives.
+
+    Returns the count of affected archives.
+    """
+    # Find all archives containing the tag
+    result = await db.execute(select(PrintArchive).where(PrintArchive.tags.isnot(None)))
+    archives = list(result.scalars().all())
+
+    affected = 0
+    for archive in archives:
+        if not archive.tags:
+            continue
+        tags = [t.strip() for t in archive.tags.split(",")]
+        if tag_name in tags:
+            # Remove the tag
+            new_tags = [t for t in tags if t != tag_name]
+            archive.tags = ", ".join(new_tags) if new_tags else None
+            affected += 1
+
+    await db.commit()
+    return {"affected": affected}
 
 
 @router.get("/{archive_id}", response_model=ArchiveResponse)

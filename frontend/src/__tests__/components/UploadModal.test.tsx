@@ -10,20 +10,12 @@ import { UploadModal } from '../../components/UploadModal';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 
-const mockPrinters = [
-  { id: 1, name: 'X1 Carbon', model: 'X1C', serial_number: '123' },
-  { id: 2, name: 'P1S', model: 'P1S', serial_number: '456' },
-];
-
 describe('UploadModal', () => {
   const mockOnClose = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
     server.use(
-      http.get('/api/v1/printers/', () => {
-        return HttpResponse.json(mockPrinters);
-      }),
       http.post('/api/v1/archives/upload-bulk', async () => {
         return HttpResponse.json({
           uploaded: 1,
@@ -54,17 +46,6 @@ describe('UploadModal', () => {
       expect(screen.getByRole('button', { name: 'Browse Files' })).toBeInTheDocument();
     });
 
-    it('renders printer selection dropdown', async () => {
-      render(<UploadModal onClose={mockOnClose} />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Associate with printer (optional)')).toBeInTheDocument();
-      });
-
-      const select = screen.getByRole('combobox');
-      expect(select).toBeInTheDocument();
-    });
-
     it('renders Cancel button', () => {
       render(<UploadModal onClose={mockOnClose} />);
 
@@ -76,32 +57,6 @@ describe('UploadModal', () => {
 
       const uploadButton = screen.getByRole('button', { name: /Upload/i });
       expect(uploadButton).toBeDisabled();
-    });
-  });
-
-  describe('printer selection', () => {
-    it('shows available printers in dropdown', async () => {
-      render(<UploadModal onClose={mockOnClose} />);
-
-      await waitFor(() => {
-        // Check for printer options in the select
-        expect(screen.getByRole('option', { name: 'No printer' })).toBeInTheDocument();
-        expect(screen.getByRole('option', { name: 'X1 Carbon' })).toBeInTheDocument();
-        expect(screen.getByRole('option', { name: 'P1S' })).toBeInTheDocument();
-      });
-    });
-
-    it('allows selecting a printer', async () => {
-      render(<UploadModal onClose={mockOnClose} />);
-
-      await waitFor(() => {
-        expect(screen.getByRole('option', { name: 'X1 Carbon' })).toBeInTheDocument();
-      });
-
-      const select = screen.getByRole('combobox');
-      fireEvent.change(select, { target: { value: '1' } });
-
-      expect(select).toHaveValue('1');
     });
   });
 

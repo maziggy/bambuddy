@@ -434,3 +434,127 @@ class TestArchiveF3DEndpoints:
         """Verify filament-requirements with plate_id returns 404 for non-existent archive."""
         response = await async_client.get("/api/v1/archives/999999/filament-requirements?plate_id=1")
         assert response.status_code == 404
+
+    # ========================================================================
+    # Tag Management endpoints (Issue #183)
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_tags_empty(self, async_client: AsyncClient):
+        """Verify empty list when no tags exist."""
+        response = await async_client.get("/api/v1/archives/tags")
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_tags_with_data(self, async_client: AsyncClient, archive_factory, printer_factory, db_session):
+        """Verify tags are returned with counts."""
+        printer = await printer_factory()
+        await archive_factory(printer.id, print_name="Archive 1", tags="functional, test")
+        await archive_factory(printer.id, print_name="Archive 2", tags="functional, calibration")
+        await archive_factory(printer.id, print_name="Archive 3", tags="test")
+
+        response = await async_client.get("/api/v1/archives/tags")
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+
+        # Convert to dict for easier lookup
+        tags_dict = {t["name"]: t["count"] for t in data}
+        assert tags_dict.get("functional") == 2
+        assert tags_dict.get("test") == 2
+        assert tags_dict.get("calibration") == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_tags_sorted_by_count(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Verify tags are sorted by count descending, then by name."""
+        printer = await printer_factory()
+        await archive_factory(printer.id, tags="alpha")
+        await archive_factory(printer.id, tags="beta, alpha")
+        await archive_factory(printer.id, tags="gamma, beta, alpha")
+
+        response = await async_client.get("/api/v1/archives/tags")
+        assert response.status_code == 200
+        data = response.json()
+
+        # alpha=3, beta=2, gamma=1
+        assert data[0]["name"] == "alpha"
+        assert data[0]["count"] == 3
+        assert data[1]["name"] == "beta"
+        assert data[1]["count"] == 2
+        assert data[2]["name"] == "gamma"
+        assert data[2]["count"] == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rename_tag(self, async_client: AsyncClient, archive_factory, printer_factory, db_session):
+        """Verify renaming a tag updates all archives."""
+        printer = await printer_factory()
+        a1 = await archive_factory(printer.id, print_name="Archive 1", tags="old-tag, other")
+        a2 = await archive_factory(printer.id, print_name="Archive 2", tags="old-tag")
+        await archive_factory(printer.id, print_name="Archive 3", tags="different")
+
+        response = await async_client.put("/api/v1/archives/tags/old-tag", json={"new_name": "new-tag"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["affected"] == 2
+
+        # Verify the archives were updated
+        response = await async_client.get(f"/api/v1/archives/{a1.id}")
+        assert "new-tag" in response.json()["tags"]
+        assert "old-tag" not in response.json()["tags"]
+
+        response = await async_client.get(f"/api/v1/archives/{a2.id}")
+        assert response.json()["tags"] == "new-tag"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rename_tag_no_change(self, async_client: AsyncClient):
+        """Verify renaming to same name returns 0 affected."""
+        response = await async_client.put("/api/v1/archives/tags/some-tag", json={"new_name": "some-tag"})
+        assert response.status_code == 200
+        assert response.json()["affected"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rename_tag_empty_name_error(self, async_client: AsyncClient):
+        """Verify renaming to empty name returns error."""
+        response = await async_client.put("/api/v1/archives/tags/some-tag", json={"new_name": ""})
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_delete_tag(self, async_client: AsyncClient, archive_factory, printer_factory, db_session):
+        """Verify deleting a tag removes it from all archives."""
+        printer = await printer_factory()
+        a1 = await archive_factory(printer.id, print_name="Archive 1", tags="delete-me, keep")
+        a2 = await archive_factory(printer.id, print_name="Archive 2", tags="delete-me")
+        await archive_factory(printer.id, print_name="Archive 3", tags="different")
+
+        response = await async_client.delete("/api/v1/archives/tags/delete-me")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["affected"] == 2
+
+        # Verify the archives were updated
+        response = await async_client.get(f"/api/v1/archives/{a1.id}")
+        assert response.json()["tags"] == "keep"
+
+        response = await async_client.get(f"/api/v1/archives/{a2.id}")
+        # Should be None or empty when last tag is removed
+        assert response.json()["tags"] is None or response.json()["tags"] == ""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_delete_tag_not_found(self, async_client: AsyncClient):
+        """Verify deleting non-existent tag returns 0 affected."""
+        response = await async_client.delete("/api/v1/archives/tags/nonexistent-tag")
+        assert response.status_code == 200
+        assert response.json()["affected"] == 0

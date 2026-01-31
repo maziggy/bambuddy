@@ -27,7 +27,7 @@ class SmartPlugManager:
         self._scheduler_task: asyncio.Task | None = None
         self._last_schedule_check: dict[int, str] = {}  # plug_id -> "HH:MM" last executed
 
-    async def _get_service_for_plug(self, plug: "SmartPlug", db: AsyncSession | None = None):
+    async def get_service_for_plug(self, plug: "SmartPlug", db: AsyncSession | None = None):
         """Get the appropriate service for the plug type.
 
         For HA plugs, configures the service with current settings from DB.
@@ -110,7 +110,7 @@ class SmartPlugManager:
             plugs = result.scalars().all()
 
             for plug in plugs:
-                service = await self._get_service_for_plug(plug, db)
+                service = await self.get_service_for_plug(plug, db)
 
                 # Check if we should turn on
                 if plug.schedule_on_time == current_time:
@@ -166,7 +166,7 @@ class SmartPlugManager:
 
         # Turn on the plug
         logger.info(f"Print started on printer {printer_id}, turning on plug '{plug.name}'")
-        service = await self._get_service_for_plug(plug, db)
+        service = await self.get_service_for_plug(plug, db)
         success = await service.turn_on(plug)
 
         if success:
@@ -193,6 +193,11 @@ class SmartPlugManager:
 
         if not plug.auto_off:
             logger.debug(f"Smart plug '{plug.name}' auto_off is disabled")
+            return
+
+        # Skip auto-off for HA script entities (scripts can only be triggered, not turned off)
+        if plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script."):
+            logger.debug(f"Smart plug '{plug.name}' is a HA script entity, skipping auto-off")
             return
 
         # Only auto-off on successful completion, not on failures
@@ -261,7 +266,7 @@ class SmartPlugManager:
                     self.name = f"plug_{plug_id}"
 
             plug_info = PlugInfo()
-            service = await self._get_service_for_plug(plug_info)
+            service = await self.get_service_for_plug(plug_info)
             success = await service.turn_off(plug_info)
             logger.info(f"Turned off plug {plug_id} after time delay")
 
@@ -353,7 +358,7 @@ class SmartPlugManager:
                                 self.name = f"plug_{plug_id}"
 
                         plug_info = PlugInfo()
-                        service = await self._get_service_for_plug(plug_info)
+                        service = await self.get_service_for_plug(plug_info)
                         success = await service.turn_off(plug_info)
                         logger.info(
                             f"Turned off plug {plug_id} after nozzle temp dropped to "
@@ -474,7 +479,7 @@ class SmartPlugManager:
                         # For time mode, just turn off immediately since delay already passed
                         logger.info(f"Time-based auto-off was pending, turning off plug '{plug.name}' now")
 
-                        service = await self._get_service_for_plug(plug, db)
+                        service = await self.get_service_for_plug(plug, db)
                         success = await service.turn_off(plug)
                         if success:
                             await self._mark_auto_off_executed(plug.id)

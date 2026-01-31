@@ -63,6 +63,8 @@ class ArchiveResponse(BaseModel):
     bed_temperature: int | None
     nozzle_temperature: int | None
 
+    sliced_for_model: str | None = None  # Printer model this file was sliced for
+
     status: str
     started_at: datetime | None
     completed_at: datetime | None

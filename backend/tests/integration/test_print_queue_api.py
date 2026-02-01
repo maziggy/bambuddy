@@ -734,3 +734,232 @@ class TestQueueLibraryFileSupport:
         assert our_item is not None
         assert our_item["library_file_name"] == "Custom Print Name"
         assert our_item["print_time_seconds"] == 7200
+
+
+class TestBulkUpdateEndpoint:
+    """Tests for the /queue/bulk endpoint."""
+
+    @pytest.fixture
+    async def printer_factory(self, db_session):
+        """Factory to create test printers."""
+        _counter = [0]
+
+        async def _create_printer(**kwargs):
+            from backend.app.models.printer import Printer
+
+            _counter[0] += 1
+            counter = _counter[0]
+
+            defaults = {
+                "name": f"Bulk Test Printer {counter}",
+                "ip_address": f"192.168.1.{150 + counter}",
+                "serial_number": f"TESTBULK{counter:04d}",
+                "access_code": "12345678",
+                "model": "X1C",
+            }
+            defaults.update(kwargs)
+
+            printer = Printer(**defaults)
+            db_session.add(printer)
+            await db_session.commit()
+            await db_session.refresh(printer)
+            return printer
+
+        return _create_printer
+
+    @pytest.fixture
+    async def archive_factory(self, db_session):
+        """Factory to create test archives."""
+        _counter = [0]
+
+        async def _create_archive(**kwargs):
+            from backend.app.models.archive import PrintArchive
+
+            _counter[0] += 1
+            counter = _counter[0]
+
+            defaults = {
+                "filename": f"bulk_test_{counter}.3mf",
+                "print_name": f"Bulk Test Print {counter}",
+                "file_path": f"/tmp/bulk_test_{counter}.3mf",
+                "file_size": 1024,
+                "content_hash": f"bulkhash{counter:04d}",
+                "status": "completed",
+            }
+            defaults.update(kwargs)
+
+            archive = PrintArchive(**defaults)
+            db_session.add(archive)
+            await db_session.commit()
+            await db_session.refresh(archive)
+            return archive
+
+        return _create_archive
+
+    @pytest.fixture
+    async def queue_item_factory(self, db_session, printer_factory, archive_factory):
+        """Factory to create test queue items."""
+
+        async def _create_item(**kwargs):
+            from backend.app.models.print_queue import PrintQueueItem
+
+            if "printer_id" not in kwargs:
+                printer = await printer_factory()
+                kwargs["printer_id"] = printer.id
+
+            if "archive_id" not in kwargs:
+                archive = await archive_factory()
+                kwargs["archive_id"] = archive.id
+
+            defaults = {
+                "status": "pending",
+                "position": 1,
+                "bed_levelling": True,
+                "flow_cali": False,
+                "vibration_cali": True,
+            }
+            defaults.update(kwargs)
+
+            item = PrintQueueItem(**defaults)
+            db_session.add(item)
+            await db_session.commit()
+            await db_session.refresh(item)
+            return item
+
+        return _create_item
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_update_single_field(self, async_client: AsyncClient, queue_item_factory, db_session):
+        """Verify bulk update can change a single field on multiple items."""
+        item1 = await queue_item_factory(bed_levelling=True)
+        item2 = await queue_item_factory(bed_levelling=True)
+
+        response = await async_client.patch(
+            "/api/v1/queue/bulk",
+            json={"item_ids": [item1.id, item2.id], "bed_levelling": False},
+        )
+        assert response.status_code == 200
+        result = response.json()
+        assert result["updated_count"] == 2
+        assert result["skipped_count"] == 0
+
+        # Verify items were updated
+        await db_session.refresh(item1)
+        await db_session.refresh(item2)
+        assert item1.bed_levelling is False
+        assert item2.bed_levelling is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_update_multiple_fields(self, async_client: AsyncClient, queue_item_factory, db_session):
+        """Verify bulk update can change multiple fields at once."""
+        item1 = await queue_item_factory(bed_levelling=True, flow_cali=False, manual_start=False)
+        item2 = await queue_item_factory(bed_levelling=True, flow_cali=False, manual_start=False)
+
+        response = await async_client.patch(
+            "/api/v1/queue/bulk",
+            json={
+                "item_ids": [item1.id, item2.id],
+                "bed_levelling": False,
+                "flow_cali": True,
+                "manual_start": True,
+            },
+        )
+        assert response.status_code == 200
+        result = response.json()
+        assert result["updated_count"] == 2
+
+        await db_session.refresh(item1)
+        assert item1.bed_levelling is False
+        assert item1.flow_cali is True
+        assert item1.manual_start is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_update_skips_non_pending(self, async_client: AsyncClient, queue_item_factory, db_session):
+        """Verify bulk update skips non-pending items."""
+        pending_item = await queue_item_factory(status="pending", bed_levelling=True)
+        printing_item = await queue_item_factory(status="printing", bed_levelling=True)
+        completed_item = await queue_item_factory(status="completed", bed_levelling=True)
+
+        response = await async_client.patch(
+            "/api/v1/queue/bulk",
+            json={
+                "item_ids": [pending_item.id, printing_item.id, completed_item.id],
+                "bed_levelling": False,
+            },
+        )
+        assert response.status_code == 200
+        result = response.json()
+        assert result["updated_count"] == 1
+        assert result["skipped_count"] == 2
+
+        # Only pending item should be updated
+        await db_session.refresh(pending_item)
+        await db_session.refresh(printing_item)
+        await db_session.refresh(completed_item)
+        assert pending_item.bed_levelling is False
+        assert printing_item.bed_levelling is True
+        assert completed_item.bed_levelling is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_update_change_printer(
+        self, async_client: AsyncClient, queue_item_factory, printer_factory, db_session
+    ):
+        """Verify bulk update can reassign items to a different printer."""
+        new_printer = await printer_factory(name="New Target Printer")
+        item1 = await queue_item_factory()
+        item2 = await queue_item_factory()
+
+        original_printer_id = item1.printer_id
+
+        response = await async_client.patch(
+            "/api/v1/queue/bulk",
+            json={"item_ids": [item1.id, item2.id], "printer_id": new_printer.id},
+        )
+        assert response.status_code == 200
+
+        await db_session.refresh(item1)
+        await db_session.refresh(item2)
+        assert item1.printer_id == new_printer.id
+        assert item2.printer_id == new_printer.id
+        assert item1.printer_id != original_printer_id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_update_empty_item_ids(self, async_client: AsyncClient):
+        """Verify 400 error when item_ids is empty."""
+        response = await async_client.patch(
+            "/api/v1/queue/bulk",
+            json={"item_ids": [], "bed_levelling": False},
+        )
+        assert response.status_code == 400
+        assert "no item" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_update_no_fields(self, async_client: AsyncClient, queue_item_factory):
+        """Verify 400 error when no fields to update."""
+        item = await queue_item_factory()
+
+        response = await async_client.patch(
+            "/api/v1/queue/bulk",
+            json={"item_ids": [item.id]},
+        )
+        assert response.status_code == 400
+        assert "no fields" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_update_invalid_printer(self, async_client: AsyncClient, queue_item_factory):
+        """Verify 400 error when printer_id doesn't exist."""
+        item = await queue_item_factory()
+
+        response = await async_client.patch(
+            "/api/v1/queue/bulk",
+            json={"item_ids": [item.id], "printer_id": 99999},
+        )
+        assert response.status_code == 400
+        assert "printer not found" in response.json()["detail"].lower()

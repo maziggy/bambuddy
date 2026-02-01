@@ -51,6 +51,16 @@ def _provider_to_dict(provider: NotificationProvider) -> dict:
         # AMS-HT environmental alarms
         "on_ams_ht_humidity_high": provider.on_ams_ht_humidity_high,
         "on_ams_ht_temperature_high": provider.on_ams_ht_temperature_high,
+        # Build plate detection
+        "on_plate_not_empty": provider.on_plate_not_empty,
+        # Print queue events
+        "on_queue_job_added": provider.on_queue_job_added,
+        "on_queue_job_assigned": provider.on_queue_job_assigned,
+        "on_queue_job_started": provider.on_queue_job_started,
+        "on_queue_job_waiting": provider.on_queue_job_waiting,
+        "on_queue_job_skipped": provider.on_queue_job_skipped,
+        "on_queue_job_failed": provider.on_queue_job_failed,
+        "on_queue_completed": provider.on_queue_completed,
         # Quiet hours
         "quiet_hours_enabled": provider.quiet_hours_enabled,
         "quiet_hours_start": provider.quiet_hours_start,
@@ -112,6 +122,8 @@ async def create_notification_provider(
         # AMS-HT environmental alarms
         on_ams_ht_humidity_high=provider_data.on_ams_ht_humidity_high,
         on_ams_ht_temperature_high=provider_data.on_ams_ht_temperature_high,
+        # Build plate detection
+        on_plate_not_empty=provider_data.on_plate_not_empty,
         # Quiet hours
         quiet_hours_enabled=provider_data.quiet_hours_enabled,
         quiet_hours_start=provider_data.quiet_hours_start,

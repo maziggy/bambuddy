@@ -15,6 +15,15 @@ class PrintQueueItem(Base):
 
     # Links
     printer_id: Mapped[int | None] = mapped_column(ForeignKey("printers.id", ondelete="CASCADE"), nullable=True)
+    # Target printer model for model-based assignment (mutually exclusive with printer_id)
+    # When set, scheduler assigns to any idle printer of matching model
+    target_model: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Required filament types for model-based assignment (JSON array, e.g., '["PLA", "PETG"]')
+    # Used by scheduler to validate printer has compatible filaments loaded
+    required_filament_types: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Waiting reason - explains why a model-based job hasn't started yet
+    # Set by scheduler when no matching printer is available
+    waiting_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Either archive_id OR library_file_id must be set (archive created at print start from library file)
     archive_id: Mapped[int | None] = mapped_column(ForeignKey("print_archives.id", ondelete="CASCADE"), nullable=True)
     library_file_id: Mapped[int | None] = mapped_column(

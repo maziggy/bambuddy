@@ -59,7 +59,7 @@ describe('BackupModal', () => {
     it('has checkbox for printers', () => {
       render(<BackupModal onClose={mockOnClose} />);
 
-      expect(screen.getByText(/printers/i)).toBeInTheDocument();
+      expect(screen.getByText('Printers')).toBeInTheDocument();
     });
 
     it('has checkbox for archives', () => {

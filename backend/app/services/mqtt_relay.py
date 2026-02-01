@@ -34,6 +34,8 @@ class MQTTRelayService:
         self._broker = ""
         self._port = 1883
         self._last_printer_status: dict[int, float] = {}  # printer_id -> last publish timestamp
+        self._smart_plug_service = None  # Lazy import to avoid circular dependency
+        self._settings: dict = {}  # Store settings for smart plug service
 
     async def configure(self, settings: dict) -> bool:
         """Configure MQTT connection from settings.
@@ -41,9 +43,12 @@ class MQTTRelayService:
         Returns True if connection was successful or MQTT is disabled.
         """
         self.enabled = settings.get("mqtt_enabled", False)
+        self._settings = settings  # Store for smart plug service
 
         if not self.enabled:
             await self.disconnect()
+            # Also configure smart plug service (will disable it)
+            await self._configure_smart_plug_service(settings)
             logger.info("MQTT relay disabled")
             return True
 
@@ -67,7 +72,33 @@ class MQTTRelayService:
             await self.disconnect()
 
         # Create and connect client
-        return await self._connect(broker, port, username, password, use_tls)
+        result = await self._connect(broker, port, username, password, use_tls)
+
+        # Configure smart plug service with same settings
+        await self._configure_smart_plug_service(settings)
+
+        return result
+
+    async def _configure_smart_plug_service(self, settings: dict):
+        """Configure the MQTT smart plug service with the same broker settings."""
+        try:
+            if self._smart_plug_service is None:
+                from backend.app.services.mqtt_smart_plug import mqtt_smart_plug_service
+
+                self._smart_plug_service = mqtt_smart_plug_service
+
+            await self._smart_plug_service.configure(settings)
+        except Exception as e:
+            logger.error(f"Failed to configure MQTT smart plug service: {e}")
+
+    @property
+    def smart_plug_service(self):
+        """Get the MQTT smart plug service instance."""
+        if self._smart_plug_service is None:
+            from backend.app.services.mqtt_smart_plug import mqtt_smart_plug_service
+
+            self._smart_plug_service = mqtt_smart_plug_service
+        return self._smart_plug_service
 
     async def _connect(self, broker: str, port: int, username: str, password: str, use_tls: bool) -> bool:
         """Establish MQTT connection."""

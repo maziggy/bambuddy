@@ -24,7 +24,7 @@ repos:
         exclude: ^static/
       - id: check-yaml
       - id: check-json
-        exclude: ^static/
+        exclude: ^(static/|frontend/tsconfig\.)
       - id: check-added-large-files
         args: ['--maxkb=1000']
         exclude: ^static/assets/

@@ -119,11 +119,13 @@ describe('LoginPage', () => {
 
     it('shows loading state during login', async () => {
       const user = userEvent.setup();
+      let resolveLogin: () => void;
+      const loginPromise = new Promise<void>(resolve => { resolveLogin = resolve; });
 
-      // Slow login endpoint
+      // Slow login endpoint that we control
       server.use(
         http.post('/api/v1/auth/login', async () => {
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await loginPromise;
           return HttpResponse.json({
             access_token: 'test-token',
             token_type: 'bearer',
@@ -148,10 +150,13 @@ describe('LoginPage', () => {
       await user.type(screen.getByLabelText(/Password/i), 'testpass');
       await user.click(screen.getByRole('button', { name: /Sign in/i }));
 
-      // Check for loading state
+      // Check for loading state - button text should change to "Logging in..."
       await waitFor(() => {
-        expect(screen.getByRole('button')).toBeDisabled();
+        expect(screen.getByRole('button', { name: /Logging in/i })).toBeInTheDocument();
       });
+
+      // Release the login request
+      resolveLogin!();
     });
   });
 });

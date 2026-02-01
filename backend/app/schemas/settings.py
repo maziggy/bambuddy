@@ -26,6 +26,7 @@ class AppSettings(BaseModel):
 
     # Updates
     check_updates: bool = Field(default=True, description="Automatically check for updates on startup")
+    check_printer_firmware: bool = Field(default=True, description="Check for printer firmware updates from Bambu Lab")
 
     # Language
     notification_language: str = Field(default="en", description="Language for push notifications (en, de)")
@@ -52,9 +53,6 @@ class AppSettings(BaseModel):
 
     # Default printer for operations
     default_printer_id: int | None = Field(default=None, description="Default printer ID for uploads, reprints, etc.")
-
-    # Telemetry
-    telemetry_enabled: bool = Field(default=True, description="Send anonymous usage data to help improve BamBuddy")
 
     # Virtual Printer
     virtual_printer_enabled: bool = Field(default=False, description="Enable virtual printer for slicer uploads")
@@ -116,6 +114,12 @@ class AppSettings(BaseModel):
         description="Camera view mode: 'window' opens in new browser window, 'embedded' shows overlay on main screen",
     )
 
+    # Prometheus metrics endpoint
+    prometheus_enabled: bool = Field(default=False, description="Enable Prometheus metrics endpoint at /metrics")
+    prometheus_token: str = Field(
+        default="", description="Bearer token for Prometheus metrics authentication (optional)"
+    )
+
 
 class AppSettingsUpdate(BaseModel):
     """Schema for updating settings (all fields optional)."""
@@ -131,6 +135,7 @@ class AppSettingsUpdate(BaseModel):
     spoolman_url: str | None = None
     spoolman_sync_mode: str | None = None
     check_updates: bool | None = None
+    check_printer_firmware: bool | None = None
     notification_language: str | None = None
     ams_humidity_good: int | None = None
     ams_humidity_fair: int | None = None
@@ -141,7 +146,6 @@ class AppSettingsUpdate(BaseModel):
     date_format: str | None = None
     time_format: str | None = None
     default_printer_id: int | None = None
-    telemetry_enabled: bool | None = None
     virtual_printer_enabled: bool | None = None
     virtual_printer_access_code: str | None = None
     virtual_printer_mode: str | None = None
@@ -168,3 +172,5 @@ class AppSettingsUpdate(BaseModel):
     library_archive_mode: str | None = None
     library_disk_warning_gb: float | None = None
     camera_view_mode: str | None = None
+    prometheus_enabled: bool | None = None
+    prometheus_token: str | None = None

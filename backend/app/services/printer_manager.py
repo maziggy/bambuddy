@@ -29,7 +29,24 @@ CHAMBER_TEMP_SUPPORTED_MODELS = frozenset(
         "O1C",  # H2C
         "O1S",  # H2S
         "O1E",  # H2D Pro
+        "O2D",  # H2D Pro (alternate code)
         "N7",  # P2S
+    ]
+)
+
+# Models that may incorrectly report stg_cur=0 when idle (firmware bug)
+# Based on Home Assistant Bambu Lab integration observations
+# See: https://github.com/greghesp/ha-bambulab/blob/main/custom_components/bambu_lab/pybambu/models.py
+A1_MODELS = frozenset(
+    [
+        # Display names
+        "A1",
+        "A1 MINI",
+        "A1-MINI",
+        "A1MINI",
+        # Internal codes (from MQTT/SSDP)
+        "N1",  # A1 Mini
+        "N2S",  # A1
     ]
 )
 
@@ -45,6 +62,19 @@ def supports_chamber_temp(model: str | None) -> bool:
     # Normalize model name (uppercase, strip whitespace)
     model_upper = model.strip().upper()
     return model_upper in CHAMBER_TEMP_SUPPORTED_MODELS
+
+
+def has_stg_cur_idle_bug(model: str | None) -> bool:
+    """Check if a printer model may incorrectly report stg_cur=0 when idle.
+
+    Some A1/A1 Mini firmware versions report stg_cur=0 (which maps to "Printing")
+    even when the printer is idle. This is a known firmware bug that was observed
+    in the Home Assistant Bambu Lab integration.
+    """
+    if not model:
+        return False
+    model_upper = model.strip().upper()
+    return model_upper in A1_MODELS
 
 
 class PrinterInfo:
@@ -66,6 +96,7 @@ class PrinterManager:
         self._on_print_complete: Callable[[int, dict], None] | None = None
         self._on_status_change: Callable[[int, PrinterState], None] | None = None
         self._on_ams_change: Callable[[int, list], None] | None = None
+        self._on_layer_change: Callable[[int, int], None] | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
 
     def get_printer(self, printer_id: int) -> PrinterInfo | None:
@@ -91,6 +122,10 @@ class PrinterManager:
     def set_ams_change_callback(self, callback: Callable[[int, list], None]):
         """Set callback for AMS data change events."""
         self._on_ams_change = callback
+
+    def set_layer_change_callback(self, callback: Callable[[int, int], None]):
+        """Set callback for layer change events. Receives (printer_id, layer_num)."""
+        self._on_layer_change = callback
 
     def _schedule_async(self, coro):
         """Schedule an async coroutine from a sync context.
@@ -135,6 +170,10 @@ class PrinterManager:
             if self._on_ams_change:
                 self._schedule_async(self._on_ams_change(printer_id, ams_data))
 
+        def on_layer_change(layer_num: int):
+            if self._on_layer_change:
+                self._schedule_async(self._on_layer_change(printer_id, layer_num))
+
         client = BambuMQTTClient(
             ip_address=printer.ip_address,
             serial_number=printer.serial_number,
@@ -143,6 +182,7 @@ class PrinterManager:
             on_print_start=on_print_start,
             on_print_complete=on_print_complete,
             on_ams_change=on_ams_change,
+            on_layer_change=on_layer_change,
         )
 
         client.connect()
@@ -363,13 +403,22 @@ class PrinterManager:
         return result
 
 
-def get_derived_status_name(state: PrinterState) -> str | None:
+def get_derived_status_name(state: PrinterState, model: str | None = None) -> str | None:
     """
     Compute a human-readable status name based on printer state.
 
     Uses stg_cur when available, otherwise derives status from temperature data
     when the printer is heating before a print starts.
+
+    Args:
+        state: The printer state to analyze
+        model: Optional printer model for model-specific workarounds
     """
+    # A1/A1 Mini firmware bug: some versions report stg_cur=0 when idle
+    # Only correct this specific case (IDLE + stg_cur=0) for affected models
+    if state.state == "IDLE" and state.stg_cur == 0 and has_stg_cur_idle_bug(model):
+        return None
+
     # If we have a valid calibration stage, use it
     # X1 models use -1 for idle, A1/P1 models use 255 for idle
     # Valid stage numbers are 0-254
@@ -571,7 +620,7 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
         "wifi_signal": state.wifi_signal,
         # Calibration stage tracking
         "stg_cur": state.stg_cur,
-        "stg_cur_name": get_derived_status_name(state),
+        "stg_cur_name": get_derived_status_name(state, model),
         # Printable objects count for skip objects feature
         "printable_objects_count": len(state.printable_objects),
         # Fan speeds (0-100 percentage, None if not available)

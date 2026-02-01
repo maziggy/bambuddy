@@ -1,18 +1,23 @@
+import io
+import json
 import logging
 import os
 import uuid
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from backend.app.api.routes.library import get_library_dir
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.models.archive import PrintArchive
+from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.project import Project
 from backend.app.models.project_bom import ProjectBOMItem
@@ -25,6 +30,7 @@ from backend.app.schemas.project import (
     BOMItemUpdate,
     ProjectChildPreview,
     ProjectCreate,
+    ProjectImport,
     ProjectListResponse,
     ProjectResponse,
     ProjectStats,
@@ -1322,3 +1328,392 @@ async def get_project_timeline(
     events.sort(key=lambda e: e.timestamp, reverse=True)
 
     return events[:limit]
+
+
+# ============ Phase 10: Import/Export Endpoints ============
+
+
+@router.get("/{project_id}/export")
+async def export_project(
+    project_id: int,
+    format: str = "zip",  # "zip" (with files) or "json" (metadata only)
+    db: AsyncSession = Depends(get_db),
+):
+    """Export a project. Use format=zip (default) for full export with files, or format=json for metadata only."""
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    project = result.scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Get BOM items
+    bom_result = await db.execute(
+        select(ProjectBOMItem).where(ProjectBOMItem.project_id == project_id).order_by(ProjectBOMItem.sort_order)
+    )
+    bom_items = bom_result.scalars().all()
+
+    bom_export = [
+        {
+            "name": item.name,
+            "quantity_needed": item.quantity_needed,
+            "quantity_acquired": item.quantity_acquired,
+            "unit_price": item.unit_price,
+            "sourcing_url": item.sourcing_url,
+            "stl_filename": item.stl_filename,
+            "remarks": item.remarks,
+        }
+        for item in bom_items
+    ]
+
+    # Get linked folders and their files
+    folders_result = await db.execute(
+        select(LibraryFolder).where(LibraryFolder.project_id == project_id).order_by(LibraryFolder.name)
+    )
+    linked_folders = folders_result.scalars().all()
+
+    folders_export = []
+    files_to_include = []  # (archive_path, zip_path)
+
+    for folder in linked_folders:
+        # Get files in this folder
+        files_result = await db.execute(
+            select(LibraryFile).where(LibraryFile.folder_id == folder.id).order_by(LibraryFile.filename)
+        )
+        files = files_result.scalars().all()
+
+        folder_files = []
+        for f in files:
+            folder_files.append(
+                {
+                    "filename": f.filename,
+                    "file_type": f.file_type,
+                    "notes": f.notes,
+                }
+            )
+            # Add file to include in ZIP
+            library_dir = get_library_dir()
+            file_path = library_dir / f.file_path
+            if file_path.exists():
+                zip_path = f"files/{folder.name}/{f.filename}"
+                files_to_include.append((file_path, zip_path))
+                # Also include thumbnail if exists
+                if f.thumbnail_path:
+                    thumb_path = library_dir / f.thumbnail_path
+                    if thumb_path.exists():
+                        thumb_zip_path = f"files/{folder.name}/.thumbnails/{f.filename}.png"
+                        files_to_include.append((thumb_path, thumb_zip_path))
+
+        folders_export.append(
+            {
+                "name": folder.name,
+                "files": folder_files,
+            }
+        )
+
+    # Build project JSON
+    project_data = {
+        "name": project.name,
+        "description": project.description,
+        "color": project.color,
+        "status": project.status,
+        "target_count": project.target_count,
+        "target_parts_count": project.target_parts_count,
+        "notes": project.notes,
+        "tags": project.tags,
+        "due_date": project.due_date.isoformat() if project.due_date else None,
+        "priority": project.priority,
+        "budget": project.budget,
+        "bom_items": bom_export,
+        "linked_folders": folders_export,
+    }
+
+    # Return JSON if requested (for bulk export)
+    if format == "json":
+        return project_data
+
+    # Create ZIP in memory
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        # Add project.json
+        zf.writestr("project.json", json.dumps(project_data, indent=2))
+
+        # Add files
+        for file_path, zip_path in files_to_include:
+            zf.write(file_path, zip_path)
+
+    zip_buffer.seek(0)
+
+    # Generate filename
+    safe_name = "".join(c if c.isalnum() or c in "-_ " else "_" for c in project.name)
+    filename = f"{safe_name}_{datetime.now().strftime('%Y-%m-%d')}.zip"
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/import", response_model=ProjectResponse)
+async def import_project(
+    data: ProjectImport,
+    db: AsyncSession = Depends(get_db),
+):
+    """Import a project with optional BOM items and linked folders."""
+    # Create the project
+    project = Project(
+        name=data.name,
+        description=data.description,
+        color=data.color,
+        status=data.status,
+        target_count=data.target_count,
+        target_parts_count=data.target_parts_count,
+        notes=data.notes,
+        tags=data.tags,
+        due_date=data.due_date,
+        priority=data.priority,
+        budget=data.budget,
+    )
+    db.add(project)
+    await db.flush()
+
+    # Create BOM items
+    for idx, bom_data in enumerate(data.bom_items):
+        bom_item = ProjectBOMItem(
+            project_id=project.id,
+            name=bom_data.name,
+            quantity_needed=bom_data.quantity_needed,
+            quantity_acquired=bom_data.quantity_acquired,
+            unit_price=bom_data.unit_price,
+            sourcing_url=bom_data.sourcing_url,
+            stl_filename=bom_data.stl_filename,
+            remarks=bom_data.remarks,
+            sort_order=idx,
+        )
+        db.add(bom_item)
+
+    # Create linked folders in library
+    for folder_data in data.linked_folders:
+        # Check if folder with this name already exists at root level
+        existing_result = await db.execute(
+            select(LibraryFolder).where(
+                LibraryFolder.name == folder_data.name,
+                LibraryFolder.parent_id.is_(None),
+            )
+        )
+        existing_folder = existing_result.scalar_one_or_none()
+
+        if existing_folder:
+            # Link existing folder to project
+            existing_folder.project_id = project.id
+        else:
+            # Create new folder linked to project
+            new_folder = LibraryFolder(
+                name=folder_data.name,
+                project_id=project.id,
+                is_external=False,
+                external_readonly=False,
+                external_show_hidden=False,
+            )
+            db.add(new_folder)
+
+    await db.flush()
+    await db.refresh(project)
+
+    stats = await compute_project_stats(db, project.id, project.target_count, project.target_parts_count)
+
+    return ProjectResponse(
+        id=project.id,
+        name=project.name,
+        description=project.description,
+        color=project.color,
+        status=project.status,
+        target_count=project.target_count,
+        target_parts_count=project.target_parts_count,
+        notes=project.notes,
+        attachments=project.attachments,
+        tags=project.tags,
+        due_date=project.due_date,
+        priority=project.priority,
+        budget=project.budget,
+        is_template=project.is_template,
+        template_source_id=project.template_source_id,
+        parent_id=project.parent_id,
+        parent_name=None,
+        children=[],
+        created_at=project.created_at,
+        updated_at=project.updated_at,
+        stats=stats,
+    )
+
+
+@router.post("/import/file", response_model=ProjectResponse)
+async def import_project_file(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Import a project from a ZIP or JSON file."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
+
+    # Determine file type
+    filename_lower = file.filename.lower()
+    content = await file.read()
+
+    if filename_lower.endswith(".zip"):
+        # Extract project.json from ZIP
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                if "project.json" not in zf.namelist():
+                    raise HTTPException(status_code=400, detail="ZIP must contain project.json")
+                project_json = zf.read("project.json")
+                data = json.loads(project_json)
+
+                # Get list of files in the ZIP
+                zip_files = {name: zf.read(name) for name in zf.namelist() if name.startswith("files/")}
+        except zipfile.BadZipFile:
+            raise HTTPException(status_code=400, detail="Invalid ZIP file")
+    elif filename_lower.endswith(".json"):
+        try:
+            data = json.loads(content)
+            zip_files = {}
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid JSON file")
+    else:
+        raise HTTPException(status_code=400, detail="File must be .zip or .json")
+
+    # Create the project
+    project = Project(
+        name=data.get("name", "Imported Project"),
+        description=data.get("description"),
+        color=data.get("color"),
+        status=data.get("status", "active"),
+        target_count=data.get("target_count"),
+        target_parts_count=data.get("target_parts_count"),
+        notes=data.get("notes"),
+        tags=data.get("tags"),
+        due_date=datetime.fromisoformat(data["due_date"]) if data.get("due_date") else None,
+        priority=data.get("priority", 0),
+        budget=data.get("budget"),
+    )
+    db.add(project)
+    await db.flush()
+
+    # Create BOM items
+    for idx, bom_data in enumerate(data.get("bom_items", [])):
+        bom_item = ProjectBOMItem(
+            project_id=project.id,
+            name=bom_data.get("name", "Unnamed"),
+            quantity_needed=bom_data.get("quantity_needed", 1),
+            quantity_acquired=bom_data.get("quantity_acquired", 0),
+            unit_price=bom_data.get("unit_price"),
+            sourcing_url=bom_data.get("sourcing_url"),
+            stl_filename=bom_data.get("stl_filename"),
+            remarks=bom_data.get("remarks"),
+            sort_order=idx,
+        )
+        db.add(bom_item)
+
+    # Create linked folders and files
+    library_dir = get_library_dir()
+    for folder_data in data.get("linked_folders", []):
+        folder_name = folder_data.get("name")
+        if not folder_name:
+            continue
+
+        # Check if folder exists
+        existing_result = await db.execute(
+            select(LibraryFolder).where(
+                LibraryFolder.name == folder_name,
+                LibraryFolder.parent_id.is_(None),
+            )
+        )
+        existing_folder = existing_result.scalar_one_or_none()
+
+        if existing_folder:
+            # Link existing folder to project
+            existing_folder.project_id = project.id
+            folder = existing_folder
+        else:
+            # Create new folder
+            folder = LibraryFolder(
+                name=folder_name,
+                project_id=project.id,
+                is_external=False,
+                external_readonly=False,
+                external_show_hidden=False,
+            )
+            db.add(folder)
+            await db.flush()
+
+            # Create folder on disk
+            folder_path = library_dir / folder_name
+            folder_path.mkdir(parents=True, exist_ok=True)
+
+        # Import files for this folder from ZIP
+        folder_prefix = f"files/{folder_name}/"
+        for zip_path, file_content in zip_files.items():
+            if not zip_path.startswith(folder_prefix):
+                continue
+            if "/.thumbnails/" in zip_path:
+                continue  # Skip thumbnails, we'll regenerate them
+
+            relative_path = zip_path[len(folder_prefix) :]
+            if not relative_path:
+                continue
+
+            # Write file to disk
+            file_disk_path = library_dir / folder_name / relative_path
+            file_disk_path.parent.mkdir(parents=True, exist_ok=True)
+            file_disk_path.write_bytes(file_content)
+
+            # Determine file type
+            ext = Path(relative_path).suffix.lower()
+            if ext in [".stl", ".3mf", ".obj"]:
+                file_type = "model"
+            elif ext in [".gcode"]:
+                file_type = "gcode"
+            elif ext in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
+                file_type = "image"
+            else:
+                file_type = "other"
+
+            # Create library file record
+            lib_file = LibraryFile(
+                folder_id=folder.id,
+                filename=relative_path,
+                file_path=f"{folder_name}/{relative_path}",
+                file_type=file_type,
+                file_size=len(file_content),
+                is_external=False,
+            )
+            db.add(lib_file)
+
+    await db.flush()
+    await db.refresh(project)
+
+    stats = await compute_project_stats(db, project.id, project.target_count, project.target_parts_count)
+
+    return ProjectResponse(
+        id=project.id,
+        name=project.name,
+        description=project.description,
+        color=project.color,
+        status=project.status,
+        target_count=project.target_count,
+        target_parts_count=project.target_parts_count,
+        notes=project.notes,
+        attachments=project.attachments,
+        tags=project.tags,
+        due_date=project.due_date,
+        priority=project.priority,
+        budget=project.budget,
+        is_template=project.is_template,
+        template_source_id=project.template_source_id,
+        parent_id=project.parent_id,
+        parent_name=None,
+        children=[],
+        created_at=project.created_at,
+        updated_at=project.updated_at,
+        stats=stats,
+    )

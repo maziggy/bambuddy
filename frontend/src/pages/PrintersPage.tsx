@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/AuthContext';
 import {
   Plus,
   Link,
@@ -37,6 +38,9 @@ import {
   Wind,
   AirVent,
   Download,
+  ScanSearch,
+  CheckCircle,
+  XCircle,
 } from 'lucide-react';
 
 // Custom Skip Objects icon - arrow jumping over boxes
@@ -916,6 +920,7 @@ function PrinterCard({
   timeFormat = 'system',
   cameraViewMode = 'window',
   onOpenEmbeddedCamera,
+  checkPrinterFirmware = true,
 }: {
   printer: Printer;
   hideIfDisconnected?: boolean;
@@ -933,11 +938,13 @@ function PrinterCard({
   timeFormat?: 'system' | '12h' | '24h';
   cameraViewMode?: 'window' | 'embedded';
   onOpenEmbeddedCamera?: (printerId: number, printerName: string) => void;
+  checkPrinterFirmware?: boolean;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const { hasPermission } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteArchives, setDeleteArchives] = useState(true);
@@ -970,6 +977,23 @@ function PrinterCard({
     trayInfoIdx?: string;
   } | null>(null);
   const [showFirmwareModal, setShowFirmwareModal] = useState(false);
+  const [plateCheckResult, setPlateCheckResult] = useState<{
+    is_empty: boolean;
+    confidence: number;
+    difference_percent: number;
+    message: string;
+    debug_image_url?: string;
+    needs_calibration: boolean;
+    light_warning?: boolean;
+    reference_count?: number;
+    max_references?: number;
+    roi?: { x: number; y: number; w: number; h: number };
+  } | null>(null);
+  const [isCheckingPlate, setIsCheckingPlate] = useState(false);
+  const [isCalibrating, setIsCalibrating] = useState(false);
+  const [editingRoi, setEditingRoi] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [isSavingRoi, setIsSavingRoi] = useState(false);
+  const [plateCheckLightWasOff, setPlateCheckLightWasOff] = useState(false);
 
   const { data: status } = useQuery({
     queryKey: ['printerStatus', printer.id],
@@ -977,12 +1001,13 @@ function PrinterCard({
     refetchInterval: 30000, // Fallback polling, WebSocket handles real-time
   });
 
-  // Check for firmware updates (cached for 5 minutes)
+  // Check for firmware updates (cached for 5 minutes, can be disabled in settings)
   const { data: firmwareInfo } = useQuery({
     queryKey: ['firmwareUpdate', printer.id],
     queryFn: () => firmwareApi.checkPrinterUpdate(printer.id),
     staleTime: 5 * 60 * 1000,
     refetchInterval: 5 * 60 * 1000,
+    enabled: checkPrinterFirmware,
   });
 
   // Collect unique tray_info_idx values for cloud filament info lookup
@@ -1075,6 +1100,12 @@ function PrinterCard({
     queryFn: () => api.getSmartPlugByPrinter(printer.id),
   });
 
+  // Fetch script plugs for this printer (for multi-device control)
+  const { data: scriptPlugs } = useQuery({
+    queryKey: ['scriptPlugsByPrinter', printer.id],
+    queryFn: () => api.getScriptPlugsByPrinter(printer.id),
+  });
+
   // Fetch smart plug status if plug exists (faster refresh for energy monitoring)
   const { data: plugStatus } = useQuery({
     queryKey: ['smartPlugStatus', smartPlug?.id],
@@ -1109,6 +1140,7 @@ function PrinterCard({
       queryClient.invalidateQueries({ queryKey: ['archives'] });
       queryClient.invalidateQueries({ queryKey: ['maintenanceOverview'] });
     },
+    onError: (error: Error) => showToast(error.message || 'Failed to delete printer', 'error'),
   });
 
   const connectMutation = useMutation({
@@ -1135,6 +1167,15 @@ function PrinterCard({
       // Also invalidate the smart-plugs list to keep Settings page in sync
       queryClient.invalidateQueries({ queryKey: ['smart-plugs'] });
     },
+  });
+
+  // Run script mutation
+  const runScriptMutation = useMutation({
+    mutationFn: (scriptId: number) => api.controlSmartPlug(scriptId, 'on'),
+    onSuccess: () => {
+      showToast('Script triggered');
+    },
+    onError: (error: Error) => showToast(error.message || 'Failed to run script', 'error'),
   });
 
   // Print control mutations
@@ -1190,6 +1231,16 @@ function PrinterCard({
       }
       showToast(error.message || t('printers.toast.failedChamberLight'), 'error');
     },
+  });
+
+  // Plate detection setting mutation
+  const plateDetectionMutation = useMutation({
+    mutationFn: (enabled: boolean) => api.updatePrinter(printer.id, { plate_detection_enabled: enabled }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['printers'] });
+      showToast(plateDetectionMutation.variables ? 'Plate check enabled' : 'Plate check disabled');
+    },
+    onError: (error: Error) => showToast(error.message || 'Failed to update setting', 'error'),
   });
 
   // Query for printable objects (for skip functionality)
@@ -1254,6 +1305,144 @@ function PrinterCard({
       setRefreshingSlot(null);
     },
   });
+
+  // Plate references state
+  const [plateReferences, setPlateReferences] = useState<{
+    references: Array<{ index: number; label: string; timestamp: string; has_image: boolean; thumbnail_url: string }>;
+    max_references: number;
+  } | null>(null);
+  const [editingRefLabel, setEditingRefLabel] = useState<{ index: number; label: string } | null>(null);
+
+  // Fetch plate references
+  const fetchPlateReferences = async () => {
+    try {
+      const data = await api.getPlateReferences(printer.id);
+      setPlateReferences(data);
+    } catch {
+      // Ignore errors - references will show as empty
+    }
+  };
+
+  // Toggle plate detection enabled/disabled
+  const handleTogglePlateDetection = () => {
+    plateDetectionMutation.mutate(!printer.plate_detection_enabled);
+  };
+
+  // Open plate detection management modal (for calibration/references)
+  const handleOpenPlateManagement = async () => {
+    setIsCheckingPlate(true);
+    setPlateCheckResult(null);
+
+    // Auto-turn on light if it's off
+    const lightWasOff = status?.chamber_light === false;
+    setPlateCheckLightWasOff(lightWasOff);
+    if (lightWasOff) {
+      await api.setChamberLight(printer.id, true);
+      // Wait for light to physically turn on and camera to adjust exposure
+      // (MQTT command is async, light takes ~1s to turn on, camera needs time to adjust)
+      await new Promise(resolve => setTimeout(resolve, 2500));
+    }
+
+    try {
+      const result = await api.checkPlateEmpty(printer.id, { includeDebugImage: true });
+      setPlateCheckResult(result);
+      fetchPlateReferences();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to check plate', 'error');
+      // Restore light if check failed
+      if (lightWasOff) {
+        await api.setChamberLight(printer.id, false);
+        setPlateCheckLightWasOff(false);
+      }
+    } finally {
+      setIsCheckingPlate(false);
+    }
+  };
+
+  // Close plate check modal and restore light state
+  const closePlateCheckModal = useCallback(async () => {
+    setPlateCheckResult(null);
+    // Restore light to original state if we turned it on
+    if (plateCheckLightWasOff) {
+      await api.setChamberLight(printer.id, false);
+      setPlateCheckLightWasOff(false);
+    }
+  }, [plateCheckLightWasOff, printer.id]);
+
+  // Calibrate plate detection handler
+  const handleCalibratePlate = async (label?: string) => {
+    setIsCalibrating(true);
+    try {
+      const result = await api.calibratePlateDetection(printer.id, { label });
+      if (result.success) {
+        showToast(result.message || 'Calibration saved!', 'success');
+        // Refresh references and re-check
+        fetchPlateReferences();
+        const checkResult = await api.checkPlateEmpty(printer.id, { includeDebugImage: true });
+        setPlateCheckResult(checkResult);
+      } else {
+        showToast(result.message || 'Calibration failed', 'error');
+      }
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Calibration failed', 'error');
+    } finally {
+      setIsCalibrating(false);
+    }
+  };
+
+  // Update reference label
+  const handleUpdateRefLabel = async (index: number, label: string) => {
+    try {
+      await api.updatePlateReferenceLabel(printer.id, index, label);
+      setEditingRefLabel(null);
+      fetchPlateReferences();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to update label', 'error');
+    }
+  };
+
+  // Delete reference
+  const handleDeleteRef = async (index: number) => {
+    try {
+      await api.deletePlateReference(printer.id, index);
+      showToast('Reference deleted', 'success');
+      fetchPlateReferences();
+      // Re-check to update counts
+      const checkResult = await api.checkPlateEmpty(printer.id, { includeDebugImage: true });
+      setPlateCheckResult(checkResult);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to delete reference', 'error');
+    }
+  };
+
+  // Save ROI settings
+  const handleSaveRoi = async () => {
+    if (!editingRoi) return;
+    setIsSavingRoi(true);
+    try {
+      await api.updatePrinter(printer.id, { plate_detection_roi: editingRoi });
+      showToast('Detection area saved', 'success');
+      setEditingRoi(null);
+      // Re-check to see new ROI in action
+      const checkResult = await api.checkPlateEmpty(printer.id, { includeDebugImage: true });
+      setPlateCheckResult(checkResult);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to save detection area', 'error');
+    } finally {
+      setIsSavingRoi(false);
+    }
+  };
+
+  // Close plate check modal on Escape key
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && plateCheckResult) {
+        closePlateCheckModal();
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [plateCheckResult, closePlateCheckModal]);
 
   // Watch ams_status_main to detect when RFID read completes
   // ams_status_main: 0=idle, 2=rfid_identifying
@@ -1359,7 +1548,7 @@ function PrinterCard({
                   {viewMode === 'compact' && (
                     <div
                       className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                        status?.connected ? 'bg-bambu-green' : 'bg-red-500'
+                        status?.connected ? 'bg-status-ok' : 'bg-status-error'
                       }`}
                       title={status?.connected ? t('printers.connected') : t('printers.offline')}
                     />
@@ -1394,11 +1583,17 @@ function PrinterCard({
               {showMenu && (
                 <div className="absolute right-0 mt-2 w-48 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg z-10">
                   <button
-                    className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
+                    className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 ${
+                      hasPermission('printers:update')
+                        ? 'hover:bg-bambu-dark-tertiary'
+                        : 'opacity-50 cursor-not-allowed'
+                    }`}
                     onClick={() => {
+                      if (!hasPermission('printers:update')) return;
                       setShowEditModal(true);
                       setShowMenu(false);
                     }}
+                    title={!hasPermission('printers:update') ? 'You do not have permission to edit printers' : undefined}
                   >
                     <Pencil className="w-4 h-4" />
                     {t('common.edit')}
@@ -1424,11 +1619,17 @@ function PrinterCard({
                     {t('printers.menu.mqttDebug')}
                   </button>
                   <button
-                    className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-bambu-dark-tertiary flex items-center gap-2"
+                    className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 ${
+                      hasPermission('printers:delete')
+                        ? 'text-red-400 hover:bg-bambu-dark-tertiary'
+                        : 'text-red-400/50 cursor-not-allowed'
+                    }`}
                     onClick={() => {
+                      if (!hasPermission('printers:delete')) return;
                       setShowDeleteConfirm(true);
                       setShowMenu(false);
                     }}
+                    title={!hasPermission('printers:delete') ? 'You do not have permission to delete printers' : undefined}
                   >
                     <Trash2 className="w-4 h-4" />
                     {t('common.delete')}
@@ -1445,8 +1646,8 @@ function PrinterCard({
               <span
                 className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs ${
                   status?.connected
-                    ? 'bg-bambu-green/20 text-bambu-green'
-                    : 'bg-red-500/20 text-red-400'
+                    ? 'bg-status-ok/20 text-status-ok'
+                    : 'bg-status-error/20 text-status-error'
                 }`}
               >
                 {status?.connected ? (
@@ -1461,14 +1662,14 @@ function PrinterCard({
                 <span
                   className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
                     wifiSignal >= -50
-                      ? 'bg-bambu-green/20 text-bambu-green'
+                      ? 'bg-status-ok/20 text-status-ok'
                       : wifiSignal >= -60
-                      ? 'bg-bambu-green/20 text-bambu-green'
+                      ? 'bg-status-ok/20 text-status-ok'
                       : wifiSignal >= -70
-                      ? 'bg-amber-500/20 text-amber-600'
+                      ? 'bg-status-warning/20 text-status-warning'
                       : wifiSignal >= -80
                       ? 'bg-orange-500/20 text-orange-600'
-                      : 'bg-red-500/20 text-red-600'
+                      : 'bg-status-error/20 text-status-error'
                   }`}
                   title={`WiFi: ${wifiSignal} dBm - ${getWifiStrength(wifiSignal, t).label}`}
                 >
@@ -1485,9 +1686,9 @@ function PrinterCard({
                     className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs cursor-pointer hover:opacity-80 transition-opacity ${
                       knownErrors.length > 0
                         ? knownErrors.some(e => e.severity <= 2)
-                          ? 'bg-red-500/20 text-red-400'
-                          : 'bg-orange-500/20 text-orange-400'
-                        : 'bg-bambu-green/20 text-bambu-green'
+                          ? 'bg-status-error/20 text-status-error'
+                          : 'bg-status-warning/20 text-status-warning'
+                        : 'bg-status-ok/20 text-status-ok'
                     }`}
                     title={t('printers.hmsErrors')}
                   >
@@ -1502,10 +1703,10 @@ function PrinterCard({
                   onClick={() => navigate('/maintenance')}
                   className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs cursor-pointer hover:opacity-80 transition-opacity ${
                     maintenanceInfo.due_count > 0
-                      ? 'bg-red-500/20 text-red-400'
+                      ? 'bg-status-error/20 text-status-error'
                       : maintenanceInfo.warning_count > 0
-                      ? 'bg-orange-500/20 text-orange-400'
-                      : 'bg-bambu-green/20 text-bambu-green'
+                      ? 'bg-status-warning/20 text-status-warning'
+                      : 'bg-status-ok/20 text-status-ok'
                   }`}
                   title={
                     maintenanceInfo.due_count > 0 || maintenanceInfo.warning_count > 0
@@ -1635,18 +1836,20 @@ function PrinterCard({
                   {/* Skip Objects button - top right corner, always visible */}
                   <button
                     onClick={() => setShowSkipObjectsModal(true)}
-                    disabled={!(status.state === 'RUNNING' || status.state === 'PAUSE' || status.state === 'PAUSED') || (status.printable_objects_count ?? 0) < 2}
+                    disabled={!(status.state === 'RUNNING' || status.state === 'PAUSE' || status.state === 'PAUSED') || (status.printable_objects_count ?? 0) < 2 || !hasPermission('printers:control')}
                     className={`absolute top-2 right-2 p-1.5 rounded transition-colors z-10 ${
-                      (status.state === 'RUNNING' || status.state === 'PAUSE' || status.state === 'PAUSED') && (status.printable_objects_count ?? 0) >= 2
+                      (status.state === 'RUNNING' || status.state === 'PAUSE' || status.state === 'PAUSED') && (status.printable_objects_count ?? 0) >= 2 && hasPermission('printers:control')
                         ? 'text-bambu-gray hover:text-white hover:bg-white/10'
                         : 'text-bambu-gray/30 cursor-not-allowed'
                     }`}
                     title={
-                      !(status.state === 'RUNNING' || status.state === 'PAUSE' || status.state === 'PAUSED')
-                        ? t('printers.skipObjects.onlyWhilePrinting')
-                        : (status.printable_objects_count ?? 0) >= 2
-                          ? t('printers.skipObjects.title')
-                          : t('printers.skipObjects.requires2Objects')
+                      !hasPermission('printers:control')
+                        ? t('printers.permissions.controlPrinters')
+                        : !(status.state === 'RUNNING' || status.state === 'PAUSE' || status.state === 'PAUSED')
+                          ? t('printers.skipObjects.onlyWhilePrinting')
+                          : (status.printable_objects_count ?? 0) >= 2
+                            ? t('printers.skipObjects.title')
+                            : t('printers.skipObjects.requires2Objects')
                     }
                   >
                     <SkipObjectsIcon className="w-4 h-4" />
@@ -1861,16 +2064,16 @@ function PrinterCard({
                       {/* Stop button */}
                       <button
                         onClick={() => setShowStopConfirm(true)}
-                        disabled={!isPrinting || isControlBusy}
+                        disabled={!isPrinting || isControlBusy || !hasPermission('printers:control')}
                         className={`
                           flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium
                           transition-colors
-                          ${isPrinting
+                          ${isPrinting && hasPermission('printers:control')
                             ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
                             : 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
                           }
                         `}
-                        title={t('printers.printControl.stopPrint')}
+                        title={!hasPermission('printers:control') ? t('printers.permissions.controlPrinters') : t('printers.printControl.stopPrint')}
                       >
                         <Square className="w-3 h-3" />
                         {t('printers.printControl.stop')}
@@ -1879,18 +2082,18 @@ function PrinterCard({
                       {/* Pause/Resume button */}
                       <button
                         onClick={() => isPaused ? setShowResumeConfirm(true) : setShowPauseConfirm(true)}
-                        disabled={!isPrinting || isControlBusy}
+                        disabled={!isPrinting || isControlBusy || !hasPermission('printers:control')}
                         className={`
                           flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium
                           transition-colors
-                          ${isPrinting
+                          ${isPrinting && hasPermission('printers:control')
                             ? isPaused
                               ? 'bg-bambu-green/20 text-bambu-green hover:bg-bambu-green/30'
                               : 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30'
                             : 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
                           }
                         `}
-                        title={isPaused ? t('printers.printControl.resumePrint') : t('printers.printControl.pausePrint')}
+                        title={!hasPermission('printers:control') ? t('printers.permissions.controlPrinters') : (isPaused ? t('printers.printControl.resumePrint') : t('printers.printControl.pausePrint'))}
                       >
                         {isPaused ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
                         {isPaused ? t('printers.printControl.resume') : t('printers.printControl.pause')}
@@ -2068,13 +2271,19 @@ function PrinterCard({
                                     {status?.state !== 'RUNNING' && amsSlotMenu?.amsId === ams.id && amsSlotMenu?.slotId === slotIdx && (
                                       <div className="absolute top-full left-0 mt-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1 min-w-[120px]">
                                         <button
-                                          className="w-full px-3 py-1.5 text-left text-xs text-white hover:bg-bambu-dark-tertiary flex items-center gap-2"
+                                          className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${
+                                            hasPermission('printers:control')
+                                              ? 'text-white hover:bg-bambu-dark-tertiary'
+                                              : 'text-bambu-gray/50 cursor-not-allowed'
+                                          }`}
                                           onClick={(e) => {
                                             e.stopPropagation();
+                                            if (!hasPermission('printers:control')) return;
                                             refreshAmsSlotMutation.mutate({ amsId: ams.id, slotId: slotIdx });
                                             setAmsSlotMenu(null);
                                           }}
-                                          disabled={isRefreshing}
+                                          disabled={isRefreshing || !hasPermission('printers:control')}
+                                          title={!hasPermission('printers:control') ? 'You do not have permission to control printers' : undefined}
                                         >
                                           <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
                                           {t('printers.rereadRfid')}
@@ -2100,7 +2309,7 @@ function PrinterCard({
                                           } : undefined,
                                         }}
                                         configureSlot={{
-                                          enabled: true,
+                                          enabled: hasPermission('printers:control'),
                                           onConfigure: () => setConfigureSlotModal({
                                             amsId: ams.id,
                                             trayId: slotIdx,
@@ -2117,7 +2326,7 @@ function PrinterCard({
                                     ) : (
                                       <EmptySlotHoverCard
                                         configureSlot={{
-                                          enabled: true,
+                                          enabled: hasPermission('printers:control'),
                                           onConfigure: () => setConfigureSlotModal({
                                             amsId: ams.id,
                                             trayId: slotIdx,
@@ -2251,13 +2460,19 @@ function PrinterCard({
                                 {status?.state !== 'RUNNING' && amsSlotMenu?.amsId === ams.id && amsSlotMenu?.slotId === htSlotId && (
                                   <div className="absolute top-full left-0 mt-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1 min-w-[120px]">
                                     <button
-                                      className="w-full px-3 py-1.5 text-left text-xs text-white hover:bg-bambu-dark-tertiary flex items-center gap-2"
+                                      className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${
+                                        hasPermission('printers:control')
+                                          ? 'text-white hover:bg-bambu-dark-tertiary'
+                                          : 'text-bambu-gray/50 cursor-not-allowed'
+                                      }`}
                                       onClick={(e) => {
                                         e.stopPropagation();
+                                        if (!hasPermission('printers:control')) return;
                                         refreshAmsSlotMutation.mutate({ amsId: ams.id, slotId: htSlotId });
                                         setAmsSlotMenu(null);
                                       }}
-                                      disabled={isHtRefreshing}
+                                      disabled={isHtRefreshing || !hasPermission('printers:control')}
+                                      title={!hasPermission('printers:control') ? 'You do not have permission to control printers' : undefined}
                                     >
                                       <RefreshCw className={`w-3 h-3 ${isHtRefreshing ? 'animate-spin' : ''}`} />
                                       Re-read RFID
@@ -2283,7 +2498,7 @@ function PrinterCard({
                                       } : undefined,
                                     }}
                                     configureSlot={{
-                                      enabled: true,
+                                      enabled: hasPermission('printers:control'),
                                       onConfigure: () => setConfigureSlotModal({
                                         amsId: ams.id,
                                         trayId: htSlotId,
@@ -2300,7 +2515,7 @@ function PrinterCard({
                                 ) : (
                                   <EmptySlotHoverCard
                                     configureSlot={{
-                                      enabled: true,
+                                      enabled: hasPermission('printers:control'),
                                       onConfigure: () => setConfigureSlotModal({
                                         amsId: ams.id,
                                         trayId: htSlotId,
@@ -2411,7 +2626,7 @@ function PrinterCard({
                                 } : undefined,
                               }}
                               configureSlot={{
-                                enabled: true,
+                                enabled: hasPermission('printers:control'),
                                 onConfigure: () => setConfigureSlotModal({
                                   amsId: 255, // External spool indicator
                                   trayId: 0,
@@ -2470,24 +2685,30 @@ function PrinterCard({
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => setShowPowerOnConfirm(true)}
-                  disabled={powerControlMutation.isPending || plugStatus?.state === 'ON'}
+                  disabled={powerControlMutation.isPending || plugStatus?.state === 'ON' || !hasPermission('smart_plugs:control')}
                   className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
-                    plugStatus?.state === 'ON'
-                      ? 'bg-bambu-green text-white'
-                      : 'bg-bambu-dark text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary'
+                    !hasPermission('smart_plugs:control')
+                      ? 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
+                      : plugStatus?.state === 'ON'
+                        ? 'bg-bambu-green text-white'
+                        : 'bg-bambu-dark text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary'
                   }`}
+                  title={!hasPermission('smart_plugs:control') ? 'You do not have permission to control smart plugs' : undefined}
                 >
                   <Power className="w-3 h-3" />
                   {t('printers.power.on')}
                 </button>
                 <button
                   onClick={() => setShowPowerOffConfirm(true)}
-                  disabled={powerControlMutation.isPending || plugStatus?.state === 'OFF'}
+                  disabled={powerControlMutation.isPending || plugStatus?.state === 'OFF' || !hasPermission('smart_plugs:control')}
                   className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
-                    plugStatus?.state === 'OFF'
-                      ? 'bg-red-500/30 text-red-400'
-                      : 'bg-bambu-dark text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary'
+                    !hasPermission('smart_plugs:control')
+                      ? 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
+                      : plugStatus?.state === 'OFF'
+                        ? 'bg-red-500/30 text-red-400'
+                        : 'bg-bambu-dark text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary'
                   }`}
+                  title={!hasPermission('smart_plugs:control') ? 'You do not have permission to control smart plugs' : undefined}
                 >
                   <PowerOff className="w-3 h-3" />
                   {t('printers.power.off')}
@@ -2501,12 +2722,14 @@ function PrinterCard({
                 </span>
                 <button
                   onClick={() => toggleAutoOffMutation.mutate(!smartPlug.auto_off)}
-                  disabled={toggleAutoOffMutation.isPending || smartPlug.auto_off_executed}
-                  title={smartPlug.auto_off_executed ? t('printers.power.autoOffExecutedTooltip') : t('printers.power.autoOffTooltip')}
+                  disabled={toggleAutoOffMutation.isPending || smartPlug.auto_off_executed || !hasPermission('smart_plugs:control')}
+                  title={!hasPermission('smart_plugs:control') ? t('printers.permissions.controlSmartPlugs') : (smartPlug.auto_off_executed ? t('printers.power.autoOffExecutedTooltip') : t('printers.power.autoOffTooltip'))}
                   className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${
-                    smartPlug.auto_off_executed
-                      ? 'bg-bambu-green/50 cursor-not-allowed'
-                      : smartPlug.auto_off ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
+                    !hasPermission('smart_plugs:control')
+                      ? 'bg-bambu-dark-tertiary/50 cursor-not-allowed'
+                      : smartPlug.auto_off_executed
+                        ? 'bg-bambu-green/50 cursor-not-allowed'
+                        : smartPlug.auto_off ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
                   }`}
                 >
                   <span
@@ -2517,24 +2740,46 @@ function PrinterCard({
                 </button>
               </div>
             </div>
+
+            {/* Script buttons row */}
+            {scriptPlugs && scriptPlugs.length > 0 && (
+              <div className="flex items-center gap-2 mt-2 pt-2 border-t border-bambu-dark-tertiary/50">
+                <Play className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                <span className="text-xs text-bambu-gray">Scripts:</span>
+                <div className="flex flex-wrap gap-1">
+                  {scriptPlugs.map(script => (
+                    <button
+                      key={script.id}
+                      onClick={() => runScriptMutation.mutate(script.id)}
+                      disabled={runScriptMutation.isPending}
+                      title={`Run ${script.ha_entity_id}`}
+                      className="px-2 py-0.5 text-xs bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 rounded transition-colors flex items-center gap-1"
+                    >
+                      <Play className="w-2.5 h-2.5" />
+                      {script.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* Connection Info & Actions - hidden in compact mode */}
         {viewMode === 'expanded' && (
-          <div className="mt-4 pt-4 border-t border-bambu-dark-tertiary flex items-center justify-between">
+          <div className="mt-4 pt-4 border-t border-bambu-dark-tertiary flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="text-xs text-bambu-gray">
               <p>{printer.ip_address}</p>
               <p className="truncate">{printer.serial_number}</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {/* Chamber Light Toggle */}
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={() => chamberLightMutation.mutate(!status?.chamber_light)}
-                disabled={!status?.connected || chamberLightMutation.isPending}
-                title={status?.chamber_light ? t('printers.chamberLight.turnOff') : t('printers.chamberLight.turnOn')}
+                disabled={!status?.connected || chamberLightMutation.isPending || !hasPermission('printers:control')}
+                title={!hasPermission('printers:control') ? t('printers.permissions.controlPrinters') : (status?.chamber_light ? t('printers.chamberLight.turnOff') : t('printers.chamberLight.turnOn'))}
                 className={status?.chamber_light ? 'bg-yellow-500/20 hover:bg-yellow-500/30 border-yellow-500/30' : ''}
               >
                 <ChamberLight on={status?.chamber_light ?? false} className="w-4 h-4" />
@@ -2565,11 +2810,43 @@ function PrinterCard({
               >
                 <Video className="w-4 h-4" />
               </Button>
+              {/* Split button: main part toggles detection, chevron opens modal */}
+              <div className={`inline-flex rounded-md ${printer.plate_detection_enabled ? 'ring-1 ring-green-500' : ''}`}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleTogglePlateDetection}
+                  disabled={!status?.connected || plateDetectionMutation.isPending || !hasPermission('printers:update')}
+                  title={!hasPermission('printers:update') ? t('printers.permissions.updatePrinters') : (printer.plate_detection_enabled ? t('printers.plateDetection.enabledClickToDisable') : t('printers.plateDetection.disabledClickToEnable'))}
+                  className={`!rounded-r-none !border-r-0 ${printer.plate_detection_enabled ? "!border-green-500 !text-green-400 hover:!bg-green-500/20" : ""}`}
+                >
+                  {plateDetectionMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <ScanSearch className="w-4 h-4" />
+                  )}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleOpenPlateManagement}
+                  disabled={!status?.connected || isCheckingPlate || !hasPermission('printers:update')}
+                  title={!hasPermission('printers:update') ? t('printers.permissions.updatePrinters') : t('printers.plateDetection.manageCalibration')}
+                  className={`!rounded-l-none !px-1.5 ${printer.plate_detection_enabled ? "!border-green-500 !text-green-400 hover:!bg-green-500/20" : ""}`}
+                >
+                  {isCheckingPlate ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3" />
+                  )}
+                </Button>
+              </div>
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={() => setShowFileManager(true)}
-                title={t('printers.browseFiles')}
+                disabled={!hasPermission('printers:files')}
+                title={!hasPermission('printers:files') ? t('printers.permissions.accessFiles') : t('printers.browseFiles')}
               >
                 <HardDrive className="w-4 h-4" />
                 {t('printers.files')}
@@ -2595,6 +2872,274 @@ function PrinterCard({
           printerName={printer.name}
           onClose={() => setShowMQTTDebug(false)}
         />
+      )}
+
+      {/* Plate Check Result Modal */}
+      {plateCheckResult && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => closePlateCheckModal()}>
+          <div className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl max-w-lg w-full" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
+              <div className="flex items-center gap-2">
+                {plateCheckResult.needs_calibration ? (
+                  <ScanSearch className="w-5 h-5 text-blue-500" />
+                ) : plateCheckResult.is_empty ? (
+                  <CheckCircle className="w-5 h-5 text-green-500" />
+                ) : (
+                  <XCircle className="w-5 h-5 text-yellow-500" />
+                )}
+                <h2 className="text-lg font-semibold text-white">
+                  Build Plate Check
+                </h2>
+                {plateCheckResult.reference_count !== undefined && plateCheckResult.max_references && (
+                  <span className="text-xs text-bambu-gray bg-bambu-dark-tertiary px-2 py-1 rounded">
+                    {plateCheckResult.reference_count}/{plateCheckResult.max_references} refs
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => closePlateCheckModal()}
+                className="p-1 text-bambu-gray hover:text-white rounded transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              {plateCheckResult.needs_calibration ? (
+                <>
+                  <div className="p-3 rounded-lg bg-blue-500/20 border border-blue-500/50">
+                    <p className="font-medium text-blue-400">
+                      Calibration Required
+                    </p>
+                    <p className="text-sm text-bambu-gray mt-1">
+                      Please ensure the build plate is <strong>completely empty</strong>, then click Calibrate.
+                    </p>
+                  </div>
+                  <div className="text-sm text-bambu-gray space-y-2">
+                    <p>Calibration captures a reference image of the empty plate. Future checks will compare against this reference to detect objects.</p>
+                    <p><strong>Tip:</strong> You can store up to 5 calibrations for different plates. The system automatically uses the best match when checking.</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className={`p-3 rounded-lg ${plateCheckResult.is_empty ? 'bg-green-500/20 border border-green-500/50' : 'bg-yellow-500/20 border border-yellow-500/50'}`}>
+                    <p className={`font-medium ${plateCheckResult.is_empty ? 'text-green-400' : 'text-yellow-400'}`}>
+                      {plateCheckResult.is_empty ? 'Plate appears empty' : 'Objects detected on plate'}
+                    </p>
+                    <p className="text-sm text-bambu-gray mt-1">
+                      Confidence: {Math.round(plateCheckResult.confidence * 100)}% | Difference: {plateCheckResult.difference_percent.toFixed(1)}%
+                    </p>
+                  </div>
+                  {plateCheckResult.debug_image_url && (
+                    <div>
+                      <p className="text-sm text-bambu-gray mb-2">Analysis preview:</p>
+                      <img
+                        src={plateCheckResult.debug_image_url}
+                        alt="Plate detection analysis"
+                        className="w-full rounded-lg border border-bambu-dark-tertiary"
+                      />
+                      <p className="text-xs text-bambu-gray mt-2">
+                        Green box = detection area, Red overlay = differences from calibration
+                      </p>
+                    </div>
+                  )}
+                  <p className="text-xs text-bambu-gray">
+                    {plateCheckResult.message}
+                  </p>
+                </>
+              )}
+
+              {/* Saved References Grid */}
+              {plateReferences && plateReferences.references.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-bambu-dark-tertiary">
+                  <p className="text-sm font-medium text-white mb-2">
+                    Saved References ({plateReferences.references.length}/{plateReferences.max_references})
+                  </p>
+                  <div className="grid grid-cols-5 gap-2">
+                    {plateReferences.references.map((ref) => (
+                      <div key={ref.index} className="relative group">
+                        <img
+                          src={api.getPlateReferenceThumbnailUrl(printer.id, ref.index)}
+                          alt={ref.label || `Reference ${ref.index + 1}`}
+                          className="w-full aspect-video object-cover rounded border border-bambu-dark-tertiary"
+                        />
+                        {/* Delete button */}
+                        <button
+                          onClick={() => handleDeleteRef(ref.index)}
+                          className="absolute top-1 right-1 p-0.5 bg-red-500/80 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                          title={t('printers.plateDetection.deleteReference')}
+                        >
+                          <X className="w-3 h-3 text-white" />
+                        </button>
+                        {/* Label */}
+                        {editingRefLabel?.index === ref.index ? (
+                          <input
+                            type="text"
+                            value={editingRefLabel.label}
+                            onChange={(e) => setEditingRefLabel({ ...editingRefLabel, label: e.target.value })}
+                            onBlur={() => handleUpdateRefLabel(ref.index, editingRefLabel.label)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleUpdateRefLabel(ref.index, editingRefLabel.label);
+                              if (e.key === 'Escape') setEditingRefLabel(null);
+                            }}
+                            className="w-full mt-1 px-1 py-0.5 text-xs bg-bambu-dark-tertiary border border-bambu-green rounded text-white"
+                            autoFocus
+                            placeholder={t('printers.plateDetection.labelPlaceholder')}
+                          />
+                        ) : (
+                          <p
+                            className="text-xs text-bambu-gray mt-1 truncate cursor-pointer hover:text-white"
+                            onClick={() => setEditingRefLabel({ index: ref.index, label: ref.label })}
+                            title={ref.label ? `${ref.label} - ${t('printers.plateDetection.clickToEdit')}` : t('printers.plateDetection.clickToAddLabel')}
+                          >
+                            {ref.label || <span className="italic opacity-50">{t('printers.plateDetection.noLabel')}</span>}
+                          </p>
+                        )}
+                        {/* Timestamp */}
+                        <p className="text-[10px] text-bambu-gray/60">
+                          {ref.timestamp ? new Date(ref.timestamp).toLocaleDateString() : ''}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ROI Editor */}
+              {!plateCheckResult.needs_calibration && (
+                <div className="mt-4 pt-4 border-t border-bambu-dark-tertiary">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-white">Detection Area (ROI)</p>
+                    {!editingRoi ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setEditingRoi(plateCheckResult.roi || { x: 0.15, y: 0.35, w: 0.70, h: 0.55 })}
+                      >
+                        <Pencil className="w-3 h-3 mr-1" />
+                        Edit
+                      </Button>
+                    ) : (
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditingRoi(null)}
+                          disabled={isSavingRoi}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={handleSaveRoi}
+                          disabled={isSavingRoi}
+                        >
+                          {isSavingRoi ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Save'}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                  {editingRoi ? (
+                    <div className="space-y-3 bg-bambu-dark-tertiary/50 p-3 rounded-lg">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs text-bambu-gray">X Start</label>
+                          <input
+                            type="range"
+                            min="0"
+                            max="0.9"
+                            step="0.01"
+                            value={editingRoi.x}
+                            onChange={(e) => setEditingRoi({ ...editingRoi, x: parseFloat(e.target.value) })}
+                            className="w-full h-1.5 bg-bambu-dark-tertiary rounded-lg cursor-pointer accent-green-500"
+                          />
+                          <span className="text-xs text-bambu-gray">{Math.round(editingRoi.x * 100)}%</span>
+                        </div>
+                        <div>
+                          <label className="text-xs text-bambu-gray">Y Start</label>
+                          <input
+                            type="range"
+                            min="0"
+                            max="0.9"
+                            step="0.01"
+                            value={editingRoi.y}
+                            onChange={(e) => setEditingRoi({ ...editingRoi, y: parseFloat(e.target.value) })}
+                            className="w-full h-1.5 bg-bambu-dark-tertiary rounded-lg cursor-pointer accent-green-500"
+                          />
+                          <span className="text-xs text-bambu-gray">{Math.round(editingRoi.y * 100)}%</span>
+                        </div>
+                        <div>
+                          <label className="text-xs text-bambu-gray">Width</label>
+                          <input
+                            type="range"
+                            min="0.1"
+                            max="1"
+                            step="0.01"
+                            value={editingRoi.w}
+                            onChange={(e) => setEditingRoi({ ...editingRoi, w: parseFloat(e.target.value) })}
+                            className="w-full h-1.5 bg-bambu-dark-tertiary rounded-lg cursor-pointer accent-green-500"
+                          />
+                          <span className="text-xs text-bambu-gray">{Math.round(editingRoi.w * 100)}%</span>
+                        </div>
+                        <div>
+                          <label className="text-xs text-bambu-gray">Height</label>
+                          <input
+                            type="range"
+                            min="0.1"
+                            max="1"
+                            step="0.01"
+                            value={editingRoi.h}
+                            onChange={(e) => setEditingRoi({ ...editingRoi, h: parseFloat(e.target.value) })}
+                            className="w-full h-1.5 bg-bambu-dark-tertiary rounded-lg cursor-pointer accent-green-500"
+                          />
+                          <span className="text-xs text-bambu-gray">{Math.round(editingRoi.h * 100)}%</span>
+                        </div>
+                      </div>
+                      <p className="text-xs text-bambu-gray">
+                        Adjust the detection area to focus on the build plate. The green box in the preview shows the current area.
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-bambu-gray">
+                      Current: X={Math.round((plateCheckResult.roi?.x || 0.15) * 100)}%, Y={Math.round((plateCheckResult.roi?.y || 0.35) * 100)}%,
+                      W={Math.round((plateCheckResult.roi?.w || 0.70) * 100)}%, H={Math.round((plateCheckResult.roi?.h || 0.55) * 100)}%
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t border-bambu-dark-tertiary">
+              {plateCheckResult.needs_calibration ? (
+                <>
+                  <Button variant="ghost" onClick={() => closePlateCheckModal()}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => handleCalibratePlate()}
+                    disabled={isCalibrating}
+                  >
+                    {isCalibrating ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Calibrating...
+                      </>
+                    ) : (
+                      'Calibrate Empty Plate'
+                    )}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="ghost" onClick={() => handleCalibratePlate()} disabled={isCalibrating}>
+                    {isCalibrating ? 'Adding...' : `Add Reference (${plateReferences?.references.length || 0}/${plateReferences?.max_references || 5})`}
+                  </Button>
+                  <Button onClick={() => closePlateCheckModal()}>
+                    Close
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Power On Confirmation */}
@@ -2867,13 +3412,13 @@ function PrinterCard({
                       {!obj.skipped ? (
                         <button
                           onClick={() => skipObjectsMutation.mutate([obj.id])}
-                          disabled={skipObjectsMutation.isPending || (status?.layer_num ?? 0) <= 1}
+                          disabled={skipObjectsMutation.isPending || (status?.layer_num ?? 0) <= 1 || !hasPermission('printers:control')}
                           className={`px-4 py-2 text-xs font-medium rounded-lg transition-colors ${
-                            (status?.layer_num ?? 0) <= 1
+                            (status?.layer_num ?? 0) <= 1 || !hasPermission('printers:control')
                               ? 'bg-gray-100 dark:bg-bambu-dark text-gray-400 dark:text-bambu-gray/50 cursor-not-allowed'
                               : 'bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-500/30 border border-red-300 dark:border-red-500/30'
                           }`}
-                          title={(status?.layer_num ?? 0) <= 1 ? t('printers.skipObjects.waitForLayer2') : t('printers.skipObjects.skipThisObject')}
+                          title={!hasPermission('printers:control') ? t('printers.permissions.controlPrinters') : ((status?.layer_num ?? 0) <= 1 ? t('printers.skipObjects.waitForLayer2') : t('printers.skipObjects.skipThisObject'))}
                         >
                           {t('printers.skipObjects.skip')}
                         </button>
@@ -3086,6 +3631,8 @@ function AddPrinterModal({
     const modelMap: Record<string, string> = {
       // H2 Series
       'O1D': 'H2D',
+      'O1E': 'H2D Pro',  // Some devices report O1E
+      'O2D': 'H2D Pro',  // Some devices report O2D
       'O1C': 'H2C',
       'O1S': 'H2S',
       // X1 Series
@@ -3109,6 +3656,7 @@ function AddPrinterModal({
       'A1': 'A1',
       'A1 Mini': 'A1 Mini',
       'H2D': 'H2D',
+      'H2D Pro': 'H2D Pro',
       'H2C': 'H2C',
       'H2S': 'H2S',
     };
@@ -3308,6 +3856,7 @@ function AddPrinterModal({
                 <optgroup label={t('printers.h2Series')}>
                   <option value="H2C">H2C</option>
                   <option value="H2D">H2D</option>
+                  <option value="H2D Pro">H2D Pro</option>
                   <option value="H2S">H2S</option>
                 </optgroup>
                 <optgroup label={t('printers.x1Series')}>
@@ -3493,8 +4042,8 @@ function FirmwareUpdateModal({
               <div className="w-full bg-bambu-dark-tertiary rounded-full h-2">
                 <div
                   className={`h-2 rounded-full transition-all ${
-                    uploadStatus.status === 'error' ? 'bg-red-500' :
-                    uploadStatus.status === 'complete' ? 'bg-bambu-green' : 'bg-orange-500'
+                    uploadStatus.status === 'error' ? 'bg-status-error' :
+                    uploadStatus.status === 'complete' ? 'bg-status-ok' : 'bg-orange-500'
                   } ${uploadStatus.status === 'uploading' ? 'animate-pulse' : ''}`}
                   style={{ width: `${uploadStatus.progress}%` }}
                 />
@@ -3563,6 +4112,7 @@ function EditPrinterModal({
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
   const [form, setForm] = useState({
     name: printer.name,
     ip_address: printer.ip_address,
@@ -3579,6 +4129,7 @@ function EditPrinterModal({
       queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
       onClose();
     },
+    onError: (error: Error) => showToast(error.message || 'Failed to update printer', 'error'),
   });
 
   // Close on Escape key
@@ -3669,6 +4220,7 @@ function EditPrinterModal({
                 <optgroup label={t('printers.h2Series')}>
                   <option value="H2C">H2C</option>
                   <option value="H2D">H2D</option>
+                  <option value="H2D Pro">H2D Pro</option>
                   <option value="H2S">H2S</option>
                 </optgroup>
                 <optgroup label={t('printers.x1Series')}>
@@ -3815,6 +4367,8 @@ export function PrintersPage() {
   // Derive viewMode from cardSize: S=compact, M/L/XL=expanded
   const viewMode: ViewMode = cardSize === 1 ? 'compact' : 'expanded';
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
+  const { hasPermission } = useAuth();
   // Embedded camera viewer state - supports multiple simultaneous viewers
   // Persisted to localStorage so cameras reopen after navigation
   const [embeddedCameraPrinters, setEmbeddedCameraPrinters] = useState<Map<number, { id: number; name: string }>>(() => {
@@ -3920,6 +4474,7 @@ export function PrintersPage() {
       queryClient.invalidateQueries({ queryKey: ['maintenanceOverview'] });
       setShowAddModal(false);
     },
+    onError: (error: Error) => showToast(error.message || 'Failed to add printer', 'error'),
   });
 
   const powerOnMutation = useMutation({
@@ -4025,12 +4580,12 @@ export function PrintersPage() {
 
   return (
     <div className="p-4 md:p-8">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">{t('printers.title')}</h1>
           <StatusSummaryBar printers={printers} />
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           {/* Sort dropdown */}
           <div className="flex items-center gap-1">
             <select
@@ -4140,7 +4695,11 @@ export function PrintersPage() {
               )}
             </div>
           )}
-          <Button onClick={() => setShowAddModal(true)}>
+          <Button
+            onClick={() => setShowAddModal(true)}
+            disabled={!hasPermission('printers:create')}
+            title={!hasPermission('printers:create') ? 'You do not have permission to add printers' : undefined}
+          >
             <Plus className="w-4 h-4" />
             {t('printers.addPrinter')}
           </Button>
@@ -4153,7 +4712,11 @@ export function PrintersPage() {
         <Card>
           <CardContent className="text-center py-12">
             <p className="text-bambu-gray mb-4">{t('printers.empty.noPrinters')}</p>
-            <Button onClick={() => setShowAddModal(true)}>
+            <Button
+              onClick={() => setShowAddModal(true)}
+              disabled={!hasPermission('printers:create')}
+              title={!hasPermission('printers:create') ? t('printers.permissions.addPrinters') : undefined}
+            >
               <Plus className="w-4 h-4" />
               {t('printers.empty.addFirst')}
             </Button>
@@ -4189,6 +4752,7 @@ export function PrintersPage() {
                     timeFormat={settings?.time_format || 'system'}
                     cameraViewMode={settings?.camera_view_mode || 'window'}
                     onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
+                    checkPrinterFirmware={settings?.check_printer_firmware !== false}
                   />
                 ))}
               </div>
@@ -4217,6 +4781,7 @@ export function PrintersPage() {
               timeFormat={settings?.time_format || 'system'}
               cameraViewMode={settings?.camera_view_mode || 'window'}
               onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
+              checkPrinterFirmware={settings?.check_printer_firmware !== false}
             />
           ))}
         </div>

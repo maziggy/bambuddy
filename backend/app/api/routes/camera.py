@@ -39,6 +39,9 @@ _last_frame_times: dict[int, float] = {}
 # Track stream start times for each printer
 _stream_start_times: dict[int, float] = {}
 
+# Track active external camera streams by printer ID
+_active_external_streams: set[int] = set()
+
 
 def get_buffered_frame(printer_id: int) -> bytes | None:
     """Get the last buffered frame for a printer from an active stream.
@@ -350,7 +353,8 @@ async def camera_stream(
     This endpoint returns a multipart MJPEG stream that can be used directly
     in an <img> tag or video player.
 
-    Uses the appropriate protocol based on printer model:
+    Uses external camera if configured, otherwise uses built-in camera:
+    - External: MJPEG, RTSP, or HTTP snapshot
     - A1/P1: Chamber image protocol (port 6000)
     - X1/H2/P2: RTSP via ffmpeg (port 322)
 
@@ -361,6 +365,50 @@ async def camera_stream(
     import uuid
 
     printer = await get_printer_or_404(printer_id, db)
+
+    # Check for external camera first
+    if printer.external_camera_enabled and printer.external_camera_url:
+        import time
+
+        from backend.app.services.external_camera import generate_mjpeg_stream
+
+        # Limit external camera FPS to reduce browser load
+        fps = min(max(fps, 1), 15)
+        logger.info(f"Using external camera ({printer.external_camera_type}) for printer {printer_id} at {fps} fps")
+
+        # Track stream start
+        _stream_start_times[printer_id] = time.time()
+        _active_external_streams.add(printer_id)
+
+        async def external_stream_wrapper():
+            """Wrap external stream to track start/stop and update frame times."""
+            frame_interval = 1.0 / fps
+            last_yield_time = 0.0
+            try:
+                async for frame in generate_mjpeg_stream(
+                    printer.external_camera_url, printer.external_camera_type, fps
+                ):
+                    # Rate limit to prevent overwhelming browser
+                    current_time = time.time()
+                    elapsed = current_time - last_yield_time
+                    if elapsed < frame_interval:
+                        await asyncio.sleep(frame_interval - elapsed)
+                    last_yield_time = time.time()
+                    _last_frame_times[printer_id] = last_yield_time
+                    yield frame
+            finally:
+                _active_external_streams.discard(printer_id)
+                logger.info(f"External camera stream ended for printer {printer_id}")
+
+        return StreamingResponse(
+            external_stream_wrapper(),
+            media_type="multipart/x-mixed-replace; boundary=frame",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
 
     # Validate FPS - A1/P1 models max out at ~5 FPS
     if is_chamber_image_model(printer.model):
@@ -554,13 +602,18 @@ async def camera_status(printer_id: int):
     # Check if there's an active stream for this printer
     has_active_stream = False
 
+    # Check external camera streams
+    if printer_id in _active_external_streams:
+        has_active_stream = True
+
     # Check ffmpeg/RTSP streams
-    for stream_id in _active_streams:
-        if stream_id.startswith(f"{printer_id}-"):
-            process = _active_streams[stream_id]
-            if process.returncode is None:
-                has_active_stream = True
-                break
+    if not has_active_stream:
+        for stream_id in _active_streams:
+            if stream_id.startswith(f"{printer_id}-"):
+                process = _active_streams[stream_id]
+                if process.returncode is None:
+                    has_active_stream = True
+                    break
 
     # Check chamber image streams
     if not has_active_stream:
@@ -597,3 +650,391 @@ async def camera_status(printer_id: int):
             and (seconds_since_frame is None or seconds_since_frame > 10)
         ),
     }
+
+
+@router.post("/{printer_id}/camera/external/test")
+async def test_external_camera(
+    printer_id: int,
+    url: str,
+    camera_type: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Test external camera connection.
+
+    Args:
+        printer_id: Printer ID (for authorization)
+        url: Camera URL or USB device path to test
+        camera_type: Camera type ("mjpeg", "rtsp", "snapshot", "usb")
+
+    Returns:
+        Dict with {success: bool, error?: str, resolution?: str}
+    """
+    # Verify printer exists (for authorization)
+    await get_printer_or_404(printer_id, db)
+
+    from backend.app.services.external_camera import test_connection
+
+    return await test_connection(url, camera_type)
+
+
+@router.get("/{printer_id}/camera/check-plate")
+async def check_plate_empty(
+    printer_id: int,
+    plate_type: str | None = None,
+    use_external: bool = False,
+    include_debug_image: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """Check if the build plate is empty using camera vision.
+
+    Uses calibration-based difference detection - compares current frame
+    to a reference image of the empty plate.
+
+    IMPORTANT: Chamber light must be ON for reliable detection.
+
+    Args:
+        printer_id: Printer ID
+        plate_type: Type of build plate (e.g., "High Temp Plate") for calibration lookup
+        use_external: If True, prefer external camera over built-in
+        include_debug_image: If True, return URL to annotated debug image
+
+    Returns:
+        Dict with detection results:
+        - is_empty: bool - Whether plate appears empty
+        - confidence: float - Confidence level (0.0 to 1.0)
+        - difference_percent: float - How different from calibration reference
+        - message: str - Human-readable result message
+        - needs_calibration: bool - True if calibration is required
+        - light_warning: bool - True if chamber light is off
+    """
+    from backend.app.services.plate_detection import (
+        check_plate_empty as do_check,
+        is_plate_detection_available,
+    )
+    from backend.app.services.printer_manager import printer_manager
+
+    # Check printer exists first (before OpenCV check)
+    printer = await get_printer_or_404(printer_id, db)
+
+    if not is_plate_detection_available():
+        raise HTTPException(
+            status_code=503,
+            detail="Plate detection not available. Install opencv-python-headless to enable.",
+        )
+
+    # Check chamber light status
+    light_warning = False
+    state = printer_manager.get_status(printer_id)
+    if state and not state.chamber_light:
+        light_warning = True
+
+    from backend.app.services.plate_detection import PlateDetector
+
+    # Build ROI tuple from printer settings if available
+    roi = None
+    if all(
+        [
+            printer.plate_detection_roi_x is not None,
+            printer.plate_detection_roi_y is not None,
+            printer.plate_detection_roi_w is not None,
+            printer.plate_detection_roi_h is not None,
+        ]
+    ):
+        roi = (
+            printer.plate_detection_roi_x,
+            printer.plate_detection_roi_y,
+            printer.plate_detection_roi_w,
+            printer.plate_detection_roi_h,
+        )
+
+    result = await do_check(
+        printer_id=printer.id,
+        ip_address=printer.ip_address,
+        access_code=printer.access_code,
+        model=printer.model,
+        plate_type=plate_type,
+        include_debug_image=include_debug_image,
+        external_camera_url=printer.external_camera_url if printer.external_camera_enabled else None,
+        external_camera_type=printer.external_camera_type if printer.external_camera_enabled else None,
+        use_external=use_external,
+        roi=roi,
+    )
+
+    # Get reference count for the response
+    detector = PlateDetector()
+    ref_count = detector.get_calibration_count(printer.id)
+
+    response = result.to_dict()
+    response["light_warning"] = light_warning
+    response["reference_count"] = ref_count
+    response["max_references"] = detector.MAX_REFERENCES
+    # Include current ROI in response
+    if roi:
+        response["roi"] = {"x": roi[0], "y": roi[1], "w": roi[2], "h": roi[3]}
+    else:
+        # Return default ROI
+        response["roi"] = {"x": 0.15, "y": 0.35, "w": 0.70, "h": 0.55}
+
+    # If debug image requested and available, encode as base64 data URL
+    if include_debug_image and result.debug_image:
+        import base64
+
+        b64_image = base64.b64encode(result.debug_image).decode("utf-8")
+        response["debug_image_url"] = f"data:image/jpeg;base64,{b64_image}"
+
+    return response
+
+
+@router.post("/{printer_id}/camera/plate-detection/calibrate")
+async def calibrate_plate_detection(
+    printer_id: int,
+    label: str | None = None,
+    use_external: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """Calibrate plate detection by capturing a reference image of the empty plate.
+
+    The plate MUST be empty when calling this endpoint. The captured image
+    will be used as the reference for future detection comparisons.
+
+    Supports up to 5 reference images per printer. When adding a 6th, the oldest
+    is automatically removed.
+
+    IMPORTANT: Chamber light should be ON for calibration.
+
+    Args:
+        printer_id: Printer ID
+        label: Optional label for this reference (e.g., "High Temp Plate", "Wham Bam")
+        use_external: If True, prefer external camera over built-in
+
+    Returns:
+        Dict with:
+        - success: bool - Whether calibration succeeded
+        - message: str - Status message
+        - index: int - The reference slot used (0-4)
+    """
+    from backend.app.services.plate_detection import (
+        calibrate_plate,
+        is_plate_detection_available,
+    )
+    from backend.app.services.printer_manager import printer_manager
+
+    # Check printer exists first (before OpenCV check)
+    printer = await get_printer_or_404(printer_id, db)
+
+    if not is_plate_detection_available():
+        raise HTTPException(
+            status_code=503,
+            detail="Plate detection not available. Install opencv-python-headless to enable.",
+        )
+
+    # Check chamber light - warn but don't block
+    state = printer_manager.get_status(printer_id)
+    light_warning = state and not state.chamber_light
+
+    success, message, index = await calibrate_plate(
+        printer_id=printer.id,
+        ip_address=printer.ip_address,
+        access_code=printer.access_code,
+        model=printer.model,
+        label=label,
+        external_camera_url=printer.external_camera_url if printer.external_camera_enabled else None,
+        external_camera_type=printer.external_camera_type if printer.external_camera_enabled else None,
+        use_external=use_external,
+    )
+
+    if light_warning and success:
+        message += " (Warning: Chamber light was off)"
+
+    return {"success": success, "message": message, "index": index}
+
+
+@router.delete("/{printer_id}/camera/plate-detection/calibrate")
+async def delete_plate_calibration(
+    printer_id: int,
+    plate_type: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete the plate detection calibration for a printer and plate type.
+
+    Args:
+        printer_id: Printer ID
+        plate_type: Type of build plate (if None, deletes legacy non-plate-specific calibration)
+
+    Returns:
+        Dict with:
+        - success: bool - Whether deletion succeeded
+        - message: str - Status message
+    """
+    from backend.app.services.plate_detection import (
+        delete_calibration,
+        is_plate_detection_available,
+    )
+
+    # Verify printer exists first (before OpenCV check)
+    await get_printer_or_404(printer_id, db)
+
+    if not is_plate_detection_available():
+        raise HTTPException(
+            status_code=503,
+            detail="Plate detection not available. Install opencv-python-headless to enable.",
+        )
+
+    deleted = delete_calibration(printer_id, plate_type)
+    plate_msg = f" for '{plate_type}'" if plate_type else ""
+
+    return {
+        "success": deleted,
+        "message": f"Calibration deleted{plate_msg}" if deleted else f"No calibration found{plate_msg}",
+    }
+
+
+@router.get("/{printer_id}/camera/plate-detection/status")
+async def get_plate_detection_status(
+    printer_id: int,
+    plate_type: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Check plate detection status for a printer and plate type.
+
+    Returns:
+        Dict with:
+        - available: bool - Whether OpenCV is installed
+        - calibrated: bool - Whether printer has calibration for this plate type
+        - plate_type: str - The plate type queried
+        - chamber_light: bool - Whether chamber light is on
+        - message: str - Status message
+    """
+    from backend.app.services.plate_detection import (
+        get_calibration_status,
+        is_plate_detection_available,
+    )
+    from backend.app.services.printer_manager import printer_manager
+
+    # Verify printer exists first (before OpenCV check)
+    await get_printer_or_404(printer_id, db)
+
+    if not is_plate_detection_available():
+        return {
+            "available": False,
+            "calibrated": False,
+            "plate_type": plate_type,
+            "chamber_light": False,
+            "message": "OpenCV not installed",
+        }
+
+    # Get chamber light status
+    state = printer_manager.get_status(printer_id)
+    chamber_light = state.chamber_light if state else False
+
+    status = get_calibration_status(printer_id, plate_type)
+    status["chamber_light"] = chamber_light
+
+    return status
+
+
+@router.get("/{printer_id}/camera/plate-detection/references")
+async def get_plate_references(
+    printer_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get all calibration references for a printer with metadata.
+
+    Returns list of references with index, label, timestamp, and thumbnail URL.
+    """
+    from backend.app.services.plate_detection import PlateDetector, is_plate_detection_available
+
+    # Verify printer exists first (before OpenCV check)
+    await get_printer_or_404(printer_id, db)
+
+    if not is_plate_detection_available():
+        raise HTTPException(503, "Plate detection not available")
+
+    detector = PlateDetector()
+    references = detector.get_references(printer_id)
+
+    # Add thumbnail URLs
+    for ref in references:
+        ref["thumbnail_url"] = (
+            f"/api/v1/printers/{printer_id}/camera/plate-detection/references/{ref['index']}/thumbnail"
+        )
+
+    return {
+        "references": references,
+        "max_references": detector.MAX_REFERENCES,
+    }
+
+
+@router.get("/{printer_id}/camera/plate-detection/references/{index}/thumbnail")
+async def get_reference_thumbnail(
+    printer_id: int,
+    index: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get thumbnail image for a calibration reference."""
+    from fastapi.responses import Response
+
+    from backend.app.services.plate_detection import PlateDetector, is_plate_detection_available
+
+    # Verify printer exists first (before OpenCV check)
+    await get_printer_or_404(printer_id, db)
+
+    if not is_plate_detection_available():
+        raise HTTPException(503, "Plate detection not available")
+
+    detector = PlateDetector()
+    thumbnail = detector.get_reference_thumbnail(printer_id, index)
+
+    if thumbnail is None:
+        raise HTTPException(404, "Reference not found")
+
+    return Response(content=thumbnail, media_type="image/jpeg")
+
+
+@router.put("/{printer_id}/camera/plate-detection/references/{index}")
+async def update_reference_label(
+    printer_id: int,
+    index: int,
+    label: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update the label for a calibration reference."""
+    from backend.app.services.plate_detection import PlateDetector, is_plate_detection_available
+
+    # Verify printer exists first (before OpenCV check)
+    await get_printer_or_404(printer_id, db)
+
+    if not is_plate_detection_available():
+        raise HTTPException(503, "Plate detection not available")
+
+    detector = PlateDetector()
+    success = detector.update_reference_label(printer_id, index, label)
+
+    if not success:
+        raise HTTPException(404, "Reference not found")
+
+    return {"success": True, "index": index, "label": label}
+
+
+@router.delete("/{printer_id}/camera/plate-detection/references/{index}")
+async def delete_reference(
+    printer_id: int,
+    index: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a specific calibration reference."""
+    from backend.app.services.plate_detection import PlateDetector, is_plate_detection_available
+
+    # Verify printer exists first (before OpenCV check)
+    await get_printer_or_404(printer_id, db)
+
+    if not is_plate_detection_available():
+        raise HTTPException(503, "Plate detection not available")
+
+    detector = PlateDetector()
+    success = detector.delete_reference(printer_id, index)
+
+    if not success:
+        raise HTTPException(404, "Reference not found")
+
+    return {"success": True, "message": "Reference deleted"}

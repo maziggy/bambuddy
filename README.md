@@ -52,11 +52,16 @@
 - Photo attachments & failure analysis
 - Timelapse editor (trim, speed, music)
 - Re-print to any connected printer with AMS mapping (auto-match or manual slot selection, multi-plate support)
+- Plate thumbnail browsing for multi-plate archives (hover to navigate between plates)
 - Archive comparison (side-by-side diff)
+- Tag management (rename/delete across all archives)
 
 ### 📊 Monitoring & Control
 - Real-time printer status via WebSocket
 - Live camera streaming (MJPEG) & snapshots with multi-viewer support
+- **Streaming overlay for OBS** - Embeddable page with camera + status for live streaming (`/overlay/:printerId`)
+- External camera support (MJPEG, RTSP, HTTP snapshot, USB/V4L2) with layer-based timelapse
+- **Build plate empty detection** - Auto-pause print if objects detected on plate (multi-reference calibration, ROI adjustment)
 - Fan status monitoring (part cooling, auxiliary, chamber)
 - Printer control (stop, pause, resume, chamber light)
 - Resizable printer cards (S/M/L/XL)
@@ -72,17 +77,23 @@
 ### ⏰ Scheduling & Automation
 - Print queue with drag-and-drop
 - Multi-printer selection (send to multiple printers at once)
+- Model-based queue assignment (send to "any X1C" for load balancing)
+- Filament validation (only assign to printers with required filaments)
 - Per-printer AMS mapping (individual slot configuration for print farms)
 - Scheduled prints (date/time)
 - Queue Only mode (stage without auto-start)
-- Smart plug integration (Tasmota, Home Assistant)
+- Smart plug integration (Tasmota, Home Assistant, MQTT)
+- MQTT smart plugs: Subscribe to Zigbee2MQTT, Shelly, or any MQTT topic for energy monitoring
 - Energy consumption tracking (per-print kWh and cost)
 - HA energy sensor support (for plugs with separate power/energy sensors)
 - Auto power-on before print
 - Auto power-off after cooldown
 
 ### 📁 File Manager (Library)
-- Upload and organize sliced files (3MF, gcode)
+- Upload and organize sliced files (3MF, gcode, STL)
+- **STL thumbnail generation** - Auto-generate previews for STL files on upload or batch generate for existing files
+- ZIP file extraction with folder structure preservation
+- Option to create folder from ZIP filename
 - Folder structure with drag-and-drop
 - Rename files and folders via context menu
 - Print directly to any printer with full options
@@ -97,6 +108,7 @@
 - Auto-detect parts count from 3MF files
 - Color-coded project badges
 - Bulk assign archives via multi-select toolbar
+- Import/Export projects as ZIP (includes files) or JSON
 
 </td>
 <td width="50%" valign="top">
@@ -108,12 +120,17 @@
 - Quiet hours & daily digest
 - Customizable message templates
 - Print finish photo URL in notifications
+- HMS error alerts (AMS, nozzle, etc.)
+- Build plate detection alerts
+- Queue events (waiting, skipped, failed)
 
 ### 🔧 Integrations
 - [Spoolman](https://github.com/Donkie/Spoolman) filament sync
 - MQTT publishing for Home Assistant, Node-RED, etc.
+- **Prometheus metrics** - Export printer telemetry for Grafana dashboards
 - Bambu Cloud profile management
 - K-profiles (pressure advance)
+- **GitHub backup** - Schedule automatic backups of cloud profiles, k profiles and settings to GitHub
 - External sidebar links
 - Webhooks & API keys
 - Interactive API browser with live testing
@@ -138,9 +155,10 @@
 
 ### 🔒 Optional Authentication
 - Enable/disable authentication any time
-- Role-based access (Admin/User)
+- Group-based permissions (50+ granular permissions)
+- Default groups: Administrators, Operators, Viewers
 - JWT tokens with secure password hashing
-- User management (create, edit, delete)
+- User management (create, edit, delete, groups)
 
 </td>
 </tr>
@@ -496,10 +514,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
-If you like Bambuddy and want to support it, you can <a href="https://ko-fi.com/maziggy" target=_blank>buy Martin a coffee</a>.
-
----
-
 ## 📄 License
 
 MIT License — see [LICENSE](LICENSE) for details.
@@ -511,6 +525,10 @@ MIT License — see [LICENSE](LICENSE) for details.
 - [Bambu Lab](https://bambulab.com/) for amazing printers
 - The reverse engineering community for protocol documentation
 - All testers and contributors
+
+---
+
+If you like Bambuddy and want to support it, you can <a href="https://ko-fi.com/maziggy" target=_blank>buy Martin a coffee</a>.
 
 ---
 

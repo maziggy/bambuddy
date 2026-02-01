@@ -91,8 +91,8 @@ function ComparisonContent({ comparison }: { comparison: ArchiveComparison }) {
                     {archive.print_name}
                   </div>
                   <div className={`text-xs ${
-                    archive.status === 'completed' ? 'text-bambu-green' :
-                    archive.status === 'failed' ? 'text-red-400' : 'text-bambu-gray'
+                    archive.status === 'completed' ? 'text-status-ok' :
+                    archive.status === 'failed' ? 'text-status-error' : 'text-bambu-gray'
                   }`}>
                     {archive.status}
                   </div>

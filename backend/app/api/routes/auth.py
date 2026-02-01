@@ -3,6 +3,7 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from backend.app.core.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -13,9 +14,25 @@ from backend.app.core.auth import (
     get_user_by_username,
 )
 from backend.app.core.database import get_db
+from backend.app.models.group import Group
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
-from backend.app.schemas.auth import LoginRequest, LoginResponse, SetupRequest, SetupResponse, UserResponse
+from backend.app.schemas.auth import GroupBrief, LoginRequest, LoginResponse, SetupRequest, SetupResponse, UserResponse
+
+
+def _user_to_response(user: User) -> UserResponse:
+    """Convert a User model to UserResponse schema."""
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        role=user.role,
+        is_active=user.is_active,
+        is_admin=user.is_admin,
+        groups=[GroupBrief(id=g.id, name=g.name) for g in user.groups],
+        permissions=sorted(user.get_permissions()),
+        created_at=user.created_at.isoformat(),
+    )
+
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -126,6 +143,14 @@ async def setup_auth(request: SetupRequest, db: AsyncSession = Depends(get_db)):
                         role="admin",
                         is_active=True,
                     )
+
+                    # Try to add user to Administrators group if it exists
+                    admin_group_result = await db.execute(select(Group).where(Group.name == "Administrators"))
+                    admin_group = admin_group_result.scalar_one_or_none()
+                    if admin_group:
+                        admin_user.groups.append(admin_group)
+                        logger.info("Added new admin user to Administrators group")
+
                     db.add(admin_user)
                     logger.info(f"Admin user added to session: {request.admin_username}")
                     admin_created = True
@@ -179,8 +204,12 @@ async def disable_auth(
 
     logger = logging.getLogger(__name__)
 
+    # Reload user with groups for proper is_admin check
+    result = await db.execute(select(User).where(User.id == current_user.id).options(selectinload(User.groups)))
+    user = result.scalar_one()
+
     # Only admins can disable authentication
-    if current_user.role != "admin":
+    if not user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can disable authentication",
@@ -189,7 +218,7 @@ async def disable_auth(
     try:
         await set_auth_enabled(db, False)
         await db.commit()
-        logger.info(f"Authentication disabled by admin user: {current_user.username}")
+        logger.info(f"Authentication disabled by admin user: {user.username}")
         return {"message": "Authentication disabled successfully", "auth_enabled": False}
     except Exception as e:
         await db.rollback()
@@ -219,32 +248,30 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # Reload user with groups for proper permission calculation
+    result = await db.execute(select(User).where(User.id == user.id).options(selectinload(User.groups)))
+    user = result.scalar_one()
+
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(data={"sub": user.username}, expires_delta=access_token_expires)
 
     return LoginResponse(
         access_token=access_token,
         token_type="bearer",
-        user=UserResponse(
-            id=user.id,
-            username=user.username,
-            role=user.role,
-            is_active=user.is_active,
-            created_at=user.created_at.isoformat(),
-        ),
+        user=_user_to_response(user),
     )
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_current_user_info(current_user: User = Depends(get_current_active_user)):
+async def get_current_user_info(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Get current user information."""
-    return UserResponse(
-        id=current_user.id,
-        username=current_user.username,
-        role=current_user.role,
-        is_active=current_user.is_active,
-        created_at=current_user.created_at.isoformat(),
-    )
+    # Reload user with groups for proper permission calculation
+    result = await db.execute(select(User).where(User.id == current_user.id).options(selectinload(User.groups)))
+    user = result.scalar_one()
+    return _user_to_response(user)
 
 
 @router.post("/logout")

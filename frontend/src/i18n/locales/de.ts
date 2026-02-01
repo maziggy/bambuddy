@@ -65,6 +65,7 @@ export default {
     done: 'Fertig',
     saving: 'Speichern...',
     saveChanges: 'Änderungen speichern',
+    model: 'Modell',
   },
 
   // Printers page
@@ -507,6 +508,22 @@ export default {
     last30Days: 'Letzte 30 Tage',
     last90Days: 'Letzte 90 Tage',
     allTime: 'Gesamt',
+    weekOf: 'Woche vom',
+    periodFilament: 'Filament im Zeitraum',
+    periodCost: 'Kosten im Zeitraum',
+    avgPerPrint: 'Durchschnitt pro Druck',
+    total: 'gesamt',
+    avg: 'Durchschnitt',
+    usageOverTime: 'Verbrauch über Zeit',
+    noDataForTimeRange: 'Keine Daten für den ausgewählten Zeitraum',
+    byFilamentType: 'Nach Filamenttyp',
+    usage: 'Verbrauch',
+    monthlyComparison: 'Monatsvergleich',
+    noPermissionRecalculate: 'Sie haben keine Berechtigung, Kosten neu zu berechnen',
+    noPermissionResetLayout: 'Sie haben keine Berechtigung, das Layout zurückzusetzen',
+    recalculateCosts: 'Kosten neu berechnen',
+    recalculateFailed: 'Kostenberechnung fehlgeschlagen',
+    recalculateTooltip: 'Alle Druckkosten basierend auf aktuellen Filamentpreisen neu berechnen',
   },
 
   // Profiles page
@@ -524,6 +541,13 @@ export default {
     spoolWeight: 'Spulengewicht',
     noProfiles: 'Keine Profile konfiguriert',
     deleteConfirm: 'Möchten Sie dieses Profil wirklich löschen?',
+    noPermissionCreate: 'Sie haben keine Berechtigung, Profile zu erstellen',
+    noPermissionDelete: 'Sie haben keine Berechtigung, Profile zu löschen',
+    noPermissionDuplicate: 'Sie haben keine Berechtigung, Profile zu duplizieren',
+    noPermissionEdit: 'Sie haben keine Berechtigung, Profile zu bearbeiten',
+    noPermissionLogout: 'Sie haben keine Berechtigung, sich abzumelden',
+    noPermissionManageTemplates: 'Sie haben keine Berechtigung, Vorlagen zu verwalten',
+    noPermissionRefresh: 'Sie haben keine Berechtigung, Profile zu aktualisieren',
   },
 
   // Maintenance page
@@ -563,6 +587,15 @@ export default {
       replaceCarbonFilter: 'Aktivkohlefilter ersetzen',
       lubricateLeftNozzleRail: 'Linke Düsenschiene schmieren',
     },
+    noPermissionCreate: 'Sie haben keine Berechtigung, Wartungseinträge zu erstellen',
+    noPermissionUpdate: 'Sie haben keine Berechtigung, Wartungseinträge zu aktualisieren',
+    noPermissionPerform: 'Sie haben keine Berechtigung, Wartungen durchzuführen',
+    noPermissionRemove: 'Sie haben keine Berechtigung, Wartungseinträge zu entfernen',
+    noPermissionAssign: 'Sie haben keine Berechtigung, Wartungen zuzuweisen',
+    noPermissionEditTypes: 'Sie haben keine Berechtigung, Wartungstypen zu bearbeiten',
+    noPermissionDeleteTypes: 'Sie haben keine Berechtigung, Wartungstypen zu löschen',
+    noPermissionEditIntervals: 'Sie haben keine Berechtigung, Wartungsintervalle zu bearbeiten',
+    noPermissionEditHours: 'Sie haben keine Berechtigung, Wartungsstunden zu bearbeiten',
   },
 
   // Settings page
@@ -588,22 +621,6 @@ export default {
     latestVersion: 'Neueste Version',
     upToDate: 'Sie sind auf dem neuesten Stand',
     updateAvailable: 'Update verfügbar',
-    telemetry: 'Anonyme Telemetrie',
-    telemetryDescription: 'Helfen Sie BamBuddy zu verbessern, indem Sie anonyme Nutzungsdaten senden',
-    telemetryLearnMore: 'Mehr erfahren',
-    telemetryInfoTitle: 'Welche Daten werden gesammelt?',
-    telemetryInfoIntro: 'BamBuddy sammelt minimale anonyme Daten, um zu verstehen, wie viele Personen die App nutzen und welche Versionen verwendet werden. Dies hilft bei der Priorisierung von Fehlerbehebungen und neuen Funktionen.',
-    telemetryInfoCollected: 'Was wir sammeln:',
-    telemetryInfoItem1: 'Eine zufällige Installations-ID (nicht mit Ihnen oder Ihrer Hardware verknüpft)',
-    telemetryInfoItem2: 'Die App-Version, die Sie verwenden',
-    telemetryInfoItem3: 'Druckermodelltypen (z.B. X1C, P1S) – keine Namen oder Seriennummern',
-    telemetryInfoItem4: 'Ein Zeitstempel (um tägliche/wöchentliche aktive Nutzer zu zählen)',
-    telemetryInfoNotCollected: 'Was wir NICHT sammeln:',
-    telemetryInfoNotItem1: 'IP-Adressen oder Standortdaten',
-    telemetryInfoNotItem2: 'Druckernamen, Seriennummern oder Druckerdaten',
-    telemetryInfoNotItem3: 'Druckverlauf, Dateinamen oder persönliche Inhalte',
-    telemetryInfoNotItem4: 'Informationen, die Sie identifizieren könnten',
-    telemetryInfoFooter: 'Sie können die Telemetrie jederzeit deaktivieren. Die Installations-ID wird zufällig generiert und kann nicht zu Ihnen zurückverfolgt werden.',
     // Notifications
     notificationLanguage: 'Benachrichtigungssprache',
     notificationLanguageDescription: 'Sprache für Push-Benachrichtigungen',
@@ -864,6 +881,8 @@ export default {
     lowDiskWarningDescription: 'Warnung anzeigen, wenn der freie Speicherplatz unter diesen Schwellenwert fällt',
 
     // Updates
+    checkPrinterFirmware: 'Drucker-Firmware prüfen',
+    checkPrinterFirmwareDescription: 'Nach Firmware-Updates von Bambu Lab suchen',
     checkForUpdatesDescription: 'Automatisch beim Start nach neuen Versionen suchen',
     checkNow: 'Jetzt prüfen',
     releaseNotes: 'Versionshinweise',
@@ -1069,6 +1088,33 @@ export default {
     disableAuthMessage: 'Sind Sie sicher, dass Sie die Authentifizierung deaktivieren möchten? Dies macht Ihre Bambuddy-Instanz ohne Anmeldung zugänglich. Alle Benutzer bleiben in der Datenbank, aber die Authentifizierung wird deaktiviert.',
     disableAuthConfirm: 'Authentifizierung deaktivieren',
     authDisabledSuccess: 'Authentifizierung erfolgreich deaktiviert',
+    // Groups
+    groups: 'Gruppen',
+    addGroup: 'Gruppe hinzufügen',
+    noGroupsFound: 'Keine Gruppen gefunden',
+    systemGroup: 'System',
+    noDescription: 'Keine Beschreibung',
+    // Users
+    users: 'Benutzer',
+    addUser: 'Benutzer hinzufügen',
+    noUsersFound: 'Keine Benutzer gefunden',
+    admin: 'Administrator',
+    // Authentication
+    authentication: 'Authentifizierung',
+    authEnableDescription: 'Aktivieren Sie die Authentifizierung, um Benutzerkonten zu erstellen, Berechtigungen zu verwalten und Ihre Bambuddy-Instanz zu sichern.',
+    authSecuredDescription: 'Ihre Bambuddy-Instanz ist durch Authentifizierung geschützt.',
+    enable: 'Aktivieren',
+    disable: 'Deaktivieren',
+    changePassword: 'Passwort ändern',
+    // Backup and Restore
+    backupAndRestore: 'Sicherung & Wiederherstellung',
+    backupAndRestoreDescription: 'Erstellen und Wiederherstellen von Sicherungen Ihrer Bambuddy-Daten',
+    goToBackup: 'Zur Sicherung',
+    // Home Assistant
+    homeAssistantDescriptionFull: 'Verbinden Sie sich mit Home Assistant, um Smart-Home-Geräte zu steuern',
+    // Counts
+    usersCount: '{{count}} Benutzer',
+    permissionsCount: '{{count}} Berechtigungen',
   },
 
   // Notifications (for push notifications)
@@ -1290,6 +1336,28 @@ export default {
     timelapseDesc: 'Zeitraffer-Video aufnehmen',
   },
 
+  // Print modal
+  printModal: {
+    specificPrinter: 'Bestimmter Drucker',
+    selectPrinters: 'Drucker auswählen',
+    selectAll: 'Alle auswählen',
+    printersSelected: '{{count}} Drucker ausgewählt',
+    noPrintersAvailable: 'Keine Drucker verfügbar',
+    noActivePrintersAvailable: 'Keine aktiven Drucker verfügbar',
+    inactive: 'Inaktiv',
+    unknownModel: 'Unbekanntes Modell',
+    customMapping: 'Benutzerdefinierte Zuordnung',
+    auto: 'Auto',
+    showAll: 'alle anzeigen',
+    selectAtLeastOne: 'Wählen Sie mindestens einen Drucker',
+    selectTargetModel: 'Zielmodell auswählen',
+    selectSlot: 'Slot auswählen...',
+    reRead: 'Neu einlesen',
+    customSlotMapping: 'Benutzerdefinierte Slot-Zuordnung',
+    autoMatched: 'Automatisch zugeordnet',
+    manuallySelected: 'Manuell ausgewählt',
+  },
+
   // Login page
   login: {
     title: 'Bambuddy Anmeldung',
@@ -1352,17 +1420,33 @@ export default {
     edit: 'Bearbeiten',
     delete: 'Löschen',
     creating: 'Wird erstellt...',
+    admin: 'Administrator',
+    editUser: 'Benutzer bearbeiten',
+    groups: 'Gruppen',
+    noGroups: 'Keine Gruppen',
+    noGroupsAvailable: 'Keine Gruppen verfügbar',
+    confirmPassword: 'Passwort bestätigen',
+    placeholderNewPassword: 'Neues Passwort',
+    placeholderConfirmPassword: 'Passwort bestätigen',
+    placeholderConfirmNewPassword: 'Neues Passwort bestätigen',
+    leaveBlankToKeepCurrent: 'Leer lassen, um das aktuelle Passwort beizubehalten',
+    saveChanges: 'Änderungen speichern',
+    saving: 'Speichern...',
+    system: 'System',
     table: {
       username: 'Benutzername',
       role: 'Rolle',
       status: 'Status',
       actions: 'Aktionen',
+      groups: 'Gruppen',
     },
     toast: {
       userCreated: 'Benutzer erfolgreich erstellt',
       userUpdated: 'Benutzer erfolgreich aktualisiert',
       userDeleted: 'Benutzer erfolgreich gelöscht',
       fillRequiredFields: 'Bitte füllen Sie alle Pflichtfelder aus',
+      passwordMinLength: 'Passwort muss mindestens 6 Zeichen lang sein',
+      passwordsDoNotMatch: 'Passwörter stimmen nicht überein',
     },
   },
 
@@ -1382,6 +1466,7 @@ export default {
     failed: 'Hochladen fehlgeschlagen',
     uploading: 'Wird hochgeladen...',
     upload: 'Hochladen',
+    printerModelExtracted: 'Druckermodell wird aus 3MF-Metadaten extrahiert, falls verfügbar',
   },
 
   // G-code viewer
@@ -1439,6 +1524,15 @@ export default {
     turnOffConfirm: 'Sind Sie sicher, dass Sie "{{name}}" ausschalten möchten? Dies trennt die Stromversorgung des angeschlossenen Geräts.',
     turnOff: 'Ausschalten',
     controlFailed: '"{{name}}" konnte nicht {{action}} werden',
+    monitorOnly: 'Nur Überwachung',
+    waiting: 'Warte auf Daten...',
+    monitor: 'Monitor',
+    power: 'Leistung',
+    kwhToday: 'kWh Heute',
+    settings: 'Einstellungen',
+    smartSwitches: 'Smart-Schalter',
+    noSwitchesInSwitchbar: 'Keine Schalter für die Switchbar aktiviert',
+    enableInSettings: 'Schalter unter Einstellungen → Smart-Steckdosen aktivieren',
   },
 
   // Add/Edit Smart Plug modal
@@ -1512,6 +1606,27 @@ export default {
     // Switchbar
     showInSwitchbar: 'In Schaltleiste anzeigen',
     showInSwitchbarHint: 'Schnellzugriff über Seitenleiste',
+    // MQTT
+    mqtt: 'MQTT',
+    mqttTopicRequired: 'Mindestens ein MQTT-Topic muss für Leistung, Energie oder Status konfiguriert werden',
+    mqttBrokerNotConfigured: 'MQTT-Broker nicht konfiguriert. Broker-Adresse einrichten unter',
+    mqttBrokerNotConfiguredPath: 'Einstellungen → Netzwerk → MQTT-Veröffentlichung',
+    mqttBrokerNotConfiguredHint: '(Sie müssen die Veröffentlichung nicht aktivieren, füllen Sie nur die Broker-Details aus).',
+    mqttMonitorOnly: 'Nur Überwachung',
+    mqttMonitorOnlyDescription: 'MQTT-Steckdosen empfangen Leistungs-/Energiedaten über MQTT-Abonnements. Ein-/Ausschalten ist nicht möglich - verwenden Sie Ihren MQTT-Broker oder Ihr Home-Automation-System.',
+    mqttPowerMonitoring: 'Leistungsüberwachung',
+    mqttEnergyMonitoring: 'Energieüberwachung',
+    mqttStateMonitoring: 'Statusüberwachung',
+    mqttTopic: 'Topic',
+    mqttJsonPath: 'JSON-Pfad',
+    mqttMultiplier: 'Multiplikator',
+    mqttOnValue: 'EIN-Wert',
+    mqttPowerJsonPathHint: 'JSON-Pfad extrahiert den Wert aus der JSON-Nutzlast (z.B. "power_l1"). Leer lassen, wenn das Topic rohe Zahlenwerte liefert.',
+    mqttPowerMultiplierHint: 'Multiplikator 0,001 für mW→W, 1000 für kW→W verwenden.',
+    mqttEnergyJsonPathHint: 'JSON-Pfad extrahiert den Wert aus der JSON-Nutzlast. Für Rohwerte leer lassen.',
+    mqttEnergyMultiplierHint: 'Multiplikator 0,001 für Wh→kWh, 1000 für MWh→kWh verwenden.',
+    mqttStateJsonPathHint: 'JSON-Pfad extrahiert den Wert aus der JSON-Nutzlast. Für Rohwerte leer lassen.',
+    mqttStateOnValueHint: 'EIN-Wert: Die genaue Zeichenkette für "EIN". Für Auto-Erkennung (ON, true, 1) leer lassen.',
     // Validation
     nameRequired: 'Name ist erforderlich',
     ipRequired: 'IP-Adresse ist für Tasmota-Plugs erforderlich',
@@ -1704,6 +1819,9 @@ export default {
     addTags: 'Tags hinzufügen...',
     addMoreTags: 'Weitere Tags hinzufügen...',
     existingTagsHint: 'Vorhandene Tags (klicken zum Hinzufügen)',
+    externalLink: 'Externer Link',
+    externalLinkPlaceholder: 'https://...',
+    externalLinkDescription: 'Link zu MakerWorld, Printables, Thingiverse usw.',
     status: 'Status',
     statusCompleted: 'Abgeschlossen',
     statusFailed: 'Fehlgeschlagen',
@@ -1895,5 +2013,44 @@ export default {
     editDigestTime: 'Anbieter bearbeiten um Zusammenfassungszeit zu ändern',
     deleteTitle: 'Benachrichtigungsanbieter löschen',
     deleteConfirm: 'Sind Sie sicher, dass Sie "{{name}}" löschen möchten? Dies kann nicht rückgängig gemacht werden.',
+  },
+
+  // K-Profiles
+  kProfiles: {
+    noPermissionAdd: 'Sie haben keine Berechtigung, K-Profile hinzuzufügen',
+    noPermissionDelete: 'Sie haben keine Berechtigung, K-Profile zu löschen',
+    noPermissionDeleteBulk: 'Sie haben keine Berechtigung, K-Profile zu löschen',
+    noPermissionExport: 'Sie haben keine Berechtigung, K-Profile zu exportieren',
+    noPermissionImport: 'Sie haben keine Berechtigung, K-Profile zu importieren',
+    noPermissionRefresh: 'Sie haben keine Berechtigung, K-Profile zu aktualisieren',
+  },
+
+  // Projects
+  projects: {
+    exportAllProjects: 'Alle Projekte exportieren',
+    importProject: 'Projekt importieren',
+    importFailed: 'Import fehlgeschlagen',
+    projectImported: 'Projekt erfolgreich importiert',
+    projectsExported: 'Projekte erfolgreich exportiert',
+    noCreatePermission: 'Sie haben keine Berechtigung, Projekte zu erstellen',
+    noDeletePermission: 'Sie haben keine Berechtigung, Projekte zu löschen',
+    noEditPermission: 'Sie haben keine Berechtigung, Projekte zu bearbeiten',
+    noExportPermission: 'Sie haben keine Berechtigung, Projekte zu exportieren',
+    noImportPermission: 'Sie haben keine Berechtigung, Projekte zu importieren',
+  },
+
+  // Project Detail
+  projectDetail: {
+    exportProject: 'Projekt exportieren',
+    exportFailed: 'Export fehlgeschlagen',
+    projectExported: 'Projekt erfolgreich exportiert',
+    noEditPermission: 'Sie haben keine Berechtigung, dieses Projekt zu bearbeiten',
+    noAddPartsPermission: 'Sie haben keine Berechtigung, Teile hinzuzufügen',
+    noDeletePartsPermission: 'Sie haben keine Berechtigung, Teile zu löschen',
+    noEditPartsPermission: 'Sie haben keine Berechtigung, Teile zu bearbeiten',
+    noUpdatePartsPermission: 'Sie haben keine Berechtigung, Teile zu aktualisieren',
+    noEditNotesPermission: 'Sie haben keine Berechtigung, Notizen zu bearbeiten',
+    noCreateTemplatesPermission: 'Sie haben keine Berechtigung, Vorlagen zu erstellen',
+    noExportPermission: 'Sie haben keine Berechtigung, Projekte zu exportieren',
   },
 };

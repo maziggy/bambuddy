@@ -37,11 +37,12 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { api } from '../api/client';
-import type { MaintenanceStatus, PrinterMaintenanceOverview, MaintenanceType } from '../api/client';
+import type { MaintenanceStatus, PrinterMaintenanceOverview, MaintenanceType, Permission } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { Toggle } from '../components/Toggle';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
 
 // Icon mapping for maintenance types
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -224,10 +225,12 @@ function MaintenanceCard({
   item,
   onPerform,
   onToggle,
+  hasPermission,
 }: {
   item: MaintenanceStatus;
   onPerform: (id: number) => void;
   onToggle: (id: number, enabled: boolean) => void;
+  hasPermission: (permission: Permission) => boolean;
 }) {
   const { t } = useTranslation();
   const Icon = getIcon(item.maintenance_type_icon);
@@ -350,15 +353,19 @@ function MaintenanceCard({
 
         {/* Actions */}
         <div className="flex items-center gap-2 shrink-0">
-          <Toggle
-            checked={item.enabled}
-            onChange={(checked) => onToggle(item.id, checked)}
-          />
+          <span title={!hasPermission('maintenance:update') ? t('maintenance.noPermissionUpdate') : undefined}>
+            <Toggle
+              checked={item.enabled}
+              onChange={(checked) => onToggle(item.id, checked)}
+              disabled={!hasPermission('maintenance:update')}
+            />
+          </span>
           <Button
             size="sm"
             variant={item.is_due ? 'primary' : 'secondary'}
             onClick={() => onPerform(item.id)}
-            disabled={!item.enabled}
+            disabled={!item.enabled || !hasPermission('maintenance:update')}
+            title={!hasPermission('maintenance:update') ? t('maintenance.noPermissionPerform') : undefined}
             className="!px-3"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -376,11 +383,13 @@ function PrinterSection({
   onPerform,
   onToggle,
   onSetHours,
+  hasPermission,
 }: {
   overview: PrinterMaintenanceOverview;
   onPerform: (id: number) => void;
   onToggle: (id: number, enabled: boolean) => void;
   onSetHours: (printerId: number, hours: number) => void;
+  hasPermission: (permission: Permission) => boolean;
 }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(true);
@@ -472,14 +481,16 @@ function PrinterSection({
             ) : (
               <button
                 onClick={() => {
+                  if (!hasPermission('maintenance:update')) return;
                   setHoursInput(Math.round(overview.total_print_hours).toString());
                   setEditingHours(true);
                 }}
-                className="group"
+                className={`group ${!hasPermission('maintenance:update') ? 'cursor-not-allowed opacity-60' : ''}`}
+                title={!hasPermission('maintenance:update') ? t('maintenance.noPermissionEditHours') : undefined}
               >
-                <div className="text-sm font-medium text-white group-hover:text-bambu-green transition-colors flex items-center gap-1">
+                <div className={`text-sm font-medium text-white ${hasPermission('maintenance:update') ? 'group-hover:text-bambu-green' : ''} transition-colors flex items-center gap-1`}>
                   {t('maintenance.nHours', { count: Math.round(overview.total_print_hours) })}
-                  <Edit3 className="w-3 h-3 text-bambu-gray group-hover:text-bambu-green" />
+                  <Edit3 className={`w-3 h-3 text-bambu-gray ${hasPermission('maintenance:update') ? 'group-hover:text-bambu-green' : ''}`} />
                 </div>
                 <div className="text-xs text-bambu-gray">{t('maintenance.totalPrintTime')}</div>
               </button>
@@ -523,6 +534,7 @@ function PrinterSection({
                 item={item}
                 onPerform={onPerform}
                 onToggle={onToggle}
+                hasPermission={hasPermission}
               />
             ))}
           </div>
@@ -542,6 +554,7 @@ function SettingsSection({
   onDeleteType,
   onAssignType,
   onRemoveItem,
+  hasPermission,
 }: {
   overview: PrinterMaintenanceOverview[] | undefined;
   types: MaintenanceType[];
@@ -551,6 +564,7 @@ function SettingsSection({
   onDeleteType: (id: number) => void;
   onAssignType: (printerId: number, typeId: number) => void;
   onRemoveItem: (itemId: number) => void;
+  hasPermission: (permission: Permission) => boolean;
 }) {
   const { t } = useTranslation();
   const [editingInterval, setEditingInterval] = useState<number | null>(null);
@@ -682,7 +696,11 @@ function SettingsSection({
             <h2 className="text-lg font-semibold text-white">{t('maintenance.maintenanceTypes')}</h2>
             <p className="text-sm text-bambu-gray mt-1">{t('maintenance.systemTypesDescription')}</p>
           </div>
-          <Button onClick={() => setShowAddType(!showAddType)}>
+          <Button
+            onClick={() => setShowAddType(!showAddType)}
+            disabled={!hasPermission('maintenance:create')}
+            title={!hasPermission('maintenance:create') ? t('maintenance.noPermissionCreate') : undefined}
+          >
             <Plus className="w-4 h-4" />
             {t('maintenance.addCustomType')}
           </Button>
@@ -942,7 +960,9 @@ function SettingsSection({
                   </button>
                   <button
                     onClick={() => startEditType(type)}
-                    className="p-2 rounded-lg hover:bg-bambu-dark text-bambu-gray hover:text-white transition-colors"
+                    disabled={!hasPermission('maintenance:update')}
+                    title={!hasPermission('maintenance:update') ? t('maintenance.noPermissionEditTypes') : undefined}
+                    className={`p-2 rounded-lg hover:bg-bambu-dark text-bambu-gray hover:text-white transition-colors ${!hasPermission('maintenance:update') ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <Edit3 className="w-4 h-4" />
                   </button>
@@ -952,7 +972,9 @@ function SettingsSection({
                         onDeleteType(type.id);
                       }
                     }}
-                    className="p-2 rounded-lg hover:bg-bambu-dark text-bambu-gray hover:text-red-400 transition-colors"
+                    disabled={!hasPermission('maintenance:delete')}
+                    title={!hasPermission('maintenance:delete') ? t('maintenance.noPermissionDeleteTypes') : undefined}
+                    className={`p-2 rounded-lg hover:bg-bambu-dark text-bambu-gray hover:text-red-400 transition-colors ${!hasPermission('maintenance:delete') ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -974,8 +996,9 @@ function SettingsSection({
                             {p.printerName}
                             <button
                               onClick={() => p.itemId && onRemoveItem(p.itemId)}
-                              className="hover:text-red-400 ml-1"
-                              title={t('maintenance.removeFromPrinter')}
+                              disabled={!hasPermission('maintenance:delete')}
+                              title={!hasPermission('maintenance:delete') ? t('maintenance.noPermissionRemove') : t('maintenance.removeFromPrinter')}
+                              className={`ml-1 ${hasPermission('maintenance:delete') ? 'hover:text-red-400' : 'opacity-50 cursor-not-allowed'}`}
                             >
                               ×
                             </button>
@@ -990,7 +1013,9 @@ function SettingsSection({
                           <button
                             key={p.id}
                             onClick={() => onAssignType(p.id, type.id)}
-                            className="px-2 py-1 bg-bambu-dark hover:bg-bambu-green/20 rounded text-xs text-bambu-gray hover:text-bambu-green transition-colors"
+                            disabled={!hasPermission('maintenance:create')}
+                            title={!hasPermission('maintenance:create') ? t('maintenance.noPermissionAssign') : undefined}
+                            className={`px-2 py-1 bg-bambu-dark rounded text-xs transition-colors ${hasPermission('maintenance:create') ? 'hover:bg-bambu-green/20 text-bambu-gray hover:text-bambu-green' : 'opacity-50 cursor-not-allowed text-bambu-gray'}`}
                           >
                             + {p.name}
                           </button>
@@ -1062,11 +1087,14 @@ function SettingsSection({
                           ) : (
                             <button
                               onClick={() => {
+                                if (!hasPermission('maintenance:update')) return;
                                 setEditingInterval(item.id);
                                 setIntervalInput(item.interval_hours.toString());
                                 setIntervalTypeInput(intervalType);
                               }}
-                              className="px-2 py-1 bg-bambu-dark-tertiary hover:bg-bambu-dark-secondary border border-bambu-dark-tertiary hover:border-bambu-green rounded text-xs font-medium text-white transition-colors flex items-center gap-1"
+                              disabled={!hasPermission('maintenance:update')}
+                              title={!hasPermission('maintenance:update') ? t('maintenance.noPermissionEditIntervals') : undefined}
+                              className={`px-2 py-1 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded text-xs font-medium text-white transition-colors flex items-center gap-1 ${hasPermission('maintenance:update') ? 'hover:bg-bambu-dark-secondary hover:border-bambu-green' : 'opacity-50 cursor-not-allowed'}`}
                             >
                               {intervalType === 'days' ? <Calendar className="w-3 h-3" /> : <Timer className="w-3 h-3" />}
                               {formatIntervalLabel(item.interval_hours, intervalType, t)}
@@ -1105,6 +1133,7 @@ export function MaintenancePage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const { hasPermission } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('status');
 
   const { data: overview, isLoading } = useQuery({
@@ -1288,6 +1317,7 @@ export function MaintenancePage() {
                 onPerform={handlePerform}
                 onToggle={handleToggle}
                 onSetHours={handleSetHours}
+                hasPermission={hasPermission}
               />
             ))
           ) : (
@@ -1322,6 +1352,7 @@ export function MaintenancePage() {
           onDeleteType={(id) => deleteTypeMutation.mutate(id)}
           onAssignType={(printerId, typeId) => assignTypeMutation.mutate({ printerId, typeId })}
           onRemoveItem={(itemId) => removeItemMutation.mutate(itemId)}
+          hasPermission={hasPermission}
         />
       )}
     </div>

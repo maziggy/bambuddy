@@ -11,10 +11,22 @@ class PrinterBase(BaseModel):
     model: str | None = None
     location: str | None = None  # Group/location name
     auto_archive: bool = True
+    external_camera_url: str | None = None
+    external_camera_type: str | None = None  # "mjpeg", "rtsp", "snapshot", "usb"
+    external_camera_enabled: bool = False
 
 
 class PrinterCreate(PrinterBase):
     pass
+
+
+class PlateDetectionROI(BaseModel):
+    """Region of interest for plate detection (percentages 0.0-1.0)."""
+
+    x: float = Field(..., ge=0.0, le=1.0)  # X start %
+    y: float = Field(..., ge=0.0, le=1.0)  # Y start %
+    w: float = Field(..., ge=0.0, le=1.0)  # Width %
+    h: float = Field(..., ge=0.0, le=1.0)  # Height %
 
 
 class PrinterUpdate(BaseModel):
@@ -26,6 +38,11 @@ class PrinterUpdate(BaseModel):
     is_active: bool | None = None
     auto_archive: bool | None = None
     print_hours_offset: float | None = None
+    external_camera_url: str | None = None
+    external_camera_type: str | None = None
+    external_camera_enabled: bool | None = None
+    plate_detection_enabled: bool | None = None
+    plate_detection_roi: PlateDetectionROI | None = None
 
 
 class PrinterResponse(PrinterBase):
@@ -33,11 +50,55 @@ class PrinterResponse(PrinterBase):
     is_active: bool
     nozzle_count: int = 1  # 1 or 2, auto-detected from MQTT
     print_hours_offset: float = 0.0
+    external_camera_url: str | None = None
+    external_camera_type: str | None = None
+    external_camera_enabled: bool = False
+    plate_detection_enabled: bool = False
+    plate_detection_roi: PlateDetectionROI | None = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+
+    @classmethod
+    def from_orm_with_roi(cls, printer) -> "PrinterResponse":
+        """Create response from ORM model, converting ROI fields to nested object."""
+        data = {
+            "id": printer.id,
+            "name": printer.name,
+            "serial_number": printer.serial_number,
+            "ip_address": printer.ip_address,
+            "access_code": printer.access_code,
+            "model": printer.model,
+            "location": printer.location,
+            "auto_archive": printer.auto_archive,
+            "external_camera_url": printer.external_camera_url,
+            "external_camera_type": printer.external_camera_type,
+            "external_camera_enabled": printer.external_camera_enabled,
+            "is_active": printer.is_active,
+            "nozzle_count": printer.nozzle_count,
+            "print_hours_offset": printer.print_hours_offset,
+            "plate_detection_enabled": printer.plate_detection_enabled,
+            "created_at": printer.created_at,
+            "updated_at": printer.updated_at,
+        }
+        # Build ROI object if any ROI field is set
+        if any(
+            [
+                printer.plate_detection_roi_x is not None,
+                printer.plate_detection_roi_y is not None,
+                printer.plate_detection_roi_w is not None,
+                printer.plate_detection_roi_h is not None,
+            ]
+        ):
+            data["plate_detection_roi"] = PlateDetectionROI(
+                x=printer.plate_detection_roi_x or 0.15,
+                y=printer.plate_detection_roi_y or 0.35,
+                w=printer.plate_detection_roi_w or 0.70,
+                h=printer.plate_detection_roi_h or 0.55,
+            )
+        return cls(**data)
 
 
 class HMSErrorResponse(BaseModel):

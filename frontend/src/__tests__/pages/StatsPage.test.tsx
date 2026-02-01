@@ -48,6 +48,7 @@ const mockArchives = [
 const mockSettings = {
   currency: '$',
   check_updates: false,
+  check_printer_firmware: false,
 };
 
 const mockFailureAnalysis = {
@@ -91,7 +92,7 @@ describe('StatsPage', () => {
       render(<StatsPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Dashboard')).toBeInTheDocument();
+        expect(screen.getByText('Statistics Dashboard')).toBeInTheDocument();
       });
     });
 
@@ -193,6 +194,16 @@ describe('StatsPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Export Stats')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('recalculate costs', () => {
+    it('has recalculate costs button', async () => {
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Recalculate Costs')).toBeInTheDocument();
       });
     });
   });

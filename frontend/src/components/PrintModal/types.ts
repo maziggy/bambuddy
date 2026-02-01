@@ -105,6 +105,13 @@ export interface PlatesResponse {
 }
 
 /**
+ * Assignment mode for queue items.
+ * - 'printer': Assign to specific printer(s)
+ * - 'model': Assign to any printer of a specific model (load balancing)
+ */
+export type AssignmentMode = 'printer' | 'model';
+
+/**
  * Props for the PrinterSelector component.
  */
 export interface PrinterSelectorProps {
@@ -115,6 +122,16 @@ export interface PrinterSelectorProps {
   allowMultiple?: boolean;
   /** Show inactive printers (for edit mode where original assignment may be inactive) */
   showInactive?: boolean;
+  /** Current assignment mode */
+  assignmentMode?: AssignmentMode;
+  /** Handler for assignment mode change */
+  onAssignmentModeChange?: (mode: AssignmentMode) => void;
+  /** Selected target model (when assignmentMode is 'model') */
+  targetModel?: string | null;
+  /** Handler for target model change */
+  onTargetModelChange?: (model: string | null) => void;
+  /** Suggested model from sliced file (for pre-selection) */
+  slicedForModel?: string | null;
 }
 
 /**

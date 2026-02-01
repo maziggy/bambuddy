@@ -45,6 +45,14 @@ EVENT_VARIABLES: dict[str, list[str]] = {
     "ams_humidity_high": ["printer", "ams_label", "humidity", "threshold", "timestamp", "app_name"],
     "ams_temperature_high": ["printer", "ams_label", "temperature", "threshold", "timestamp", "app_name"],
     "test": ["app_name", "timestamp"],
+    # Queue notifications
+    "queue_job_added": ["job_name", "target", "timestamp", "app_name"],
+    "queue_job_assigned": ["job_name", "printer", "target_model", "timestamp", "app_name"],
+    "queue_job_started": ["printer", "job_name", "estimated_time", "timestamp", "app_name"],
+    "queue_job_waiting": ["job_name", "target_model", "waiting_reason", "timestamp", "app_name"],
+    "queue_job_skipped": ["printer", "job_name", "reason", "timestamp", "app_name"],
+    "queue_job_failed": ["printer", "job_name", "reason", "timestamp", "app_name"],
+    "queue_completed": ["completed_count", "timestamp", "app_name"],
 }
 
 # Sample data for previewing templates
@@ -135,6 +143,53 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
     "test": {
         "app_name": "Bambuddy",
         "timestamp": "2024-01-15 14:30",
+    },
+    # Queue notifications
+    "queue_job_added": {
+        "job_name": "Benchy.3mf",
+        "target": "Bambu X1C",
+        "timestamp": "2024-01-15 14:30",
+        "app_name": "Bambuddy",
+    },
+    "queue_job_assigned": {
+        "job_name": "Benchy.3mf",
+        "printer": "Bambu X1C #1",
+        "target_model": "X1C",
+        "timestamp": "2024-01-15 14:30",
+        "app_name": "Bambuddy",
+    },
+    "queue_job_started": {
+        "printer": "Bambu X1C",
+        "job_name": "Benchy.3mf",
+        "estimated_time": "1h 23m",
+        "timestamp": "2024-01-15 14:30",
+        "app_name": "Bambuddy",
+    },
+    "queue_job_waiting": {
+        "job_name": "Benchy.3mf",
+        "target_model": "X1C",
+        "waiting_reason": "Printer1 (needs PLA)",
+        "timestamp": "2024-01-15 14:30",
+        "app_name": "Bambuddy",
+    },
+    "queue_job_skipped": {
+        "printer": "Bambu X1C",
+        "job_name": "Benchy.3mf",
+        "reason": "Previous print failed",
+        "timestamp": "2024-01-15 14:30",
+        "app_name": "Bambuddy",
+    },
+    "queue_job_failed": {
+        "printer": "Bambu X1C",
+        "job_name": "Benchy.3mf",
+        "reason": "Upload failed: connection timeout",
+        "timestamp": "2024-01-15 14:30",
+        "app_name": "Bambuddy",
+    },
+    "queue_completed": {
+        "completed_count": "5",
+        "timestamp": "2024-01-15 18:30",
+        "app_name": "Bambuddy",
     },
 }
 

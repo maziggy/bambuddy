@@ -1,5 +1,10 @@
 """Integration tests for Library API endpoints."""
 
+import io
+import tempfile
+import zipfile
+from pathlib import Path
+
 import pytest
 from httpx import AsyncClient
 
@@ -445,3 +450,268 @@ class TestLibraryZipExtractAPI:
         result = response.json()
         assert result["extracted"] == 1  # Only real_file.txt
         assert result["files"][0]["filename"] == "real_file.txt"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_extract_zip_create_folder_from_zip(self, async_client: AsyncClient, db_session):
+        """Verify ZIP extraction creates a folder from the ZIP filename."""
+        import io
+        import zipfile
+
+        # Create a ZIP file with some files
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("file1.txt", "Content 1")
+            zf.writestr("file2.txt", "Content 2")
+        zip_buffer.seek(0)
+
+        files = {"file": ("MyProject.zip", zip_buffer.read(), "application/zip")}
+        params = {"create_folder_from_zip": "true", "preserve_structure": "false"}
+        response = await async_client.post("/api/v1/library/files/extract-zip", files=files, params=params)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["extracted"] == 2
+        assert result["folders_created"] == 1  # MyProject folder created
+
+        # Verify the files are in a folder
+        assert result["files"][0]["folder_id"] is not None
+        assert result["files"][1]["folder_id"] is not None
+        # Both files should be in the same folder
+        assert result["files"][0]["folder_id"] == result["files"][1]["folder_id"]
+
+        # Verify the folder was created with the right name
+        folder_response = await async_client.get(f"/api/v1/library/folders/{result['files'][0]['folder_id']}")
+        assert folder_response.status_code == 200
+        folder = folder_response.json()
+        assert folder["name"] == "MyProject"
+
+
+class TestLibraryStlThumbnailAPI:
+    """Integration tests for STL thumbnail generation endpoints."""
+
+    @pytest.fixture
+    async def file_factory(self, db_session):
+        """Factory to create test files."""
+        _counter = [0]
+
+        async def _create_file(**kwargs):
+            from backend.app.models.library import LibraryFile
+
+            _counter[0] += 1
+            counter = _counter[0]
+
+            defaults = {
+                "filename": f"test_model_{counter}.stl",
+                "file_path": f"/test/path/test_model_{counter}.stl",
+                "file_size": 1024,
+                "file_type": "stl",
+            }
+            defaults.update(kwargs)
+
+            lib_file = LibraryFile(**defaults)
+            db_session.add(lib_file)
+            await db_session.commit()
+            await db_session.refresh(lib_file)
+            return lib_file
+
+        return _create_file
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_batch_generate_thumbnails_empty(self, async_client: AsyncClient, db_session):
+        """Verify batch thumbnail generation with no files."""
+        data = {"all_missing": True}
+        response = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["processed"] == 0
+        assert result["succeeded"] == 0
+        assert result["failed"] == 0
+        assert result["results"] == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_batch_generate_thumbnails_no_criteria(self, async_client: AsyncClient, db_session):
+        """Verify batch thumbnail generation with no criteria returns empty."""
+        data = {}
+        response = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["processed"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_batch_generate_thumbnails_file_not_on_disk(
+        self, async_client: AsyncClient, file_factory, db_session
+    ):
+        """Verify batch thumbnail generation handles missing files gracefully."""
+        # Create a file in DB but not on disk
+        stl_file = await file_factory(
+            filename="missing.stl",
+            file_path="/nonexistent/path/missing.stl",
+            thumbnail_path=None,
+        )
+
+        data = {"file_ids": [stl_file.id]}
+        response = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["processed"] == 1
+        assert result["succeeded"] == 0
+        assert result["failed"] == 1
+        assert result["results"][0]["success"] is False
+        assert "not found" in result["results"][0]["error"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_batch_generate_thumbnails_with_real_stl(self, async_client: AsyncClient, db_session):
+        """Verify batch thumbnail generation with a real STL file."""
+        from backend.app.models.library import LibraryFile
+
+        # Create a simple ASCII STL cube
+        stl_content = """solid cube
+facet normal 0 0 -1
+  outer loop
+    vertex 0 0 0
+    vertex 1 0 0
+    vertex 1 1 0
+  endloop
+endfacet
+facet normal 0 0 1
+  outer loop
+    vertex 0 0 1
+    vertex 1 1 1
+    vertex 1 0 1
+  endloop
+endfacet
+endsolid cube"""
+
+        with tempfile.NamedTemporaryFile(suffix=".stl", delete=False, mode="w") as f:
+            f.write(stl_content)
+            stl_path = f.name
+
+        try:
+            # Create file in DB pointing to real STL
+            lib_file = LibraryFile(
+                filename="test_cube.stl",
+                file_path=stl_path,
+                file_size=len(stl_content),
+                file_type="stl",
+                thumbnail_path=None,
+            )
+            db_session.add(lib_file)
+            await db_session.commit()
+            await db_session.refresh(lib_file)
+
+            data = {"file_ids": [lib_file.id]}
+            response = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+            assert response.status_code == 200
+            result = response.json()
+            assert result["processed"] == 1
+            # Result depends on whether trimesh/matplotlib are installed
+            # Either succeeds or fails gracefully
+            assert result["succeeded"] + result["failed"] == 1
+        finally:
+            import os
+
+            if os.path.exists(stl_path):
+                os.unlink(stl_path)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_file_with_stl_thumbnail_param(self, async_client: AsyncClient, db_session):
+        """Verify file upload accepts generate_stl_thumbnails parameter."""
+        # Create a simple STL file
+        stl_content = b"solid test\nendsolid test"
+
+        files = {"file": ("test.stl", stl_content, "application/octet-stream")}
+        params = {"generate_stl_thumbnails": "false"}
+        response = await async_client.post("/api/v1/library/files", files=files, params=params)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["filename"] == "test.stl"
+        assert result["file_type"] == "stl"
+        # No thumbnail should be generated when disabled
+        assert result["thumbnail_path"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_extract_zip_with_stl_thumbnail_param(self, async_client: AsyncClient, db_session):
+        """Verify ZIP extraction accepts generate_stl_thumbnails parameter."""
+        # Create a ZIP file containing an STL
+        stl_content = b"solid test\nendsolid test"
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("model.stl", stl_content)
+        zip_buffer.seek(0)
+
+        files = {"file": ("test.zip", zip_buffer.read(), "application/zip")}
+        params = {"generate_stl_thumbnails": "false"}
+        response = await async_client.post("/api/v1/library/files/extract-zip", files=files, params=params)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["extracted"] == 1
+        assert result["files"][0]["filename"] == "model.stl"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_batch_generate_thumbnails_by_folder(self, async_client: AsyncClient, file_factory, db_session):
+        """Verify batch thumbnail generation can filter by folder."""
+        from backend.app.models.library import LibraryFolder
+
+        # Create a folder
+        folder = LibraryFolder(name="STL Folder")
+        db_session.add(folder)
+        await db_session.commit()
+        await db_session.refresh(folder)
+
+        # Create STL file in folder (no thumbnail)
+        stl_in_folder = await file_factory(
+            filename="in_folder.stl",
+            folder_id=folder.id,
+            thumbnail_path=None,
+        )
+
+        # Create STL file at root (no thumbnail)
+        _stl_at_root = await file_factory(
+            filename="at_root.stl",
+            folder_id=None,
+            thumbnail_path=None,
+        )
+
+        # Request thumbnails only for files in folder
+        data = {"folder_id": folder.id, "all_missing": True}
+        response = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        # Should only process the file in the folder
+        assert result["processed"] == 1
+        assert result["results"][0]["file_id"] == stl_in_folder.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_batch_generate_thumbnails_all_missing(self, async_client: AsyncClient, file_factory, db_session):
+        """Verify batch thumbnail generation finds all STL files missing thumbnails."""
+        # Create files with and without thumbnails
+        _stl_with_thumb = await file_factory(
+            filename="with_thumb.stl",
+            thumbnail_path="/some/path/thumb.png",
+        )
+        stl_without_thumb1 = await file_factory(
+            filename="without_thumb1.stl",
+            thumbnail_path=None,
+        )
+        stl_without_thumb2 = await file_factory(
+            filename="without_thumb2.stl",
+            thumbnail_path=None,
+        )
+
+        data = {"all_missing": True}
+        response = await async_client.post("/api/v1/library/generate-stl-thumbnails", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        # Should only process files without thumbnails
+        assert result["processed"] == 2
+        file_ids = {r["file_id"] for r in result["results"]}
+        assert stl_without_thumb1.id in file_ids
+        assert stl_without_thumb2.id in file_ids

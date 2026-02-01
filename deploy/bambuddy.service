@@ -1,31 +1,61 @@
+# BamBuddy Systemd Service Template
+#
+# INSTALLATION:
+# 1. Copy this file to /etc/systemd/system/bambuddy.service
+# 2. Replace placeholders:
+#    - INSTALL_PATH: Where BamBuddy is installed (e.g., /opt/bambuddy)
+#    - SERVICE_USER: User to run as (e.g., bambuddy)
+#    - DATA_DIR: Data directory (e.g., /opt/bambuddy/data)
+#    - LOG_DIR: Log directory (e.g., /opt/bambuddy/logs)
+# 3. Run: sudo systemctl daemon-reload
+# 4. Run: sudo systemctl enable bambuddy
+# 5. Run: sudo systemctl start bambuddy
+#
+# Or use the install script: ./install/install.sh
+#
+
 [Unit]
-Description=BamBuddy Print Archive
+Description=BamBuddy - Bambu Lab Print Management
+Documentation=https://github.com/maziggy/bambuddy
 After=network.target
 
 [Service]
 Type=simple
-User=claude
-Group=claude
-WorkingDirectory=/opt/claude/projects/bambuddy
-Environment="PATH=/opt/claude/projects/bambuddy/venv/bin"
+User=SERVICE_USER
+Group=SERVICE_USER
+WorkingDirectory=INSTALL_PATH
 
-# Force kill after 10 seconds if graceful shutdown fails
+# Environment file (optional - created by install script)
+EnvironmentFile=-INSTALL_PATH/.env
+
+# Use virtual environment
+Environment="PATH=INSTALL_PATH/venv/bin:/usr/local/bin:/usr/bin:/bin"
+
+# Server configuration
+ExecStart=INSTALL_PATH/venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+
+# Graceful shutdown
 TimeoutStopSec=10
 
-# Kill any zombie ffmpeg processes before starting/after stopping
-ExecStartPre=-/usr/bin/pkill -9 ffmpeg
-ExecStopPost=-/usr/bin/pkill -9 ffmpeg
+# Kill zombie ffmpeg processes (timelapse processing)
+ExecStartPre=-/usr/bin/pkill -9 -f "ffmpeg.*bambuddy"
+ExecStopPost=-/usr/bin/pkill -9 -f "ffmpeg.*bambuddy"
 
-# Ensure directories exist and have correct permissions before starting
-# The + prefix runs the command as root even though User=claude
-ExecStartPre=+/bin/mkdir -p /opt/claude/projects/bambuddy/logs
-ExecStartPre=+/bin/mkdir -p /opt/claude/projects/bambuddy/archive
-ExecStartPre=+/bin/chown -R claude:claude /opt/claude/projects/bambuddy/logs
-ExecStartPre=+/bin/chown -R claude:claude /opt/claude/projects/bambuddy/archive
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bambuddy
 
-ExecStart=/opt/claude/projects/bambuddy/venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
-Restart=always
-RestartSec=10
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=DATA_DIR LOG_DIR INSTALL_PATH
 
 [Install]
 WantedBy=multi-user.target

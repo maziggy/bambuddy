@@ -205,3 +205,58 @@ class TimelineEvent(BaseModel):
     title: str
     description: str | None = None
     metadata: dict | None = None  # Additional event-specific data
+
+
+# Phase 10: Import/Export Schemas
+class BOMItemExport(BaseModel):
+    """Schema for exporting a BOM item."""
+
+    name: str
+    quantity_needed: int
+    quantity_acquired: int
+    unit_price: float | None
+    sourcing_url: str | None
+    stl_filename: str | None
+    remarks: str | None
+
+
+class LinkedFolderExport(BaseModel):
+    """Schema for exporting a linked library folder."""
+
+    name: str
+
+
+class ProjectExport(BaseModel):
+    """Schema for exporting a project."""
+
+    name: str
+    description: str | None
+    color: str | None
+    status: str
+    target_count: int | None
+    target_parts_count: int | None
+    notes: str | None
+    tags: str | None
+    due_date: datetime | None
+    priority: str
+    budget: float | None
+    bom_items: list[BOMItemExport] = []
+    linked_folders: list[LinkedFolderExport] = []
+
+
+class ProjectImport(BaseModel):
+    """Schema for importing a project."""
+
+    name: str
+    description: str | None = None
+    color: str | None = None
+    status: str = "active"
+    target_count: int | None = None
+    target_parts_count: int | None = None
+    notes: str | None = None
+    tags: str | None = None
+    due_date: datetime | None = None
+    priority: str = "normal"
+    budget: float | None = None
+    bom_items: list[BOMItemExport] = []
+    linked_folders: list[LinkedFolderExport] = []

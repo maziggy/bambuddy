@@ -541,9 +541,14 @@ class SpoolmanClient:
 
         # Need valid color to create filament
         tray_color = tray_data.get("tray_color", "")
-        if not tray_color or tray_color in ("", "00000000"):
-            logger.debug(f"Skipping tray with invalid color: {tray_color}")
+        if not tray_color or tray_color.strip() == "":
+            logger.debug("Skipping tray with empty color")
             return None
+
+        # Handle transparent/natural filament (RRGGBBAA with alpha=00)
+        # Replace with cream color that represents how natural PLA actually looks
+        if tray_color == "00000000":
+            tray_color = "F5E6D3FF"  # Light cream/natural color
 
         # Get sub_brands, falling back to tray_type
         tray_sub_brands = tray_data.get("tray_sub_brands", "")

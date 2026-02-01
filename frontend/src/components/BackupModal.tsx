@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Download, X, Settings, Bell, FileText, Plug, Printer, Palette, Wrench, Archive, Loader2, Key, AlertTriangle, Link, FolderKanban, Upload } from 'lucide-react';
+import { Download, X, Settings, Bell, FileText, Plug, Printer, Palette, Wrench, Archive, Loader2, Key, AlertTriangle, Link, FolderKanban, Upload, Camera } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from './Card';
 import { Button } from './Button';
@@ -13,6 +13,7 @@ interface BackupCategory {
   default: boolean;
   descriptionKey: string;
   description: string;
+  requiresPrinters?: boolean;
 }
 
 const BACKUP_CATEGORIES: BackupCategory[] = [
@@ -69,6 +70,16 @@ const BACKUP_CATEGORIES: BackupCategory[] = [
     default: false,
     descriptionKey: 'backup.printersDescription',
     description: 'Printer info (access codes excluded)',
+  },
+  {
+    id: 'plate_calibration',
+    labelKey: 'backup.categories.plateCalibration',
+    defaultLabel: 'Plate Detection',
+    icon: <Camera className="w-4 h-4" />,
+    default: false,
+    descriptionKey: 'backup.plateCalibrationDescription',
+    description: 'Empty plate reference images',
+    requiresPrinters: true,
   },
   {
     id: 'filaments',
@@ -234,33 +245,42 @@ export function BackupModal({ onClose, onExport }: BackupModalProps) {
 
           {/* Categories */}
           <div className={`p-4 space-y-2 max-h-[400px] overflow-y-auto ${isExporting ? 'opacity-50 pointer-events-none' : ''}`}>
-            {BACKUP_CATEGORIES.map((category) => (
+            {BACKUP_CATEGORIES.map((category) => {
+              const isDisabled = isExporting || (category.requiresPrinters && !selected.printers);
+              return (
               <label
                 key={category.id}
-                className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
-                  selected[category.id]
+                className={`flex items-center gap-3 p-3 rounded-lg transition-colors ${
+                  isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+                } ${
+                  selected[category.id] && !isDisabled
                     ? 'bg-bambu-green/10 border border-bambu-green/30'
                     : 'bg-bambu-dark hover:bg-bambu-dark-tertiary border border-transparent'
                 }`}
               >
                 <input
                   type="checkbox"
-                  checked={selected[category.id]}
+                  checked={selected[category.id] && !isDisabled}
                   onChange={() => toggleCategory(category.id)}
-                  disabled={isExporting}
+                  disabled={isDisabled}
                   className="w-4 h-4 rounded border-bambu-gray bg-bambu-dark text-bambu-green focus:ring-bambu-green focus:ring-offset-0"
                 />
-                <div className={`${selected[category.id] ? 'text-bambu-green' : 'text-bambu-gray'}`}>
+                <div className={`${selected[category.id] && !isDisabled ? 'text-bambu-green' : 'text-bambu-gray'}`}>
                   {category.icon}
                 </div>
                 <div className="flex-1">
                   <div className="text-white text-sm font-medium">
                     {t(category.labelKey, { defaultValue: category.defaultLabel })}
                   </div>
-                  <div className="text-xs text-bambu-gray">{t(category.descriptionKey, { defaultValue: category.description })}</div>
+                  <div className="text-xs text-bambu-gray">
+                    {category.requiresPrinters && !selected.printers
+                      ? t('backup.requiresPrintersSelected', { defaultValue: 'Requires Printers to be selected' })
+                      : t(category.descriptionKey, { defaultValue: category.description })}
+                  </div>
                 </div>
               </label>
-            ))}
+              );
+            })}
           </div>
 
           {/* Archive warning */}
@@ -269,8 +289,8 @@ export function BackupModal({ onClose, onExport }: BackupModalProps) {
               <div className="flex items-start gap-2 text-sm">
                 <Archive className="w-4 h-4 text-yellow-500 mt-0.5 flex-shrink-0" />
                 <div className="text-yellow-200 dark:text-yellow-200 text-yellow-700">
-                  <span className="font-medium">ZIP file will be created.</span>
-                  <span className="text-yellow-600 dark:text-yellow-200/70"> Includes all 3MF files, thumbnails, timelapses, and photos. This may take a while and result in a large file.</span>
+                  <span className="font-medium">{t('backup.zipFileWarningTitle', { defaultValue: 'ZIP file will be created.' })}</span>
+                  <span className="text-yellow-600 dark:text-yellow-200/70"> {t('backup.zipFileWarningMessage', { defaultValue: 'Includes all 3MF files, thumbnails, timelapses, and photos. This may take a while and result in a large file.' })}</span>
                 </div>
               </div>
             </div>
@@ -283,8 +303,8 @@ export function BackupModal({ onClose, onExport }: BackupModalProps) {
                 <div className="flex items-start gap-2">
                   <Key className="w-4 h-4 text-orange-500 dark:text-orange-400 mt-0.5 flex-shrink-0" />
                   <div>
-                    <p className="text-sm font-medium text-white">Include Access Codes</p>
-                    <p className="text-xs text-bambu-gray">For transferring to another machine</p>
+                    <p className="text-sm font-medium text-white">{t('backup.includeAccessCodes', { defaultValue: 'Include Access Codes' })}</p>
+                    <p className="text-xs text-bambu-gray">{t('backup.includeAccessCodesDescription', { defaultValue: 'For transferring to another machine' })}</p>
                   </div>
                 </div>
                 <Toggle checked={includeAccessCodes} onChange={setIncludeAccessCodes} />
@@ -294,7 +314,7 @@ export function BackupModal({ onClose, onExport }: BackupModalProps) {
                   <div className="flex items-start gap-2 text-xs">
                     <AlertTriangle className="w-3 h-3 text-orange-500 dark:text-orange-400 mt-0.5 flex-shrink-0" />
                     <span className="text-orange-700 dark:text-orange-200">
-                      Access codes will be included in plain text. Keep this backup file secure!
+                      {t('backup.accessCodesWarning', { defaultValue: 'Access codes will be included in plain text. Keep this backup file secure!' })}
                     </span>
                   </div>
                 </div>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plug, Power, PowerOff, Loader2, Wifi, WifiOff, Zap } from 'lucide-react';
+import { Plug, Power, PowerOff, Loader2, Wifi, WifiOff, Zap, Radio, Eye } from 'lucide-react';
 import { api } from '../api/client';
 import type { SmartPlug } from '../api/client';
 import { ConfirmModal } from './ConfirmModal';
@@ -31,8 +31,11 @@ function SwitchItem({ plug }: { plug: SmartPlug }) {
   });
 
   const isOn = status?.state === 'ON';
-  const isReachable = status?.reachable ?? false;
+  // For MQTT plugs, consider reachable if we have power data
+  const hasMqttData = plug.plug_type === 'mqtt' && (status?.energy?.power !== null && status?.energy?.power !== undefined);
+  const isReachable = (status?.reachable ?? false) || hasMqttData;
   const isPending = controlMutation.isPending;
+  const isMqtt = plug.plug_type === 'mqtt';
 
   const handleConfirm = () => {
     if (confirmAction) {
@@ -45,18 +48,42 @@ function SwitchItem({ plug }: { plug: SmartPlug }) {
     <>
       <div className="flex items-center justify-between py-2 px-3 hover:bg-bambu-dark-tertiary rounded-lg transition-colors">
         <div className="flex items-center gap-2">
-          <div className={`p-1.5 rounded ${isReachable ? (isOn ? 'bg-bambu-green/20' : 'bg-bambu-dark') : 'bg-red-500/20'}`}>
-            <Plug className={`w-4 h-4 ${isReachable ? (isOn ? 'text-bambu-green' : 'text-bambu-gray') : 'text-red-400'}`} />
+          <div className={`p-1.5 rounded ${
+            isMqtt
+              ? (isReachable ? 'bg-teal-500/20' : 'bg-red-500/20')
+              : (isReachable ? (isOn ? 'bg-bambu-green/20' : 'bg-bambu-dark') : 'bg-red-500/20')
+          }`}>
+            {isMqtt ? (
+              <Radio className={`w-4 h-4 ${isReachable ? 'text-teal-400' : 'text-red-400'}`} />
+            ) : (
+              <Plug className={`w-4 h-4 ${isReachable ? (isOn ? 'text-bambu-green' : 'text-bambu-gray') : 'text-red-400'}`} />
+            )}
           </div>
           <div>
             <p className="text-sm text-white font-medium">{plug.name}</p>
             <div className="flex items-center gap-1 text-xs">
               {statusLoading ? (
                 <Loader2 className="w-3 h-3 text-bambu-gray animate-spin" />
+              ) : isMqtt ? (
+                /* MQTT plugs show power and monitor-only indicator */
+                isReachable ? (
+                  <>
+                    <Zap className="w-3 h-3 text-teal-400" />
+                    <span className="text-teal-400">{Math.round(status?.energy?.power ?? 0)}W</span>
+                    <span className="text-bambu-gray mx-1">|</span>
+                    <Eye className="w-3 h-3 text-bambu-gray" />
+                    <span className="text-bambu-gray">{t('smartPlug.monitor')}</span>
+                  </>
+                ) : (
+                  <>
+                    <WifiOff className="w-3 h-3 text-status-error" />
+                    <span className="text-status-error">{t('smartPlug.waiting')}</span>
+                  </>
+                )
               ) : isReachable ? (
                 <>
-                  <Wifi className="w-3 h-3 text-bambu-green" />
-                  <span className={isOn ? 'text-bambu-green' : 'text-bambu-gray'}>{status?.state || 'Unknown'}</span>
+                  <Wifi className="w-3 h-3 text-status-ok" />
+                  <span className={isOn ? 'text-status-ok' : 'text-bambu-gray'}>{status?.state || t('common.unknown')}</span>
                   {status?.energy?.power !== null && status?.energy?.power !== undefined && (
                     <>
                       <span className="text-bambu-gray mx-1">|</span>
@@ -67,46 +94,52 @@ function SwitchItem({ plug }: { plug: SmartPlug }) {
                 </>
               ) : (
                 <>
-                  <WifiOff className="w-3 h-3 text-red-400" />
-                  <span className="text-red-400">Offline</span>
+                  <WifiOff className="w-3 h-3 text-status-error" />
+                  <span className="text-status-error">{t('smartPlug.offline')}</span>
                 </>
               )}
             </div>
           </div>
         </div>
 
-        <div className="flex gap-1">
-          <button
-            onClick={() => setConfirmAction('on')}
-            disabled={!isReachable || isPending}
-            className={`p-1.5 rounded transition-colors ${
-              isOn
-                ? 'bg-bambu-green text-white'
-                : 'bg-bambu-dark text-bambu-gray hover:text-white'
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
-            title={t('common.turnOn')}
-          >
-            {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Power className="w-4 h-4" />}
-          </button>
-          <button
-            onClick={() => setConfirmAction('off')}
-            disabled={!isReachable || isPending}
-            className={`p-1.5 rounded transition-colors ${
-              !isOn && isReachable
-                ? 'bg-bambu-dark-tertiary text-white'
-                : 'bg-bambu-dark text-bambu-gray hover:text-white'
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
-            title={t('common.turnOff')}
-          >
-            {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <PowerOff className="w-4 h-4" />}
-          </button>
-        </div>
+        {/* Hide on/off buttons for MQTT plugs (monitor-only) */}
+        {!isMqtt && (
+          <div className="flex gap-1">
+            <button
+              onClick={() => setConfirmAction('on')}
+              disabled={!isReachable || isPending}
+              className={`p-1.5 rounded transition-colors ${
+                isOn
+                  ? 'bg-bambu-green text-white'
+                  : 'bg-bambu-dark text-bambu-gray hover:text-white'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+              title={t('common.turnOn')}
+            >
+              {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Power className="w-4 h-4" />}
+            </button>
+            <button
+              onClick={() => setConfirmAction('off')}
+              disabled={!isReachable || isPending}
+              className={`p-1.5 rounded transition-colors ${
+                !isOn && isReachable
+                  ? 'bg-bambu-dark-tertiary text-white'
+                  : 'bg-bambu-dark text-bambu-gray hover:text-white'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+              title={t('common.turnOff')}
+            >
+              {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <PowerOff className="w-4 h-4" />}
+            </button>
+          </div>
+        )}
       </div>
 
       {confirmAction && (
         <ConfirmModal
-          title={`Turn ${confirmAction === 'on' ? 'On' : 'Off'} Smart Plug`}
-          message={`Are you sure you want to turn ${confirmAction === 'on' ? 'on' : 'off'} "${plug.name}"?`}
+          title={confirmAction === 'on' ? t('smartPlug.turnOnTitle') : t('smartPlug.turnOffTitle')}
+          message={confirmAction === 'on'
+            ? t('smartPlug.turnOnConfirm', { name: plug.name })
+            : t('smartPlug.turnOffConfirm', { name: plug.name })
+          }
           confirmText={confirmAction === 'on' ? t('common.turnOn') : t('common.turnOff')}
           variant={confirmAction === 'off' ? 'warning' : 'default'}
           onConfirm={handleConfirm}
@@ -118,6 +151,7 @@ function SwitchItem({ plug }: { plug: SmartPlug }) {
 }
 
 export function SwitchbarPopover({ onClose }: SwitchbarPopoverProps) {
+  const { t } = useTranslation();
   // Fetch all smart plugs
   const { data: plugs, isLoading } = useQuery({
     queryKey: ['smart-plugs'],
@@ -136,7 +170,7 @@ export function SwitchbarPopover({ onClose }: SwitchbarPopoverProps) {
       <div className="px-4 py-3 border-b border-bambu-dark-tertiary">
         <h3 className="text-sm font-semibold text-white flex items-center gap-2">
           <Plug className="w-4 h-4 text-bambu-green" />
-          Smart Switches
+          {t('smartPlug.smartSwitches')}
         </h3>
       </div>
 
@@ -149,9 +183,9 @@ export function SwitchbarPopover({ onClose }: SwitchbarPopoverProps) {
         ) : switchbarPlugs.length === 0 ? (
           <div className="text-center py-6 px-4">
             <Plug className="w-8 h-8 text-bambu-gray mx-auto mb-2" />
-            <p className="text-sm text-bambu-gray">No switches in switchbar</p>
+            <p className="text-sm text-bambu-gray">{t('smartPlug.noSwitchesInSwitchbar')}</p>
             <p className="text-xs text-bambu-gray mt-1">
-              Enable "Show in Switchbar" in Settings &gt; Smart Plugs
+              {t('smartPlug.enableInSettings')}
             </p>
           </div>
         ) : (

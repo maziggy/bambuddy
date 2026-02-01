@@ -4,6 +4,127 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from logging.handlers import RotatingFileHandler
 
+
+# =============================================================================
+# Dependency Check - runs before other imports to give helpful error messages
+# =============================================================================
+def _start_error_server(missing_packages: list):
+    """Start a minimal HTTP server to display dependency errors in browser."""
+    import os
+    import signal
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    packages_html = "".join(f"<li><code>{p}</code></li>" for p in missing_packages)
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>Bambuddy - Setup Required</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f172a; color: #e2e8f0;
+            display: flex; justify-content: center; align-items: center;
+            min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box;
+        }}
+        .container {{
+            background: #1e293b; border-radius: 12px; padding: 40px;
+            max-width: 600px; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }}
+        h1 {{ color: #f87171; margin-bottom: 10px; }}
+        h2 {{ color: #94a3b8; font-weight: normal; margin-top: 0; }}
+        .packages {{
+            background: #0f172a; border-radius: 8px; padding: 20px;
+            margin: 20px 0; text-align: left;
+        }}
+        .packages ul {{ margin: 0; padding-left: 20px; }}
+        .packages li {{ color: #fbbf24; margin: 8px 0; }}
+        .command {{
+            background: #0f172a; border-radius: 8px; padding: 15px 20px;
+            margin: 15px 0; font-family: monospace; color: #4ade80;
+            text-align: left; overflow-x: auto;
+        }}
+        .note {{ color: #94a3b8; font-size: 14px; margin-top: 20px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Setup Required</h1>
+        <h2>Missing Python packages</h2>
+        <div class="packages"><ul>{packages_html}</ul></div>
+        <p>To fix, run this command on your server:</p>
+        <div class="command">pip install -r requirements.txt</div>
+        <p>Or if using a virtual environment:</p>
+        <div class="command">./venv/bin/pip install -r requirements.txt</div>
+        <p class="note">After installing, restart Bambuddy:<br>
+        <code>sudo systemctl restart bambuddy</code></p>
+    </div>
+</body>
+</html>"""
+
+    class ErrorHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(503)
+            self.send_header("Content-type", "text/html")
+            self.end_headers()
+            self.wfile.write(html.encode())
+
+        def log_message(self, format, *args):
+            print(f"[Error Server] {args[0]}")
+
+    port = int(os.environ.get("PORT", 8000))
+    print(f"\nStarting error server on http://0.0.0.0:{port}")
+    print("Visit this URL in your browser to see the error details.\n")
+
+    server = HTTPServer(("0.0.0.0", port), ErrorHandler)
+
+    def shutdown(signum, frame):
+        print("\nShutting down error server...")
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, shutdown)
+    signal.signal(signal.SIGINT, shutdown)
+
+    server.serve_forever()
+
+
+def check_dependencies():
+    """Check that all required packages are installed."""
+    missing = []
+
+    # Map of import name -> package name (for pip install)
+    required = {
+        "jwt": "PyJWT",
+        "fastapi": "fastapi",
+        "uvicorn": "uvicorn",
+        "sqlalchemy": "sqlalchemy",
+        "aiosqlite": "aiosqlite",
+        "pydantic": "pydantic",
+        "paho.mqtt": "paho-mqtt",
+    }
+
+    for module, package in required.items():
+        try:
+            __import__(module)
+        except ImportError:
+            missing.append(package)
+
+    if missing:
+        print("\n" + "=" * 60)
+        print("ERROR: Missing required Python packages!")
+        print("=" * 60)
+        print(f"\nMissing packages: {', '.join(missing)}")
+        print("\nTo fix, run:")
+        print("  pip install -r requirements.txt")
+        print("\nOr if using a virtual environment:")
+        print("  ./venv/bin/pip install -r requirements.txt")
+        print("=" * 60 + "\n")
+        _start_error_server(missing)
+
+
+check_dependencies()
+# =============================================================================
+
 from fastapi import FastAPI
 
 # Import settings first for logging configuration
@@ -61,9 +182,12 @@ from backend.app.api.routes import (
     external_links,
     filaments,
     firmware,
+    github_backup,
+    groups,
     kprofiles,
     library,
     maintenance,
+    metrics,
     notification_templates,
     notifications,
     pending_uploads,
@@ -88,6 +212,7 @@ from backend.app.models.smart_plug import SmartPlug
 from backend.app.services.archive import ArchiveService
 from backend.app.services.bambu_ftp import download_file_async, get_ftp_retry_settings, with_ftp_retry
 from backend.app.services.bambu_mqtt import PrinterState
+from backend.app.services.github_backup import github_backup_service
 from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.mqtt_relay import mqtt_relay
 from backend.app.services.notification_service import notification_service
@@ -100,7 +225,6 @@ from backend.app.services.printer_manager import (
 from backend.app.services.smart_plug_manager import smart_plug_manager
 from backend.app.services.spoolman import close_spoolman_client, get_spoolman_client, init_spoolman_client
 from backend.app.services.tasmota import tasmota_service
-from backend.app.services.telemetry import start_telemetry_loop
 
 # Track active prints: {(printer_id, filename): archive_id}
 _active_prints: dict[tuple[int, str], int] = {}
@@ -112,11 +236,23 @@ _expected_prints: dict[tuple[int, str], int] = {}
 # Track starting energy for prints: {archive_id: starting_kwh}
 _print_energy_start: dict[int, float] = {}
 
+# Track reprints to add costs on completion: {archive_id}
+_reprint_archives: set[int] = set()
+
+# Track progress milestones for notifications: {printer_id: last_milestone_notified}
+# Milestones are 25, 50, 75. Value of 0 means no milestone notified yet for current print.
+_last_progress_milestone: dict[int, int] = {}
+
+# Track HMS errors that have been notified: {printer_id: set of error codes}
+# This prevents sending duplicate notifications for the same error
+_notified_hms_errors: dict[int, set[str]] = {}
+
 
 async def _get_plug_energy(plug, db) -> dict | None:
-    """Get energy from plug regardless of type (Tasmota or Home Assistant).
+    """Get energy from plug regardless of type (Tasmota, Home Assistant, or MQTT).
 
     For HA plugs, configures the service with current settings from DB.
+    For MQTT plugs, returns data from the subscription service.
     """
     if plug.plug_type == "homeassistant":
         from backend.app.api.routes.settings import get_setting
@@ -125,6 +261,17 @@ async def _get_plug_energy(plug, db) -> dict | None:
         ha_token = await get_setting(db, "ha_token") or ""
         homeassistant_service.configure(ha_url, ha_token)
         return await homeassistant_service.get_energy(plug)
+    elif plug.plug_type == "mqtt":
+        # MQTT plugs report "today" energy, not lifetime total
+        # For per-print tracking, we use "today" as the counter (resets at midnight)
+        mqtt_data = mqtt_relay.smart_plug_service.get_plug_data(plug.id)
+        if mqtt_data:
+            return {
+                "power": mqtt_data.power,
+                "today": mqtt_data.energy,
+                "total": mqtt_data.energy,  # Use today as total for per-print calculations
+            }
+        return None
     else:
         return await tasmota_service.get_energy(plug)
 
@@ -278,6 +425,124 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
         return  # No change, skip WebSocket broadcast
 
     _last_status_broadcast[printer_id] = status_key
+
+    # Check for progress milestone notifications (25%, 50%, 75%)
+    progress = state.progress or 0
+    is_printing = state.state in ("RUNNING", "PRINTING")
+
+    if is_printing and progress > 0:
+        # Determine which milestone we've reached
+        current_milestone = 0
+        if progress >= 75:
+            current_milestone = 75
+        elif progress >= 50:
+            current_milestone = 50
+        elif progress >= 25:
+            current_milestone = 25
+
+        last_milestone = _last_progress_milestone.get(printer_id, 0)
+
+        # If we've crossed a new milestone, send notification
+        if current_milestone > last_milestone:
+            _last_progress_milestone[printer_id] = current_milestone
+            try:
+                async with async_session() as db:
+                    from backend.app.models.printer import Printer
+
+                    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+                    printer = result.scalar_one_or_none()
+                    printer_name = printer.name if printer else f"Printer {printer_id}"
+                    filename = state.subtask_name or state.gcode_file or "Unknown"
+                    # remaining_time is in minutes, convert to seconds for notification
+                    remaining_time_seconds = state.remaining_time * 60 if state.remaining_time else None
+
+                    await notification_service.on_print_progress(
+                        printer_id, printer_name, filename, current_milestone, db, remaining_time_seconds
+                    )
+            except Exception as e:
+                logging.getLogger(__name__).warning(f"Progress milestone notification failed: {e}")
+    elif progress < 5:
+        # Reset milestone tracking when print restarts or new print begins
+        _last_progress_milestone[printer_id] = 0
+
+    # Check for new HMS errors and send notifications
+    current_hms_errors = getattr(state, "hms_errors", []) or []
+    if current_hms_errors:
+        # Build set of current error codes (using attr for uniqueness)
+        current_error_codes = {f"{e.attr:08x}" for e in current_hms_errors}
+        previously_notified = _notified_hms_errors.get(printer_id, set())
+
+        # Find new errors that haven't been notified yet
+        new_error_codes = current_error_codes - previously_notified
+
+        if new_error_codes:
+            # Get the actual new errors for the notification
+            new_errors = [e for e in current_hms_errors if f"{e.attr:08x}" in new_error_codes]
+
+            try:
+                async with async_session() as db:
+                    from backend.app.models.printer import Printer
+
+                    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+                    printer = result.scalar_one_or_none()
+                    printer_name = printer.name if printer else f"Printer {printer_id}"
+
+                    # Format error details for notification
+                    # Module 0x07 = AMS/Filament, 0x05 = Nozzle, 0x0C = Motion Controller, etc.
+                    module_names = {
+                        0x03: "Print/Task",
+                        0x05: "Nozzle/Extruder",
+                        0x07: "AMS/Filament",
+                        0x0C: "Motion Controller",
+                        0x12: "Chamber",
+                    }
+
+                    from backend.app.services.hms_errors import get_error_description
+
+                    for error in new_errors:
+                        module_name = module_names.get(error.module, f"Module 0x{error.module:02X}")
+                        # Build short code like "0700_8010"
+                        error_code_int = int(error.code.replace("0x", ""), 16) if error.code else 0
+                        short_code = f"{(error.attr >> 16) & 0xFFFF:04X}_{error_code_int:04X}"
+
+                        error_type = f"{module_name} Error"
+                        # Look up human-readable description
+                        description = get_error_description(short_code)
+                        error_detail = description if description else f"Error code: {short_code}"
+
+                        await notification_service.on_printer_error(
+                            printer_id, printer_name, error_type, db, error_detail
+                        )
+
+                    logging.getLogger(__name__).info(
+                        f"[HMS] Sent notification for {len(new_errors)} new error(s) on printer {printer_id}"
+                    )
+
+                    # Also publish to MQTT relay
+                    printer_info = printer_manager.get_printer(printer_id)
+                    if printer_info:
+                        errors_data = [
+                            {
+                                "code": e.code,
+                                "attr": e.attr,
+                                "module": e.module,
+                                "severity": e.severity,
+                            }
+                            for e in new_errors
+                        ]
+                        await mqtt_relay.on_printer_error(
+                            printer_id, printer_info.name, printer_info.serial_number, errors_data
+                        )
+
+            except Exception as e:
+                logging.getLogger(__name__).warning(f"HMS error notification failed: {e}")
+
+            # Update tracking with all current errors
+            _notified_hms_errors[printer_id] = current_error_codes
+    else:
+        # No HMS errors - clear tracking so future errors get notified
+        if printer_id in _notified_hms_errors:
+            _notified_hms_errors.pop(printer_id, None)
 
     await ws_manager.send_printer_status(
         printer_id,
@@ -461,6 +726,94 @@ async def on_print_start(printer_id: int, data: dict):
         result = await db.execute(select(Printer).where(Printer.id == printer_id))
         printer = result.scalar_one_or_none()
 
+        # Plate detection check - pause if objects detected on build plate
+        if printer and printer.plate_detection_enabled:
+            try:
+                from backend.app.services.plate_detection import check_plate_empty
+
+                # Build ROI tuple from printer settings if available
+                roi = None
+                if all(
+                    [
+                        printer.plate_detection_roi_x is not None,
+                        printer.plate_detection_roi_y is not None,
+                        printer.plate_detection_roi_w is not None,
+                        printer.plate_detection_roi_h is not None,
+                    ]
+                ):
+                    roi = (
+                        printer.plate_detection_roi_x,
+                        printer.plate_detection_roi_y,
+                        printer.plate_detection_roi_w,
+                        printer.plate_detection_roi_h,
+                    )
+
+                # Auto-turn on chamber light if it's off for better detection
+                light_was_off = False
+                client = printer_manager.get_client(printer_id)
+                if client and client.state:
+                    light_was_off = not client.state.chamber_light
+                    if light_was_off:
+                        logger.info(f"[PLATE CHECK] Turning on chamber light for printer {printer_id}")
+                        client.set_chamber_light(True)
+                        # Wait for light to physically turn on and camera to adjust exposure
+                        await asyncio.sleep(2.5)
+
+                logger.info(f"[PLATE CHECK] Running plate detection for printer {printer_id}")
+                plate_result = await check_plate_empty(
+                    printer_id=printer_id,
+                    ip_address=printer.ip_address,
+                    access_code=printer.access_code,
+                    model=printer.model,
+                    include_debug_image=False,
+                    external_camera_url=printer.external_camera_url,
+                    external_camera_type=printer.external_camera_type,
+                    use_external=printer.external_camera_enabled,
+                    roi=roi,
+                )
+
+                # Restore chamber light to original state
+                if light_was_off and client:
+                    logger.info(f"[PLATE CHECK] Restoring chamber light to off for printer {printer_id}")
+                    client.set_chamber_light(False)
+
+                if not plate_result.needs_calibration and not plate_result.is_empty:
+                    # Objects detected - pause the print!
+                    logger.warning(
+                        f"[PLATE CHECK] Objects detected on plate for printer {printer_id}! "
+                        f"Confidence: {plate_result.confidence:.0%}, Diff: {plate_result.difference_percent:.1f}%"
+                    )
+                    client = printer_manager.get_client(printer_id)
+                    if client:
+                        client.pause_print()
+                        logger.info(f"[PLATE CHECK] Print paused for printer {printer_id}")
+
+                    # Send notification about plate not empty
+                    await ws_manager.broadcast(
+                        {
+                            "type": "plate_not_empty",
+                            "printer_id": printer_id,
+                            "printer_name": printer.name,
+                            "message": f"Objects detected on build plate! Print paused. (Diff: {plate_result.difference_percent:.1f}%)",
+                        }
+                    )
+
+                    # Also send push notification
+                    try:
+                        await notification_service.on_plate_not_empty(
+                            printer_id=printer_id,
+                            printer_name=printer.name,
+                            db=db,
+                            difference_percent=plate_result.difference_percent,
+                        )
+                    except Exception as notif_err:
+                        logger.warning(f"[PLATE CHECK] Failed to send notification: {notif_err}")
+                else:
+                    logger.info(f"[PLATE CHECK] Plate is empty for printer {printer_id}, proceeding with print")
+            except Exception as plate_err:
+                # Don't block print on plate detection errors
+                logger.warning(f"[PLATE CHECK] Plate detection failed for printer {printer_id}: {plate_err}")
+
         if not printer or not printer.auto_archive:
             # Send notification without archive data (auto-archive disabled)
             logger.info(
@@ -525,6 +878,10 @@ async def on_print_start(printer_id: int, data: dict):
                 _active_prints[(printer_id, archive.filename)] = archive.id
                 if subtask_name:
                     _active_prints[(printer_id, f"{subtask_name}.3mf")] = archive.id
+
+                # Mark as reprint so we add cost on completion
+                _reprint_archives.add(archive.id)
+                logger.info(f"Marked archive {archive.id} as reprint for cost addition on completion")
 
                 # Set up energy tracking
                 try:
@@ -665,6 +1022,8 @@ async def on_print_start(printer_id: int, data: dict):
             remote_paths = [
                 f"/cache/{try_filename}",
                 f"/model/{try_filename}",
+                f"/data/{try_filename}",
+                f"/data/Metadata/{try_filename}",
                 f"/{try_filename}",
             ]
 
@@ -706,48 +1065,54 @@ async def on_print_start(printer_id: int, data: dict):
             if downloaded_filename:
                 break
 
-        # If still not found, try listing /cache to find matching file
+        # If still not found, try listing directories to find matching file
+        # Different printer models use different directory structures
         if not downloaded_filename and (filename or subtask_name):
             search_term = (subtask_name or filename).lower().replace(".gcode", "").replace(".3mf", "")
-            logger.info(f"Direct FTP download failed, listing /cache to find '{search_term}'")
-            try:
-                cache_files = await list_files_async(printer.ip_address, printer.access_code, "/cache")
-                threemf_files = [f.get("name") for f in cache_files if f.get("name", "").endswith(".3mf")]
-                logger.info(
-                    f"Found {len(threemf_files)} 3MF files in /cache: {threemf_files[:5]}{'...' if len(threemf_files) > 5 else ''}"
-                )
-                for f in cache_files:
-                    if f.get("is_directory"):
-                        continue
-                    fname = f.get("name", "")
-                    if fname.endswith(".3mf") and search_term in fname.lower():
-                        logger.info(f"Found matching file: {fname}")
-                        temp_path = app_settings.archive_dir / "temp" / fname
-                        temp_path.parent.mkdir(parents=True, exist_ok=True)
-                        if ftp_retry_enabled:
-                            downloaded = await with_ftp_retry(
-                                download_file_async,
-                                printer.ip_address,
-                                printer.access_code,
-                                f"/cache/{fname}",
-                                temp_path,
-                                max_retries=ftp_retry_count,
-                                retry_delay=ftp_retry_delay,
-                                operation_name=f"Download 3MF from /cache/{fname}",
-                            )
-                        else:
-                            downloaded = await download_file_async(
-                                printer.ip_address,
-                                printer.access_code,
-                                f"/cache/{fname}",
-                                temp_path,
-                            )
-                        if downloaded:
-                            downloaded_filename = fname
-                            logger.info(f"Found and downloaded from cache: {fname}")
-                            break
-            except Exception as e:
-                logger.warning(f"Failed to list cache: {e}")
+            logger.info(f"Direct FTP download failed, searching directories for '{search_term}'")
+            search_dirs = ["/cache", "/model", "/data", "/data/Metadata", "/"]
+            for search_dir in search_dirs:
+                if downloaded_filename:
+                    break
+                try:
+                    dir_files = await list_files_async(printer.ip_address, printer.access_code, search_dir)
+                    threemf_files = [f.get("name") for f in dir_files if f.get("name", "").endswith(".3mf")]
+                    if threemf_files:
+                        logger.info(
+                            f"Found {len(threemf_files)} 3MF files in {search_dir}: {threemf_files[:5]}{'...' if len(threemf_files) > 5 else ''}"
+                        )
+                    for f in dir_files:
+                        if f.get("is_directory"):
+                            continue
+                        fname = f.get("name", "")
+                        if fname.endswith(".3mf") and search_term in fname.lower():
+                            logger.info(f"Found matching file in {search_dir}: {fname}")
+                            temp_path = app_settings.archive_dir / "temp" / fname
+                            temp_path.parent.mkdir(parents=True, exist_ok=True)
+                            if ftp_retry_enabled:
+                                downloaded = await with_ftp_retry(
+                                    download_file_async,
+                                    printer.ip_address,
+                                    printer.access_code,
+                                    f"{search_dir}/{fname}",
+                                    temp_path,
+                                    max_retries=ftp_retry_count,
+                                    retry_delay=ftp_retry_delay,
+                                    operation_name=f"Download 3MF from {search_dir}/{fname}",
+                                )
+                            else:
+                                downloaded = await download_file_async(
+                                    printer.ip_address,
+                                    printer.access_code,
+                                    f"{search_dir}/{fname}",
+                                    temp_path,
+                                )
+                            if downloaded:
+                                downloaded_filename = fname
+                                logger.info(f"Found and downloaded from {search_dir}: {fname}")
+                                break
+                except Exception as e:
+                    logger.debug(f"Failed to list {search_dir}: {e}")
 
         if not downloaded_filename or not temp_path:
             logger.warning(f"Could not find 3MF file for print: {filename or subtask_name}")
@@ -782,6 +1147,18 @@ async def on_print_start(printer_id: int, data: dict):
                 await db.refresh(fallback_archive)
 
                 logger.info(f"Created fallback archive {fallback_archive.id} for {print_name} (no 3MF available)")
+
+                # Start timelapse session if external camera is enabled
+                if printer.external_camera_enabled and printer.external_camera_url:
+                    from backend.app.services.layer_timelapse import start_session
+
+                    start_session(
+                        printer_id,
+                        fallback_archive.id,
+                        printer.external_camera_url,
+                        printer.external_camera_type or "mjpeg",
+                    )
+                    logger.info(f"Started layer timelapse for printer {printer_id}, archive {fallback_archive.id}")
 
                 # Track as active print
                 _active_prints[(printer_id, fallback_archive.filename)] = fallback_archive.id
@@ -856,6 +1233,18 @@ async def on_print_start(printer_id: int, data: dict):
                     _active_prints[(printer_id, f"{subtask_name}.3mf")] = archive.id
 
                 logger.info(f"Created archive {archive.id} for {downloaded_filename}")
+
+                # Start timelapse session if external camera is enabled
+                if printer.external_camera_enabled and printer.external_camera_url:
+                    from backend.app.services.layer_timelapse import start_session
+
+                    start_session(
+                        printer_id,
+                        archive.id,
+                        printer.external_camera_url,
+                        printer.external_camera_type or "mjpeg",
+                    )
+                    logger.info(f"Started layer timelapse for printer {printer_id}, archive {archive.id}")
 
                 # Record starting energy from smart plug if available
                 try:
@@ -1235,6 +1624,15 @@ async def on_print_complete(printer_id: int, data: dict):
             )
             logger.info(f"[ARCHIVE] Archive {archive_id} status updated to {status}, failure_reason={failure_reason}")
 
+            # Add cost for reprints (first prints have cost set in archive_print())
+            if status == "completed" and archive_id in _reprint_archives:
+                _reprint_archives.discard(archive_id)
+                try:
+                    await service.add_reprint_cost(archive_id)
+                    logger.info(f"[ARCHIVE] Added reprint cost for archive {archive_id}")
+                except Exception as e:
+                    logger.warning(f"[ARCHIVE] Failed to add reprint cost for archive {archive_id}: {e}")
+
             await ws_manager.send_archive_updated(
                 {
                     "id": archive_id,
@@ -1341,35 +1739,52 @@ async def on_print_complete(printer_id: int, data: dict):
                             archive_dir = app_settings.base_dir / Path(archive.file_path).parent
                             photo_filename = None
 
-                            # Check if camera stream is active - use buffered frame to avoid freeze
-                            # Check both RTSP streams (_active_streams) and chamber image streams (_active_chamber_streams)
-                            active_for_printer = [k for k in _active_streams if k.startswith(f"{printer_id}-")]
-                            active_chamber_for_printer = [
-                                k for k in _active_chamber_streams if k.startswith(f"{printer_id}-")
-                            ]
-                            buffered_frame = get_buffered_frame(printer_id)
+                            # Check for external camera first
+                            if printer.external_camera_enabled and printer.external_camera_url:
+                                logger.info("[PHOTO-BG] Using external camera")
+                                from backend.app.services.external_camera import capture_frame
 
-                            if (active_for_printer or active_chamber_for_printer) and buffered_frame:
-                                # Use frame from active stream
-                                logger.info("[PHOTO-BG] Using buffered frame from active stream")
-                                photos_dir = archive_dir / "photos"
-                                photos_dir.mkdir(parents=True, exist_ok=True)
-                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                photo_filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
-                                photo_path = photos_dir / photo_filename
-                                await asyncio.to_thread(photo_path.write_bytes, buffered_frame)
-                                logger.info(f"[PHOTO-BG] Saved buffered frame: {photo_filename}")
-                            else:
-                                # No active stream - capture new frame
-                                from backend.app.services.camera import capture_finish_photo
-
-                                photo_filename = await capture_finish_photo(
-                                    printer_id=printer_id,
-                                    ip_address=printer.ip_address,
-                                    access_code=printer.access_code,
-                                    model=printer.model,
-                                    archive_dir=archive_dir,
+                                frame_data = await capture_frame(
+                                    printer.external_camera_url, printer.external_camera_type or "mjpeg"
                                 )
+                                if frame_data:
+                                    photos_dir = archive_dir / "photos"
+                                    photos_dir.mkdir(parents=True, exist_ok=True)
+                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                    photo_filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
+                                    photo_path = photos_dir / photo_filename
+                                    await asyncio.to_thread(photo_path.write_bytes, frame_data)
+                                    logger.info(f"[PHOTO-BG] Saved external camera frame: {photo_filename}")
+                            else:
+                                # Check if camera stream is active - use buffered frame to avoid freeze
+                                # Check both RTSP streams (_active_streams) and chamber image streams (_active_chamber_streams)
+                                active_for_printer = [k for k in _active_streams if k.startswith(f"{printer_id}-")]
+                                active_chamber_for_printer = [
+                                    k for k in _active_chamber_streams if k.startswith(f"{printer_id}-")
+                                ]
+                                buffered_frame = get_buffered_frame(printer_id)
+
+                                if (active_for_printer or active_chamber_for_printer) and buffered_frame:
+                                    # Use frame from active stream
+                                    logger.info("[PHOTO-BG] Using buffered frame from active stream")
+                                    photos_dir = archive_dir / "photos"
+                                    photos_dir.mkdir(parents=True, exist_ok=True)
+                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                    photo_filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
+                                    photo_path = photos_dir / photo_filename
+                                    await asyncio.to_thread(photo_path.write_bytes, buffered_frame)
+                                    logger.info(f"[PHOTO-BG] Saved buffered frame: {photo_filename}")
+                                else:
+                                    # No active stream - capture new frame
+                                    from backend.app.services.camera import capture_finish_photo
+
+                                    photo_filename = await capture_finish_photo(
+                                        printer_id=printer_id,
+                                        ip_address=printer.ip_address,
+                                        access_code=printer.access_code,
+                                        model=printer.model,
+                                        archive_dir=archive_dir,
+                                    )
 
                             if photo_filename:
                                 photos = archive.photos or []
@@ -1505,6 +1920,43 @@ async def on_print_complete(printer_id: int, data: dict):
             await _background_notifications(None)
 
     asyncio.create_task(_photo_then_notify())
+
+    # Stitch external camera layer timelapse if session was active
+    print_status = data.get("status", "completed")
+
+    async def _background_layer_timelapse():
+        """Stitch layer timelapse and attach to archive."""
+        from backend.app.services.layer_timelapse import cancel_session, on_print_complete as tl_complete
+
+        try:
+            if print_status == "completed":
+                logger.info(f"[LAYER-TL] Stitching layer timelapse for printer {printer_id}")
+                timelapse_path = await tl_complete(printer_id)
+                if timelapse_path and archive_id:
+                    logger.info(f"[LAYER-TL] Attaching timelapse {timelapse_path} to archive {archive_id}")
+                    async with async_session() as db:
+                        service = ArchiveService(db)
+                        timelapse_data = await asyncio.to_thread(timelapse_path.read_bytes)
+                        await service.attach_timelapse(archive_id, timelapse_data, "layer_timelapse.mp4")
+                        # Clean up the temp file
+                        await asyncio.to_thread(timelapse_path.unlink, missing_ok=True)
+                        logger.info("[LAYER-TL] Layer timelapse attached successfully")
+                elif timelapse_path:
+                    # Timelapse created but no archive - just clean up
+                    await asyncio.to_thread(timelapse_path.unlink, missing_ok=True)
+            else:
+                # Print failed or cancelled - cancel timelapse session
+                cancel_session(printer_id)
+                logger.info(f"[LAYER-TL] Cancelled layer timelapse for printer {printer_id} (status: {print_status})")
+        except Exception as e:
+            logger.warning(f"[LAYER-TL] Failed: {e}")
+            # Try to cancel session on error
+            try:
+                cancel_session(printer_id)
+            except Exception:
+                pass
+
+    asyncio.create_task(_background_layer_timelapse())
     log_timing("All background tasks scheduled")
 
     # Auto-scan for timelapse if recording was active during the print
@@ -1548,6 +2000,34 @@ async def on_print_complete(printer_id: int, data: dict):
                     )
                 except Exception:
                     pass  # Don't fail if MQTT fails
+
+                # Check if queue is now empty and send notification
+                try:
+                    from sqlalchemy import func
+
+                    # Count remaining pending items
+                    count_result = await db.execute(
+                        select(func.count(PrintQueueItem.id)).where(PrintQueueItem.status == "pending")
+                    )
+                    pending_count = count_result.scalar() or 0
+
+                    if pending_count == 0:
+                        # Count how many completed today (rough approximation)
+                        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                        completed_result = await db.execute(
+                            select(func.count(PrintQueueItem.id)).where(
+                                PrintQueueItem.status.in_(["completed", "failed", "skipped"]),
+                                PrintQueueItem.completed_at >= today_start,
+                            )
+                        )
+                        completed_count = completed_result.scalar() or 1
+
+                        await notification_service.on_queue_completed(
+                            completed_count=completed_count,
+                            db=db,
+                        )
+                except Exception:
+                    pass  # Don't fail if notification fails
 
                 # Handle auto_off_after - power off printer if requested (after cooldown)
                 if queue_item.auto_off_after:
@@ -1904,6 +2384,15 @@ async def lifespan(app: FastAPI):
     printer_manager.set_print_complete_callback(on_print_complete)
     printer_manager.set_ams_change_callback(on_ams_change)
 
+    # Layer change callback for external camera timelapse
+    async def on_layer_change(printer_id: int, layer_num: int):
+        """Capture timelapse frame on layer change."""
+        from backend.app.services.layer_timelapse import on_layer_change as tl_layer_change
+
+        await tl_layer_change(printer_id, layer_num)
+
+    printer_manager.set_layer_change_callback(on_layer_change)
+
     # Initialize MQTT relay from settings
     async with async_session() as db:
         from backend.app.api.routes.settings import get_setting
@@ -1918,6 +2407,27 @@ async def lifespan(app: FastAPI):
             "mqtt_use_tls": (await get_setting(db, "mqtt_use_tls") or "false") == "true",
         }
         await mqtt_relay.configure(mqtt_settings)
+
+        # Restore MQTT smart plug subscriptions
+        if mqtt_settings.get("mqtt_enabled"):
+            from sqlalchemy import select
+
+            from backend.app.models.smart_plug import SmartPlug
+
+            result = await db.execute(select(SmartPlug).where(SmartPlug.plug_type == "mqtt"))
+            mqtt_plugs = result.scalars().all()
+            for plug in mqtt_plugs:
+                if plug.mqtt_topic:
+                    mqtt_relay.smart_plug_service.subscribe(
+                        plug_id=plug.id,
+                        topic=plug.mqtt_topic,
+                        power_path=plug.mqtt_power_path,
+                        energy_path=plug.mqtt_energy_path,
+                        state_path=plug.mqtt_state_path,
+                        multiplier=plug.mqtt_multiplier or 1.0,
+                    )
+            if mqtt_plugs:
+                logging.info(f"Restored {len(mqtt_plugs)} MQTT smart plug subscriptions")
 
     # Connect to all active printers
     async with async_session() as db:
@@ -1954,14 +2464,14 @@ async def lifespan(app: FastAPI):
     # Start the notification digest scheduler
     notification_service.start_digest_scheduler()
 
+    # Start the GitHub backup scheduler
+    await github_backup_service.start_scheduler()
+
     # Start AMS history recording
     start_ams_history_recording()
 
     # Start printer runtime tracking
     start_runtime_tracking()
-
-    # Start anonymous telemetry (opt-out via settings)
-    asyncio.create_task(start_telemetry_loop(async_session))
 
     # Initialize virtual printer manager
     from backend.app.services.virtual_printer import virtual_printer_manager
@@ -1996,6 +2506,7 @@ async def lifespan(app: FastAPI):
     print_scheduler.stop()
     smart_plug_manager.stop_scheduler()
     notification_service.stop_digest_scheduler()
+    github_backup_service.stop_scheduler()
     stop_ams_history_recording()
     stop_runtime_tracking()
     printer_manager.disconnect_all()
@@ -2016,6 +2527,7 @@ app = FastAPI(
 # API routes
 app.include_router(auth.router, prefix=app_settings.api_prefix)
 app.include_router(users.router, prefix=app_settings.api_prefix)
+app.include_router(groups.router, prefix=app_settings.api_prefix)
 app.include_router(printers.router, prefix=app_settings.api_prefix)
 app.include_router(archives.router, prefix=app_settings.api_prefix)
 app.include_router(filaments.router, prefix=app_settings.api_prefix)
@@ -2042,6 +2554,8 @@ app.include_router(websocket.router, prefix=app_settings.api_prefix)
 app.include_router(discovery.router, prefix=app_settings.api_prefix)
 app.include_router(pending_uploads.router, prefix=app_settings.api_prefix)
 app.include_router(firmware.router, prefix=app_settings.api_prefix)
+app.include_router(github_backup.router, prefix=app_settings.api_prefix)
+app.include_router(metrics.router, prefix=app_settings.api_prefix)
 
 
 # Serve static files (React build)

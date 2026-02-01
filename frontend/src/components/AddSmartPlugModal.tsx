@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { X, Save, Loader2, Wifi, WifiOff, CheckCircle, Bell, Clock, LayoutGrid, Search, Plug, Power, Home } from 'lucide-react';
+import { X, Save, Loader2, Wifi, WifiOff, CheckCircle, Bell, Clock, LayoutGrid, Search, Plug, Power, Home, Radio } from 'lucide-react';
 import { api } from '../api/client';
 import type { SmartPlug, SmartPlugCreate, SmartPlugUpdate, DiscoveredTasmotaDevice } from '../api/client';
 import { Button } from './Button';
@@ -17,7 +17,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
   const isEditing = !!plug;
 
   // Plug type selection
-  const [plugType, setPlugType] = useState<'tasmota' | 'homeassistant'>(plug?.plug_type || 'tasmota');
+  const [plugType, setPlugType] = useState<'tasmota' | 'homeassistant' | 'mqtt'>(plug?.plug_type || 'tasmota');
 
   const [name, setName] = useState(plug?.name || '');
   // Tasmota fields
@@ -26,6 +26,22 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
   const [password, setPassword] = useState(plug?.password || '');
   // Home Assistant fields
   const [haEntityId, setHaEntityId] = useState(plug?.ha_entity_id || '');
+  // MQTT fields - Power
+  const [mqttPowerTopic, setMqttPowerTopic] = useState(plug?.mqtt_power_topic || plug?.mqtt_topic || '');
+  const [mqttPowerPath, setMqttPowerPath] = useState(plug?.mqtt_power_path || '');
+  const [mqttPowerMultiplier, setMqttPowerMultiplier] = useState<string>(
+    (plug?.mqtt_power_multiplier ?? plug?.mqtt_multiplier ?? 1).toString()
+  );
+  // MQTT fields - Energy
+  const [mqttEnergyTopic, setMqttEnergyTopic] = useState(plug?.mqtt_energy_topic || '');
+  const [mqttEnergyPath, setMqttEnergyPath] = useState(plug?.mqtt_energy_path || '');
+  const [mqttEnergyMultiplier, setMqttEnergyMultiplier] = useState<string>(
+    (plug?.mqtt_energy_multiplier ?? 1).toString()
+  );
+  // MQTT fields - State
+  const [mqttStateTopic, setMqttStateTopic] = useState(plug?.mqtt_state_topic || '');
+  const [mqttStatePath, setMqttStatePath] = useState(plug?.mqtt_state_path || '');
+  const [mqttStateOnValue, setMqttStateOnValue] = useState(plug?.mqtt_state_on_value || '');
   // HA energy sensor entities (optional)
   const [haPowerEntity, setHaPowerEntity] = useState(plug?.ha_power_entity || '');
   const [haEnergyTodayEntity, setHaEnergyTodayEntity] = useState(plug?.ha_energy_today_entity || '');
@@ -281,6 +297,18 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
       return;
     }
 
+    if (plugType === 'mqtt') {
+      // Check that at least one topic is configured (path is optional)
+      const hasPower = mqttPowerTopic.trim();
+      const hasEnergy = mqttEnergyTopic.trim();
+      const hasState = mqttStateTopic.trim();
+
+      if (!hasPower && !hasEnergy && !hasState) {
+        setError(t('addSmartPlug.mqttTopicRequired'));
+        return;
+      }
+    }
+
     const data = {
       name: name.trim(),
       plug_type: plugType,
@@ -290,6 +318,18 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
       ha_power_entity: plugType === 'homeassistant' ? (haPowerEntity || null) : null,
       ha_energy_today_entity: plugType === 'homeassistant' ? (haEnergyTodayEntity || null) : null,
       ha_energy_total_entity: plugType === 'homeassistant' ? (haEnergyTotalEntity || null) : null,
+      // MQTT power fields
+      mqtt_power_topic: plugType === 'mqtt' ? (mqttPowerTopic.trim() || null) : null,
+      mqtt_power_path: plugType === 'mqtt' ? (mqttPowerPath.trim() || null) : null,
+      mqtt_power_multiplier: plugType === 'mqtt' ? (parseFloat(mqttPowerMultiplier) || 1) : 1,
+      // MQTT energy fields
+      mqtt_energy_topic: plugType === 'mqtt' ? (mqttEnergyTopic.trim() || null) : null,
+      mqtt_energy_path: plugType === 'mqtt' ? (mqttEnergyPath.trim() || null) : null,
+      mqtt_energy_multiplier: plugType === 'mqtt' ? (parseFloat(mqttEnergyMultiplier) || 1) : 1,
+      // MQTT state fields
+      mqtt_state_topic: plugType === 'mqtt' ? (mqttStateTopic.trim() || null) : null,
+      mqtt_state_path: plugType === 'mqtt' ? (mqttStatePath.trim() || null) : null,
+      mqtt_state_on_value: plugType === 'mqtt' ? (mqttStateOnValue.trim() || null) : null,
       username: plugType === 'tasmota' ? (username.trim() || null) : null,
       password: plugType === 'tasmota' ? (password.trim() || null) : null,
       printer_id: printerId,
@@ -354,7 +394,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                   setTestResult(null);
                   setError(null);
                 }}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-colors ${
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg font-medium transition-colors ${
                   plugType === 'tasmota'
                     ? 'bg-bambu-green text-white'
                     : 'bg-bambu-dark text-bambu-gray hover:text-white border border-bambu-dark-tertiary'
@@ -370,7 +410,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                   setTestResult(null);
                   setError(null);
                 }}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-colors ${
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg font-medium transition-colors ${
                   plugType === 'homeassistant'
                     ? 'bg-bambu-green text-white'
                     : 'bg-bambu-dark text-bambu-gray hover:text-white border border-bambu-dark-tertiary'
@@ -378,6 +418,22 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
               >
                 <Home className="w-4 h-4" />
                 {t('addSmartPlug.homeAssistant')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPlugType('mqtt');
+                  setTestResult(null);
+                  setError(null);
+                }}
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg font-medium transition-colors ${
+                  plugType === 'mqtt'
+                    ? 'bg-bambu-green text-white'
+                    : 'bg-bambu-dark text-bambu-gray hover:text-white border border-bambu-dark-tertiary'
+                }`}
+              >
+                <Radio className="w-4 h-4" />
+                {t('addSmartPlug.mqtt')}
               </button>
             </div>
           )}
@@ -859,6 +915,155 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
             </div>
           )}
 
+          {/* MQTT Configuration - only show when MQTT is selected */}
+          {plugType === 'mqtt' && (
+            <div className="space-y-3">
+              {/* MQTT broker not configured */}
+              {!settings?.mqtt_broker && (
+                <div className="p-3 bg-yellow-500/20 border border-yellow-500/50 rounded-lg text-sm text-yellow-400">
+                  {t('addSmartPlug.mqttBrokerNotConfigured')}{' '}
+                  <span className="font-medium">{t('addSmartPlug.mqttBrokerNotConfiguredPath')}</span>
+                  {' '}{t('addSmartPlug.mqttBrokerNotConfiguredHint')}
+                </div>
+              )}
+
+              {/* MQTT broker configured - show fields */}
+              {settings?.mqtt_broker && (
+                <>
+                  <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-sm text-blue-300">
+                    <p className="font-medium mb-1">{t('addSmartPlug.mqttMonitorOnly')}</p>
+                    <p className="text-xs opacity-80">
+                      {t('addSmartPlug.mqttMonitorOnlyDescription')}
+                    </p>
+                  </div>
+
+                  {/* Power Section */}
+                  <div className="space-y-3 p-3 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
+                    <p className="text-white font-medium text-sm">{t('addSmartPlug.mqttPowerMonitoring')}</p>
+                    <div>
+                      <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.mqttTopic')}</label>
+                      <input
+                        type="text"
+                        value={mqttPowerTopic}
+                        onChange={(e) => setMqttPowerTopic(e.target.value)}
+                        placeholder="zigbee2mqtt/shelly-working-room"
+                        className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.mqttJsonPath')}</label>
+                        <input
+                          type="text"
+                          value={mqttPowerPath}
+                          onChange={(e) => setMqttPowerPath(e.target.value)}
+                          placeholder="power_l1"
+                          className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.mqttMultiplier')}</label>
+                        <input
+                          type="text"
+                          value={mqttPowerMultiplier}
+                          onChange={(e) => setMqttPowerMultiplier(e.target.value)}
+                          placeholder="1"
+                          className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-bambu-gray">
+                      {t('addSmartPlug.mqttPowerJsonPathHint')}<br/>
+                      {t('addSmartPlug.mqttPowerMultiplierHint')}
+                    </p>
+                  </div>
+
+                  {/* Energy Section */}
+                  <div className="space-y-3 p-3 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
+                    <p className="text-white font-medium text-sm">{t('addSmartPlug.mqttEnergyMonitoring')} <span className="text-bambu-gray font-normal">({t('common.optional')})</span></p>
+                    <div>
+                      <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.mqttTopic')}</label>
+                      <input
+                        type="text"
+                        value={mqttEnergyTopic}
+                        onChange={(e) => setMqttEnergyTopic(e.target.value)}
+                        placeholder="Same as power topic, or different"
+                        className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.mqttJsonPath')}</label>
+                        <input
+                          type="text"
+                          value={mqttEnergyPath}
+                          onChange={(e) => setMqttEnergyPath(e.target.value)}
+                          placeholder="energy_l1"
+                          className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.mqttMultiplier')}</label>
+                        <input
+                          type="text"
+                          value={mqttEnergyMultiplier}
+                          onChange={(e) => setMqttEnergyMultiplier(e.target.value)}
+                          placeholder="1"
+                          className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-bambu-gray">
+                      {t('addSmartPlug.mqttEnergyJsonPathHint')}<br/>
+                      {t('addSmartPlug.mqttEnergyMultiplierHint')}
+                    </p>
+                  </div>
+
+                  {/* State Section */}
+                  <div className="space-y-3 p-3 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
+                    <p className="text-white font-medium text-sm">{t('addSmartPlug.mqttStateMonitoring')} <span className="text-bambu-gray font-normal">({t('common.optional')})</span></p>
+                    <div>
+                      <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.mqttTopic')}</label>
+                      <input
+                        type="text"
+                        value={mqttStateTopic}
+                        onChange={(e) => setMqttStateTopic(e.target.value)}
+                        placeholder="Same as power topic, or different"
+                        className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.mqttJsonPath')}</label>
+                        <input
+                          type="text"
+                          value={mqttStatePath}
+                          onChange={(e) => setMqttStatePath(e.target.value)}
+                          placeholder="state_l1"
+                          className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.mqttOnValue')}</label>
+                        <input
+                          type="text"
+                          value={mqttStateOnValue}
+                          onChange={(e) => setMqttStateOnValue(e.target.value)}
+                          placeholder="ON, true, 1"
+                          className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-bambu-gray">
+                      {t('addSmartPlug.mqttStateJsonPathHint')}<br/>
+                      {t('addSmartPlug.mqttStateOnValueHint')}
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           {/* IP Address - only show for Tasmota */}
           {plugType === 'tasmota' && (
             <div>
@@ -961,25 +1166,27 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
             </>
           )}
 
-          {/* Link to Printer */}
-          <div>
-            <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.linkToPrinter')}</label>
-            <select
-              value={printerId ?? ''}
-              onChange={(e) => setPrinterId(e.target.value ? Number(e.target.value) : null)}
-              className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-            >
-              <option value="">{t('addSmartPlug.noPrinterOption')}</option>
-              {availablePrinters?.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-bambu-gray mt-1">
-              {t('addSmartPlug.linkToPrinterHint')}
-            </p>
-          </div>
+          {/* Link to Printer - not shown for MQTT plugs (monitor-only) */}
+          {plugType !== 'mqtt' && (
+            <div>
+              <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.linkToPrinter')}</label>
+              <select
+                value={printerId ?? ''}
+                onChange={(e) => setPrinterId(e.target.value ? Number(e.target.value) : null)}
+                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              >
+                <option value="">{t('addSmartPlug.noPrinterOption')}</option>
+                {availablePrinters?.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-bambu-gray mt-1">
+                {t('addSmartPlug.linkToPrinterHint')}
+              </p>
+            </div>
+          )}
 
           {/* Power Alerts */}
           <div className="border-t border-bambu-dark-tertiary pt-4">
@@ -1033,51 +1240,53 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
             )}
           </div>
 
-          {/* Schedule */}
-          <div className="border-t border-bambu-dark-tertiary pt-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-bambu-green" />
-                <span className="text-white font-medium">{t('addSmartPlug.dailySchedule')}</span>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={scheduleEnabled}
-                  onChange={(e) => setScheduleEnabled(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
-              </label>
-            </div>
-            {scheduleEnabled && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.turnOnAt')}</label>
-                    <input
-                      type="time"
-                      value={scheduleOnTime}
-                      onChange={(e) => setScheduleOnTime(e.target.value)}
-                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.turnOffAt')}</label>
-                    <input
-                      type="time"
-                      value={scheduleOffTime}
-                      onChange={(e) => setScheduleOffTime(e.target.value)}
-                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                    />
-                  </div>
+          {/* Schedule - not shown for MQTT plugs (monitor-only) */}
+          {plugType !== 'mqtt' && (
+            <div className="border-t border-bambu-dark-tertiary pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-bambu-green" />
+                  <span className="text-white font-medium">{t('addSmartPlug.dailySchedule')}</span>
                 </div>
-                <p className="text-xs text-bambu-gray">
-                  {t('addSmartPlug.scheduleHint')}
-                </p>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={scheduleEnabled}
+                    onChange={(e) => setScheduleEnabled(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
               </div>
-            )}
-          </div>
+              {scheduleEnabled && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.turnOnAt')}</label>
+                      <input
+                        type="time"
+                        value={scheduleOnTime}
+                        onChange={(e) => setScheduleOnTime(e.target.value)}
+                        className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-bambu-gray mb-1">{t('addSmartPlug.turnOffAt')}</label>
+                      <input
+                        type="time"
+                        value={scheduleOffTime}
+                        onChange={(e) => setScheduleOffTime(e.target.value)}
+                        className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-bambu-gray">
+                    {t('addSmartPlug.scheduleHint')}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Switchbar Visibility */}
           <div className="border-t border-bambu-dark-tertiary pt-4">

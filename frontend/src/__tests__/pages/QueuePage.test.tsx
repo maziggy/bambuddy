@@ -215,6 +215,27 @@ describe('QueuePage', () => {
         expect(printerElements.length).toBeGreaterThan(0);
       });
     });
+
+    it('renders queue items with plate_id correctly', async () => {
+      // Override with queue items that have plate_id set
+      server.use(
+        http.get('/api/v1/queue/', () => {
+          return HttpResponse.json([
+            {
+              ...mockQueueItems[0],
+              plate_id: 2,
+              archive_name: 'Multi-plate Print',
+            },
+          ]);
+        })
+      );
+
+      render(<QueuePage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Multi-plate Print')).toBeInTheDocument();
+      });
+    });
   });
 
   describe('empty state', () => {

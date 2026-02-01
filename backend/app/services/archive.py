@@ -67,6 +67,19 @@ class ThreeMFParser:
                 content = zf.read("Metadata/slice_info.config").decode()
                 root = ET.fromstring(content)
 
+                # Extract printer_model_id from plate metadata
+                # Format: <plate><metadata key="printer_model_id" value="C11" /></plate>
+                for meta in root.findall(".//metadata"):
+                    key = meta.get("key")
+                    value = meta.get("value")
+                    if key == "printer_model_id" and value:
+                        from backend.app.utils.printer_models import normalize_printer_model_id
+
+                        normalized = normalize_printer_model_id(value)
+                        if normalized:
+                            self.metadata["sliced_for_model"] = normalized
+                        break
+
                 # Find the plate element (single-plate exports only have one plate)
                 plate = root.find(".//plate")
 
@@ -156,7 +169,7 @@ class ThreeMFParser:
             pass
 
     def _parse_gcode_header(self, zf: zipfile.ZipFile):
-        """Parse G-code file header for total layer count."""
+        """Parse G-code file header for total layer count and printer model."""
         import re
 
         try:
@@ -165,15 +178,25 @@ class ThreeMFParser:
             if not gcode_files:
                 return
 
-            # Read first 2KB of G-code (header contains the layer count)
+            # Read first 4KB of G-code (header contains metadata)
             gcode_path = gcode_files[0]
             with zf.open(gcode_path) as f:
-                header = f.read(2048).decode("utf-8", errors="ignore")
+                header = f.read(4096).decode("utf-8", errors="ignore")
 
             # Look for "; total layer number: XX" pattern
             match = re.search(r";\s*total\s+layer\s+number[:\s]+(\d+)", header, re.IGNORECASE)
             if match:
                 self.metadata["total_layers"] = int(match.group(1))
+
+            # Look for printer_model in gcode header (fallback if not found in slice_info)
+            # Format: "; printer_model = Bambu Lab X1 Carbon" or "; printer_model = X1C"
+            if "sliced_for_model" not in self.metadata:
+                match = re.search(r";\s*printer_model\s*=\s*(.+)", header, re.IGNORECASE)
+                if match:
+                    from backend.app.utils.printer_models import normalize_printer_model
+
+                    raw_model = match.group(1).strip()
+                    self.metadata["sliced_for_model"] = normalize_printer_model(raw_model)
         except Exception:
             pass
 
@@ -256,6 +279,12 @@ class ThreeMFParser:
                     elif isinstance(val, (int, float, str)):
                         self.metadata["nozzle_temperature"] = int(float(val))
                     break
+
+            # Printer model (extract and normalize)
+            if "printer_model" in data:
+                from backend.app.utils.printer_models import normalize_printer_model
+
+                self.metadata["sliced_for_model"] = normalize_printer_model(data["printer_model"])
         except Exception:
             pass
 
@@ -877,6 +906,7 @@ class ArchiveService:
             nozzle_diameter=metadata.get("nozzle_diameter"),
             bed_temperature=metadata.get("bed_temperature"),
             nozzle_temperature=metadata.get("nozzle_temperature"),
+            sliced_for_model=metadata.get("sliced_for_model"),
             makerworld_url=metadata.get("makerworld_url"),
             designer=metadata.get("designer"),
             status=status,
@@ -917,6 +947,43 @@ class ArchiveService:
             archive.failure_reason = failure_reason
 
         await self.db.commit()
+        return True
+
+    async def add_reprint_cost(self, archive_id: int) -> bool:
+        """Add cost for a reprint to the existing archive cost."""
+        archive = await self.get_archive(archive_id)
+        if not archive:
+            return False
+
+        if not archive.filament_used_grams or not archive.filament_type:
+            return False
+
+        # Calculate cost based on filament type or default
+        from backend.app.api.routes.settings import get_setting
+
+        primary_type = archive.filament_type.split(",")[0].strip()
+
+        # Look up filament cost_per_kg from database
+        filament_result = await self.db.execute(select(Filament).where(Filament.type == primary_type).limit(1))
+        filament = filament_result.scalar_one_or_none()
+
+        if filament:
+            cost_per_kg = filament.cost_per_kg
+        else:
+            # Use default filament cost from settings
+            default_cost_setting = await get_setting(self.db, "default_filament_cost")
+            cost_per_kg = float(default_cost_setting) if default_cost_setting else 25.0
+
+        additional_cost = round((archive.filament_used_grams / 1000) * cost_per_kg, 2)
+
+        # Add to existing cost (or set if None)
+        if archive.cost is None:
+            archive.cost = additional_cost
+        else:
+            archive.cost = round(archive.cost + additional_cost, 2)
+
+        await self.db.commit()
+        logger.info(f"Added reprint cost {additional_cost} to archive {archive_id}, new total: {archive.cost}")
         return True
 
     async def list_archives(

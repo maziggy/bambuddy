@@ -8,9 +8,10 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequireAdminIfAuthEnabled
+from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
+from backend.app.core.permissions import Permission
 from backend.app.models.printer import Printer
 from backend.app.models.slot_preset import SlotPresetMapping
 from backend.app.schemas.printer import (
@@ -38,7 +39,10 @@ router = APIRouter(prefix="/printers", tags=["printers"])
 
 
 @router.get("/", response_model=list[PrinterResponse])
-async def list_printers(db: AsyncSession = Depends(get_db)):
+async def list_printers(
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    db: AsyncSession = Depends(get_db),
+):
     """List all configured printers."""
     result = await db.execute(select(Printer).order_by(Printer.name))
     return list(result.scalars().all())
@@ -47,8 +51,8 @@ async def list_printers(db: AsyncSession = Depends(get_db)):
 @router.post("/", response_model=PrinterResponse)
 async def create_printer(
     printer_data: PrinterCreate,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CREATE),
     db: AsyncSession = Depends(get_db),
-    _current_user=RequireAdminIfAuthEnabled(),
 ):
     """Add a new printer."""
     # Check if serial number already exists
@@ -68,8 +72,30 @@ async def create_printer(
     return printer
 
 
+@router.get("/usb-cameras")
+async def list_usb_cameras(
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+):
+    """List available USB cameras connected to the system.
+
+    Returns a list of detected V4L2 video devices with their info.
+    Only works on Linux systems with V4L2 support.
+
+    Returns:
+        List of dicts with {device: str, name: str, capabilities: list, formats?: list}
+    """
+    from backend.app.services.external_camera import list_usb_cameras
+
+    cameras = list_usb_cameras()
+    return {"cameras": cameras}
+
+
 @router.get("/{printer_id}", response_model=PrinterResponse)
-async def get_printer(printer_id: int, db: AsyncSession = Depends(get_db)):
+async def get_printer(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    db: AsyncSession = Depends(get_db),
+):
     """Get a specific printer."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
@@ -82,8 +108,8 @@ async def get_printer(printer_id: int, db: AsyncSession = Depends(get_db)):
 async def update_printer(
     printer_id: int,
     printer_data: PrinterUpdate,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
     db: AsyncSession = Depends(get_db),
-    _current_user=RequireAdminIfAuthEnabled(),
 ):
     """Update a printer."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
@@ -92,6 +118,22 @@ async def update_printer(
         raise HTTPException(404, "Printer not found")
 
     update_data = printer_data.model_dump(exclude_unset=True)
+
+    # Handle nested ROI object - flatten to individual columns
+    if "plate_detection_roi" in update_data:
+        roi = update_data.pop("plate_detection_roi")
+        if roi:
+            update_data["plate_detection_roi_x"] = roi.get("x")
+            update_data["plate_detection_roi_y"] = roi.get("y")
+            update_data["plate_detection_roi_w"] = roi.get("w")
+            update_data["plate_detection_roi_h"] = roi.get("h")
+        else:
+            # Clear ROI if set to null
+            update_data["plate_detection_roi_x"] = None
+            update_data["plate_detection_roi_y"] = None
+            update_data["plate_detection_roi_w"] = None
+            update_data["plate_detection_roi_h"] = None
+
     for field, value in update_data.items():
         setattr(printer, field, value)
 
@@ -111,8 +153,8 @@ async def update_printer(
 async def delete_printer(
     printer_id: int,
     delete_archives: bool = True,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_DELETE),
     db: AsyncSession = Depends(get_db),
-    _current_user=RequireAdminIfAuthEnabled(),
 ):
     """Delete a printer.
 
@@ -159,7 +201,11 @@ async def delete_printer(
 
 
 @router.get("/{printer_id}/status", response_model=PrinterStatus)
-async def get_printer_status(printer_id: int, db: AsyncSession = Depends(get_db)):
+async def get_printer_status(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    db: AsyncSession = Depends(get_db),
+):
     """Get real-time status of a printer."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
@@ -376,7 +422,7 @@ async def get_printer_status(printer_id: int, db: AsyncSession = Depends(get_db)
         nozzles=nozzles,
         print_options=print_options,
         stg_cur=state.stg_cur,
-        stg_cur_name=get_derived_status_name(state),
+        stg_cur_name=get_derived_status_name(state, printer.model),
         stg=state.stg,
         airduct_mode=state.airduct_mode,
         speed_level=state.speed_level,
@@ -399,7 +445,11 @@ async def get_printer_status(printer_id: int, db: AsyncSession = Depends(get_db)
 
 
 @router.post("/{printer_id}/refresh-status")
-async def refresh_printer_status(printer_id: int, db: AsyncSession = Depends(get_db)):
+async def refresh_printer_status(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    db: AsyncSession = Depends(get_db),
+):
     """Request a full status refresh from the printer (sends pushall command)."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
@@ -414,7 +464,11 @@ async def refresh_printer_status(printer_id: int, db: AsyncSession = Depends(get
 
 
 @router.post("/{printer_id}/connect")
-async def connect_printer(printer_id: int, db: AsyncSession = Depends(get_db)):
+async def connect_printer(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
     """Manually connect to a printer."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
@@ -426,7 +480,11 @@ async def connect_printer(printer_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/{printer_id}/disconnect")
-async def disconnect_printer(printer_id: int, db: AsyncSession = Depends(get_db)):
+async def disconnect_printer(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
     """Manually disconnect from a printer."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
@@ -442,6 +500,7 @@ async def test_printer_connection(
     ip_address: str,
     serial_number: str,
     access_code: str,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CREATE),
 ):
     """Test connection to a printer without saving."""
     result = await printer_manager.test_connection(
@@ -460,6 +519,7 @@ _cover_cache: dict[int, dict[tuple[str, str], bytes]] = {}
 async def get_printer_cover(
     printer_id: int,
     view: str | None = None,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
     db: AsyncSession = Depends(get_db),
 ):
     """Get the cover image for the current print job.
@@ -647,6 +707,7 @@ async def get_printer_cover(
 async def list_printer_files(
     printer_id: int,
     path: str = "/",
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
     db: AsyncSession = Depends(get_db),
 ):
     """List files on the printer at the specified path."""
@@ -671,6 +732,7 @@ async def list_printer_files(
 async def download_printer_file(
     printer_id: int,
     path: str,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
     db: AsyncSession = Depends(get_db),
 ):
     """Download a file from the printer."""
@@ -707,10 +769,56 @@ async def download_printer_file(
     )
 
 
+@router.post("/{printer_id}/files/download-zip")
+async def download_printer_files_as_zip(
+    printer_id: int,
+    request: dict,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
+    db: AsyncSession = Depends(get_db),
+):
+    """Download multiple files from the printer as a ZIP archive."""
+    import io
+
+    paths = request.get("paths", [])
+    if not paths:
+        raise HTTPException(400, "No files specified")
+
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    # Create ZIP in memory
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for path in paths:
+            try:
+                data = await download_file_bytes_async(printer.ip_address, printer.access_code, path)
+                if data:
+                    filename = path.split("/")[-1]
+                    zf.writestr(filename, data)
+            except Exception as e:
+                logging.warning(f"Failed to add {path} to ZIP: {e}")
+                continue
+
+    zip_buffer.seek(0)
+    zip_data = zip_buffer.read()
+
+    if len(zip_data) == 0:
+        raise HTTPException(404, "No files could be downloaded")
+
+    return Response(
+        content=zip_data,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="printer-files.zip"'},
+    )
+
+
 @router.delete("/{printer_id}/files")
 async def delete_printer_file(
     printer_id: int,
     path: str,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a file from the printer."""
@@ -729,6 +837,7 @@ async def delete_printer_file(
 @router.get("/{printer_id}/storage")
 async def get_printer_storage(
     printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
     db: AsyncSession = Depends(get_db),
 ):
     """Get storage information from the printer."""
@@ -748,7 +857,11 @@ async def get_printer_storage(
 
 
 @router.post("/{printer_id}/logging/enable")
-async def enable_mqtt_logging(printer_id: int, db: AsyncSession = Depends(get_db)):
+async def enable_mqtt_logging(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
     """Enable MQTT message logging for a printer."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
@@ -763,7 +876,11 @@ async def enable_mqtt_logging(printer_id: int, db: AsyncSession = Depends(get_db
 
 
 @router.post("/{printer_id}/logging/disable")
-async def disable_mqtt_logging(printer_id: int, db: AsyncSession = Depends(get_db)):
+async def disable_mqtt_logging(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
     """Disable MQTT message logging for a printer."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
@@ -778,7 +895,11 @@ async def disable_mqtt_logging(printer_id: int, db: AsyncSession = Depends(get_d
 
 
 @router.get("/{printer_id}/logging")
-async def get_mqtt_logs(printer_id: int, db: AsyncSession = Depends(get_db)):
+async def get_mqtt_logs(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    db: AsyncSession = Depends(get_db),
+):
     """Get MQTT message logs for a printer."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
@@ -801,7 +922,11 @@ async def get_mqtt_logs(printer_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/{printer_id}/logging")
-async def clear_mqtt_logs(printer_id: int, db: AsyncSession = Depends(get_db)):
+async def clear_mqtt_logs(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
     """Clear MQTT message logs for a printer."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
@@ -824,6 +949,7 @@ async def set_print_option(
     enabled: bool,
     print_halt: bool = True,
     sensitivity: str = "medium",
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
     db: AsyncSession = Depends(get_db),
 ):
     """Set an AI detection / print option on the printer.
@@ -896,6 +1022,7 @@ async def start_calibration(
     motor_noise: bool = False,
     nozzle_offset: bool = False,
     high_temp_heatbed: bool = False,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
     db: AsyncSession = Depends(get_db),
 ):
     """Start printer calibration with selected options.
@@ -951,6 +1078,7 @@ async def start_calibration(
 @router.get("/{printer_id}/slot-presets")
 async def get_slot_presets(
     printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
     db: AsyncSession = Depends(get_db),
 ):
     """Get all saved slot-to-preset mappings for a printer."""
@@ -973,6 +1101,7 @@ async def get_slot_preset(
     printer_id: int,
     ams_id: int,
     tray_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
     db: AsyncSession = Depends(get_db),
 ):
     """Get the saved preset for a specific slot."""
@@ -1003,6 +1132,7 @@ async def save_slot_preset(
     tray_id: int,
     preset_id: str,
     preset_name: str,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ):
     """Save a preset mapping for a specific slot."""
@@ -1052,6 +1182,7 @@ async def delete_slot_preset(
     printer_id: int,
     ams_id: int,
     tray_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a saved preset mapping for a slot."""
@@ -1088,6 +1219,7 @@ async def configure_ams_slot(
     kprofile_filament_id: str = Query(""),
     kprofile_setting_id: str = Query(""),
     k_value: float = Query(0.0),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
 ):
     """Configure an AMS slot with a specific filament setting and K profile.
 
@@ -1287,7 +1419,11 @@ async def debug_simulate_print_complete(
 
 
 @router.post("/{printer_id}/print/stop")
-async def stop_print(printer_id: int, db: AsyncSession = Depends(get_db)):
+async def stop_print(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
     """Stop/cancel the current print job."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
@@ -1306,7 +1442,11 @@ async def stop_print(printer_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/{printer_id}/print/pause")
-async def pause_print(printer_id: int, db: AsyncSession = Depends(get_db)):
+async def pause_print(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
     """Pause the current print job."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
@@ -1325,7 +1465,11 @@ async def pause_print(printer_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/{printer_id}/print/resume")
-async def resume_print(printer_id: int, db: AsyncSession = Depends(get_db)):
+async def resume_print(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
     """Resume a paused print job."""
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
@@ -1347,6 +1491,7 @@ async def resume_print(printer_id: int, db: AsyncSession = Depends(get_db)):
 async def set_chamber_light(
     printer_id: int,
     on: bool = Query(..., description="True to turn on, False to turn off"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
     db: AsyncSession = Depends(get_db),
 ):
     """Turn the chamber light on or off."""
@@ -1370,6 +1515,7 @@ async def set_chamber_light(
 async def get_printable_objects(
     printer_id: int,
     reload: bool = False,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
     db: AsyncSession = Depends(get_db),
 ):
     """Get the list of printable objects for the current print.
@@ -1467,6 +1613,7 @@ async def get_printable_objects(
 async def skip_objects(
     printer_id: int,
     object_ids: list[int],
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
     db: AsyncSession = Depends(get_db),
 ):
     """Skip specific objects during the current print.
@@ -1521,6 +1668,7 @@ async def refresh_ams_slot(
     printer_id: int,
     ams_id: int,
     slot_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
     db: AsyncSession = Depends(get_db),
 ):
     """Re-read RFID for an AMS slot (triggers filament info refresh)."""
@@ -1543,6 +1691,7 @@ async def refresh_ams_slot(
 @router.get("/{printer_id}/runtime-debug")
 async def get_runtime_debug(
     printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
     db: AsyncSession = Depends(get_db),
 ):
     """Debug endpoint: Get runtime tracking status for a printer."""

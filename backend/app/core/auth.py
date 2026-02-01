@@ -11,8 +11,10 @@ from jwt.exceptions import PyJWTError as JWTError
 from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from backend.app.core.database import async_session, get_db
+from backend.app.core.permissions import Permission
 from backend.app.models.api_key import APIKey
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
@@ -60,8 +62,8 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
 
 
 async def get_user_by_username(db: AsyncSession, username: str) -> User | None:
-    """Get a user by username."""
-    result = await db.execute(select(User).where(User.username == username))
+    """Get a user by username with groups loaded for permission checks."""
+    result = await db.execute(select(User).where(User.username == username).options(selectinload(User.groups)))
     return result.scalar_one_or_none()
 
 
@@ -347,3 +349,124 @@ def RequireAdmin():
 def RequireAdminIfAuthEnabled():
     """Dependency that requires admin role if auth is enabled."""
     return Depends(require_admin_if_auth_enabled())
+
+
+def require_permission(*permissions: str | Permission):
+    """Dependency factory that requires user to have ALL specified permissions.
+
+    Args:
+        *permissions: Permission strings or Permission enum values to require
+
+    Returns:
+        A dependency function that validates permissions
+    """
+    # Convert Permission enums to strings
+    perm_strings = [p.value if isinstance(p, Permission) else p for p in permissions]
+
+    async def permission_checker(
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+    ) -> User:
+        credentials_exception = HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        if credentials is None:
+            raise credentials_exception
+
+        try:
+            token = credentials.credentials
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            username: str = payload.get("sub")
+            if username is None:
+                raise credentials_exception
+        except JWTError:
+            raise credentials_exception
+
+        async with async_session() as db:
+            user = await get_user_by_username(db, username)
+            if user is None or not user.is_active:
+                raise credentials_exception
+
+            if not user.has_all_permissions(*perm_strings):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Missing required permissions: {', '.join(perm_strings)}",
+                )
+            return user
+
+    return permission_checker
+
+
+def require_permission_if_auth_enabled(*permissions: str | Permission):
+    """Dependency factory that checks permissions only if auth is enabled.
+
+    This provides backward compatibility - when auth is disabled, all access is allowed.
+
+    Args:
+        *permissions: Permission strings or Permission enum values to require
+
+    Returns:
+        A dependency function that validates permissions if auth is enabled
+    """
+    # Convert Permission enums to strings
+    perm_strings = [p.value if isinstance(p, Permission) else p for p in permissions]
+
+    async def permission_checker(
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+    ) -> User | None:
+        async with async_session() as db:
+            auth_enabled = await is_auth_enabled(db)
+            if not auth_enabled:
+                return None  # Auth disabled, allow access
+
+            if credentials is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication required",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            try:
+                token = credentials.credentials
+                payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                username: str = payload.get("sub")
+                if username is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Could not validate credentials",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+            except JWTError:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Could not validate credentials",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            user = await get_user_by_username(db, username)
+            if user is None or not user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Could not validate credentials",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            if not user.has_all_permissions(*perm_strings):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Missing required permissions: {', '.join(perm_strings)}",
+                )
+            return user
+
+    return permission_checker
+
+
+def RequirePermission(*permissions: str | Permission):
+    """Convenience dependency that requires ALL specified permissions."""
+    return Depends(require_permission(*permissions))
+
+
+def RequirePermissionIfAuthEnabled(*permissions: str | Permission):
+    """Convenience dependency that requires permissions if auth is enabled."""
+    return Depends(require_permission_if_auth_enabled(*permissions))

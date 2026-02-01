@@ -21,6 +21,24 @@ const createMockPlug = (overrides: Partial<SmartPlug> = {}): SmartPlug => ({
   plug_type: 'tasmota',
   ip_address: '192.168.1.100',
   ha_entity_id: null,
+  ha_power_entity: null,
+  ha_energy_today_entity: null,
+  ha_energy_total_entity: null,
+  // MQTT fields (legacy)
+  mqtt_topic: null,
+  mqtt_multiplier: 1.0,
+  // MQTT power fields
+  mqtt_power_topic: null,
+  mqtt_power_path: null,
+  mqtt_power_multiplier: 1.0,
+  // MQTT energy fields
+  mqtt_energy_topic: null,
+  mqtt_energy_path: null,
+  mqtt_energy_multiplier: 1.0,
+  // MQTT state fields
+  mqtt_state_topic: null,
+  mqtt_state_path: null,
+  mqtt_state_on_value: null,
   printer_id: 1,
   enabled: true,
   auto_on: true,
@@ -90,8 +108,8 @@ describe('SmartPlugCard', () => {
 
       // Should show Auto On and Auto Off labels
       await waitFor(() => {
-        expect(screen.getByText('Auto On')).toBeInTheDocument();
-        expect(screen.getByText('Auto Off')).toBeInTheDocument();
+        expect(screen.getByText('Auto Power On')).toBeInTheDocument();
+        expect(screen.getByText('Auto Power Off')).toBeInTheDocument();
       });
     });
 
@@ -105,7 +123,7 @@ describe('SmartPlugCard', () => {
 
       await waitFor(() => {
         // The toggle should reflect auto_off = true
-        const autoOffText = screen.getByText('Auto Off');
+        const autoOffText = screen.getByText('Auto Power Off');
         expect(autoOffText).toBeInTheDocument();
       });
     });
@@ -119,7 +137,7 @@ describe('SmartPlugCard', () => {
       await user.click(screen.getByText('Automation Settings'));
 
       await waitFor(() => {
-        const autoOffText = screen.getByText('Auto Off');
+        const autoOffText = screen.getByText('Auto Power Off');
         expect(autoOffText).toBeInTheDocument();
       });
     });
@@ -270,6 +288,75 @@ describe('SmartPlugCard', () => {
       // Power control buttons should still be present
       const buttons = screen.getAllByRole('button');
       expect(buttons.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('MQTT plugs', () => {
+    it('renders MQTT plug with topic instead of IP', () => {
+      const plug = createMockPlug({
+        plug_type: 'mqtt',
+        ip_address: null,
+        mqtt_topic: 'zigbee2mqtt/shelly-power',
+        mqtt_power_path: 'power_l1',
+      });
+      render(<SmartPlugCard plug={plug} onEdit={mockOnEdit} />);
+
+      // Should show topic, not IP
+      expect(screen.getByText('zigbee2mqtt/shelly-power')).toBeInTheDocument();
+      expect(screen.queryByText('192.168.1.100')).not.toBeInTheDocument();
+    });
+
+    it('renders MQTT plug name correctly', () => {
+      const plug = createMockPlug({
+        name: 'MQTT Energy Monitor',
+        plug_type: 'mqtt',
+        ip_address: null,
+        mqtt_topic: 'sensors/power',
+        mqtt_power_path: 'power',
+      });
+      render(<SmartPlugCard plug={plug} onEdit={mockOnEdit} />);
+
+      expect(screen.getByText('MQTT Energy Monitor')).toBeInTheDocument();
+    });
+
+    it('shows Monitor Only badge for MQTT plug', () => {
+      const plug = createMockPlug({
+        plug_type: 'mqtt',
+        ip_address: null,
+        mqtt_topic: 'test/topic',
+        mqtt_power_path: 'power',
+      });
+      render(<SmartPlugCard plug={plug} onEdit={mockOnEdit} />);
+
+      expect(screen.getByText('Monitor Only')).toBeInTheDocument();
+    });
+
+    it('does not show power control buttons for MQTT plug', () => {
+      const plug = createMockPlug({
+        plug_type: 'mqtt',
+        ip_address: null,
+        mqtt_topic: 'test/topic',
+        mqtt_power_path: 'power',
+      });
+      render(<SmartPlugCard plug={plug} onEdit={mockOnEdit} />);
+
+      // On/Off buttons should not be present for monitor-only plugs
+      expect(screen.queryByRole('button', { name: /^on$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^off$/i })).not.toBeInTheDocument();
+    });
+
+    it('shows Settings instead of Automation Settings for MQTT plug', async () => {
+      const plug = createMockPlug({
+        plug_type: 'mqtt',
+        ip_address: null,
+        mqtt_topic: 'test/topic',
+        mqtt_power_path: 'power',
+      });
+      render(<SmartPlugCard plug={plug} onEdit={mockOnEdit} />);
+
+      // Should show "Settings" not "Automation Settings"
+      expect(screen.getByText('Settings')).toBeInTheDocument();
+      expect(screen.queryByText('Automation Settings')).not.toBeInTheDocument();
     });
   });
 });

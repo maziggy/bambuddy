@@ -32,6 +32,14 @@ EVENT_NAMES = {
     "filament_low": "Filament Low",
     "maintenance_due": "Maintenance Due",
     "test": "Test Notification",
+    # Queue notifications
+    "queue_job_added": "Queue Job Added",
+    "queue_job_assigned": "Queue Job Assigned",
+    "queue_job_started": "Queue Job Started",
+    "queue_job_waiting": "Queue Job Waiting",
+    "queue_job_skipped": "Queue Job Skipped",
+    "queue_job_failed": "Queue Job Failed",
+    "queue_completed": "Queue Completed",
 }
 
 

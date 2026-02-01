@@ -486,7 +486,7 @@ describe('PrintModal', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText('Select all')).toBeInTheDocument();
+        expect(screen.getByText('Select All')).toBeInTheDocument();
       });
     });
 
@@ -502,10 +502,10 @@ describe('PrintModal', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText('Select all')).toBeInTheDocument();
+        expect(screen.getByText('Select All')).toBeInTheDocument();
       });
 
-      await user.click(screen.getByText('Select all'));
+      await user.click(screen.getByText('Select All'));
 
       await waitFor(() => {
         expect(screen.getByText(/2 printers selected/)).toBeInTheDocument();
@@ -524,10 +524,10 @@ describe('PrintModal', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText('Select all')).toBeInTheDocument();
+        expect(screen.getByText('Select All')).toBeInTheDocument();
       });
 
-      await user.click(screen.getByText('Select all'));
+      await user.click(screen.getByText('Select All'));
 
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /print to 2 printers/i })).toBeInTheDocument();

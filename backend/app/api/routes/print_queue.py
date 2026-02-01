@@ -2,28 +2,97 @@
 
 import json
 import logging
+import xml.etree.ElementTree as ET
+import zipfile
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
 from backend.app.schemas.print_queue import (
+    PrintQueueBulkUpdate,
+    PrintQueueBulkUpdateResponse,
     PrintQueueItemCreate,
     PrintQueueItemResponse,
     PrintQueueItemUpdate,
     PrintQueueReorder,
 )
+from backend.app.services.notification_service import notification_service
+from backend.app.utils.printer_models import normalize_printer_model, normalize_printer_model_id
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/queue", tags=["queue"])
+
+
+def _extract_filament_types_from_3mf(file_path: Path, plate_id: int | None = None) -> list[str]:
+    """Extract unique filament types from a 3MF file.
+
+    Args:
+        file_path: Path to the 3MF file
+        plate_id: Optional plate index to filter for (for multi-plate files)
+
+    Returns:
+        List of unique filament types (e.g., ["PLA", "PETG"])
+    """
+    types: set[str] = set()
+
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            if "Metadata/slice_info.config" not in zf.namelist():
+                return []
+
+            content = zf.read("Metadata/slice_info.config").decode()
+            root = ET.fromstring(content)
+
+            if plate_id is not None:
+                # Find the plate element with matching index
+                for plate_elem in root.findall(".//plate"):
+                    plate_index = None
+                    for meta in plate_elem.findall("metadata"):
+                        if meta.get("key") == "index":
+                            try:
+                                plate_index = int(meta.get("value", "0"))
+                            except ValueError:
+                                pass
+                            break
+
+                    if plate_index == plate_id:
+                        for filament_elem in plate_elem.findall("filament"):
+                            filament_type = filament_elem.get("type", "")
+                            used_g = filament_elem.get("used_g", "0")
+                            try:
+                                used_grams = float(used_g)
+                            except (ValueError, TypeError):
+                                used_grams = 0
+                            if used_grams > 0 and filament_type:
+                                types.add(filament_type)
+                        break
+            else:
+                # No plate_id specified - extract all filaments with used_g > 0
+                for filament_elem in root.findall(".//filament"):
+                    filament_type = filament_elem.get("type", "")
+                    used_g = filament_elem.get("used_g", "0")
+                    try:
+                        used_grams = float(used_g)
+                    except (ValueError, TypeError):
+                        used_grams = 0
+                    if used_grams > 0 and filament_type:
+                        types.add(filament_type)
+
+    except Exception as e:
+        logger.warning(f"Failed to extract filament types from {file_path}: {e}")
+
+    return sorted(types)
 
 
 def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
@@ -36,10 +105,21 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         except json.JSONDecodeError:
             ams_mapping_parsed = None
 
+    # Parse required_filament_types from JSON string
+    required_filament_types_parsed = None
+    if item.required_filament_types:
+        try:
+            required_filament_types_parsed = json.loads(item.required_filament_types)
+        except json.JSONDecodeError:
+            required_filament_types_parsed = None
+
     # Create response with parsed ams_mapping
     item_dict = {
         "id": item.id,
         "printer_id": item.printer_id,
+        "target_model": item.target_model,
+        "required_filament_types": required_filament_types_parsed,
+        "waiting_reason": item.waiting_reason,
         "archive_id": item.archive_id,
         "library_file_id": item.library_file_id,
         "position": item.position,
@@ -118,9 +198,22 @@ async def add_to_queue(
     db: AsyncSession = Depends(get_db),
 ):
     """Add an item to the print queue."""
+    # Normalize target_model (e.g., "Bambu Lab X1E" / "C13" -> "X1E")
+    target_model_norm = None
+    if data.target_model:
+        target_model_norm = (
+            normalize_printer_model(data.target_model)
+            or normalize_printer_model_id(data.target_model)
+            or data.target_model
+        )
+
     # Validate that either archive_id or library_file_id is provided
     if not data.archive_id and not data.library_file_id:
         raise HTTPException(400, "Either archive_id or library_file_id must be provided")
+
+    # Cannot specify both printer_id and target_model
+    if data.printer_id and target_model_norm:
+        raise HTTPException(400, "Cannot specify both printer_id and target_model")
 
     # Validate printer exists (if assigned)
     if data.printer_id is not None:
@@ -128,19 +221,48 @@ async def add_to_queue(
         if not result.scalar_one_or_none():
             raise HTTPException(400, "Printer not found")
 
-    # Validate archive exists (if provided)
+    # Validate target_model has active printers
+    if target_model_norm:
+        result = await db.execute(
+            select(Printer).where(Printer.model == target_model_norm).where(Printer.is_active == True)  # noqa: E712
+        )
+        if not result.scalars().first():
+            raise HTTPException(400, f"No active printers for model: {target_model_norm}")
+
+    # Validate archive exists (if provided) and get it for filament extraction
+    archive = None
     if data.archive_id:
         result = await db.execute(select(PrintArchive).where(PrintArchive.id == data.archive_id))
-        if not result.scalar_one_or_none():
+        archive = result.scalar_one_or_none()
+        if not archive:
             raise HTTPException(400, "Archive not found")
 
-    # Validate library file exists (if provided)
+    # Validate library file exists (if provided) and get it for filament extraction
+    library_file = None
     if data.library_file_id:
         result = await db.execute(select(LibraryFile).where(LibraryFile.id == data.library_file_id))
-        if not result.scalar_one_or_none():
+        library_file = result.scalar_one_or_none()
+        if not library_file:
             raise HTTPException(400, "Library file not found")
 
-    # Get next position for this printer (or for unassigned items)
+    # Extract filament types for model-based assignment (used by scheduler for validation)
+    required_filament_types = None
+    if target_model_norm:
+        # Get file path from archive or library file
+        file_path = None
+        if archive:
+            file_path = settings.base_dir / archive.file_path
+        elif library_file:
+            lib_path = Path(library_file.file_path)
+            file_path = lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
+
+        if file_path and file_path.exists():
+            filament_types = _extract_filament_types_from_3mf(file_path, data.plate_id)
+            if filament_types:
+                required_filament_types = json.dumps(filament_types)
+                logger.info(f"Extracted filament types for model-based queue: {filament_types}")
+
+    # Get next position for this printer (or for unassigned/model-based items)
     if data.printer_id is not None:
         result = await db.execute(
             select(func.max(PrintQueueItem.position))
@@ -148,7 +270,7 @@ async def add_to_queue(
             .where(PrintQueueItem.status == "pending")
         )
     else:
-        # For unassigned items, get max position across all unassigned
+        # For unassigned/model-based items, get max position across all unassigned
         result = await db.execute(
             select(func.max(PrintQueueItem.position))
             .where(PrintQueueItem.printer_id.is_(None))
@@ -158,6 +280,8 @@ async def add_to_queue(
 
     item = PrintQueueItem(
         printer_id=data.printer_id,
+        target_model=target_model_norm,
+        required_filament_types=required_filament_types,
         archive_id=data.archive_id,
         library_file_id=data.library_file_id,
         scheduled_time=data.scheduled_time,
@@ -183,7 +307,8 @@ async def add_to_queue(
     await db.refresh(item, ["archive", "printer", "library_file"])
 
     source_name = f"archive {data.archive_id}" if data.archive_id else f"library file {data.library_file_id}"
-    logger.info(f"Added {source_name} to queue for printer {data.printer_id or 'unassigned'}")
+    target_desc = data.printer_id or (f"model {target_model_norm}" if target_model_norm else "unassigned")
+    logger.info(f"Added {source_name} to queue for {target_desc}")
 
     # MQTT relay - publish queue job added
     try:
@@ -198,7 +323,79 @@ async def add_to_queue(
     except Exception:
         pass  # Don't fail queue add if MQTT fails
 
+    # Send notification for job added
+    try:
+        job_name = (
+            item.archive.filename
+            if item.archive
+            else item.library_file.filename
+            if item.library_file
+            else f"Job #{item.id}"
+        )
+        job_name = job_name.replace(".gcode.3mf", "").replace(".3mf", "")
+        target = (
+            item.printer.name if item.printer else (f"Any {item.target_model}" if target_model_norm else "Unassigned")
+        )
+        await notification_service.on_queue_job_added(
+            job_name=job_name,
+            target=target,
+            db=db,
+            printer_id=item.printer_id,
+            printer_name=item.printer.name if item.printer else None,
+        )
+    except Exception:
+        pass  # Don't fail queue add if notification fails
+
     return _enrich_response(item)
+
+
+@router.patch("/bulk", response_model=PrintQueueBulkUpdateResponse)
+async def bulk_update_queue_items(
+    data: PrintQueueBulkUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk update multiple queue items with the same values.
+
+    Only pending items can be updated. Non-pending items are skipped.
+    """
+    if not data.item_ids:
+        raise HTTPException(400, "No item IDs provided")
+
+    # Get fields to update (exclude item_ids and unset fields)
+    update_data = data.model_dump(exclude={"item_ids"}, exclude_unset=True)
+    if not update_data:
+        raise HTTPException(400, "No fields to update")
+
+    # Validate printer_id if being changed
+    if "printer_id" in update_data and update_data["printer_id"] is not None:
+        result = await db.execute(select(Printer).where(Printer.id == update_data["printer_id"]))
+        if not result.scalar_one_or_none():
+            raise HTTPException(400, "Printer not found")
+
+    # Fetch all items
+    result = await db.execute(select(PrintQueueItem).where(PrintQueueItem.id.in_(data.item_ids)))
+    items = result.scalars().all()
+
+    updated_count = 0
+    skipped_count = 0
+
+    for item in items:
+        if item.status != "pending":
+            skipped_count += 1
+            continue
+
+        for field, value in update_data.items():
+            setattr(item, field, value)
+        updated_count += 1
+
+    await db.commit()
+
+    logger.info(f"Bulk updated {updated_count} queue items, skipped {skipped_count}")
+    return PrintQueueBulkUpdateResponse(
+        updated_count=updated_count,
+        skipped_count=skipped_count,
+        message=f"Updated {updated_count} items" + (f", skipped {skipped_count} non-pending" if skipped_count else ""),
+    )
 
 
 @router.get("/{item_id}", response_model=PrintQueueItemResponse)
@@ -236,11 +433,33 @@ async def update_queue_item(
 
     update_data = data.model_dump(exclude_unset=True)
 
+    # Normalize target_model if being updated
+    if "target_model" in update_data and update_data["target_model"]:
+        update_data["target_model"] = (
+            normalize_printer_model(update_data["target_model"])
+            or normalize_printer_model_id(update_data["target_model"])
+            or update_data["target_model"]
+        )
+
+    # Cannot specify both printer_id and target_model
+    new_printer_id = update_data.get("printer_id", item.printer_id)
+    new_target_model = update_data.get("target_model", item.target_model)
+    if new_printer_id and new_target_model:
+        raise HTTPException(400, "Cannot specify both printer_id and target_model")
+
     # Validate new printer_id if being changed (and not None)
     if "printer_id" in update_data and update_data["printer_id"] is not None:
         result = await db.execute(select(Printer).where(Printer.id == update_data["printer_id"]))
         if not result.scalar_one_or_none():
             raise HTTPException(400, "Printer not found")
+
+    # Validate target_model has active printers
+    if "target_model" in update_data and update_data["target_model"]:
+        result = await db.execute(
+            select(Printer).where(Printer.model == update_data["target_model"]).where(Printer.is_active == True)  # noqa: E712
+        )
+        if not result.scalars().first():
+            raise HTTPException(400, f"No active printers for model: {update_data['target_model']}")
 
     # Serialize ams_mapping to JSON for TEXT column storage
     if "ams_mapping" in update_data:

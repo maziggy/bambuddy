@@ -31,6 +31,7 @@ const mockSettings = {
   ha_url: '',
   ha_token: '',
   check_updates: false,
+  check_printer_firmware: false,
 };
 
 describe('SettingsPage', () => {
@@ -122,6 +123,16 @@ describe('SettingsPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Appearance')).toBeInTheDocument();
+      });
+    });
+
+    it('shows updates section with firmware toggle', async () => {
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Updates')).toBeInTheDocument();
+        expect(screen.getByText('Check for Updates')).toBeInTheDocument();
+        expect(screen.getByText('Check Printer Firmware')).toBeInTheDocument();
       });
     });
   });

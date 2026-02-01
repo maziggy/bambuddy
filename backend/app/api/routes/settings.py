@@ -15,6 +15,8 @@ from backend.app.models.api_key import APIKey
 from backend.app.models.archive import PrintArchive
 from backend.app.models.external_link import ExternalLink
 from backend.app.models.filament import Filament
+from backend.app.models.github_backup import GitHubBackupConfig
+from backend.app.models.group import Group
 from backend.app.models.maintenance import MaintenanceHistory, MaintenanceType, PrinterMaintenance
 from backend.app.models.notification import NotificationProvider
 from backend.app.models.notification_template import NotificationTemplate
@@ -73,13 +75,14 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
                 "capture_finish_photo",
                 "spoolman_enabled",
                 "check_updates",
-                "telemetry_enabled",
+                "check_printer_firmware",
                 "virtual_printer_enabled",
                 "ftp_retry_enabled",
                 "mqtt_enabled",
                 "mqtt_use_tls",
                 "ha_enabled",
                 "per_printer_mapping_expanded",
+                "prometheus_enabled",
             ]:
                 settings_dict[setting.key] = setting.value.lower() == "true"
             elif setting.key in [
@@ -164,6 +167,16 @@ async def update_settings(
     return await get_settings(db)
 
 
+@router.patch("/", response_model=AppSettings)
+@router.patch("", response_model=AppSettings)
+async def patch_settings(
+    settings_update: AppSettingsUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Partially update application settings (same as PUT, for REST compatibility)."""
+    return await update_settings(settings_update, db)
+
+
 @router.post("/reset", response_model=AppSettings)
 async def reset_settings(db: AsyncSession = Depends(get_db)):
     """Reset all settings to defaults."""
@@ -233,6 +246,7 @@ async def export_backup(
     include_smart_plugs: bool = Query(True, description="Include smart plugs"),
     include_external_links: bool = Query(True, description="Include external sidebar links"),
     include_printers: bool = Query(False, description="Include printers (without access codes)"),
+    include_plate_calibration: bool = Query(False, description="Include plate detection reference images"),
     include_filaments: bool = Query(False, description="Include filament inventory"),
     include_maintenance: bool = Query(
         False, description="Include maintenance types, per-printer settings, and history"
@@ -246,6 +260,8 @@ async def export_backup(
     include_users: bool = Query(
         False, description="Include users (passwords not exported - users will need new passwords)"
     ),
+    include_groups: bool = Query(False, description="Include groups and user-group assignments"),
+    include_github_backup: bool = Query(False, description="Include GitHub backup configuration (token not exported)"),
 ):
     """Export selected data as JSON backup."""
     backup: dict = {
@@ -296,6 +312,14 @@ async def export_backup(
                     "on_ams_temperature_high": getattr(p, "on_ams_temperature_high", False),
                     "on_ams_ht_humidity_high": getattr(p, "on_ams_ht_humidity_high", False),
                     "on_ams_ht_temperature_high": getattr(p, "on_ams_ht_temperature_high", False),
+                    "on_plate_not_empty": getattr(p, "on_plate_not_empty", True),
+                    "on_queue_job_added": getattr(p, "on_queue_job_added", False),
+                    "on_queue_job_assigned": getattr(p, "on_queue_job_assigned", False),
+                    "on_queue_job_started": getattr(p, "on_queue_job_started", False),
+                    "on_queue_job_waiting": getattr(p, "on_queue_job_waiting", True),
+                    "on_queue_job_skipped": getattr(p, "on_queue_job_skipped", True),
+                    "on_queue_job_failed": getattr(p, "on_queue_job_failed", True),
+                    "on_queue_completed": getattr(p, "on_queue_completed", False),
                     "quiet_hours_enabled": p.quiet_hours_enabled,
                     "quiet_hours_start": p.quiet_hours_start,
                     "quiet_hours_end": p.quiet_hours_end,
@@ -345,6 +369,21 @@ async def export_backup(
                     "ha_power_entity": plug.ha_power_entity,
                     "ha_energy_today_entity": plug.ha_energy_today_entity,
                     "ha_energy_total_entity": plug.ha_energy_total_entity,
+                    # MQTT plug fields (legacy)
+                    "mqtt_topic": plug.mqtt_topic,
+                    "mqtt_multiplier": plug.mqtt_multiplier,
+                    # MQTT power fields
+                    "mqtt_power_topic": plug.mqtt_power_topic,
+                    "mqtt_power_path": plug.mqtt_power_path,
+                    "mqtt_power_multiplier": plug.mqtt_power_multiplier,
+                    # MQTT energy fields
+                    "mqtt_energy_topic": plug.mqtt_energy_topic,
+                    "mqtt_energy_path": plug.mqtt_energy_path,
+                    "mqtt_energy_multiplier": plug.mqtt_energy_multiplier,
+                    # MQTT state fields
+                    "mqtt_state_topic": plug.mqtt_state_topic,
+                    "mqtt_state_path": plug.mqtt_state_path,
+                    "mqtt_state_on_value": plug.mqtt_state_on_value,
                     "printer_serial": printer_id_to_serial.get(plug.printer_id) if plug.printer_id else None,
                     "enabled": plug.enabled,
                     "auto_on": plug.auto_on,
@@ -361,6 +400,7 @@ async def export_backup(
                     "schedule_on_time": plug.schedule_on_time,
                     "schedule_off_time": plug.schedule_off_time,
                     "show_in_switchbar": plug.show_in_switchbar,
+                    "show_on_printer_card": plug.show_on_printer_card,
                 }
             )
         backup["included"].append("smart_plugs")
@@ -404,6 +444,14 @@ async def export_backup(
                 "auto_archive": printer.auto_archive,
                 "print_hours_offset": printer.print_hours_offset,
                 "runtime_seconds": printer.runtime_seconds,
+                "external_camera_url": printer.external_camera_url,
+                "external_camera_type": printer.external_camera_type,
+                "external_camera_enabled": printer.external_camera_enabled,
+                "plate_detection_enabled": printer.plate_detection_enabled,
+                "plate_detection_roi_x": printer.plate_detection_roi_x,
+                "plate_detection_roi_y": printer.plate_detection_roi_y,
+                "plate_detection_roi_w": printer.plate_detection_roi_w,
+                "plate_detection_roi_h": printer.plate_detection_roi_h,
             }
             if include_access_codes:
                 printer_data["access_code"] = printer.access_code
@@ -411,6 +459,30 @@ async def export_backup(
         backup["included"].append("printers")
         if include_access_codes:
             backup["included"].append("access_codes")
+
+    # Plate calibration references (requires include_printers)
+    if include_printers and include_plate_calibration:
+        plate_cal_dir = app_settings.plate_calibration_dir
+        if plate_cal_dir.exists():
+            backup["plate_calibration"] = {
+                "files": [],
+                "printer_id_to_serial": {},  # Map old printer IDs to serial numbers for restore
+            }
+            for cal_file in plate_cal_dir.iterdir():
+                if cal_file.is_file():
+                    backup["plate_calibration"]["files"].append(cal_file.name)
+                    # Extract printer ID from filename (e.g., "printer_1_ref_0.jpg" -> 1)
+                    if cal_file.name.startswith("printer_"):
+                        parts = cal_file.name.split("_")
+                        if len(parts) >= 2 and parts[1].isdigit():
+                            old_printer_id = int(parts[1])
+                            if old_printer_id not in backup["plate_calibration"]["printer_id_to_serial"]:
+                                # Look up serial number for this printer ID
+                                backup["plate_calibration"]["printer_id_to_serial"][old_printer_id] = (
+                                    printer_id_to_serial.get(old_printer_id)
+                                )
+            if backup["plate_calibration"]["files"]:
+                backup["included"].append("plate_calibration")
 
     # Filaments
     if include_filaments:
@@ -571,6 +643,17 @@ async def export_backup(
                 if icon_path.exists():
                     backup_files.append((link_data["custom_icon_path"], icon_path))
 
+    # Add plate calibration reference images
+    if "plate_calibration" in backup:
+        plate_cal_dir = app_settings.plate_calibration_dir
+        plate_cal_data = backup["plate_calibration"]
+        # Support both old list format and new dict format
+        filenames = plate_cal_data.get("files", []) if isinstance(plate_cal_data, dict) else plate_cal_data
+        for filename in filenames:
+            file_path = plate_cal_dir / filename
+            if file_path.exists():
+                backup_files.append((f"plate_calibration/{filename}", file_path))
+
     # Print archives with file paths for ZIP
     if include_archives:
         result = await db.execute(select(PrintArchive))
@@ -613,6 +696,7 @@ async def export_backup(
                 "completed_at": a.completed_at.isoformat() if a.completed_at else None,
                 "makerworld_url": a.makerworld_url,
                 "designer": a.designer,
+                "external_url": a.external_url,
                 "is_favorite": a.is_favorite,
                 "tags": a.tags,
                 "notes": a.notes,
@@ -794,10 +878,45 @@ async def export_backup(
                     "username": user.username,
                     "role": user.role,
                     "is_active": user.is_active,
+                    "groups": [g.name for g in user.groups],
                     # password_hash intentionally not exported for security
                 }
             )
         backup["included"].append("users")
+
+    # Groups (permission groups)
+    if include_groups:
+        result = await db.execute(select(Group))
+        groups = result.scalars().all()
+        backup["groups"] = []
+        for group in groups:
+            backup["groups"].append(
+                {
+                    "name": group.name,
+                    "description": group.description,
+                    "permissions": group.permissions,
+                    "is_system": group.is_system,
+                }
+            )
+        backup["included"].append("groups")
+
+    # GitHub backup configuration
+    if include_github_backup:
+        result = await db.execute(select(GitHubBackupConfig).limit(1))
+        config = result.scalar_one_or_none()
+        if config:
+            backup["github_backup"] = {
+                "repository_url": config.repository_url,
+                # access_token intentionally not exported for security
+                "branch": config.branch,
+                "schedule_enabled": config.schedule_enabled,
+                "schedule_type": config.schedule_type,
+                "backup_kprofiles": config.backup_kprofiles,
+                "backup_cloud_profiles": config.backup_cloud_profiles,
+                "backup_settings": config.backup_settings,
+                "enabled": config.enabled,
+            }
+            backup["included"].append("github_backup")
 
     # If there are files to include (icons or archives), create ZIP file
     if backup_files:
@@ -844,6 +963,8 @@ async def import_backup(
         content = await file.read()
         base_dir = app_settings.base_dir
         files_restored = 0
+        # Store plate calibration files for later (need printer ID remapping after printers restored)
+        plate_cal_files: dict[str, bytes] = {}
 
         # Check if it's a ZIP file
         if file.filename and file.filename.endswith(".zip"):
@@ -863,6 +984,12 @@ async def import_backup(
                             continue
                         # Ensure path is safe (no path traversal)
                         if ".." in zip_path or zip_path.startswith("/"):
+                            continue
+                        # Plate calibration files - store for later processing after printers are restored
+                        if zip_path.startswith("plate_calibration/"):
+                            filename = zip_path.replace("plate_calibration/", "", 1)
+                            if filename:  # Skip directory entries
+                                plate_cal_files[filename] = zf.read(zip_path)
                             continue
                         target_path = base_dir / zip_path
                         target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -890,6 +1017,8 @@ async def import_backup(
         "projects": 0,
         "pending_uploads": 0,
         "users": 0,
+        "groups": 0,
+        "github_backup": 0,
     }
     skipped = {
         "settings": 0,
@@ -904,6 +1033,8 @@ async def import_backup(
         "projects": 0,
         "pending_uploads": 0,
         "users": 0,
+        "groups": 0,
+        "github_backup": 0,
     }
     skipped_details = {
         "notification_providers": [],
@@ -916,6 +1047,7 @@ async def import_backup(
         "projects": [],
         "pending_uploads": [],
         "users": [],
+        "groups": [],
     }
 
     # Restore settings (always overwrites)
@@ -959,6 +1091,18 @@ async def import_backup(
                             is_active_val = is_active_val.lower() == "true"
                         existing.is_active = is_active_val
 
+                    # Restore external camera settings
+                    existing.external_camera_url = printer_data.get("external_camera_url")
+                    existing.external_camera_type = printer_data.get("external_camera_type")
+                    existing.external_camera_enabled = printer_data.get("external_camera_enabled", False)
+
+                    # Restore plate detection settings
+                    existing.plate_detection_enabled = printer_data.get("plate_detection_enabled", False)
+                    existing.plate_detection_roi_x = printer_data.get("plate_detection_roi_x")
+                    existing.plate_detection_roi_y = printer_data.get("plate_detection_roi_y")
+                    existing.plate_detection_roi_w = printer_data.get("plate_detection_roi_w")
+                    existing.plate_detection_roi_h = printer_data.get("plate_detection_roi_h")
+
                     restored["printers"] += 1
                 else:
                     skipped["printers"] += 1
@@ -984,11 +1128,61 @@ async def import_backup(
                     auto_archive=printer_data.get("auto_archive", True),
                     print_hours_offset=printer_data.get("print_hours_offset", 0.0),
                     runtime_seconds=printer_data.get("runtime_seconds", 0),
+                    external_camera_url=printer_data.get("external_camera_url"),
+                    external_camera_type=printer_data.get("external_camera_type"),
+                    external_camera_enabled=printer_data.get("external_camera_enabled", False),
+                    plate_detection_enabled=printer_data.get("plate_detection_enabled", False),
+                    plate_detection_roi_x=printer_data.get("plate_detection_roi_x"),
+                    plate_detection_roi_y=printer_data.get("plate_detection_roi_y"),
+                    plate_detection_roi_w=printer_data.get("plate_detection_roi_w"),
+                    plate_detection_roi_h=printer_data.get("plate_detection_roi_h"),
                 )
                 db.add(printer)
                 restored["printers"] += 1
         # Flush printers so other sections can look them up
         await db.flush()
+
+    # Restore plate calibration files (remap printer IDs based on serial numbers)
+    if plate_cal_files:
+        # Build serial_number -> new_printer_id mapping
+        serial_to_new_id: dict[str, int] = {}
+        pr_result = await db.execute(select(Printer))
+        for pr in pr_result.scalars().all():
+            serial_to_new_id[pr.serial_number] = pr.id
+
+        # Get old_id -> serial mapping from backup (supports both old list format and new dict format)
+        plate_cal_data = backup.get("plate_calibration", {})
+        if isinstance(plate_cal_data, dict):
+            old_id_to_serial: dict[int, str | None] = {
+                int(k): v for k, v in plate_cal_data.get("printer_id_to_serial", {}).items()
+            }
+        else:
+            old_id_to_serial = {}
+
+        # Build old_id -> new_id mapping
+        old_id_to_new_id: dict[int, int] = {}
+        for old_id, serial in old_id_to_serial.items():
+            if serial and serial in serial_to_new_id:
+                old_id_to_new_id[old_id] = serial_to_new_id[serial]
+
+        app_settings.plate_calibration_dir.mkdir(parents=True, exist_ok=True)
+
+        for filename, file_data in plate_cal_files.items():
+            # Parse old printer ID from filename (e.g., "printer_3_ref_0.jpg" -> 3)
+            new_filename = filename
+            if filename.startswith("printer_"):
+                parts = filename.split("_")
+                if len(parts) >= 2 and parts[1].isdigit():
+                    old_printer_id = int(parts[1])
+                    if old_printer_id in old_id_to_new_id:
+                        new_printer_id = old_id_to_new_id[old_printer_id]
+                        # Replace old ID with new ID in filename
+                        new_filename = filename.replace(f"printer_{old_printer_id}_", f"printer_{new_printer_id}_", 1)
+
+            target_path = app_settings.plate_calibration_dir / new_filename
+            with open(target_path, "wb") as f:
+                f.write(file_data)
+            files_restored += 1
 
     # Restore notification providers (skip or overwrite duplicates by name)
     # Build printer serial to ID lookup (printers were restored first)
@@ -1026,6 +1220,14 @@ async def import_backup(
                     existing.on_ams_temperature_high = provider_data.get("on_ams_temperature_high", False)
                     existing.on_ams_ht_humidity_high = provider_data.get("on_ams_ht_humidity_high", False)
                     existing.on_ams_ht_temperature_high = provider_data.get("on_ams_ht_temperature_high", False)
+                    existing.on_plate_not_empty = provider_data.get("on_plate_not_empty", True)
+                    existing.on_queue_job_added = provider_data.get("on_queue_job_added", False)
+                    existing.on_queue_job_assigned = provider_data.get("on_queue_job_assigned", False)
+                    existing.on_queue_job_started = provider_data.get("on_queue_job_started", False)
+                    existing.on_queue_job_waiting = provider_data.get("on_queue_job_waiting", True)
+                    existing.on_queue_job_skipped = provider_data.get("on_queue_job_skipped", True)
+                    existing.on_queue_job_failed = provider_data.get("on_queue_job_failed", True)
+                    existing.on_queue_completed = provider_data.get("on_queue_completed", False)
                     existing.quiet_hours_enabled = provider_data.get("quiet_hours_enabled", False)
                     existing.quiet_hours_start = provider_data.get("quiet_hours_start")
                     existing.quiet_hours_end = provider_data.get("quiet_hours_end")
@@ -1055,6 +1257,14 @@ async def import_backup(
                     on_ams_temperature_high=provider_data.get("on_ams_temperature_high", False),
                     on_ams_ht_humidity_high=provider_data.get("on_ams_ht_humidity_high", False),
                     on_ams_ht_temperature_high=provider_data.get("on_ams_ht_temperature_high", False),
+                    on_plate_not_empty=provider_data.get("on_plate_not_empty", True),
+                    on_queue_job_added=provider_data.get("on_queue_job_added", False),
+                    on_queue_job_assigned=provider_data.get("on_queue_job_assigned", False),
+                    on_queue_job_started=provider_data.get("on_queue_job_started", False),
+                    on_queue_job_waiting=provider_data.get("on_queue_job_waiting", True),
+                    on_queue_job_skipped=provider_data.get("on_queue_job_skipped", True),
+                    on_queue_job_failed=provider_data.get("on_queue_job_failed", True),
+                    on_queue_completed=provider_data.get("on_queue_completed", False),
                     quiet_hours_enabled=provider_data.get("quiet_hours_enabled", False),
                     quiet_hours_start=provider_data.get("quiet_hours_start"),
                     quiet_hours_end=provider_data.get("quiet_hours_end"),
@@ -1106,12 +1316,23 @@ async def import_backup(
             # Determine plug type (default to tasmota for backwards compatibility)
             plug_type = plug_data.get("plug_type", "tasmota")
 
-            # Find existing plug by IP (Tasmota) or entity_id (Home Assistant)
+            # Find existing plug by IP (Tasmota), entity_id (Home Assistant), or mqtt_topic (MQTT)
             existing = None
+            plug_identifier = None
             if plug_type == "homeassistant" and plug_data.get("ha_entity_id"):
                 result = await db.execute(select(SmartPlug).where(SmartPlug.ha_entity_id == plug_data["ha_entity_id"]))
                 existing = result.scalar_one_or_none()
                 plug_identifier = plug_data["ha_entity_id"]
+            elif plug_type == "mqtt" and (plug_data.get("mqtt_power_topic") or plug_data.get("mqtt_topic")):
+                # Check by mqtt_power_topic first (new format), fall back to mqtt_topic (legacy)
+                power_topic = plug_data.get("mqtt_power_topic") or plug_data.get("mqtt_topic")
+                result = await db.execute(
+                    select(SmartPlug).where(
+                        (SmartPlug.mqtt_power_topic == power_topic) | (SmartPlug.mqtt_topic == power_topic)
+                    )
+                )
+                existing = result.scalar_one_or_none()
+                plug_identifier = power_topic
             elif plug_data.get("ip_address"):
                 result = await db.execute(select(SmartPlug).where(SmartPlug.ip_address == plug_data["ip_address"]))
                 existing = result.scalar_one_or_none()
@@ -1128,6 +1349,21 @@ async def import_backup(
                     existing.ha_power_entity = plug_data.get("ha_power_entity")
                     existing.ha_energy_today_entity = plug_data.get("ha_energy_today_entity")
                     existing.ha_energy_total_entity = plug_data.get("ha_energy_total_entity")
+                    # MQTT fields (legacy)
+                    existing.mqtt_topic = plug_data.get("mqtt_topic")
+                    existing.mqtt_multiplier = plug_data.get("mqtt_multiplier", 1.0)
+                    # MQTT power fields
+                    existing.mqtt_power_topic = plug_data.get("mqtt_power_topic")
+                    existing.mqtt_power_path = plug_data.get("mqtt_power_path")
+                    existing.mqtt_power_multiplier = plug_data.get("mqtt_power_multiplier", 1.0)
+                    # MQTT energy fields
+                    existing.mqtt_energy_topic = plug_data.get("mqtt_energy_topic")
+                    existing.mqtt_energy_path = plug_data.get("mqtt_energy_path")
+                    existing.mqtt_energy_multiplier = plug_data.get("mqtt_energy_multiplier", 1.0)
+                    # MQTT state fields
+                    existing.mqtt_state_topic = plug_data.get("mqtt_state_topic")
+                    existing.mqtt_state_path = plug_data.get("mqtt_state_path")
+                    existing.mqtt_state_on_value = plug_data.get("mqtt_state_on_value")
                     existing.printer_id = printer_id
                     existing.enabled = plug_data.get("enabled", True)
                     existing.auto_on = plug_data.get("auto_on", True)
@@ -1144,6 +1380,7 @@ async def import_backup(
                     existing.schedule_on_time = plug_data.get("schedule_on_time")
                     existing.schedule_off_time = plug_data.get("schedule_off_time")
                     existing.show_in_switchbar = plug_data.get("show_in_switchbar", False)
+                    existing.show_on_printer_card = plug_data.get("show_on_printer_card", True)
                     restored["smart_plugs"] += 1
                 else:
                     skipped["smart_plugs"] += 1
@@ -1157,6 +1394,21 @@ async def import_backup(
                     ha_power_entity=plug_data.get("ha_power_entity"),
                     ha_energy_today_entity=plug_data.get("ha_energy_today_entity"),
                     ha_energy_total_entity=plug_data.get("ha_energy_total_entity"),
+                    # MQTT fields (legacy)
+                    mqtt_topic=plug_data.get("mqtt_topic"),
+                    mqtt_multiplier=plug_data.get("mqtt_multiplier", 1.0),
+                    # MQTT power fields
+                    mqtt_power_topic=plug_data.get("mqtt_power_topic"),
+                    mqtt_power_path=plug_data.get("mqtt_power_path"),
+                    mqtt_power_multiplier=plug_data.get("mqtt_power_multiplier", 1.0),
+                    # MQTT energy fields
+                    mqtt_energy_topic=plug_data.get("mqtt_energy_topic"),
+                    mqtt_energy_path=plug_data.get("mqtt_energy_path"),
+                    mqtt_energy_multiplier=plug_data.get("mqtt_energy_multiplier", 1.0),
+                    # MQTT state fields
+                    mqtt_state_topic=plug_data.get("mqtt_state_topic"),
+                    mqtt_state_path=plug_data.get("mqtt_state_path"),
+                    mqtt_state_on_value=plug_data.get("mqtt_state_on_value"),
                     printer_id=printer_id,
                     enabled=plug_data.get("enabled", True),
                     auto_on=plug_data.get("auto_on", True),
@@ -1173,6 +1425,7 @@ async def import_backup(
                     schedule_on_time=plug_data.get("schedule_on_time"),
                     schedule_off_time=plug_data.get("schedule_off_time"),
                     show_in_switchbar=plug_data.get("show_in_switchbar", False),
+                    show_on_printer_card=plug_data.get("show_on_printer_card", True),
                 )
                 db.add(plug)
                 restored["smart_plugs"] += 1
@@ -1458,6 +1711,7 @@ async def import_backup(
                     status=archive_data.get("status", "completed"),
                     makerworld_url=archive_data.get("makerworld_url"),
                     designer=archive_data.get("designer"),
+                    external_url=archive_data.get("external_url"),
                     is_favorite=archive_data.get("is_favorite", False),
                     tags=archive_data.get("tags"),
                     notes=archive_data.get("notes"),
@@ -1804,6 +2058,39 @@ async def import_backup(
                     }
                 )
 
+    # Restore groups (before users, so groups exist for assignment)
+    if "groups" in backup:
+        for group_data in backup["groups"]:
+            result = await db.execute(select(Group).where(Group.name == group_data["name"]))
+            existing = result.scalar_one_or_none()
+            if existing:
+                if overwrite and not existing.is_system:
+                    # Update non-system groups
+                    existing.description = group_data.get("description")
+                    existing.permissions = group_data.get("permissions", [])
+                    restored["groups"] += 1
+                else:
+                    skipped["groups"] += 1
+                    skipped_details["groups"].append(group_data["name"])
+            else:
+                group = Group(
+                    name=group_data["name"],
+                    description=group_data.get("description"),
+                    permissions=group_data.get("permissions", []),
+                    is_system=group_data.get("is_system", False),
+                )
+                db.add(group)
+                restored["groups"] += 1
+
+    # Flush to ensure groups are persisted before user assignment
+    await db.flush()
+
+    # Build group name to object lookup for user assignment
+    group_name_to_obj: dict[str, Group] = {}
+    result = await db.execute(select(Group))
+    for g in result.scalars().all():
+        group_name_to_obj[g.name] = g
+
     # Restore users (note: passwords not included in backup - users will need new passwords)
     # Users are skipped by default since they have no passwords; admin must recreate them
     new_users: list[str] = []
@@ -1817,6 +2104,10 @@ async def import_backup(
                 if overwrite:
                     existing.role = user_data.get("role", "user")
                     existing.is_active = user_data.get("is_active", True)
+                    # Assign groups if provided
+                    group_names = user_data.get("groups", [])
+                    if group_names:
+                        existing.groups = [group_name_to_obj[name] for name in group_names if name in group_name_to_obj]
                     # Don't change password - keep existing
                     restored["users"] += 1
                 else:
@@ -1834,9 +2125,49 @@ async def import_backup(
                     role=user_data.get("role", "user"),
                     is_active=user_data.get("is_active", True),
                 )
+                # Assign groups if provided
+                group_names = user_data.get("groups", [])
+                if group_names:
+                    user.groups = [group_name_to_obj[name] for name in group_names if name in group_name_to_obj]
                 db.add(user)
                 restored["users"] += 1
                 new_users.append(f"{user_data['username']} (temp password: {temp_password})")
+
+    # Restore GitHub backup configuration (note: access_token not included for security)
+    if "github_backup" in backup:
+        github_data = backup["github_backup"]
+        result = await db.execute(select(GitHubBackupConfig).limit(1))
+        existing = result.scalar_one_or_none()
+        if existing:
+            if overwrite:
+                existing.repository_url = github_data.get("repository_url", existing.repository_url)
+                existing.branch = github_data.get("branch", existing.branch)
+                existing.schedule_enabled = github_data.get("schedule_enabled", existing.schedule_enabled)
+                existing.schedule_type = github_data.get("schedule_type", existing.schedule_type)
+                existing.backup_kprofiles = github_data.get("backup_kprofiles", existing.backup_kprofiles)
+                existing.backup_cloud_profiles = github_data.get(
+                    "backup_cloud_profiles", existing.backup_cloud_profiles
+                )
+                existing.backup_settings = github_data.get("backup_settings", existing.backup_settings)
+                existing.enabled = github_data.get("enabled", existing.enabled)
+                # Note: access_token must be re-entered after restore
+                restored["github_backup"] += 1
+            else:
+                skipped["github_backup"] += 1
+        else:
+            config = GitHubBackupConfig(
+                repository_url=github_data.get("repository_url", ""),
+                access_token="",  # Must be entered after restore
+                branch=github_data.get("branch", "main"),
+                schedule_enabled=github_data.get("schedule_enabled", False),
+                schedule_type=github_data.get("schedule_type", "daily"),
+                backup_kprofiles=github_data.get("backup_kprofiles", True),
+                backup_cloud_profiles=github_data.get("backup_cloud_profiles", True),
+                backup_settings=github_data.get("backup_settings", False),
+                enabled=False,  # Disabled until token is entered
+            )
+            db.add(config)
+            restored["github_backup"] += 1
 
     await db.commit()
 

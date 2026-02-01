@@ -252,15 +252,18 @@ class NotificationService:
 
         url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
 
-        # Check if message contains URLs (which have underscores that break Markdown)
-        # If so, don't use parse_mode to avoid parsing errors
+        # Check if message contains characters that break Markdown parsing
+        # URLs and error codes with underscores cause issues
         has_url = "http://" in message or "https://" in message
+        # Check for underscores outside of the bold title (odd number of _ breaks markdown)
+        body_part = message.split("\n", 1)[1] if "\n" in message else ""
+        has_problematic_underscore = "_" in body_part
 
         data = {
             "chat_id": chat_id,
             "text": message,
         }
-        if not has_url:
+        if not has_url and not has_problematic_underscore:
             data["parse_mode"] = "Markdown"
 
         client = await self._get_client()
@@ -750,6 +753,28 @@ class NotificationService:
         title, message = await self._build_message_from_template(db, "printer_error", variables)
         await self._send_to_providers(providers, title, message, db, "printer_error", printer_id, printer_name)
 
+    async def on_plate_not_empty(
+        self,
+        printer_id: int,
+        printer_name: str,
+        db: AsyncSession,
+        difference_percent: float | None = None,
+    ):
+        """Handle plate not empty event - objects detected on build plate before print."""
+        providers = await self._get_providers_for_event(db, "on_plate_not_empty", printer_id)
+        if not providers:
+            return
+
+        variables = {
+            "printer": printer_name,
+            "difference_percent": f"{difference_percent:.1f}" if difference_percent else "N/A",
+        }
+
+        title, message = await self._build_message_from_template(db, "plate_not_empty", variables)
+        await self._send_to_providers(
+            providers, title, message, db, "plate_not_empty", printer_id, printer_name, force_immediate=True
+        )
+
     async def on_filament_low(
         self,
         printer_id: int,
@@ -919,6 +944,156 @@ class NotificationService:
     def clear_template_cache(self):
         """Clear the template cache. Call this when templates are updated."""
         self._template_cache.clear()
+
+    # ==================== Queue Notifications ====================
+
+    async def on_queue_job_added(
+        self,
+        job_name: str,
+        target: str,
+        db: AsyncSession,
+        printer_id: int | None = None,
+        printer_name: str | None = None,
+    ):
+        """Handle queue job added event."""
+        providers = await self._get_providers_for_event(db, "on_queue_job_added", printer_id)
+        if not providers:
+            return
+
+        variables = {
+            "job_name": job_name,
+            "target": target,  # e.g., "Printer1" or "Any X1C"
+            "printer": printer_name or target,
+        }
+
+        title, message = await self._build_message_from_template(db, "queue_job_added", variables)
+        await self._send_to_providers(providers, title, message, db, "queue_job_added", printer_id, printer_name)
+
+    async def on_queue_job_assigned(
+        self,
+        job_name: str,
+        printer_id: int,
+        printer_name: str,
+        target_model: str,
+        db: AsyncSession,
+    ):
+        """Handle model-based job assigned to printer event."""
+        providers = await self._get_providers_for_event(db, "on_queue_job_assigned", printer_id)
+        if not providers:
+            return
+
+        variables = {
+            "job_name": job_name,
+            "printer": printer_name,
+            "target_model": target_model,
+        }
+
+        title, message = await self._build_message_from_template(db, "queue_job_assigned", variables)
+        await self._send_to_providers(providers, title, message, db, "queue_job_assigned", printer_id, printer_name)
+
+    async def on_queue_job_started(
+        self,
+        job_name: str,
+        printer_id: int,
+        printer_name: str,
+        db: AsyncSession,
+        estimated_time: int | None = None,
+    ):
+        """Handle queue job started printing event."""
+        providers = await self._get_providers_for_event(db, "on_queue_job_started", printer_id)
+        if not providers:
+            return
+
+        variables = {
+            "job_name": job_name,
+            "printer": printer_name,
+            "estimated_time": self._format_duration(estimated_time),
+        }
+
+        title, message = await self._build_message_from_template(db, "queue_job_started", variables)
+        await self._send_to_providers(providers, title, message, db, "queue_job_started", printer_id, printer_name)
+
+    async def on_queue_job_waiting(
+        self,
+        job_name: str,
+        target_model: str,
+        waiting_reason: str,
+        db: AsyncSession,
+    ):
+        """Handle job waiting for filament event."""
+        providers = await self._get_providers_for_event(db, "on_queue_job_waiting", None)
+        if not providers:
+            return
+
+        variables = {
+            "job_name": job_name,
+            "target_model": target_model,
+            "waiting_reason": waiting_reason,
+        }
+
+        title, message = await self._build_message_from_template(db, "queue_job_waiting", variables)
+        await self._send_to_providers(providers, title, message, db, "queue_job_waiting")
+
+    async def on_queue_job_skipped(
+        self,
+        job_name: str,
+        printer_id: int,
+        printer_name: str,
+        reason: str,
+        db: AsyncSession,
+    ):
+        """Handle job skipped event (e.g., previous print failed)."""
+        providers = await self._get_providers_for_event(db, "on_queue_job_skipped", printer_id)
+        if not providers:
+            return
+
+        variables = {
+            "job_name": job_name,
+            "printer": printer_name,
+            "reason": reason,
+        }
+
+        title, message = await self._build_message_from_template(db, "queue_job_skipped", variables)
+        await self._send_to_providers(providers, title, message, db, "queue_job_skipped", printer_id, printer_name)
+
+    async def on_queue_job_failed(
+        self,
+        job_name: str,
+        printer_id: int | None,
+        printer_name: str | None,
+        reason: str,
+        db: AsyncSession,
+    ):
+        """Handle job failed to start event (upload error, etc.)."""
+        providers = await self._get_providers_for_event(db, "on_queue_job_failed", printer_id)
+        if not providers:
+            return
+
+        variables = {
+            "job_name": job_name,
+            "printer": printer_name or "Unknown",
+            "reason": reason,
+        }
+
+        title, message = await self._build_message_from_template(db, "queue_job_failed", variables)
+        await self._send_to_providers(providers, title, message, db, "queue_job_failed", printer_id, printer_name)
+
+    async def on_queue_completed(
+        self,
+        completed_count: int,
+        db: AsyncSession,
+    ):
+        """Handle all queue jobs completed event."""
+        providers = await self._get_providers_for_event(db, "on_queue_completed", None)
+        if not providers:
+            return
+
+        variables = {
+            "completed_count": str(completed_count),
+        }
+
+        title, message = await self._build_message_from_template(db, "queue_completed", variables)
+        await self._send_to_providers(providers, title, message, db, "queue_completed")
 
     async def _queue_for_digest(
         self,

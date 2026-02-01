@@ -10,6 +10,11 @@
   --color-bambu-green-light: var(--accent-light);
   --color-bambu-green-dark: var(--accent-dark);
 
+  /* Semantic status colors - fixed, don't change with accent */
+  --color-status-ok: var(--status-ok);
+  --color-status-error: var(--status-error);
+  --color-status-warning: var(--status-warning);
+
   /* Theme-aware colors via CSS variables */
   --color-bambu-dark: var(--bg-primary);
   --color-bambu-dark-secondary: var(--bg-secondary);
@@ -28,6 +33,11 @@
   --accent: #00ae42;
   --accent-light: #00c64d;
   --accent-dark: #009438;
+
+  /* Semantic status colors - these never change with accent theme */
+  --status-ok: #22c55e;      /* green-500 - always green for success/online/ok */
+  --status-error: #ef4444;   /* red-500 - always red for error/offline/failed */
+  --status-warning: #f59e0b; /* amber-500 - always amber for warnings */
 
   /* Default light mode background (neutral) */
   --bg-primary: #f5f5f5;

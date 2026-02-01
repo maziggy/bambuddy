@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { X, Printer, Loader2, Calendar, Pencil, AlertCircle } from 'lucide-react';
+import { X, Printer, Loader2, Calendar, Pencil, AlertCircle, AlertTriangle } from 'lucide-react';
 import { api } from '../../api/client';
 import type { PrintQueueItemCreate, PrintQueueItemUpdate } from '../../api/client';
 import { Card, CardContent } from '../Card';
@@ -20,6 +20,7 @@ import type {
   PrintOptions,
   ScheduleOptions,
   ScheduleType,
+  AssignmentMode,
 } from './types';
 import { DEFAULT_PRINT_OPTIONS, DEFAULT_SCHEDULE_OPTIONS } from './types';
 
@@ -119,6 +120,23 @@ export function PrintModal({
   // Per-printer override configs (for multi-printer selection)
   const [perPrinterConfigs, setPerPrinterConfigs] = useState<Record<number, PerPrinterConfig>>({});
 
+  // Assignment mode: 'printer' (specific) or 'model' (any of model)
+  const [assignmentMode, setAssignmentMode] = useState<AssignmentMode>(() => {
+    // Initialize from queue item if editing with target_model
+    if (mode === 'edit-queue-item' && queueItem?.target_model) {
+      return 'model';
+    }
+    return 'printer';
+  });
+
+  // Target model for model-based assignment
+  const [targetModel, setTargetModel] = useState<string | null>(() => {
+    if (mode === 'edit-queue-item' && queueItem?.target_model) {
+      return queueItem.target_model;
+    }
+    return null;
+  });
+
   // Track initial values for clearing mappings on change (edit mode only)
   const [initialPrinterIds] = useState(() => (mode === 'edit-queue-item' && queueItem?.printer_id ? [queueItem.printer_id] : []));
   const [initialPlateId] = useState(() => (mode === 'edit-queue-item' && queueItem ? queueItem.plate_id : null));
@@ -146,6 +164,16 @@ export function PrintModal({
     queryKey: ['printers'],
     queryFn: api.getPrinters,
   });
+
+  // Fetch archive details to get sliced_for_model
+  const { data: archiveDetails } = useQuery({
+    queryKey: ['archive', archiveId],
+    queryFn: () => api.getArchive(archiveId!),
+    enabled: !!archiveId && !isLibraryFile,
+  });
+
+  // Get sliced_for_model from archive or library file
+  const slicedForModel = archiveDetails?.sliced_for_model || null;
 
   // Fetch plates for archives
   const { data: archivePlatesData, isError: archivePlatesError } = useQuery({
@@ -306,14 +334,20 @@ export function PrintModal({
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
 
-    // Validate printer selection
-    if (selectedPrinters.length === 0) {
+    // Validate printer/model selection
+    if (assignmentMode === 'printer' && selectedPrinters.length === 0) {
       showToast('Please select at least one printer', 'error');
+      return;
+    }
+    if (assignmentMode === 'model' && !targetModel) {
+      showToast('Please select a target printer model', 'error');
       return;
     }
 
     setIsSubmitting(true);
-    setSubmitProgress({ current: 0, total: selectedPrinters.length });
+    // For model-based assignment, we just make one API call
+    const totalCount = assignmentMode === 'model' ? 1 : selectedPrinters.length;
+    setSubmitProgress({ current: 0, total: totalCount });
 
     const results: { success: number; failed: number; errors: string[] } = {
       success: 0,
@@ -334,15 +368,16 @@ export function PrintModal({
     };
 
     // Common queue data for add-to-queue and edit modes
-    const getQueueData = (printerId: number): PrintQueueItemCreate => ({
-      printer_id: printerId,
+    const getQueueData = (printerId: number | null): PrintQueueItemCreate => ({
+      printer_id: assignmentMode === 'printer' ? printerId : null,
+      target_model: assignmentMode === 'model' ? targetModel : null,
       // Use library_file_id for library files, archive_id for archives
       archive_id: isLibraryFile ? undefined : archiveId,
       library_file_id: isLibraryFile ? libraryFileId : undefined,
       require_previous_success: scheduleOptions.requirePreviousSuccess,
       auto_off_after: scheduleOptions.autoOffAfter,
       manual_start: scheduleOptions.scheduleType === 'manual',
-      ams_mapping: getMappingForPrinter(printerId),
+      ams_mapping: printerId ? getMappingForPrinter(printerId) : undefined,
       plate_id: selectedPlate,
       scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
         ? new Date(scheduleOptions.scheduledTime).toISOString()
@@ -350,35 +385,24 @@ export function PrintModal({
       ...printOptions,
     });
 
-    for (let i = 0; i < selectedPrinters.length; i++) {
-      const printerId = selectedPrinters[i];
-      setSubmitProgress({ current: i + 1, total: selectedPrinters.length });
-
+    // Model-based assignment: single API call
+    if (assignmentMode === 'model') {
+      setSubmitProgress({ current: 1, total: 1 });
       try {
         if (mode === 'reprint') {
-          // Reprint mode - start print immediately
-          const printerMapping = getMappingForPrinter(printerId);
-          if (isLibraryFile) {
-            await api.printLibraryFile(libraryFileId!, printerId, {
-              ams_mapping: printerMapping,
-              ...printOptions,
-            });
-          } else {
-            await api.reprintArchive(archiveId!, printerId, {
-              plate_id: selectedPlate ?? undefined,
-              ams_mapping: printerMapping,
-              ...printOptions,
-            });
-          }
-        } else if (mode === 'edit-queue-item' && i === 0) {
-          // Edit mode - update the original queue item for the first printer
-          const printerMapping = getMappingForPrinter(printerId);
+          // Model-based reprint not supported (need specific printer for immediate print)
+          showToast('Model-based assignment only works with queue mode', 'error');
+          setIsSubmitting(false);
+          return;
+        } else if (mode === 'edit-queue-item') {
+          // Edit mode - update with target_model
           const updateData: PrintQueueItemUpdate = {
-            printer_id: printerId,
+            printer_id: null,
+            target_model: targetModel,
             require_previous_success: scheduleOptions.requirePreviousSuccess,
             auto_off_after: scheduleOptions.autoOffAfter,
             manual_start: scheduleOptions.scheduleType === 'manual',
-            ams_mapping: printerMapping,
+            ams_mapping: undefined,
             plate_id: selectedPlate,
             scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
               ? new Date(scheduleOptions.scheduledTime).toISOString()
@@ -387,14 +411,63 @@ export function PrintModal({
           };
           await updateQueueMutation.mutateAsync(updateData);
         } else {
-          // Add-to-queue mode OR edit mode with additional printers
-          await addToQueueMutation.mutateAsync(getQueueData(printerId));
+          // Add-to-queue mode with model-based assignment
+          await addToQueueMutation.mutateAsync(getQueueData(null));
         }
         results.success++;
       } catch (error) {
         results.failed++;
-        const printerName = printers?.find(p => p.id === printerId)?.name || `Printer ${printerId}`;
-        results.errors.push(`${printerName}: ${(error as Error).message}`);
+        results.errors.push((error as Error).message);
+      }
+    } else {
+      // Printer-based assignment: loop through selected printers
+      for (let i = 0; i < selectedPrinters.length; i++) {
+        const printerId = selectedPrinters[i];
+        setSubmitProgress({ current: i + 1, total: selectedPrinters.length });
+
+        try {
+          if (mode === 'reprint') {
+            // Reprint mode - start print immediately
+            const printerMapping = getMappingForPrinter(printerId);
+            if (isLibraryFile) {
+              await api.printLibraryFile(libraryFileId!, printerId, {
+                ams_mapping: printerMapping,
+                ...printOptions,
+              });
+            } else {
+              await api.reprintArchive(archiveId!, printerId, {
+                plate_id: selectedPlate ?? undefined,
+                ams_mapping: printerMapping,
+                ...printOptions,
+              });
+            }
+          } else if (mode === 'edit-queue-item' && i === 0) {
+            // Edit mode - update the original queue item for the first printer
+            const printerMapping = getMappingForPrinter(printerId);
+            const updateData: PrintQueueItemUpdate = {
+              printer_id: printerId,
+              target_model: null,
+              require_previous_success: scheduleOptions.requirePreviousSuccess,
+              auto_off_after: scheduleOptions.autoOffAfter,
+              manual_start: scheduleOptions.scheduleType === 'manual',
+              ams_mapping: printerMapping,
+              plate_id: selectedPlate,
+              scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
+                ? new Date(scheduleOptions.scheduledTime).toISOString()
+                : null,
+              ...printOptions,
+            };
+            await updateQueueMutation.mutateAsync(updateData);
+          } else {
+            // Add-to-queue mode OR edit mode with additional printers
+            await addToQueueMutation.mutateAsync(getQueueData(printerId));
+          }
+          results.success++;
+        } catch (error) {
+          results.failed++;
+          const printerName = printers?.find(p => p.id === printerId)?.name || `Printer ${printerId}`;
+          results.errors.push(`${printerName}: ${(error as Error).message}`);
+        }
       }
     }
 
@@ -402,11 +475,15 @@ export function PrintModal({
 
     // Show result toast
     if (results.failed === 0) {
-      const action = mode === 'reprint' ? 'sent to' : (mode === 'edit-queue-item' ? 'updated/queued for' : 'queued for');
-      if (results.success === 1) {
-        showToast(mode === 'edit-queue-item' ? 'Queue item updated' : `Print ${action} printer`);
+      if (assignmentMode === 'model') {
+        showToast(mode === 'edit-queue-item' ? 'Queue item updated' : `Queued for any ${targetModel}`);
       } else {
-        showToast(`Print ${action} ${results.success} printers`);
+        const action = mode === 'reprint' ? 'sent to' : (mode === 'edit-queue-item' ? 'updated/queued for' : 'queued for');
+        if (results.success === 1) {
+          showToast(mode === 'edit-queue-item' ? 'Queue item updated' : `Print ${action} printer`);
+        } else {
+          showToast(`Print ${action} ${results.success} printers`);
+        }
       }
       queryClient.invalidateQueries({ queryKey: ['queue'] });
       onSuccess?.();
@@ -424,14 +501,18 @@ export function PrintModal({
   const canSubmit = useMemo(() => {
     if (isPending) return false;
 
-    // Need at least one selected printer
-    if (selectedPrinters.length === 0) return false;
+    // Need valid printer/model selection
+    if (assignmentMode === 'printer' && selectedPrinters.length === 0) return false;
+    if (assignmentMode === 'model' && !targetModel) return false;
+
+    // Model-based assignment only works in queue modes (not immediate reprint)
+    if (assignmentMode === 'model' && mode === 'reprint') return false;
 
     // For multi-plate archive files, need a selected plate (library files skip this)
     if (!isLibraryFile && isMultiPlate && !selectedPlate) return false;
 
     return true;
-  }, [selectedPrinters.length, isMultiPlate, selectedPlate, isPending, isLibraryFile]);
+  }, [selectedPrinters.length, assignmentMode, targetModel, mode, isMultiPlate, selectedPlate, isPending, isLibraryFile]);
 
   // Modal title and action button text based on mode
   const getModalConfig = () => {
@@ -543,7 +624,28 @@ export function PrintModal({
               filamentReqs={effectiveFilamentReqs}
               onAutoConfigurePrinter={multiPrinterMapping.autoConfigurePrinter}
               onUpdatePrinterConfig={multiPrinterMapping.updatePrinterConfig}
+              assignmentMode={mode === 'reprint' ? 'printer' : assignmentMode}
+              onAssignmentModeChange={mode !== 'reprint' ? setAssignmentMode : undefined}
+              targetModel={targetModel}
+              onTargetModelChange={mode !== 'reprint' ? setTargetModel : undefined}
+              slicedForModel={slicedForModel}
             />
+
+            {/* Compatibility warning when sliced model doesn't match selected printer */}
+            {slicedForModel && assignmentMode === 'printer' && selectedPrinters.length === 1 && (() => {
+              const selectedPrinter = printers?.find(p => p.id === selectedPrinters[0]);
+              if (selectedPrinter && selectedPrinter.model && slicedForModel !== selectedPrinter.model) {
+                return (
+                  <div className="p-3 mb-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0" />
+                    <span className="text-sm text-yellow-400">
+                      File was sliced for {slicedForModel}, but printing on {selectedPrinter.model}
+                    </span>
+                  </div>
+                );
+              }
+              return null;
+            })()}
 
             {/* Warning when archive data couldn't be loaded */}
             {archiveDataMissing && (
@@ -567,7 +669,7 @@ export function PrintModal({
             )}
 
             {/* Print options */}
-            {(mode === 'reprint' || effectivePrinterCount > 0) && (
+            {(mode === 'reprint' || effectivePrinterCount > 0 || (assignmentMode === 'model' && targetModel)) && (
               <PrintOptionsPanel options={printOptions} onChange={setPrintOptions} />
             )}
 

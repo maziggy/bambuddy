@@ -46,12 +46,14 @@ body:
       options:
         - X1 Carbon
         - X1
+        - X1E
         - P1S
         - P1P
         - P2S
         - A1
         - A1 Mini
         - H2D
+        - H2D Pro
         - H2C
         - H2S
         - Multiple printers

@@ -24,6 +24,17 @@ class Printer(Base):
     last_runtime_update: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True
     )  # Last time runtime was updated
+    # External camera configuration
+    external_camera_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    external_camera_type: Mapped[str | None] = mapped_column(String(20), nullable=True)  # mjpeg, rtsp, snapshot
+    external_camera_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Plate detection - check if build plate is empty before starting print
+    plate_detection_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # ROI for plate detection (percentages: 0.0-1.0)
+    plate_detection_roi_x: Mapped[float | None] = mapped_column(Float, nullable=True)  # X start %
+    plate_detection_roi_y: Mapped[float | None] = mapped_column(Float, nullable=True)  # Y start %
+    plate_detection_roi_w: Mapped[float | None] = mapped_column(Float, nullable=True)  # Width %
+    plate_detection_roi_h: Mapped[float | None] = mapped_column(Float, nullable=True)  # Height %
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

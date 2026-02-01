@@ -101,17 +101,17 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
       .sort((a, b) => a.week.localeCompare(b.week))
       .map(d => ({
         date: d.week,
-        dateLabel: `Week of ${new Date(d.week).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+        dateLabel: `${t('stats.weekOf')} ${new Date(d.week).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
         ...d,
       }));
-  }, [filteredArchives, dailyData, timeRange]);
+  }, [filteredArchives, dailyData, timeRange, t]);
 
   // Usage by filament type
   const filamentTypeData = useMemo(() => {
     const dataMap = new Map<string, number>();
 
     filteredArchives.forEach(archive => {
-      const type = archive.filament_type || 'Unknown';
+      const type = archive.filament_type || t('common.unknown');
       // Handle multiple types (e.g., "PLA, PETG")
       const types = type.split(', ');
       types.forEach(t => {
@@ -123,7 +123,7 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
     return Array.from(dataMap.entries())
       .map(([name, value]) => ({ name, value: Math.round(value) }))
       .sort((a, b) => b.value - a.value);
-  }, [filteredArchives]);
+  }, [filteredArchives, t]);
 
   // Monthly comparison data
   const monthlyComparison = useMemo(() => {
@@ -159,7 +159,7 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
     <div className="space-y-6">
       {/* Time Range Selector */}
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-white">Filament Usage Trends</h3>
+        <h3 className="text-lg font-semibold text-white">{t('stats.filamentUsageTrends')}</h3>
         <div className="flex gap-1 bg-bambu-dark rounded-lg p-1">
           {(['7d', '30d', '90d', '365d', 'all'] as TimeRange[]).map((range) => (
             <button
@@ -171,7 +171,7 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
                   : 'text-bambu-gray hover:text-white'
               }`}
             >
-              {range === 'all' ? 'All' : range.replace('d', 'D')}
+              {range === 'all' ? t('common.all') : range.replace('d', 'D')}
             </button>
           ))}
         </div>
@@ -180,24 +180,24 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
       {/* Summary Cards */}
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-bambu-dark rounded-lg p-4">
-          <p className="text-sm text-bambu-gray">Period Filament</p>
+          <p className="text-sm text-bambu-gray">{t('stats.periodFilament')}</p>
           <p className="text-2xl font-bold text-white">{(totalFilament / 1000).toFixed(2)}kg</p>
-          <p className="text-xs text-bambu-gray">{totalFilament.toFixed(0)}g total</p>
+          <p className="text-xs text-bambu-gray">{totalFilament.toFixed(0)}g {t('stats.total')}</p>
         </div>
         <div className="bg-bambu-dark rounded-lg p-4">
-          <p className="text-sm text-bambu-gray">Period Cost</p>
+          <p className="text-sm text-bambu-gray">{t('stats.periodCost')}</p>
           <p className="text-2xl font-bold text-white">{currency}{totalCost.toFixed(2)}</p>
-          <p className="text-xs text-bambu-gray">{filteredArchives.length} prints</p>
+          <p className="text-xs text-bambu-gray">{filteredArchives.length} {t('stats.prints')}</p>
         </div>
         <div className="bg-bambu-dark rounded-lg p-4">
-          <p className="text-sm text-bambu-gray">Avg per Print</p>
+          <p className="text-sm text-bambu-gray">{t('stats.avgPerPrint')}</p>
           <p className="text-2xl font-bold text-white">
             {filteredArchives.length > 0
               ? (totalFilament / filteredArchives.length).toFixed(0)
               : 0}g
           </p>
           <p className="text-xs text-bambu-gray">
-            {currency}{filteredArchives.length > 0 ? (totalCost / filteredArchives.length).toFixed(2) : '0.00'} avg
+            {currency}{filteredArchives.length > 0 ? (totalCost / filteredArchives.length).toFixed(2) : '0.00'} {t('stats.avg')}
           </p>
         </div>
       </div>
@@ -205,7 +205,7 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
       {/* Usage Over Time Chart */}
       {chartData.length > 0 ? (
         <div className="bg-bambu-dark rounded-lg p-4">
-          <h4 className="text-sm font-medium text-bambu-gray mb-4">Usage Over Time</h4>
+          <h4 className="text-sm font-medium text-bambu-gray mb-4">{t('stats.usageOverTime')}</h4>
           <ResponsiveContainer width="100%" height={250}>
             <AreaChart data={chartData}>
               <defs>
@@ -233,7 +233,7 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
                   borderRadius: '8px',
                 }}
                 labelStyle={{ color: '#fff' }}
-                formatter={(value: number) => [`${value.toFixed(0)}g`, t('stats.filament')]}
+                formatter={(value) => [`${Number(value ?? 0).toFixed(0)}g`, t('stats.filament')]}
               />
               <Area
                 type="monotone"
@@ -248,7 +248,7 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
         </div>
       ) : (
         <div className="bg-bambu-dark rounded-lg p-8 text-center text-bambu-gray">
-          No data for selected time range
+          {t('stats.noDataForTimeRange')}
         </div>
       )}
 
@@ -256,7 +256,7 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Filament Type Distribution */}
         <div className="bg-bambu-dark rounded-lg p-4">
-          <h4 className="text-sm font-medium text-bambu-gray mb-4">By Filament Type</h4>
+          <h4 className="text-sm font-medium text-bambu-gray mb-4">{t('stats.byFilamentType')}</h4>
           {filamentTypeData.length > 0 ? (
             <div className="flex items-center gap-4">
               <ResponsiveContainer width={160} height={160}>
@@ -280,7 +280,7 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
                       border: '1px solid #3d3d3d',
                       borderRadius: '8px',
                     }}
-                    formatter={(value: number) => [`${value}g`, 'Usage']}
+                    formatter={(value) => [`${value ?? 0}g`, t('stats.usage')]}
                   />
                 </PieChart>
               </ResponsiveContainer>
@@ -303,14 +303,14 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
             </div>
           ) : (
             <div className="h-[160px] flex items-center justify-center text-bambu-gray">
-              No filament data
+              {t('stats.noFilamentData')}
             </div>
           )}
         </div>
 
         {/* Monthly Comparison */}
         <div className="bg-bambu-dark rounded-lg p-4">
-          <h4 className="text-sm font-medium text-bambu-gray mb-4">Monthly Comparison</h4>
+          <h4 className="text-sm font-medium text-bambu-gray mb-4">{t('stats.monthlyComparison')}</h4>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={monthlyComparison}>
               <CartesianGrid strokeDasharray="3 3" stroke="#3d3d3d" />
@@ -322,8 +322,8 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
                   border: '1px solid #3d3d3d',
                   borderRadius: '8px',
                 }}
-                formatter={(value: number, name: string) => [
-                  name === 'filament' ? `${value}g` : name === 'cost' ? `${currency}${value.toFixed(2)}` : value,
+                formatter={(value, name) => [
+                  name === 'filament' ? `${value ?? 0}g` : name === 'cost' ? `${currency}${Number(value ?? 0).toFixed(2)}` : value ?? 0,
                   name === 'filament' ? t('stats.filament') : name === 'cost' ? t('stats.cost') : t('stats.prints')
                 ]}
               />

@@ -965,3 +965,230 @@ class TestNotificationTemplates:
             assert "Test" in result
         except KeyError:
             pytest.fail("Template should handle missing variables gracefully")
+
+
+class TestPrinterErrorNotifications:
+    """Tests for HMS error (printer error) notifications."""
+
+    @pytest.fixture
+    def service(self):
+        return NotificationService()
+
+    @pytest.fixture
+    def mock_provider(self):
+        """Create a mock notification provider with error notifications enabled."""
+        provider = MagicMock()
+        provider.id = 1
+        provider.name = "Test Provider"
+        provider.provider_type = "webhook"
+        provider.enabled = True
+        provider.config = json.dumps({"webhook_url": "http://test.local/webhook"})
+        provider.on_printer_error = True  # Enable error notifications
+        provider.quiet_hours_enabled = False
+        provider.daily_digest_enabled = False
+        provider.printer_id = None
+        return provider
+
+    @pytest.fixture
+    def mock_db(self):
+        """Create a mock database session."""
+        db = AsyncMock()
+        db.commit = AsyncMock()
+        return db
+
+    @pytest.mark.asyncio
+    async def test_on_printer_error_sends_notification(self, service, mock_provider, mock_db):
+        """Verify HMS error notification is sent when triggered."""
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
+        ):
+            mock_get.return_value = [mock_provider]
+            mock_build.return_value = ("Printer Error", "AMS/Filament Error: 0700_8010")
+
+            await service.on_printer_error(
+                printer_id=1,
+                printer_name="Test Printer",
+                error_type="AMS/Filament Error",
+                db=mock_db,
+                error_detail="Error code: 0700_8010",
+            )
+
+            mock_get.assert_called_once()
+            mock_send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_on_printer_error_skipped_when_disabled(self, service, mock_provider, mock_db):
+        """CRITICAL: Verify error notifications respect toggle setting."""
+        mock_provider.on_printer_error = False
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+        ):
+            # Provider with toggle disabled won't be returned
+            mock_get.return_value = []
+
+            await service.on_printer_error(
+                printer_id=1,
+                printer_name="Test",
+                error_type="AMS Error",
+                db=mock_db,
+                error_detail="Test error",
+            )
+
+            mock_send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_on_printer_error_includes_error_detail(self, service, mock_provider, mock_db):
+        """Verify error details are passed to template variables."""
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_printer_error(
+                printer_id=1,
+                printer_name="X1 Carbon",
+                error_type="AMS/Filament Error",
+                db=mock_db,
+                error_detail="Error code: 0700_8010",
+            )
+
+            assert captured_variables["printer"] == "X1 Carbon"
+            assert captured_variables["error_type"] == "AMS/Filament Error"
+            assert captured_variables["error_detail"] == "Error code: 0700_8010"
+
+    @pytest.mark.asyncio
+    async def test_on_printer_error_fallback_when_no_detail(self, service, mock_provider, mock_db):
+        """Verify fallback message when error_detail is None."""
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_printer_error(
+                printer_id=1,
+                printer_name="Test Printer",
+                error_type="Unknown Error",
+                db=mock_db,
+                error_detail=None,  # No detail provided
+            )
+
+            assert captured_variables["error_detail"] == "No details available"
+
+
+class TestPlateNotEmptyNotifications:
+    """Tests for plate not empty (build plate detection) notifications."""
+
+    @pytest.fixture
+    def service(self):
+        return NotificationService()
+
+    @pytest.fixture
+    def mock_provider(self):
+        """Create a mock notification provider with plate detection enabled."""
+        provider = MagicMock()
+        provider.id = 1
+        provider.name = "Test Provider"
+        provider.provider_type = "webhook"
+        provider.enabled = True
+        provider.config = json.dumps({"webhook_url": "http://test.local/webhook"})
+        provider.on_plate_not_empty = True
+        provider.quiet_hours_enabled = False
+        provider.daily_digest_enabled = False
+        provider.printer_id = None
+        return provider
+
+    @pytest.fixture
+    def mock_db(self):
+        """Create a mock database session."""
+        db = AsyncMock()
+        db.commit = AsyncMock()
+        return db
+
+    @pytest.mark.asyncio
+    async def test_on_plate_not_empty_sends_notification(self, service, mock_provider, mock_db):
+        """Verify plate not empty notification is sent when triggered."""
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
+        ):
+            mock_get.return_value = [mock_provider]
+            mock_build.return_value = ("Plate Not Empty", "Objects detected on build plate")
+
+            await service.on_plate_not_empty(
+                printer_id=1,
+                printer_name="Test Printer",
+                db=mock_db,
+                difference_percent=5.2,
+            )
+
+            mock_get.assert_called_once()
+            mock_send.assert_called_once()
+            # Verify force_immediate is True (critical alert)
+            call_kwargs = mock_send.call_args[1]
+            assert call_kwargs.get("force_immediate") is True
+
+    @pytest.mark.asyncio
+    async def test_on_plate_not_empty_skipped_when_disabled(self, service, mock_provider, mock_db):
+        """Verify notification is skipped when toggle is disabled."""
+        mock_provider.on_plate_not_empty = False
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+        ):
+            mock_get.return_value = []
+
+            await service.on_plate_not_empty(
+                printer_id=1,
+                printer_name="Test",
+                db=mock_db,
+            )
+
+            mock_send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_on_plate_not_empty_includes_difference_percent(self, service, mock_provider, mock_db):
+        """Verify difference percentage is passed to template variables."""
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_plate_not_empty(
+                printer_id=1,
+                printer_name="X1 Carbon",
+                db=mock_db,
+                difference_percent=3.5,
+            )
+
+            assert captured_variables["printer"] == "X1 Carbon"
+            assert captured_variables["difference_percent"] == "3.5"

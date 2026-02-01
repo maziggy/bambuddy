@@ -63,6 +63,14 @@ const createMockProvider = (
   on_ams_temperature_high: false,
   on_ams_ht_humidity_high: false,
   on_ams_ht_temperature_high: false,
+  on_plate_not_empty: true,
+  on_queue_job_added: false,
+  on_queue_job_assigned: false,
+  on_queue_job_started: false,
+  on_queue_job_waiting: true,
+  on_queue_job_skipped: true,
+  on_queue_job_failed: true,
+  on_queue_completed: false,
   quiet_hours_enabled: false,
   quiet_hours_start: null,
   quiet_hours_end: null,
@@ -279,6 +287,86 @@ describe('NotificationProviderCard AMS toggles', () => {
       expect(provider.on_ams_temperature_high).toBe(false);
       expect(provider.on_ams_ht_humidity_high).toBe(false);
       expect(provider.on_ams_ht_temperature_high).toBe(false);
+    });
+  });
+});
+
+describe('NotificationProviderCard Queue notifications', () => {
+  describe('queue job notifications', () => {
+    it('includes on_queue_job_added in provider data', () => {
+      const provider = createMockProvider({ on_queue_job_added: true });
+      expect(provider.on_queue_job_added).toBe(true);
+    });
+
+    it('includes on_queue_job_assigned in provider data', () => {
+      const provider = createMockProvider({ on_queue_job_assigned: true });
+      expect(provider.on_queue_job_assigned).toBe(true);
+    });
+
+    it('includes on_queue_job_started in provider data', () => {
+      const provider = createMockProvider({ on_queue_job_started: true });
+      expect(provider.on_queue_job_started).toBe(true);
+    });
+
+    it('includes on_queue_job_waiting in provider data', () => {
+      const provider = createMockProvider({ on_queue_job_waiting: true });
+      expect(provider.on_queue_job_waiting).toBe(true);
+    });
+
+    it('includes on_queue_job_skipped in provider data', () => {
+      const provider = createMockProvider({ on_queue_job_skipped: true });
+      expect(provider.on_queue_job_skipped).toBe(true);
+    });
+
+    it('includes on_queue_job_failed in provider data', () => {
+      const provider = createMockProvider({ on_queue_job_failed: true });
+      expect(provider.on_queue_job_failed).toBe(true);
+    });
+
+    it('includes on_queue_completed in provider data', () => {
+      const provider = createMockProvider({ on_queue_completed: true });
+      expect(provider.on_queue_completed).toBe(true);
+    });
+  });
+
+  describe('queue notification defaults', () => {
+    it('defaults actionable notifications to true', () => {
+      const provider = createMockProvider();
+      // These should default to true (actionable - user needs to do something)
+      expect(provider.on_queue_job_waiting).toBe(true);
+      expect(provider.on_queue_job_skipped).toBe(true);
+      expect(provider.on_queue_job_failed).toBe(true);
+    });
+
+    it('defaults informational notifications to false', () => {
+      const provider = createMockProvider();
+      // These should default to false (informational only)
+      expect(provider.on_queue_job_added).toBe(false);
+      expect(provider.on_queue_job_assigned).toBe(false);
+      expect(provider.on_queue_job_started).toBe(false);
+      expect(provider.on_queue_completed).toBe(false);
+    });
+  });
+
+  describe('queue notification combinations', () => {
+    it('supports all queue toggles independently', () => {
+      const provider = createMockProvider({
+        on_queue_job_added: true,
+        on_queue_job_assigned: false,
+        on_queue_job_started: true,
+        on_queue_job_waiting: false,
+        on_queue_job_skipped: true,
+        on_queue_job_failed: false,
+        on_queue_completed: true,
+      });
+
+      expect(provider.on_queue_job_added).toBe(true);
+      expect(provider.on_queue_job_assigned).toBe(false);
+      expect(provider.on_queue_job_started).toBe(true);
+      expect(provider.on_queue_job_waiting).toBe(false);
+      expect(provider.on_queue_job_skipped).toBe(true);
+      expect(provider.on_queue_job_failed).toBe(false);
+      expect(provider.on_queue_completed).toBe(true);
     });
   });
 });

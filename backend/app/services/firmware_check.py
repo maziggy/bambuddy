@@ -44,6 +44,7 @@ MODEL_TO_API_KEY = {
     "X1E": "x1e",
     "H2D Pro": "h2d-pro",
     "H2D-Pro": "h2d-pro",
+    "H2DPRO": "h2d-pro",
 }
 
 # Reverse mapping: API key to model codes

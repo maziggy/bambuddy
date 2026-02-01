@@ -214,6 +214,18 @@ export function useWebSocket() {
       case 'pong':
         // Keepalive response, ignore
         break;
+
+      case 'plate_not_empty':
+        // Plate detection found objects - print was paused
+        // Dispatch event for toast notification
+        window.dispatchEvent(new CustomEvent('plate-not-empty', {
+          detail: {
+            printer_id: message.printer_id,
+            printer_name: (message as unknown as { printer_name?: string }).printer_name,
+            message: (message as unknown as { message?: string }).message,
+          }
+        }));
+        break;
     }
   }, [queryClient, debouncedInvalidate, throttledPrinterStatusUpdate]);
 

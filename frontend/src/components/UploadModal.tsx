@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Upload, X, File, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { api } from '../api/client';
@@ -29,7 +29,6 @@ export function UploadModal({ onClose, initialFiles }: UploadModalProps) {
     initialFiles?.filter(f => f.name.endsWith('.3mf')).map(file => ({ file, status: 'pending' as const })) || []
   );
   const [isDragging, setIsDragging] = useState(false);
-  const [selectedPrinter, setSelectedPrinter] = useState<number | undefined>();
   const [uploadResult, setUploadResult] = useState<BulkUploadResult | null>(null);
 
   // Close on Escape key
@@ -41,14 +40,9 @@ export function UploadModal({ onClose, initialFiles }: UploadModalProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  const { data: printers } = useQuery({
-    queryKey: ['printers'],
-    queryFn: api.getPrinters,
-  });
-
   const uploadMutation = useMutation({
     mutationFn: (filesToUpload: File[]) =>
-      api.uploadArchivesBulk(filesToUpload, selectedPrinter),
+      api.uploadArchivesBulk(filesToUpload),
     onSuccess: (result) => {
       setUploadResult(result);
       queryClient.invalidateQueries({ queryKey: ['archives'] });
@@ -202,26 +196,11 @@ export function UploadModal({ onClose, initialFiles }: UploadModalProps) {
             </div>
           </div>
 
-          {/* Optional Printer Selection */}
+          {/* Info about printer model extraction */}
           <div className="px-4 pb-4">
-            <label className="block text-sm text-bambu-gray mb-2">
-              {t('upload.associatePrinter')}
-            </label>
-            <select
-              className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-              value={selectedPrinter || ''}
-              onChange={(e) =>
-                setSelectedPrinter(e.target.value ? Number(e.target.value) : undefined)
-              }
-              disabled={isUploading}
-            >
-              <option value="">{t('upload.noPrinter')}</option>
-              {printers?.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+            <p className="text-xs text-bambu-gray">
+              {t('upload.printerModelExtracted')}
+            </p>
           </div>
 
           {/* File List */}

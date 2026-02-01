@@ -228,7 +228,7 @@ class HomeAssistantService:
             - domain: str
         """
         # Default domains for smart plug control
-        default_domains = {"switch", "light", "input_boolean"}
+        default_domains = {"switch", "light", "input_boolean", "script"}
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -282,9 +282,9 @@ class HomeAssistantService:
                 )
                 response.raise_for_status()
 
-                # Valid units for energy monitoring sensors
-                power_units = {"W", "kW", "mW"}
-                energy_units = {"kWh", "Wh", "MWh"}
+                # Valid units for energy monitoring sensors (lowercase for case-insensitive matching)
+                power_units = {"w", "kw", "mw"}
+                energy_units = {"kwh", "wh", "mwh"}
                 valid_units = power_units | energy_units
 
                 entities = []
@@ -299,8 +299,8 @@ class HomeAssistantService:
                     attrs = entity.get("attributes", {})
                     unit = attrs.get("unit_of_measurement", "")
 
-                    # Only include sensors with power/energy units
-                    if unit in valid_units:
+                    # Only include sensors with power/energy units (case-insensitive)
+                    if unit.lower() in valid_units:
                         entities.append(
                             {
                                 "entity_id": entity_id,

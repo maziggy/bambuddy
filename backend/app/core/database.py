@@ -34,20 +34,25 @@ async def get_db() -> AsyncSession:
 async def init_db():
     # Import models to register them with SQLAlchemy
     from backend.app.models import (  # noqa: F401
+        ams_history,
         api_key,
         archive,
         external_link,
         filament,
+        github_backup,
+        group,
         kprofile_note,
         library,
         maintenance,
         notification,
         notification_template,
+        pending_upload,
         print_queue,
         printer,
         project,
         project_bom,
         settings,
+        slot_preset,
         smart_plug,
         user,
     )
@@ -60,6 +65,9 @@ async def init_db():
 
     # Seed default notification templates
     await seed_notification_templates()
+
+    # Seed default groups and migrate existing users
+    await seed_default_groups()
 
 
 async def run_migrations(conn):
@@ -285,6 +293,12 @@ async def run_migrations(conn):
         await conn.execute(
             text("ALTER TABLE notification_providers ADD COLUMN on_ams_ht_temperature_high BOOLEAN DEFAULT 0")
         )
+    except Exception:
+        pass
+
+    # Migration: Add plate not empty notification column to notification_providers
+    try:
+        await conn.execute(text("ALTER TABLE notification_providers ADD COLUMN on_plate_not_empty BOOLEAN DEFAULT 1"))
     except Exception:
         pass
 
@@ -675,6 +689,311 @@ async def run_migrations(conn):
     except Exception:
         pass
 
+    # Migration: Add external camera columns to printers
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN external_camera_url VARCHAR(500)"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN external_camera_type VARCHAR(20)"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN external_camera_enabled BOOLEAN DEFAULT 0"))
+    except Exception:
+        pass
+
+    # Migration: Add external_url column to print_archives for user-defined links (Printables, etc.)
+    try:
+        await conn.execute(text("ALTER TABLE print_archives ADD COLUMN external_url VARCHAR(500)"))
+    except Exception:
+        pass
+
+    # Migration: Add is_external column to library_files for external cloud files
+    try:
+        await conn.execute(text("ALTER TABLE library_files ADD COLUMN is_external BOOLEAN DEFAULT 0"))
+    except Exception:
+        pass
+
+    # Migration: Add project_id column to library_files
+    try:
+        await conn.execute(
+            text("ALTER TABLE library_files ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL")
+        )
+    except Exception:
+        pass
+
+    # Migration: Add is_external column to library_folders for external cloud folders
+    try:
+        await conn.execute(text("ALTER TABLE library_folders ADD COLUMN is_external BOOLEAN DEFAULT 0"))
+    except Exception:
+        pass
+
+    # Migration: Add external folder settings columns to library_folders
+    try:
+        await conn.execute(text("ALTER TABLE library_folders ADD COLUMN external_readonly BOOLEAN DEFAULT 0"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE library_folders ADD COLUMN external_show_hidden BOOLEAN DEFAULT 0"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE library_folders ADD COLUMN external_path VARCHAR(500)"))
+    except Exception:
+        pass
+
+    # Migration: Add plate_detection_enabled column to printers
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN plate_detection_enabled BOOLEAN DEFAULT 0"))
+    except Exception:
+        pass
+
+    # Migration: Add plate detection ROI columns to printers
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN plate_detection_roi_x REAL"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN plate_detection_roi_y REAL"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN plate_detection_roi_w REAL"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN plate_detection_roi_h REAL"))
+    except Exception:
+        pass
+
+    # Migration: Remove UNIQUE constraint from smart_plugs.printer_id
+    # This allows HA scripts to coexist with regular plugs (scripts are for multi-device control)
+    # SQLite requires table recreation to drop constraints
+    try:
+        # Check if we need to migrate (if UNIQUE constraint exists)
+        result = await conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='smart_plugs'"))
+        row = result.fetchone()
+        if row and "printer_id INTEGER UNIQUE" in (row[0] or ""):
+            # Create new table without UNIQUE constraint on printer_id
+            await conn.execute(
+                text("""
+                CREATE TABLE smart_plugs_temp (
+                    id INTEGER PRIMARY KEY,
+                    name VARCHAR(100) NOT NULL,
+                    ip_address VARCHAR(45),
+                    plug_type VARCHAR(20) DEFAULT 'tasmota',
+                    ha_entity_id VARCHAR(100),
+                    ha_power_entity VARCHAR(100),
+                    ha_energy_today_entity VARCHAR(100),
+                    ha_energy_total_entity VARCHAR(100),
+                    printer_id INTEGER REFERENCES printers(id) ON DELETE SET NULL,
+                    enabled BOOLEAN NOT NULL DEFAULT 1,
+                    auto_on BOOLEAN NOT NULL DEFAULT 1,
+                    auto_off BOOLEAN NOT NULL DEFAULT 1,
+                    off_delay_mode VARCHAR(20) NOT NULL DEFAULT 'time',
+                    off_delay_minutes INTEGER NOT NULL DEFAULT 5,
+                    off_temp_threshold INTEGER NOT NULL DEFAULT 70,
+                    username VARCHAR(50),
+                    password VARCHAR(100),
+                    power_alert_enabled BOOLEAN NOT NULL DEFAULT 0,
+                    power_alert_high FLOAT,
+                    power_alert_low FLOAT,
+                    power_alert_last_triggered DATETIME,
+                    schedule_enabled BOOLEAN NOT NULL DEFAULT 0,
+                    schedule_on_time VARCHAR(5),
+                    schedule_off_time VARCHAR(5),
+                    show_in_switchbar BOOLEAN DEFAULT 0,
+                    last_state VARCHAR(10),
+                    last_checked DATETIME,
+                    auto_off_executed BOOLEAN NOT NULL DEFAULT 0,
+                    auto_off_pending BOOLEAN DEFAULT 0,
+                    auto_off_pending_since DATETIME,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
+                )
+            """)
+            )
+            # Copy data
+            await conn.execute(
+                text("""
+                INSERT INTO smart_plugs_temp
+                SELECT id, name, ip_address, plug_type, ha_entity_id, ha_power_entity,
+                       ha_energy_today_entity, ha_energy_total_entity, printer_id, enabled,
+                       auto_on, auto_off, off_delay_mode, off_delay_minutes, off_temp_threshold,
+                       username, password, power_alert_enabled, power_alert_high, power_alert_low,
+                       power_alert_last_triggered, schedule_enabled, schedule_on_time, schedule_off_time,
+                       show_in_switchbar, last_state, last_checked, auto_off_executed,
+                       auto_off_pending, auto_off_pending_since, created_at, updated_at
+                FROM smart_plugs
+            """)
+            )
+            # Drop old table and rename new one
+            await conn.execute(text("DROP TABLE smart_plugs"))
+            await conn.execute(text("ALTER TABLE smart_plugs_temp RENAME TO smart_plugs"))
+    except Exception:
+        pass
+
+    # Migration: Add show_on_printer_card column to smart_plugs
+    try:
+        await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN show_on_printer_card BOOLEAN DEFAULT 1"))
+    except Exception:
+        pass
+
+    # Migration: Add MQTT smart plug fields (legacy)
+    try:
+        await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN mqtt_topic VARCHAR(200)"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN mqtt_power_path VARCHAR(100)"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN mqtt_energy_path VARCHAR(100)"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN mqtt_state_path VARCHAR(100)"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN mqtt_multiplier REAL DEFAULT 1.0"))
+    except Exception:
+        pass
+
+    # Migration: Add enhanced MQTT smart plug fields (separate topics and multipliers)
+    try:
+        await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN mqtt_power_topic VARCHAR(200)"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN mqtt_power_multiplier REAL DEFAULT 1.0"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN mqtt_energy_topic VARCHAR(200)"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN mqtt_energy_multiplier REAL DEFAULT 1.0"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN mqtt_state_topic VARCHAR(200)"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN mqtt_state_on_value VARCHAR(50)"))
+    except Exception:
+        pass
+
+    # Migration: Copy existing mqtt_topic to mqtt_power_topic for backward compatibility
+    try:
+        await conn.execute(
+            text("""
+            UPDATE smart_plugs
+            SET mqtt_power_topic = mqtt_topic,
+                mqtt_power_multiplier = mqtt_multiplier
+            WHERE mqtt_topic IS NOT NULL AND mqtt_power_topic IS NULL
+        """)
+        )
+    except Exception:
+        pass
+
+    # Migration: Create groups table for permission-based access control
+    try:
+        await conn.execute(
+            text("""
+            CREATE TABLE IF NOT EXISTS groups (
+                id INTEGER PRIMARY KEY,
+                name VARCHAR(100) NOT NULL UNIQUE,
+                description VARCHAR(500),
+                permissions JSON,
+                is_system BOOLEAN NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        )
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_groups_name ON groups(name)"))
+    except Exception:
+        pass
+
+    # Migration: Create user_groups association table
+    try:
+        await conn.execute(
+            text("""
+            CREATE TABLE IF NOT EXISTS user_groups (
+                user_id INTEGER NOT NULL,
+                group_id INTEGER NOT NULL,
+                PRIMARY KEY (user_id, group_id),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
+            )
+        """)
+        )
+    except Exception:
+        pass
+
+    # Migration: Add model-based queue assignment columns to print_queue
+    try:
+        await conn.execute(text("ALTER TABLE print_queue ADD COLUMN target_model VARCHAR(50)"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE print_queue ADD COLUMN required_filament_types TEXT"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE print_queue ADD COLUMN waiting_reason TEXT"))
+    except Exception:
+        pass
+
+    # Migration: Add nozzle_count column to printers (for dual-extruder detection)
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN nozzle_count INTEGER DEFAULT 1"))
+    except Exception:
+        pass
+
+    # Migration: Add print_hours_offset column to printers (baseline hours adjustment)
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN print_hours_offset REAL DEFAULT 0.0"))
+    except Exception:
+        pass
+
+    # Migration: Add queue notification event columns to notification_providers
+    try:
+        await conn.execute(text("ALTER TABLE notification_providers ADD COLUMN on_queue_job_added BOOLEAN DEFAULT 0"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(
+            text("ALTER TABLE notification_providers ADD COLUMN on_queue_job_assigned BOOLEAN DEFAULT 0")
+        )
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE notification_providers ADD COLUMN on_queue_job_started BOOLEAN DEFAULT 0"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE notification_providers ADD COLUMN on_queue_job_waiting BOOLEAN DEFAULT 1"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE notification_providers ADD COLUMN on_queue_job_skipped BOOLEAN DEFAULT 1"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE notification_providers ADD COLUMN on_queue_job_failed BOOLEAN DEFAULT 1"))
+    except Exception:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE notification_providers ADD COLUMN on_queue_completed BOOLEAN DEFAULT 0"))
+    except Exception:
+        pass
+
 
 async def seed_notification_templates():
     """Seed default notification templates if they don't exist."""
@@ -683,21 +1002,99 @@ async def seed_notification_templates():
     from backend.app.models.notification_template import DEFAULT_TEMPLATES, NotificationTemplate
 
     async with async_session() as session:
-        # Check if templates already exist
-        result = await session.execute(select(NotificationTemplate).limit(1))
-        if result.scalar_one_or_none() is not None:
-            # Templates already seeded
-            return
+        # Get existing template event types
+        result = await session.execute(select(NotificationTemplate.event_type))
+        existing_types = {row[0] for row in result.fetchall()}
 
-        # Insert default templates
-        for template_data in DEFAULT_TEMPLATES:
-            template = NotificationTemplate(
-                event_type=template_data["event_type"],
-                name=template_data["name"],
-                title_template=template_data["title_template"],
-                body_template=template_data["body_template"],
-                is_default=True,
-            )
-            session.add(template)
+        if not existing_types:
+            # No templates exist - insert all defaults
+            for template_data in DEFAULT_TEMPLATES:
+                template = NotificationTemplate(
+                    event_type=template_data["event_type"],
+                    name=template_data["name"],
+                    title_template=template_data["title_template"],
+                    body_template=template_data["body_template"],
+                    is_default=True,
+                )
+                session.add(template)
+        else:
+            # Templates exist - only add missing ones
+            for template_data in DEFAULT_TEMPLATES:
+                if template_data["event_type"] not in existing_types:
+                    template = NotificationTemplate(
+                        event_type=template_data["event_type"],
+                        name=template_data["name"],
+                        title_template=template_data["title_template"],
+                        body_template=template_data["body_template"],
+                        is_default=True,
+                    )
+                    session.add(template)
 
         await session.commit()
+
+
+async def seed_default_groups():
+    """Seed default groups and migrate existing users to appropriate groups.
+
+    Creates the default system groups (Administrators, Operators, Viewers) if they
+    don't exist, then migrates existing users:
+    - Users with role='admin' -> Administrators group
+    - Users with role='user' -> Operators group
+    """
+    import logging
+
+    from sqlalchemy import select
+
+    from backend.app.core.permissions import DEFAULT_GROUPS
+    from backend.app.models.group import Group
+    from backend.app.models.user import User
+
+    logger = logging.getLogger(__name__)
+
+    async with async_session() as session:
+        # Get existing groups
+        result = await session.execute(select(Group.name))
+        existing_groups = {row[0] for row in result.fetchall()}
+
+        # Create default groups if they don't exist
+        groups_created = []
+        for group_name, group_config in DEFAULT_GROUPS.items():
+            if group_name not in existing_groups:
+                group = Group(
+                    name=group_name,
+                    description=group_config["description"],
+                    permissions=group_config["permissions"],
+                    is_system=group_config["is_system"],
+                )
+                session.add(group)
+                groups_created.append(group_name)
+                logger.info(f"Created default group: {group_name}")
+
+        await session.commit()
+
+        # Migrate existing users to groups if they're not already in any group
+        if groups_created:
+            # Get the groups we need
+            admin_result = await session.execute(select(Group).where(Group.name == "Administrators"))
+            admin_group = admin_result.scalar_one_or_none()
+
+            operators_result = await session.execute(select(Group).where(Group.name == "Operators"))
+            operators_group = operators_result.scalar_one_or_none()
+
+            # Get all users
+            users_result = await session.execute(select(User))
+            users = users_result.scalars().all()
+
+            for user in users:
+                # Skip if user already has groups
+                if user.groups:
+                    continue
+
+                if user.role == "admin" and admin_group:
+                    user.groups.append(admin_group)
+                    logger.info(f"Migrated admin user '{user.username}' to Administrators group")
+                elif operators_group:
+                    user.groups.append(operators_group)
+                    logger.info(f"Migrated user '{user.username}' to Operators group")
+
+            await session.commit()

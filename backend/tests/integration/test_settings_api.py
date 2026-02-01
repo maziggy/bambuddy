@@ -215,6 +215,28 @@ class TestSettingsAPI:
         assert result["currency"] == "JPY"
         assert result["check_updates"] is False
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_check_printer_firmware(self, async_client: AsyncClient):
+        """Verify check_printer_firmware can be updated."""
+        # Default should be True
+        response = await async_client.get("/api/v1/settings/")
+        assert response.json()["check_printer_firmware"] is True
+
+        # Update to False
+        response = await async_client.put("/api/v1/settings/", json={"check_printer_firmware": False})
+        assert response.status_code == 200
+        assert response.json()["check_printer_firmware"] is False
+
+        # Verify persistence
+        response = await async_client.get("/api/v1/settings/")
+        assert response.json()["check_printer_firmware"] is False
+
+        # Update back to True
+        response = await async_client.put("/api/v1/settings/", json={"check_printer_firmware": True})
+        assert response.status_code == 200
+        assert response.json()["check_printer_firmware"] is True
+
     # ========================================================================
     # MQTT settings tests
     # ========================================================================
@@ -370,3 +392,86 @@ class TestSettingsAPI:
         assert "per_printer_mapping_expanded" in result
         # Default is False as defined in schema
         assert isinstance(result["per_printer_mapping_expanded"], bool)
+
+    # ========================================================================
+    # Backup/Restore tests
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_backup_includes_external_camera_settings(self, async_client: AsyncClient, printer_factory):
+        """Verify backup includes external camera settings for printers."""
+        # Create a printer with external camera settings
+        _printer = await printer_factory(
+            name="Camera Test Printer",
+            external_camera_url="/dev/video0",
+            external_camera_type="usb",
+            external_camera_enabled=True,
+        )
+
+        # Request backup with printers
+        response = await async_client.get("/api/v1/settings/backup?include_printers=true")
+
+        assert response.status_code == 200
+        backup = response.json()
+
+        # Find the printer in the backup
+        assert "printers" in backup
+        printer_data = next((p for p in backup["printers"] if p["name"] == "Camera Test Printer"), None)
+        assert printer_data is not None
+
+        # Verify external camera fields are included
+        assert "external_camera_url" in printer_data
+        assert "external_camera_type" in printer_data
+        assert "external_camera_enabled" in printer_data
+        assert printer_data["external_camera_url"] == "/dev/video0"
+        assert printer_data["external_camera_type"] == "usb"
+        assert printer_data["external_camera_enabled"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_restore_external_camera_settings_overwrite(self, async_client: AsyncClient, printer_factory):
+        """Verify restore with overwrite updates external camera settings."""
+        import io
+
+        # Create a printer without camera settings
+        printer = await printer_factory(
+            name="Restore Test",
+            external_camera_url=None,
+            external_camera_type=None,
+            external_camera_enabled=False,
+        )
+
+        # Create backup data with camera settings
+        backup_data = {
+            "version": "1.0",
+            "included": ["printers"],
+            "printers": [
+                {
+                    "name": "Restore Test",
+                    "serial_number": printer.serial_number,
+                    "ip_address": printer.ip_address,
+                    "external_camera_url": "/dev/video1",
+                    "external_camera_type": "usb",
+                    "external_camera_enabled": True,
+                }
+            ],
+        }
+
+        # Restore with overwrite
+        import json
+
+        files = {"file": ("backup.json", io.BytesIO(json.dumps(backup_data).encode()), "application/json")}
+        response = await async_client.post("/api/v1/settings/restore?overwrite=true", files=files)
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["success"] is True
+
+        # Verify the printer was updated
+        response = await async_client.get(f"/api/v1/printers/{printer.id}")
+        assert response.status_code == 200
+        updated_printer = response.json()
+        assert updated_printer["external_camera_url"] == "/dev/video1"
+        assert updated_printer["external_camera_type"] == "usb"
+        assert updated_printer["external_camera_enabled"] is True

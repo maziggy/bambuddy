@@ -56,3 +56,5 @@ firmware/
 
 # Node modules
 node_modules/
+
+data/

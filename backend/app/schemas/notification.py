@@ -50,6 +50,18 @@ class NotificationProviderBase(BaseModel):
         default=False, description="Notify when AMS-HT temperature exceeds threshold"
     )
 
+    # Event triggers - Build plate detection
+    on_plate_not_empty: bool = Field(default=True, description="Notify when objects detected on plate before print")
+
+    # Event triggers - Print queue
+    on_queue_job_added: bool = Field(default=False, description="Notify when job is added to queue")
+    on_queue_job_assigned: bool = Field(default=False, description="Notify when model-based job is assigned to printer")
+    on_queue_job_started: bool = Field(default=False, description="Notify when queue job starts printing")
+    on_queue_job_waiting: bool = Field(default=True, description="Notify when job is waiting for filament")
+    on_queue_job_skipped: bool = Field(default=True, description="Notify when job is skipped")
+    on_queue_job_failed: bool = Field(default=True, description="Notify when job fails to start")
+    on_queue_completed: bool = Field(default=False, description="Notify when all queue jobs finish")
+
     # Quiet hours
     quiet_hours_enabled: bool = Field(default=False, description="Enable quiet hours")
     quiet_hours_start: str | None = Field(default=None, description="Start time in HH:MM format")
@@ -113,6 +125,18 @@ class NotificationProviderUpdate(BaseModel):
     # Event triggers - AMS-HT environmental alarms
     on_ams_ht_humidity_high: bool | None = None
     on_ams_ht_temperature_high: bool | None = None
+
+    # Event triggers - Build plate detection
+    on_plate_not_empty: bool | None = None
+
+    # Event triggers - Print queue
+    on_queue_job_added: bool | None = None
+    on_queue_job_assigned: bool | None = None
+    on_queue_job_started: bool | None = None
+    on_queue_job_waiting: bool | None = None
+    on_queue_job_skipped: bool | None = None
+    on_queue_job_failed: bool | None = None
+    on_queue_completed: bool | None = None
 
     # Quiet hours
     quiet_hours_enabled: bool | None = None

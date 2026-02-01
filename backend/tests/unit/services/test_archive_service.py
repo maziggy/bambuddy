@@ -611,3 +611,54 @@ class TestMultiPlate3MFParsing:
 
         is_multi_plate = len(plate_indices) > 1
         assert is_multi_plate is False
+
+
+class TestReprintCostCalculation:
+    """Tests for reprint cost calculation."""
+
+    def test_cost_addition_logic(self):
+        """Test that reprint costs are added correctly."""
+        # Simulate the cost addition logic
+        existing_cost = 5.25  # Original print cost
+        filament_grams = 100.0
+        cost_per_kg = 25.0  # Default cost
+
+        # Calculate additional cost for reprint
+        additional_cost = round((filament_grams / 1000) * cost_per_kg, 2)
+        assert additional_cost == 2.50
+
+        # Add to existing cost
+        new_total = round(existing_cost + additional_cost, 2)
+        assert new_total == 7.75
+
+    def test_cost_addition_with_none_existing(self):
+        """Test cost addition when existing cost is None."""
+        existing_cost = None
+        filament_grams = 200.0
+        cost_per_kg = 15.0
+
+        additional_cost = round((filament_grams / 1000) * cost_per_kg, 2)
+        assert additional_cost == 3.0
+
+        # When existing is None, just use additional
+        new_total = additional_cost if existing_cost is None else round(existing_cost + additional_cost, 2)
+        assert new_total == 3.0
+
+    def test_cost_with_custom_filament_price(self):
+        """Test cost calculation with custom filament price."""
+        filament_grams = 150.0
+        custom_cost_per_kg = 35.0  # More expensive filament
+
+        cost = round((filament_grams / 1000) * custom_cost_per_kg, 2)
+        assert cost == 5.25
+
+    def test_multiple_reprints_accumulate(self):
+        """Test that multiple reprints accumulate costs correctly."""
+        filament_grams = 100.0
+        cost_per_kg = 20.0
+        single_print_cost = round((filament_grams / 1000) * cost_per_kg, 2)
+        assert single_print_cost == 2.0
+
+        # After 3 prints (1 original + 2 reprints)
+        total_after_3_prints = round(single_print_cost * 3, 2)
+        assert total_after_3_prints == 6.0

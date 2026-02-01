@@ -267,6 +267,34 @@ _filament_cache_time: float = 0
 FILAMENT_CACHE_TTL = 300  # 5 minutes
 
 
+def _filament_id_to_setting_id(filament_id: str) -> str:
+    """
+    Convert filament_id to setting_id format for Bambu Cloud API.
+
+    Printers report filament_id (e.g., GFA00, GFG02) but the API expects
+    setting_id format which has an "S" inserted after "GF" (e.g., GFSA00, GFSG02).
+
+    User presets (starting with "P") and already-correct IDs are returned unchanged.
+    """
+    if not filament_id:
+        return filament_id
+
+    # User presets start with "P" - leave unchanged
+    if filament_id.startswith("P"):
+        return filament_id
+
+    # Official Bambu presets: GFx## -> GFSx##
+    # Check if it matches the filament_id pattern (GF followed by letter and digits)
+    if filament_id.startswith("GF") and len(filament_id) >= 4:
+        # Check if it's already a setting_id (has S after GF)
+        if filament_id[2] == "S":
+            return filament_id
+        # Insert "S" after "GF": GFA00 -> GFSA00
+        return f"GFS{filament_id[2:]}"
+
+    return filament_id
+
+
 @router.post("/filament-info")
 async def get_filament_info(setting_ids: list[str] = Body(...), db: AsyncSession = Depends(get_db)):
     """
@@ -308,7 +336,10 @@ async def get_filament_info(setting_ids: list[str] = Body(...), db: AsyncSession
             continue
 
         try:
-            data = await cloud.get_setting_detail(setting_id)
+            # Transform filament_id to setting_id format (GFA00 -> GFSA00)
+            api_setting_id = _filament_id_to_setting_id(setting_id)
+
+            data = await cloud.get_setting_detail(api_setting_id)
             setting = data.get("setting", {})
 
             # Extract name (e.g., "Bambu PLA Basic Jade White")
@@ -323,11 +354,14 @@ async def get_filament_info(setting_ids: list[str] = Body(...), db: AsyncSession
                     k_value = None
 
             info = {"name": name, "k": k_value}
+            # Cache using original ID so frontend gets expected response
             _filament_cache[setting_id] = info
             result[setting_id] = info
 
         except Exception as e:
-            logger.warning(f"Failed to get cloud preset {setting_id}: {e}")
+            logger.warning(
+                f"Failed to get cloud preset {setting_id} (API ID: {_filament_id_to_setting_id(setting_id)}): {e}"
+            )
             # Cache the failure to avoid repeated requests
             _filament_cache[setting_id] = {"name": "", "k": None}
             result[setting_id] = {"name": "", "k": None}

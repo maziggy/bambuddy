@@ -38,7 +38,11 @@ describe('EditArchiveModal', () => {
         return HttpResponse.json(mockProjects);
       }),
       http.get('/api/v1/archives/tags', () => {
-        return HttpResponse.json(['test', 'calibration', 'functional']);
+        return HttpResponse.json([
+          { name: 'test', count: 2 },
+          { name: 'calibration', count: 1 },
+          { name: 'functional', count: 3 },
+        ]);
       }),
       http.patch('/api/v1/archives/:id', async ({ request }) => {
         const body = await request.json();

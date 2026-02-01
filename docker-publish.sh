@@ -122,13 +122,12 @@ else
     echo -e "${BLUE}[3/4] Building and pushing (version only, no latest)...${NC}"
 fi
 
-# Common build args for speed
-BUILD_ARGS="--provenance=false --sbom=false"
-CACHE_ARGS="--cache-from type=registry,ref=${FULL_IMAGE}:buildcache --cache-to type=registry,ref=${FULL_IMAGE}:buildcache,mode=max"
+# Common build args (no cache to ensure clean builds)
+BUILD_ARGS="--provenance=false --sbom=false --no-cache --pull"
 
 if [ "$PARALLEL" = true ]; then
     # Parallel build: Build each architecture separately then combine
-    echo -e "${YELLOW}Building amd64 and arm64 in parallel (${CPU_COUNT} cores each)...${NC}"
+    echo -e "${YELLOW}Building amd64 and arm64 in parallel (${CPU_COUNT} cores each, no cache)...${NC}"
 
     # Build amd64 in background
     (
@@ -137,8 +136,6 @@ if [ "$PARALLEL" = true ]; then
             --platform linux/amd64 \
             -t "${FULL_IMAGE}:${VERSION}-amd64" \
             ${BUILD_ARGS} \
-            --cache-from type=registry,ref=${FULL_IMAGE}:cache-amd64 \
-            --cache-to type=registry,ref=${FULL_IMAGE}:cache-amd64,mode=max \
             --push \
             . 2>&1 | sed 's/^/[amd64] /'
         echo -e "${GREEN}[amd64] Complete!${NC}"
@@ -152,8 +149,6 @@ if [ "$PARALLEL" = true ]; then
             --platform linux/arm64 \
             -t "${FULL_IMAGE}:${VERSION}-arm64" \
             ${BUILD_ARGS} \
-            --cache-from type=registry,ref=${FULL_IMAGE}:cache-arm64 \
-            --cache-to type=registry,ref=${FULL_IMAGE}:cache-arm64,mode=max \
             --push \
             . 2>&1 | sed 's/^/[arm64] /'
         echo -e "${GREEN}[arm64] Complete!${NC}"
@@ -180,11 +175,10 @@ if [ "$PARALLEL" = true ]; then
     fi
 else
     # Sequential build (default): Build both platforms in one command
-    echo -e "${YELLOW}Building sequentially with ${CPU_COUNT} cores...${NC}"
+    echo -e "${YELLOW}Building sequentially with ${CPU_COUNT} cores (no cache)...${NC}"
     DOCKER_BUILDKIT=1 docker buildx build \
         --platform "$PLATFORMS" \
         ${BUILD_ARGS} \
-        ${CACHE_ARGS} \
         $TAGS \
         --push \
         .

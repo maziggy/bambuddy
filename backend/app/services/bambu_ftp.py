@@ -78,7 +78,7 @@ class BambuFTPClient:
     FTP_PORT = 990
     DEFAULT_TIMEOUT = 30  # Default timeout in seconds (increased for A1 printers)
     # Models that need SSL session reuse disabled (A1 series has FTP issues with session reuse)
-    SKIP_SESSION_REUSE_MODELS = ("A1", "A1 Mini", "P1S", "P1P")
+    SKIP_SESSION_REUSE_MODELS = ("A1", "A1 Mini", "P1S", "P1P", "P2S")
 
     def __init__(
         self,
@@ -323,7 +323,7 @@ class BambuFTPClient:
         # Calculate used space by listing root directories
         try:
             total_used = 0
-            dirs_to_scan = ["/cache", "/timelapse", "/model"]
+            dirs_to_scan = ["/cache", "/timelapse", "/model", "/data", "/data/Metadata", "/"]
 
             for dir_path in dirs_to_scan:
                 try:

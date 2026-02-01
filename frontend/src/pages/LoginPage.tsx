@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { HelpCircle, X } from 'lucide-react';
 
 export function LoginPage() {
   const { t } = useTranslation();
@@ -14,6 +15,7 @@ export function LoginPage() {
   const { mode } = useTheme();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   const loginMutation = useMutation({
     mutationFn: () => login(username, password),
@@ -98,8 +100,67 @@ export function LoginPage() {
               {loginMutation.isPending ? t('login.loggingIn') : t('login.signIn')}
             </button>
           </div>
+
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={() => setShowForgotPassword(true)}
+              className="text-sm text-bambu-gray hover:text-bambu-green transition-colors"
+            >
+              Forgot your password?
+            </button>
+          </div>
         </form>
       </div>
+
+      {/* Forgot Password Modal */}
+      {showForgotPassword && (
+        <div
+          className="fixed inset-0 bg-black flex items-center justify-center z-50 p-4"
+          onClick={() => setShowForgotPassword(false)}
+        >
+          <div
+            className="w-full max-w-md bg-bambu-card rounded-xl border border-bambu-dark-tertiary shadow-lg p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <HelpCircle className="w-5 h-5 text-bambu-green" />
+                <h2 className="text-lg font-semibold text-white">Forgot Password</h2>
+              </div>
+              <button
+                onClick={() => setShowForgotPassword(false)}
+                className="p-1 rounded-lg hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <p className="text-bambu-gray">
+                If you've forgotten your password, please contact your system administrator to reset it.
+              </p>
+
+              <div className="bg-bambu-dark rounded-lg p-4 space-y-2">
+                <p className="text-sm text-white font-medium">How to reset your password:</p>
+                <ol className="text-sm text-bambu-gray space-y-1 list-decimal list-inside">
+                  <li>Contact your Bambuddy administrator</li>
+                  <li>Ask them to reset your password in User Management</li>
+                  <li>They can set a new temporary password for you</li>
+                  <li>Log in with the new password and change it in Settings</li>
+                </ol>
+              </div>
+
+              <button
+                onClick={() => setShowForgotPassword(false)}
+                className="w-full py-2 px-4 bg-bambu-dark-tertiary hover:bg-bambu-dark text-white rounded-lg transition-colors"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -34,12 +34,21 @@ aiofiles>=23.0.0
 # QR Code generation
 qrcode[pil]>=7.4.0
 
+# STL Thumbnail Generation
+trimesh>=4.0.0
+matplotlib>=3.8.0
+fast-simplification>=0.1.0
+
 # System monitoring
 psutil>=6.0.0
 
 # Authentication
 PyJWT>=2.8.0
 passlib[bcrypt]>=1.7.4
+
+# Plate Detection (optional - enables build plate empty detection)
+opencv-python-headless>=4.8.0
+numpy>=1.24.0
 
 # Development
 pytest>=8.0.0

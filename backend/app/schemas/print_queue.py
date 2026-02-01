@@ -17,6 +17,8 @@ UTCDatetime = Annotated[datetime | None, PlainSerializer(serialize_utc_datetime)
 
 class PrintQueueItemCreate(BaseModel):
     printer_id: int | None = None  # None = unassigned, user assigns later
+    target_model: str | None = None  # Target printer model (mutually exclusive with printer_id)
+    required_filament_types: list[str] | None = None  # Required filament types for model-based assignment
     # Either archive_id OR library_file_id must be provided
     archive_id: int | None = None
     library_file_id: int | None = None
@@ -40,6 +42,7 @@ class PrintQueueItemCreate(BaseModel):
 
 class PrintQueueItemUpdate(BaseModel):
     printer_id: int | None = None
+    target_model: str | None = None  # Target printer model (mutually exclusive with printer_id)
     position: int | None = None
     scheduled_time: datetime | None = None
     require_previous_success: bool | None = None
@@ -59,6 +62,9 @@ class PrintQueueItemUpdate(BaseModel):
 class PrintQueueItemResponse(BaseModel):
     id: int
     printer_id: int | None  # None = unassigned
+    target_model: str | None = None  # Target printer model for model-based assignment
+    required_filament_types: list[str] | None = None  # Required filament types for model-based assignment
+    waiting_reason: str | None = None  # Why a model-based job hasn't started yet
     archive_id: int | None  # None if library_file_id is set (archive created at print start)
     library_file_id: int | None  # For queue items from library files
     position: int
@@ -100,3 +106,30 @@ class PrintQueueReorderItem(BaseModel):
 
 class PrintQueueReorder(BaseModel):
     items: list[PrintQueueReorderItem]
+
+
+class PrintQueueBulkUpdate(BaseModel):
+    """Bulk update multiple queue items with the same values."""
+
+    item_ids: list[int]
+    # Fields to update (all optional - only set fields are applied)
+    printer_id: int | None = None
+    scheduled_time: datetime | None = None
+    require_previous_success: bool | None = None
+    auto_off_after: bool | None = None
+    manual_start: bool | None = None
+    # Print options
+    bed_levelling: bool | None = None
+    flow_cali: bool | None = None
+    vibration_cali: bool | None = None
+    layer_inspect: bool | None = None
+    timelapse: bool | None = None
+    use_ams: bool | None = None
+
+
+class PrintQueueBulkUpdateResponse(BaseModel):
+    """Response for bulk update operation."""
+
+    updated_count: int
+    skipped_count: int  # Items that were not pending
+    message: str

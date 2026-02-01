@@ -12,6 +12,7 @@ import pytest
 from backend.app.services.printer_manager import (
     PrinterManager,
     get_derived_status_name,
+    has_stg_cur_idle_bug,
     init_printer_connections,
     printer_state_to_dict,
     supports_chamber_temp,
@@ -901,13 +902,79 @@ class TestGetDerivedStatusName:
         assert result == "Auto bed leveling"
 
     def test_stg_cur_zero_returns_printing(self):
-        """Verify stg_cur=0 returns 'Printing'."""
+        """Verify stg_cur=0 returns 'Printing' when no model specified."""
         state = MagicMock()
         state.stg_cur = 0
 
         result = get_derived_status_name(state)
 
         assert result == "Printing"
+
+    def test_a1_idle_with_stg_cur_zero_returns_none(self):
+        """Verify A1 with IDLE state and stg_cur=0 returns None (bug workaround)."""
+        state = MagicMock()
+        state.stg_cur = 0
+        state.state = "IDLE"
+
+        # Test various A1 model names
+        for model in ["A1", "A1 Mini", "A1-Mini", "A1MINI", "N1", "N2S"]:
+            result = get_derived_status_name(state, model)
+            assert result is None, f"Expected None for model {model}"
+
+    def test_a1_running_with_stg_cur_zero_returns_printing(self):
+        """Verify A1 with RUNNING state and stg_cur=0 still returns 'Printing'."""
+        state = MagicMock()
+        state.stg_cur = 0
+        state.state = "RUNNING"
+
+        result = get_derived_status_name(state, "A1")
+
+        assert result == "Printing"
+
+    def test_non_a1_idle_with_stg_cur_zero_returns_printing(self):
+        """Verify non-A1 models with IDLE and stg_cur=0 still return 'Printing'."""
+        state = MagicMock()
+        state.stg_cur = 0
+        state.state = "IDLE"
+
+        # X1C should not get the workaround
+        result = get_derived_status_name(state, "X1C")
+
+        assert result == "Printing"
+
+
+class TestHasStgCurIdleBug:
+    """Tests for has_stg_cur_idle_bug function."""
+
+    def test_a1_models_return_true(self):
+        """Verify A1 model variants return True."""
+        assert has_stg_cur_idle_bug("A1") is True
+        assert has_stg_cur_idle_bug("A1 Mini") is True
+        assert has_stg_cur_idle_bug("A1-Mini") is True
+        assert has_stg_cur_idle_bug("A1MINI") is True
+        assert has_stg_cur_idle_bug("a1") is True  # case insensitive
+        assert has_stg_cur_idle_bug("a1 mini") is True
+
+    def test_a1_internal_codes_return_true(self):
+        """Verify A1 internal model codes return True."""
+        assert has_stg_cur_idle_bug("N1") is True  # A1 Mini
+        assert has_stg_cur_idle_bug("N2S") is True  # A1
+
+    def test_non_a1_models_return_false(self):
+        """Verify non-A1 models return False."""
+        assert has_stg_cur_idle_bug("X1C") is False
+        assert has_stg_cur_idle_bug("X1") is False
+        assert has_stg_cur_idle_bug("P1P") is False
+        assert has_stg_cur_idle_bug("P1S") is False
+        assert has_stg_cur_idle_bug("H2D") is False
+
+    def test_none_model_returns_false(self):
+        """Verify None model returns False."""
+        assert has_stg_cur_idle_bug(None) is False
+
+    def test_empty_model_returns_false(self):
+        """Verify empty model returns False."""
+        assert has_stg_cur_idle_bug("") is False
 
 
 class TestInitPrinterConnections:

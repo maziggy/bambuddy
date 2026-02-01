@@ -2,6 +2,178 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
+## [0.1.6-final] - 2026-01-31
+
+### New Features
+- **Group-Based Permissions** - Granular access control with user groups:
+  - Create custom groups with specific permissions (50+ granular permissions)
+  - Default system groups: Administrators (full access), Operators (control printers), Viewers (read-only)
+  - Users can belong to multiple groups with additive permissions
+  - Permission-based UI: buttons/features disabled when user lacks permission
+  - Groups management page in Settings → Users → Groups tab
+  - Change password: users can change their own password from sidebar
+  - Included in backup/restore
+- **STL Thumbnail Generation** - Auto-generate preview thumbnails for STL files (Issue #156):
+  - Checkbox option when uploading STL files to generate thumbnails automatically
+  - Batch generate thumbnails for existing STL files via "Generate Thumbnails" button
+  - Individual file thumbnail generation via context menu (three-dot menu)
+  - Works with ZIP extraction (generates thumbnails for all STL files in archive)
+  - Uses trimesh and matplotlib for 3D rendering with Bambu green color theme
+  - Thumbnails auto-refresh in UI after generation
+  - Graceful handling of complex/invalid STL files
+- **Streaming Overlay for OBS** - Embeddable overlay page for live streaming with camera and print status (Issue #164):
+  - All-in-one page at `/overlay/:printerId` combining camera feed with status overlay
+  - Real-time print progress, ETA, layer count, and filename display
+  - Bambuddy logo branding (links to GitHub)
+  - Customizable via query parameters: `?size=small|medium|large` and `?show=progress,layers,eta,filename,status,printer`
+  - No authentication required - designed for OBS browser source embedding
+  - Gradient overlay at bottom for readable text over camera feed
+  - Auto-reconnect on camera stream errors
+- **MQTT Smart Plug Support** - Add smart plugs that subscribe to MQTT topics for energy monitoring (Issue #173):
+  - New "MQTT" plug type alongside Tasmota and Home Assistant
+  - Subscribe to any MQTT topic (Zigbee2MQTT, Shelly, Tasmota discovery, etc.)
+  - **Separate topics per data type**: Configure different MQTT topics for power, energy, and state
+  - Configurable JSON paths for data extraction (e.g., `power_l1`, `data.power`)
+  - **Separate multipliers**: Individual multiplier for power and energy (e.g., mW→W, Wh→kWh)
+  - **Custom ON value**: Configure what value means "ON" for state (e.g., "ON", "true", "1")
+  - Monitor-only: displays power/energy data without control capabilities
+  - Reuses existing MQTT broker settings from Settings → Network
+  - Energy data included in statistics and per-print tracking
+  - Full backup/restore support for MQTT plug configurations
+- **Disable Printer Firmware Checks** - New toggle in Settings → General → Updates to disable printer firmware update checks:
+  - Prevents Bambuddy from checking Bambu Lab servers for firmware updates
+  - Useful for users who prefer to manage firmware manually or have network restrictions
+- **Archive Plate Browsing** - Browse plate thumbnails directly in archive cards (Issue #166):
+  - Hover over archive card to reveal plate navigation for multi-plate files
+  - Left/right arrows to cycle through plate thumbnails
+  - Dot indicators show current plate (clickable to jump to specific plate)
+  - Lazy-loads plate data only when user hovers
+- **GitHub Profile Backup** - Automatically backup your Cloud profiles, K-profiles and settings to a GitHub repository:
+  - Configure GitHub repository URL and Personal Access Token
+  - Schedule backups hourly, daily, or weekly
+  - Manual on-demand backup trigger
+  - Backs up K-profiles (per-printer), cloud profiles, and app settings
+  - Skip unchanged commits (only creates commit when data changes)
+  - Real-time progress tracking during backup
+  - Backup history log with status and commit links
+  - Requires Bambu Cloud login for full profile access
+  - New Settings → Backup & Restore tab (local backup/restore moved here)
+  - Included in local backup/restore (except PAT for security)
+- **Plate Not Empty Notification** - Dedicated notification category for build plate detection:
+  - New toggle in notification provider settings (enabled by default)
+  - Sends immediately (bypasses quiet hours and digest mode)
+  - Separate from general printer errors for granular control
+- **USB Camera Support** - Connect USB webcams directly to your Bambuddy host:
+  - New "USB Camera (V4L2)" option in external camera settings
+  - Auto-detection of available USB cameras via V4L2
+  - API endpoint to list connected USB cameras (`GET /api/v1/printers/usb-cameras`)
+  - Works with any V4L2-compatible camera on Linux
+  - Uses ffmpeg for frame capture and streaming
+- **Build Plate Empty Detection** - Automatically detect if objects are on the build plate before printing:
+  - Per-printer toggle to enable/disable plate detection
+  - Multi-reference calibration: Store up to 5 reference images of empty plates (different plate types)
+  - Automatic print pause when objects detected on plate at print start
+  - Push notification and WebSocket alert when print is paused due to plate detection
+  - ROI (Region of Interest) calibration UI with sliders to focus detection on build plate area
+  - Reference management: View thumbnails, add labels, delete references
+  - Works with both built-in and external cameras
+  - Uses buffered camera frames when stream is active (no blocking)
+  - Split button UI: Main button toggles detection on/off, chevron opens calibration modal
+  - Green visual indicator when plate detection is enabled
+  - Included in backup/restore
+- **Project Import/Export** - Export and import projects with full file support (Issue #152):
+  - Export single project as ZIP (includes project settings, BOM, and all files from linked library folders)
+  - Export all projects as JSON for metadata-only backup
+  - Import from ZIP (with files) or JSON (metadata only)
+  - Linked folders and files are automatically created on import
+  - Useful for sharing complete project bundles or migrating between instances
+- **BOM Item Editing** - Bill of Materials items are now fully editable:
+  - Edit name, quantity, price, URL, and remarks after creation
+  - Pencil icon on each BOM item to enter edit mode
+- **Prometheus Metrics Endpoint** - Export printer telemetry for external monitoring systems (Issue #161):
+  - Enable via Settings → Network → Prometheus Metrics
+  - Endpoint: `GET /api/v1/metrics` (Prometheus text format)
+  - Optional bearer token authentication for security
+  - Printer metrics: connection status, state, temperatures (bed, nozzle, chamber), fans, WiFi signal
+  - Print metrics: progress, remaining time, layer count
+  - Statistics: total prints by status, filament used, print time
+  - Queue metrics: pending and active jobs
+  - System metrics: connected printers count
+  - Labels include printer_id, printer_name, serial for filtering
+  - Ready for Grafana dashboards
+- **External Link for Archives** - Add custom external links to archives for non-MakerWorld sources (Issue #151):
+  - Link archives to Printables, Thingiverse, or any other URL
+  - Globe button opens external link when set, falls back to auto-detected MakerWorld URL
+  - Edit via archive edit modal
+  - Included in backup/restore
+- **External Network Camera Support** - Add external cameras (MJPEG, RTSP, HTTP snapshot) to replace built-in printer cameras (Issue #143):
+  - Configure per-printer external camera URL and type in Settings → Camera
+  - Live streaming uses external camera when enabled
+  - Finish photo capture uses external camera
+  - Layer-based timelapse: captures frame on each layer change, stitches to MP4 on print completion
+  - Test connection button to verify camera accessibility
+- **Recalculate Costs Button** - New button on Dashboard to recalculate all archive costs using current filament prices (Issue #120)
+- **Create Folder from ZIP** - New option in File Manager upload to automatically create a folder named after the ZIP file (Issue #121)
+- **Multi-File Selection in Printer Files** - Printer card file browser now supports multiple file selection (Issue #144):
+  - Checkbox selection for individual files
+  - Select All / Deselect All buttons
+  - Bulk download as ZIP when multiple files selected
+  - Bulk delete for multiple files at once
+- **Queue Bulk Edit** - Select and edit multiple queue items at once (Issue #159):
+  - Checkbox selection for pending queue items
+  - Select All / Deselect All in toolbar
+  - Bulk edit: printer assignment, print options, queue options
+  - Bulk cancel selected items
+  - Tri-state toggles: unchanged / on / off for each setting
+
+### Fixes
+- **Multi-Plate Thumbnail in Queue** - Fixed queue items showing wrong thumbnail for multi-plate files (Issue #166):
+  - Queue now displays the correct plate thumbnail based on selected plate
+  - Previously always showed plate 1 thumbnail regardless of selection
+- **A1/A1 Mini Shows Printing Instead of Idle** - Fixed incorrect status display for A1 series printers (Issue #168):
+  - Some A1/A1 Mini firmware versions incorrectly report stage 0 ("Printing") when idle
+  - Now checks gcode_state to correctly display "Idle" for affected printers
+  - Fix only applies to A1 models with the specific buggy condition
+- **HMS Error Notifications** - Get notified when printer errors occur (Issue #84):
+  - Automatic notifications for HMS errors (AMS issues, nozzle problems, etc.)
+  - Human-readable error messages (853 error codes translated)
+  - Friendly error type names (Print/Task, AMS/Filament, Nozzle/Extruder, Motion Controller, Chamber)
+  - Deduplication prevents spam from repeated error messages
+  - Publishes to MQTT relay for home automation integrations
+  - New "Printer Error" toggle in notification provider settings
+- **Plate Calibration Persistence** - Fixed plate detection reference images not persisting after restart in Docker deployments
+- **Telegram Notification Parsing** - Fixed Telegram markdown parsing errors when messages contain underscores (e.g., error codes)
+- **Settings API PATCH Method** - Added PATCH support to `/api/settings` for Home Assistant rest_command compatibility (Issue #152)
+- **P2S Empty Archive Tiles** - Fixed FTP file search for printers without SD card (Issue #146):
+  - Added root folder `/` to search paths when looking for 3MF files
+  - Printers without SD card store files in root instead of `/cache`
+- **Empty AMS Slot Not Recognized** - Fixed bug where removed spools still appeared in Bambuddy (Issue #147):
+  - Old AMS: Now properly applies empty values from tray data updates
+  - New AMS (AMS 2 Pro): Now checks `tray_exist_bits` bitmask to detect and clear empty slots
+- **Reprint Cost Tracking** - Reprinting an archive now adds the cost to the existing total, so statistics accurately reflect total filament expenditure across all prints
+- **HA Energy Sensors Not Detected** - Home Assistant energy sensors with lowercase units (w, kwh) are now properly detected; unit matching is now case-insensitive (Issue #119)
+- **File Manager Upload** - Upload modal now accepts all file types, not just ZIP files
+- **Camera Zoom & Pan Improvements** - Enhanced camera viewer zoom/pan functionality (Issue #132):
+  - Pan range now based on actual container size, allowing full navigation of zoomed image
+  - Added pinch-to-zoom support for mobile/touch devices
+  - Added touch-based panning when zoomed in
+  - Both embedded camera viewer and standalone camera page updated
+- **Progress Milestone Time** - Fixed milestone notifications showing wrong time (e.g., "17m" instead of "17h 47m") by converting remaining_time from minutes to seconds (Issue #157)
+- **File Manager Folder Navigation** - Improved handling of long folder names (Issue #160):
+  - Resizable sidebar: Drag the edge to adjust width (200-500px), double-click to reset
+  - Text wrap toggle: "Wrap" button in header to wrap long names instead of truncating
+  - Both settings persist in localStorage
+  - Tooltip shows full name on hover
+- **K-Profiles Backup Status** - Fixed GitHub backup settings showing incorrect printer connection count (e.g., "1/2 connected" when both printers are connected); now fetches status from API instead of relying on WebSocket cache
+- **GitHub Backup Timestamps** - Removed volatile timestamps from GitHub backup files so git diffs only show actual data changes
+- **Model-Based Queue AMS Mapping** - Fixed "Any [Model]" queue jobs failing at filament loading on H2D Pro and other printers (Issue #192):
+  - Scheduler now computes AMS mapping after printer assignment for model-based jobs
+  - Previously, no AMS mapping was sent because the specific printer wasn't known at queue time
+  - Auto-matches required filaments to available AMS slots by type and color
+
+### Maintenance
+- Upgraded vitest from 2.x to 3.x to resolve npm audit security vulnerabilities in dev dependencies
+
 ## [0.1.6b11] - 2026-01-22
 
 ### New Features

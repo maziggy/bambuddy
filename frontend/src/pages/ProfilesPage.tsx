@@ -43,10 +43,11 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { parseUTCDate } from '../utils/date';
-import type { SlicerSetting, SlicerSettingsResponse, SlicerSettingDetail, SlicerSettingCreate, Printer, FieldDefinition } from '../api/client';
+import type { SlicerSetting, SlicerSettingsResponse, SlicerSettingDetail, SlicerSettingCreate, Printer, FieldDefinition, Permission } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
 import { KProfilesView } from '../components/KProfilesView';
 
 type ProfileTab = 'cloud' | 'kprofiles';
@@ -511,12 +512,14 @@ function PresetDetailModal({
   onDeleted,
   onDuplicate,
   onEdit,
+  hasPermission,
 }: {
   setting: SlicerSetting;
   onClose: () => void;
   onDeleted: () => void;
   onDuplicate: () => void;
   onEdit: () => void;
+  hasPermission: (permission: Permission) => boolean;
 }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -605,17 +608,32 @@ function PresetDetailModal({
             <div className="flex-shrink-0 p-4 border-t border-bambu-dark-tertiary">
               <div className="flex gap-2">
                 <Button variant="secondary" onClick={onClose} className="flex-1">{t('common.close')}</Button>
-                <Button variant="secondary" onClick={onDuplicate}>
+                <Button
+                  variant="secondary"
+                  onClick={onDuplicate}
+                  disabled={!hasPermission('cloud:auth')}
+                  title={!hasPermission('cloud:auth') ? t('profiles.noPermissionDuplicate') : undefined}
+                >
                   <Copy className="w-4 h-4" />
                   {t('profiles.duplicate')}
                 </Button>
                 {isEditable && (
                   <>
-                    <Button variant="secondary" onClick={onEdit} disabled={isLoading || !detail}>
+                    <Button
+                      variant="secondary"
+                      onClick={onEdit}
+                      disabled={isLoading || !detail || !hasPermission('cloud:auth')}
+                      title={!hasPermission('cloud:auth') ? t('profiles.noPermissionEdit') : undefined}
+                    >
                       <Pencil className="w-4 h-4" />
                       {t('common.edit')}
                     </Button>
-                    <Button variant="danger" onClick={() => setShowDeleteConfirm(true)}>
+                    <Button
+                      variant="danger"
+                      onClick={() => setShowDeleteConfirm(true)}
+                      disabled={!hasPermission('cloud:auth')}
+                      title={!hasPermission('cloud:auth') ? t('profiles.noPermissionDelete') : undefined}
+                    >
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   </>
@@ -2215,12 +2233,14 @@ function CloudProfilesView({
   onRefresh,
   isRefreshing,
   printers,
+  hasPermission,
 }: {
   settings: SlicerSettingsResponse;
   lastSyncTime?: Date;
   onRefresh: () => void;
   isRefreshing: boolean;
   printers: Printer[];
+  hasPermission: (permission: Permission) => boolean;
 }) {
   const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
@@ -2434,15 +2454,29 @@ function CloudProfilesView({
               <GitCompare className="w-4 h-4" />
               {compareMode ? t('common.cancel') : t('profiles.compare')}
             </Button>
-            <Button variant="secondary" onClick={() => setShowTemplatesModal(true)}>
+            <Button
+              variant="secondary"
+              onClick={() => setShowTemplatesModal(true)}
+              disabled={!hasPermission('cloud:auth')}
+              title={!hasPermission('cloud:auth') ? t('profiles.noPermissionManageTemplates') : undefined}
+            >
               <Sparkles className="w-4 h-4" />
               {t('profiles.templates')}
             </Button>
-            <Button variant="secondary" onClick={onRefresh} disabled={isRefreshing}>
+            <Button
+              variant="secondary"
+              onClick={onRefresh}
+              disabled={isRefreshing || !hasPermission('cloud:auth')}
+              title={!hasPermission('cloud:auth') ? t('profiles.noPermissionRefresh') : undefined}
+            >
               <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
               {t('common.refresh')}
             </Button>
-            <Button onClick={() => setShowCreateModal(true)}>
+            <Button
+              onClick={() => setShowCreateModal(true)}
+              disabled={!hasPermission('cloud:auth')}
+              title={!hasPermission('cloud:auth') ? t('profiles.noPermissionCreate') : undefined}
+            >
               <Plus className="w-4 h-4" />
               {t('profiles.newPreset')}
             </Button>
@@ -2714,6 +2748,7 @@ function CloudProfilesView({
           onDeleted={() => setSelectedSetting(null)}
           onDuplicate={() => handleDuplicate(selectedSetting)}
           onEdit={() => handleEdit(selectedSetting)}
+          hasPermission={hasPermission}
         />
       )}
 
@@ -2759,6 +2794,7 @@ export function ProfilesPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const { hasPermission } = useAuth();
   const [activeTab, setActiveTab] = useState<ProfileTab>('cloud');
   const [lastSyncTime, setLastSyncTime] = useState<Date>();
 
@@ -2857,7 +2893,8 @@ export function ProfilesPage() {
                 variant="secondary"
                 size="sm"
                 onClick={() => logoutMutation.mutate()}
-                disabled={logoutMutation.isPending}
+                disabled={logoutMutation.isPending || !hasPermission('cloud:auth')}
+                title={!hasPermission('cloud:auth') ? t('profiles.noPermissionLogout') : undefined}
               >
                 <LogOut className="w-4 h-4" />
                 {t('profiles.logout')}
@@ -2878,6 +2915,7 @@ export function ProfilesPage() {
               onRefresh={() => refetchSettings()}
               isRefreshing={settingsLoading}
               printers={printers}
+              hasPermission={hasPermission}
             />
           ) : (
             <div className="text-center py-16">

@@ -205,7 +205,18 @@ class TestUsersAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_list_users_requires_auth(self, async_client: AsyncClient):
-        """Verify listing users requires authentication."""
+        """Verify listing users requires authentication when auth is enabled."""
+        # First enable auth
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "authreqadmin",
+                "admin_password": "adminpassword123",
+            },
+        )
+
+        # Now try to list users without a token
         response = await async_client.get("/api/v1/users/")
 
         assert response.status_code == 401
@@ -360,3 +371,321 @@ class TestAuthDisableAPI:
         # Verify auth is now disabled
         status_response = await async_client.get("/api/v1/auth/status")
         assert status_response.json()["auth_enabled"] is False
+
+
+class TestGroupsAPI:
+    """Integration tests for /api/v1/groups/ endpoints."""
+
+    @pytest.fixture
+    async def auth_token(self, async_client: AsyncClient):
+        """Setup auth and return admin token."""
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "groupsadmin",
+                "admin_password": "adminpassword123",
+            },
+        )
+
+        login_response = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "groupsadmin", "password": "adminpassword123"},
+        )
+        return login_response.json()["access_token"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_groups(self, async_client: AsyncClient, auth_token: str):
+        """Verify listing groups returns default groups."""
+        response = await async_client.get(
+            "/api/v1/groups/",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+
+        assert response.status_code == 200
+        groups = response.json()
+        assert isinstance(groups, list)
+        # Should have default groups: Administrators, Operators, Viewers
+        group_names = [g["name"] for g in groups]
+        assert "Administrators" in group_names
+        assert "Operators" in group_names
+        assert "Viewers" in group_names
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_permissions(self, async_client: AsyncClient, auth_token: str):
+        """Verify getting available permissions."""
+        response = await async_client.get(
+            "/api/v1/groups/permissions",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+
+        assert response.status_code == 200
+        permissions = response.json()
+        assert isinstance(permissions, dict)
+        # Should have permission categories
+        assert "Printers" in permissions or len(permissions) > 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_group(self, async_client: AsyncClient, auth_token: str):
+        """Verify creating a new group."""
+        response = await async_client.post(
+            "/api/v1/groups/",
+            headers={"Authorization": f"Bearer {auth_token}"},
+            json={
+                "name": "Custom Group",
+                "description": "A custom test group",
+                "permissions": ["printers:read", "archives:read"],
+            },
+        )
+
+        assert response.status_code == 201
+        group = response.json()
+        assert group["name"] == "Custom Group"
+        assert group["description"] == "A custom test group"
+        assert "printers:read" in group["permissions"]
+        assert group["is_system"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_group(self, async_client: AsyncClient, auth_token: str):
+        """Verify updating a group."""
+        # Create a group first
+        create_response = await async_client.post(
+            "/api/v1/groups/",
+            headers={"Authorization": f"Bearer {auth_token}"},
+            json={
+                "name": "Update Test Group",
+                "permissions": ["printers:read"],
+            },
+        )
+        group_id = create_response.json()["id"]
+
+        # Update the group
+        response = await async_client.patch(
+            f"/api/v1/groups/{group_id}",
+            headers={"Authorization": f"Bearer {auth_token}"},
+            json={
+                "description": "Updated description",
+                "permissions": ["printers:read", "printers:control"],
+            },
+        )
+
+        assert response.status_code == 200
+        group = response.json()
+        assert group["description"] == "Updated description"
+        assert "printers:control" in group["permissions"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_cannot_delete_system_group(self, async_client: AsyncClient, auth_token: str):
+        """Verify system groups cannot be deleted."""
+        # Get the Administrators group
+        list_response = await async_client.get(
+            "/api/v1/groups/",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        admin_group = next(g for g in list_response.json() if g["name"] == "Administrators")
+
+        # Try to delete it
+        response = await async_client.delete(
+            f"/api/v1/groups/{admin_group['id']}",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+
+        assert response.status_code == 400
+        assert "system group" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_delete_custom_group(self, async_client: AsyncClient, auth_token: str):
+        """Verify custom groups can be deleted."""
+        # Create a group
+        create_response = await async_client.post(
+            "/api/v1/groups/",
+            headers={"Authorization": f"Bearer {auth_token}"},
+            json={"name": "Delete Test Group"},
+        )
+        group_id = create_response.json()["id"]
+
+        # Delete it
+        response = await async_client.delete(
+            f"/api/v1/groups/{group_id}",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+
+        assert response.status_code == 204
+
+
+class TestUserGroupsAPI:
+    """Integration tests for user-group assignments."""
+
+    @pytest.fixture
+    async def auth_token(self, async_client: AsyncClient):
+        """Setup auth and return admin token."""
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "usergroupadmin",
+                "admin_password": "adminpassword123",
+            },
+        )
+
+        login_response = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "usergroupadmin", "password": "adminpassword123"},
+        )
+        return login_response.json()["access_token"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_user_with_groups(self, async_client: AsyncClient, auth_token: str):
+        """Verify creating a user with group assignments."""
+        # Get Operators group ID
+        groups_response = await async_client.get(
+            "/api/v1/groups/",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        operators_group = next(g for g in groups_response.json() if g["name"] == "Operators")
+
+        # Create user with group
+        response = await async_client.post(
+            "/api/v1/users/",
+            headers={"Authorization": f"Bearer {auth_token}"},
+            json={
+                "username": "groupuser",
+                "password": "password123",
+                "group_ids": [operators_group["id"]],
+            },
+        )
+
+        assert response.status_code == 201
+        user = response.json()
+        assert any(g["name"] == "Operators" for g in user["groups"])
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_user_to_group(self, async_client: AsyncClient, auth_token: str):
+        """Verify adding a user to a group."""
+        # Create a user
+        user_response = await async_client.post(
+            "/api/v1/users/",
+            headers={"Authorization": f"Bearer {auth_token}"},
+            json={"username": "addtogroup", "password": "password123"},
+        )
+        user_id = user_response.json()["id"]
+
+        # Get Viewers group
+        groups_response = await async_client.get(
+            "/api/v1/groups/",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        viewers_group = next(g for g in groups_response.json() if g["name"] == "Viewers")
+
+        # Add user to group
+        response = await async_client.post(
+            f"/api/v1/groups/{viewers_group['id']}/users/{user_id}",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+
+        assert response.status_code == 204
+
+        # Verify user is in group
+        user_check = await async_client.get(
+            f"/api/v1/users/{user_id}",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert any(g["name"] == "Viewers" for g in user_check.json()["groups"])
+
+
+class TestChangePasswordAPI:
+    """Integration tests for /api/v1/users/me/change-password endpoint."""
+
+    @pytest.fixture
+    async def user_token(self, async_client: AsyncClient):
+        """Setup auth and return regular user token."""
+        # Enable auth with admin
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "pwchangeadmin",
+                "admin_password": "adminpassword123",
+            },
+        )
+
+        admin_login = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "pwchangeadmin", "password": "adminpassword123"},
+        )
+        admin_token = admin_login.json()["access_token"]
+
+        # Create a regular user
+        await async_client.post(
+            "/api/v1/users/",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"username": "pwchangeuser", "password": "oldpassword123"},
+        )
+
+        # Login as regular user
+        user_login = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "pwchangeuser", "password": "oldpassword123"},
+        )
+        return user_login.json()["access_token"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_change_password_success(self, async_client: AsyncClient, user_token: str):
+        """Verify user can change their own password."""
+        response = await async_client.post(
+            "/api/v1/users/me/change-password",
+            headers={"Authorization": f"Bearer {user_token}"},
+            json={
+                "current_password": "oldpassword123",
+                "new_password": "newpassword456",
+            },
+        )
+
+        assert response.status_code == 200
+        assert "success" in response.json()["message"].lower()
+
+        # Verify can login with new password
+        login_response = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "pwchangeuser", "password": "newpassword456"},
+        )
+        assert login_response.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_change_password_wrong_current(self, async_client: AsyncClient, user_token: str):
+        """Verify changing password fails with wrong current password."""
+        response = await async_client.post(
+            "/api/v1/users/me/change-password",
+            headers={"Authorization": f"Bearer {user_token}"},
+            json={
+                "current_password": "wrongpassword",
+                "new_password": "newpassword456",
+            },
+        )
+
+        assert response.status_code == 400
+        assert "incorrect" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_change_password_requires_auth(self, async_client: AsyncClient):
+        """Verify changing password requires authentication."""
+        response = await async_client.post(
+            "/api/v1/users/me/change-password",
+            json={
+                "current_password": "oldpassword",
+                "new_password": "newpassword",
+            },
+        )
+
+        assert response.status_code == 401

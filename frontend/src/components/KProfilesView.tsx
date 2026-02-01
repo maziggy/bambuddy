@@ -20,10 +20,11 @@ import {
   StickyNote,
 } from 'lucide-react';
 import { api } from '../api/client';
-import type { KProfile, KProfileCreate, KProfileDelete } from '../api/client';
+import type { KProfile, KProfileCreate, KProfileDelete, Permission } from '../api/client';
 import { Card, CardContent } from './Card';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
 
 interface KProfileCardProps {
   profile: KProfile;
@@ -156,6 +157,7 @@ interface KProfileModalProps {
   onClose: () => void;
   onSave: () => void;
   onSaveNote?: (settingId: string, note: string) => void;  // Callback to save note
+  hasPermission: (permission: Permission) => boolean;
 }
 
 function KProfileModal({
@@ -169,6 +171,7 @@ function KProfileModal({
   onClose,
   onSave,
   onSaveNote,
+  hasPermission,
 }: KProfileModalProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -593,7 +596,8 @@ function KProfileModal({
                   type="button"
                   variant="secondary"
                   onClick={() => setShowDeleteConfirm(true)}
-                  disabled={deleteMutation.isPending || isSyncing}
+                  disabled={deleteMutation.isPending || isSyncing || !hasPermission('kprofiles:delete')}
+                  title={!hasPermission('kprofiles:delete') ? t('kProfiles.noPermissionDelete') : undefined}
                   className="text-red-500 hover:bg-red-500/10"
                 >
                   {deleteMutation.isPending ? (
@@ -614,7 +618,8 @@ function KProfileModal({
               </Button>
               <Button
                 type="submit"
-                disabled={saveMutation.isPending || isSyncing}
+                disabled={saveMutation.isPending || isSyncing || !hasPermission(profile ? 'kprofiles:update' : 'kprofiles:create')}
+                title={!hasPermission(profile ? 'kprofiles:update' : 'kprofiles:create') ? t(profile ? 'kProfiles.noPermissionUpdate' : 'kProfiles.noPermissionCreate') : undefined}
                 className="flex-1"
               >
                 {saveMutation.isPending ? (
@@ -691,6 +696,7 @@ const STORAGE_KEYS = {
 export function KProfilesView() {
   const { t } = useTranslation();
   const { showToast } = useToast();
+  const { hasPermission } = useAuth();
   const [selectedPrinter, setSelectedPrinter] = useState<number | null>(null);
   // Load nozzle diameter from localStorage
   const [nozzleDiameter, setNozzleDiameter] = useState(() => {
@@ -1143,12 +1149,17 @@ export function KProfilesView() {
           <Button
             variant="secondary"
             onClick={() => refetchProfiles()}
-            disabled={isFetching}
+            disabled={isFetching || !hasPermission('kprofiles:read')}
+            title={!hasPermission('kprofiles:read') ? t('kProfiles.noPermissionRefresh') : undefined}
           >
             <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
             {t('common.refresh')}
           </Button>
-          <Button onClick={() => setShowAddModal(true)}>
+          <Button
+            onClick={() => setShowAddModal(true)}
+            disabled={!hasPermission('kprofiles:create')}
+            title={!hasPermission('kprofiles:create') ? t('kProfiles.noPermissionAdd') : undefined}
+          >
             <Plus className="w-4 h-4" />
             {t('kProfiles.addProfile')}
           </Button>
@@ -1209,8 +1220,8 @@ export function KProfilesView() {
         <Button
           variant="secondary"
           onClick={handleExport}
-          disabled={!kprofiles?.profiles?.length}
-          title={t('kProfiles.exportToJson')}
+          disabled={!kprofiles?.profiles?.length || !hasPermission('kprofiles:read')}
+          title={!hasPermission('kprofiles:read') ? t('kProfiles.noPermissionExport') : t('kProfiles.exportToJson')}
         >
           <Download className="w-4 h-4" />
           {t('common.export')}
@@ -1218,7 +1229,8 @@ export function KProfilesView() {
         <Button
           variant="secondary"
           onClick={handleImport}
-          title={t('kProfiles.importFromJson')}
+          disabled={!hasPermission('kprofiles:create')}
+          title={!hasPermission('kprofiles:create') ? t('kProfiles.noPermissionImport') : t('kProfiles.importFromJson')}
         >
           <Upload className="w-4 h-4" />
           {t('common.import')}
@@ -1237,9 +1249,9 @@ export function KProfilesView() {
             <Button
               variant="secondary"
               onClick={handleBulkDelete}
-              disabled={selectedProfiles.size === 0}
+              disabled={selectedProfiles.size === 0 || !hasPermission('kprofiles:delete')}
               className="text-red-500 hover:bg-red-500/10"
-              title={`Delete ${selectedProfiles.size} selected profiles`}
+              title={!hasPermission('kprofiles:delete') ? t('kProfiles.noPermissionDeleteBulk') : t('kProfiles.deleteSelectedProfiles', { count: selectedProfiles.size })}
             >
               <Trash2 className="w-4 h-4" />
               {t('common.delete')} ({selectedProfiles.size})
@@ -1259,8 +1271,8 @@ export function KProfilesView() {
           <Button
             variant="secondary"
             onClick={() => setSelectionMode(true)}
-            disabled={!filteredProfiles.length}
-            title={t('kProfiles.enterSelectionMode')}
+            disabled={!filteredProfiles.length || !hasPermission('kprofiles:delete')}
+            title={!hasPermission('kprofiles:delete') ? t('kProfiles.noPermissionDeleteBulk') : t('kProfiles.enterSelectionMode')}
           >
             <CheckSquare className="w-4 h-4" />
             {t('kProfiles.select')}
@@ -1388,6 +1400,7 @@ export function KProfilesView() {
             initialNote={note}
             initialNoteKey={key}
             onSaveNote={handleSaveNote}
+            hasPermission={hasPermission}
             onClose={() => {
               console.log('[KProfiles] Edit modal onClose - refetching profiles...');
               setEditingProfile(null);
@@ -1409,6 +1422,7 @@ export function KProfilesView() {
           existingProfiles={allProfiles?.profiles || kprofiles?.profiles}
           isDualNozzle={isDualNozzle}
           onSaveNote={handleSaveNote}
+          hasPermission={hasPermission}
           onClose={() => {
             setShowAddModal(false);
             refetchProfiles();  // Refetch after close
@@ -1428,6 +1442,7 @@ export function KProfilesView() {
           existingProfiles={allProfiles?.profiles || kprofiles?.profiles}
           isDualNozzle={isDualNozzle}
           onSaveNote={handleSaveNote}
+          hasPermission={hasPermission}
           // Pass profile data but without slot_id to create a new profile
           profile={{
             ...copyingProfile,

@@ -1,11 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Upload, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, Info, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, ChevronRight, Check, Save } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDateOnly } from '../utils/date';
-import type { AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus } from '../api/client';
+import type { AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, Group, GroupCreate, GroupUpdate, Permission, PermissionCategory } from '../api/client';
 import { Card, CardContent, CardHeader } from '../components/Card';
 import { Button } from '../components/Button';
 import { SmartPlugCard } from '../components/SmartPlugCard';
@@ -15,11 +15,10 @@ import { AddNotificationModal } from '../components/AddNotificationModal';
 import { NotificationTemplateEditor } from '../components/NotificationTemplateEditor';
 import { NotificationLogViewer } from '../components/NotificationLogViewer';
 import { ConfirmModal } from '../components/ConfirmModal';
-import { BackupModal } from '../components/BackupModal';
-import { RestoreModal } from '../components/RestoreModal';
 import { SpoolmanSettings } from '../components/SpoolmanSettings';
 import { ExternalLinksSettings } from '../components/ExternalLinksSettings';
 import { VirtualPrinterSettings } from '../components/VirtualPrinterSettings';
+import { GitHubBackupSettings } from '../components/GitHubBackupSettings';
 import { APIBrowser } from '../components/APIBrowser';
 import { virtualPrinterApi } from '../api/client';
 import { defaultNavItems, getDefaultView, setDefaultView } from '../components/Layout';
@@ -29,7 +28,7 @@ import { useTheme, type ThemeStyle, type DarkBackground, type LightBackground, t
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Palette } from 'lucide-react';
 
-const validTabs = ['general', 'network', 'plugs', 'notifications', 'filament', 'apikeys', 'virtual-printer', 'users'] as const;
+const validTabs = ['general', 'network', 'plugs', 'notifications', 'filament', 'apikeys', 'virtual-printer', 'users', 'backup'] as const;
 type TabType = typeof validTabs[number];
 
 export function SettingsPage() {
@@ -37,7 +36,7 @@ export function SettingsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { t, i18n } = useTranslation();
-  const { showToast, showPersistentToast, dismissToast } = useToast();
+  const { showToast } = useToast();
   const { authEnabled, user, refreshAuth } = useAuth();
   const {
     mode,
@@ -85,15 +84,53 @@ export function SettingsPage() {
   const [showClearLogsConfirm, setShowClearLogsConfirm] = useState(false);
   const [showClearStorageConfirm, setShowClearStorageConfirm] = useState(false);
   const [showBulkPlugConfirm, setShowBulkPlugConfirm] = useState<'on' | 'off' | null>(null);
-  const [showBackupModal, setShowBackupModal] = useState(false);
-  const [showRestoreModal, setShowRestoreModal] = useState(false);
-  const [showTelemetryInfo, setShowTelemetryInfo] = useState(false);
   const [showReleaseNotes, setShowReleaseNotes] = useState(false);
   const [showDisableAuthConfirm, setShowDisableAuthConfirm] = useState(false);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [changePasswordData, setChangePasswordData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [changePasswordLoading, setChangePasswordLoading] = useState(false);
+
+  // User management state
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
+  const [showEditUserModal, setShowEditUserModal] = useState(false);
+  const [editingUserId, setEditingUserId] = useState<number | null>(null);
+  const [deleteUserId, setDeleteUserId] = useState<number | null>(null);
+  const [userFormData, setUserFormData] = useState<{
+    username: string;
+    password: string;
+    confirmPassword: string;
+    role: string;
+    group_ids: number[];
+  }>({
+    username: '',
+    password: '',
+    confirmPassword: '',
+    role: 'user',
+    group_ids: [],
+  });
+
+  // Group management state
+  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<Group | null>(null);
+  const [deleteGroupId, setDeleteGroupId] = useState<number | null>(null);
+  const [groupFormData, setGroupFormData] = useState<{
+    name: string;
+    description: string;
+    permissions: Permission[];
+  }>({
+    name: '',
+    description: '',
+    permissions: [],
+  });
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
   // Home Assistant test connection state
   const [haTestResult, setHaTestResult] = useState<{ success: boolean; message: string | null; error: string | null } | null>(null);
   const [haTestLoading, setHaTestLoading] = useState(false);
+
+  // External camera test state
+  const [extCameraTestResults, setExtCameraTestResults] = useState<Record<number, { success: boolean; error?: string; resolution?: string } | null>>({});
+  const [extCameraTestLoading, setExtCameraTestLoading] = useState<Record<number, boolean>>({});
 
   const handleDefaultViewChange = (path: string) => {
     setDefaultViewState(path);
@@ -138,13 +175,17 @@ export function SettingsPage() {
       let totalLifetime = 0;
       let reachableCount = 0;
 
-      for (const { status } of statuses) {
-        if (status?.reachable && status.energy) {
+      for (const { plug, status } of statuses) {
+        // For MQTT plugs, consider reachable if we have power data
+        const hasMqttData = plug.plug_type === 'mqtt' && (status?.energy?.power != null);
+        const isReachable = (status?.reachable || hasMqttData) && status?.energy;
+
+        if (isReachable) {
           reachableCount++;
-          if (status.energy.power != null) totalPower += status.energy.power;
-          if (status.energy.today != null) totalToday += status.energy.today;
-          if (status.energy.yesterday != null) totalYesterday += status.energy.yesterday;
-          if (status.energy.total != null) totalLifetime += status.energy.total;
+          if (status.energy?.power != null) totalPower += status.energy.power;
+          if (status.energy?.today != null) totalToday += status.energy.today;
+          if (status.energy?.yesterday != null) totalYesterday += status.energy.yesterday;
+          if (status.energy?.total != null) totalLifetime += status.energy.total;
         }
       }
 
@@ -250,6 +291,271 @@ export function SettingsPage() {
     queryFn: api.getMQTTStatus,
     refetchInterval: activeTab === 'network' ? 5000 : false, // Poll every 5s when on Network tab
   });
+
+  // GitHub backup status for Backup tab indicator
+  const { data: githubBackupStatus } = useQuery<GitHubBackupStatus>({
+    queryKey: ['github-backup-status'],
+    queryFn: api.getGitHubBackupStatus,
+  });
+
+  // Cloud auth status for Backup tab indicator
+  const { data: cloudAuthStatus } = useQuery<CloudAuthStatus>({
+    queryKey: ['cloud-status'],
+    queryFn: api.getCloudStatus,
+  });
+
+  // User management queries and mutations
+  const { hasPermission } = useAuth();
+
+  const { data: usersData = [], isLoading: usersLoading } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => api.getUsers(),
+    enabled: authEnabled && hasPermission('users:read'),
+  });
+
+  const { data: groupsData = [], isLoading: groupsLoading } = useQuery({
+    queryKey: ['groups'],
+    queryFn: () => api.getGroups(),
+    enabled: authEnabled && hasPermission('groups:read'),
+  });
+
+  const { data: permissionsData } = useQuery({
+    queryKey: ['permissions'],
+    queryFn: () => api.getPermissions(),
+    enabled: authEnabled && hasPermission('groups:read'),
+  });
+
+  const createUserMutation = useMutation({
+    mutationFn: (data: UserCreate) => api.createUser(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      setShowCreateUserModal(false);
+      setUserFormData({ username: '', password: '', confirmPassword: '', role: 'user', group_ids: [] });
+      showToast('User created successfully');
+    },
+    onError: (error: Error) => {
+      showToast(error.message, 'error');
+    },
+  });
+
+  const updateUserMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: UserUpdate }) => api.updateUser(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      setShowEditUserModal(false);
+      setEditingUserId(null);
+      setUserFormData({ username: '', password: '', confirmPassword: '', role: 'user', group_ids: [] });
+      showToast('User updated successfully');
+    },
+    onError: (error: Error) => {
+      showToast(error.message, 'error');
+    },
+  });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: (id: number) => api.deleteUser(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      showToast('User deleted successfully');
+    },
+    onError: (error: Error) => {
+      showToast(error.message, 'error');
+    },
+  });
+
+  const createGroupMutation = useMutation({
+    mutationFn: (data: GroupCreate) => api.createGroup(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      setShowCreateGroupModal(false);
+      resetGroupForm();
+      showToast('Group created successfully');
+    },
+    onError: (error: Error) => {
+      showToast(error.message, 'error');
+    },
+  });
+
+  const updateGroupMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: GroupUpdate }) => api.updateGroup(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      setEditingGroup(null);
+      resetGroupForm();
+      showToast('Group updated successfully');
+    },
+    onError: (error: Error) => {
+      showToast(error.message, 'error');
+    },
+  });
+
+  const deleteGroupMutation = useMutation({
+    mutationFn: (id: number) => api.deleteGroup(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      showToast('Group deleted successfully');
+    },
+    onError: (error: Error) => {
+      showToast(error.message, 'error');
+    },
+  });
+
+  // User management handlers
+  const handleCreateUser = () => {
+    if (!userFormData.username || !userFormData.password) {
+      showToast('Please fill in all required fields', 'error');
+      return;
+    }
+    if (userFormData.password !== userFormData.confirmPassword) {
+      showToast('Passwords do not match', 'error');
+      return;
+    }
+    if (userFormData.password.length < 6) {
+      showToast('Password must be at least 6 characters', 'error');
+      return;
+    }
+    createUserMutation.mutate({
+      username: userFormData.username,
+      password: userFormData.password,
+      role: userFormData.role,
+      group_ids: userFormData.group_ids.length > 0 ? userFormData.group_ids : undefined,
+    });
+  };
+
+  const handleUpdateUser = (id: number) => {
+    if (userFormData.password) {
+      if (userFormData.password !== userFormData.confirmPassword) {
+        showToast('Passwords do not match', 'error');
+        return;
+      }
+      if (userFormData.password.length < 6) {
+        showToast('Password must be at least 6 characters', 'error');
+        return;
+      }
+    }
+    const updateData: UserUpdate = {
+      username: userFormData.username || undefined,
+      password: userFormData.password || undefined,
+      role: userFormData.role,
+      group_ids: userFormData.group_ids,
+    };
+    if (!updateData.password) {
+      delete updateData.password;
+    }
+    updateUserMutation.mutate({ id, data: updateData });
+  };
+
+  const startEditUser = (userToEdit: UserResponse) => {
+    setEditingUserId(userToEdit.id);
+    setUserFormData({
+      username: userToEdit.username,
+      password: '',
+      confirmPassword: '',
+      role: userToEdit.role,
+      group_ids: userToEdit.groups?.map(g => g.id) || [],
+    });
+    setShowEditUserModal(true);
+  };
+
+  const toggleUserGroup = (groupId: number) => {
+    setUserFormData(prev => ({
+      ...prev,
+      group_ids: prev.group_ids.includes(groupId)
+        ? prev.group_ids.filter(id => id !== groupId)
+        : [...prev.group_ids, groupId],
+    }));
+  };
+
+  // Group management handlers
+  const resetGroupForm = () => {
+    setGroupFormData({ name: '', description: '', permissions: [] });
+    setExpandedCategories(new Set());
+  };
+
+  const handleCreateGroup = () => {
+    if (!groupFormData.name.trim()) {
+      showToast('Please enter a group name', 'error');
+      return;
+    }
+    createGroupMutation.mutate({
+      name: groupFormData.name,
+      description: groupFormData.description || undefined,
+      permissions: groupFormData.permissions,
+    });
+  };
+
+  const handleUpdateGroup = () => {
+    if (!editingGroup) return;
+    if (!groupFormData.name.trim()) {
+      showToast('Please enter a group name', 'error');
+      return;
+    }
+    updateGroupMutation.mutate({
+      id: editingGroup.id,
+      data: {
+        name: groupFormData.name !== editingGroup.name ? groupFormData.name : undefined,
+        description: groupFormData.description,
+        permissions: groupFormData.permissions,
+      },
+    });
+  };
+
+  const startEditGroup = (group: Group) => {
+    setEditingGroup(group);
+    setGroupFormData({
+      name: group.name,
+      description: group.description || '',
+      permissions: group.permissions,
+    });
+    const cats = new Set<string>();
+    permissionsData?.categories.forEach((cat) => {
+      if (cat.permissions.some((p) => group.permissions.includes(p.value))) {
+        cats.add(cat.name);
+      }
+    });
+    setExpandedCategories(cats);
+  };
+
+  const toggleCategory = (categoryName: string) => {
+    setExpandedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(categoryName)) {
+        next.delete(categoryName);
+      } else {
+        next.add(categoryName);
+      }
+      return next;
+    });
+  };
+
+  const togglePermission = (permission: Permission) => {
+    setGroupFormData((prev) => {
+      const permissions = prev.permissions.includes(permission)
+        ? prev.permissions.filter((p) => p !== permission)
+        : [...prev.permissions, permission];
+      return { ...prev, permissions };
+    });
+  };
+
+  const toggleCategoryPermissions = (category: PermissionCategory, checked: boolean) => {
+    setGroupFormData((prev) => {
+      const categoryPerms = category.permissions.map((p) => p.value);
+      const otherPerms = prev.permissions.filter((p) => !categoryPerms.includes(p));
+      const permissions = checked ? [...otherPerms, ...categoryPerms] : otherPerms;
+      return { ...prev, permissions };
+    });
+  };
+
+  const isCategoryFullySelected = (category: PermissionCategory) => {
+    return category.permissions.every((p) => groupFormData.permissions.includes(p.value));
+  };
+
+  const isCategoryPartiallySelected = (category: PermissionCategory) => {
+    const selected = category.permissions.filter((p) => groupFormData.permissions.includes(p.value));
+    return selected.length > 0 && selected.length < category.permissions.length;
+  };
 
   const applyUpdateMutation = useMutation({
     mutationFn: api.applyUpdate,
@@ -366,6 +672,18 @@ export function SettingsPage() {
     },
   });
 
+  const updatePrinterMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Partial<{ external_camera_url: string | null; external_camera_type: string | null; external_camera_enabled: boolean }> }) =>
+      api.updatePrinter(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['printers'] });
+      showToast('Camera settings saved', 'success');
+    },
+    onError: (error: Error) => {
+      showToast(`Failed to update printer: ${error.message}`, 'error');
+    },
+  });
+
   // Debounced auto-save when localSettings change
   useEffect(() => {
     // Skip if initial load or no settings
@@ -383,8 +701,8 @@ export function SettingsPage() {
       settings.energy_cost_per_kwh !== localSettings.energy_cost_per_kwh ||
       settings.energy_tracking_mode !== localSettings.energy_tracking_mode ||
       settings.check_updates !== localSettings.check_updates ||
+      (settings.check_printer_firmware ?? true) !== (localSettings.check_printer_firmware ?? true) ||
       settings.notification_language !== localSettings.notification_language ||
-      settings.telemetry_enabled !== localSettings.telemetry_enabled ||
       settings.ams_humidity_good !== localSettings.ams_humidity_good ||
       settings.ams_humidity_fair !== localSettings.ams_humidity_fair ||
       settings.ams_temp_good !== localSettings.ams_temp_good ||
@@ -411,7 +729,9 @@ export function SettingsPage() {
       settings.ha_token !== localSettings.ha_token ||
       (settings.library_archive_mode ?? 'ask') !== (localSettings.library_archive_mode ?? 'ask') ||
       Number(settings.library_disk_warning_gb ?? 5) !== Number(localSettings.library_disk_warning_gb ?? 5) ||
-      (settings.camera_view_mode ?? 'window') !== (localSettings.camera_view_mode ?? 'window');
+      (settings.camera_view_mode ?? 'window') !== (localSettings.camera_view_mode ?? 'window') ||
+      settings.prometheus_enabled !== localSettings.prometheus_enabled ||
+      settings.prometheus_token !== localSettings.prometheus_token;
 
     if (!hasChanges) {
       return;
@@ -444,8 +764,8 @@ export function SettingsPage() {
         energy_cost_per_kwh: localSettings.energy_cost_per_kwh,
         energy_tracking_mode: localSettings.energy_tracking_mode,
         check_updates: localSettings.check_updates,
+        check_printer_firmware: localSettings.check_printer_firmware,
         notification_language: localSettings.notification_language,
-        telemetry_enabled: localSettings.telemetry_enabled,
         ams_humidity_good: localSettings.ams_humidity_good,
         ams_humidity_fair: localSettings.ams_humidity_fair,
         ams_temp_good: localSettings.ams_temp_good,
@@ -473,6 +793,8 @@ export function SettingsPage() {
         library_archive_mode: localSettings.library_archive_mode,
         library_disk_warning_gb: localSettings.library_disk_warning_gb,
         camera_view_mode: localSettings.camera_view_mode,
+        prometheus_enabled: localSettings.prometheus_enabled,
+        prometheus_token: localSettings.prometheus_token,
       };
       updateMutation.mutate(settingsToSave);
     }, 500);
@@ -488,6 +810,76 @@ export function SettingsPage() {
   const updateSetting = useCallback(<K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     setLocalSettings(prev => prev ? { ...prev, [key]: value } : null);
   }, []);
+
+  const handleTestExternalCamera = async (printerId: number, url: string, cameraType: string) => {
+    if (!url) {
+      showToast('Please enter a camera URL', 'error');
+      return;
+    }
+    setExtCameraTestLoading(prev => ({ ...prev, [printerId]: true }));
+    setExtCameraTestResults(prev => ({ ...prev, [printerId]: null }));
+    try {
+      const result = await api.testExternalCamera(printerId, url, cameraType);
+      setExtCameraTestResults(prev => ({ ...prev, [printerId]: result }));
+      if (result.success) {
+        showToast(`Camera connected${result.resolution ? ` (${result.resolution})` : ''}`, 'success');
+      } else {
+        showToast(result.error || 'Connection failed', 'error');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Test failed';
+      setExtCameraTestResults(prev => ({ ...prev, [printerId]: { success: false, error: message } }));
+      showToast(message, 'error');
+    } finally {
+      setExtCameraTestLoading(prev => ({ ...prev, [printerId]: false }));
+    }
+  };
+
+  // Local state for camera URL inputs (to avoid saving on every keystroke)
+  const [localCameraUrls, setLocalCameraUrls] = useState<Record<number, string>>({});
+  const cameraUrlSaveTimeoutRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const initializedPrinterUrlsRef = useRef<Set<number>>(new Set());
+
+  // Initialize local camera URLs from printer data
+  useEffect(() => {
+    if (printers) {
+      const urls: Record<number, string> = {};
+      printers.forEach(p => {
+        if (p.external_camera_url && !initializedPrinterUrlsRef.current.has(p.id)) {
+          urls[p.id] = p.external_camera_url;
+          initializedPrinterUrlsRef.current.add(p.id);
+        }
+      });
+      if (Object.keys(urls).length > 0) {
+        setLocalCameraUrls(prev => ({ ...prev, ...urls }));
+      }
+    }
+  }, [printers]);
+
+  const handleCameraUrlChange = (printerId: number, url: string) => {
+    // Update local state immediately for responsive UI
+    setLocalCameraUrls(prev => ({ ...prev, [printerId]: url }));
+
+    // Clear existing timeout for this printer
+    if (cameraUrlSaveTimeoutRef.current[printerId]) {
+      clearTimeout(cameraUrlSaveTimeoutRef.current[printerId]);
+    }
+
+    // Debounce the save (800ms delay)
+    cameraUrlSaveTimeoutRef.current[printerId] = setTimeout(() => {
+      updatePrinterMutation.mutate({
+        id: printerId,
+        data: { external_camera_url: url || null }
+      });
+    }, 800);
+  };
+
+  const handleUpdatePrinterCamera = (printerId: number, updates: { type?: string; enabled?: boolean }) => {
+    const data: Partial<{ external_camera_type: string | null; external_camera_enabled: boolean }> = {};
+    if (updates.type !== undefined) data.external_camera_type = updates.type || null;
+    if (updates.enabled !== undefined) data.external_camera_enabled = updates.enabled;
+    updatePrinterMutation.mutate({ id: printerId, data });
+  };
 
   if (isLoading || !localSettings) {
     return (
@@ -613,6 +1005,18 @@ export function SettingsPage() {
             <span className={`w-2 h-2 rounded-full ${authEnabled ? 'bg-green-400' : 'bg-gray-500'}`} />
           )}
         </button>
+        <button
+          onClick={() => handleTabChange('backup')}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
+            activeTab === 'backup'
+              ? 'text-bambu-green border-bambu-green'
+              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
+          }`}
+        >
+          <Database className="w-4 h-4" />
+          {t('settings.backup')}
+          <span className={`w-2 h-2 rounded-full ${cloudAuthStatus?.is_authenticated && githubBackupStatus?.configured && githubBackupStatus?.enabled ? 'bg-green-400' : 'bg-gray-500'}`} />
+        </button>
       </div>
 
       {/* General Tab */}
@@ -630,17 +1034,20 @@ export function SettingsPage() {
                   <Globe className="w-4 h-4 inline mr-1" />
                   {t('settings.language')}
                 </label>
-                <select
-                  value={i18n.language}
-                  onChange={(e) => i18n.changeLanguage(e.target.value)}
-                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                >
-                  {availableLanguages.map((lang) => (
-                    <option key={lang.code} value={lang.code}>
-                      {lang.nativeName} ({lang.name})
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <select
+                    value={i18n.language}
+                    onChange={(e) => i18n.changeLanguage(e.target.value)}
+                    className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
+                  >
+                    {availableLanguages.map((lang) => (
+                      <option key={lang.code} value={lang.code}>
+                        {lang.nativeName} ({lang.name})
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+                </div>
                 <p className="text-xs text-bambu-gray mt-1">
                   {t('settings.languageDescription')}
                 </p>
@@ -649,17 +1056,20 @@ export function SettingsPage() {
                 <label className="block text-sm text-bambu-gray mb-1">
                   {t('settings.defaultView')}
                 </label>
-                <select
-                  value={defaultView}
-                  onChange={(e) => handleDefaultViewChange(e.target.value)}
-                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                >
-                  {defaultNavItems.map((item) => (
-                    <option key={item.id} value={item.to}>
-                      {t(item.labelKey)}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <select
+                    value={defaultView}
+                    onChange={(e) => handleDefaultViewChange(e.target.value)}
+                    className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
+                  >
+                    {defaultNavItems.map((item) => (
+                      <option key={item.id} value={item.to}>
+                        {t(item.labelKey)}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+                </div>
                 <p className="text-xs text-bambu-gray mt-1">
                   {t('settings.defaultViewDescription')}
                 </p>
@@ -669,48 +1079,57 @@ export function SettingsPage() {
                   <label className="block text-sm text-bambu-gray mb-1">
                     {t('settings.dateFormat')}
                   </label>
-                  <select
-                    value={localSettings.date_format || 'system'}
-                    onChange={(e) => updateSetting('date_format', e.target.value as 'system' | 'us' | 'eu' | 'iso')}
-                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                  >
-                    <option value="system">{t('settings.systemDefault')}</option>
-                    <option value="us">{t('settings.dateFormatUS')}</option>
-                    <option value="eu">{t('settings.dateFormatEU')}</option>
-                    <option value="iso">{t('settings.dateFormatISO')}</option>
-                  </select>
+                  <div className="relative">
+                    <select
+                      value={localSettings.date_format || 'system'}
+                      onChange={(e) => updateSetting('date_format', e.target.value as 'system' | 'us' | 'eu' | 'iso')}
+                      className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
+                    >
+                      <option value="system">{t('settings.systemDefault')}</option>
+                      <option value="us">{t('settings.dateFormatUS')}</option>
+                      <option value="eu">{t('settings.dateFormatEU')}</option>
+                      <option value="iso">{t('settings.dateFormatISO')}</option>
+                    </select>
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm text-bambu-gray mb-1">
                     {t('settings.timeFormat')}
                   </label>
-                  <select
-                    value={localSettings.time_format || 'system'}
-                    onChange={(e) => updateSetting('time_format', e.target.value as 'system' | '12h' | '24h')}
-                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                  >
-                    <option value="system">{t('settings.systemDefault')}</option>
-                    <option value="12h">{t('settings.timeFormat12h')}</option>
-                    <option value="24h">{t('settings.timeFormat24h')}</option>
-                  </select>
+                  <div className="relative">
+                    <select
+                      value={localSettings.time_format || 'system'}
+                      onChange={(e) => updateSetting('time_format', e.target.value as 'system' | '12h' | '24h')}
+                      className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
+                    >
+                      <option value="system">{t('settings.systemDefault')}</option>
+                      <option value="12h">{t('settings.timeFormat12h')}</option>
+                      <option value="24h">{t('settings.timeFormat24h')}</option>
+                    </select>
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+                  </div>
                 </div>
               </div>
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
                   {t('settings.defaultPrinter')}
                 </label>
-                <select
-                  value={localSettings.default_printer_id ?? ''}
-                  onChange={(e) => updateSetting('default_printer_id', e.target.value ? Number(e.target.value) : null)}
-                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                >
-                  <option value="">{t('settings.noDefaultPrinter')}</option>
-                  {printers?.map((printer) => (
-                    <option key={printer.id} value={printer.id}>
-                      {printer.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <select
+                    value={localSettings.default_printer_id ?? ''}
+                    onChange={(e) => updateSetting('default_printer_id', e.target.value ? Number(e.target.value) : null)}
+                    className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
+                  >
+                    <option value="">{t('settings.noDefaultPrinter')}</option>
+                    {printers?.map((printer) => (
+                      <option key={printer.id} value={printer.id}>
+                        {printer.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+                </div>
                 <p className="text-xs text-bambu-gray mt-1">
                   {t('settings.defaultPrinterDescription')}
                 </p>
@@ -950,6 +1369,88 @@ export function SettingsPage() {
                     : t('settings.cameraNewWindowDescription')}
                 </p>
               </div>
+
+              {/* External Cameras Section */}
+              <div className="border-t border-bambu-dark-tertiary pt-4 mt-4">
+                <h3 className="text-sm font-medium text-white mb-2">External Cameras</h3>
+                <p className="text-xs text-bambu-gray mb-3">
+                  Configure external cameras to replace the built-in printer camera. Supports MJPEG streams, RTSP, HTTP snapshots, and USB cameras (V4L2). When enabled, the external camera is used for live view and finish photos.
+                </p>
+
+                {printers && printers.length > 0 ? (
+                  <div className="space-y-3">
+                    {printers.map(printer => (
+                      <div key={printer.id} className="p-3 bg-bambu-dark rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-white font-medium text-sm">{printer.name}</span>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={printer.external_camera_enabled}
+                              onChange={(e) => handleUpdatePrinterCamera(printer.id, { enabled: e.target.checked })}
+                              className="sr-only peer"
+                            />
+                            <div className="w-9 h-5 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-bambu-green"></div>
+                          </label>
+                        </div>
+
+                        {printer.external_camera_enabled && (
+                          <div className="space-y-2 mt-2">
+                            <input
+                              type="text"
+                              placeholder={printer.external_camera_type === 'usb' ? 'Device path (/dev/video0)' : 'Camera URL (rtsp://... or http://...)'}
+                              value={localCameraUrls[printer.id] ?? printer.external_camera_url ?? ''}
+                              onChange={(e) => handleCameraUrlChange(printer.id, e.target.value)}
+                              className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
+                            />
+                            <div className="flex gap-2">
+                              <select
+                                value={printer.external_camera_type || 'mjpeg'}
+                                onChange={(e) => handleUpdatePrinterCamera(printer.id, { type: e.target.value })}
+                                className="flex-1 px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
+                              >
+                                <option value="mjpeg">MJPEG Stream</option>
+                                <option value="rtsp">RTSP Stream</option>
+                                <option value="snapshot">HTTP Snapshot</option>
+                                <option value="usb">USB Camera (V4L2)</option>
+                              </select>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => handleTestExternalCamera(printer.id, localCameraUrls[printer.id] ?? printer.external_camera_url ?? '', printer.external_camera_type || 'mjpeg')}
+                                disabled={extCameraTestLoading[printer.id] || !(localCameraUrls[printer.id] ?? printer.external_camera_url)}
+                              >
+                                {extCameraTestLoading[printer.id] ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  'Test'
+                                )}
+                              </Button>
+                            </div>
+                            {extCameraTestResults[printer.id] && (
+                              <div className={`text-xs flex items-center gap-1 ${extCameraTestResults[printer.id]?.success ? 'text-green-500' : 'text-red-500'}`}>
+                                {extCameraTestResults[printer.id]?.success ? (
+                                  <>
+                                    <CheckCircle className="w-3 h-3" />
+                                    Connected{extCameraTestResults[printer.id]?.resolution && ` (${extCameraTestResults[printer.id]?.resolution})`}
+                                  </>
+                                ) : (
+                                  <>
+                                    <XCircle className="w-3 h-3" />
+                                    {extCameraTestResults[printer.id]?.error || 'Connection failed'}
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-bambu-gray italic">No printers configured</p>
+                )}
+              </div>
             </CardContent>
           </Card>
 
@@ -1108,31 +1609,21 @@ export function SettingsPage() {
               </div>
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <p className="text-white">{t('settings.telemetry')}</p>
-                    <button
-                      onClick={() => setShowTelemetryInfo(true)}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-bambu-dark rounded-full text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary transition-colors"
-                    >
-                      <Info className="w-3 h-3" />
-                      {t('settings.telemetryLearnMore')}
-                    </button>
-                  </div>
+                  <p className="text-white">{t('settings.checkPrinterFirmware')}</p>
                   <p className="text-sm text-bambu-gray">
-                    {t('settings.telemetryDescription')}
+                    {t('settings.checkPrinterFirmwareDescription')}
                   </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={localSettings.telemetry_enabled}
-                    onChange={(e) => updateSetting('telemetry_enabled', e.target.checked)}
+                    checked={localSettings.check_printer_firmware ?? true}
+                    onChange={(e) => updateSetting('check_printer_firmware', e.target.checked)}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
                 </label>
               </div>
-
               <div className="border-t border-bambu-dark-tertiary pt-4">
                 <div className="flex items-center justify-between mb-2">
                   <div>
@@ -1252,57 +1743,21 @@ export function SettingsPage() {
               <h2 className="text-lg font-semibold text-white">{t('settings.dataManagement')}</h2>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Backup/Restore */}
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-white">{t('settings.backupData')}</p>
+                  <p className="text-white">{t('settings.clearLogs')}</p>
                   <p className="text-sm text-bambu-gray">
-                    {t('settings.backupDescription')}
+                    {t('settings.clearLogsDescription')}
                   </p>
                 </div>
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => setShowBackupModal(true)}
+                  onClick={() => setShowClearLogsConfirm(true)}
                 >
-                  <Download className="w-4 h-4" />
-                  {t('settings.export')}
+                  <Trash2 className="w-4 h-4" />
+                  {t('settings.clear')}
                 </Button>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-white">{t('settings.restoreBackup')}</p>
-                  <p className="text-sm text-bambu-gray">
-                    {t('settings.restoreDescription')}
-                  </p>
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setShowRestoreModal(true)}
-                >
-                  <Upload className="w-4 h-4" />
-                  {t('settings.restore')}
-                </Button>
-              </div>
-
-              <div className="border-t border-bambu-dark-tertiary pt-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-white">{t('settings.clearLogs')}</p>
-                    <p className="text-sm text-bambu-gray">
-                      {t('settings.clearLogsDescription')}
-                    </p>
-                  </div>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setShowClearLogsConfirm(true)}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    {t('settings.clear')}
-                  </Button>
-                </div>
               </div>
               <div className="flex items-center justify-between">
                 <div>
@@ -1318,6 +1773,22 @@ export function SettingsPage() {
                 >
                   <Trash2 className="w-4 h-4" />
                   {t('settings.reset')}
+                </Button>
+              </div>
+              <div className="flex items-center justify-between pt-4 border-t border-bambu-dark-tertiary">
+                <div>
+                  <p className="text-white">{t('settings.backupAndRestore')}</p>
+                  <p className="text-sm text-bambu-gray">
+                    {t('settings.backupAndRestoreDescription')}
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleTabChange('backup')}
+                >
+                  <Database className="w-4 h-4" />
+                  {t('settings.goToBackup')}
                 </Button>
               </div>
             </CardContent>
@@ -1481,7 +1952,7 @@ export function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-bambu-gray">
-                {t('settings.homeAssistantDescription')}
+                {t('settings.homeAssistantDescriptionFull')}
               </p>
 
               <div className="flex items-center justify-between">
@@ -1711,6 +2182,72 @@ export function SettingsPage() {
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Third Column - Prometheus Metrics */}
+        <div className="flex-1 lg:max-w-md space-y-4">
+          <Card>
+            <CardHeader>
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-orange-400" />
+                {t('settings.prometheusTitle')}
+              </h2>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-bambu-gray">
+                {t('settings.prometheusDescriptionPre')}<code className="bg-bambu-dark px-1 rounded">/api/v1/metrics</code>{t('settings.prometheusDescriptionPost')}
+              </p>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-white">{t('settings.enableMetricsEndpoint')}</p>
+                  <p className="text-xs text-bambu-gray">{t('settings.exposePrometheusData')}</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.prometheus_enabled ?? false}
+                    onChange={(e) => updateSetting('prometheus_enabled', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
+
+              {localSettings.prometheus_enabled && (
+                <div className="space-y-4 pt-2 border-t border-bambu-dark-tertiary">
+                  <div>
+                    <label className="block text-sm text-bambu-gray mb-1">
+                      {t('settings.bearerTokenOptional')}
+                    </label>
+                    <input
+                      type="password"
+                      value={localSettings.prometheus_token ?? ''}
+                      onChange={(e) => updateSetting('prometheus_token', e.target.value)}
+                      placeholder={t('settings.bearerTokenPlaceholder')}
+                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                    />
+                    <p className="text-xs text-bambu-gray mt-1">
+                      {t('settings.bearerTokenHint')}<code className="bg-bambu-dark px-1 rounded">Authorization: Bearer &lt;token&gt;</code>
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-bambu-dark-tertiary">
+                    <p className="text-sm text-white mb-2">{t('settings.availableMetrics')}</p>
+                    <div className="text-xs text-bambu-gray space-y-1">
+                      <p><code className="text-orange-400">bambuddy_printer_connected</code> - {t('settings.metricConnectionStatus')}</p>
+                      <p><code className="text-orange-400">bambuddy_printer_state</code> - {t('settings.metricPrinterState')}</p>
+                      <p><code className="text-orange-400">bambuddy_print_progress</code> - {t('settings.metricPrintProgress')}</p>
+                      <p><code className="text-orange-400">bambuddy_bed_temp_celsius</code> - {t('settings.metricBedTemp')}</p>
+                      <p><code className="text-orange-400">bambuddy_nozzle_temp_celsius</code> - {t('settings.metricNozzleTemp')}</p>
+                      <p><code className="text-orange-400">bambuddy_prints_total</code> - {t('settings.metricPrintsTotal')}</p>
+                      <p className="text-bambu-gray/70 italic">{t('settings.metricAndMore')}</p>
+                    </div>
+                  </div>
                 </div>
               )}
             </CardContent>
@@ -2739,156 +3276,6 @@ export function SettingsPage() {
         />
       )}
 
-      {/* Backup Modal */}
-      {showBackupModal && (
-        <BackupModal
-          onClose={() => setShowBackupModal(false)}
-          onExport={async (categories) => {
-            setShowBackupModal(false);
-            const toastId = 'backup-progress';
-            const includesArchives = categories.archives;
-
-            // Show persistent loading toast for archive backups (can be large)
-            if (includesArchives) {
-              showPersistentToast(toastId, t('backup.preparing', { defaultValue: 'Preparing backup...' }), 'loading');
-            }
-
-            try {
-              const { blob, filename } = await api.exportBackup(categories);
-
-              // Dismiss loading toast before download starts
-              if (includesArchives) {
-                dismissToast(toastId);
-              }
-
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = filename;
-              a.click();
-              URL.revokeObjectURL(url);
-              showToast(t('backup.downloaded', { defaultValue: 'Backup downloaded' }), 'success');
-            } catch {
-              // Dismiss loading toast on error
-              if (includesArchives) {
-                dismissToast(toastId);
-              }
-              showToast(t('backup.failed', { defaultValue: 'Failed to create backup' }), 'error');
-            }
-          }}
-        />
-      )}
-
-      {/* Restore Modal */}
-      {showRestoreModal && (
-        <RestoreModal
-          onClose={() => setShowRestoreModal(false)}
-          onRestore={async (file, overwrite) => {
-            return await api.importBackup(file, overwrite);
-          }}
-          onSuccess={() => {
-            // Reset local settings to force re-sync from restored data
-            setLocalSettings(null);
-            isInitialLoadRef.current = true;
-            // Use resetQueries to clear cached data completely
-            // This ensures fresh data is fetched, not stale cache
-            queryClient.resetQueries({ queryKey: ['settings'] });
-            // Invalidate other queries that may have changed
-            queryClient.invalidateQueries({ queryKey: ['notification-providers'] });
-            queryClient.invalidateQueries({ queryKey: ['notification-templates'] });
-            queryClient.invalidateQueries({ queryKey: ['smart-plugs'] });
-            queryClient.invalidateQueries({ queryKey: ['external-links'] });
-            queryClient.invalidateQueries({ queryKey: ['printers'] });
-            queryClient.invalidateQueries({ queryKey: ['filaments'] });
-            queryClient.invalidateQueries({ queryKey: ['maintenance-types'] });
-            queryClient.invalidateQueries({ queryKey: ['api-keys'] });
-          }}
-        />
-      )}
-
-      {/* Telemetry Info Modal */}
-      {showTelemetryInfo && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-          onClick={() => setShowTelemetryInfo(false)}
-        >
-          <Card className="w-full max-w-lg" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Shield className="w-5 h-5 text-bambu-green" />
-                <h2 className="text-lg font-semibold text-white">{t('settings.telemetryInfoTitle')}</h2>
-              </div>
-              <button
-                onClick={() => setShowTelemetryInfo(false)}
-                className="p-1 rounded hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-bambu-gray text-sm">
-                {t('settings.telemetryInfoIntro')}
-              </p>
-
-              <div className="space-y-3">
-                <h3 className="text-white font-medium">{t('settings.telemetryInfoCollected')}</h3>
-                <ul className="space-y-2 text-sm">
-                  <li className="flex items-start gap-2 text-bambu-gray">
-                    <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 shrink-0" />
-                    <span>{t('settings.telemetryInfoItem1')}</span>
-                  </li>
-                  <li className="flex items-start gap-2 text-bambu-gray">
-                    <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 shrink-0" />
-                    <span>{t('settings.telemetryInfoItem2')}</span>
-                  </li>
-                  <li className="flex items-start gap-2 text-bambu-gray">
-                    <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 shrink-0" />
-                    <span>{t('settings.telemetryInfoItem3')}</span>
-                  </li>
-                  <li className="flex items-start gap-2 text-bambu-gray">
-                    <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 shrink-0" />
-                    <span>{t('settings.telemetryInfoItem4')}</span>
-                  </li>
-                </ul>
-              </div>
-
-              <div className="space-y-3">
-                <h3 className="text-white font-medium">{t('settings.telemetryInfoNotCollected')}</h3>
-                <ul className="space-y-2 text-sm">
-                  <li className="flex items-start gap-2 text-bambu-gray">
-                    <XCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
-                    <span>{t('settings.telemetryInfoNotItem1')}</span>
-                  </li>
-                  <li className="flex items-start gap-2 text-bambu-gray">
-                    <XCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
-                    <span>{t('settings.telemetryInfoNotItem2')}</span>
-                  </li>
-                  <li className="flex items-start gap-2 text-bambu-gray">
-                    <XCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
-                    <span>{t('settings.telemetryInfoNotItem3')}</span>
-                  </li>
-                  <li className="flex items-start gap-2 text-bambu-gray">
-                    <XCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
-                    <span>{t('settings.telemetryInfoNotItem4')}</span>
-                  </li>
-                </ul>
-              </div>
-
-              <p className="text-bambu-gray text-xs border-t border-bambu-dark-tertiary pt-4">
-                {t('settings.telemetryInfoFooter')}
-              </p>
-
-              <Button
-                onClick={() => setShowTelemetryInfo(false)}
-                className="w-full"
-              >
-                {t('common.close')}
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
       {/* Release Notes Modal */}
       {showReleaseNotes && updateCheck?.release_notes && (
         <div
@@ -2944,202 +3331,756 @@ export function SettingsPage() {
 
       {/* Users Tab */}
       {activeTab === 'users' && (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-          <div>
-            <div className="mb-6">
-              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                <Users className="w-5 h-5 text-bambu-green" />
-                {t('settings.userAuth')}
-              </h2>
-              <p className="text-sm text-bambu-gray mt-1">
-                {t('settings.userAuthDescription')}
-              </p>
-            </div>
-
-            <Card>
-              <CardContent className="py-6">
-                {!authEnabled ? (
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center ${authEnabled ? 'bg-green-500/20' : 'bg-gray-500/20'}`}>
-                        {authEnabled ? (
-                          <Lock className="w-6 h-6 text-green-400" />
-                        ) : (
-                          <Unlock className="w-6 h-6 text-gray-400" />
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-white font-medium">{t('settings.authDisabled')}</h3>
-                        <p className="text-sm text-bambu-gray">
-                          {t('settings.authDisabledDescription')}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="pt-4 border-t border-bambu-dark-tertiary">
-                      <p className="text-sm text-bambu-gray mb-4">
-                        {t('settings.enableAuthTo')}
-                      </p>
-                      <ul className="space-y-2 text-sm text-bambu-gray mb-4">
-                        <li className="flex items-start gap-2">
-                          <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 flex-shrink-0" />
-                          <span>{t('settings.authBenefitLogin')}</span>
-                        </li>
-                        <li className="flex items-start gap-2">
-                          <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 flex-shrink-0" />
-                          <span>{t('settings.authBenefitUsers')}</span>
-                        </li>
-                        <li className="flex items-start gap-2">
-                          <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 flex-shrink-0" />
-                          <span>{t('settings.authBenefitAccess')}</span>
-                        </li>
-                      </ul>
-
-                      <Button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          navigate('/setup');
-                        }}
-                        className="w-full"
-                      >
-                        <Lock className="w-4 h-4" />
-                        {t('settings.activateAuth')}
-                      </Button>
-                    </div>
+        <div className="space-y-6">
+          {/* Auth Toggle Header */}
+          <Card>
+            <CardContent className="py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${authEnabled ? 'bg-green-500/20' : 'bg-gray-500/20'}`}>
+                    {authEnabled ? (
+                      <Lock className="w-5 h-5 text-green-400" />
+                    ) : (
+                      <Unlock className="w-5 h-5 text-gray-400" />
+                    )}
                   </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full flex items-center justify-center bg-green-500/20">
-                        <Lock className="w-6 h-6 text-green-400" />
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-white font-medium">{t('settings.authEnabled')}</h3>
-                        <p className="text-sm text-bambu-gray">
-                          {t('settings.authEnabledDescription')}
-                        </p>
-                      </div>
-                    </div>
+                  <div>
+                    <h3 className="text-white font-medium">{t('settings.authentication')}</h3>
+                    <p className="text-sm text-bambu-gray">
+                      {authEnabled
+                        ? t('settings.authSecuredDescription')
+                        : t('settings.authEnableDescription')}
+                    </p>
+                  </div>
+                </div>
+                {!authEnabled ? (
+                  <Button onClick={() => navigate('/setup')}>
+                    <Lock className="w-4 h-4" />
+                    {t('settings.enable')}
+                  </Button>
+                ) : user?.is_admin && (
+                  <Button variant="secondary" onClick={() => setShowDisableAuthConfirm(true)}>
+                    <Unlock className="w-4 h-4" />
+                    {t('settings.disable')}
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
 
-                    {user && (
-                      <div className="pt-4 border-t border-bambu-dark-tertiary">
-                        <div className="flex items-center justify-between mb-4">
-                          <div>
-                            <p className="text-sm text-bambu-gray">{t('settings.currentUser')}</p>
-                            <p className="text-white font-medium">{user.username}</p>
-                            <p className="text-xs text-bambu-gray mt-1">
-                              {t('settings.role')} <span className="capitalize">{user.role}</span>
-                            </p>
-                          </div>
-                          <div className={`px-3 py-1 rounded-full text-xs font-medium ${
-                            user.role === 'admin'
-                              ? 'bg-purple-500/20 text-purple-300'
-                              : 'bg-blue-500/20 text-blue-300'
-                          }`}>
-                            {user.role === 'admin' ? t('settings.roleAdmin') : t('settings.roleUser')}
+          {authEnabled && (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              {/* Left Column: Current User + User List */}
+              <div className="space-y-6">
+                {/* Current User Card */}
+                {user && (
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                          <Users className="w-5 h-5 text-bambu-green" />
+                          {t('settings.currentUser')}
+                        </h3>
+                        <Button size="sm" variant="ghost" onClick={() => setShowChangePasswordModal(true)}>
+                          <Key className="w-4 h-4" />
+                          {t('settings.changePassword')}
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-white font-medium text-lg">{user.username}</p>
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {user.is_admin && (
+                              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-300">
+                                {t('settings.admin')}
+                              </span>
+                            )}
+                            {user.groups?.map(group => (
+                              <span
+                                key={group.id}
+                                className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                  group.name === 'Administrators'
+                                    ? 'bg-purple-500/20 text-purple-300'
+                                    : group.name === 'Operators'
+                                    ? 'bg-blue-500/20 text-blue-300'
+                                    : group.name === 'Viewers'
+                                    ? 'bg-green-500/20 text-green-300'
+                                    : 'bg-gray-500/20 text-gray-300'
+                                }`}
+                              >
+                                {group.name}
+                              </span>
+                            ))}
+
                           </div>
                         </div>
                       </div>
-                    )}
+                    </CardContent>
+                  </Card>
+                )}
 
-                    <div className="pt-4 border-t border-bambu-dark-tertiary space-y-3">
-                      <Button
-                        onClick={() => navigate('/users')}
-                        className="w-full"
-                        variant="secondary"
-                      >
-                        <Users className="w-4 h-4" />
-                        {t('settings.manageUsers')}
-                      </Button>
-
-                      {user?.role === 'admin' && (
+                {/* User List */}
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                        <Users className="w-5 h-5 text-bambu-green" />
+                        {t('settings.users')}
+                      </h3>
+                      {hasPermission('users:create') && (
                         <Button
-                          onClick={() => setShowDisableAuthConfirm(true)}
-                          className="w-full"
-                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            setShowCreateUserModal(true);
+                            setUserFormData({ username: '', password: '', confirmPassword: '', role: 'user', group_ids: [] });
+                          }}
                         >
-                          <Unlock className="w-4 h-4" />
-                          {t('settings.disableAuth')}
+                          <Plus className="w-4 h-4" />
+                          {t('settings.addUser')}
                         </Button>
                       )}
                     </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {authEnabled && (
-            <div>
-              <div className="mb-6">
-                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <Shield className="w-5 h-5 text-bambu-green" />
-                  {t('settings.rolePermissions')}
-                </h2>
-                <p className="text-sm text-bambu-gray mt-1">
-                  {t('settings.rolePermissionsDescription')}
-                </p>
-              </div>
-
-              <div className="space-y-4">
-                <Card>
-                  <CardHeader>
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center">
-                        <Shield className="w-4 h-4 text-purple-300" />
-                      </div>
-                      <h3 className="text-white font-medium">{t('settings.roleAdmin')}</h3>
-                    </div>
                   </CardHeader>
                   <CardContent>
-                    <ul className="space-y-2 text-sm text-bambu-gray">
-                      <li className="flex items-start gap-2">
-                        <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 flex-shrink-0" />
-                        <span>{t('settings.adminPerm1')}</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 flex-shrink-0" />
-                        <span>{t('settings.adminPerm2')}</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 flex-shrink-0" />
-                        <span>{t('settings.adminPerm3')}</span>
-                      </li>
-                    </ul>
+                    {usersLoading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="w-6 h-6 text-bambu-green animate-spin" />
+                      </div>
+                    ) : usersData.length === 0 ? (
+                      <p className="text-center text-bambu-gray py-8">{t('settings.noUsersFound')}</p>
+                    ) : (
+                      <div className="divide-y divide-bambu-dark-tertiary">
+                        {usersData.map((userItem) => (
+                          <div key={userItem.id} className="py-3 flex items-center justify-between">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-white font-medium truncate">{userItem.username}</p>
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {userItem.is_admin && (
+                                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-300">
+                                    {t('settings.admin')}
+                                  </span>
+                                )}
+                                {userItem.groups?.map(group => (
+                                  <span
+                                    key={group.id}
+                                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                      group.name === 'Administrators'
+                                        ? 'bg-purple-500/20 text-purple-300'
+                                        : group.name === 'Operators'
+                                        ? 'bg-blue-500/20 text-blue-300'
+                                        : group.name === 'Viewers'
+                                        ? 'bg-green-500/20 text-green-300'
+                                        : 'bg-gray-500/20 text-gray-300'
+                                    }`}
+                                  >
+                                    {group.name}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 ml-4">
+                              {hasPermission('users:update') && (
+                                <Button size="sm" variant="ghost" onClick={() => startEditUser(userItem)}>
+                                  <Edit2 className="w-4 h-4" />
+                                </Button>
+                              )}
+                              {hasPermission('users:delete') && userItem.id !== user?.id && (
+                                <Button size="sm" variant="ghost" onClick={() => setDeleteUserId(userItem.id)}>
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
+              </div>
 
+              {/* Right Column: Groups */}
+              <div>
                 <Card>
                   <CardHeader>
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
-                        <Users className="w-4 h-4 text-blue-300" />
-                      </div>
-                      <h3 className="text-white font-medium">{t('settings.roleUser')}</h3>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                        <Shield className="w-5 h-5 text-bambu-green" />
+                        {t('settings.groups')}
+                      </h3>
+                      {hasPermission('groups:create') && (
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            setShowCreateGroupModal(true);
+                            resetGroupForm();
+                          }}
+                        >
+                          <Plus className="w-4 h-4" />
+                          {t('settings.addGroup')}
+                        </Button>
+                      )}
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <ul className="space-y-2 text-sm text-bambu-gray">
-                      <li className="flex items-start gap-2">
-                        <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 flex-shrink-0" />
-                        <span>{t('settings.userPerm1')}</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 flex-shrink-0" />
-                        <span>{t('settings.userPerm2')}</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 flex-shrink-0" />
-                        <span>{t('settings.userPerm3')}</span>
-                      </li>
-                    </ul>
+                    {groupsLoading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="w-6 h-6 text-bambu-green animate-spin" />
+                      </div>
+                    ) : groupsData.length === 0 ? (
+                      <p className="text-center text-bambu-gray py-8">{t('settings.noGroupsFound')}</p>
+                    ) : (
+                      <div className="divide-y divide-bambu-dark-tertiary">
+                        {groupsData.map((group) => (
+                          <div key={group.id} className="py-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Shield
+                                  className={`w-4 h-4 ${
+                                    group.name === 'Administrators'
+                                      ? 'text-purple-400'
+                                      : group.name === 'Operators'
+                                      ? 'text-blue-400'
+                                      : group.name === 'Viewers'
+                                      ? 'text-green-400'
+                                      : 'text-bambu-gray'
+                                  }`}
+                                />
+                                <span className="text-white font-medium">{group.name}</span>
+                                {group.is_system && (
+                                  <span className="px-2 py-0.5 rounded text-xs bg-yellow-500/20 text-yellow-400">
+                                    {t('settings.systemGroup')}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {hasPermission('groups:update') && (
+                                  <Button size="sm" variant="ghost" onClick={() => startEditGroup(group)}>
+                                    <Edit2 className="w-4 h-4" />
+                                  </Button>
+                                )}
+                                {hasPermission('groups:delete') && !group.is_system && (
+                                  <Button size="sm" variant="ghost" onClick={() => setDeleteGroupId(group.id)}>
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                            <p className="text-sm text-bambu-gray mt-1 ml-6">
+                              {group.description || t('settings.noDescription')}
+                            </p>
+                            <div className="flex items-center gap-4 mt-2 ml-6 text-xs text-bambu-gray">
+                              <span>{group.user_count} {t('settings.usersCount')}</span>
+                              <span>{group.permissions.length} {t('settings.permissionsCount')}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
             </div>
           )}
+
+          {/* Auth Disabled Info */}
+          {!authEnabled && (
+            <Card>
+              <CardContent className="py-6">
+                <div className="text-center">
+                  <Unlock className="w-12 h-12 text-bambu-gray mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-white mb-2">{t('settings.authDisabledTitle')}</h3>
+                  <p className="text-sm text-bambu-gray mb-4 max-w-md mx-auto">
+                    {t('settings.authDisabledDescription')}
+                  </p>
+                  <ul className="space-y-2 text-sm text-bambu-gray mb-6 text-left max-w-xs mx-auto">
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 flex-shrink-0" />
+                      <span>{t('settings.authFeature1')}</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 flex-shrink-0" />
+                      <span>{t('settings.authFeature2')}</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 flex-shrink-0" />
+                      <span>{t('settings.authFeature3')}</span>
+                    </li>
+                  </ul>
+                  <Button onClick={() => navigate('/setup')}>
+                    <Lock className="w-4 h-4" />
+                    {t('settings.enableAuthentication')}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
+      )}
+
+      {/* Create User Modal */}
+      {showCreateUserModal && (
+        <div
+          className="fixed inset-0 bg-black flex items-center justify-center z-50 p-4"
+          onClick={() => {
+            setShowCreateUserModal(false);
+            setUserFormData({ username: '', password: '', confirmPassword: '', role: 'user', group_ids: [] });
+          }}
+        >
+          <Card
+            className="w-full max-w-md"
+            onClick={(e: React.MouseEvent) => e.stopPropagation()}
+          >
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-bambu-green" />
+                  <h2 className="text-lg font-semibold text-white">{t('settings.createUser')}</h2>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowCreateUserModal(false);
+                    setUserFormData({ username: '', password: '', confirmPassword: '', role: 'user', group_ids: [] });
+                  }}
+                >
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-white mb-2">{t('settings.username')}</label>
+                  <input
+                    type="text"
+                    value={userFormData.username}
+                    onChange={(e) => setUserFormData({ ...userFormData, username: e.target.value })}
+                    className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
+                    placeholder={t('settings.enterUsername')}
+                    autoComplete="username"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white mb-2">{t('settings.password')}</label>
+                  <input
+                    type="password"
+                    value={userFormData.password}
+                    onChange={(e) => setUserFormData({ ...userFormData, password: e.target.value })}
+                    className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
+                    placeholder={t('settings.enterPassword')}
+                    autoComplete="new-password"
+                    minLength={6}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white mb-2">{t('settings.confirmPassword')}</label>
+                  <input
+                    type="password"
+                    value={userFormData.confirmPassword}
+                    onChange={(e) => setUserFormData({ ...userFormData, confirmPassword: e.target.value })}
+                    className={`w-full px-4 py-3 bg-bambu-dark-secondary border rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors ${
+                      userFormData.confirmPassword && userFormData.password !== userFormData.confirmPassword
+                        ? 'border-red-500'
+                        : 'border-bambu-dark-tertiary'
+                    }`}
+                    placeholder={t('settings.confirmPasswordPlaceholder')}
+                    autoComplete="new-password"
+                    minLength={6}
+                  />
+                  {userFormData.confirmPassword && userFormData.password !== userFormData.confirmPassword && (
+                    <p className="text-red-400 text-xs mt-1">{t('settings.passwordsDoNotMatch')}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white mb-2">{t('settings.groupsLabel')}</label>
+                  <div className="space-y-2 max-h-40 overflow-y-auto p-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
+                    {groupsData.map(group => (
+                      <label
+                        key={group.id}
+                        className="flex items-center gap-3 px-2 py-1.5 rounded hover:bg-bambu-dark-tertiary cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={userFormData.group_ids.includes(group.id)}
+                          onChange={() => toggleUserGroup(group.id)}
+                          className="w-4 h-4 rounded border-bambu-gray text-bambu-green focus:ring-bambu-green focus:ring-offset-0 bg-bambu-dark"
+                        />
+                        <span className="text-sm text-white">{group.name}</span>
+                        {group.is_system && (
+                          <span className="text-xs text-yellow-400">{t('settings.systemLabel')}</span>
+                        )}
+                      </label>
+                    ))}
+                    {groupsData.length === 0 && (
+                      <p className="text-sm text-bambu-gray">{t('settings.noGroupsAvailable')}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-6 flex justify-end gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setShowCreateUserModal(false);
+                    setUserFormData({ username: '', password: '', confirmPassword: '', role: 'user', group_ids: [] });
+                  }}
+                >
+                  {t('common.cancel')}
+                </Button>
+                <Button
+                  onClick={handleCreateUser}
+                  disabled={createUserMutation.isPending || !userFormData.username || !userFormData.password || userFormData.password !== userFormData.confirmPassword || userFormData.password.length < 6}
+                >
+                  {createUserMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {t('settings.creating')}
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4" />
+                      {t('settings.createUser')}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Edit User Modal */}
+      {showEditUserModal && editingUserId !== null && (
+        <div
+          className="fixed inset-0 bg-black flex items-center justify-center z-50 p-4"
+          onClick={() => {
+            setShowEditUserModal(false);
+            setEditingUserId(null);
+            setUserFormData({ username: '', password: '', confirmPassword: '', role: 'user', group_ids: [] });
+          }}
+        >
+          <Card
+            className="w-full max-w-md"
+            onClick={(e: React.MouseEvent) => e.stopPropagation()}
+          >
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Edit2 className="w-5 h-5 text-bambu-green" />
+                  <h2 className="text-lg font-semibold text-white">{t('settings.editUser')}</h2>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowEditUserModal(false);
+                    setEditingUserId(null);
+                    setUserFormData({ username: '', password: '', confirmPassword: '', role: 'user', group_ids: [] });
+                  }}
+                >
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-white mb-2">{t('settings.username')}</label>
+                  <input
+                    type="text"
+                    value={userFormData.username}
+                    onChange={(e) => setUserFormData({ ...userFormData, username: e.target.value })}
+                    className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
+                    placeholder={t('settings.enterUsername')}
+                    autoComplete="username"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white mb-2">
+                    {t('settings.password')} <span className="text-bambu-gray font-normal">{t('settings.leaveBlankToKeep')}</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={userFormData.password}
+                    onChange={(e) => setUserFormData({ ...userFormData, password: e.target.value, confirmPassword: '' })}
+                    className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
+                    placeholder={t('settings.enterNewPassword')}
+                    autoComplete="new-password"
+                    minLength={6}
+                  />
+                </div>
+                {userFormData.password && (
+                  <div>
+                    <label className="block text-sm font-medium text-white mb-2">{t('settings.confirmPassword')}</label>
+                    <input
+                      type="password"
+                      value={userFormData.confirmPassword}
+                      onChange={(e) => setUserFormData({ ...userFormData, confirmPassword: e.target.value })}
+                      className={`w-full px-4 py-3 bg-bambu-dark-secondary border rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors ${
+                        userFormData.confirmPassword && userFormData.password !== userFormData.confirmPassword
+                          ? 'border-red-500'
+                          : 'border-bambu-dark-tertiary'
+                      }`}
+                      placeholder={t('settings.confirmNewPassword')}
+                      autoComplete="new-password"
+                      minLength={6}
+                    />
+                    {userFormData.confirmPassword && userFormData.password !== userFormData.confirmPassword && (
+                      <p className="text-red-400 text-xs mt-1">{t('settings.passwordsDoNotMatch')}</p>
+                    )}
+                  </div>
+                )}
+                <div>
+                  <label className="block text-sm font-medium text-white mb-2">{t('settings.groupsLabel')}</label>
+                  <div className="space-y-2 max-h-40 overflow-y-auto p-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
+                    {groupsData.map(group => (
+                      <label
+                        key={group.id}
+                        className="flex items-center gap-3 px-2 py-1.5 rounded hover:bg-bambu-dark-tertiary cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={userFormData.group_ids.includes(group.id)}
+                          onChange={() => toggleUserGroup(group.id)}
+                          className="w-4 h-4 rounded border-bambu-gray text-bambu-green focus:ring-bambu-green focus:ring-offset-0 bg-bambu-dark"
+                        />
+                        <span className="text-sm text-white">{group.name}</span>
+                        {group.is_system && (
+                          <span className="text-xs text-yellow-400">{t('settings.systemLabel')}</span>
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-6 flex justify-end gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setShowEditUserModal(false);
+                    setEditingUserId(null);
+                    setUserFormData({ username: '', password: '', confirmPassword: '', role: 'user', group_ids: [] });
+                  }}
+                >
+                  {t('common.cancel')}
+                </Button>
+                <Button
+                  onClick={() => handleUpdateUser(editingUserId)}
+                  disabled={updateUserMutation.isPending || !userFormData.username || !!(userFormData.password && (userFormData.password !== userFormData.confirmPassword || userFormData.password.length < 6))}
+                >
+                  {updateUserMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {t('common.saving')}
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      {t('common.saveChanges')}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Delete User Confirmation Modal */}
+      {deleteUserId !== null && (
+        <ConfirmModal
+          title={t('settings.deleteUser')}
+          message={t('settings.deleteUserConfirm')}
+          confirmText={t('settings.deleteUser')}
+          variant="danger"
+          onConfirm={() => {
+            deleteUserMutation.mutate(deleteUserId);
+            setDeleteUserId(null);
+          }}
+          onCancel={() => setDeleteUserId(null)}
+        />
+      )}
+
+      {/* Create/Edit Group Modal */}
+      {(showCreateGroupModal || editingGroup) && (
+        <div
+          className="fixed inset-0 bg-black flex items-center justify-center z-50 p-4"
+          onClick={() => {
+            setShowCreateGroupModal(false);
+            setEditingGroup(null);
+            resetGroupForm();
+          }}
+        >
+          <Card
+            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+            onClick={(e: React.MouseEvent) => e.stopPropagation()}
+          >
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-bambu-green" />
+                  <h2 className="text-lg font-semibold text-white">
+                    {editingGroup ? t('settings.editGroup') : t('settings.createGroup')}
+                  </h2>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowCreateGroupModal(false);
+                    setEditingGroup(null);
+                    resetGroupForm();
+                  }}
+                >
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-white mb-2">{t('settings.groupName')}</label>
+                  <input
+                    type="text"
+                    value={groupFormData.name}
+                    onChange={(e) => setGroupFormData({ ...groupFormData, name: e.target.value })}
+                    disabled={editingGroup?.is_system}
+                    className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors disabled:opacity-50"
+                    placeholder={t('settings.enterGroupName')}
+                  />
+                  {editingGroup?.is_system && (
+                    <p className="text-xs text-yellow-400 mt-1">{t('settings.systemGroupNameReadonly')}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white mb-2">{t('settings.descriptionLabel')}</label>
+                  <textarea
+                    value={groupFormData.description}
+                    onChange={(e) => setGroupFormData({ ...groupFormData, description: e.target.value })}
+                    rows={2}
+                    className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors resize-none"
+                    placeholder={t('settings.enterDescription')}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white mb-2">
+                    {t('settings.permissionsSelected', { count: groupFormData.permissions.length })}
+                  </label>
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {permissionsData?.categories.map((category) => (
+                      <div key={category.name} className="border border-bambu-dark-tertiary rounded-lg overflow-hidden">
+                        <div
+                          className="flex items-center justify-between px-4 py-2 bg-bambu-dark-secondary cursor-pointer hover:bg-bambu-dark-tertiary transition-colors"
+                          onClick={() => toggleCategory(category.name)}
+                        >
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleCategoryPermissions(category, !isCategoryFullySelected(category));
+                              }}
+                              className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+                                isCategoryFullySelected(category)
+                                  ? 'bg-bambu-green border-bambu-green'
+                                  : isCategoryPartiallySelected(category)
+                                  ? 'bg-bambu-green/50 border-bambu-green'
+                                  : 'border-bambu-gray hover:border-white'
+                              }`}
+                            >
+                              {(isCategoryFullySelected(category) || isCategoryPartiallySelected(category)) && (
+                                <Check className="w-3 h-3 text-white" />
+                              )}
+                            </button>
+                            <span className="text-white font-medium">{category.name}</span>
+                            <span className="text-xs text-bambu-gray">
+                              ({category.permissions.filter((p) => groupFormData.permissions.includes(p.value)).length}/
+                              {category.permissions.length})
+                            </span>
+                          </div>
+                          {expandedCategories.has(category.name) ? (
+                            <ChevronDown className="w-4 h-4 text-bambu-gray" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4 text-bambu-gray" />
+                          )}
+                        </div>
+                        {expandedCategories.has(category.name) && (
+                          <div className="p-3 bg-bambu-dark space-y-2">
+                            {category.permissions.map((perm) => (
+                              <label
+                                key={perm.value}
+                                className="flex items-center gap-3 px-2 py-1.5 rounded hover:bg-bambu-dark-secondary cursor-pointer"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={groupFormData.permissions.includes(perm.value)}
+                                  onChange={() => togglePermission(perm.value)}
+                                  className="w-4 h-4 rounded border-bambu-gray text-bambu-green focus:ring-bambu-green focus:ring-offset-0 bg-bambu-dark-secondary"
+                                />
+                                <span className="text-sm text-bambu-gray">{perm.label}</span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-6 flex justify-end gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setShowCreateGroupModal(false);
+                    setEditingGroup(null);
+                    resetGroupForm();
+                  }}
+                >
+                  {t('common.cancel')}
+                </Button>
+                <Button
+                  onClick={editingGroup ? handleUpdateGroup : handleCreateGroup}
+                  disabled={createGroupMutation.isPending || updateGroupMutation.isPending || !groupFormData.name.trim()}
+                >
+                  {(createGroupMutation.isPending || updateGroupMutation.isPending) ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {editingGroup ? t('common.saving') : t('settings.creating')}
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      {editingGroup ? t('common.saveChanges') : t('settings.createGroup')}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Delete Group Confirmation Modal */}
+      {deleteGroupId !== null && (
+        <ConfirmModal
+          title={t('settings.deleteGroup')}
+          message={t('settings.deleteGroupConfirm')}
+          confirmText={t('settings.deleteGroup')}
+          variant="danger"
+          onConfirm={() => {
+            deleteGroupMutation.mutate(deleteGroupId);
+            setDeleteGroupId(null);
+          }}
+          onCancel={() => setDeleteGroupId(null)}
+        />
+      )}
+
+      {/* Backup Tab */}
+      {activeTab === 'backup' && (
+        <GitHubBackupSettings />
       )}
 
       {/* Disable Authentication Confirmation Modal */}
@@ -3164,6 +4105,141 @@ export function SettingsPage() {
           }}
           onCancel={() => setShowDisableAuthConfirm(false)}
         />
+      )}
+
+      {/* Change Password Modal */}
+      {showChangePasswordModal && (
+        <div
+          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+          onClick={() => {
+            setShowChangePasswordModal(false);
+            setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+          }}
+        >
+          <Card
+            className="w-full max-w-md"
+            onClick={(e: React.MouseEvent) => e.stopPropagation()}
+          >
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Key className="w-5 h-5 text-bambu-green" />
+                  <h2 className="text-lg font-semibold text-white">{t('settings.changePasswordTitle')}</h2>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowChangePasswordModal(false);
+                    setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+                  }}
+                >
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-white mb-2">
+                    {t('settings.currentPassword')}
+                  </label>
+                  <input
+                    type="password"
+                    value={changePasswordData.currentPassword}
+                    onChange={(e) => setChangePasswordData({ ...changePasswordData, currentPassword: e.target.value })}
+                    className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
+                    placeholder={t('settings.enterCurrentPassword')}
+                    autoComplete="current-password"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white mb-2">
+                    {t('settings.newPassword')}
+                  </label>
+                  <input
+                    type="password"
+                    value={changePasswordData.newPassword}
+                    onChange={(e) => setChangePasswordData({ ...changePasswordData, newPassword: e.target.value })}
+                    className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
+                    placeholder={t('settings.enterNewPasswordMin6')}
+                    autoComplete="new-password"
+                    minLength={6}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white mb-2">
+                    {t('settings.confirmNewPassword')}
+                  </label>
+                  <input
+                    type="password"
+                    value={changePasswordData.confirmPassword}
+                    onChange={(e) => setChangePasswordData({ ...changePasswordData, confirmPassword: e.target.value })}
+                    className={`w-full px-4 py-3 bg-bambu-dark-secondary border rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors ${
+                      changePasswordData.confirmPassword && changePasswordData.newPassword !== changePasswordData.confirmPassword
+                        ? 'border-red-500'
+                        : 'border-bambu-dark-tertiary'
+                    }`}
+                    placeholder={t('settings.confirmNewPasswordPlaceholder')}
+                    autoComplete="new-password"
+                    minLength={6}
+                  />
+                  {changePasswordData.confirmPassword && changePasswordData.newPassword !== changePasswordData.confirmPassword && (
+                    <p className="text-red-400 text-xs mt-1">{t('settings.passwordsDoNotMatch')}</p>
+                  )}
+                </div>
+              </div>
+              <div className="mt-6 flex justify-end gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setShowChangePasswordModal(false);
+                    setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+                  }}
+                >
+                  {t('common.cancel')}
+                </Button>
+                <Button
+                  onClick={async () => {
+                    if (changePasswordData.newPassword !== changePasswordData.confirmPassword) {
+                      showToast(t('settings.passwordsDoNotMatch'), 'error');
+                      return;
+                    }
+                    if (changePasswordData.newPassword.length < 6) {
+                      showToast(t('settings.passwordMinLength'), 'error');
+                      return;
+                    }
+                    setChangePasswordLoading(true);
+                    try {
+                      await api.changePassword(changePasswordData.currentPassword, changePasswordData.newPassword);
+                      showToast(t('settings.passwordChanged'), 'success');
+                      setShowChangePasswordModal(false);
+                      setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+                    } catch (error: unknown) {
+                      const message = error instanceof Error ? error.message : t('settings.failedToChangePassword');
+                      showToast(message, 'error');
+                    } finally {
+                      setChangePasswordLoading(false);
+                    }
+                  }}
+                  disabled={changePasswordLoading || !changePasswordData.currentPassword || !changePasswordData.newPassword || changePasswordData.newPassword !== changePasswordData.confirmPassword || changePasswordData.newPassword.length < 6}
+                >
+                  {changePasswordLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {t('settings.changingPassword')}
+                    </>
+                  ) : (
+                    <>
+                      <Key className="w-4 h-4" />
+                      {t('settings.changePasswordTitle')}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );

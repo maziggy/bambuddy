@@ -35,6 +35,9 @@ class PrintArchive(Base):
     bed_temperature: Mapped[int | None] = mapped_column(Integer)
     nozzle_temperature: Mapped[int | None] = mapped_column(Integer)
 
+    # Printer model this file was sliced for (extracted from 3MF metadata)
+    sliced_for_model: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
     # Print result
     status: Mapped[str] = mapped_column(String(20), default="completed")
     started_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -43,9 +46,12 @@ class PrintArchive(Base):
     # Extended metadata (JSON blob for flexibility)
     extra_data: Mapped[dict | None] = mapped_column(JSON)
 
-    # MakerWorld info
+    # MakerWorld info (auto-extracted from 3MF)
     makerworld_url: Mapped[str | None] = mapped_column(String(500))
     designer: Mapped[str | None] = mapped_column(String(255))
+
+    # User-defined external link (Printables, Thingiverse, etc.)
+    external_url: Mapped[str | None] = mapped_column(String(500))
 
     # User additions
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False)

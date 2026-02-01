@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -16,6 +16,12 @@ class LibraryFolder(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("library_folders.id", ondelete="CASCADE"), nullable=True)
+
+    # External folder flags (for folders that point to external paths)
+    is_external: Mapped[bool] = mapped_column(Boolean, default=False)
+    external_readonly: Mapped[bool] = mapped_column(Boolean, default=False)
+    external_show_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
+    external_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # Link to project or archive
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
@@ -54,6 +60,9 @@ class LibraryFile(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     folder_id: Mapped[int | None] = mapped_column(ForeignKey("library_folders.id", ondelete="CASCADE"), nullable=True)
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
+
+    # External file flag
+    is_external: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # File info
     filename: Mapped[str] = mapped_column(String(255))  # Original filename

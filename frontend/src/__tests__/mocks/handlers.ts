@@ -270,6 +270,101 @@ export const handlers = [
   }),
 
   // ========================================================================
+  // Auth
+  // ========================================================================
+
+  http.get('/api/v1/auth/status', () => {
+    return HttpResponse.json({
+      auth_enabled: false,
+      requires_setup: false,
+    });
+  }),
+
+  http.get('/api/v1/auth/me', () => {
+    return HttpResponse.json({
+      id: 1,
+      username: 'admin',
+      role: 'admin',
+      is_active: true,
+      is_admin: true,
+      groups: [{ id: 1, name: 'Administrators' }],
+      permissions: [],
+      created_at: '2024-01-01T00:00:00Z',
+    });
+  }),
+
+  // ========================================================================
+  // Groups
+  // ========================================================================
+
+  http.get('/api/v1/groups/', () => {
+    return HttpResponse.json([
+      {
+        id: 1,
+        name: 'Administrators',
+        description: 'Full access to all features',
+        permissions: ['printers:read', 'settings:update', 'users:create'],
+        is_system: true,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      },
+      {
+        id: 2,
+        name: 'Operators',
+        description: 'Control printers and manage content',
+        permissions: ['printers:read', 'printers:control'],
+        is_system: true,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      },
+      {
+        id: 3,
+        name: 'Viewers',
+        description: 'Read-only access',
+        permissions: ['printers:read'],
+        is_system: true,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      },
+    ]);
+  }),
+
+  http.get('/api/v1/groups/permissions', () => {
+    return HttpResponse.json({
+      'Printers': ['printers:read', 'printers:create', 'printers:update', 'printers:delete', 'printers:control'],
+      'Archives': ['archives:read', 'archives:create', 'archives:update', 'archives:delete'],
+      'Settings': ['settings:read', 'settings:update'],
+    });
+  }),
+
+  http.post('/api/v1/groups/', async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    return HttpResponse.json({
+      id: 4,
+      ...body,
+      is_system: false,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+    });
+  }),
+
+  http.patch('/api/v1/groups/:id', async ({ params, request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    return HttpResponse.json({
+      id: Number(params.id),
+      name: 'Updated Group',
+      ...body,
+      is_system: false,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+    });
+  }),
+
+  http.delete('/api/v1/groups/:id', () => {
+    return new HttpResponse(null, { status: 204 });
+  }),
+
+  // ========================================================================
   // Version / Health
   // ========================================================================
 

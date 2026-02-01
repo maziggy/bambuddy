@@ -29,6 +29,7 @@ describe('Layout', () => {
       http.get('/api/v1/settings/', () => {
         return HttpResponse.json({
           check_updates: false,
+          check_printer_firmware: false,
           auto_archive: true,
         });
       }),
@@ -119,6 +120,67 @@ describe('Layout', () => {
         // Theme toggle should be present
         const buttons = document.querySelectorAll('button');
         expect(buttons.length).toBeGreaterThan(0);
+      });
+    });
+  });
+
+  describe('plate detection alert modal', () => {
+    it('shows modal when plate-not-empty event is dispatched', async () => {
+      render(<Layout />);
+
+      // Dispatch the plate-not-empty event
+      window.dispatchEvent(
+        new CustomEvent('plate-not-empty', {
+          detail: {
+            printer_id: 1,
+            printer_name: 'Test Printer',
+            message: 'Objects detected on build plate',
+          },
+        })
+      );
+
+      await waitFor(() => {
+        // Modal should appear with "Print Paused!" text
+        expect(document.body.textContent).toContain('Print Paused!');
+        expect(document.body.textContent).toContain('Test Printer');
+      });
+    });
+
+    it('closes modal when I Understand button is clicked', async () => {
+      render(<Layout />);
+
+      // Dispatch the plate-not-empty event
+      window.dispatchEvent(
+        new CustomEvent('plate-not-empty', {
+          detail: {
+            printer_id: 1,
+            printer_name: 'Test Printer',
+            message: 'Objects detected on build plate',
+          },
+        })
+      );
+
+      await waitFor(() => {
+        expect(document.body.textContent).toContain('Print Paused!');
+      });
+
+      // Click the "I Understand" button
+      const button = document.querySelector('button');
+      if (button && button.textContent?.includes('I Understand')) {
+        button.click();
+      }
+
+      // Find and click the "I Understand" button by searching all buttons
+      const buttons = document.querySelectorAll('button');
+      buttons.forEach((btn) => {
+        if (btn.textContent?.includes('I Understand')) {
+          btn.click();
+        }
+      });
+
+      await waitFor(() => {
+        // Modal should be closed
+        expect(document.body.textContent).not.toContain('Print Paused!');
       });
     });
   });

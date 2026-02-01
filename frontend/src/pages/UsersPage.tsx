@@ -4,51 +4,74 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Plus, Edit2, Trash2, Save, Loader2, Users as UsersIcon, Shield, ArrowLeft } from 'lucide-react';
 import { api } from '../api/client';
-import type { UserCreate, UserUpdate } from '../api/client';
+import type { UserCreate, UserUpdate, UserResponse } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { Button } from '../components/Button';
 import { Card, CardContent, CardHeader } from '../components/Card';
 import { ConfirmModal } from '../components/ConfirmModal';
 
+interface FormData extends UserCreate {
+  group_ids: number[];
+  confirmPassword: string;
+}
+
 export function UsersPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, hasPermission } = useAuth();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [editingUser, setEditingUser] = useState<number | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingUserId, setEditingUserId] = useState<number | null>(null);
   const [deleteUserId, setDeleteUserId] = useState<number | null>(null);
-  const [formData, setFormData] = useState<UserCreate>({
+  const [formData, setFormData] = useState<FormData>({
     username: '',
     password: '',
+    confirmPassword: '',
     role: 'user',
+    group_ids: [],
   });
 
   // Close modal on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && showCreateModal) {
-        setShowCreateModal(false);
-        setFormData({ username: '', password: '', role: 'user' });
+      if (e.key === 'Escape') {
+        if (showCreateModal) {
+          setShowCreateModal(false);
+          setFormData({ username: '', password: '', confirmPassword: '', role: 'user', group_ids: [] });
+        }
+        if (showEditModal) {
+          setShowEditModal(false);
+          setEditingUserId(null);
+          setFormData({ username: '', password: '', confirmPassword: '', role: 'user', group_ids: [] });
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showCreateModal]);
+  }, [showCreateModal, showEditModal]);
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['users'],
     queryFn: () => api.getUsers(),
+    enabled: hasPermission('users:read'),
+  });
+
+  const { data: groups = [] } = useQuery({
+    queryKey: ['groups'],
+    queryFn: () => api.getGroups(),
+    enabled: hasPermission('groups:read'),
   });
 
   const createMutation = useMutation({
     mutationFn: (data: UserCreate) => api.createUser(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
       setShowCreateModal(false);
-      setFormData({ username: '', password: '', role: 'user' });
+      setFormData({ username: '', password: '', confirmPassword: '', role: 'user', group_ids: [] });
       showToast(t('users.toast.userCreated'));
     },
     onError: (error: Error) => {
@@ -60,8 +83,10 @@ export function UsersPage() {
     mutationFn: ({ id, data }: { id: number; data: UserUpdate }) => api.updateUser(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
-      setEditingUser(null);
-      setFormData({ username: '', password: '', role: 'user' });
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      setShowEditModal(false);
+      setEditingUserId(null);
+      setFormData({ username: '', password: '', confirmPassword: '', role: 'user', group_ids: [] });
       showToast(t('users.toast.userUpdated'));
     },
     onError: (error: Error) => {
@@ -85,14 +110,39 @@ export function UsersPage() {
       showToast(t('users.toast.fillRequiredFields'), 'error');
       return;
     }
-    createMutation.mutate(formData);
+    if (formData.password !== formData.confirmPassword) {
+      showToast(t('users.toast.passwordsDoNotMatch'), 'error');
+      return;
+    }
+    if (formData.password.length < 6) {
+      showToast(t('users.toast.passwordMinLength'), 'error');
+      return;
+    }
+    createMutation.mutate({
+      username: formData.username,
+      password: formData.password,
+      role: formData.role,
+      group_ids: formData.group_ids.length > 0 ? formData.group_ids : undefined,
+    });
   };
 
   const handleUpdate = (id: number) => {
+    // Validate password confirmation if a new password is being set
+    if (formData.password) {
+      if (formData.password !== formData.confirmPassword) {
+        showToast(t('users.toast.passwordsDoNotMatch'), 'error');
+        return;
+      }
+      if (formData.password.length < 6) {
+        showToast(t('users.toast.passwordMinLength'), 'error');
+        return;
+      }
+    }
     const updateData: UserUpdate = {
       username: formData.username || undefined,
       password: formData.password || undefined,
       role: formData.role,
+      group_ids: formData.group_ids,
     };
     // Remove password if empty
     if (!updateData.password) {
@@ -105,16 +155,34 @@ export function UsersPage() {
     setDeleteUserId(id);
   };
 
-  const startEdit = (user: { id: number; username: string; role: string }) => {
-    setEditingUser(user.id);
+  const startEdit = (user: UserResponse) => {
+    setEditingUserId(user.id);
     setFormData({
       username: user.username,
       password: '',
+      confirmPassword: '',
       role: user.role,
+      group_ids: user.groups?.map(g => g.id) || [],
     });
+    setShowEditModal(true);
   };
 
-  if (currentUser?.role !== 'admin') {
+  const closeEditModal = () => {
+    setShowEditModal(false);
+    setEditingUserId(null);
+    setFormData({ username: '', password: '', confirmPassword: '', role: 'user', group_ids: [] });
+  };
+
+  const toggleGroup = (groupId: number) => {
+    setFormData(prev => ({
+      ...prev,
+      group_ids: prev.group_ids.includes(groupId)
+        ? prev.group_ids.filter(id => id !== groupId)
+        : [...prev.group_ids, groupId],
+    }));
+  };
+
+  if (!hasPermission('users:read')) {
     return (
       <div className="p-6">
         <Card>
@@ -153,7 +221,7 @@ export function UsersPage() {
         <Button
           onClick={() => {
             setShowCreateModal(true);
-            setFormData({ username: '', password: '', role: 'user' });
+            setFormData({ username: '', password: '', confirmPassword: '', role: 'user', group_ids: [] });
           }}
         >
           <Plus className="w-4 h-4" />
@@ -175,7 +243,7 @@ export function UsersPage() {
                     {t('users.table.username')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wider">
-                    {t('users.table.role')}
+                    {t('users.table.groups')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wider">
                     {t('users.table.status')}
@@ -189,36 +257,35 @@ export function UsersPage() {
                 {users.map((user) => (
                   <tr key={user.id} className="hover:bg-bambu-dark-tertiary/50 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">
-                      {editingUser === user.id ? (
-                        <input
-                          type="text"
-                          value={formData.username}
-                          onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                          className="px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green"
-                        />
-                      ) : (
-                        user.username
-                      )}
+                      {user.username}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      {editingUser === user.id ? (
-                        <select
-                          value={formData.role}
-                          onChange={(e) => setFormData({ ...formData, role: e.target.value as 'admin' | 'user' })}
-                          className="px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green"
-                        >
-                          <option value="user">{t('users.roleUser')}</option>
-                          <option value="admin">{t('users.roleAdmin')}</option>
-                        </select>
-                      ) : (
-                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                          user.role === 'admin'
-                            ? 'bg-purple-500/20 text-purple-300'
-                            : 'bg-blue-500/20 text-blue-300'
-                        }`}>
-                          {user.role}
-                        </span>
-                      )}
+                    <td className="px-6 py-4 text-sm">
+                      <div className="flex flex-wrap gap-1">
+                        {user.is_admin && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-300">
+                            {t('users.admin')}
+                          </span>
+                        )}
+                        {user.groups?.map(group => (
+                          <span
+                            key={group.id}
+                            className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                              group.name === 'Administrators'
+                                ? 'bg-purple-500/20 text-purple-300'
+                                : group.name === 'Operators'
+                                ? 'bg-blue-500/20 text-blue-300'
+                                : group.name === 'Viewers'
+                                ? 'bg-green-500/20 text-green-300'
+                                : 'bg-gray-500/20 text-gray-300'
+                            }`}
+                          >
+                            {group.name}
+                          </span>
+                        ))}
+                        {(!user.groups || user.groups.length === 0) && !user.is_admin && (
+                          <span className="text-bambu-gray">{t('users.noGroups')}</span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <span className={`px-3 py-1 rounded-full text-xs font-medium ${
@@ -230,53 +297,26 @@ export function UsersPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      {editingUser === user.id ? (
-                        <div className="flex items-center gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => handleUpdate(user.id)}
-                            disabled={updateMutation.isPending}
-                          >
-                            {updateMutation.isPending ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Save className="w-4 h-4" />
-                            )}
-                            {t('users.save')}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => {
-                              setEditingUser(null);
-                              setFormData({ username: '', password: '', role: 'user' });
-                            }}
-                          >
-                            {t('users.cancel')}
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => startEdit(user)}
+                        >
+                          <Edit2 className="w-4 h-4" />
+                          {t('users.edit')}
+                        </Button>
+                        {user.id !== currentUser?.id && (
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => startEdit(user)}
+                            onClick={() => handleDelete(user.id)}
                           >
-                            <Edit2 className="w-4 h-4" />
-                            {t('users.edit')}
+                            <Trash2 className="w-4 h-4" />
+                            {t('users.delete')}
                           </Button>
-                          {user.id !== currentUser?.id && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleDelete(user.id)}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                              {t('users.delete')}
-                            </Button>
-                          )}
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -292,7 +332,7 @@ export function UsersPage() {
           className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
           onClick={() => {
             setShowCreateModal(false);
-            setFormData({ username: '', password: '', role: 'user' });
+            setFormData({ username: '', password: '', confirmPassword: '', role: 'user', group_ids: [] });
           }}
         >
           <Card
@@ -310,7 +350,7 @@ export function UsersPage() {
                   size="sm"
                   onClick={() => {
                     setShowCreateModal(false);
-                    setFormData({ username: '', password: '', role: 'user' });
+                    setFormData({ username: '', password: '', confirmPassword: '', role: 'user', group_ids: [] });
                   }}
                 >
                   <X className="w-5 h-5" />
@@ -348,16 +388,51 @@ export function UsersPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    {t('users.table.role')}
+                    {t('users.confirmPassword')}
                   </label>
-                  <select
-                    value={formData.role}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value as 'admin' | 'user' })}
-                    className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                  >
-                    <option value="user">{t('users.roleUser')}</option>
-                    <option value="admin">{t('users.roleAdmin')}</option>
-                  </select>
+                  <input
+                    type="password"
+                    value={formData.confirmPassword}
+                    onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                    className={`w-full px-4 py-3 bg-bambu-dark-secondary border rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors ${
+                      formData.confirmPassword && formData.password !== formData.confirmPassword
+                        ? 'border-red-500'
+                        : 'border-bambu-dark-tertiary'
+                    }`}
+                    placeholder={t('users.placeholderConfirmPassword')}
+                    autoComplete="new-password"
+                    minLength={6}
+                  />
+                  {formData.confirmPassword && formData.password !== formData.confirmPassword && (
+                    <p className="text-red-400 text-xs mt-1">{t('users.toast.passwordsDoNotMatch')}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white mb-2">
+                    {t('users.groups')}
+                  </label>
+                  <div className="space-y-2 max-h-40 overflow-y-auto p-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
+                    {groups.map(group => (
+                      <label
+                        key={group.id}
+                        className="flex items-center gap-3 px-2 py-1.5 rounded hover:bg-bambu-dark-tertiary cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={formData.group_ids.includes(group.id)}
+                          onChange={() => toggleGroup(group.id)}
+                          className="w-4 h-4 rounded border-bambu-gray text-bambu-green focus:ring-bambu-green focus:ring-offset-0 bg-bambu-dark"
+                        />
+                        <span className="text-sm text-white">{group.name}</span>
+                        {group.is_system && (
+                          <span className="text-xs text-yellow-400">{t('users.system')}</span>
+                        )}
+                      </label>
+                    ))}
+                    {groups.length === 0 && (
+                      <p className="text-sm text-bambu-gray">{t('users.noGroupsAvailable')}</p>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="mt-6 flex justify-end gap-3">
@@ -365,14 +440,14 @@ export function UsersPage() {
                   variant="secondary"
                   onClick={() => {
                     setShowCreateModal(false);
-                    setFormData({ username: '', password: '', role: 'user' });
+                    setFormData({ username: '', password: '', confirmPassword: '', role: 'user', group_ids: [] });
                   }}
                 >
                   {t('users.cancel')}
                 </Button>
                 <Button
                   onClick={handleCreate}
-                  disabled={createMutation.isPending || !formData.username || !formData.password}
+                  disabled={createMutation.isPending || !formData.username || !formData.password || formData.password !== formData.confirmPassword || formData.password.length < 6}
                 >
                   {createMutation.isPending ? (
                     <>
@@ -383,6 +458,140 @@ export function UsersPage() {
                     <>
                       <Plus className="w-4 h-4" />
                       {t('users.createUser')}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Edit User Modal */}
+      {showEditModal && editingUserId !== null && (
+        <div
+          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+          onClick={closeEditModal}
+        >
+          <Card
+            className="w-full max-w-md"
+            onClick={(e: React.MouseEvent) => e.stopPropagation()}
+          >
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Edit2 className="w-5 h-5 text-bambu-green" />
+                  <h2 className="text-lg font-semibold text-white">{t('users.editUser')}</h2>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={closeEditModal}
+                >
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-white mb-2">
+                    {t('users.table.username')}
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.username}
+                    onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                    className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
+                    placeholder={t('users.placeholderUsername')}
+                    autoComplete="username"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white mb-2">
+                    {t('users.password')} <span className="text-bambu-gray font-normal">({t('users.leaveBlankToKeepCurrent')})</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value, confirmPassword: '' })}
+                    className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
+                    placeholder={t('users.placeholderNewPassword')}
+                    autoComplete="new-password"
+                    minLength={6}
+                  />
+                </div>
+                {formData.password && (
+                  <div>
+                    <label className="block text-sm font-medium text-white mb-2">
+                      {t('users.confirmPassword')}
+                    </label>
+                    <input
+                      type="password"
+                      value={formData.confirmPassword}
+                      onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                      className={`w-full px-4 py-3 bg-bambu-dark-secondary border rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors ${
+                        formData.confirmPassword && formData.password !== formData.confirmPassword
+                          ? 'border-red-500'
+                          : 'border-bambu-dark-tertiary'
+                      }`}
+                      placeholder={t('users.placeholderConfirmNewPassword')}
+                      autoComplete="new-password"
+                      minLength={6}
+                    />
+                    {formData.confirmPassword && formData.password !== formData.confirmPassword && (
+                      <p className="text-red-400 text-xs mt-1">{t('users.toast.passwordsDoNotMatch')}</p>
+                    )}
+                  </div>
+                )}
+                <div>
+                  <label className="block text-sm font-medium text-white mb-2">
+                    {t('users.groups')}
+                  </label>
+                  <div className="space-y-2 max-h-40 overflow-y-auto p-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
+                    {groups.map(group => (
+                      <label
+                        key={group.id}
+                        className="flex items-center gap-3 px-2 py-1.5 rounded hover:bg-bambu-dark-tertiary cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={formData.group_ids.includes(group.id)}
+                          onChange={() => toggleGroup(group.id)}
+                          className="w-4 h-4 rounded border-bambu-gray text-bambu-green focus:ring-bambu-green focus:ring-offset-0 bg-bambu-dark"
+                        />
+                        <span className="text-sm text-white">{group.name}</span>
+                        {group.is_system && (
+                          <span className="text-xs text-yellow-400">{t('users.system')}</span>
+                        )}
+                      </label>
+                    ))}
+                    {groups.length === 0 && (
+                      <p className="text-sm text-bambu-gray">{t('users.noGroupsAvailable')}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-6 flex justify-end gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={closeEditModal}
+                >
+                  {t('users.cancel')}
+                </Button>
+                <Button
+                  onClick={() => handleUpdate(editingUserId)}
+                  disabled={updateMutation.isPending || !formData.username || !!(formData.password && (formData.password !== formData.confirmPassword || formData.password.length < 6))}
+                >
+                  {updateMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {t('users.saving')}
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      {t('users.saveChanges')}
                     </>
                   )}
                 </Button>

@@ -123,6 +123,10 @@ class FileResponse(BaseModel):
     duplicates: list[FileDuplicate] | None = None
     duplicate_count: int = 0
 
+    # User tracking (Issue #206)
+    created_by_id: int | None = None
+    created_by_username: str | None = None
+
     created_at: datetime
     updated_at: datetime
 
@@ -141,6 +145,9 @@ class FileListResponse(BaseModel):
     thumbnail_path: str | None
     print_count: int
     duplicate_count: int = 0
+    # User tracking (Issue #206)
+    created_by_id: int | None = None
+    created_by_username: str | None = None
     created_at: datetime
 
     # Key metadata fields for display

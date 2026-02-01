@@ -59,7 +59,7 @@
 ### 📊 Monitoring & Control
 - Real-time printer status via WebSocket
 - Live camera streaming (MJPEG) & snapshots with multi-viewer support
-- **Streaming overlay for OBS** - Embeddable page with camera + status for live streaming (`/overlay/:printerId`)
+- **Streaming overlay for OBS** - Embeddable page with camera + status for live streaming (`/overlay/:printerId`), configurable FPS (`?fps=30`), status-only mode (`?camera=false`)
 - External camera support (MJPEG, RTSP, HTTP snapshot, USB/V4L2) with layer-based timelapse
 - **Build plate empty detection** - Auto-pause print if objects detected on plate (multi-reference calibration, ROI adjustment)
 - Fan status monitoring (part cooling, auxiliary, chamber)
@@ -159,6 +159,7 @@
 - Default groups: Administrators, Operators, Viewers
 - JWT tokens with secure password hashing
 - User management (create, edit, delete, groups)
+- User activity tracking (who uploaded archives, library files, queued prints, started prints)
 
 </td>
 </tr>

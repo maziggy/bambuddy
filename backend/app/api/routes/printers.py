@@ -175,7 +175,10 @@ async def delete_printer(
 
     printer_manager.disconnect_printer(printer_id)
 
-    if not delete_archives:
+    if delete_archives:
+        # Delete all archives for this printer
+        await db.execute(sql_delete(PrintArchive).where(PrintArchive.printer_id == printer_id))
+    else:
         # Orphan the archives instead of deleting them
         from sqlalchemy import update
 
@@ -442,6 +445,27 @@ async def get_printer_status(
         heatbreak_fan_speed=state.heatbreak_fan_speed,
         firmware_version=state.firmware_version,
     )
+
+
+@router.get("/{printer_id}/current-print-user")
+async def get_current_print_user(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the user who started the current print (for reprint tracking).
+
+    Returns user info if available, empty object otherwise.
+    This tracks users for reprints (which bypass the queue).
+    For queue-based prints, use the queue item's created_by field instead.
+    """
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    user_info = printer_manager.get_current_print_user(printer_id)
+    return user_info or {}
 
 
 @router.post("/{printer_id}/refresh-status")
@@ -1668,7 +1692,7 @@ async def refresh_ams_slot(
     printer_id: int,
     ams_id: int,
     slot_id: int,
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_AMS_RFID),
     db: AsyncSession = Depends(get_db),
 ):
     """Re-read RFID for an AMS slot (triggers filament info refresh)."""

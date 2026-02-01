@@ -470,3 +470,79 @@ def RequirePermission(*permissions: str | Permission):
 def RequirePermissionIfAuthEnabled(*permissions: str | Permission):
     """Convenience dependency that requires permissions if auth is enabled."""
     return Depends(require_permission_if_auth_enabled(*permissions))
+
+
+def require_ownership_permission(
+    all_permission: str | Permission,
+    own_permission: str | Permission,
+):
+    """Dependency factory for ownership-based permission checks.
+
+    - User with `all_permission` can modify any item
+    - User with `own_permission` can only modify items where created_by_id == user.id
+    - Ownerless items (created_by_id = null) require `all_permission`
+
+    Returns:
+        A dependency function that returns (user, can_modify_all).
+        - can_modify_all=True: user can modify any item
+        - can_modify_all=False: user can only modify their own items
+    """
+    all_perm = all_permission.value if isinstance(all_permission, Permission) else all_permission
+    own_perm = own_permission.value if isinstance(own_permission, Permission) else own_permission
+
+    async def checker(
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+    ) -> tuple[User | None, bool]:
+        """Returns (user, can_modify_all).
+
+        - can_modify_all=True: user can modify any item
+        - can_modify_all=False: user can only modify their own items
+        """
+        async with async_session() as db:
+            auth_enabled = await is_auth_enabled(db)
+            if not auth_enabled:
+                return None, True  # Auth disabled, allow all
+
+            if credentials is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication required",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            try:
+                token = credentials.credentials
+                payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                username: str = payload.get("sub")
+                if username is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Could not validate credentials",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+            except JWTError:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Could not validate credentials",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            user = await get_user_by_username(db, username)
+            if user is None or not user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Could not validate credentials",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            if user.has_permission(all_perm):
+                return user, True
+            if user.has_permission(own_perm):
+                return user, False
+
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing permission: {own_perm} or {all_perm}",
+            )
+
+    return checker

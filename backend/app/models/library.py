@@ -82,6 +82,9 @@ class LibraryFile(Base):
     # User notes
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # User tracking (Issue #206)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -89,7 +92,9 @@ class LibraryFile(Base):
     # Relationships
     folder: Mapped["LibraryFolder | None"] = relationship(back_populates="files")
     project: Mapped["Project | None"] = relationship()
+    created_by: Mapped["User | None"] = relationship()
 
 
 from backend.app.models.archive import PrintArchive  # noqa: E402, F811
 from backend.app.models.project import Project  # noqa: E402, F811
+from backend.app.models.user import User  # noqa: E402, F811

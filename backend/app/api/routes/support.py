@@ -410,6 +410,10 @@ def _sanitize_log_content(content: str) -> str:
     # Replace email addresses
     content = re.sub(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "[EMAIL]", content)
 
+    # Replace Bambu Lab printer serial numbers (format: 00M/01D/01S/01P/03W + alphanumeric, 12-16 chars total)
+    # These appear in logs as [SERIAL] or in messages
+    content = re.sub(r"\b(0[0-3][A-Z0-9])[A-Z0-9]{9,13}\b", r"\1[SERIAL]", content)
+
     # Replace paths with usernames
     content = re.sub(r"/home/[^/\s]+/", "/home/[user]/", content)
     content = re.sub(r"/Users/[^/\s]+/", "/Users/[user]/", content)

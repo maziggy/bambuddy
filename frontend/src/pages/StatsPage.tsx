@@ -704,8 +704,8 @@ export function StatsPage() {
           <Button
             variant="secondary"
             onClick={handleRecalculateCosts}
-            disabled={isRecalculating || !hasPermission('archives:update')}
-            title={!hasPermission('archives:update') ? t('stats.noPermissionRecalculate') : t('stats.recalculateTooltip')}
+            disabled={isRecalculating || !hasPermission('archives:update_all')}
+            title={!hasPermission('archives:update_all') ? t('stats.noPermissionRecalculate') : t('stats.recalculateTooltip')}
           >
             {isRecalculating ? (
               <Loader2 className="w-4 h-4 animate-spin" />

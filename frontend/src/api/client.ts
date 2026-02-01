@@ -324,6 +324,9 @@ export interface Archive {
   energy_kwh: number | null;
   energy_cost: number | null;
   created_at: string;
+  // User tracking (Issue #206)
+  created_by_id: number | null;
+  created_by_username: string | null;
 }
 
 export interface ArchiveStats {
@@ -1094,6 +1097,9 @@ export interface PrintQueueItem {
   library_file_thumbnail?: string | null;
   printer_name?: string | null;
   print_time_seconds?: number | null;  // Estimated print time from archive or library file
+  // User tracking (Issue #206)
+  created_by_id?: number | null;
+  created_by_username?: string | null;
 }
 
 export interface PrintQueueItemCreate {
@@ -1721,10 +1727,15 @@ export interface ExternalLinkUpdate {
 
 // Permission type - all available permissions
 export type Permission =
-  | 'printers:read' | 'printers:create' | 'printers:update' | 'printers:delete' | 'printers:control' | 'printers:files'
-  | 'archives:read' | 'archives:create' | 'archives:update' | 'archives:delete' | 'archives:reprint'
-  | 'queue:read' | 'queue:create' | 'queue:update' | 'queue:delete' | 'queue:reorder'
-  | 'library:read' | 'library:upload' | 'library:update' | 'library:delete'
+  | 'printers:read' | 'printers:create' | 'printers:update' | 'printers:delete' | 'printers:control' | 'printers:files' | 'printers:ams_rfid'
+  | 'archives:read' | 'archives:create'
+  | 'archives:update_own' | 'archives:update_all' | 'archives:delete_own' | 'archives:delete_all'
+  | 'archives:reprint_own' | 'archives:reprint_all'
+  | 'queue:read' | 'queue:create'
+  | 'queue:update_own' | 'queue:update_all' | 'queue:delete_own' | 'queue:delete_all'
+  | 'queue:reorder'
+  | 'library:read' | 'library:upload'
+  | 'library:update_own' | 'library:update_all' | 'library:delete_own' | 'library:delete_all'
   | 'projects:read' | 'projects:create' | 'projects:update' | 'projects:delete'
   | 'filaments:read' | 'filaments:create' | 'filaments:update' | 'filaments:delete'
   | 'smart_plugs:read' | 'smart_plugs:create' | 'smart_plugs:update' | 'smart_plugs:delete' | 'smart_plugs:control'
@@ -1886,10 +1897,12 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
-  deleteUser: (id: number) =>
-    request<void>(`/users/${id}`, {
+  deleteUser: (id: number, deleteItems: boolean = false) =>
+    request<void>(`/users/${id}?delete_items=${deleteItems}`, {
       method: 'DELETE',
     }),
+  getUserItemsCount: (id: number) =>
+    request<{ archives: number; queue_items: number; library_files: number }>(`/users/${id}/items-count`),
   changePassword: (currentPassword: string, newPassword: string) =>
     request<{ message: string }>('/users/me/change-password', {
       method: 'POST',
@@ -1974,6 +1987,10 @@ export const api = {
     request<{ success: boolean; message: string }>(`/printers/${printerId}/print/resume`, {
       method: 'POST',
     }),
+
+  // Get current print user (for reprint tracking - Issue #206)
+  getCurrentPrintUser: (printerId: number) =>
+    request<{ user_id?: number; username?: string }>(`/printers/${printerId}/current-print-user`),
 
   // Chamber Light Control
   setChamberLight: (printerId: number, on: boolean) =>
@@ -2223,8 +2240,13 @@ export const api = {
   uploadArchiveTimelapse: async (archiveId: number, file: File): Promise<{ status: string; filename: string }> => {
     const formData = new FormData();
     formData.append('file', file);
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
     const response = await fetch(`${API_BASE}/archives/${archiveId}/timelapse/upload`, {
       method: 'POST',
+      headers,
       body: formData,
     });
     if (!response.ok) {
@@ -2273,8 +2295,13 @@ export const api = {
     if (audioFile) {
       formData.append('audio', audioFile);
     }
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
     const response = await fetch(`${API_BASE}/archives/${archiveId}/timelapse/process`, {
       method: 'POST',
+      headers,
       body: formData,
     });
     if (!response.ok) {
@@ -2289,7 +2316,12 @@ export const api = {
   uploadArchivePhoto: async (archiveId: number, file: File): Promise<{ status: string; filename: string; photos: string[] }> => {
     const formData = new FormData();
     formData.append('file', file);
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
     const response = await fetch(`${API_BASE}/archives/${archiveId}/photos`, {
+      headers,
       method: 'POST',
       body: formData,
     });
@@ -2311,8 +2343,13 @@ export const api = {
   uploadSource3mf: async (archiveId: number, file: File): Promise<{ status: string; filename: string }> => {
     const formData = new FormData();
     formData.append('file', file);
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
     const response = await fetch(`${API_BASE}/archives/${archiveId}/source`, {
       method: 'POST',
+      headers,
       body: formData,
     });
     if (!response.ok) {
@@ -2331,8 +2368,13 @@ export const api = {
   uploadF3d: async (archiveId: number, file: File): Promise<{ status: string; filename: string }> => {
     const formData = new FormData();
     formData.append('file', file);
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
     const response = await fetch(`${API_BASE}/archives/${archiveId}/f3d`, {
       method: 'POST',
+      headers,
       body: formData,
     });
     if (!response.ok) {
@@ -2461,8 +2503,13 @@ export const api = {
     const url = printerId
       ? `${API_BASE}/archives/upload?printer_id=${printerId}`
       : `${API_BASE}/archives/upload`;
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
     const response = await fetch(url, {
       method: 'POST',
+      headers,
       body: formData,
     });
     if (!response.ok) {
@@ -2477,8 +2524,13 @@ export const api = {
     const url = printerId
       ? `${API_BASE}/archives/upload-bulk?printer_id=${printerId}`
       : `${API_BASE}/archives/upload-bulk`;
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
     const response = await fetch(url, {
       method: 'POST',
+      headers,
       body: formData,
     });
     if (!response.ok) {
@@ -2498,25 +2550,9 @@ export const api = {
   getMQTTStatus: () => request<MQTTStatus>('/settings/mqtt/status'),
   resetSettings: () =>
     request<AppSettings>('/settings/reset', { method: 'POST' }),
-  exportBackup: async (categories?: Record<string, boolean>): Promise<{ blob: Blob; filename: string }> => {
-    const params = new URLSearchParams();
-    if (categories) {
-      if (categories.settings !== undefined) params.set('include_settings', String(categories.settings));
-      if (categories.notifications !== undefined) params.set('include_notifications', String(categories.notifications));
-      if (categories.templates !== undefined) params.set('include_templates', String(categories.templates));
-      if (categories.smart_plugs !== undefined) params.set('include_smart_plugs', String(categories.smart_plugs));
-      if (categories.external_links !== undefined) params.set('include_external_links', String(categories.external_links));
-      if (categories.printers !== undefined) params.set('include_printers', String(categories.printers));
-      if (categories.plate_calibration !== undefined) params.set('include_plate_calibration', String(categories.plate_calibration));
-      if (categories.filaments !== undefined) params.set('include_filaments', String(categories.filaments));
-      if (categories.maintenance !== undefined) params.set('include_maintenance', String(categories.maintenance));
-      if (categories.archives !== undefined) params.set('include_archives', String(categories.archives));
-      if (categories.projects !== undefined) params.set('include_projects', String(categories.projects));
-      if (categories.pending_uploads !== undefined) params.set('include_pending_uploads', String(categories.pending_uploads));
-      if (categories.access_codes !== undefined) params.set('include_access_codes', String(categories.access_codes));
-      if (categories.api_keys !== undefined) params.set('include_api_keys', String(categories.api_keys));
-    }
-    const url = `${API_BASE}/settings/backup${params.toString() ? '?' + params.toString() : ''}`;
+  exportBackup: async (): Promise<{ blob: Blob; filename: string }> => {
+    // New simplified backup - complete database + all files
+    const url = `${API_BASE}/settings/backup`;
     const response = await fetch(url);
 
     // Check for errors
@@ -2527,7 +2563,7 @@ export const api = {
 
     // Get filename from Content-Disposition header
     const contentDisposition = response.headers.get('Content-Disposition');
-    let filename = 'bambuddy-backup.json';
+    let filename = 'bambuddy-backup.zip';
     if (contentDisposition) {
       const match = contentDisposition.match(/filename=([^;]+)/);
       if (match) filename = match[1].trim();
@@ -2536,22 +2572,23 @@ export const api = {
     const blob = await response.blob();
     return { blob, filename };
   },
-  importBackup: async (file: File, overwrite = false) => {
+  importBackup: async (file: File) => {
+    // New simplified restore - replaces database + all directories
     const formData = new FormData();
     formData.append('file', file);
-    const url = `${API_BASE}/settings/restore${overwrite ? '?overwrite=true' : ''}`;
+    const url = `${API_BASE}/settings/restore`;
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
     const response = await fetch(url, {
       method: 'POST',
+      headers,
       body: formData,
     });
     return response.json() as Promise<{
       success: boolean;
       message: string;
-      restored?: Record<string, number>;
-      skipped?: Record<string, number>;
-      skipped_details?: Record<string, string[]>;
-      files_restored?: number;
-      total_skipped?: number;
     }>;
   },
   checkFfmpeg: () =>
@@ -3047,8 +3084,13 @@ export const api = {
   uploadExternalLinkIcon: async (id: number, file: File): Promise<ExternalLink> => {
     const formData = new FormData();
     formData.append('file', file);
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
     const response = await fetch(`${API_BASE}/external-links/${id}/icon`, {
       method: 'POST',
+      headers,
       body: formData,
     });
     if (!response.ok) {
@@ -3107,8 +3149,13 @@ export const api = {
   }> => {
     const formData = new FormData();
     formData.append('file', file);
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
     const response = await fetch(`${API_BASE}/projects/${projectId}/attachments`, {
       method: 'POST',
+      headers,
       body: formData,
     });
     if (!response.ok) {
@@ -3225,8 +3272,13 @@ export const api = {
     const params = new URLSearchParams();
     if (folderId) params.set('folder_id', String(folderId));
     params.set('generate_stl_thumbnails', String(generateStlThumbnails));
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
     const response = await fetch(`${API_BASE}/library/files?${params}`, {
       method: 'POST',
+      headers,
       body: formData,
     });
     if (!response.ok) {
@@ -3249,8 +3301,13 @@ export const api = {
     params.set('preserve_structure', String(preserveStructure));
     params.set('create_folder_from_zip', String(createFolderFromZip));
     params.set('generate_stl_thumbnails', String(generateStlThumbnails));
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
     const response = await fetch(`${API_BASE}/library/files/extract-zip?${params}`, {
       method: 'POST',
+      headers,
       body: formData,
     });
     if (!response.ok) {
@@ -3550,6 +3607,9 @@ export interface LibraryFile {
   notes: string | null;
   duplicates: LibraryFileDuplicate[] | null;
   duplicate_count: number;
+  // User tracking (Issue #206)
+  created_by_id: number | null;
+  created_by_username: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -3563,6 +3623,9 @@ export interface LibraryFileListItem {
   thumbnail_path: string | null;
   print_count: number;
   duplicate_count: number;
+  // User tracking (Issue #206)
+  created_by_id: number | null;
+  created_by_username: string | null;
   created_at: string;
   print_name: string | null;
   print_time_seconds: number | null;

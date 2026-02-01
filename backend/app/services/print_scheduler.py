@@ -857,17 +857,25 @@ class PrintScheduler:
         # Get FTP retry settings
         ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
 
+        logger.info(
+            f"Queue item {item.id}: FTP upload starting - printer={printer.name} ({printer.model}), "
+            f"ip={printer.ip_address}, file={remote_filename}, local_path={file_path}, "
+            f"retry_enabled={ftp_retry_enabled}, retry_count={ftp_retry_count}, timeout={ftp_timeout}"
+        )
+
         # Delete existing file if present (avoids 553 error on overwrite)
         try:
-            await delete_file_async(
+            logger.debug(f"Queue item {item.id}: Deleting existing file {remote_path} if present...")
+            delete_result = await delete_file_async(
                 printer.ip_address,
                 printer.access_code,
                 remote_path,
                 socket_timeout=ftp_timeout,
                 printer_model=printer.model,
             )
-        except Exception:
-            pass  # File may not exist, that's fine
+            logger.debug(f"Queue item {item.id}: Delete result: {delete_result}")
+        except Exception as e:
+            logger.debug(f"Queue item {item.id}: Delete failed (may not exist): {e}")
 
         try:
             if ftp_retry_enabled:
@@ -894,14 +902,21 @@ class PrintScheduler:
                 )
         except Exception as e:
             uploaded = False
-            logger.error(f"Queue item {item.id}: FTP error: {e}")
+            logger.error(f"Queue item {item.id}: FTP error: {e} (type: {type(e).__name__})")
 
         if not uploaded:
+            error_msg = (
+                "Failed to upload file to printer. Check if SD card is inserted and properly formatted (FAT32/exFAT). "
+                "See server logs for detailed diagnostics."
+            )
             item.status = "failed"
-            item.error_message = "Failed to upload file to printer"
+            item.error_message = error_msg
             item.completed_at = datetime.utcnow()
             await db.commit()
-            logger.error(f"Queue item {item.id}: FTP upload failed")
+            logger.error(
+                f"Queue item {item.id}: FTP upload failed - printer={printer.name}, model={printer.model}, "
+                f"ip={printer.ip_address}. Check logs above for storage diagnostics and specific error codes."
+            )
 
             # Send failure notification
             await notification_service.on_queue_job_failed(
@@ -911,7 +926,6 @@ class PrintScheduler:
                 reason="Failed to upload file to printer",
                 db=db,
             )
-
             await self._power_off_if_needed(db, item)
             return
 

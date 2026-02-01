@@ -2,6 +2,61 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
+## [0.1.7b] - Not released
+
+### Enhancements
+- **Ownership-Based Permissions** (Issue #205):
+  - Users can now only update/delete their own items unless they have elevated permissions
+  - Update/delete permissions split into `*_own` and `*_all` variants:
+    - `queue:update_own` / `queue:update_all`
+    - `queue:delete_own` / `queue:delete_all`
+    - `archives:update_own` / `archives:update_all`
+    - `archives:delete_own` / `archives:delete_all`
+    - `archives:reprint_own` / `archives:reprint_all`
+    - `library:update_own` / `library:update_all`
+    - `library:delete_own` / `library:delete_all`
+  - Administrators group gets `*_all` permissions (can modify any items)
+  - Operators group gets `*_own` permissions (can only modify their own items)
+  - Ownerless items (legacy data without creator) require `*_all` permission
+  - Bulk operations skip items user doesn't have permission to modify
+  - User deletion now offers choice: delete user's items or keep them (become ownerless)
+  - Backend enforces permissions on all API endpoints (not just frontend UI)
+  - Automatic migration upgrades existing groups to new permission model
+- **User Tracking for Archives, Library & Queue** (Issue #206):
+  - Track and display who uploaded each archive file
+  - Track and display who uploaded each library file (File Manager)
+  - Track and display who added each print job to the queue
+  - Shows username on archive cards, library files, queue items, and printer cards (while printing)
+  - Works when authentication is enabled; gracefully hidden when auth is disabled
+  - Database migration adds `created_by_id` columns to `print_archives`, `library_files`, and `print_queue` tables
+- **Separate AMS RFID Permission** (Issue #204):
+  - Added new `printers:ams_rfid` permission for re-reading AMS RFID tags
+  - Allows granting RFID re-read access without full printer control permissions
+  - Operators group includes this permission by default
+  - Available in Settings > Users > Group Editor as a toggleable permission
+- **Schedule Button on Archive Cards** (Issue #208):
+  - Added "Schedule" button next to "Reprint" on archive cards for quick access to print scheduling
+  - Previously only available in the context menu (right-click)
+  - Respects `queue:create` permission for users with restricted access
+- **Streaming Overlay Improvements** (Issue #164):
+  - **Configurable FPS**: Add `?fps=30` parameter to control camera frame rate (1-30, default 15)
+  - **Status-only mode**: Add `?camera=false` parameter to hide camera and show only status overlay on black background
+  - Increased default camera FPS from 10 to 15 for smoother video across all camera views
+- **Simplified Backup/Restore System**:
+  - Complete backup now creates a single ZIP file containing the entire database and all data directories
+  - Includes: database, archives, library files, thumbnails, timelapses, icons, projects, and plate calibration data
+  - Portable backups: works across different installations and data directories
+  - Faster backup/restore: direct file copy instead of JSON export/import
+  - Progress indicator and navigation blocking during backup/restore operations
+  - Removed ~2000 lines of legacy JSON-based backup/restore code
+
+### Fixes
+- **Library thumbnails missing after restore** - Fixed library files using absolute paths that break after restore on different systems:
+  - Library now stores relative paths in database for portability
+  - Automatic migration converts existing absolute paths to relative on startup
+  - Thumbnails and files now display correctly after restoring backups
+- **File uploads failing with authentication enabled** - Fixed all file upload functions (archives, photos, timelapses, library files, etc.) not sending authentication headers when auth is enabled
+
 ## [0.1.6-final] - 2026-01-31
 
 ### New Features

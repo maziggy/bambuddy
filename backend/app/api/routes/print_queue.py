@@ -12,12 +12,15 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from backend.app.core.auth import require_auth_if_enabled, require_ownership_permission
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
+from backend.app.core.permissions import Permission
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
+from backend.app.models.user import User
 from backend.app.schemas.print_queue import (
     PrintQueueBulkUpdate,
     PrintQueueBulkUpdateResponse,
@@ -140,6 +143,9 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "completed_at": item.completed_at,
         "error_message": item.error_message,
         "created_at": item.created_at,
+        # User tracking (Issue #206)
+        "created_by_id": item.created_by_id,
+        "created_by_username": item.created_by.username if item.created_by else None,
     }
     response = PrintQueueItemResponse(**item_dict)
     if item.archive:
@@ -174,6 +180,7 @@ async def list_queue(
             selectinload(PrintQueueItem.archive),
             selectinload(PrintQueueItem.printer),
             selectinload(PrintQueueItem.library_file),
+            selectinload(PrintQueueItem.created_by),
         )
         .order_by(PrintQueueItem.printer_id.nulls_first(), PrintQueueItem.position)
     )
@@ -196,6 +203,7 @@ async def list_queue(
 async def add_to_queue(
     data: PrintQueueItemCreate,
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(require_auth_if_enabled),
 ):
     """Add an item to the print queue."""
     # Normalize target_model (e.g., "Bambu Lab X1E" / "C13" -> "X1E")
@@ -298,13 +306,14 @@ async def add_to_queue(
         use_ams=data.use_ams,
         position=max_pos + 1,
         status="pending",
+        created_by_id=current_user.id if current_user else None,
     )
     db.add(item)
     await db.commit()
     await db.refresh(item)
 
     # Load relationships for response
-    await db.refresh(item, ["archive", "printer", "library_file"])
+    await db.refresh(item, ["archive", "printer", "library_file", "created_by"])
 
     source_name = f"archive {data.archive_id}" if data.archive_id else f"library file {data.library_file_id}"
     target_desc = data.printer_id or (f"model {target_model_norm}" if target_model_norm else "unassigned")
@@ -353,11 +362,20 @@ async def add_to_queue(
 async def bulk_update_queue_items(
     data: PrintQueueBulkUpdate,
     db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.QUEUE_UPDATE_ALL,
+            Permission.QUEUE_UPDATE_OWN,
+        )
+    ),
 ):
     """Bulk update multiple queue items with the same values.
 
     Only pending items can be updated. Non-pending items are skipped.
+    Items not owned by the user are also skipped (unless user has *_all permission).
     """
+    user, can_modify_all = auth_result
+
     if not data.item_ids:
         raise HTTPException(400, "No item IDs provided")
 
@@ -384,6 +402,11 @@ async def bulk_update_queue_items(
             skipped_count += 1
             continue
 
+        # Ownership check
+        if not can_modify_all and item.created_by_id != user.id:
+            skipped_count += 1
+            continue
+
         for field, value in update_data.items():
             setattr(item, field, value)
         updated_count += 1
@@ -394,7 +417,8 @@ async def bulk_update_queue_items(
     return PrintQueueBulkUpdateResponse(
         updated_count=updated_count,
         skipped_count=skipped_count,
-        message=f"Updated {updated_count} items" + (f", skipped {skipped_count} non-pending" if skipped_count else ""),
+        message=f"Updated {updated_count} items"
+        + (f", skipped {skipped_count} non-pending/not-owned" if skipped_count else ""),
     )
 
 
@@ -407,6 +431,7 @@ async def get_queue_item(item_id: int, db: AsyncSession = Depends(get_db)):
             selectinload(PrintQueueItem.archive),
             selectinload(PrintQueueItem.printer),
             selectinload(PrintQueueItem.library_file),
+            selectinload(PrintQueueItem.created_by),
         )
         .where(PrintQueueItem.id == item_id)
     )
@@ -421,12 +446,25 @@ async def update_queue_item(
     item_id: int,
     data: PrintQueueItemUpdate,
     db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.QUEUE_UPDATE_ALL,
+            Permission.QUEUE_UPDATE_OWN,
+        )
+    ),
 ):
     """Update a queue item."""
+    user, can_modify_all = auth_result
+
     result = await db.execute(select(PrintQueueItem).where(PrintQueueItem.id == item_id))
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(404, "Queue item not found")
+
+    # Ownership check
+    if not can_modify_all:
+        if item.created_by_id != user.id:
+            raise HTTPException(403, "You can only update your own queue items")
 
     if item.status != "pending":
         raise HTTPException(400, "Can only update pending items")
@@ -469,19 +507,35 @@ async def update_queue_item(
         setattr(item, field, value)
 
     await db.commit()
-    await db.refresh(item, ["archive", "printer", "library_file"])
+    await db.refresh(item, ["archive", "printer", "library_file", "created_by"])
 
     logger.info(f"Updated queue item {item_id}")
     return _enrich_response(item)
 
 
 @router.delete("/{item_id}")
-async def delete_queue_item(item_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_queue_item(
+    item_id: int,
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.QUEUE_DELETE_ALL,
+            Permission.QUEUE_DELETE_OWN,
+        )
+    ),
+):
     """Remove an item from the queue."""
+    user, can_modify_all = auth_result
+
     result = await db.execute(select(PrintQueueItem).where(PrintQueueItem.id == item_id))
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(404, "Queue item not found")
+
+    # Ownership check
+    if not can_modify_all:
+        if item.created_by_id != user.id:
+            raise HTTPException(403, "You can only delete your own queue items")
 
     if item.status == "printing":
         raise HTTPException(400, "Cannot delete item that is currently printing")
@@ -511,12 +565,28 @@ async def reorder_queue(
 
 
 @router.post("/{item_id}/cancel")
-async def cancel_queue_item(item_id: int, db: AsyncSession = Depends(get_db)):
+async def cancel_queue_item(
+    item_id: int,
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.QUEUE_UPDATE_ALL,
+            Permission.QUEUE_UPDATE_OWN,
+        )
+    ),
+):
     """Cancel a pending queue item."""
+    user, can_modify_all = auth_result
+
     result = await db.execute(select(PrintQueueItem).where(PrintQueueItem.id == item_id))
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(404, "Queue item not found")
+
+    # Ownership check
+    if not can_modify_all:
+        if item.created_by_id != user.id:
+            raise HTTPException(403, "You can only cancel your own queue items")
 
     if item.status not in ("pending",):
         raise HTTPException(400, f"Cannot cancel item with status '{item.status}'")
@@ -624,7 +694,7 @@ async def start_queue_item(
     # Clear manual_start flag so scheduler picks it up
     item.manual_start = False
     await db.commit()
-    await db.refresh(item, ["archive", "printer", "library_file"])
+    await db.refresh(item, ["archive", "printer", "library_file", "created_by"])
 
     logger.info(f"Manually started queue item {item_id} (cleared manual_start flag)")
     return _enrich_response(item)

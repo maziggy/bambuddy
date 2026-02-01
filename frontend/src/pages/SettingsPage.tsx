@@ -95,6 +95,8 @@ export function SettingsPage() {
   const [showEditUserModal, setShowEditUserModal] = useState(false);
   const [editingUserId, setEditingUserId] = useState<number | null>(null);
   const [deleteUserId, setDeleteUserId] = useState<number | null>(null);
+  const [deleteUserItemCounts, setDeleteUserItemCounts] = useState<{ archives: number; queue_items: number; library_files: number } | null>(null);
+  const [deleteUserLoading, setDeleteUserLoading] = useState(false);
   const [userFormData, setUserFormData] = useState<{
     username: string;
     password: string;
@@ -355,15 +357,32 @@ export function SettingsPage() {
   });
 
   const deleteUserMutation = useMutation({
-    mutationFn: (id: number) => api.deleteUser(id),
+    mutationFn: ({ id, deleteItems }: { id: number; deleteItems: boolean }) => api.deleteUser(id, deleteItems),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       showToast('User deleted successfully');
+      setDeleteUserId(null);
+      setDeleteUserItemCounts(null);
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
     },
   });
+
+  // Function to initiate user deletion with item count check
+  const handleDeleteUserClick = async (userId: number) => {
+    setDeleteUserId(userId);
+    setDeleteUserLoading(true);
+    try {
+      const counts = await api.getUserItemsCount(userId);
+      setDeleteUserItemCounts(counts);
+    } catch {
+      // If we can't get counts, just proceed without showing item options
+      setDeleteUserItemCounts({ archives: 0, queue_items: 0, library_files: 0 });
+    } finally {
+      setDeleteUserLoading(false);
+    }
+  };
 
   const createGroupMutation = useMutation({
     mutationFn: (data: GroupCreate) => api.createGroup(data),
@@ -3487,7 +3506,7 @@ export function SettingsPage() {
                                 </Button>
                               )}
                               {hasPermission('users:delete') && userItem.id !== user?.id && (
-                                <Button size="sm" variant="ghost" onClick={() => setDeleteUserId(userItem.id)}>
+                                <Button size="sm" variant="ghost" onClick={() => handleDeleteUserClick(userItem.id)}>
                                   <Trash2 className="w-4 h-4" />
                                 </Button>
                               )}
@@ -3891,17 +3910,101 @@ export function SettingsPage() {
 
       {/* Delete User Confirmation Modal */}
       {deleteUserId !== null && (
-        <ConfirmModal
-          title={t('settings.deleteUser')}
-          message={t('settings.deleteUserConfirm')}
-          confirmText={t('settings.deleteUser')}
-          variant="danger"
-          onConfirm={() => {
-            deleteUserMutation.mutate(deleteUserId);
+        <div
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
+          onClick={() => {
             setDeleteUserId(null);
+            setDeleteUserItemCounts(null);
           }}
-          onCancel={() => setDeleteUserId(null)}
-        />
+        >
+          <Card
+            className="w-full max-w-md"
+            onClick={(e: React.MouseEvent) => e.stopPropagation()}
+          >
+            <CardHeader>
+              <div className="flex items-center gap-2 text-red-400">
+                <Trash2 className="w-5 h-5" />
+                <h3 className="text-lg font-semibold">{t('settings.deleteUserTitle')}</h3>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {deleteUserLoading ? (
+                <div className="flex items-center justify-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-2 border-bambu-green border-t-transparent" />
+                </div>
+              ) : deleteUserItemCounts && (deleteUserItemCounts.archives + deleteUserItemCounts.queue_items + deleteUserItemCounts.library_files > 0) ? (
+                <>
+                  <p className="text-white">{t('settings.userHasCreated')}</p>
+                  <ul className="list-disc list-inside text-bambu-gray space-y-1">
+                    {deleteUserItemCounts.archives > 0 && (
+                      <li>{t('settings.archiveCount', { count: deleteUserItemCounts.archives })}</li>
+                    )}
+                    {deleteUserItemCounts.queue_items > 0 && (
+                      <li>{t('settings.queueItemCount', { count: deleteUserItemCounts.queue_items })}</li>
+                    )}
+                    {deleteUserItemCounts.library_files > 0 && (
+                      <li>{t('settings.libraryFileCount', { count: deleteUserItemCounts.library_files })}</li>
+                    )}
+                  </ul>
+                  <p className="text-bambu-gray text-sm">{t('settings.whatToDoWithItems')}</p>
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      variant="danger"
+                      onClick={() => deleteUserMutation.mutate({ id: deleteUserId, deleteItems: true })}
+                      disabled={deleteUserMutation.isPending}
+                      className="justify-center"
+                    >
+                      {t('settings.deleteUserAndItems')}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => deleteUserMutation.mutate({ id: deleteUserId, deleteItems: false })}
+                      disabled={deleteUserMutation.isPending}
+                      className="justify-center"
+                    >
+                      {t('settings.deleteUserKeepItems')}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setDeleteUserId(null);
+                        setDeleteUserItemCounts(null);
+                      }}
+                      disabled={deleteUserMutation.isPending}
+                      className="justify-center"
+                    >
+                      {t('common.cancel')}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-white">{t('settings.deleteUserConfirm')}</p>
+                  <p className="text-bambu-gray text-sm">{t('settings.actionCannotBeUndone')}</p>
+                  <div className="flex gap-2 justify-end">
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setDeleteUserId(null);
+                        setDeleteUserItemCounts(null);
+                      }}
+                      disabled={deleteUserMutation.isPending}
+                    >
+                      {t('common.cancel')}
+                    </Button>
+                    <Button
+                      variant="danger"
+                      onClick={() => deleteUserMutation.mutate({ id: deleteUserId, deleteItems: false })}
+                      disabled={deleteUserMutation.isPending}
+                    >
+                      {t('settings.deleteUserTitle')}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* Create/Edit Group Modal */}

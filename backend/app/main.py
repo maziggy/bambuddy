@@ -1461,6 +1461,9 @@ async def on_print_complete(printer_id: int, data: dict):
     except Exception as e:
         logger.warning(f"[CALLBACK] WebSocket send_print_complete failed: {e}")
 
+    # Clear current print user tracking (Issue #206)
+    printer_manager.clear_current_print_user(printer_id)
+
     # MQTT relay - publish print complete
     try:
         printer_info = printer_manager.get_printer(printer_id)

@@ -2033,10 +2033,15 @@ class BambuMQTTClient:
                 for tray_id in ams_mapping:
                     # Ensure tray_id is an integer (may be string from JSON)
                     tray_id = int(tray_id) if tray_id is not None else -1
-                    if tray_id == -1 or tray_id == 255:
+                    if tray_id == -1:
+                        # Unmapped filament slot
                         ams_mapping2.append({"ams_id": 255, "slot_id": 255})
+                    elif tray_id >= 254:
+                        # External spool: 254 = main nozzle, 255 = deputy nozzle
+                        # External spools use ams_id=255 with slot_id matching tray_id
+                        ams_mapping2.append({"ams_id": 255, "slot_id": tray_id})
                     else:
-                        # Global tray ID = (ams_id * 4) + slot_id
+                        # Regular AMS tray: Global tray ID = (ams_id * 4) + slot_id
                         ams_id = tray_id // 4
                         slot_id = tray_id % 4
                         ams_mapping2.append({"ams_id": ams_id, "slot_id": slot_id})

@@ -21,26 +21,34 @@ class Permission(str, Enum):
     PRINTERS_DELETE = "printers:delete"
     PRINTERS_CONTROL = "printers:control"  # Start/stop/pause/resume prints
     PRINTERS_FILES = "printers:files"  # Send files to printer
+    PRINTERS_AMS_RFID = "printers:ams_rfid"  # Re-read AMS RFID tags
 
     # Archives
     ARCHIVES_READ = "archives:read"
     ARCHIVES_CREATE = "archives:create"
-    ARCHIVES_UPDATE = "archives:update"
-    ARCHIVES_DELETE = "archives:delete"
-    ARCHIVES_REPRINT = "archives:reprint"  # Reprint from archive
+    ARCHIVES_UPDATE_OWN = "archives:update_own"
+    ARCHIVES_UPDATE_ALL = "archives:update_all"
+    ARCHIVES_DELETE_OWN = "archives:delete_own"
+    ARCHIVES_DELETE_ALL = "archives:delete_all"
+    ARCHIVES_REPRINT_OWN = "archives:reprint_own"
+    ARCHIVES_REPRINT_ALL = "archives:reprint_all"
 
     # Queue
     QUEUE_READ = "queue:read"
     QUEUE_CREATE = "queue:create"
-    QUEUE_UPDATE = "queue:update"
-    QUEUE_DELETE = "queue:delete"
+    QUEUE_UPDATE_OWN = "queue:update_own"
+    QUEUE_UPDATE_ALL = "queue:update_all"
+    QUEUE_DELETE_OWN = "queue:delete_own"
+    QUEUE_DELETE_ALL = "queue:delete_all"
     QUEUE_REORDER = "queue:reorder"
 
     # Library
     LIBRARY_READ = "library:read"
     LIBRARY_UPLOAD = "library:upload"
-    LIBRARY_UPDATE = "library:update"
-    LIBRARY_DELETE = "library:delete"
+    LIBRARY_UPDATE_OWN = "library:update_own"
+    LIBRARY_UPDATE_ALL = "library:update_all"
+    LIBRARY_DELETE_OWN = "library:delete_own"
+    LIBRARY_DELETE_ALL = "library:delete_all"
 
     # Projects
     PROJECTS_READ = "projects:read"
@@ -152,26 +160,34 @@ PERMISSION_CATEGORIES = {
         Permission.PRINTERS_DELETE,
         Permission.PRINTERS_CONTROL,
         Permission.PRINTERS_FILES,
+        Permission.PRINTERS_AMS_RFID,
     ],
     "Archives": [
         Permission.ARCHIVES_READ,
         Permission.ARCHIVES_CREATE,
-        Permission.ARCHIVES_UPDATE,
-        Permission.ARCHIVES_DELETE,
-        Permission.ARCHIVES_REPRINT,
+        Permission.ARCHIVES_UPDATE_OWN,
+        Permission.ARCHIVES_UPDATE_ALL,
+        Permission.ARCHIVES_DELETE_OWN,
+        Permission.ARCHIVES_DELETE_ALL,
+        Permission.ARCHIVES_REPRINT_OWN,
+        Permission.ARCHIVES_REPRINT_ALL,
     ],
     "Queue": [
         Permission.QUEUE_READ,
         Permission.QUEUE_CREATE,
-        Permission.QUEUE_UPDATE,
-        Permission.QUEUE_DELETE,
+        Permission.QUEUE_UPDATE_OWN,
+        Permission.QUEUE_UPDATE_ALL,
+        Permission.QUEUE_DELETE_OWN,
+        Permission.QUEUE_DELETE_ALL,
         Permission.QUEUE_REORDER,
     ],
     "Library": [
         Permission.LIBRARY_READ,
         Permission.LIBRARY_UPLOAD,
-        Permission.LIBRARY_UPDATE,
-        Permission.LIBRARY_DELETE,
+        Permission.LIBRARY_UPDATE_OWN,
+        Permission.LIBRARY_UPDATE_ALL,
+        Permission.LIBRARY_DELETE_OWN,
+        Permission.LIBRARY_DELETE_ALL,
     ],
     "Projects": [
         Permission.PROJECTS_READ,
@@ -291,23 +307,24 @@ DEFAULT_GROUPS = {
             Permission.PRINTERS_DELETE.value,
             Permission.PRINTERS_CONTROL.value,
             Permission.PRINTERS_FILES.value,
-            # Archives - full access
+            Permission.PRINTERS_AMS_RFID.value,
+            # Archives - own items only
             Permission.ARCHIVES_READ.value,
             Permission.ARCHIVES_CREATE.value,
-            Permission.ARCHIVES_UPDATE.value,
-            Permission.ARCHIVES_DELETE.value,
-            Permission.ARCHIVES_REPRINT.value,
-            # Queue - full access
+            Permission.ARCHIVES_UPDATE_OWN.value,
+            Permission.ARCHIVES_DELETE_OWN.value,
+            Permission.ARCHIVES_REPRINT_OWN.value,
+            # Queue - own items only
             Permission.QUEUE_READ.value,
             Permission.QUEUE_CREATE.value,
-            Permission.QUEUE_UPDATE.value,
-            Permission.QUEUE_DELETE.value,
+            Permission.QUEUE_UPDATE_OWN.value,
+            Permission.QUEUE_DELETE_OWN.value,
             Permission.QUEUE_REORDER.value,
-            # Library - full access
+            # Library - own items only
             Permission.LIBRARY_READ.value,
             Permission.LIBRARY_UPLOAD.value,
-            Permission.LIBRARY_UPDATE.value,
-            Permission.LIBRARY_DELETE.value,
+            Permission.LIBRARY_UPDATE_OWN.value,
+            Permission.LIBRARY_DELETE_OWN.value,
             # Projects - full access
             Permission.PROJECTS_READ.value,
             Permission.PROJECTS_CREATE.value,

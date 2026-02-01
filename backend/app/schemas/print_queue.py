@@ -95,6 +95,10 @@ class PrintQueueItemResponse(BaseModel):
     printer_name: str | None = None
     print_time_seconds: int | None = None  # Estimated print time from archive or library file
 
+    # User tracking (Issue #206)
+    created_by_id: int | None = None
+    created_by_username: str | None = None
+
     class Config:
         from_attributes = True
 

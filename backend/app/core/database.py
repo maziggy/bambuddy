@@ -15,6 +15,26 @@ async_session = async_sessionmaker(
 )
 
 
+async def close_all_connections():
+    """Close all database connections for backup/restore operations."""
+    global engine
+    await engine.dispose()
+
+
+async def reinitialize_database():
+    """Reinitialize database connection after restore."""
+    global engine, async_session
+    engine = create_async_engine(
+        settings.database_url,
+        echo=settings.debug,
+    )
+    async_session = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -709,6 +729,12 @@ async def run_migrations(conn):
     except Exception:
         pass
 
+    # Migration: Add sliced_for_model column to print_archives for model-based queue assignment
+    try:
+        await conn.execute(text("ALTER TABLE print_archives ADD COLUMN sliced_for_model VARCHAR(50)"))
+    except Exception:
+        pass
+
     # Migration: Add is_external column to library_files for external cloud files
     try:
         await conn.execute(text("ALTER TABLE library_files ADD COLUMN is_external BOOLEAN DEFAULT 0"))
@@ -994,6 +1020,60 @@ async def run_migrations(conn):
     except Exception:
         pass
 
+    # Migration: Add created_by_id column to print_archives for user tracking (Issue #206)
+    try:
+        await conn.execute(
+            text("ALTER TABLE print_archives ADD COLUMN created_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL")
+        )
+    except Exception:
+        pass
+
+    # Migration: Add created_by_id column to print_queue for user tracking (Issue #206)
+    try:
+        await conn.execute(
+            text("ALTER TABLE print_queue ADD COLUMN created_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL")
+        )
+    except Exception:
+        pass
+
+    # Migration: Add created_by_id column to library_files for user tracking (Issue #206)
+    try:
+        await conn.execute(
+            text("ALTER TABLE library_files ADD COLUMN created_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL")
+        )
+    except Exception:
+        pass
+
+    # Migration: Convert absolute paths to relative paths in library_files table
+    # This ensures backup/restore portability across different installations
+    try:
+        base_dir_str = str(settings.base_dir)
+        # Ensure we have a trailing slash for clean replacement
+        if not base_dir_str.endswith("/"):
+            base_dir_str += "/"
+
+        # Update file_path - remove base_dir prefix from absolute paths
+        await conn.execute(
+            text("""
+            UPDATE library_files
+            SET file_path = SUBSTR(file_path, LENGTH(:base_dir) + 1)
+            WHERE file_path LIKE :pattern
+        """),
+            {"base_dir": base_dir_str, "pattern": base_dir_str + "%"},
+        )
+
+        # Update thumbnail_path - remove base_dir prefix from absolute paths
+        await conn.execute(
+            text("""
+            UPDATE library_files
+            SET thumbnail_path = SUBSTR(thumbnail_path, LENGTH(:base_dir) + 1)
+            WHERE thumbnail_path LIKE :pattern
+        """),
+            {"base_dir": base_dir_str, "pattern": base_dir_str + "%"},
+        )
+    except Exception:
+        pass
+
 
 async def seed_notification_templates():
     """Seed default notification templates if they don't exist."""
@@ -1040,6 +1120,8 @@ async def seed_default_groups():
     don't exist, then migrates existing users:
     - Users with role='admin' -> Administrators group
     - Users with role='user' -> Operators group
+
+    Also migrates old permissions to new ownership-based permissions (Issue #205).
     """
     import logging
 
@@ -1051,10 +1133,32 @@ async def seed_default_groups():
 
     logger = logging.getLogger(__name__)
 
+    # Map old permissions to new ones for migration
+    # Administrators get *_all permissions, Operators get *_own permissions
+    PERMISSION_MIGRATION_ALL = {
+        "queue:update": "queue:update_all",
+        "queue:delete": "queue:delete_all",
+        "archives:update": "archives:update_all",
+        "archives:delete": "archives:delete_all",
+        "archives:reprint": "archives:reprint_all",
+        "library:update": "library:update_all",
+        "library:delete": "library:delete_all",
+    }
+
+    PERMISSION_MIGRATION_OWN = {
+        "queue:update": "queue:update_own",
+        "queue:delete": "queue:delete_own",
+        "archives:update": "archives:update_own",
+        "archives:delete": "archives:delete_own",
+        "archives:reprint": "archives:reprint_own",
+        "library:update": "library:update_own",
+        "library:delete": "library:delete_own",
+    }
+
     async with async_session() as session:
         # Get existing groups
-        result = await session.execute(select(Group.name))
-        existing_groups = {row[0] for row in result.fetchall()}
+        result = await session.execute(select(Group))
+        existing_groups = {group.name: group for group in result.scalars().all()}
 
         # Create default groups if they don't exist
         groups_created = []
@@ -1069,12 +1173,50 @@ async def seed_default_groups():
                 session.add(group)
                 groups_created.append(group_name)
                 logger.info(f"Created default group: {group_name}")
+            else:
+                # Migrate existing group's permissions from old to new format
+                group = existing_groups[group_name]
+                if group.permissions:
+                    updated = False
+                    new_permissions = list(group.permissions)
+
+                    # Determine which migration map to use based on group
+                    migration_map = (
+                        PERMISSION_MIGRATION_ALL if group_name == "Administrators" else PERMISSION_MIGRATION_OWN
+                    )
+
+                    for old_perm, new_perm in migration_map.items():
+                        if old_perm in new_permissions:
+                            new_permissions.remove(old_perm)
+                            if new_perm not in new_permissions:
+                                new_permissions.append(new_perm)
+                            updated = True
+                            logger.info(f"Migrated permission '{old_perm}' to '{new_perm}' in group '{group_name}'")
+
+                    # For Administrators, also ensure they get *_all permissions if they have any new *_own
+                    if group_name == "Administrators":
+                        for _own_perm, all_perm in [
+                            ("queue:update_own", "queue:update_all"),
+                            ("queue:delete_own", "queue:delete_all"),
+                            ("archives:update_own", "archives:update_all"),
+                            ("archives:delete_own", "archives:delete_all"),
+                            ("archives:reprint_own", "archives:reprint_all"),
+                            ("library:update_own", "library:update_all"),
+                            ("library:delete_own", "library:delete_all"),
+                        ]:
+                            # Add *_all if not present
+                            if all_perm not in new_permissions:
+                                new_permissions.append(all_perm)
+                                updated = True
+
+                    if updated:
+                        group.permissions = new_permissions
 
         await session.commit()
 
         # Migrate existing users to groups if they're not already in any group
         if groups_created:
-            # Get the groups we need
+            # Refresh to get newly created groups
             admin_result = await session.execute(select(Group).where(Group.name == "Administrators"))
             admin_group = admin_result.scalar_one_or_none()
 

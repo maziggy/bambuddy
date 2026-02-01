@@ -533,7 +533,7 @@ export function CameraPage() {
   const currentUrl = transitioning
     ? ''
     : streamMode === 'stream'
-      ? `/api/v1/printers/${id}/camera/stream?fps=10&t=${imageKey}`
+      ? `/api/v1/printers/${id}/camera/stream?fps=15&t=${imageKey}`
       : `/api/v1/printers/${id}/camera/snapshot?t=${imageKey}`;
 
   const isDisabled = streamLoading || transitioning || isReconnecting;

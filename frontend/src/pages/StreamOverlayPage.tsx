@@ -9,6 +9,8 @@ type OverlaySize = 'small' | 'medium' | 'large';
 
 interface OverlayConfig {
   size: OverlaySize;
+  fps: number;
+  showCamera: boolean;
   showProgress: boolean;
   showLayers: boolean;
   showEta: boolean;
@@ -20,8 +22,18 @@ interface OverlayConfig {
 function parseConfig(params: URLSearchParams): OverlayConfig {
   const show = params.get('show')?.split(',') || ['progress', 'layers', 'eta', 'filename', 'status'];
 
+  // Parse FPS (default 15, max 30, min 1)
+  const fpsParam = parseInt(params.get('fps') || '15', 10);
+  const fps = Math.min(Math.max(isNaN(fpsParam) ? 15 : fpsParam, 1), 30);
+
+  // Parse camera toggle (default true, set camera=false to hide)
+  const cameraParam = params.get('camera');
+  const showCamera = cameraParam !== 'false' && cameraParam !== '0';
+
   return {
     size: (params.get('size') as OverlaySize) || 'medium',
+    fps,
+    showCamera,
     showProgress: show.includes('progress'),
     showLayers: show.includes('layers'),
     showEta: show.includes('eta'),
@@ -191,18 +203,20 @@ export function StreamOverlayPage() {
 
   const isPrinting = status.state === 'RUNNING' || status.state === 'PAUSE';
   const progress = status.progress || 0;
-  const streamUrl = `/api/v1/printers/${id}/camera/stream?fps=10&t=${imageKey}`;
+  const streamUrl = `/api/v1/printers/${id}/camera/stream?fps=${config.fps}&t=${imageKey}`;
 
   return (
     <div className="min-h-screen bg-black relative overflow-hidden">
-      {/* Camera feed - fullscreen background */}
-      <img
-        key={imageKey}
-        src={streamUrl}
-        alt="Camera stream"
-        className="absolute inset-0 w-full h-full object-contain"
-        onError={handleStreamError}
-      />
+      {/* Camera feed - fullscreen background (optional) */}
+      {config.showCamera && (
+        <img
+          key={imageKey}
+          src={streamUrl}
+          alt="Camera stream"
+          className="absolute inset-0 w-full h-full object-contain"
+          onError={handleStreamError}
+        />
+      )}
 
       {/* Bambuddy logo - top right */}
       <a

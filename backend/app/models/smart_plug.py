@@ -50,10 +50,8 @@ class SmartPlug(Base):
     # Legacy multiplier - kept for backward compatibility
     mqtt_multiplier: Mapped[float] = mapped_column(Float, default=1.0)  # Deprecated, use mqtt_power_multiplier
 
-    # Link to printer (1:1)
-    printer_id: Mapped[int | None] = mapped_column(
-        ForeignKey("printers.id", ondelete="SET NULL"), unique=True, nullable=True
-    )
+    # Link to printer (multiple plugs/scripts can be linked to one printer)
+    printer_id: Mapped[int | None] = mapped_column(ForeignKey("printers.id", ondelete="SET NULL"), nullable=True)
 
     # Automation settings
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -100,7 +98,7 @@ class SmartPlug(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     # Relationship
-    printer: Mapped["Printer"] = relationship(back_populates="smart_plug")
+    printer: Mapped["Printer"] = relationship(back_populates="smart_plugs")
 
 
 from backend.app.models.printer import Printer  # noqa: E402

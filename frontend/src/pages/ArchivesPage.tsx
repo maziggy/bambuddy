@@ -44,6 +44,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Settings,
+  User,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { openInSlicer } from '../utils/slicer';
@@ -124,7 +125,7 @@ function ArchiveCard({
 
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const { hasPermission } = useAuth();
+  const { hasPermission, canModify } = useAuth();
   const isMobile = useIsMobile();
   const { t } = useTranslation();
   const [showViewer, setShowViewer] = useState(false);
@@ -288,8 +289,8 @@ function ArchiveCard({
         label: t('archiveActions.print'),
         icon: <Printer className="w-4 h-4" />,
         onClick: () => setShowReprint(true),
-        disabled: !hasPermission('archives:reprint'),
-        title: !hasPermission('archives:reprint') ? t('permissions.noReprint') : undefined,
+        disabled: !canModify('archives', 'reprint', archive.created_by_id),
+        title: !canModify('archives', 'reprint', archive.created_by_id) ? t('permissions.noReprint') : undefined,
       },
       {
         label: t('archiveActions.schedule'),
@@ -343,8 +344,8 @@ function ArchiveCard({
       label: t('archiveActions.scanTimelapse'),
       icon: <ScanSearch className="w-4 h-4" />,
       onClick: () => timelapseScanMutation.mutate(),
-      disabled: !archive.printer_id || !!archive.timelapse_path || timelapseScanMutation.isPending || !hasPermission('archives:update'),
-      title: !hasPermission('archives:update') ? t('permissions.noUpdateArchives') : undefined,
+      disabled: !archive.printer_id || !!archive.timelapse_path || timelapseScanMutation.isPending || !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('permissions.noUpdateArchives') : undefined,
     },
     { label: '', divider: true, onClick: () => {} },
     {
@@ -360,30 +361,30 @@ function ArchiveCard({
           source3mfInputRef.current?.click();
         }
       },
-      disabled: !archive.source_3mf_path && !hasPermission('archives:update'),
-      title: !archive.source_3mf_path && !hasPermission('archives:update') ? t('permissions.noUploadFiles') : undefined,
+      disabled: !archive.source_3mf_path && !canModify('archives', 'update', archive.created_by_id),
+      title: !archive.source_3mf_path && !canModify('archives', 'update', archive.created_by_id) ? t('permissions.noUploadFiles') : undefined,
     },
     ...(archive.source_3mf_path ? [{
       label: t('archiveActions.replaceSource3mf'),
       icon: <Upload className="w-4 h-4" />,
       onClick: () => source3mfInputRef.current?.click(),
-      disabled: !hasPermission('archives:update'),
-      title: !hasPermission('archives:update') ? t('permissions.noUpdateArchives') : undefined,
+      disabled: !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('permissions.noUpdateArchives') : undefined,
     },
     {
       label: t('archiveActions.removeSource3mf'),
       icon: <Trash2 className="w-4 h-4" />,
       onClick: () => setShowDeleteSource3mfConfirm(true),
       danger: true,
-      disabled: !hasPermission('archives:update'),
-      title: !hasPermission('archives:update') ? t('permissions.noUpdateArchives') : undefined,
+      disabled: !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('permissions.noUpdateArchives') : undefined,
     }] : []),
     {
       label: archive.f3d_path ? t('archiveActions.replaceF3d') : t('archiveActions.uploadF3d'),
       icon: <Box className="w-4 h-4" />,
       onClick: () => f3dInputRef.current?.click(),
-      disabled: !hasPermission('archives:update'),
-      title: !hasPermission('archives:update') ? t('permissions.noUpdateArchives') : undefined,
+      disabled: !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('permissions.noUpdateArchives') : undefined,
     },
     ...(archive.f3d_path ? [{
       label: t('archiveActions.downloadF3d'),
@@ -400,8 +401,8 @@ function ArchiveCard({
       icon: <Trash2 className="w-4 h-4" />,
       onClick: () => setShowDeleteF3dConfirm(true),
       danger: true,
-      disabled: !hasPermission('archives:update'),
-      title: !hasPermission('archives:update') ? t('permissions.noUpdateArchives') : undefined,
+      disabled: !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('permissions.noUpdateArchives') : undefined,
     }] : []),
     { label: '', divider: true, onClick: () => {} },
     {
@@ -451,15 +452,15 @@ function ArchiveCard({
       label: archive.is_favorite ? t('archives.unfavorite') : t('archives.favorite'),
       icon: <Star className={`w-4 h-4 ${archive.is_favorite ? 'fill-yellow-400 text-yellow-400' : ''}`} />,
       onClick: () => favoriteMutation.mutate(),
-      disabled: !hasPermission('archives:update'),
-      title: !hasPermission('archives:update') ? t('permissions.noUpdateArchives') : undefined,
+      disabled: !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('permissions.noUpdateArchives') : undefined,
     },
     {
       label: t('common.edit'),
       icon: <Pencil className="w-4 h-4" />,
       onClick: () => setShowEdit(true),
-      disabled: !hasPermission('archives:update'),
-      title: !hasPermission('archives:update') ? t('permissions.noUpdateArchives') : undefined,
+      disabled: !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('permissions.noUpdateArchives') : undefined,
     },
     ...(archive.project_id && archive.project_name ? [{
       label: t('archiveActions.goToProject', { name: archive.project_name }),
@@ -470,8 +471,8 @@ function ArchiveCard({
       label: t('archiveActions.addToProject'),
       icon: <FolderKanban className="w-4 h-4" />,
       onClick: () => {},
-      disabled: !hasPermission('archives:update'),
-      title: !hasPermission('archives:update') ? t('permissions.noUpdateArchives') : undefined,
+      disabled: !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('permissions.noUpdateArchives') : undefined,
       submenu: (() => {
         const items: ContextMenuItem[] = [];
 
@@ -481,7 +482,7 @@ function ArchiveCard({
             label: t('archiveActions.removeFromProject'),
             icon: <X className="w-4 h-4" />,
             onClick: () => assignProjectMutation.mutate(null),
-            disabled: !hasPermission('archives:update'),
+            disabled: !canModify('archives', 'update', archive.created_by_id),
           });
         }
 
@@ -508,7 +509,7 @@ function ArchiveCard({
                 label: p.name,
                 icon: <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: p.color || '#888' }} />,
                 onClick: () => assignProjectMutation.mutate(p.id),
-                disabled: archive.project_id === p.id || !hasPermission('archives:update'),
+                disabled: archive.project_id === p.id || !canModify('archives', 'update', archive.created_by_id),
               });
             });
           }
@@ -528,8 +529,8 @@ function ArchiveCard({
       icon: <Trash2 className="w-4 h-4" />,
       onClick: () => setShowDeleteConfirm(true),
       danger: true,
-      disabled: !hasPermission('archives:delete'),
-      title: !hasPermission('archives:delete') ? t('permissions.noDeleteArchives') : undefined,
+      disabled: !canModify('archives', 'delete', archive.created_by_id),
+      title: !canModify('archives', 'delete', archive.created_by_id) ? t('permissions.noDeleteArchives') : undefined,
     },
   ];
 
@@ -650,21 +651,21 @@ function ArchiveCard({
         {/* Favorite star */}
         <button
           className={`absolute top-2 right-2 p-1 rounded transition-colors ${
-            hasPermission('archives:update')
+            canModify('archives', 'update', archive.created_by_id)
               ? 'bg-black/50 hover:bg-black/70'
               : 'bg-black/30 cursor-not-allowed'
           }`}
           onClick={(e) => {
             e.stopPropagation();
-            if (hasPermission('archives:update')) {
+            if (canModify('archives', 'update', archive.created_by_id)) {
               favoriteMutation.mutate();
             }
           }}
-          disabled={!hasPermission('archives:update')}
-          title={!hasPermission('archives:update') ? t('permissions.noUpdateArchives') : (archive.is_favorite ? t('archives.unfavorite') : t('archives.favorite'))}
+          disabled={!canModify('archives', 'update', archive.created_by_id)}
+          title={!canModify('archives', 'update', archive.created_by_id) ? t('permissions.noUpdateArchives') : (archive.is_favorite ? t('archives.unfavorite') : t('archives.favorite'))}
         >
           <Star
-            className={`w-5 h-5 ${archive.is_favorite ? 'text-yellow-400 fill-yellow-400' : 'text-white'} ${!hasPermission('archives:update') ? 'opacity-50' : ''}`}
+            className={`w-5 h-5 ${archive.is_favorite ? 'text-yellow-400 fill-yellow-400' : 'text-white'} ${!canModify('archives', 'update', archive.created_by_id) ? 'opacity-50' : ''}`}
           />
         </button>
         {(archive.status === 'failed' || archive.status === 'aborted') && (
@@ -839,7 +840,7 @@ function ArchiveCard({
             </div>
           )}
           {archive.sliced_for_model && (
-            <div className="flex items-center gap-1.5 text-bambu-gray" title={`Sliced for ${archive.sliced_for_model}`}>
+            <div className="flex items-center gap-1.5 text-bambu-gray" title={t('archives.slicedFor', { model: archive.sliced_for_model })}>
               <Printer className="w-3 h-3" />
               {archive.sliced_for_model}
             </div>
@@ -888,10 +889,18 @@ function ArchiveCard({
         {/* Spacer to push content to bottom */}
         <div className="flex-1" />
 
-        {/* Date & Size */}
+        {/* Date, Size & Creator */}
         <div className="flex items-center justify-between text-xs text-bambu-gray border-t border-bambu-dark-tertiary pt-3">
           <span>{formatDateTime(archive.created_at, timeFormat)}</span>
-          <span>{formatFileSize(archive.file_size)}</span>
+          <div className="flex items-center gap-2">
+            {archive.created_by_username && (
+              <span className="flex items-center gap-1" title={t('archives.uploadedBy', { username: archive.created_by_username })}>
+                <User className="w-3 h-3" />
+                {archive.created_by_username}
+              </span>
+            )}
+            <span>{formatFileSize(archive.file_size)}</span>
+          </div>
         </div>
 
         {/* Actions */}
@@ -904,11 +913,22 @@ function ArchiveCard({
                 size="sm"
                 className="flex-1 min-w-0"
                 onClick={() => setShowReprint(true)}
-                disabled={!hasPermission('archives:reprint')}
-                title={!hasPermission('archives:reprint') ? 'You do not have permission to reprint' : undefined}
+                disabled={!canModify('archives', 'reprint', archive.created_by_id)}
+                title={!canModify('archives', 'reprint', archive.created_by_id) ? t('permissions.noReprint') : undefined}
               >
                 <Printer className="w-3 h-3 flex-shrink-0" />
                 <span className="hidden sm:inline">{t('archives.reprint')}</span>
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="flex-1 min-w-0"
+                onClick={() => setShowSchedule(true)}
+                disabled={!hasPermission('queue:create')}
+                title={!hasPermission('queue:create') ? t('permissions.noAddToQueue') : t('archives.schedulePrint')}
+              >
+                <Calendar className="w-3 h-3 flex-shrink-0" />
+                <span className="hidden sm:inline">Schedule</span>
               </Button>
               <Button
                 variant="secondary"
@@ -988,8 +1008,8 @@ function ArchiveCard({
             size="sm"
             className="min-w-0 p-1 sm:p-1.5"
             onClick={() => setShowEdit(true)}
-            disabled={!hasPermission('archives:update')}
-            title={!hasPermission('archives:update') ? t('permissions.noEditArchives') : t('common.edit')}
+            disabled={!canModify('archives', 'update', archive.created_by_id)}
+            title={!canModify('archives', 'update', archive.created_by_id) ? t('permissions.noEditArchives') : t('common.edit')}
           >
             <Pencil className="w-3 h-3 sm:w-4 sm:h-4" />
           </Button>
@@ -998,8 +1018,8 @@ function ArchiveCard({
             size="sm"
             className="min-w-0 p-1 sm:p-1.5"
             onClick={() => setShowDeleteConfirm(true)}
-            disabled={!hasPermission('archives:delete')}
-            title={!hasPermission('archives:delete') ? t('permissions.noDeleteArchives') : t('common.delete')}
+            disabled={!canModify('archives', 'delete', archive.created_by_id)}
+            title={!canModify('archives', 'delete', archive.created_by_id) ? t('permissions.noDeleteArchives') : t('common.delete')}
           >
             <Trash2 className="w-3 h-3 sm:w-4 sm:h-4 text-red-400" />
           </Button>
@@ -1257,7 +1277,7 @@ function ArchiveListRow({
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { t } = useTranslation();
-  const { hasPermission } = useAuth();
+  const { hasPermission, canModify } = useAuth();
   const [showEdit, setShowEdit] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showReprint, setShowReprint] = useState(false);
@@ -1402,8 +1422,8 @@ function ArchiveListRow({
         label: t('archiveActions.print'),
         icon: <Printer className="w-4 h-4" />,
         onClick: () => setShowReprint(true),
-        disabled: !hasPermission('archives:reprint'),
-        title: !hasPermission('archives:reprint') ? t('permissions.noReprint') : undefined,
+        disabled: !canModify('archives', 'reprint', archive.created_by_id),
+        title: !canModify('archives', 'reprint', archive.created_by_id) ? t('permissions.noReprint') : undefined,
       },
       {
         label: t('archiveActions.schedule'),
@@ -1457,8 +1477,8 @@ function ArchiveListRow({
       label: t('archiveActions.scanTimelapse'),
       icon: <ScanSearch className="w-4 h-4" />,
       onClick: () => timelapseScanMutation.mutate(),
-      disabled: !archive.printer_id || !!archive.timelapse_path || timelapseScanMutation.isPending || !hasPermission('archives:update'),
-      title: !hasPermission('archives:update') ? t('permissions.noUpdateArchives') : undefined,
+      disabled: !archive.printer_id || !!archive.timelapse_path || timelapseScanMutation.isPending || !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('permissions.noUpdateArchives') : undefined,
     },
     { label: '', divider: true, onClick: () => {} },
     {
@@ -1474,30 +1494,30 @@ function ArchiveListRow({
           source3mfInputRef.current?.click();
         }
       },
-      disabled: !archive.source_3mf_path && !hasPermission('archives:update'),
-      title: !archive.source_3mf_path && !hasPermission('archives:update') ? t('permissions.noUploadFiles') : undefined,
+      disabled: !archive.source_3mf_path && !canModify('archives', 'update', archive.created_by_id),
+      title: !archive.source_3mf_path && !canModify('archives', 'update', archive.created_by_id) ? t('permissions.noUploadFiles') : undefined,
     },
     ...(archive.source_3mf_path ? [{
       label: t('archiveActions.replaceSource3mf'),
       icon: <Upload className="w-4 h-4" />,
       onClick: () => source3mfInputRef.current?.click(),
-      disabled: !hasPermission('archives:update'),
-      title: !hasPermission('archives:update') ? t('permissions.noUpdateArchives') : undefined,
+      disabled: !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('permissions.noUpdateArchives') : undefined,
     },
     {
       label: t('archiveActions.removeSource3mf'),
       icon: <Trash2 className="w-4 h-4" />,
       onClick: () => setShowDeleteSource3mfConfirm(true),
       danger: true,
-      disabled: !hasPermission('archives:update'),
-      title: !hasPermission('archives:update') ? t('permissions.noUpdateArchives') : undefined,
+      disabled: !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('permissions.noUpdateArchives') : undefined,
     }] : []),
     {
       label: archive.f3d_path ? t('archiveActions.replaceF3d') : t('archiveActions.uploadF3d'),
       icon: <Box className="w-4 h-4" />,
       onClick: () => f3dInputRef.current?.click(),
-      disabled: !hasPermission('archives:update'),
-      title: !hasPermission('archives:update') ? t('permissions.noUpdateArchives') : undefined,
+      disabled: !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('permissions.noUpdateArchives') : undefined,
     },
     ...(archive.f3d_path ? [{
       label: t('archiveActions.downloadF3d'),
@@ -1514,8 +1534,8 @@ function ArchiveListRow({
       icon: <Trash2 className="w-4 h-4" />,
       onClick: () => setShowDeleteF3dConfirm(true),
       danger: true,
-      disabled: !hasPermission('archives:update'),
-      title: !hasPermission('archives:update') ? t('permissions.noUpdateArchives') : undefined,
+      disabled: !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('permissions.noUpdateArchives') : undefined,
     }] : []),
     { label: '', divider: true, onClick: () => {} },
     {
@@ -1565,15 +1585,15 @@ function ArchiveListRow({
       label: archive.is_favorite ? t('archives.unfavorite') : t('archives.favorite'),
       icon: <Star className={`w-4 h-4 ${archive.is_favorite ? 'fill-yellow-400 text-yellow-400' : ''}`} />,
       onClick: () => favoriteMutation.mutate(),
-      disabled: !hasPermission('archives:update'),
-      title: !hasPermission('archives:update') ? t('permissions.noUpdateArchives') : undefined,
+      disabled: !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('permissions.noUpdateArchives') : undefined,
     },
     {
       label: t('common.edit'),
       icon: <Pencil className="w-4 h-4" />,
       onClick: () => setShowEdit(true),
-      disabled: !hasPermission('archives:update'),
-      title: !hasPermission('archives:update') ? t('permissions.noUpdateArchives') : undefined,
+      disabled: !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('permissions.noUpdateArchives') : undefined,
     },
     ...(archive.project_id && archive.project_name ? [{
       label: t('archiveActions.goToProject', { name: archive.project_name }),
@@ -1634,8 +1654,8 @@ function ArchiveListRow({
       icon: <Trash2 className="w-4 h-4" />,
       onClick: () => setShowDeleteConfirm(true),
       danger: true,
-      disabled: !hasPermission('archives:delete'),
-      title: !hasPermission('archives:delete') ? t('permissions.noDeleteArchives') : undefined,
+      disabled: !canModify('archives', 'delete', archive.created_by_id),
+      title: !canModify('archives', 'delete', archive.created_by_id) ? t('permissions.noDeleteArchives') : undefined,
     },
   ];
 
@@ -1693,7 +1713,7 @@ function ArchiveListRow({
           {(archive.filament_type || archive.sliced_for_model) && (
             <div className="flex items-center gap-1.5 mt-0.5">
               {archive.sliced_for_model && (
-                <span className="text-xs text-bambu-gray flex items-center gap-1" title={`Sliced for ${archive.sliced_for_model}`}>
+                <span className="text-xs text-bambu-gray flex items-center gap-1" title={t('archives.slicedFor', { model: archive.sliced_for_model })}>
                   <Printer className="w-2.5 h-2.5" />
                   {archive.sliced_for_model}
                 </span>
@@ -1723,7 +1743,13 @@ function ArchiveListRow({
           {printerName}
         </div>
         <div className="col-span-2 text-sm text-bambu-gray">
-          {formatDateOnly(archive.created_at)}
+          <div>{formatDateOnly(archive.created_at)}</div>
+          {archive.created_by_username && (
+            <div className="flex items-center gap-1 text-xs opacity-75" title={t('archives.uploadedBy', { username: archive.created_by_username })}>
+              <User className="w-3 h-3" />
+              {archive.created_by_username}
+            </div>
+          )}
         </div>
         <div className="col-span-1 text-sm text-bambu-gray">
           {formatFileSize(archive.file_size)}
@@ -1768,8 +1794,8 @@ function ArchiveListRow({
             variant="ghost"
             size="sm"
             onClick={() => setShowEdit(true)}
-            disabled={!hasPermission('archives:update')}
-            title={!hasPermission('archives:update') ? t('permissions.noEditArchives') : t('common.edit')}
+            disabled={!canModify('archives', 'update', archive.created_by_id)}
+            title={!canModify('archives', 'update', archive.created_by_id) ? t('permissions.noEditArchives') : t('common.edit')}
           >
             <Pencil className="w-4 h-4" />
           </Button>
@@ -1777,8 +1803,8 @@ function ArchiveListRow({
             variant="ghost"
             size="sm"
             onClick={() => setShowDeleteConfirm(true)}
-            disabled={!hasPermission('archives:delete')}
-            title={!hasPermission('archives:delete') ? t('permissions.noDeleteArchives') : t('common.delete')}
+            disabled={!canModify('archives', 'delete', archive.created_by_id)}
+            title={!canModify('archives', 'delete', archive.created_by_id) ? t('permissions.noDeleteArchives') : t('common.delete')}
           >
             <Trash2 className="w-4 h-4 text-red-400" />
           </Button>
@@ -2033,7 +2059,7 @@ export function ArchivesPage() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { t } = useTranslation();
-  const { hasPermission } = useAuth();
+  const { hasPermission, hasAnyPermission } = useAuth();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState('');
   const [filterPrinter, setFilterPrinter] = useState<number | null>(() => {
@@ -2449,8 +2475,8 @@ export function ArchivesPage() {
             variant="secondary"
             size="sm"
             onClick={() => setShowBatchTag(true)}
-            disabled={!hasPermission('archives:update')}
-            title={!hasPermission('archives:update') ? t('permissions.noUpdateArchives') : undefined}
+            disabled={!hasAnyPermission('archives:update_own', 'archives:update_all')}
+            title={!hasAnyPermission('archives:update_own', 'archives:update_all') ? t('permissions.noUpdateArchives') : undefined}
           >
             <Tag className="w-4 h-4" />
             {t('archives.tags')}
@@ -2459,8 +2485,8 @@ export function ArchivesPage() {
             variant="secondary"
             size="sm"
             onClick={() => setShowBatchProject(true)}
-            disabled={!hasPermission('archives:update')}
-            title={!hasPermission('archives:update') ? t('permissions.noUpdateArchives') : undefined}
+            disabled={!hasAnyPermission('archives:update_own', 'archives:update_all')}
+            title={!hasAnyPermission('archives:update_own', 'archives:update_all') ? t('permissions.noUpdateArchives') : undefined}
           >
             <FolderKanban className="w-4 h-4" />
             {t('archives.project')}
@@ -2468,8 +2494,8 @@ export function ArchivesPage() {
           <Button
             variant="secondary"
             size="sm"
-            disabled={!hasPermission('archives:update')}
-            title={!hasPermission('archives:update') ? t('permissions.noUpdateArchives') : undefined}
+            disabled={!hasAnyPermission('archives:update_own', 'archives:update_all')}
+            title={!hasAnyPermission('archives:update_own', 'archives:update_all') ? t('permissions.noUpdateArchives') : undefined}
             onClick={() => {
               const ids = Array.from(selectedIds);
               Promise.all(ids.map(id => api.toggleFavorite(id)))
@@ -2489,8 +2515,8 @@ export function ArchivesPage() {
             size="sm"
             className="bg-red-500 hover:bg-red-600"
             onClick={() => setShowBulkDeleteConfirm(true)}
-            disabled={!hasPermission('archives:delete')}
-            title={!hasPermission('archives:delete') ? t('permissions.noDeleteArchives') : undefined}
+            disabled={!hasAnyPermission('archives:delete_own', 'archives:delete_all')}
+            title={!hasAnyPermission('archives:delete_own', 'archives:delete_all') ? t('permissions.noDeleteArchives') : undefined}
           >
             <Trash2 className="w-4 h-4" />
             {t('common.delete')}

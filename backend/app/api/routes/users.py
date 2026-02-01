@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -11,7 +11,10 @@ from backend.app.core.auth import (
 )
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.models.archive import PrintArchive
 from backend.app.models.group import Group
+from backend.app.models.library import LibraryFile
+from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.user import User
 from backend.app.schemas.auth import ChangePasswordRequest, GroupBrief, UserCreate, UserResponse, UserUpdate
 
@@ -198,13 +201,55 @@ async def update_user(
     return _user_to_response(user)
 
 
+@router.get("/{user_id}/items-count")
+async def get_user_items_count(
+    user_id: int,
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_READ),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get count of items created by this user."""
+    # Verify user exists
+    result = await db.execute(select(User).where(User.id == user_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    # Count archives
+    archives_result = await db.execute(select(func.count(PrintArchive.id)).where(PrintArchive.created_by_id == user_id))
+    archives_count = archives_result.scalar() or 0
+
+    # Count queue items
+    queue_result = await db.execute(
+        select(func.count(PrintQueueItem.id)).where(PrintQueueItem.created_by_id == user_id)
+    )
+    queue_items_count = queue_result.scalar() or 0
+
+    # Count library files
+    library_result = await db.execute(select(func.count(LibraryFile.id)).where(LibraryFile.created_by_id == user_id))
+    library_files_count = library_result.scalar() or 0
+
+    return {
+        "archives": archives_count,
+        "queue_items": queue_items_count,
+        "library_files": library_files_count,
+    }
+
+
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
     user_id: int,
+    delete_items: bool = Query(False, description="Delete all items created by this user"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_DELETE),
     db: AsyncSession = Depends(get_db),
 ):
-    """Delete a user."""
+    """Delete a user.
+
+    If delete_items=True, all archives, queue items, and library files created by
+    this user will also be deleted. Otherwise, these items will become "ownerless"
+    (created_by_id set to NULL by the foreign key constraint).
+    """
     result = await db.execute(select(User).where(User.id == user_id).options(selectinload(User.groups)))
     user = result.scalar_one_or_none()
     if not user:
@@ -240,6 +285,22 @@ async def delete_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete your own account",
         )
+
+    if delete_items:
+        # Delete all items created by this user
+        await db.execute(delete(PrintArchive).where(PrintArchive.created_by_id == user_id))
+        await db.execute(delete(PrintQueueItem).where(PrintQueueItem.created_by_id == user_id))
+        await db.execute(delete(LibraryFile).where(LibraryFile.created_by_id == user_id))
+    else:
+        # Explicitly set created_by_id to NULL for all items (ensures consistent behavior
+        # across different database backends, including SQLite without foreign key support)
+        from sqlalchemy import update
+
+        await db.execute(update(PrintArchive).where(PrintArchive.created_by_id == user_id).values(created_by_id=None))
+        await db.execute(
+            update(PrintQueueItem).where(PrintQueueItem.created_by_id == user_id).values(created_by_id=None)
+        )
+        await db.execute(update(LibraryFile).where(LibraryFile.created_by_id == user_id).values(created_by_id=None))
 
     await db.delete(user)
     await db.commit()

@@ -41,6 +41,7 @@ import {
   ScanSearch,
   CheckCircle,
   XCircle,
+  User,
 } from 'lucide-react';
 
 // Custom Skip Objects icon - arrow jumping over boxes
@@ -1121,6 +1122,23 @@ function PrinterCard({
   });
   const queueCount = queueItems?.length || 0;
 
+  // Fetch currently printing queue item to show who started it (Issue #206)
+  const { data: printingQueueItems } = useQuery({
+    queryKey: ['queue', printer.id, 'printing'],
+    queryFn: () => api.getQueue(printer.id, 'printing'),
+    enabled: status?.state === 'RUNNING',
+  });
+
+  // Fetch reprint user info (for prints started via Reprint, not queue - Issue #206)
+  const { data: reprintUser } = useQuery({
+    queryKey: ['currentPrintUser', printer.id],
+    queryFn: () => api.getCurrentPrintUser(printer.id),
+    enabled: status?.state === 'RUNNING',
+  });
+
+  // Combine both sources: queue item user takes precedence, then reprint user
+  const currentPrintUser = printingQueueItems?.[0]?.created_by_username || reprintUser?.username;
+
   // Fetch last completed print for this printer
   const { data: lastPrints } = useQuery({
     queryKey: ['archives', printer.id, 'last'],
@@ -1901,6 +1919,12 @@ function PrinterCard({
                                 {status.layer_num}/{status.total_layers}
                               </span>
                             )}
+                            {currentPrintUser && (
+                              <span className="flex items-center gap-1" title={`Started by ${currentPrintUser}`}>
+                                <User className="w-3 h-3" />
+                                {currentPrintUser}
+                              </span>
+                            )}
                           </div>
                         </>
                       ) : (
@@ -2272,18 +2296,18 @@ function PrinterCard({
                                       <div className="absolute top-full left-0 mt-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1 min-w-[120px]">
                                         <button
                                           className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${
-                                            hasPermission('printers:control')
+                                            hasPermission('printers:ams_rfid')
                                               ? 'text-white hover:bg-bambu-dark-tertiary'
                                               : 'text-bambu-gray/50 cursor-not-allowed'
                                           }`}
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            if (!hasPermission('printers:control')) return;
+                                            if (!hasPermission('printers:ams_rfid')) return;
                                             refreshAmsSlotMutation.mutate({ amsId: ams.id, slotId: slotIdx });
                                             setAmsSlotMenu(null);
                                           }}
-                                          disabled={isRefreshing || !hasPermission('printers:control')}
-                                          title={!hasPermission('printers:control') ? 'You do not have permission to control printers' : undefined}
+                                          disabled={isRefreshing || !hasPermission('printers:ams_rfid')}
+                                          title={!hasPermission('printers:ams_rfid') ? 'You do not have permission to re-read AMS RFID' : undefined}
                                         >
                                           <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
                                           {t('printers.rereadRfid')}
@@ -2461,18 +2485,18 @@ function PrinterCard({
                                   <div className="absolute top-full left-0 mt-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1 min-w-[120px]">
                                     <button
                                       className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${
-                                        hasPermission('printers:control')
+                                        hasPermission('printers:ams_rfid')
                                           ? 'text-white hover:bg-bambu-dark-tertiary'
                                           : 'text-bambu-gray/50 cursor-not-allowed'
                                       }`}
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        if (!hasPermission('printers:control')) return;
+                                        if (!hasPermission('printers:ams_rfid')) return;
                                         refreshAmsSlotMutation.mutate({ amsId: ams.id, slotId: htSlotId });
                                         setAmsSlotMenu(null);
                                       }}
-                                      disabled={isHtRefreshing || !hasPermission('printers:control')}
-                                      title={!hasPermission('printers:control') ? 'You do not have permission to control printers' : undefined}
+                                      disabled={isHtRefreshing || !hasPermission('printers:ams_rfid')}
+                                      title={!hasPermission('printers:ams_rfid') ? 'You do not have permission to re-read AMS RFID' : undefined}
                                     >
                                       <RefreshCw className={`w-3 h-3 ${isHtRefreshing ? 'animate-spin' : ''}`} />
                                       Re-read RFID

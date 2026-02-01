@@ -254,6 +254,74 @@ class TestLibraryFilesAPI:
         assert result["total_folders"] == 2
         assert result["total_files"] == 1
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_file_list_includes_user_tracking_fields(self, async_client: AsyncClient, file_factory, db_session):
+        """Verify file list response includes user tracking fields (Issue #206)."""
+        lib_file = await file_factory(filename="test.3mf")
+        response = await async_client.get("/api/v1/library/files?include_root=false")
+        assert response.status_code == 200
+        result = response.json()
+        assert len(result) >= 1
+        # Find our test file
+        test_file = next((f for f in result if f["id"] == lib_file.id), None)
+        assert test_file is not None
+        # User tracking fields should be present (even if null)
+        assert "created_by_id" in test_file
+        assert "created_by_username" in test_file
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_file_detail_includes_user_tracking_fields(self, async_client: AsyncClient, file_factory, db_session):
+        """Verify file detail response includes user tracking fields (Issue #206)."""
+        lib_file = await file_factory(filename="test_detail.3mf")
+        response = await async_client.get(f"/api/v1/library/files/{lib_file.id}")
+        assert response.status_code == 200
+        result = response.json()
+        # User tracking fields should be present (even if null)
+        assert "created_by_id" in result
+        assert "created_by_username" in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_file_with_user_tracking(self, async_client: AsyncClient, db_session):
+        """Verify file created with user shows username in response (Issue #206)."""
+        from backend.app.models.library import LibraryFile
+        from backend.app.models.user import User
+
+        # Create a test user
+        user = User(username="testuploader", password_hash="fakehash", role="user")
+        db_session.add(user)
+        await db_session.flush()
+
+        # Create a file with created_by_id set
+        lib_file = LibraryFile(
+            filename="user_uploaded.3mf",
+            file_path="/test/user_uploaded.3mf",
+            file_size=2048,
+            file_type="3mf",
+            created_by_id=user.id,
+        )
+        db_session.add(lib_file)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+
+        # Verify file detail shows username
+        response = await async_client.get(f"/api/v1/library/files/{lib_file.id}")
+        assert response.status_code == 200
+        result = response.json()
+        assert result["created_by_id"] == user.id
+        assert result["created_by_username"] == "testuploader"
+
+        # Verify file list also shows username
+        response = await async_client.get("/api/v1/library/files?include_root=false")
+        assert response.status_code == 200
+        files = response.json()
+        test_file = next((f for f in files if f["id"] == lib_file.id), None)
+        assert test_file is not None
+        assert test_file["created_by_id"] == user.id
+        assert test_file["created_by_username"] == "testuploader"
+
 
 class TestLibraryAddToQueueAPI:
     """Integration tests for /api/v1/library/files/add-to-queue endpoint."""
@@ -715,3 +783,68 @@ endsolid cube"""
         file_ids = {r["file_id"] for r in result["results"]}
         assert stl_without_thumb1.id in file_ids
         assert stl_without_thumb2.id in file_ids
+
+
+class TestLibraryPathHelpers:
+    """Tests for path handling utilities used for backup portability."""
+
+    def test_to_relative_path_converts_absolute(self):
+        """Verify absolute paths are converted to relative paths."""
+        from backend.app.api.routes.library import to_relative_path
+        from backend.app.core.config import settings
+
+        base_dir = str(settings.base_dir)
+        abs_path = f"{base_dir}/archive/library/files/test.3mf"
+        rel_path = to_relative_path(abs_path)
+
+        assert not rel_path.startswith("/")
+        assert rel_path == "archive/library/files/test.3mf"
+
+    def test_to_relative_path_handles_path_object(self):
+        """Verify Path objects are handled correctly."""
+        from pathlib import Path
+
+        from backend.app.api.routes.library import to_relative_path
+        from backend.app.core.config import settings
+
+        abs_path = Path(settings.base_dir) / "archive" / "test.3mf"
+        rel_path = to_relative_path(abs_path)
+
+        assert not rel_path.startswith("/")
+        assert rel_path == "archive/test.3mf"
+
+    def test_to_relative_path_returns_empty_for_empty_input(self):
+        """Verify empty input returns empty string."""
+        from backend.app.api.routes.library import to_relative_path
+
+        assert to_relative_path("") == ""
+        assert to_relative_path(None) == ""
+
+    def test_to_absolute_path_converts_relative(self):
+        """Verify relative paths are converted to absolute paths."""
+        from backend.app.api.routes.library import to_absolute_path
+        from backend.app.core.config import settings
+
+        rel_path = "archive/library/files/test.3mf"
+        abs_path = to_absolute_path(rel_path)
+
+        assert abs_path is not None
+        assert abs_path.is_absolute()
+        assert str(abs_path) == f"{settings.base_dir}/archive/library/files/test.3mf"
+
+    def test_to_absolute_path_handles_already_absolute(self):
+        """Verify already absolute paths are returned as-is (for backwards compatibility)."""
+        from backend.app.api.routes.library import to_absolute_path
+
+        abs_path_str = "/data/archive/test.3mf"
+        result = to_absolute_path(abs_path_str)
+
+        assert result is not None
+        assert str(result) == abs_path_str
+
+    def test_to_absolute_path_returns_none_for_empty(self):
+        """Verify None/empty input returns None."""
+        from backend.app.api.routes.library import to_absolute_path
+
+        assert to_absolute_path(None) is None
+        assert to_absolute_path("") is None

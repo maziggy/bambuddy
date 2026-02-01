@@ -40,7 +40,7 @@ class Printer(Base):
 
     # Relationships
     archives: Mapped[list["PrintArchive"]] = relationship(back_populates="printer", cascade="all, delete-orphan")
-    smart_plug: Mapped["SmartPlug | None"] = relationship(back_populates="printer", uselist=False)
+    smart_plugs: Mapped[list["SmartPlug"]] = relationship(back_populates="printer")
     notification_providers: Mapped[list["NotificationProvider"]] = relationship(back_populates="printer")
     maintenance_items: Mapped[list["PrinterMaintenance"]] = relationship(
         back_populates="printer", cascade="all, delete-orphan"

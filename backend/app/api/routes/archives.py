@@ -8,10 +8,13 @@ from fastapi.responses import FileResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.auth import require_auth_if_enabled, require_ownership_permission
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
+from backend.app.core.permissions import Permission
 from backend.app.models.archive import PrintArchive
 from backend.app.models.filament import Filament
+from backend.app.models.user import User
 from backend.app.schemas.archive import ArchiveResponse, ArchiveStats, ArchiveUpdate, ReprintRequest
 from backend.app.services.archive import ArchiveService
 
@@ -96,6 +99,9 @@ def archive_to_response(
         "energy_kwh": archive.energy_kwh,
         "energy_cost": archive.energy_cost,
         "created_at": archive.created_at,
+        # User tracking (Issue #206)
+        "created_by_id": archive.created_by_id,
+        "created_by_username": archive.created_by.username if archive.created_by else None,
     }
 
     # Add computed time accuracy fields
@@ -707,25 +713,42 @@ async def update_archive(
     archive_id: int,
     update_data: ArchiveUpdate,
     db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_UPDATE_ALL,
+            Permission.ARCHIVES_UPDATE_OWN,
+        )
+    ),
 ):
     """Update archive metadata (tags, notes, cost, is_favorite, project_id)."""
     from sqlalchemy.orm import selectinload
 
+    user, can_modify_all = auth_result
+
     result = await db.execute(
-        select(PrintArchive).options(selectinload(PrintArchive.project)).where(PrintArchive.id == archive_id)
+        select(PrintArchive)
+        .options(selectinload(PrintArchive.project), selectinload(PrintArchive.created_by))
+        .where(PrintArchive.id == archive_id)
     )
     archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(404, "Archive not found")
+
+    # Ownership check
+    if not can_modify_all:
+        if archive.created_by_id != user.id:
+            raise HTTPException(403, "You can only update your own archives")
 
     for field, value in update_data.model_dump(exclude_unset=True).items():
         setattr(archive, field, value)
 
     await db.commit()
 
-    # Re-fetch with project relationship loaded after commit
+    # Re-fetch with relationships loaded after commit
     result = await db.execute(
-        select(PrintArchive).options(selectinload(PrintArchive.project)).where(PrintArchive.id == archive_id)
+        select(PrintArchive)
+        .options(selectinload(PrintArchive.project), selectinload(PrintArchive.created_by))
+        .where(PrintArchive.id == archive_id)
     )
     archive = result.scalar_one_or_none()
 
@@ -928,8 +951,30 @@ async def backfill_content_hashes(db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/{archive_id}")
-async def delete_archive(archive_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_archive(
+    archive_id: int,
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_DELETE_ALL,
+            Permission.ARCHIVES_DELETE_OWN,
+        )
+    ),
+):
     """Delete an archive."""
+    user, can_modify_all = auth_result
+
+    # Get archive first to check ownership
+    result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
+    archive = result.scalar_one_or_none()
+    if not archive:
+        raise HTTPException(404, "Archive not found")
+
+    # Ownership check
+    if not can_modify_all:
+        if archive.created_by_id != user.id:
+            raise HTTPException(403, "You can only delete your own archives")
+
     service = ArchiveService(db)
     if not await service.delete_archive(archive_id):
         raise HTTPException(404, "Archive not found")
@@ -2018,6 +2063,7 @@ async def upload_archive(
     file: UploadFile = File(...),
     printer_id: int | None = None,
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(require_auth_if_enabled),
 ):
     """Manually upload a 3MF file to archive."""
     if not file.filename or not file.filename.endswith(".3mf"):
@@ -2035,6 +2081,7 @@ async def upload_archive(
         archive = await service.archive_print(
             printer_id=printer_id,
             source_file=temp_path,
+            created_by_id=current_user.id if current_user else None,
         )
 
         if not archive:
@@ -2051,6 +2098,7 @@ async def upload_archives_bulk(
     files: list[UploadFile] = File(...),
     printer_id: int | None = None,
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(require_auth_if_enabled),
 ):
     """Bulk upload multiple 3MF files to archive."""
     results = []
@@ -2072,6 +2120,7 @@ async def upload_archives_bulk(
             archive = await service.archive_print(
                 printer_id=printer_id,
                 source_file=temp_path,
+                created_by_id=current_user.id if current_user else None,
             )
 
             if archive:
@@ -2424,6 +2473,12 @@ async def reprint_archive(
     printer_id: int,
     body: ReprintRequest | None = None,
     db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_REPRINT_ALL,
+            Permission.ARCHIVES_REPRINT_OWN,
+        )
+    ),
 ):
     """Send an archived 3MF file to a printer and start printing."""
     from backend.app.main import register_expected_print
@@ -2435,6 +2490,8 @@ async def reprint_archive(
     )
     from backend.app.services.printer_manager import printer_manager
 
+    user, can_modify_all = auth_result
+
     # Use defaults if no body provided
     if body is None:
         body = ReprintRequest()
@@ -2444,6 +2501,11 @@ async def reprint_archive(
     archive = await service.get_archive(archive_id)
     if not archive:
         raise HTTPException(404, "Archive not found")
+
+    # Ownership check
+    if not can_modify_all:
+        if archive.created_by_id != user.id:
+            raise HTTPException(403, "You can only reprint your own archives")
 
     # Get printer
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
@@ -2476,14 +2538,22 @@ async def reprint_archive(
     # Get FTP retry settings
     ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
 
+    logger.info(
+        f"Reprint FTP upload starting: printer={printer.name} ({printer.model}), "
+        f"ip={printer.ip_address}, file={remote_filename}, local_path={file_path}, "
+        f"retry_enabled={ftp_retry_enabled}, retry_count={ftp_retry_count}, timeout={ftp_timeout}"
+    )
+
     # Delete existing file if present (avoids 553 error)
-    await delete_file_async(
+    logger.debug(f"Deleting existing file {remote_path} if present...")
+    delete_result = await delete_file_async(
         printer.ip_address,
         printer.access_code,
         remote_path,
         socket_timeout=ftp_timeout,
         printer_model=printer.model,
     )
+    logger.debug(f"Delete result: {delete_result}")
 
     if ftp_retry_enabled:
         uploaded = await with_ftp_retry(
@@ -2509,7 +2579,16 @@ async def reprint_archive(
         )
 
     if not uploaded:
-        raise HTTPException(500, "Failed to upload file to printer")
+        logger.error(
+            f"FTP upload failed for reprint: printer={printer.name}, model={printer.model}, "
+            f"ip={printer.ip_address}, file={remote_filename}. "
+            "Check logs above for storage diagnostics and specific error codes."
+        )
+        raise HTTPException(
+            500,
+            "Failed to upload file to printer. Check if SD card is inserted and properly formatted (FAT32/exFAT). "
+            "See server logs for detailed diagnostics.",
+        )
 
     # Register this as an expected print so we don't create a duplicate archive
     register_expected_print(printer_id, remote_filename, archive_id)
@@ -2554,6 +2633,11 @@ async def reprint_archive(
 
     if not started:
         raise HTTPException(500, "Failed to start print")
+
+    # Track who started this print (Issue #206)
+    if user:
+        printer_manager.set_current_print_user(printer_id, user.id, user.username)
+        logger.info(f"Reprint started by user: {user.username}")
 
     return {
         "status": "printing",

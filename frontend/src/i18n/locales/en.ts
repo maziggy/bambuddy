@@ -624,6 +624,7 @@ export default {
     overdue: 'Overdue',
     dragReorderTooltip: 'Position only affects ASAP items. Scheduled items run at their set time.',
     anyModel: 'Any {{model}}{{filaments}}',
+    addedBy: 'Added by {{username}}',
     bulkEdit: {
       title: 'Edit {{count}} Item{{count, plural, one {} other {s}}}',
       description: 'Only changed settings will be applied to selected items.',

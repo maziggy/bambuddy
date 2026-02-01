@@ -463,7 +463,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     }
   }, [isDragging, isResizing, dragOffset]);
 
-  const streamUrl = `/api/v1/printers/${printerId}/camera/stream?fps=10&t=${imageKey}`;
+  const streamUrl = `/api/v1/printers/${printerId}/camera/stream?fps=15&t=${imageKey}`;
 
   return (
     <div

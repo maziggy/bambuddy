@@ -89,6 +89,10 @@ class ArchiveResponse(BaseModel):
 
     created_at: datetime
 
+    # User tracking (Issue #206)
+    created_by_id: int | None = None
+    created_by_username: str | None = None
+
     @model_validator(mode="after")
     def compute_object_count(self) -> "ArchiveResponse":
         """Compute object_count from extra_data.printable_objects if not set."""

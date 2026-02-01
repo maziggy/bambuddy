@@ -16,6 +16,7 @@ import {
   SkipForward,
   AlertTriangle,
   Trash2,
+  RotateCcw,
 } from 'lucide-react';
 import { api } from '../api/client';
 import type {
@@ -31,8 +32,7 @@ import type {
 import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
 import { Toggle } from './Toggle';
-import { BackupModal } from './BackupModal';
-import { RestoreModal } from './RestoreModal';
+import { ConfirmModal } from './ConfirmModal';
 import { useToast } from '../contexts/ToastContext';
 import { useTranslation } from 'react-i18next';
 
@@ -110,9 +110,30 @@ export function GitHubBackupSettings() {
   const [backupSettings, setBackupSettings] = useState(false);
   const [enabled, setEnabled] = useState(true);
 
-  // Local backup modals
-  const [showBackupModal, setShowBackupModal] = useState(false);
-  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  // Local backup state
+  const [isExporting, setIsExporting] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [operationStatus, setOperationStatus] = useState<string>('');
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [restoreResult, setRestoreResult] = useState<{ success: boolean; message: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Block navigation while backup/restore is in progress
+  useEffect(() => {
+    const isOperationInProgress = isExporting || isRestoring;
+
+    if (isOperationInProgress) {
+      const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+        e.preventDefault();
+        e.returnValue = t('githubBackup.operationInProgress');
+        return e.returnValue;
+      };
+
+      window.addEventListener('beforeunload', handleBeforeUnload);
+      return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }
+  }, [isExporting, isRestoring]);
 
   // Test connection state
   const [testLoading, setTestLoading] = useState(false);
@@ -701,77 +722,182 @@ export function GitHubBackupSettings() {
               {t('githubBackup.localDescription')}
             </p>
 
+            {/* Export */}
             <div className="flex items-center justify-between py-3 border-b border-bambu-dark-tertiary">
               <div>
-                <p className="text-white">{t('githubBackup.exportData')}</p>
+                <p className="text-white">{t('githubBackup.downloadBackup')}</p>
                 <p className="text-sm text-bambu-gray">
-                  {t('githubBackup.exportDescription')}
+                  {t('githubBackup.downloadBackupDesc')}
                 </p>
               </div>
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => setShowBackupModal(true)}
+                disabled={isExporting || isRestoring}
+                onClick={async () => {
+                  setIsExporting(true);
+                  setOperationStatus(t('githubBackup.preparingBackup'));
+                  try {
+                    setOperationStatus(t('githubBackup.creatingBackupArchive'));
+                    const { blob, filename } = await api.exportBackup();
+                    setOperationStatus(t('githubBackup.downloadingBackupFile'));
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    showToast(t('githubBackup.backupDownloaded'));
+                  } catch (e) {
+                    showToast(`${t('githubBackup.failedToCreateBackup')}: ${e instanceof Error ? e.message : t('common.unknownError')}`, 'error');
+                  } finally {
+                    setIsExporting(false);
+                    setOperationStatus('');
+                  }
+                }}
               >
                 <Download className="w-4 h-4" />
-                {t('common.export')}
+                {t('common.download')}
               </Button>
             </div>
 
-            <div className="flex items-center justify-between py-3">
+            {/* Import */}
+            <div className="flex items-center justify-between py-3 border-b border-bambu-dark-tertiary">
               <div>
-                <p className="text-white">{t('githubBackup.importBackup')}</p>
+                <p className="text-white">{t('githubBackup.restoreBackup')}</p>
                 <p className="text-sm text-bambu-gray">
-                  {t('githubBackup.importDescription')}
+                  {t('githubBackup.restoreBackupDesc')}
                 </p>
               </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".zip"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    setRestoreFile(file);
+                    setShowRestoreConfirm(true);
+                  }
+                  e.target.value = '';
+                }}
+              />
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => setShowRestoreModal(true)}
+                disabled={isRestoring || isExporting}
+                onClick={() => fileInputRef.current?.click()}
               >
                 <Upload className="w-4 h-4" />
-                {t('common.import')}
+                {t('githubBackup.restore')}
               </Button>
+            </div>
+
+            {/* Restore result message */}
+            {restoreResult && (
+              <div className={`p-3 rounded-lg ${restoreResult.success ? 'bg-green-500/10 border border-green-500/30' : 'bg-red-500/10 border border-red-500/30'}`}>
+                <div className="flex items-start gap-2 text-sm">
+                  {restoreResult.success ? (
+                    <CheckCircle className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
+                  ) : (
+                    <XCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
+                  )}
+                  <div className={restoreResult.success ? 'text-green-200' : 'text-red-200'}>
+                    {restoreResult.message}
+                    {restoreResult.success && (
+                      <div className="mt-2">
+                        <Button
+                          size="sm"
+                          onClick={() => window.location.reload()}
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          {t('githubBackup.reloadNow')}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Warning */}
+            <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+              <div className="flex items-start gap-2 text-sm">
+                <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
+                <div className="text-yellow-200">
+                  <span className="font-medium">{t('githubBackup.restoreWarning')}</span>{' '}
+                  <span className="text-yellow-200/70">{t('githubBackup.restoreWarningDetail')}</span>
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Modals */}
-      {showBackupModal && (
-        <BackupModal
-          onClose={() => setShowBackupModal(false)}
-          onExport={async (categories) => {
-            setShowBackupModal(false);
+      {/* Restore Confirmation Modal */}
+      {showRestoreConfirm && restoreFile && (
+        <ConfirmModal
+          title={t('githubBackup.restoreConfirmTitle')}
+          message={t('githubBackup.restoreConfirmMessage', { filename: restoreFile.name })}
+          confirmText={t('githubBackup.restoreConfirmButton')}
+          variant="danger"
+          onConfirm={async () => {
+            setShowRestoreConfirm(false);
+            setIsRestoring(true);
+            setRestoreResult(null);
             try {
-              const { blob, filename } = await api.exportBackup(categories);
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = filename;
-              a.click();
-              URL.revokeObjectURL(url);
-              showToast(t('githubBackup.backupDownloaded'));
-            } catch {
-              showToast(t('githubBackup.failedToCreateBackup'), 'error');
+              setOperationStatus(t('githubBackup.uploadingBackup'));
+              const result = await api.importBackup(restoreFile);
+              setRestoreResult(result);
+              if (result.success) {
+                showToast(t('githubBackup.backupRestoredRestart'), 'success');
+              } else {
+                showToast(result.message, 'error');
+              }
+            } catch (e) {
+              const message = e instanceof Error ? e.message : t('githubBackup.failedToRestoreBackup');
+              setRestoreResult({ success: false, message });
+              showToast(message, 'error');
+            } finally {
+              setIsRestoring(false);
+              setOperationStatus('');
+              setRestoreFile(null);
             }
+          }}
+          onCancel={() => {
+            setShowRestoreConfirm(false);
+            setRestoreFile(null);
           }}
         />
       )}
 
-      {showRestoreModal && (
-        <RestoreModal
-          onClose={() => setShowRestoreModal(false)}
-          onRestore={async (file, overwrite) => {
-            return await api.importBackup(file, overwrite);
-          }}
-          onSuccess={() => {
-            setShowRestoreModal(false);
-            showToast(t('githubBackup.backupRestored'));
-            queryClient.invalidateQueries();
-          }}
-        />
+      {/* Blocking overlay during backup/restore operations */}
+      {(isExporting || isRestoring) && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100]">
+          <div className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl p-8 max-w-md w-full mx-4 text-center">
+            <div className="flex justify-center mb-4">
+              <div className="relative">
+                <div className="w-16 h-16 border-4 border-bambu-dark-tertiary rounded-full"></div>
+                <div className="w-16 h-16 border-4 border-bambu-green border-t-transparent rounded-full absolute inset-0 animate-spin"></div>
+              </div>
+            </div>
+            <h3 className="text-xl font-semibold text-white mb-2">
+              {isExporting ? t('githubBackup.creatingBackupTitle') : t('githubBackup.restoringBackupTitle')}
+            </h3>
+            <p className="text-bambu-gray mb-4">
+              {operationStatus || (isExporting ? t('githubBackup.preparing') : t('githubBackup.processing'))}
+            </p>
+            <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+              <div className="flex items-start gap-2 text-sm">
+                <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
+                <p className="text-yellow-200 text-left">
+                  {t('githubBackup.doNotClosePage')}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

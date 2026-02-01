@@ -13,13 +13,21 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, Up
 from fastapi.responses import FileResponse as FastAPIFileResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from backend.app.core.auth import (
+    require_auth_if_enabled,
+    require_ownership_permission,
+    require_permission_if_auth_enabled,
+)
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import get_db
+from backend.app.core.permissions import Permission
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.project import Project
+from backend.app.models.user import User
 from backend.app.schemas.library import (
     AddToQueueError,
     AddToQueueRequest,
@@ -73,6 +81,30 @@ def get_library_thumbnails_dir() -> Path:
     thumbnails_dir = get_library_dir() / "thumbnails"
     thumbnails_dir.mkdir(parents=True, exist_ok=True)
     return thumbnails_dir
+
+
+def to_relative_path(absolute_path: Path | str) -> str:
+    """Convert an absolute path to a path relative to base_dir for storage."""
+    if not absolute_path:
+        return ""
+    abs_path = Path(absolute_path)
+    base_dir = Path(app_settings.base_dir)
+    try:
+        return str(abs_path.relative_to(base_dir))
+    except ValueError:
+        # Path is not under base_dir, return as-is (shouldn't happen normally)
+        return str(abs_path)
+
+
+def to_absolute_path(relative_path: str | None) -> Path | None:
+    """Convert a relative path (from database) to an absolute path for file operations."""
+    if not relative_path:
+        return None
+    # Handle already-absolute paths (for backwards compatibility during migration)
+    path = Path(relative_path)
+    if path.is_absolute():
+        return path
+    return Path(app_settings.base_dir) / relative_path
 
 
 def calculate_file_hash(file_path: Path) -> str:
@@ -500,8 +532,16 @@ async def update_folder(folder_id: int, data: FolderUpdate, db: AsyncSession = D
 
 
 @router.delete("/folders/{folder_id}")
-async def delete_folder(folder_id: int, db: AsyncSession = Depends(get_db)):
-    """Delete a folder and all its contents (cascade)."""
+async def delete_folder(
+    folder_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_DELETE_ALL)),
+):
+    """Delete a folder and all its contents (cascade).
+
+    Note: Folders require library:delete_all permission since they don't have
+    ownership tracking.
+    """
     result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
     folder = result.scalar_one_or_none()
 
@@ -563,7 +603,7 @@ async def list_files(
         include_root: If True and folder_id is None, returns files at root level.
                      If False and folder_id is None, returns all files.
     """
-    query = select(LibraryFile)
+    query = select(LibraryFile).options(selectinload(LibraryFile.created_by))
 
     if folder_id is not None:
         query = query.where(LibraryFile.folder_id == folder_id)
@@ -610,6 +650,8 @@ async def list_files(
                 thumbnail_path=f.thumbnail_path,
                 print_count=f.print_count,
                 duplicate_count=hash_counts.get(f.file_hash, 0) if f.file_hash else 0,
+                created_by_id=f.created_by_id,
+                created_by_username=f.created_by.username if f.created_by else None,
                 created_at=f.created_at,
                 print_name=print_name,
                 print_time_seconds=print_time,
@@ -627,6 +669,7 @@ async def upload_file(
     folder_id: int | None = None,
     generate_stl_thumbnails: bool = Query(default=True),
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(require_auth_if_enabled),
 ):
     """Upload a file to the library."""
     try:
@@ -722,16 +765,17 @@ async def upload_file(
             if generate_stl_thumbnails:
                 thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
 
-        # Create database entry
+        # Create database entry (store relative paths for portability)
         library_file = LibraryFile(
             folder_id=folder_id,
             filename=filename,
-            file_path=str(file_path),
+            file_path=to_relative_path(file_path),
             file_type=file_type,
             file_size=len(content),
             file_hash=file_hash,
-            thumbnail_path=thumbnail_path,
+            thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
             file_metadata=metadata if metadata else None,
+            created_by_id=current_user.id if current_user else None,
         )
         db.add(library_file)
         await db.flush()
@@ -761,6 +805,7 @@ async def extract_zip_file(
     create_folder_from_zip: bool = Query(default=False),
     generate_stl_thumbnails: bool = Query(default=True),
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(require_auth_if_enabled),
 ):
     """Upload and extract a ZIP file to the library.
 
@@ -958,16 +1003,17 @@ async def extract_zip_file(
                         if generate_stl_thumbnails:
                             thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
 
-                    # Create database entry
+                    # Create database entry (store relative paths for portability)
                     library_file = LibraryFile(
                         folder_id=target_folder_id,
                         filename=filename,
-                        file_path=str(file_path),
+                        file_path=to_relative_path(file_path),
                         file_type=file_type,
                         file_size=len(file_content),
                         file_hash=file_hash,
-                        thumbnail_path=thumbnail_path,
+                        thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
                         file_metadata=metadata if metadata else None,
+                        created_by_id=current_user.id if current_user else None,
                     )
                     db.add(library_file)
                     await db.flush()
@@ -1062,9 +1108,9 @@ async def batch_generate_stl_thumbnails(
     failed = 0
 
     for stl_file in stl_files:
-        file_path = Path(stl_file.file_path)
+        file_path = to_absolute_path(stl_file.file_path)
 
-        if not file_path.exists():
+        if not file_path or not file_path.exists():
             results.append(
                 BatchThumbnailResult(
                     file_id=stl_file.id,
@@ -1080,8 +1126,8 @@ async def batch_generate_stl_thumbnails(
             thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
 
             if thumbnail_path:
-                # Update database
-                stl_file.thumbnail_path = thumbnail_path
+                # Update database with relative path
+                stl_file.thumbnail_path = to_relative_path(thumbnail_path)
                 await db.flush()
                 results.append(
                     BatchThumbnailResult(
@@ -1633,14 +1679,22 @@ async def print_library_file(
     # Get FTP retry settings
     ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
 
+    logger.info(
+        f"Library print FTP upload starting: printer={printer.name} ({printer.model}), "
+        f"ip={printer.ip_address}, file={remote_filename}, local_path={file_path}, "
+        f"retry_enabled={ftp_retry_enabled}, retry_count={ftp_retry_count}, timeout={ftp_timeout}"
+    )
+
     # Delete existing file if present (avoids 553 error)
-    await delete_file_async(
+    logger.debug(f"Deleting existing file {remote_path} if present...")
+    delete_result = await delete_file_async(
         printer.ip_address,
         printer.access_code,
         remote_path,
         socket_timeout=ftp_timeout,
         printer_model=printer.model,
     )
+    logger.debug(f"Delete result: {delete_result}")
 
     # Upload file to printer
     if ftp_retry_enabled:
@@ -1667,7 +1721,16 @@ async def print_library_file(
         )
 
     if not uploaded:
-        raise HTTPException(status_code=500, detail="Failed to upload file to printer")
+        logger.error(
+            f"FTP upload failed for library print: printer={printer.name}, model={printer.model}, "
+            f"ip={printer.ip_address}, file={remote_filename}. "
+            "Check logs above for storage diagnostics and specific error codes."
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to upload file to printer. Check if SD card is inserted and properly formatted (FAT32/exFAT). "
+            "See server logs for detailed diagnostics.",
+        )
 
     # Register this as an expected print so we don't create a duplicate archive
     register_expected_print(printer_id, remote_filename, archive.id)
@@ -1725,7 +1788,9 @@ async def print_library_file(
 @router.get("/files/{file_id}", response_model=FileResponseSchema)
 async def get_file(file_id: int, db: AsyncSession = Depends(get_db)):
     """Get a file by ID with full details."""
-    result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
+    result = await db.execute(
+        select(LibraryFile).options(selectinload(LibraryFile.created_by)).where(LibraryFile.id == file_id)
+    )
     file = result.scalar_one_or_none()
 
     if not file:
@@ -1782,19 +1847,38 @@ async def get_file(file_id: int, db: AsyncSession = Depends(get_db)):
         notes=file.notes,
         duplicates=duplicates if duplicates else None,
         duplicate_count=duplicate_count,
+        created_by_id=file.created_by_id,
+        created_by_username=file.created_by.username if file.created_by else None,
         created_at=file.created_at,
         updated_at=file.updated_at,
     )
 
 
 @router.put("/files/{file_id}", response_model=FileResponseSchema)
-async def update_file(file_id: int, data: FileUpdate, db: AsyncSession = Depends(get_db)):
+async def update_file(
+    file_id: int,
+    data: FileUpdate,
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_UPDATE_ALL,
+            Permission.LIBRARY_UPDATE_OWN,
+        )
+    ),
+):
     """Update a file's metadata."""
+    user, can_modify_all = auth_result
+
     result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
     file = result.scalar_one_or_none()
 
     if not file:
         raise HTTPException(status_code=404, detail="File not found")
+
+    # Ownership check
+    if not can_modify_all:
+        if file.created_by_id != user.id:
+            raise HTTPException(status_code=403, detail="You can only update your own files")
 
     if data.filename is not None:
         # Validate filename doesn't contain path separators
@@ -1833,20 +1917,38 @@ async def update_file(file_id: int, data: FileUpdate, db: AsyncSession = Depends
 
 
 @router.delete("/files/{file_id}")
-async def delete_file(file_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_file(
+    file_id: int,
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_DELETE_ALL,
+            Permission.LIBRARY_DELETE_OWN,
+        )
+    ),
+):
     """Delete a file."""
+    user, can_modify_all = auth_result
+
     result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
     file = result.scalar_one_or_none()
 
     if not file:
         raise HTTPException(status_code=404, detail="File not found")
 
+    # Ownership check
+    if not can_modify_all:
+        if file.created_by_id != user.id:
+            raise HTTPException(status_code=403, detail="You can only delete your own files")
+
     # Delete actual files
     try:
-        if file.file_path and os.path.exists(file.file_path):
-            os.remove(file.file_path)
-        if file.thumbnail_path and os.path.exists(file.thumbnail_path):
-            os.remove(file.thumbnail_path)
+        abs_file_path = to_absolute_path(file.file_path)
+        abs_thumb_path = to_absolute_path(file.thumbnail_path)
+        if abs_file_path and abs_file_path.exists():
+            abs_file_path.unlink()
+        if abs_thumb_path and abs_thumb_path.exists():
+            abs_thumb_path.unlink()
     except Exception as e:
         logger.warning(f"Failed to delete file from disk: {e}")
 
@@ -1867,11 +1969,12 @@ async def download_file(file_id: int, db: AsyncSession = Depends(get_db)):
     if not file:
         raise HTTPException(status_code=404, detail="File not found")
 
-    if not file.file_path or not os.path.exists(file.file_path):
+    abs_path = to_absolute_path(file.file_path)
+    if not abs_path or not abs_path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
 
     return FastAPIFileResponse(
-        file.file_path,
+        str(abs_path),
         filename=file.filename,
         media_type="application/octet-stream",
     )
@@ -1886,11 +1989,12 @@ async def get_thumbnail(file_id: int, db: AsyncSession = Depends(get_db)):
     if not file:
         raise HTTPException(status_code=404, detail="File not found")
 
-    if not file.thumbnail_path or not os.path.exists(file.thumbnail_path):
+    abs_thumb_path = to_absolute_path(file.thumbnail_path)
+    if not abs_thumb_path or not abs_thumb_path.exists():
         raise HTTPException(status_code=404, detail="Thumbnail not found")
 
     # Detect media type from extension
-    thumb_ext = os.path.splitext(file.thumbnail_path)[1].lower()
+    thumb_ext = abs_thumb_path.suffix.lower()
     media_types = {
         ".png": "image/png",
         ".jpg": "image/jpeg",
@@ -1900,7 +2004,7 @@ async def get_thumbnail(file_id: int, db: AsyncSession = Depends(get_db)):
     }
     media_type = media_types.get(thumb_ext, "image/png")
 
-    return FastAPIFileResponse(file.thumbnail_path, media_type=media_type)
+    return FastAPIFileResponse(str(abs_thumb_path), media_type=media_type)
 
 
 @router.get("/files/{file_id}/gcode")
@@ -1912,17 +2016,18 @@ async def get_gcode(file_id: int, db: AsyncSession = Depends(get_db)):
     if not file:
         raise HTTPException(status_code=404, detail="File not found")
 
-    if not file.file_path or not os.path.exists(file.file_path):
+    abs_path = to_absolute_path(file.file_path)
+    if not abs_path or not abs_path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
 
     if file.file_type == "gcode":
-        return FastAPIFileResponse(file.file_path, media_type="text/plain")
+        return FastAPIFileResponse(str(abs_path), media_type="text/plain")
     elif file.file_type == "3mf":
         # Extract gcode from 3mf
         import zipfile
 
         try:
-            with zipfile.ZipFile(file.file_path, "r") as zf:
+            with zipfile.ZipFile(str(abs_path), "r") as zf:
                 # Find gcode file
                 gcode_files = [n for n in zf.namelist() if n.endswith(".gcode")]
                 if not gcode_files:
@@ -1962,28 +2067,54 @@ async def move_files(data: FileMoveRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/bulk-delete", response_model=BulkDeleteResponse)
-async def bulk_delete(data: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
-    """Delete multiple files and/or folders."""
+async def bulk_delete(
+    data: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_DELETE_ALL,
+            Permission.LIBRARY_DELETE_OWN,
+        )
+    ),
+):
+    """Delete multiple files and/or folders.
+
+    Files not owned by the user are skipped (unless user has *_all permission).
+    """
+    user, can_modify_all = auth_result
     deleted_files = 0
     deleted_folders = 0
+    skipped_files = 0
 
     # Delete files first
     for file_id in data.file_ids:
         result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
         file = result.scalar_one_or_none()
         if file:
+            # Ownership check
+            if not can_modify_all and file.created_by_id != user.id:
+                skipped_files += 1
+                continue
+
             try:
-                if file.file_path and os.path.exists(file.file_path):
-                    os.remove(file.file_path)
-                if file.thumbnail_path and os.path.exists(file.thumbnail_path):
-                    os.remove(file.thumbnail_path)
+                abs_file_path = to_absolute_path(file.file_path)
+                abs_thumb_path = to_absolute_path(file.thumbnail_path)
+                if abs_file_path and abs_file_path.exists():
+                    abs_file_path.unlink()
+                if abs_thumb_path and abs_thumb_path.exists():
+                    abs_thumb_path.unlink()
             except Exception as e:
                 logger.warning(f"Failed to delete file from disk: {e}")
             await db.delete(file)
             deleted_files += 1
 
     # Delete folders (cascade will handle contents)
+    # Note: Folders don't have ownership tracking currently, require *_all permission
     for folder_id in data.folder_ids:
+        if not can_modify_all:
+            # Users without *_all permission cannot delete folders
+            continue
+
         result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
         folder = result.scalar_one_or_none()
         if folder:

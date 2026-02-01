@@ -107,17 +107,32 @@ class BambuFTPClient:
                 f"FTP connecting to {self.ip_address}:{self.FTP_PORT} "
                 f"(timeout={self.timeout}s, model={self.printer_model}, skip_session_reuse={skip_reuse})"
             )
-            self._ftp = ImplicitFTP_TLS()
+            self._ftp = ImplicitFTP_TLS(skip_session_reuse=skip_reuse)
             self._ftp.connect(self.ip_address, self.FTP_PORT, timeout=self.timeout)
             logger.debug("FTP connected, logging in as bblp")
             self._ftp.login("bblp", self.access_code)
             logger.debug("FTP logged in, setting prot_p and passive mode")
             self._ftp.prot_p()
             self._ftp.set_pasv(True)
-            logger.info(f"FTP connected successfully to {self.ip_address}")
+            # Log welcome message for debugging
+            if hasattr(self._ftp, "welcome") and self._ftp.welcome:
+                logger.debug(f"FTP server welcome: {self._ftp.welcome}")
+            logger.info(f"FTP connected successfully to {self.ip_address} (model={self.printer_model})")
             return True
+        except ftplib.error_perm as e:
+            logger.warning(f"FTP connection permission error to {self.ip_address}: {e}")
+            self._ftp = None
+            return False
+        except TimeoutError as e:
+            logger.warning(f"FTP connection timed out to {self.ip_address}: {e}")
+            self._ftp = None
+            return False
+        except ssl.SSLError as e:
+            logger.warning(f"FTP SSL error connecting to {self.ip_address}: {e}")
+            self._ftp = None
+            return False
         except Exception as e:
-            logger.warning(f"FTP connection failed to {self.ip_address}: {e}")
+            logger.warning(f"FTP connection failed to {self.ip_address}: {e} (type: {type(e).__name__})")
             self._ftp = None
             return False
 
@@ -227,6 +242,62 @@ class BambuFTPClient:
                     pass
             return False
 
+    def diagnose_storage(self) -> dict:
+        """Run storage diagnostics and return results. For debugging upload issues."""
+        results = {
+            "connected": self._ftp is not None,
+            "can_list_root": False,
+            "root_files": [],
+            "can_list_cache": False,
+            "storage_info": None,
+            "pwd": None,
+            "errors": [],
+        }
+
+        if not self._ftp:
+            results["errors"].append("FTP not connected")
+            return results
+
+        # Try to get current directory
+        try:
+            results["pwd"] = self._ftp.pwd()
+            logger.debug(f"FTP current directory: {results['pwd']}")
+        except Exception as e:
+            results["errors"].append(f"PWD failed: {e}")
+            logger.debug(f"FTP PWD failed: {e}")
+
+        # Try to list root directory
+        try:
+            self._ftp.cwd("/")
+            items = []
+            self._ftp.retrlines("LIST", items.append)
+            results["can_list_root"] = True
+            results["root_files"] = items[:10]  # First 10 entries
+            logger.debug(f"FTP root listing ({len(items)} items): {items[:5]}")
+        except Exception as e:
+            results["errors"].append(f"LIST / failed: {e}")
+            logger.debug(f"FTP LIST / failed: {e}")
+
+        # Try to list /cache (should exist on all printers)
+        try:
+            self._ftp.cwd("/cache")
+            items = []
+            self._ftp.retrlines("LIST", items.append)
+            results["can_list_cache"] = True
+            logger.debug(f"FTP /cache listing: {len(items)} items")
+        except Exception as e:
+            results["errors"].append(f"LIST /cache failed: {e}")
+            logger.debug(f"FTP LIST /cache failed: {e}")
+
+        # Try to get storage info
+        try:
+            results["storage_info"] = self.get_storage_info()
+            logger.debug(f"FTP storage info: {results['storage_info']}")
+        except Exception as e:
+            results["errors"].append(f"Storage info failed: {e}")
+
+        return results
+
     def upload_file(
         self,
         local_path: Path,
@@ -242,6 +313,17 @@ class BambuFTPClient:
             file_size = local_path.stat().st_size if local_path.exists() else 0
             logger.info(f"FTP uploading {local_path} ({file_size} bytes) to {remote_path}")
 
+            # Run storage diagnostics before upload (debug)
+            logger.debug("Running pre-upload storage diagnostics...")
+            diag = self.diagnose_storage()
+            logger.info(
+                f"FTP storage diagnostics: can_list_root={diag['can_list_root']}, "
+                f"can_list_cache={diag['can_list_cache']}, "
+                f"storage={diag['storage_info']}, errors={diag['errors']}"
+            )
+            if diag["root_files"]:
+                logger.debug(f"FTP root directory contents: {diag['root_files']}")
+
             uploaded = 0
 
             def on_block(block: bytes):
@@ -254,11 +336,27 @@ class BambuFTPClient:
                 if self._should_skip_session_reuse():
                     ftplib._SSLSocket = None
 
+                logger.debug(f"FTP STOR command starting for {remote_path}")
                 self._ftp.storbinary(f"STOR {remote_path}", f, callback=on_block)
             logger.info(f"FTP upload complete: {remote_path}")
             return True
+        except ftplib.error_perm as e:
+            # Permanent FTP error (4xx/5xx response)
+            error_code = str(e)[:3] if str(e) else "unknown"
+            logger.error(f"FTP upload failed for {remote_path}: {e} (error code: {error_code})")
+            if error_code == "553":
+                logger.error(
+                    "FTP 553 error - Could not create file. Possible causes: "
+                    "1) No SD card inserted, 2) SD card full, 3) SD card not formatted correctly (needs FAT32/exFAT), "
+                    "4) Printer busy/not ready, 5) File path issue"
+                )
+            elif error_code == "550":
+                logger.error("FTP 550 error - File/directory not found or permission denied")
+            elif error_code == "552":
+                logger.error("FTP 552 error - Storage quota exceeded (SD card full?)")
+            return False
         except Exception as e:
-            logger.error(f"FTP upload failed for {remote_path}: {e}")
+            logger.error(f"FTP upload failed for {remote_path}: {e} (type: {type(e).__name__})")
             return False
 
     def upload_bytes(self, data: bytes, remote_path: str) -> bool:

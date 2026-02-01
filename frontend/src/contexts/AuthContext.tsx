@@ -15,6 +15,7 @@ interface AuthContextType {
   hasPermission: (permission: Permission) => boolean;
   hasAnyPermission: (...permissions: Permission[]) => boolean;
   hasAllPermissions: (...permissions: Permission[]) => boolean;
+  canModify: (resource: 'queue' | 'archives' | 'library', action: 'update' | 'delete' | 'reprint', createdById: number | null | undefined) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -156,6 +157,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return permissions.every(p => permissionSet.has(p));
   }, [authEnabled, isAdmin, permissionSet]);
 
+  // Ownership-based permission check
+  const canModify = useCallback((
+    resource: 'queue' | 'archives' | 'library',
+    action: 'update' | 'delete' | 'reprint',
+    createdById: number | null | undefined,
+  ): boolean => {
+    if (!authEnabled) return true;  // Auth disabled, allow all
+    if (isAdmin) return true;  // Admins can modify anything
+
+    const allPerm = `${resource}:${action}_all` as Permission;
+    const ownPerm = `${resource}:${action}_own` as Permission;
+
+    // User has *_all permission - can modify any item
+    if (permissionSet.has(allPerm)) return true;
+
+    // User has *_own permission - can only modify their own items
+    if (permissionSet.has(ownPerm)) {
+      // Ownerless items (null created_by_id) require *_all permission
+      if (createdById == null) return false;
+      return createdById === user?.id;
+    }
+
+    return false;
+  }, [authEnabled, isAdmin, permissionSet, user?.id]);
+
   return (
     <AuthContext.Provider
       value={{
@@ -171,6 +197,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         hasPermission,
         hasAnyPermission,
         hasAllPermissions,
+        canModify,
       }}
     >
       {children}

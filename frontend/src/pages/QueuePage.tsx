@@ -42,16 +42,21 @@ import {
   ArrowUp,
   ArrowDown,
   Hand,
+  Check,
+  CheckSquare,
+  Square,
+  User,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { type TimeFormat } from '../utils/date';
 import { formatRelativeTime } from '../utils/relativeTime';
-import type { PrintQueueItem } from '../api/client';
+import type { PrintQueueItem, Permission } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { PrintModal } from '../components/PrintModal';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
 
 function formatDuration(seconds: number | null | undefined): string {
   if (!seconds) return '--';
@@ -93,6 +98,10 @@ function SortableQueueItem({
   onRequeue,
   onStart,
   timeFormat = 'system',
+  isSelected = false,
+  onToggleSelect,
+  hasPermission,
+  canModify,
 }: {
   item: PrintQueueItem;
   position?: number;
@@ -103,6 +112,10 @@ function SortableQueueItem({
   onRequeue: () => void;
   onStart: () => void;
   timeFormat?: TimeFormat;
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
+  hasPermission: (permission: Permission) => boolean;
+  canModify: (resource: 'queue' | 'archives' | 'library', action: 'update' | 'delete' | 'reprint', createdById: number | null | undefined) => boolean;
 }) {
   const { t } = useTranslation();
   const {
@@ -209,6 +222,12 @@ function SortableQueueItem({
                 {formatDuration(item.print_time_seconds)}
               </span>
             )}
+            {item.created_by_username && (
+              <span className="flex items-center gap-1.5" title={t('queue.addedBy', { username: item.created_by_username })}>
+                <User className="w-3.5 h-3.5" />
+                {item.created_by_username}
+              </span>
+            )}
             {isPending && !item.manual_start && (
               <span className="flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5" />
@@ -290,7 +309,8 @@ function SortableQueueItem({
                 variant="ghost"
                 size="sm"
                 onClick={onEdit}
-                title={t('common.edit')}
+                disabled={!canModify('queue', 'update', item.created_by_id)}
+                title={!canModify('queue', 'update', item.created_by_id) ? t('queue.permissions.noEditPermission') : t('common.edit')}
               >
                 <Pencil className="w-4 h-4" />
               </Button>
@@ -298,7 +318,8 @@ function SortableQueueItem({
                 variant="ghost"
                 size="sm"
                 onClick={onCancel}
-                title={t('common.cancel')}
+                disabled={!canModify('queue', 'delete', item.created_by_id)}
+                title={!canModify('queue', 'delete', item.created_by_id) ? t('queue.permissions.noCancelPermission') : t('common.cancel')}
                 className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
               >
                 <X className="w-4 h-4" />
@@ -320,7 +341,8 @@ function SortableQueueItem({
                 variant="ghost"
                 size="sm"
                 onClick={onRemove}
-                title={t('queue.remove')}
+                disabled={!canModify('queue', 'delete', item.created_by_id)}
+                title={!canModify('queue', 'delete', item.created_by_id) ? t('queue.permissions.noRemovePermission') : t('queue.remove')}
               >
                 <Trash2 className="w-4 h-4" />
               </Button>
@@ -336,6 +358,7 @@ export function QueuePage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const { hasPermission, hasAnyPermission, canModify } = useAuth();
   const [filterPrinter, setFilterPrinter] = useState<number | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('');
   const [showClearHistoryConfirm, setShowClearHistoryConfirm] = useState(false);
@@ -361,6 +384,8 @@ export function QueuePage() {
     const saved = localStorage.getItem('queue.pendingSortAsc');
     return saved !== null ? saved === 'true' : true;
   });
+  const [selectedItems, setSelectedItems] = useState<number[]>([]);
+  const [showBulkEditModal, setShowBulkEditModal] = useState(false);
 
   // Persist sort settings to localStorage
   useEffect(() => {
@@ -463,6 +488,21 @@ export function QueuePage() {
     onError: () => showToast(t('queue.toast.failedToClear'), 'error'),
   });
 
+  const bulkCancelMutation = useMutation({
+    mutationFn: async (ids: number[]) => {
+      for (const id of ids) {
+        await api.cancelQueueItem(id);
+      }
+      return ids.length;
+    },
+    onSuccess: (count) => {
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+      setSelectedItems([]);
+      showToast(t('queue.toast.cancelledItems', { count }));
+    },
+    onError: () => showToast(t('queue.toast.failedToCancelItems'), 'error'),
+  });
+
   const pendingItems = useMemo(() => {
     const items = queue?.filter(i => i.status === 'pending') || [];
 
@@ -531,6 +571,20 @@ export function QueuePage() {
       }));
       reorderMutation.mutate(updates);
     }
+  };
+
+  const handleSelectAll = () => {
+    if (selectedItems.length === pendingItems.length && pendingItems.length > 0) {
+      setSelectedItems([]);
+    } else {
+      setSelectedItems(pendingItems.map(i => i.id));
+    }
+  };
+
+  const handleToggleSelect = (id: number) => {
+    setSelectedItems(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
   };
 
   return (
@@ -645,6 +699,8 @@ export function QueuePage() {
             variant="secondary"
             size="sm"
             onClick={() => setShowClearHistoryConfirm(true)}
+            disabled={!hasPermission('queue:delete_all')}
+            title={!hasPermission('queue:delete_all') ? t('queue.permissions.noClearHistoryPermission') : undefined}
           >
             <Trash2 className="w-4 h-4" />
             {t('queue.clearHistory')}
@@ -683,6 +739,8 @@ export function QueuePage() {
                     onRequeue={() => {}}
                     onStart={() => {}}
                     timeFormat={timeFormat}
+                    hasPermission={hasPermission}
+                    canModify={canModify}
                   />
                 ))}
               </div>
@@ -725,6 +783,54 @@ export function QueuePage() {
                   </Button>
                 </div>
               </div>
+
+              {/* Bulk action toolbar */}
+              <div className="flex items-center gap-3 mb-4 p-3 bg-bambu-dark rounded-lg">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleSelectAll}
+                  className="flex items-center gap-2"
+                >
+                  {selectedItems.length === pendingItems.length && pendingItems.length > 0 ? (
+                    <CheckSquare className="w-4 h-4 text-bambu-green" />
+                  ) : (
+                    <Square className="w-4 h-4" />
+                  )}
+                  {selectedItems.length === pendingItems.length && pendingItems.length > 0 ? t('queue.bulkActions.deselectAll') : t('queue.bulkActions.selectAll')}
+                </Button>
+                {selectedItems.length > 0 && (
+                  <>
+                    <span className="text-sm text-bambu-gray">
+                      {t('queue.bulkActions.selected', { count: selectedItems.length })}
+                    </span>
+                    <div className="h-4 w-px bg-bambu-dark-tertiary" />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowBulkEditModal(true)}
+                      className="flex items-center gap-2 text-bambu-green hover:text-bambu-green-light"
+                      disabled={!hasAnyPermission('queue:update_own', 'queue:update_all')}
+                      title={!hasAnyPermission('queue:update_own', 'queue:update_all') ? t('queue.permissions.noEditPermission') : undefined}
+                    >
+                      <Pencil className="w-4 h-4" />
+                      {t('queue.bulkActions.editSelected')}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => bulkCancelMutation.mutate(selectedItems)}
+                      className="flex items-center gap-2 text-red-400 hover:text-red-300"
+                      disabled={bulkCancelMutation.isPending || !hasAnyPermission('queue:delete_own', 'queue:delete_all')}
+                      title={!hasAnyPermission('queue:delete_own', 'queue:delete_all') ? t('queue.permissions.noCancelPermission') : undefined}
+                    >
+                      <X className="w-4 h-4" />
+                      {t('queue.bulkActions.cancelSelected')}
+                    </Button>
+                  </>
+                )}
+              </div>
+
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
@@ -747,6 +853,10 @@ export function QueuePage() {
                         onRequeue={() => {}}
                         onStart={() => startMutation.mutate(item.id)}
                         timeFormat={timeFormat}
+                        isSelected={selectedItems.includes(item.id)}
+                        onToggleSelect={() => handleToggleSelect(item.id)}
+                        hasPermission={hasPermission}
+                        canModify={canModify}
                       />
                     ))}
                   </div>
@@ -800,6 +910,8 @@ export function QueuePage() {
                     onRequeue={() => setRequeueItem(item)}
                     onStart={() => {}}
                     timeFormat={timeFormat}
+                    hasPermission={hasPermission}
+                    canModify={canModify}
                   />
                 ))}
               </div>

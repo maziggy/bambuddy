@@ -273,7 +273,7 @@ export const handlers = [
   // Auth
   // ========================================================================
 
-  http.get('/api/v1/auth/status', () => {
+  http.get('*/api/v1/auth/status', () => {
     return HttpResponse.json({
       auth_enabled: false,
       requires_setup: false,

@@ -4600,7 +4600,7 @@ export function PrintersPage() {
       groups[location].push(printer);
     });
     return groups;
-  }, [sortBy, sortedPrinters]);
+  }, [sortBy, sortedPrinters, t]);
 
   return (
     <div className="p-4 md:p-8">

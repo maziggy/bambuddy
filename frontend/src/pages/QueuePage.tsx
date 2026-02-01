@@ -42,7 +42,6 @@ import {
   ArrowUp,
   ArrowDown,
   Hand,
-  Check,
   CheckSquare,
   Square,
   User,
@@ -145,9 +144,25 @@ function SortableQueueItem({
         transition-all duration-200 hover:border-bambu-dark-tertiary/80
         ${isDragging ? 'opacity-50 scale-[1.02] shadow-xl z-50' : ''}
         ${isPrinting ? 'border-blue-500/30 bg-gradient-to-r from-blue-500/5 to-transparent' : ''}
+        ${isSelected ? 'border-bambu-green/50 bg-bambu-green/5' : ''}
       `}
     >
       <div className="flex items-center gap-4 p-4">
+        {/* Selection checkbox for pending items */}
+        {isPending && onToggleSelect && (
+          <button
+            type="button"
+            onClick={onToggleSelect}
+            className="flex items-center justify-center w-8 h-8 rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
+          >
+            {isSelected ? (
+              <CheckSquare className="w-4 h-4 text-bambu-green" />
+            ) : (
+              <Square className="w-4 h-4 text-bambu-gray" />
+            )}
+          </button>
+        )}
+
         {/* Drag handle or position number */}
         {isPending ? (
           <div
@@ -286,7 +301,8 @@ function SortableQueueItem({
               variant="ghost"
               size="sm"
               onClick={onStop}
-              title={t('queue.stopPrint')}
+              disabled={!hasPermission('printers:control')}
+              title={!hasPermission('printers:control') ? t('queue.permissions.noStopPermission') : t('queue.stopPrint')}
               className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
             >
               <StopCircle className="w-4 h-4" />
@@ -299,7 +315,8 @@ function SortableQueueItem({
                   variant="ghost"
                   size="sm"
                   onClick={onStart}
-                  title={t('queue.startPrint')}
+                  disabled={!hasPermission('printers:control')}
+                  title={!hasPermission('printers:control') ? t('queue.permissions.noStartPermission') : t('queue.startPrint')}
                   className="text-bambu-green hover:text-bambu-green-light hover:bg-bambu-green/10"
                 >
                   <Play className="w-4 h-4" />
@@ -332,7 +349,8 @@ function SortableQueueItem({
                 variant="ghost"
                 size="sm"
                 onClick={onRequeue}
-                title={t('queue.requeue')}
+                disabled={!hasPermission('queue:create')}
+                title={!hasPermission('queue:create') ? t('queue.permissions.noRequeuePermission') : t('queue.requeue')}
                 className="text-bambu-green hover:text-bambu-green/80 hover:bg-bambu-green/10"
               >
                 <RefreshCw className="w-4 h-4" />
@@ -385,7 +403,7 @@ export function QueuePage() {
     return saved !== null ? saved === 'true' : true;
   });
   const [selectedItems, setSelectedItems] = useState<number[]>([]);
-  const [showBulkEditModal, setShowBulkEditModal] = useState(false);
+  const [, setShowBulkEditModal] = useState(false);
 
   // Persist sort settings to localStorage
   useEffect(() => {

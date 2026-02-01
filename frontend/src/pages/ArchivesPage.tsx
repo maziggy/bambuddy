@@ -2399,7 +2399,7 @@ export function ArchivesPage() {
     } else if (e.dataTransfer.files.length > 0) {
       showToast(t('archives.only3mfSupported'), 'warning');
     }
-  }, [showToast]);
+  }, [showToast, t]);
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback((e: KeyboardEvent) => {

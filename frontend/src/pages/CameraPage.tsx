@@ -51,7 +51,7 @@ export function CameraPage() {
     return () => {
       document.title = 'Bambuddy';
     };
-  }, [printer]);
+  }, [printer, t]);
 
   // Cleanup on unmount - stop the camera stream
   // Track if we've already sent the stop signal to avoid duplicate calls

@@ -490,7 +490,7 @@ export function APIBrowser({ apiKey = '' }: APIBrowserProps) {
       }
     }
     fetchSchema();
-  }, []);
+  }, [t]);
 
   if (loading) {
     return (

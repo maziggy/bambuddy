@@ -133,7 +133,7 @@ export function GitHubBackupSettings() {
       window.addEventListener('beforeunload', handleBeforeUnload);
       return () => window.removeEventListener('beforeunload', handleBeforeUnload);
     }
-  }, [isExporting, isRestoring]);
+  }, [isExporting, isRestoring, t]);
 
   // Test connection state
   const [testLoading, setTestLoading] = useState(false);
@@ -247,7 +247,7 @@ export function GitHubBackupSettings() {
     } catch (error) {
       showToast(t('githubBackup.failedToSave', { error: (error as Error).message }), 'error');
     }
-  }, [config?.has_token, repoUrl, accessToken, branch, scheduleEnabled, scheduleType, backupKProfiles, backupCloudProfiles, backupSettings, enabled, queryClient, showToast]);
+  }, [config?.has_token, repoUrl, accessToken, branch, scheduleEnabled, scheduleType, backupKProfiles, backupCloudProfiles, backupSettings, enabled, queryClient, showToast, t]);
 
   // Auto-save effect for existing configs (debounced)
   useEffect(() => {

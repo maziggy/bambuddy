@@ -34,6 +34,7 @@ import { Toggle } from './Toggle';
 import { BackupModal } from './BackupModal';
 import { RestoreModal } from './RestoreModal';
 import { useToast } from '../contexts/ToastContext';
+import { useTranslation } from 'react-i18next';
 
 interface StatusBadgeProps {
   status: string | null;
@@ -96,6 +97,7 @@ function formatRelativeTime(dateStr: string | null): string {
 export function GitHubBackupSettings() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const { t } = useTranslation();
 
   // Local state for form
   const [repoUrl, setRepoUrl] = useState('');
@@ -204,7 +206,7 @@ export function GitHubBackupSettings() {
           enabled,
         });
         setAccessToken(''); // Clear after save
-        showToast('Token updated');
+        showToast(t('githubBackup.tokenUpdated'));
       } else {
         // Update without token
         await api.updateGitHubBackupConfig({
@@ -217,12 +219,12 @@ export function GitHubBackupSettings() {
           backup_settings: backupSettings,
           enabled,
         });
-        showToast('Settings saved');
+        showToast(t('githubBackup.settingsSaved'));
       }
       queryClient.invalidateQueries({ queryKey: ['github-backup-config'] });
       queryClient.invalidateQueries({ queryKey: ['github-backup-status'] });
     } catch (error) {
-      showToast(`Failed to save: ${(error as Error).message}`, 'error');
+      showToast(t('githubBackup.failedToSave', { error: (error as Error).message }), 'error');
     }
   }, [config?.has_token, repoUrl, accessToken, branch, scheduleEnabled, scheduleType, backupKProfiles, backupCloudProfiles, backupSettings, enabled, queryClient, showToast]);
 
@@ -270,12 +272,12 @@ export function GitHubBackupSettings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['github-backup-config'] });
       queryClient.invalidateQueries({ queryKey: ['github-backup-status'] });
-      showToast('GitHub backup enabled');
+      showToast(t('githubBackup.backupEnabled'));
       setAccessToken('');
       isInitializedRef.current = true;
     },
     onError: (error: Error) => {
-      showToast(`Failed to save: ${error.message}`, 'error');
+      showToast(t('githubBackup.failedToSave', { error: error.message }), 'error');
     },
   });
 
@@ -286,16 +288,16 @@ export function GitHubBackupSettings() {
       queryClient.invalidateQueries({ queryKey: ['github-backup-logs'] });
       if (result.success) {
         if (result.files_changed > 0) {
-          showToast(`Backup complete - ${result.files_changed} files updated`);
+          showToast(t('githubBackup.backupComplete', { count: result.files_changed }));
         } else {
-          showToast('Backup skipped - no changes');
+          showToast(t('githubBackup.backupSkipped'));
         }
       } else {
-        showToast(`Backup failed: ${result.message}`, 'error');
+        showToast(t('githubBackup.backupFailed', { error: result.message }), 'error');
       }
     },
     onError: (error: Error) => {
-      showToast(`Backup failed: ${error.message}`, 'error');
+      showToast(t('githubBackup.backupFailed', { error: error.message }), 'error');
     },
   });
 
@@ -303,10 +305,10 @@ export function GitHubBackupSettings() {
     mutationFn: () => api.clearGitHubBackupLogs(0),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['github-backup-logs'] });
-      showToast(`Cleared ${result.deleted} logs`);
+      showToast(t('githubBackup.logsCleared', { count: result.deleted }));
     },
     onError: (error: Error) => {
-      showToast(`Failed to clear logs: ${error.message}`, 'error');
+      showToast(t('githubBackup.failedToClearLogs', { error: error.message }), 'error');
     },
   });
 
@@ -318,7 +320,7 @@ export function GitHubBackupSettings() {
       // If user entered a new token, test with those credentials
       if (accessToken) {
         if (!repoUrl) {
-          showToast('Enter repository URL', 'error');
+          showToast(t('githubBackup.enterRepoUrl'), 'error');
           setTestLoading(false);
           return;
         }
@@ -327,7 +329,7 @@ export function GitHubBackupSettings() {
         // Use stored credentials
         result = await api.testGitHubStoredConnection();
       } else {
-        showToast('Enter repository URL and access token', 'error');
+        showToast(t('githubBackup.enterRepoUrlAndToken'), 'error');
         setTestLoading(false);
         return;
       }
@@ -342,11 +344,11 @@ export function GitHubBackupSettings() {
   // Initial setup save (only for new configs)
   const handleInitialSetup = () => {
     if (!repoUrl) {
-      showToast('Repository URL is required', 'error');
+      showToast(t('githubBackup.repoUrlRequired'), 'error');
       return;
     }
     if (!accessToken) {
-      showToast('Access token is required', 'error');
+      showToast(t('githubBackup.tokenRequired'), 'error');
       return;
     }
 
@@ -380,11 +382,11 @@ export function GitHubBackupSettings() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Github className="w-5 h-5 text-gray-400" />
-                <h2 className="text-lg font-semibold text-white">GitHub Backup</h2>
+                <h2 className="text-lg font-semibold text-white">{t('githubBackup.title')}</h2>
               </div>
               {config && cloudStatus?.is_authenticated && (
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-bambu-gray">Enabled</span>
+                  <span className="text-sm text-bambu-gray">{t('githubBackup.enabled')}</span>
                   <Toggle
                     checked={enabled}
                     onChange={setEnabled}
@@ -399,19 +401,19 @@ export function GitHubBackupSettings() {
               <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                 <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
                 <p className="text-sm text-yellow-400">
-                  Bambu Cloud login required. Sign in under Profiles → Cloud Profiles to enable GitHub backup.
+                  {t('githubBackup.cloudLoginRequired')}
                 </p>
               </div>
             ) : (
               <>
                 <p className="text-sm text-bambu-gray">
-                  Automatically sync your profiles to a private GitHub repository for backup and version history.
+                  {t('githubBackup.description')}
                 </p>
 
                 {/* Repository URL */}
                 <div>
                   <label className="block text-sm text-bambu-gray mb-1">
-                    Repository URL
+                    {t('githubBackup.repositoryUrl')}
                   </label>
                   <input
                     type="text"
@@ -425,24 +427,24 @@ export function GitHubBackupSettings() {
                 {/* Access Token */}
                 <div>
                   <label className="block text-sm text-bambu-gray mb-1">
-                    Personal Access Token {config?.has_token && <span className="text-green-400">(saved)</span>}
+                    {t('githubBackup.personalAccessToken')} {config?.has_token && <span className="text-green-400">({t('githubBackup.saved')})</span>}
                   </label>
                   <input
                     type="password"
                     value={accessToken}
                     onChange={(e) => { setAccessToken(e.target.value); setTestResult(null); }}
-                    placeholder={config?.has_token ? 'Enter new token to update' : 'ghp_xxxxxxxxxxxx'}
+                    placeholder={config?.has_token ? t('githubBackup.enterNewToken') : 'ghp_xxxxxxxxxxxx'}
                     className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                   />
                   <p className="text-xs text-bambu-gray mt-1">
-                    Fine-grained token with Contents read/write permission
+                    {t('githubBackup.tokenHint')}
                   </p>
                 </div>
 
             {/* Branch - inline with schedule */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-bambu-gray mb-1">Branch</label>
+                <label className="block text-sm text-bambu-gray mb-1">{t('githubBackup.branch')}</label>
                 <input
                   type="text"
                   value={branch}
@@ -452,7 +454,7 @@ export function GitHubBackupSettings() {
                 />
               </div>
               <div>
-                <label className="block text-sm text-bambu-gray mb-1">Auto-backup</label>
+                <label className="block text-sm text-bambu-gray mb-1">{t('githubBackup.autoBackup')}</label>
                 <select
                   value={scheduleEnabled ? scheduleType : 'disabled'}
                   onChange={(e) => {
@@ -465,17 +467,17 @@ export function GitHubBackupSettings() {
                   }}
                   className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 >
-                  <option value="disabled">Manual only</option>
-                  <option value="hourly">Hourly</option>
-                  <option value="daily">Daily</option>
-                  <option value="weekly">Weekly</option>
+                  <option value="disabled">{t('githubBackup.manualOnly')}</option>
+                  <option value="hourly">{t('githubBackup.hourly')}</option>
+                  <option value="daily">{t('githubBackup.daily')}</option>
+                  <option value="weekly">{t('githubBackup.weekly')}</option>
                 </select>
               </div>
             </div>
 
             {/* What to backup */}
             <div>
-              <label className="block text-sm text-bambu-gray mb-2">Include in backup</label>
+              <label className="block text-sm text-bambu-gray mb-2">{t('githubBackup.includeInBackup')}</label>
               <div className="space-y-2">
                 <label className={`flex items-start gap-2 ${noPrintersConnected ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
                   <input
@@ -487,21 +489,21 @@ export function GitHubBackupSettings() {
                   />
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <span className={`text-sm ${noPrintersConnected ? 'text-bambu-gray' : 'text-white'}`}>K-Profiles</span>
+                      <span className={`text-sm ${noPrintersConnected ? 'text-bambu-gray' : 'text-white'}`}>{t('githubBackup.kProfiles')}</span>
                       {noPrintersConnected && (
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-yellow-500/20 text-yellow-400">
                           <AlertTriangle className="w-3 h-3" />
-                          No printers connected
+                          {t('githubBackup.noPrintersConnected')}
                         </span>
                       )}
                       {somePrintersDisconnected && (
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-yellow-500/20 text-yellow-400">
                           <AlertTriangle className="w-3 h-3" />
-                          {connectedPrinters}/{totalPrinters} connected
+                          {t('githubBackup.printersConnected', { connected: connectedPrinters, total: totalPrinters })}
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-bambu-gray">Pressure advance calibration from connected printers</p>
+                    <p className="text-xs text-bambu-gray">{t('githubBackup.kProfilesDescription')}</p>
                   </div>
                 </label>
                 <label className="flex items-start gap-2 cursor-pointer">
@@ -513,8 +515,8 @@ export function GitHubBackupSettings() {
                     disabled={!cloudStatus?.is_authenticated}
                   />
                   <div>
-                    <span className={`text-sm ${cloudStatus?.is_authenticated ? 'text-white' : 'text-bambu-gray'}`}>Cloud Profiles</span>
-                    <p className="text-xs text-bambu-gray">Filament, printer, and process presets from Bambu Cloud</p>
+                    <span className={`text-sm ${cloudStatus?.is_authenticated ? 'text-white' : 'text-bambu-gray'}`}>{t('githubBackup.cloudProfiles')}</span>
+                    <p className="text-xs text-bambu-gray">{t('githubBackup.cloudProfilesDescription')}</p>
                   </div>
                 </label>
                 <label className="flex items-start gap-2 cursor-pointer">
@@ -525,8 +527,8 @@ export function GitHubBackupSettings() {
                     className="w-4 h-4 mt-0.5 rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
                   />
                   <div>
-                    <span className="text-white text-sm">App Settings</span>
-                    <p className="text-xs text-bambu-gray">Bambuddy configuration (excludes sensitive data)</p>
+                    <span className="text-white text-sm">{t('githubBackup.appSettings')}</span>
+                    <p className="text-xs text-bambu-gray">{t('githubBackup.appSettingsDescription')}</p>
                   </div>
                 </label>
               </div>
@@ -540,17 +542,17 @@ export function GitHubBackupSettings() {
                   <div className="flex items-center gap-2 text-bambu-gray">
                     {status.last_backup_at ? (
                       <>
-                        <span>Last backup: {formatRelativeTime(status.last_backup_at)}</span>
+                        <span>{t('githubBackup.lastBackup')}: {formatRelativeTime(status.last_backup_at)}</span>
                         <StatusBadge status={status.last_backup_status} />
                       </>
                     ) : (
-                      <span>No backups yet</span>
+                      <span>{t('githubBackup.noBackupsYet')}</span>
                     )}
                   </div>
                   {status.next_scheduled_run && (
                     <span className="text-bambu-gray">
                       <Clock className="w-3 h-3 inline mr-1" />
-                      Next: {formatRelativeTime(status.next_scheduled_run)}
+                      {t('githubBackup.next')}: {formatRelativeTime(status.next_scheduled_run)}
                     </span>
                   )}
                 </div>
@@ -571,7 +573,7 @@ export function GitHubBackupSettings() {
                     {(triggerBackupMutation.isPending || status.is_running) ? (
                       <div className="flex items-center gap-2 text-bambu-green">
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span className="text-sm">{status.progress || 'Starting backup...'}</span>
+                        <span className="text-sm">{status.progress || t('githubBackup.startingBackup')}</span>
                       </div>
                     ) : (
                       <>
@@ -582,7 +584,7 @@ export function GitHubBackupSettings() {
                           disabled={!config?.enabled}
                         >
                           <Play className="w-4 h-4" />
-                          Backup Now
+                          {t('githubBackup.backupNow')}
                         </Button>
                         <Button
                           variant="secondary"
@@ -591,7 +593,7 @@ export function GitHubBackupSettings() {
                           disabled={testLoading}
                         >
                           {testLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                          Test
+                          {t('githubBackup.test')}
                         </Button>
                       </>
                     )}
@@ -605,7 +607,7 @@ export function GitHubBackupSettings() {
                       disabled={saveConfigMutation.isPending || !repoUrl || !accessToken}
                     >
                       {saveConfigMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                      Enable Backup
+                      {t('githubBackup.enableBackup')}
                     </Button>
                     <Button
                       variant="secondary"
@@ -614,7 +616,7 @@ export function GitHubBackupSettings() {
                       disabled={testLoading || !repoUrl || !accessToken}
                     >
                       {testLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                      Test Connection
+                      {t('githubBackup.testConnection')}
                     </Button>
                   </>
                 )}
@@ -632,7 +634,7 @@ export function GitHubBackupSettings() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <History className="w-5 h-5 text-gray-400" />
-                  <h2 className="text-lg font-semibold text-white">History</h2>
+                  <h2 className="text-lg font-semibold text-white">{t('githubBackup.history')}</h2>
                 </div>
                 <Button
                   variant="ghost"
@@ -641,7 +643,7 @@ export function GitHubBackupSettings() {
                   disabled={clearLogsMutation.isPending}
                 >
                   <Trash2 className="w-4 h-4" />
-                  Clear
+                  {t('common.clear')}
                 </Button>
               </div>
             </CardHeader>
@@ -650,9 +652,9 @@ export function GitHubBackupSettings() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-bambu-gray border-b border-bambu-dark-tertiary">
-                      <th className="text-left py-2 px-2">Date</th>
-                      <th className="text-left py-2 px-2">Status</th>
-                      <th className="text-left py-2 px-2">Commit</th>
+                      <th className="text-left py-2 px-2">{t('githubBackup.date')}</th>
+                      <th className="text-left py-2 px-2">{t('githubBackup.status')}</th>
+                      <th className="text-left py-2 px-2">{t('githubBackup.commit')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -691,19 +693,19 @@ export function GitHubBackupSettings() {
           <CardHeader>
             <div className="flex items-center gap-2">
               <Database className="w-5 h-5 text-gray-400" />
-              <h2 className="text-lg font-semibold text-white">Local Backup</h2>
+              <h2 className="text-lg font-semibold text-white">{t('githubBackup.localBackup')}</h2>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-bambu-gray">
-              Export or import your Bambuddy data as a local file for manual backup or migration.
+              {t('githubBackup.localDescription')}
             </p>
 
             <div className="flex items-center justify-between py-3 border-b border-bambu-dark-tertiary">
               <div>
-                <p className="text-white">Export Data</p>
+                <p className="text-white">{t('githubBackup.exportData')}</p>
                 <p className="text-sm text-bambu-gray">
-                  Download all settings, printers, and profiles
+                  {t('githubBackup.exportDescription')}
                 </p>
               </div>
               <Button
@@ -712,15 +714,15 @@ export function GitHubBackupSettings() {
                 onClick={() => setShowBackupModal(true)}
               >
                 <Download className="w-4 h-4" />
-                Export
+                {t('common.export')}
               </Button>
             </div>
 
             <div className="flex items-center justify-between py-3">
               <div>
-                <p className="text-white">Import Backup</p>
+                <p className="text-white">{t('githubBackup.importBackup')}</p>
                 <p className="text-sm text-bambu-gray">
-                  Restore from a previous export file
+                  {t('githubBackup.importDescription')}
                 </p>
               </div>
               <Button
@@ -729,7 +731,7 @@ export function GitHubBackupSettings() {
                 onClick={() => setShowRestoreModal(true)}
               >
                 <Upload className="w-4 h-4" />
-                Import
+                {t('common.import')}
               </Button>
             </div>
           </CardContent>
@@ -750,9 +752,9 @@ export function GitHubBackupSettings() {
               a.download = filename;
               a.click();
               URL.revokeObjectURL(url);
-              showToast('Backup downloaded successfully');
+              showToast(t('githubBackup.backupDownloaded'));
             } catch {
-              showToast('Failed to create backup', 'error');
+              showToast(t('githubBackup.failedToCreateBackup'), 'error');
             }
           }}
         />
@@ -766,7 +768,7 @@ export function GitHubBackupSettings() {
           }}
           onSuccess={() => {
             setShowRestoreModal(false);
-            showToast('Backup restored successfully');
+            showToast(t('githubBackup.backupRestored'));
             queryClient.invalidateQueries();
           }}
         />

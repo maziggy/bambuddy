@@ -1014,7 +1014,7 @@ export function SettingsPage() {
           }`}
         >
           <Database className="w-4 h-4" />
-          Backup
+          {t('settings.backup')}
           <span className={`w-2 h-2 rounded-full ${cloudAuthStatus?.is_authenticated && githubBackupStatus?.configured && githubBackupStatus?.enabled ? 'bg-green-400' : 'bg-gray-500'}`} />
         </button>
       </div>
@@ -2194,18 +2194,18 @@ export function SettingsPage() {
             <CardHeader>
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                 <TrendingUp className="w-5 h-5 text-orange-400" />
-                Prometheus Metrics
+                {t('settings.prometheusTitle')}
               </h2>
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-bambu-gray">
-                Expose printer metrics at <code className="bg-bambu-dark px-1 rounded">/api/v1/metrics</code> for Prometheus/Grafana monitoring.
+                {t('settings.prometheusDescriptionPre')}<code className="bg-bambu-dark px-1 rounded">/api/v1/metrics</code>{t('settings.prometheusDescriptionPost')}
               </p>
 
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-white">Enable Metrics Endpoint</p>
-                  <p className="text-xs text-bambu-gray">Expose printer data in Prometheus format</p>
+                  <p className="text-white">{t('settings.enableMetricsEndpoint')}</p>
+                  <p className="text-xs text-bambu-gray">{t('settings.exposePrometheusData')}</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
@@ -2222,30 +2222,30 @@ export function SettingsPage() {
                 <div className="space-y-4 pt-2 border-t border-bambu-dark-tertiary">
                   <div>
                     <label className="block text-sm text-bambu-gray mb-1">
-                      Bearer Token (optional)
+                      {t('settings.bearerTokenOptional')}
                     </label>
                     <input
                       type="password"
                       value={localSettings.prometheus_token ?? ''}
                       onChange={(e) => updateSetting('prometheus_token', e.target.value)}
-                      placeholder="Leave empty for no authentication"
+                      placeholder={t('settings.bearerTokenPlaceholder')}
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     />
                     <p className="text-xs text-bambu-gray mt-1">
-                      If set, requests must include <code className="bg-bambu-dark px-1 rounded">Authorization: Bearer &lt;token&gt;</code>
+                      {t('settings.bearerTokenHint')}<code className="bg-bambu-dark px-1 rounded">Authorization: Bearer &lt;token&gt;</code>
                     </p>
                   </div>
 
                   <div className="pt-2 border-t border-bambu-dark-tertiary">
-                    <p className="text-sm text-white mb-2">Available Metrics</p>
+                    <p className="text-sm text-white mb-2">{t('settings.availableMetrics')}</p>
                     <div className="text-xs text-bambu-gray space-y-1">
-                      <p><code className="text-orange-400">bambuddy_printer_connected</code> - Connection status</p>
-                      <p><code className="text-orange-400">bambuddy_printer_state</code> - Printer state (idle/printing/etc)</p>
-                      <p><code className="text-orange-400">bambuddy_print_progress</code> - Print progress 0-100%</p>
-                      <p><code className="text-orange-400">bambuddy_bed_temp_celsius</code> - Bed temperature</p>
-                      <p><code className="text-orange-400">bambuddy_nozzle_temp_celsius</code> - Nozzle temperature</p>
-                      <p><code className="text-orange-400">bambuddy_prints_total</code> - Total prints by result</p>
-                      <p className="text-bambu-gray/70 italic">...and more (layers, fans, queue, filament usage)</p>
+                      <p><code className="text-orange-400">bambuddy_printer_connected</code> - {t('settings.metricConnectionStatus')}</p>
+                      <p><code className="text-orange-400">bambuddy_printer_state</code> - {t('settings.metricPrinterState')}</p>
+                      <p><code className="text-orange-400">bambuddy_print_progress</code> - {t('settings.metricPrintProgress')}</p>
+                      <p><code className="text-orange-400">bambuddy_bed_temp_celsius</code> - {t('settings.metricBedTemp')}</p>
+                      <p><code className="text-orange-400">bambuddy_nozzle_temp_celsius</code> - {t('settings.metricNozzleTemp')}</p>
+                      <p><code className="text-orange-400">bambuddy_prints_total</code> - {t('settings.metricPrintsTotal')}</p>
+                      <p className="text-bambu-gray/70 italic">{t('settings.metricAndMore')}</p>
                     </div>
                   </div>
                 </div>
@@ -3590,27 +3590,27 @@ export function SettingsPage() {
               <CardContent className="py-6">
                 <div className="text-center">
                   <Unlock className="w-12 h-12 text-bambu-gray mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-white mb-2">Authentication is Disabled</h3>
+                  <h3 className="text-lg font-medium text-white mb-2">{t('settings.authDisabledTitle')}</h3>
                   <p className="text-sm text-bambu-gray mb-4 max-w-md mx-auto">
-                    Enable authentication to create user accounts, manage permissions, and secure your Bambuddy instance.
+                    {t('settings.authDisabledDescription')}
                   </p>
                   <ul className="space-y-2 text-sm text-bambu-gray mb-6 text-left max-w-xs mx-auto">
                     <li className="flex items-start gap-2">
                       <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 flex-shrink-0" />
-                      <span>Require login to access the system</span>
+                      <span>{t('settings.authFeature1')}</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 flex-shrink-0" />
-                      <span>Create multiple users with group-based permissions</span>
+                      <span>{t('settings.authFeature2')}</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <CheckCircle className="w-4 h-4 text-bambu-green mt-0.5 flex-shrink-0" />
-                      <span>Control access with 50+ granular permissions</span>
+                      <span>{t('settings.authFeature3')}</span>
                     </li>
                   </ul>
                   <Button onClick={() => navigate('/setup')}>
                     <Lock className="w-4 h-4" />
-                    Enable Authentication
+                    {t('settings.enableAuthentication')}
                   </Button>
                 </div>
               </CardContent>
@@ -3636,7 +3636,7 @@ export function SettingsPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Users className="w-5 h-5 text-bambu-green" />
-                  <h2 className="text-lg font-semibold text-white">Create User</h2>
+                  <h2 className="text-lg font-semibold text-white">{t('settings.createUser')}</h2>
                 </div>
                 <Button
                   variant="ghost"
@@ -3653,30 +3653,30 @@ export function SettingsPage() {
             <CardContent>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-white mb-2">Username</label>
+                  <label className="block text-sm font-medium text-white mb-2">{t('settings.username')}</label>
                   <input
                     type="text"
                     value={userFormData.username}
                     onChange={(e) => setUserFormData({ ...userFormData, username: e.target.value })}
                     className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                    placeholder="Enter username"
+                    placeholder={t('settings.enterUsername')}
                     autoComplete="username"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-white mb-2">Password</label>
+                  <label className="block text-sm font-medium text-white mb-2">{t('settings.password')}</label>
                   <input
                     type="password"
                     value={userFormData.password}
                     onChange={(e) => setUserFormData({ ...userFormData, password: e.target.value })}
                     className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                    placeholder="Enter password (min 6 characters)"
+                    placeholder={t('settings.enterPassword')}
                     autoComplete="new-password"
                     minLength={6}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-white mb-2">Confirm Password</label>
+                  <label className="block text-sm font-medium text-white mb-2">{t('settings.confirmPassword')}</label>
                   <input
                     type="password"
                     value={userFormData.confirmPassword}
@@ -3686,16 +3686,16 @@ export function SettingsPage() {
                         ? 'border-red-500'
                         : 'border-bambu-dark-tertiary'
                     }`}
-                    placeholder="Confirm password"
+                    placeholder={t('settings.confirmPasswordPlaceholder')}
                     autoComplete="new-password"
                     minLength={6}
                   />
                   {userFormData.confirmPassword && userFormData.password !== userFormData.confirmPassword && (
-                    <p className="text-red-400 text-xs mt-1">Passwords do not match</p>
+                    <p className="text-red-400 text-xs mt-1">{t('settings.passwordsDoNotMatch')}</p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-white mb-2">Groups</label>
+                  <label className="block text-sm font-medium text-white mb-2">{t('settings.groupsLabel')}</label>
                   <div className="space-y-2 max-h-40 overflow-y-auto p-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
                     {groupsData.map(group => (
                       <label
@@ -3710,12 +3710,12 @@ export function SettingsPage() {
                         />
                         <span className="text-sm text-white">{group.name}</span>
                         {group.is_system && (
-                          <span className="text-xs text-yellow-400">(System)</span>
+                          <span className="text-xs text-yellow-400">{t('settings.systemLabel')}</span>
                         )}
                       </label>
                     ))}
                     {groupsData.length === 0 && (
-                      <p className="text-sm text-bambu-gray">No groups available</p>
+                      <p className="text-sm text-bambu-gray">{t('settings.noGroupsAvailable')}</p>
                     )}
                   </div>
                 </div>
@@ -3728,7 +3728,7 @@ export function SettingsPage() {
                     setUserFormData({ username: '', password: '', confirmPassword: '', role: 'user', group_ids: [] });
                   }}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button
                   onClick={handleCreateUser}
@@ -3737,12 +3737,12 @@ export function SettingsPage() {
                   {createUserMutation.isPending ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Creating...
+                      {t('settings.creating')}
                     </>
                   ) : (
                     <>
                       <Plus className="w-4 h-4" />
-                      Create User
+                      {t('settings.createUser')}
                     </>
                   )}
                 </Button>
@@ -3770,7 +3770,7 @@ export function SettingsPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Edit2 className="w-5 h-5 text-bambu-green" />
-                  <h2 className="text-lg font-semibold text-white">Edit User</h2>
+                  <h2 className="text-lg font-semibold text-white">{t('settings.editUser')}</h2>
                 </div>
                 <Button
                   variant="ghost"
@@ -3788,33 +3788,33 @@ export function SettingsPage() {
             <CardContent>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-white mb-2">Username</label>
+                  <label className="block text-sm font-medium text-white mb-2">{t('settings.username')}</label>
                   <input
                     type="text"
                     value={userFormData.username}
                     onChange={(e) => setUserFormData({ ...userFormData, username: e.target.value })}
                     className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                    placeholder="Enter username"
+                    placeholder={t('settings.enterUsername')}
                     autoComplete="username"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    Password <span className="text-bambu-gray font-normal">(leave blank to keep current)</span>
+                    {t('settings.password')} <span className="text-bambu-gray font-normal">{t('settings.leaveBlankToKeep')}</span>
                   </label>
                   <input
                     type="password"
                     value={userFormData.password}
                     onChange={(e) => setUserFormData({ ...userFormData, password: e.target.value, confirmPassword: '' })}
                     className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                    placeholder="Enter new password"
+                    placeholder={t('settings.enterNewPassword')}
                     autoComplete="new-password"
                     minLength={6}
                   />
                 </div>
                 {userFormData.password && (
                   <div>
-                    <label className="block text-sm font-medium text-white mb-2">Confirm Password</label>
+                    <label className="block text-sm font-medium text-white mb-2">{t('settings.confirmPassword')}</label>
                     <input
                       type="password"
                       value={userFormData.confirmPassword}
@@ -3824,17 +3824,17 @@ export function SettingsPage() {
                           ? 'border-red-500'
                           : 'border-bambu-dark-tertiary'
                       }`}
-                      placeholder="Confirm new password"
+                      placeholder={t('settings.confirmNewPassword')}
                       autoComplete="new-password"
                       minLength={6}
                     />
                     {userFormData.confirmPassword && userFormData.password !== userFormData.confirmPassword && (
-                      <p className="text-red-400 text-xs mt-1">Passwords do not match</p>
+                      <p className="text-red-400 text-xs mt-1">{t('settings.passwordsDoNotMatch')}</p>
                     )}
                   </div>
                 )}
                 <div>
-                  <label className="block text-sm font-medium text-white mb-2">Groups</label>
+                  <label className="block text-sm font-medium text-white mb-2">{t('settings.groupsLabel')}</label>
                   <div className="space-y-2 max-h-40 overflow-y-auto p-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
                     {groupsData.map(group => (
                       <label
@@ -3849,7 +3849,7 @@ export function SettingsPage() {
                         />
                         <span className="text-sm text-white">{group.name}</span>
                         {group.is_system && (
-                          <span className="text-xs text-yellow-400">(System)</span>
+                          <span className="text-xs text-yellow-400">{t('settings.systemLabel')}</span>
                         )}
                       </label>
                     ))}
@@ -3865,7 +3865,7 @@ export function SettingsPage() {
                     setUserFormData({ username: '', password: '', confirmPassword: '', role: 'user', group_ids: [] });
                   }}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button
                   onClick={() => handleUpdateUser(editingUserId)}
@@ -3874,12 +3874,12 @@ export function SettingsPage() {
                   {updateUserMutation.isPending ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Saving...
+                      {t('common.saving')}
                     </>
                   ) : (
                     <>
                       <Save className="w-4 h-4" />
-                      Save Changes
+                      {t('common.saveChanges')}
                     </>
                   )}
                 </Button>
@@ -3892,9 +3892,9 @@ export function SettingsPage() {
       {/* Delete User Confirmation Modal */}
       {deleteUserId !== null && (
         <ConfirmModal
-          title="Delete User"
-          message="Are you sure you want to delete this user? This action cannot be undone."
-          confirmText="Delete User"
+          title={t('settings.deleteUser')}
+          message={t('settings.deleteUserConfirm')}
+          confirmText={t('settings.deleteUser')}
           variant="danger"
           onConfirm={() => {
             deleteUserMutation.mutate(deleteUserId);
@@ -3923,7 +3923,7 @@ export function SettingsPage() {
                 <div className="flex items-center gap-2">
                   <Shield className="w-5 h-5 text-bambu-green" />
                   <h2 className="text-lg font-semibold text-white">
-                    {editingGroup ? 'Edit Group' : 'Create Group'}
+                    {editingGroup ? t('settings.editGroup') : t('settings.createGroup')}
                   </h2>
                 </div>
                 <Button
@@ -3942,32 +3942,32 @@ export function SettingsPage() {
             <CardContent>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-white mb-2">Group Name</label>
+                  <label className="block text-sm font-medium text-white mb-2">{t('settings.groupName')}</label>
                   <input
                     type="text"
                     value={groupFormData.name}
                     onChange={(e) => setGroupFormData({ ...groupFormData, name: e.target.value })}
                     disabled={editingGroup?.is_system}
                     className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors disabled:opacity-50"
-                    placeholder="Enter group name"
+                    placeholder={t('settings.enterGroupName')}
                   />
                   {editingGroup?.is_system && (
-                    <p className="text-xs text-yellow-400 mt-1">System group names cannot be changed</p>
+                    <p className="text-xs text-yellow-400 mt-1">{t('settings.systemGroupNameReadonly')}</p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-white mb-2">Description</label>
+                  <label className="block text-sm font-medium text-white mb-2">{t('settings.descriptionLabel')}</label>
                   <textarea
                     value={groupFormData.description}
                     onChange={(e) => setGroupFormData({ ...groupFormData, description: e.target.value })}
                     rows={2}
                     className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors resize-none"
-                    placeholder="Enter description (optional)"
+                    placeholder={t('settings.enterDescription')}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    Permissions ({groupFormData.permissions.length} selected)
+                    {t('settings.permissionsSelected', { count: groupFormData.permissions.length })}
                   </label>
                   <div className="space-y-2 max-h-96 overflow-y-auto">
                     {permissionsData?.categories.map((category) => (
@@ -4039,7 +4039,7 @@ export function SettingsPage() {
                     resetGroupForm();
                   }}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button
                   onClick={editingGroup ? handleUpdateGroup : handleCreateGroup}
@@ -4048,12 +4048,12 @@ export function SettingsPage() {
                   {(createGroupMutation.isPending || updateGroupMutation.isPending) ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      {editingGroup ? 'Saving...' : 'Creating...'}
+                      {editingGroup ? t('common.saving') : t('settings.creating')}
                     </>
                   ) : (
                     <>
                       <Save className="w-4 h-4" />
-                      {editingGroup ? 'Save Changes' : 'Create Group'}
+                      {editingGroup ? t('common.saveChanges') : t('settings.createGroup')}
                     </>
                   )}
                 </Button>
@@ -4066,9 +4066,9 @@ export function SettingsPage() {
       {/* Delete Group Confirmation Modal */}
       {deleteGroupId !== null && (
         <ConfirmModal
-          title="Delete Group"
-          message="Are you sure you want to delete this group? Users in this group will lose these permissions."
-          confirmText="Delete Group"
+          title={t('settings.deleteGroup')}
+          message={t('settings.deleteGroupConfirm')}
+          confirmText={t('settings.deleteGroup')}
           variant="danger"
           onConfirm={() => {
             deleteGroupMutation.mutate(deleteGroupId);
@@ -4124,7 +4124,7 @@ export function SettingsPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Key className="w-5 h-5 text-bambu-green" />
-                  <h2 className="text-lg font-semibold text-white">Change Password</h2>
+                  <h2 className="text-lg font-semibold text-white">{t('settings.changePasswordTitle')}</h2>
                 </div>
                 <Button
                   variant="ghost"
@@ -4142,34 +4142,34 @@ export function SettingsPage() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    Current Password
+                    {t('settings.currentPassword')}
                   </label>
                   <input
                     type="password"
                     value={changePasswordData.currentPassword}
                     onChange={(e) => setChangePasswordData({ ...changePasswordData, currentPassword: e.target.value })}
                     className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                    placeholder="Enter current password"
+                    placeholder={t('settings.enterCurrentPassword')}
                     autoComplete="current-password"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    New Password
+                    {t('settings.newPassword')}
                   </label>
                   <input
                     type="password"
                     value={changePasswordData.newPassword}
                     onChange={(e) => setChangePasswordData({ ...changePasswordData, newPassword: e.target.value })}
                     className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                    placeholder="Enter new password (min 6 characters)"
+                    placeholder={t('settings.enterNewPasswordMin6')}
                     autoComplete="new-password"
                     minLength={6}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    Confirm New Password
+                    {t('settings.confirmNewPassword')}
                   </label>
                   <input
                     type="password"
@@ -4180,12 +4180,12 @@ export function SettingsPage() {
                         ? 'border-red-500'
                         : 'border-bambu-dark-tertiary'
                     }`}
-                    placeholder="Confirm new password"
+                    placeholder={t('settings.confirmNewPasswordPlaceholder')}
                     autoComplete="new-password"
                     minLength={6}
                   />
                   {changePasswordData.confirmPassword && changePasswordData.newPassword !== changePasswordData.confirmPassword && (
-                    <p className="text-red-400 text-xs mt-1">Passwords do not match</p>
+                    <p className="text-red-400 text-xs mt-1">{t('settings.passwordsDoNotMatch')}</p>
                   )}
                 </div>
               </div>
@@ -4197,26 +4197,26 @@ export function SettingsPage() {
                     setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
                   }}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button
                   onClick={async () => {
                     if (changePasswordData.newPassword !== changePasswordData.confirmPassword) {
-                      showToast('Passwords do not match', 'error');
+                      showToast(t('settings.passwordsDoNotMatch'), 'error');
                       return;
                     }
                     if (changePasswordData.newPassword.length < 6) {
-                      showToast('Password must be at least 6 characters', 'error');
+                      showToast(t('settings.passwordMinLength'), 'error');
                       return;
                     }
                     setChangePasswordLoading(true);
                     try {
                       await api.changePassword(changePasswordData.currentPassword, changePasswordData.newPassword);
-                      showToast('Password changed successfully', 'success');
+                      showToast(t('settings.passwordChanged'), 'success');
                       setShowChangePasswordModal(false);
                       setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
                     } catch (error: unknown) {
-                      const message = error instanceof Error ? error.message : 'Failed to change password';
+                      const message = error instanceof Error ? error.message : t('settings.failedToChangePassword');
                       showToast(message, 'error');
                     } finally {
                       setChangePasswordLoading(false);
@@ -4227,12 +4227,12 @@ export function SettingsPage() {
                   {changePasswordLoading ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Changing...
+                      {t('settings.changingPassword')}
                     </>
                   ) : (
                     <>
                       <Key className="w-4 h-4" />
-                      Change Password
+                      {t('settings.changePasswordTitle')}
                     </>
                   )}
                 </Button>

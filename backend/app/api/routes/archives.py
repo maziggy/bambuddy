@@ -901,7 +901,8 @@ async def rescan_all_archives(db: AsyncSession = Depends(get_db)):
 
             updated += 1
         except Exception as e:
-            errors.append({"id": archive.id, "error": str(e)})
+            logger.exception(f"Failed to rescan archive {archive.id}: {e}")
+            errors.append({"id": archive.id, "error": "Failed to parse 3MF file"})
 
     await db.commit()
     return {"updated": updated, "errors": errors}
@@ -944,7 +945,8 @@ async def backfill_content_hashes(db: AsyncSession = Depends(get_db)):
             archive.content_hash = ArchiveService.compute_file_hash(file_path)
             updated += 1
         except Exception as e:
-            errors.append({"id": archive.id, "error": str(e)})
+            logger.exception(f"Failed to compute hash for archive {archive.id}: {e}")
+            errors.append({"id": archive.id, "error": "Failed to compute hash"})
 
     await db.commit()
     return {"updated": updated, "errors": errors}
@@ -2134,7 +2136,8 @@ async def upload_archives_bulk(
             else:
                 errors.append({"filename": file.filename, "error": "Failed to process"})
         except Exception as e:
-            errors.append({"filename": file.filename, "error": str(e)})
+            logger.exception(f"Failed to upload archive {file.filename}: {e}")
+            errors.append({"filename": file.filename, "error": "Failed to process file"})
         finally:
             if temp_path.exists():
                 temp_path.unlink()

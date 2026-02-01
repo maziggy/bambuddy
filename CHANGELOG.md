@@ -5,6 +5,13 @@ All notable changes to Bambuddy will be documented in this file.
 ## [0.1.7b] - Not released
 
 ### Enhancements
+- **User Tracking for Archives, Library & Queue** (Issue #206):
+  - Track and display who uploaded each archive file
+  - Track and display who uploaded each library file (File Manager)
+  - Track and display who added each print job to the queue
+  - Shows username on archive cards, library files, queue items, and printer cards (while printing)
+  - Works when authentication is enabled; gracefully hidden when auth is disabled
+  - Database migration adds `created_by_id` columns to `print_archives`, `library_files`, and `print_queue` tables
 - **Schedule Button on Archive Cards** (Issue #208):
   - Added "Schedule" button next to "Reprint" on archive cards for quick access to print scheduling
   - Previously only available in the context menu (right-click)
@@ -26,6 +33,7 @@ All notable changes to Bambuddy will be documented in this file.
   - Library now stores relative paths in database for portability
   - Automatic migration converts existing absolute paths to relative on startup
   - Thumbnails and files now display correctly after restoring backups
+- **File uploads failing with authentication enabled** - Fixed all file upload functions (archives, photos, timelapses, library files, etc.) not sending authentication headers when auth is enabled
 
 ## [0.1.6-final] - 2026-01-31
 

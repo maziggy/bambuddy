@@ -98,10 +98,24 @@ class PrinterManager:
         self._on_ams_change: Callable[[int, list], None] | None = None
         self._on_layer_change: Callable[[int, int], None] | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        # Track who started the current print (Issue #206)
+        self._current_print_user: dict[int, dict] = {}  # {printer_id: {"user_id": int, "username": str}}
 
     def get_printer(self, printer_id: int) -> PrinterInfo | None:
         """Get printer info by ID."""
         return self._printer_info.get(printer_id)
+
+    def set_current_print_user(self, printer_id: int, user_id: int, username: str):
+        """Track who started the current print (Issue #206)."""
+        self._current_print_user[printer_id] = {"user_id": user_id, "username": username}
+
+    def get_current_print_user(self, printer_id: int) -> dict | None:
+        """Get the user who started the current print (Issue #206)."""
+        return self._current_print_user.get(printer_id)
+
+    def clear_current_print_user(self, printer_id: int):
+        """Clear the current print user when print completes (Issue #206)."""
+        self._current_print_user.pop(printer_id, None)
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop):
         """Set the event loop for async callbacks."""

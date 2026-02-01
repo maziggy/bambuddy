@@ -68,14 +68,19 @@ class PrintQueueItem(Base):
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
+    # User tracking (who added this to the queue)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
     # Relationships
     printer: Mapped["Printer"] = relationship()
     archive: Mapped["PrintArchive | None"] = relationship()
     library_file: Mapped["LibraryFile | None"] = relationship()
     project: Mapped["Project | None"] = relationship(back_populates="queue_items")
+    created_by: Mapped["User | None"] = relationship()
 
 
 from backend.app.models.archive import PrintArchive  # noqa: E402
 from backend.app.models.library import LibraryFile  # noqa: E402
 from backend.app.models.printer import Printer  # noqa: E402
 from backend.app.models.project import Project  # noqa: E402
+from backend.app.models.user import User  # noqa: E402

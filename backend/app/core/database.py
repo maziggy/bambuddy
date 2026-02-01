@@ -1014,6 +1014,30 @@ async def run_migrations(conn):
     except Exception:
         pass
 
+    # Migration: Add created_by_id column to print_archives for user tracking (Issue #206)
+    try:
+        await conn.execute(
+            text("ALTER TABLE print_archives ADD COLUMN created_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL")
+        )
+    except Exception:
+        pass
+
+    # Migration: Add created_by_id column to print_queue for user tracking (Issue #206)
+    try:
+        await conn.execute(
+            text("ALTER TABLE print_queue ADD COLUMN created_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL")
+        )
+    except Exception:
+        pass
+
+    # Migration: Add created_by_id column to library_files for user tracking (Issue #206)
+    try:
+        await conn.execute(
+            text("ALTER TABLE library_files ADD COLUMN created_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL")
+        )
+    except Exception:
+        pass
+
     # Migration: Convert absolute paths to relative paths in library_files table
     # This ensures backup/restore portability across different installations
     try:

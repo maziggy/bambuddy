@@ -44,6 +44,7 @@ import {
   Check,
   CheckSquare,
   Square,
+  User,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { parseUTCDate, formatDateTime, type TimeFormat } from '../utils/date';
@@ -425,6 +426,12 @@ function SortableQueueItem({
               <span className="flex items-center gap-1.5">
                 <Timer className="w-3.5 h-3.5" />
                 {formatDuration(item.print_time_seconds)}
+              </span>
+            )}
+            {item.created_by_username && (
+              <span className="flex items-center gap-1.5" title={`Added by ${item.created_by_username}`}>
+                <User className="w-3.5 h-3.5" />
+                {item.created_by_username}
               </span>
             )}
             {isPending && !item.manual_start && (

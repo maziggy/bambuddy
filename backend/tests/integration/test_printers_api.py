@@ -292,6 +292,47 @@ class TestPrinterDataIntegrity:
             assert response.json()["status"] == "refresh_requested"
             mock_pm.request_status_update.assert_called_once_with(printer.id)
 
+    # ========================================================================
+    # Current print user endpoint (Issue #206)
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_current_print_user_not_found(self, async_client: AsyncClient):
+        """Verify 404 for non-existent printer."""
+        response = await async_client.get("/api/v1/printers/99999/current-print-user")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_current_print_user_returns_empty_when_no_user(self, async_client: AsyncClient, printer_factory):
+        """Verify empty object returned when no user is tracked."""
+        printer = await printer_factory(name="Test Printer")
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_current_print_user.return_value = None
+
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/current-print-user")
+
+            assert response.status_code == 200
+            assert response.json() == {}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_current_print_user_returns_user_info(self, async_client: AsyncClient, printer_factory):
+        """Verify user info is returned when tracked."""
+        printer = await printer_factory(name="Test Printer")
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_current_print_user.return_value = {"user_id": 42, "username": "testuser"}
+
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/current-print-user")
+
+            assert response.status_code == 200
+            result = response.json()
+            assert result["user_id"] == 42
+            assert result["username"] == "testuser"
+
 
 class TestPrintControlAPI:
     """Integration tests for print control endpoints (stop, pause, resume)."""

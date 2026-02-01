@@ -12,12 +12,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from backend.app.core.auth import require_auth_if_enabled
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
+from backend.app.models.user import User
 from backend.app.schemas.print_queue import (
     PrintQueueBulkUpdate,
     PrintQueueBulkUpdateResponse,
@@ -140,6 +142,9 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "completed_at": item.completed_at,
         "error_message": item.error_message,
         "created_at": item.created_at,
+        # User tracking (Issue #206)
+        "created_by_id": item.created_by_id,
+        "created_by_username": item.created_by.username if item.created_by else None,
     }
     response = PrintQueueItemResponse(**item_dict)
     if item.archive:
@@ -174,6 +179,7 @@ async def list_queue(
             selectinload(PrintQueueItem.archive),
             selectinload(PrintQueueItem.printer),
             selectinload(PrintQueueItem.library_file),
+            selectinload(PrintQueueItem.created_by),
         )
         .order_by(PrintQueueItem.printer_id.nulls_first(), PrintQueueItem.position)
     )
@@ -196,6 +202,7 @@ async def list_queue(
 async def add_to_queue(
     data: PrintQueueItemCreate,
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(require_auth_if_enabled),
 ):
     """Add an item to the print queue."""
     # Normalize target_model (e.g., "Bambu Lab X1E" / "C13" -> "X1E")
@@ -298,13 +305,14 @@ async def add_to_queue(
         use_ams=data.use_ams,
         position=max_pos + 1,
         status="pending",
+        created_by_id=current_user.id if current_user else None,
     )
     db.add(item)
     await db.commit()
     await db.refresh(item)
 
     # Load relationships for response
-    await db.refresh(item, ["archive", "printer", "library_file"])
+    await db.refresh(item, ["archive", "printer", "library_file", "created_by"])
 
     source_name = f"archive {data.archive_id}" if data.archive_id else f"library file {data.library_file_id}"
     target_desc = data.printer_id or (f"model {target_model_norm}" if target_model_norm else "unassigned")
@@ -407,6 +415,7 @@ async def get_queue_item(item_id: int, db: AsyncSession = Depends(get_db)):
             selectinload(PrintQueueItem.archive),
             selectinload(PrintQueueItem.printer),
             selectinload(PrintQueueItem.library_file),
+            selectinload(PrintQueueItem.created_by),
         )
         .where(PrintQueueItem.id == item_id)
     )
@@ -469,7 +478,7 @@ async def update_queue_item(
         setattr(item, field, value)
 
     await db.commit()
-    await db.refresh(item, ["archive", "printer", "library_file"])
+    await db.refresh(item, ["archive", "printer", "library_file", "created_by"])
 
     logger.info(f"Updated queue item {item_id}")
     return _enrich_response(item)
@@ -624,7 +633,7 @@ async def start_queue_item(
     # Clear manual_start flag so scheduler picks it up
     item.manual_start = False
     await db.commit()
-    await db.refresh(item, ["archive", "printer", "library_file"])
+    await db.refresh(item, ["archive", "printer", "library_file", "created_by"])
 
     logger.info(f"Manually started queue item {item_id} (cleared manual_start flag)")
     return _enrich_response(item)

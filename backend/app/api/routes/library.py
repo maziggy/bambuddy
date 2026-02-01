@@ -13,13 +13,16 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, Up
 from fastapi.responses import FileResponse as FastAPIFileResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from backend.app.core.auth import require_auth_if_enabled
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import get_db
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.project import Project
+from backend.app.models.user import User
 from backend.app.schemas.library import (
     AddToQueueError,
     AddToQueueRequest,
@@ -587,7 +590,7 @@ async def list_files(
         include_root: If True and folder_id is None, returns files at root level.
                      If False and folder_id is None, returns all files.
     """
-    query = select(LibraryFile)
+    query = select(LibraryFile).options(selectinload(LibraryFile.created_by))
 
     if folder_id is not None:
         query = query.where(LibraryFile.folder_id == folder_id)
@@ -634,6 +637,8 @@ async def list_files(
                 thumbnail_path=f.thumbnail_path,
                 print_count=f.print_count,
                 duplicate_count=hash_counts.get(f.file_hash, 0) if f.file_hash else 0,
+                created_by_id=f.created_by_id,
+                created_by_username=f.created_by.username if f.created_by else None,
                 created_at=f.created_at,
                 print_name=print_name,
                 print_time_seconds=print_time,
@@ -651,6 +656,7 @@ async def upload_file(
     folder_id: int | None = None,
     generate_stl_thumbnails: bool = Query(default=True),
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(require_auth_if_enabled),
 ):
     """Upload a file to the library."""
     try:
@@ -756,6 +762,7 @@ async def upload_file(
             file_hash=file_hash,
             thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
             file_metadata=metadata if metadata else None,
+            created_by_id=current_user.id if current_user else None,
         )
         db.add(library_file)
         await db.flush()
@@ -785,6 +792,7 @@ async def extract_zip_file(
     create_folder_from_zip: bool = Query(default=False),
     generate_stl_thumbnails: bool = Query(default=True),
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(require_auth_if_enabled),
 ):
     """Upload and extract a ZIP file to the library.
 
@@ -992,6 +1000,7 @@ async def extract_zip_file(
                         file_hash=file_hash,
                         thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
                         file_metadata=metadata if metadata else None,
+                        created_by_id=current_user.id if current_user else None,
                     )
                     db.add(library_file)
                     await db.flush()
@@ -1749,7 +1758,9 @@ async def print_library_file(
 @router.get("/files/{file_id}", response_model=FileResponseSchema)
 async def get_file(file_id: int, db: AsyncSession = Depends(get_db)):
     """Get a file by ID with full details."""
-    result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
+    result = await db.execute(
+        select(LibraryFile).options(selectinload(LibraryFile.created_by)).where(LibraryFile.id == file_id)
+    )
     file = result.scalar_one_or_none()
 
     if not file:
@@ -1806,6 +1817,8 @@ async def get_file(file_id: int, db: AsyncSession = Depends(get_db)):
         notes=file.notes,
         duplicates=duplicates if duplicates else None,
         duplicate_count=duplicate_count,
+        created_by_id=file.created_by_id,
+        created_by_username=file.created_by.username if file.created_by else None,
         created_at=file.created_at,
         updated_at=file.updated_at,
     )

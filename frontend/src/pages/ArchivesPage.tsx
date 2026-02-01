@@ -44,6 +44,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Settings,
+  User,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { openInSlicer } from '../utils/slicer';
@@ -886,10 +887,18 @@ function ArchiveCard({
         {/* Spacer to push content to bottom */}
         <div className="flex-1" />
 
-        {/* Date & Size */}
+        {/* Date, Size & Creator */}
         <div className="flex items-center justify-between text-xs text-bambu-gray border-t border-bambu-dark-tertiary pt-3">
           <span>{formatDateTime(archive.created_at, timeFormat)}</span>
-          <span>{formatFileSize(archive.file_size)}</span>
+          <div className="flex items-center gap-2">
+            {archive.created_by_username && (
+              <span className="flex items-center gap-1" title={`Uploaded by ${archive.created_by_username}`}>
+                <User className="w-3 h-3" />
+                {archive.created_by_username}
+              </span>
+            )}
+            <span>{formatFileSize(archive.file_size)}</span>
+          </div>
         </div>
 
         {/* Actions */}
@@ -1731,7 +1740,13 @@ function ArchiveListRow({
           {printerName}
         </div>
         <div className="col-span-2 text-sm text-bambu-gray">
-          {formatDateOnly(archive.created_at)}
+          <div>{formatDateOnly(archive.created_at)}</div>
+          {archive.created_by_username && (
+            <div className="flex items-center gap-1 text-xs opacity-75" title={`Uploaded by ${archive.created_by_username}`}>
+              <User className="w-3 h-3" />
+              {archive.created_by_username}
+            </div>
+          )}
         </div>
         <div className="col-span-1 text-sm text-bambu-gray">
           {formatFileSize(archive.file_size)}

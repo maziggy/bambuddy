@@ -159,6 +159,7 @@
 - Default groups: Administrators, Operators, Viewers
 - JWT tokens with secure password hashing
 - User management (create, edit, delete, groups)
+- User activity tracking (who uploaded archives, library files, queued prints, started prints)
 
 </td>
 </tr>

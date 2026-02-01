@@ -806,8 +806,16 @@ class ArchiveService:
         printer_id: int | None,
         source_file: Path,
         print_data: dict | None = None,
+        created_by_id: int | None = None,
     ) -> PrintArchive | None:
-        """Archive a 3MF file with metadata."""
+        """Archive a 3MF file with metadata.
+
+        Args:
+            printer_id: ID of the printer (optional)
+            source_file: Path to the 3MF file
+            print_data: Print data from MQTT (optional)
+            created_by_id: User ID who created this archive (optional, for user tracking)
+        """
         # Verify printer exists if specified
         if printer_id is not None:
             result = await self.db.execute(select(Printer).where(Printer.id == printer_id))
@@ -915,6 +923,7 @@ class ArchiveService:
             cost=cost,
             quantity=quantity,
             extra_data=metadata,
+            created_by_id=created_by_id,
         )
 
         self.db.add(archive)
@@ -924,8 +933,12 @@ class ArchiveService:
         return archive
 
     async def get_archive(self, archive_id: int) -> PrintArchive | None:
-        """Get an archive by ID."""
-        result = await self.db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
+        """Get an archive by ID with creator loaded."""
+        from sqlalchemy.orm import selectinload
+
+        result = await self.db.execute(
+            select(PrintArchive).options(selectinload(PrintArchive.created_by)).where(PrintArchive.id == archive_id)
+        )
         return result.scalar_one_or_none()
 
     async def update_archive_status(
@@ -997,7 +1010,9 @@ class ArchiveService:
         from sqlalchemy.orm import selectinload
 
         query = (
-            select(PrintArchive).options(selectinload(PrintArchive.project)).order_by(PrintArchive.created_at.desc())
+            select(PrintArchive)
+            .options(selectinload(PrintArchive.project), selectinload(PrintArchive.created_by))
+            .order_by(PrintArchive.created_at.desc())
         )
 
         if printer_id:

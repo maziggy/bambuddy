@@ -565,6 +565,66 @@ class TestPrinterManager:
             assert result["state"] is None
             mock_instance.disconnect.assert_called_once()
 
+    # ========================================================================
+    # Tests for current print user tracking (Issue #206)
+    # ========================================================================
+
+    def test_set_current_print_user(self, manager):
+        """Verify current print user can be set."""
+        manager.set_current_print_user(1, 42, "testuser")
+
+        assert 1 in manager._current_print_user
+        assert manager._current_print_user[1]["user_id"] == 42
+        assert manager._current_print_user[1]["username"] == "testuser"
+
+    def test_get_current_print_user_returns_user(self, manager):
+        """Verify get_current_print_user returns the stored user."""
+        manager.set_current_print_user(1, 42, "testuser")
+
+        result = manager.get_current_print_user(1)
+
+        assert result is not None
+        assert result["user_id"] == 42
+        assert result["username"] == "testuser"
+
+    def test_get_current_print_user_returns_none_for_unknown(self, manager):
+        """Verify get_current_print_user returns None for unknown printer."""
+        result = manager.get_current_print_user(999)
+        assert result is None
+
+    def test_clear_current_print_user(self, manager):
+        """Verify current print user can be cleared."""
+        manager.set_current_print_user(1, 42, "testuser")
+        manager.clear_current_print_user(1)
+
+        result = manager.get_current_print_user(1)
+        assert result is None
+
+    def test_clear_current_print_user_no_error_for_unknown(self, manager):
+        """Verify clearing unknown printer doesn't raise error."""
+        # Should not raise
+        manager.clear_current_print_user(999)
+
+    def test_set_current_print_user_overwrites_existing(self, manager):
+        """Verify setting user overwrites existing value."""
+        manager.set_current_print_user(1, 42, "user1")
+        manager.set_current_print_user(1, 99, "user2")
+
+        result = manager.get_current_print_user(1)
+        assert result["user_id"] == 99
+        assert result["username"] == "user2"
+
+    def test_multiple_printers_have_separate_users(self, manager):
+        """Verify each printer tracks its own user separately."""
+        manager.set_current_print_user(1, 42, "user1")
+        manager.set_current_print_user(2, 99, "user2")
+
+        result1 = manager.get_current_print_user(1)
+        result2 = manager.get_current_print_user(2)
+
+        assert result1["username"] == "user1"
+        assert result2["username"] == "user2"
+
 
 class TestPrinterStateToDict:
     """Tests for printer_state_to_dict helper function."""

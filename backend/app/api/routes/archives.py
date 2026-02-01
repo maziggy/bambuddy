@@ -8,10 +8,12 @@ from fastapi.responses import FileResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.auth import require_auth_if_enabled
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.models.archive import PrintArchive
 from backend.app.models.filament import Filament
+from backend.app.models.user import User
 from backend.app.schemas.archive import ArchiveResponse, ArchiveStats, ArchiveUpdate, ReprintRequest
 from backend.app.services.archive import ArchiveService
 
@@ -96,6 +98,9 @@ def archive_to_response(
         "energy_kwh": archive.energy_kwh,
         "energy_cost": archive.energy_cost,
         "created_at": archive.created_at,
+        # User tracking (Issue #206)
+        "created_by_id": archive.created_by_id,
+        "created_by_username": archive.created_by.username if archive.created_by else None,
     }
 
     # Add computed time accuracy fields
@@ -2018,6 +2023,7 @@ async def upload_archive(
     file: UploadFile = File(...),
     printer_id: int | None = None,
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(require_auth_if_enabled),
 ):
     """Manually upload a 3MF file to archive."""
     if not file.filename or not file.filename.endswith(".3mf"):
@@ -2035,6 +2041,7 @@ async def upload_archive(
         archive = await service.archive_print(
             printer_id=printer_id,
             source_file=temp_path,
+            created_by_id=current_user.id if current_user else None,
         )
 
         if not archive:
@@ -2051,6 +2058,7 @@ async def upload_archives_bulk(
     files: list[UploadFile] = File(...),
     printer_id: int | None = None,
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(require_auth_if_enabled),
 ):
     """Bulk upload multiple 3MF files to archive."""
     results = []
@@ -2072,6 +2080,7 @@ async def upload_archives_bulk(
             archive = await service.archive_print(
                 printer_id=printer_id,
                 source_file=temp_path,
+                created_by_id=current_user.id if current_user else None,
             )
 
             if archive:
@@ -2424,6 +2433,7 @@ async def reprint_archive(
     printer_id: int,
     body: ReprintRequest | None = None,
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(require_auth_if_enabled),
 ):
     """Send an archived 3MF file to a printer and start printing."""
     from backend.app.main import register_expected_print
@@ -2554,6 +2564,11 @@ async def reprint_archive(
 
     if not started:
         raise HTTPException(500, "Failed to start print")
+
+    # Track who started this print (Issue #206)
+    if current_user:
+        printer_manager.set_current_print_user(printer_id, current_user.id, current_user.username)
+        logger.info(f"Reprint started by user: {current_user.username}")
 
     return {
         "status": "printing",

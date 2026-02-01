@@ -937,6 +937,11 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
             Printed {file.print_count}x
           </div>
         )}
+        {file.created_by_username && (
+          <div className="mt-1 text-xs text-bambu-gray">
+            Uploaded by {file.created_by_username}
+          </div>
+        )}
       </div>
 
       {/* Actions - always visible on mobile, hover on desktop */}

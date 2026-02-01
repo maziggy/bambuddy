@@ -2038,8 +2038,9 @@ class BambuMQTTClient:
                         ams_mapping2.append({"ams_id": 255, "slot_id": 255})
                     elif tray_id >= 254:
                         # External spool: 254 = main nozzle, 255 = deputy nozzle
-                        # External spools use ams_id=255 with slot_id matching tray_id
-                        ams_mapping2.append({"ams_id": 255, "slot_id": tray_id})
+                        # For ams_mapping2, slot_id is 0 (main) or 1 (deputy), not the tray_id
+                        external_slot = 0 if tray_id == 254 else 1
+                        ams_mapping2.append({"ams_id": 255, "slot_id": external_slot})
                     else:
                         # Regular AMS tray: Global tray ID = (ams_id * 4) + slot_id
                         ams_id = tray_id // 4

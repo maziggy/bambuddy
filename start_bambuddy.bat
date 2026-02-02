@@ -27,6 +27,9 @@ set "PORTABLE=%ROOT%\.portable"
 set "PYTHON_DIR=%PORTABLE%\python"
 set "NODE_DIR=%PORTABLE%\node"
 set "FFMPEG_DIR=%PORTABLE%\ffmpeg"
+REM NOTE: Python version is intentionally pinned to a specific portable build.
+REM       If you upgrade the bundled Python runtime, update PYTHON_VER here
+REM       and make sure it matches the version used in download/installation logic.
 set "PYTHON_VER=3.13.1"
 set "NODE_VER=22.12.0"
 

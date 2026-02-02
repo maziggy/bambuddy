@@ -130,6 +130,10 @@ export interface PrinterSelectorProps {
   targetModel?: string | null;
   /** Handler for target model change */
   onTargetModelChange?: (model: string | null) => void;
+  /** Selected target location (when assignmentMode is 'model') */
+  targetLocation?: string | null;
+  /** Handler for target location change */
+  onTargetLocationChange?: (location: string | null) => void;
   /** Suggested model from sliced file (for pre-selection) */
   slicedForModel?: string | null;
 }

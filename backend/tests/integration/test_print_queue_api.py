@@ -963,3 +963,216 @@ class TestBulkUpdateEndpoint:
         )
         assert response.status_code == 400
         assert "printer not found" in response.json()["detail"].lower()
+
+
+class TestTargetLocationFeature:
+    """Tests for queue items with target_location (Issue #220)."""
+
+    @pytest.fixture
+    async def printer_factory(self, db_session):
+        """Factory to create test printers."""
+        _counter = [0]
+
+        async def _create_printer(**kwargs):
+            from backend.app.models.printer import Printer
+
+            _counter[0] += 1
+            counter = _counter[0]
+
+            defaults = {
+                "name": f"Location Test Printer {counter}",
+                "ip_address": f"192.168.1.{50 + counter}",
+                "serial_number": f"TESTLOC{counter:04d}",
+                "access_code": "12345678",
+                "model": "X1C",
+            }
+            defaults.update(kwargs)
+
+            printer = Printer(**defaults)
+            db_session.add(printer)
+            await db_session.commit()
+            await db_session.refresh(printer)
+            return printer
+
+        return _create_printer
+
+    @pytest.fixture
+    async def archive_factory(self, db_session):
+        """Factory to create test archives."""
+        _counter = [0]
+
+        async def _create_archive(**kwargs):
+            from backend.app.models.archive import PrintArchive
+
+            _counter[0] += 1
+            counter = _counter[0]
+
+            defaults = {
+                "filename": f"location_test_{counter}.3mf",
+                "print_name": f"Location Test Print {counter}",
+                "file_path": f"/tmp/location_test_{counter}.3mf",
+                "file_size": 1024,
+                "content_hash": f"lochash{counter:08d}",
+                "status": "completed",
+            }
+            defaults.update(kwargs)
+
+            archive = PrintArchive(**defaults)
+            db_session.add(archive)
+            await db_session.commit()
+            await db_session.refresh(archive)
+            return archive
+
+        return _create_archive
+
+    @pytest.fixture
+    async def queue_item_factory(self, db_session, printer_factory, archive_factory):
+        """Factory to create test queue items."""
+        _counter = [0]
+
+        async def _create_queue_item(**kwargs):
+            from backend.app.models.print_queue import PrintQueueItem
+
+            _counter[0] += 1
+            counter = _counter[0]
+
+            if "printer_id" not in kwargs and "target_model" not in kwargs:
+                printer = await printer_factory()
+                kwargs["printer_id"] = printer.id
+
+            if "archive_id" not in kwargs:
+                archive = await archive_factory()
+                kwargs["archive_id"] = archive.id
+
+            defaults = {
+                "status": "pending",
+                "position": counter,
+            }
+            defaults.update(kwargs)
+
+            item = PrintQueueItem(**defaults)
+            db_session.add(item)
+            await db_session.commit()
+            await db_session.refresh(item)
+            return item
+
+        return _create_queue_item
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_with_target_location(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Verify item can be added with target_model and target_location."""
+        # Create a printer with model X1C so the API can validate
+        await printer_factory(model="X1C", location="Office")
+        archive = await archive_factory()
+
+        data = {
+            "target_model": "X1C",
+            "target_location": "Workbench",
+            "archive_id": archive.id,
+        }
+        response = await async_client.post("/api/v1/queue/", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["target_model"] == "X1C"
+        assert result["target_location"] == "Workbench"
+        assert result["printer_id"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_location_without_model_ignored(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Verify target_location without target_model is allowed (location is just ignored)."""
+        printer = await printer_factory()
+        archive = await archive_factory()
+
+        data = {
+            "printer_id": printer.id,
+            "target_location": "Workbench",  # This gets ignored since printer_id is set
+            "archive_id": archive.id,
+        }
+        response = await async_client.post("/api/v1/queue/", json=data)
+        # The API accepts this but the location is only used with target_model
+        assert response.status_code == 200
+        result = response.json()
+        assert result["printer_id"] == printer.id
+        # Location may or may not be stored since it's meaningless without target_model
+        # The important thing is the request succeeds
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_queue_item_target_location_in_response(
+        self, async_client: AsyncClient, queue_item_factory, db_session
+    ):
+        """Verify target_location is returned in queue item response."""
+        item = await queue_item_factory(
+            printer_id=None,
+            target_model="X1C",
+            target_location="Workshop",
+        )
+
+        response = await async_client.get(f"/api/v1/queue/{item.id}")
+        assert response.status_code == 200
+        result = response.json()
+        assert result["target_model"] == "X1C"
+        assert result["target_location"] == "Workshop"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_queue_list_includes_target_location(self, async_client: AsyncClient, queue_item_factory, db_session):
+        """Verify target_location is included in queue list."""
+        await queue_item_factory(
+            printer_id=None,
+            target_model="P1S",
+            target_location="Garage",
+        )
+
+        response = await async_client.get("/api/v1/queue/")
+        assert response.status_code == 200
+        items = response.json()
+        assert len(items) >= 1
+
+        # Find our item
+        our_item = next((i for i in items if i["target_location"] == "Garage"), None)
+        assert our_item is not None
+        assert our_item["target_model"] == "P1S"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_queue_item_target_location(self, async_client: AsyncClient, queue_item_factory, db_session):
+        """Verify target_location can be updated on existing queue item."""
+        item = await queue_item_factory(
+            printer_id=None,
+            target_model="X1C",
+            target_location="Office",
+        )
+
+        response = await async_client.patch(
+            f"/api/v1/queue/{item.id}",
+            json={"target_location": "Basement"},
+        )
+        assert response.status_code == 200
+        result = response.json()
+        assert result["target_location"] == "Basement"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_clear_target_location(self, async_client: AsyncClient, queue_item_factory, db_session):
+        """Verify target_location can be cleared (set to None)."""
+        item = await queue_item_factory(
+            printer_id=None,
+            target_model="X1C",
+            target_location="Office",
+        )
+
+        # Note: Setting to empty string should clear it
+        response = await async_client.patch(
+            f"/api/v1/queue/{item.id}",
+            json={"target_location": None},
+        )
+        assert response.status_code == 200
+        result = response.json()
+        assert result["target_location"] is None

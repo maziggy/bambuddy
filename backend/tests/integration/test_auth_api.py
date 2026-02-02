@@ -689,3 +689,88 @@ class TestChangePasswordAPI:
         )
 
         assert response.status_code == 401
+
+
+class TestAuthMiddlewarePublicRoutes:
+    """Tests for auth middleware public route configuration.
+
+    These routes must be accessible without authentication, even when auth is enabled,
+    because browser elements like <img src> and <video src> don't send Authorization headers.
+    """
+
+    @pytest.fixture
+    async def enabled_auth(self, async_client: AsyncClient):
+        """Enable auth for testing middleware behavior."""
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "middlewareadmin",
+                "admin_password": "adminpassword123",
+            },
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_auth_status_is_public(self, async_client: AsyncClient, enabled_auth):
+        """Verify /api/v1/auth/status is accessible without auth."""
+        response = await async_client.get("/api/v1/auth/status")
+        assert response.status_code == 200
+        assert "auth_enabled" in response.json()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_auth_login_is_public(self, async_client: AsyncClient, enabled_auth):
+        """Verify /api/v1/auth/login is accessible without auth."""
+        response = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "middlewareadmin", "password": "adminpassword123"},
+        )
+        # Should not return 401 (unauthorized) - it should either succeed or return
+        # a different error (like 400 for wrong credentials)
+        assert response.status_code != 401 or "token" in response.json()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_auth_setup_is_public(self, async_client: AsyncClient):
+        """Verify /api/v1/auth/setup is accessible without auth (needed for setup/recovery)."""
+        # Don't enable auth first - test that setup endpoint itself is accessible
+        response = await async_client.post(
+            "/api/v1/auth/setup",
+            json={"auth_enabled": False},
+        )
+        # Should not be 401
+        assert response.status_code != 401
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_updates_version_is_public(self, async_client: AsyncClient, enabled_auth):
+        """Verify /api/v1/updates/version is accessible without auth."""
+        response = await async_client.get("/api/v1/updates/version")
+        # Should not be 401
+        assert response.status_code != 401
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_protected_route_requires_auth(self, async_client: AsyncClient, enabled_auth):
+        """Verify non-public routes return 401 without token."""
+        response = await async_client.get("/api/v1/printers/")
+        assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_protected_route_works_with_token(self, async_client: AsyncClient, enabled_auth):
+        """Verify non-public routes work with valid token."""
+        # Login to get token
+        login_response = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "middlewareadmin", "password": "adminpassword123"},
+        )
+        token = login_response.json()["access_token"]
+
+        # Access protected route
+        response = await async_client.get(
+            "/api/v1/printers/",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200

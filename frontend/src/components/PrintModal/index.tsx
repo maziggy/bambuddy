@@ -135,6 +135,14 @@ export function PrintModal({
     return null;
   });
 
+  // Target location for model-based assignment (optional filter)
+  const [targetLocation, setTargetLocation] = useState<string | null>(() => {
+    if (mode === 'edit-queue-item' && queueItem?.target_location) {
+      return queueItem.target_location;
+    }
+    return null;
+  });
+
   // Track initial values for clearing mappings on change (edit mode only)
   const [initialPrinterIds] = useState(() => (mode === 'edit-queue-item' && queueItem?.printer_id ? [queueItem.printer_id] : []));
   const [initialPlateId] = useState(() => (mode === 'edit-queue-item' && queueItem ? queueItem.plate_id : null));
@@ -369,6 +377,7 @@ export function PrintModal({
     const getQueueData = (printerId: number | null): PrintQueueItemCreate => ({
       printer_id: assignmentMode === 'printer' ? printerId : null,
       target_model: assignmentMode === 'model' ? targetModel : null,
+      target_location: assignmentMode === 'model' ? targetLocation : null,
       // Use library_file_id for library files, archive_id for archives
       archive_id: isLibraryFile ? undefined : archiveId,
       library_file_id: isLibraryFile ? libraryFileId : undefined,
@@ -397,6 +406,7 @@ export function PrintModal({
           const updateData: PrintQueueItemUpdate = {
             printer_id: null,
             target_model: targetModel,
+            target_location: targetLocation,
             require_previous_success: scheduleOptions.requirePreviousSuccess,
             auto_off_after: scheduleOptions.autoOffAfter,
             manual_start: scheduleOptions.scheduleType === 'manual',
@@ -445,6 +455,7 @@ export function PrintModal({
             const updateData: PrintQueueItemUpdate = {
               printer_id: printerId,
               target_model: null,
+              target_location: null,
               require_previous_success: scheduleOptions.requirePreviousSuccess,
               auto_off_after: scheduleOptions.autoOffAfter,
               manual_start: scheduleOptions.scheduleType === 'manual',
@@ -626,6 +637,8 @@ export function PrintModal({
               onAssignmentModeChange={mode !== 'reprint' ? setAssignmentMode : undefined}
               targetModel={targetModel}
               onTargetModelChange={mode !== 'reprint' ? setTargetModel : undefined}
+              targetLocation={targetLocation}
+              onTargetLocationChange={mode !== 'reprint' ? setTargetLocation : undefined}
               slicedForModel={slicedForModel}
             />
 

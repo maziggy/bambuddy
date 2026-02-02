@@ -5,6 +5,11 @@ All notable changes to Bambuddy will be documented in this file.
 ## [0.1.7b] - Not released
 
 ### Enhancements
+- **Location Filter for Queue** (Issue #220):
+  - Filter queue jobs by printer location in the Queue page
+  - "Any {Model}" queue assignments can now specify a target location (e.g., "Any X1C in Workshop")
+  - Location filter dropdown shows all unique locations from printers and queue items
+  - Location is saved with queue items and displayed in the queue list
 - **Ownership-Based Permissions** (Issue #205):
   - Users can now only update/delete their own items unless they have elevated permissions
   - Update/delete permissions split into `*_own` and `*_all` variants:
@@ -51,6 +56,8 @@ All notable changes to Bambuddy will be documented in this file.
   - Removed ~2000 lines of legacy JSON-based backup/restore code
 
 ### Fixes
+- **JWT secret key not persistent across restarts** - Fixed JWT secret key generation to properly use data directory, ensuring tokens remain valid across container restarts
+- **Images/thumbnails returning 401 when auth enabled** - Fixed auth middleware to allow public access to image/media endpoints (thumbnails, photos, QR codes, timelapses, camera streams) since browser elements like `<img>` don't send Authorization headers
 - **Library thumbnails missing after restore** - Fixed library files using absolute paths that break after restore on different systems:
   - Library now stores relative paths in database for portability
   - Automatic migration converts existing absolute paths to relative on startup

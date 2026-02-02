@@ -18,6 +18,9 @@ class PrintQueueItem(Base):
     # Target printer model for model-based assignment (mutually exclusive with printer_id)
     # When set, scheduler assigns to any idle printer of matching model
     target_model: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Target location filter for model-based assignment (only used with target_model)
+    # When set, only printers in this location are considered
+    target_location: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Required filament types for model-based assignment (JSON array, e.g., '["PLA", "PETG"]')
     # Used by scheduler to validate printer has compatible filaments loaded
     required_filament_types: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -7,6 +7,13 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
+    pool: 'threads',
+    poolOptions: {
+      threads: {
+        maxThreads: 14,
+        minThreads: 4,
+      },
+    },
     environmentOptions: {
       jsdom: {
         url: 'http://localhost:3000',

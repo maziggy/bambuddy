@@ -2543,17 +2543,39 @@ app = FastAPI(
 # =============================================================================
 # Public routes that don't require authentication even when auth is enabled
 PUBLIC_API_ROUTES = {
-    # Auth routes needed before login
+    # Auth routes needed before/during login
     "/api/v1/auth/status",
     "/api/v1/auth/login",
+    "/api/v1/auth/setup",  # Needed for initial setup and recovery
     # Version check for updates (no sensitive data)
     "/api/v1/updates/version",
+    # Metrics endpoint handles its own prometheus_token authentication
+    "/api/v1/metrics",
 }
 
 # Route prefixes that are public (for routes with dynamic segments)
 PUBLIC_API_PREFIXES = [
     # WebSocket connections handle their own auth
     "/api/v1/ws",
+]
+
+# Route patterns that are public (read-only display data)
+# These are checked with "in path" - needed because browsers load images/videos
+# via <img src> and <video src> which don't include Authorization headers
+PUBLIC_API_PATTERNS = [
+    # Thumbnails
+    "/thumbnail",  # /archives/{id}/thumbnail, /library/files/{id}/thumbnail
+    "/plate-thumbnail/",  # /archives/{id}/plate-thumbnail/{plate_id}
+    # Images and media
+    "/photos/",  # /archives/{id}/photos/{filename}
+    "/project-image/",  # /archives/{id}/project-image/{path}
+    "/qrcode",  # /archives/{id}/qrcode
+    "/timelapse",  # /archives/{id}/timelapse (video)
+    "/cover",  # /printers/{id}/cover
+    "/icon",  # /external-links/{id}/icon
+    # Camera (streams loaded via <img> tag)
+    "/camera/stream",  # /printers/{id}/camera/stream
+    "/camera/snapshot",  # /printers/{id}/camera/snapshot
 ]
 
 
@@ -2579,6 +2601,11 @@ async def auth_middleware(request, call_next):
     # Allow public prefixes
     for prefix in PUBLIC_API_PREFIXES:
         if path.startswith(prefix):
+            return await call_next(request)
+
+    # Allow public patterns (read-only display data like thumbnails)
+    for pattern in PUBLIC_API_PATTERNS:
+        if pattern in path:
             return await call_next(request)
 
     # Check if auth is enabled

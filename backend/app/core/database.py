@@ -1044,6 +1044,12 @@ async def run_migrations(conn):
     except Exception:
         pass
 
+    # Migration: Add target_location column to print_queue for location-based filtering (Issue #220)
+    try:
+        await conn.execute(text("ALTER TABLE print_queue ADD COLUMN target_location VARCHAR(100)"))
+    except Exception:
+        pass
+
     # Migration: Convert absolute paths to relative paths in library_files table
     # This ensures backup/restore portability across different installations
     try:

@@ -48,7 +48,13 @@ def _get_jwt_secret() -> str:
         return env_secret
 
     # 2. Check for secret file in data directory
-    data_dir = Path(os.environ.get("BAMBUDDY_DATA_DIR", "/app/data"))
+    # Use DATA_DIR env var (same as rest of app), fallback to data/ subdirectory
+    data_dir_env = os.environ.get("DATA_DIR")
+    if data_dir_env:
+        data_dir = Path(data_dir_env)
+    else:
+        # Fallback to data/ subdirectory under project root (not project root itself!)
+        data_dir = Path(__file__).parent.parent.parent.parent / "data"
     secret_file = data_dir / ".jwt_secret"
 
     if secret_file.exists():

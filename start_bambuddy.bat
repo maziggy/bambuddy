@@ -14,10 +14,10 @@ REM  no system changes). Everything is stored in
 REM  the .portable\ folder.
 REM
 REM  Usage:
-REM    start_Bambuddy.bat            Launch
-REM    start_Bambuddy.bat update     Update deps & rebuild frontend
-REM    start_Bambuddy.bat reset      Clean all & fresh start
-REM    set PORT=9000 & start_Bambuddy.bat   Change port
+REM    start_bambuddy.bat            Launch
+REM    start_bambuddy.bat update     Update deps & rebuild frontend
+REM    start_bambuddy.bat reset      Clean all & fresh start
+REM    set PORT=9000 & start_bambuddy.bat   Change port
 REM ============================================
 
 set "ROOT=%~dp0"

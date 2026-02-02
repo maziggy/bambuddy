@@ -2551,6 +2551,15 @@ PUBLIC_API_ROUTES = {
     "/api/v1/updates/version",
     # Metrics endpoint handles its own prometheus_token authentication
     "/api/v1/metrics",
+    # Support & debug endpoints (protected by JWT middleware when auth enabled)
+    "/api/v1/support/bundle",
+    "/api/v1/support/debug-logging",
+    "/api/v1/support/logs",
+    # Spoolman integration (protected by JWT middleware when auth enabled)
+    "/api/v1/settings/spoolman",
+    "/api/v1/spoolman/status",
+    "/api/v1/spoolman/connect",
+    "/api/v1/spoolman/disconnect",
 }
 
 # Route prefixes that are public (for routes with dynamic segments)
@@ -2676,6 +2685,7 @@ async def auth_middleware(request, call_next):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # Token is valid - allow request
     return await call_next(request)
 
 

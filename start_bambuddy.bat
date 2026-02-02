@@ -344,6 +344,12 @@ if errorlevel 1 (
 )
 
 popd
+if not exist "%ROOT%\frontend\static\index.html" (
+    echo [ERROR] Frontend build did not produce static\index.html.
+    echo        Expected: "%ROOT%\frontend\static\index.html"
+    pause
+    exit /b 1
+)
 if not exist "%ROOT%\static\index.html" (
     echo [ERROR] Frontend build did not produce static\index.html.
     echo        Expected: "%ROOT%\static\index.html"

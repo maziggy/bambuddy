@@ -526,12 +526,6 @@ export function QueuePage() {
     onError: () => showToast(t('queue.toast.failedToCancelItems'), 'error'),
   });
 
-  const handleToggleSelect = (id: number) => {
-    setSelectedItems(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    );
-  };
-
   // Get unique locations from printers for the filter dropdown
   const uniqueLocations = useMemo(() => {
     const locations = new Set<string>();
@@ -593,15 +587,6 @@ export function QueuePage() {
       return pendingSortAsc ? cmp : -cmp;
     });
   }, [queue, pendingSortBy, pendingSortAsc, matchesLocationFilter, filterLocation]);
-
-  const handleSelectAll = () => {
-    const allPendingIds = pendingItems.map(i => i.id);
-    if (selectedItems.length === allPendingIds.length) {
-      setSelectedItems([]);
-    } else {
-      setSelectedItems(allPendingIds);
-    }
-  };
 
   const activeItems = useMemo(() => {
     let items = queue?.filter(i => i.status === 'printing') || [];

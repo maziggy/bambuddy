@@ -11,17 +11,12 @@ import { server } from './mocks/server';
 // Initialize i18n for tests (suppresses react-i18next warnings)
 import '../i18n';
 
-// Setup MSW server - bypass WebSocket requests so our mock handles them
+// Setup MSW server
 beforeAll(() =>
   server.listen({
-    onUnhandledRequest: (request, _print) => {
-      // Allow WebSocket requests to pass through to our mock
-      if (request.url.includes('/ws')) {
-        return;
-      }
-      // Silently ignore unhandled requests in tests to reduce noise
-      // Remove 'warn' to completely silence, or use print.warning() to show warnings
-    },
+    // Bypass unhandled requests silently (don't warn, just let them through)
+    // Handlers use wildcard (*) prefix to match any origin
+    onUnhandledRequest: 'bypass',
   })
 );
 afterEach(() => {

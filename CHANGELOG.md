@@ -4,7 +4,27 @@ All notable changes to Bambuddy will be documented in this file.
 
 ## [0.1.7b] - Not released
 
+## [0.1.6.2] - 2026-02-02
+
+> **Security Release**: This release addresses critical security vulnerabilities. Users running authentication-enabled instances should upgrade immediately.
+
+### Security
+- **Critical: Hardcoded JWT Secret Key** (GHSA-gc24-px2r-5qmf, CWE-321) - Fixed hardcoded JWT secret key that could allow attackers to forge authentication tokens:
+  - JWT secret now loaded from `JWT_SECRET_KEY` environment variable (recommended for production)
+  - Falls back to auto-generated `.jwt_secret` file in data directory with secure permissions (0600)
+  - Generates cryptographically secure 64-byte random secret if neither exists
+  - **Action Required**: Existing users will need to re-login after upgrading
+- **Critical: Missing API Authentication** (GHSA-gc24-px2r-5qmf, CWE-306) - Fixed 77+ API endpoints that lacked authentication checks:
+  - Added HTTP middleware enforcing authentication on ALL `/api/` routes when auth is enabled
+  - Only essential public endpoints are exempt (login, auth status, version check, WebSocket)
+  - All other API calls now require valid JWT token or API key
+
 ### Enhancements
+- **Location Filter for Queue** (Issue #220):
+  - Filter queue jobs by printer location in the Queue page
+  - "Any {Model}" queue assignments can now specify a target location (e.g., "Any X1C in Workshop")
+  - Location filter dropdown shows all unique locations from printers and queue items
+  - Location is saved with queue items and displayed in the queue list
 - **Ownership-Based Permissions** (Issue #205):
   - Users can now only update/delete their own items unless they have elevated permissions
   - Update/delete permissions split into `*_own` and `*_all` variants:
@@ -51,11 +71,28 @@ All notable changes to Bambuddy will be documented in this file.
   - Removed ~2000 lines of legacy JSON-based backup/restore code
 
 ### Fixes
+- **File Manager permissions not enforced** (Issue #224) - Fixed backend not checking `library:read` permission for File Manager endpoints:
+  - Added `library:read` permission check to all list/view endpoints (files, folders, stats)
+  - Added `library:upload` permission check to upload and folder creation endpoints
+  - Added `queue:create` permission check to add-to-queue endpoint
+  - Added `printers:control` permission check to direct print endpoint
+  - Added ownership-based permission checks to file move operation
+  - Users without `library:read` permission can no longer view files in the File Manager
+  - Users can now only delete/update their own files unless they have `*_all` permissions
+- **JWT secret key not persistent across restarts** - Fixed JWT secret key generation to properly use data directory, ensuring tokens remain valid across container restarts
+- **Images/thumbnails returning 401 when auth enabled** - Fixed auth middleware to allow public access to image/media endpoints (thumbnails, photos, QR codes, timelapses, camera streams) since browser elements like `<img>` don't send Authorization headers
 - **Library thumbnails missing after restore** - Fixed library files using absolute paths that break after restore on different systems:
   - Library now stores relative paths in database for portability
   - Automatic migration converts existing absolute paths to relative on startup
   - Thumbnails and files now display correctly after restoring backups
 - **File uploads failing with authentication enabled** - Fixed all file upload functions (archives, photos, timelapses, library files, etc.) not sending authentication headers when auth is enabled
+- **External spool AMS mapping causing "Failed to get AMS mapping table"** (Issue #213) - Fixed external spool `ams_mapping2` slot_id handling that caused AMS mapping failures
+- **Filename matching for files with spaces** (Issue #218) - Fixed file detection when filenames contain spaces
+- **P2S FTP upload failure** (Issue #218) - Fixed FTP uploads to P2S printers by passing `skip_session_reuse` to ImplicitFTP_TLS
+- **Printer deletion freeze** (Issue #214) - Fixed UI freeze when deleting printers, and now allows multiple smart plugs per printer
+- **Stack trace exposure in error responses** (CodeQL Alert #68) - Fixed stack traces being exposed in API error responses in archives.py
+- **Printer serial numbers exposed in support bundle** (Issue #216) - Sanitized printer serial numbers in support bundle logs for privacy
+- **Missing sliced_for_model migration** (Issue #211) - Fixed database migration for `sliced_for_model` column that was missing in some upgrade paths
 
 ## [0.1.6-final] - 2026-01-31
 

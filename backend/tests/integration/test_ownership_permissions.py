@@ -700,7 +700,10 @@ class TestUserItemsCountAndDeletion(TestOwnershipPermissionsSetup):
         assert response.status_code == 204
 
         # Verify archive still exists but is now ownerless
-        archive_response = await async_client.get(f"/api/v1/archives/{archive_id}")
+        archive_response = await async_client.get(
+            f"/api/v1/archives/{archive_id}",
+            headers={"Authorization": f"Bearer {auth_setup['admin_token']}"},
+        )
         assert archive_response.status_code == 200
         assert archive_response.json()["created_by_id"] is None
 
@@ -736,5 +739,8 @@ class TestUserItemsCountAndDeletion(TestOwnershipPermissionsSetup):
         assert response.status_code == 204
 
         # Verify archive was deleted
-        archive_response = await async_client.get(f"/api/v1/archives/{archive_id}")
+        archive_response = await async_client.get(
+            f"/api/v1/archives/{archive_id}",
+            headers={"Authorization": f"Bearer {auth_setup['admin_token']}"},
+        )
         assert archive_response.status_code == 404

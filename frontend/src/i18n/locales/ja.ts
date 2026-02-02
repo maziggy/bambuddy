@@ -251,7 +251,7 @@ export default {
       selectModel: 'モデルを選択...',
       locationGroup: 'ロケーション / グループ',
       locationPlaceholder: '例: 工房、オフィス、地下室',
-      locationHint: 'ダッシュボードでプリンターをグループ化するために使用',
+      locationHint: 'プリンターのグループ化とキュージョブのフィルタリングに使用',
       autoArchive: '完了した印刷を自動アーカイブ',
     },
     discovery: {
@@ -507,7 +507,7 @@ export default {
     dragToReorder: 'ドラッグして並べ替え（ASAPのみ）',
     overdue: '期限超過',
     dragReorderTooltip: '順番はASAPアイテムのみに影響します。スケジュール済みアイテムは設定された時間に実行されます。',
-    anyModel: '任意の{{model}}{{filaments}}',
+    anyModel: '任意の{{model}}{{location}}{{filaments}}',
     addedBy: '{{username}}が追加',
     bulkEdit: {
       title: '{{count}}件のアイテムを編集',
@@ -1983,6 +1983,16 @@ export default {
     customSlotMapping: 'カスタムスロットマッピング',
     autoMatched: '自動マッチ',
     manuallySelected: '手動選択',
+    schedulerWillAssign: 'スケジューラーが最初に利用可能なアイドル状態の{{model}}プリンターに割り当てます',
+    inLocation: '{{location}}内',
+    anyModel: '任意の{{model}}',
+    hiddenPrinters: '他{{count}}台のプリンターが非表示（異なるモデル）',
+    showOnlyModel: '{{model}}プリンターのみ表示',
+    matchedCount: '({{matched}}/{{total}} 一致)',
+    targetModelLabel: 'ターゲットモデル',
+    selectAModel: 'モデルを選択...',
+    locationFilterLabel: 'ロケーションフィルター（任意）',
+    anyLocation: 'すべてのロケーション',
   },
 
   // ログインページ

@@ -848,3 +848,210 @@ class TestLibraryPathHelpers:
 
         assert to_absolute_path(None) is None
         assert to_absolute_path("") is None
+
+
+class TestLibraryPermissions:
+    """Tests for library permission enforcement."""
+
+    @pytest.fixture
+    async def auth_setup(self, db_session):
+        """Set up auth with users of different permission levels."""
+        from backend.app.core.auth import create_access_token, get_password_hash
+        from backend.app.models.group import Group
+        from backend.app.models.settings import Settings
+        from backend.app.models.user import User
+
+        # Enable auth
+        settings = Settings(key="auth_enabled", value="true")
+        db_session.add(settings)
+        await db_session.commit()
+
+        # Groups are auto-seeded during db init, but we need to commit them
+        await db_session.commit()
+
+        # Get groups
+        from sqlalchemy import select
+
+        admin_group = (await db_session.execute(select(Group).where(Group.name == "Administrators"))).scalar_one()
+        operator_group = (await db_session.execute(select(Group).where(Group.name == "Operators"))).scalar_one()
+        viewer_group = (await db_session.execute(select(Group).where(Group.name == "Viewers"))).scalar_one()
+
+        password_hash = get_password_hash("password")
+
+        # Create users
+        admin_user = User(username="admin_lib", password_hash=password_hash, role="admin", is_active=True)
+        admin_user.groups.append(admin_group)
+
+        operator_user = User(username="operator_lib", password_hash=password_hash, is_active=True)
+        operator_user.groups.append(operator_group)
+
+        viewer_user = User(username="viewer_lib", password_hash=password_hash, is_active=True)
+        viewer_user.groups.append(viewer_group)
+
+        db_session.add_all([admin_user, operator_user, viewer_user])
+        await db_session.commit()
+
+        # Create tokens
+        admin_token = create_access_token(data={"sub": admin_user.username})
+        operator_token = create_access_token(data={"sub": operator_user.username})
+        viewer_token = create_access_token(data={"sub": viewer_user.username})
+
+        return {
+            "admin_user": admin_user,
+            "operator_user": operator_user,
+            "viewer_user": viewer_user,
+            "admin_token": admin_token,
+            "operator_token": operator_token,
+            "viewer_token": viewer_token,
+        }
+
+    @pytest.fixture
+    async def test_file(self, db_session, auth_setup):
+        """Create a test file owned by the operator user."""
+        from backend.app.models.library import LibraryFile
+
+        operator_user = auth_setup["operator_user"]
+        lib_file = LibraryFile(
+            filename="test.txt",
+            file_path="data/archive/library/files/test.txt",
+            file_type="txt",
+            file_size=100,
+            created_by_id=operator_user.id,
+        )
+        db_session.add(lib_file)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+        return lib_file
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_files_requires_library_read(self, async_client: AsyncClient, db_session, auth_setup):
+        """Verify list_files requires library:read permission."""
+        viewer_token = auth_setup["viewer_token"]
+
+        # Viewers have library:read, should succeed
+        response = await async_client.get("/api/v1/library/files", headers={"Authorization": f"Bearer {viewer_token}"})
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_files_denied_without_permission(self, async_client: AsyncClient, db_session):
+        """Verify list_files denied without auth when auth is enabled."""
+        from backend.app.models.settings import Settings
+
+        # Enable auth
+        settings = Settings(key="auth_enabled", value="true")
+        db_session.add(settings)
+        await db_session.commit()
+
+        # Request without token should fail
+        response = await async_client.get("/api/v1/library/files")
+        assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_delete_file_own_by_owner(self, async_client: AsyncClient, db_session, auth_setup, test_file):
+        """Verify operator can delete their own files."""
+        from pathlib import Path
+
+        # Create actual file on disk so delete doesn't fail
+        from backend.app.core.config import settings as app_settings
+
+        file_path = Path(app_settings.base_dir) / test_file.file_path
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text("test content")
+
+        operator_token = auth_setup["operator_token"]
+
+        response = await async_client.delete(
+            f"/api/v1/library/files/{test_file.id}", headers={"Authorization": f"Bearer {operator_token}"}
+        )
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_delete_file_own_denied_for_others_file(self, async_client: AsyncClient, db_session, auth_setup):
+        """Verify operator cannot delete files owned by others."""
+        # Create another operator user with a file
+        from sqlalchemy import select
+
+        from backend.app.core.auth import create_access_token
+        from backend.app.models.group import Group
+        from backend.app.models.library import LibraryFile
+        from backend.app.models.user import User
+
+        operator_group = (await db_session.execute(select(Group).where(Group.name == "Operators"))).scalar_one()
+
+        from backend.app.core.auth import get_password_hash as get_pw_hash
+
+        other_user = User(username="other_op", password_hash=get_pw_hash("password"), is_active=True)
+        other_user.groups.append(operator_group)
+        db_session.add(other_user)
+        await db_session.commit()
+        await db_session.refresh(other_user)
+
+        # Create file owned by other user
+        other_file = LibraryFile(
+            filename="other.txt",
+            file_path="data/archive/library/files/other.txt",
+            file_type="txt",
+            file_size=100,
+            created_by_id=other_user.id,
+        )
+        db_session.add(other_file)
+        await db_session.commit()
+        await db_session.refresh(other_file)
+
+        # Original operator should not be able to delete it
+        operator_token = auth_setup["operator_token"]
+        response = await async_client.delete(
+            f"/api/v1/library/files/{other_file.id}", headers={"Authorization": f"Bearer {operator_token}"}
+        )
+        assert response.status_code == 403
+        assert "your own files" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_delete_file_admin_can_delete_any(self, async_client: AsyncClient, db_session, auth_setup):
+        """Verify admin can delete any file."""
+        from pathlib import Path
+
+        from backend.app.core.config import settings as app_settings
+        from backend.app.models.library import LibraryFile
+
+        # Create file owned by operator
+        operator_user = auth_setup["operator_user"]
+        lib_file = LibraryFile(
+            filename="admin_can_delete.txt",
+            file_path="data/archive/library/files/admin_can_delete.txt",
+            file_type="txt",
+            file_size=100,
+            created_by_id=operator_user.id,
+        )
+        db_session.add(lib_file)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+
+        # Create actual file on disk
+        file_path = Path(app_settings.base_dir) / lib_file.file_path
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text("test content")
+
+        # Admin should be able to delete it
+        admin_token = auth_setup["admin_token"]
+        response = await async_client.delete(
+            f"/api/v1/library/files/{lib_file.id}", headers={"Authorization": f"Bearer {admin_token}"}
+        )
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_viewer_cannot_delete_files(self, async_client: AsyncClient, db_session, auth_setup, test_file):
+        """Verify viewer cannot delete any files."""
+        viewer_token = auth_setup["viewer_token"]
+
+        response = await async_client.delete(
+            f"/api/v1/library/files/{test_file.id}", headers={"Authorization": f"Bearer {viewer_token}"}
+        )
+        # Viewers don't have delete_own or delete_all permissions
+        assert response.status_code == 403

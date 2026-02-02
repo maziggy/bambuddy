@@ -121,6 +121,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "id": item.id,
         "printer_id": item.printer_id,
         "target_model": item.target_model,
+        "target_location": item.target_location,
         "required_filament_types": required_filament_types_parsed,
         "waiting_reason": item.waiting_reason,
         "archive_id": item.archive_id,
@@ -289,6 +290,7 @@ async def add_to_queue(
     item = PrintQueueItem(
         printer_id=data.printer_id,
         target_model=target_model_norm,
+        target_location=data.target_location,
         required_filament_types=required_filament_types,
         archive_id=data.archive_id,
         library_file_id=data.library_file_id,

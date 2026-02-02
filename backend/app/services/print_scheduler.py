@@ -148,7 +148,7 @@ class PrintScheduler:
                             pass
 
                     printer_id, waiting_reason = await self._find_idle_printer_for_model(
-                        db, item.target_model, busy_printers, required_types
+                        db, item.target_model, busy_printers, required_types, item.target_location
                     )
 
                     # Update waiting_reason if changed and send notification when first waiting
@@ -225,6 +225,7 @@ class PrintScheduler:
         model: str,
         exclude_ids: set[int],
         required_filament_types: list[str] | None = None,
+        target_location: str | None = None,
     ) -> tuple[int | None, str | None]:
         """Find an idle, connected printer matching the model with compatible filaments.
 
@@ -234,6 +235,7 @@ class PrintScheduler:
             exclude_ids: Printer IDs to exclude (already busy)
             required_filament_types: Optional list of filament types needed (e.g., ["PLA", "PETG"])
                                      If provided, only printers with all required types loaded will match.
+            target_location: Optional location filter. If provided, only printers in this location are considered.
 
         Returns:
             Tuple of (printer_id, waiting_reason):
@@ -242,15 +244,22 @@ class PrintScheduler:
         """
         # Normalize model name and use case-insensitive matching
         normalized_model = normalize_printer_model(model) or model
-        result = await db.execute(
+        query = (
             select(Printer)
             .where(func.lower(Printer.model) == normalized_model.lower())
             .where(Printer.is_active == True)  # noqa: E712
         )
+
+        # Add location filter if specified
+        if target_location:
+            query = query.where(Printer.location == target_location)
+
+        result = await db.execute(query)
         printers = list(result.scalars().all())
 
+        location_suffix = f" in {target_location}" if target_location else ""
         if not printers:
-            return None, f"No active {normalized_model} printers configured"
+            return None, f"No active {normalized_model} printers{location_suffix} configured"
 
         # Track reasons for skipping printers
         printers_busy = []
@@ -295,7 +304,7 @@ class PrintScheduler:
         if printers_offline:
             reasons.append(f"Offline: {', '.join(printers_offline)}")
 
-        return None, " | ".join(reasons) if reasons else f"No available {model} printers"
+        return None, " | ".join(reasons) if reasons else f"No available {model} printers{location_suffix}"
 
     def _get_missing_filament_types(self, printer_id: int, required_types: list[str]) -> list[str]:
         """Get the list of required filament types that are not loaded on the printer.

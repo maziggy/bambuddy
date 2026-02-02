@@ -595,6 +595,15 @@ async def get_printer_cover(
         possible_filenames.append(f"{subtask_name}.gcode.3mf")
         possible_filenames.append(f"{subtask_name}.3mf")
 
+    # Also try with spaces converted to underscores (Bambu Studio may normalize filenames)
+    if " " in subtask_name:
+        normalized = subtask_name.replace(" ", "_")
+        if normalized.endswith(".3mf"):
+            possible_filenames.append(normalized)
+        else:
+            possible_filenames.append(f"{normalized}.gcode.3mf")
+            possible_filenames.append(f"{normalized}.3mf")
+
     # Build list of all remote paths to try
     remote_paths = []
     for filename in possible_filenames:
@@ -1573,6 +1582,15 @@ async def get_printable_objects(
             else:
                 possible_filenames.append(f"{subtask_name}.gcode.3mf")
                 possible_filenames.append(f"{subtask_name}.3mf")
+
+            # Also try with spaces converted to underscores (Bambu Studio may normalize filenames)
+            if " " in subtask_name:
+                normalized = subtask_name.replace(" ", "_")
+                if normalized.endswith(".3mf"):
+                    possible_filenames.append(normalized)
+                else:
+                    possible_filenames.append(f"{normalized}.gcode.3mf")
+                    possible_filenames.append(f"{normalized}.3mf")
 
             # Download 3MF from printer
             temp_path = settings.archive_dir / "temp" / f"objects_{printer_id}_{possible_filenames[0]}"

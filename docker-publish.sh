@@ -84,7 +84,7 @@ fi
 
 # Determine if this is a release version (includes betas for now)
 IS_RELEASE=false
-if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(b[0-9]+)?$ ]]; then
+if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?(b[0-9]+)?$ ]]; then
     IS_RELEASE=true
 fi
 

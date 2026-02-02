@@ -1002,6 +1002,13 @@ async def on_print_start(printer_id: int, data: dict):
                 possible_names.append(f"{fname}.gcode.3mf")
                 possible_names.append(f"{fname}.3mf")
 
+        # Also try with spaces converted to underscores (Bambu Studio may normalize filenames)
+        space_variants = []
+        for name in possible_names:
+            if " " in name:
+                space_variants.append(name.replace(" ", "_"))
+        possible_names.extend(space_variants)
+
         # Remove duplicates while preserving order
         seen = set()
         possible_names = [x for x in possible_names if not (x in seen or seen.add(x))]
@@ -1085,7 +1092,10 @@ async def on_print_start(printer_id: int, data: dict):
                         if f.get("is_directory"):
                             continue
                         fname = f.get("name", "")
-                        if fname.endswith(".3mf") and search_term in fname.lower():
+                        # Normalize both for comparison (spaces and underscores are equivalent)
+                        fname_normalized = fname.lower().replace(" ", "_")
+                        search_normalized = search_term.replace(" ", "_")
+                        if fname.endswith(".3mf") and search_normalized in fname_normalized:
                             logger.info(f"Found matching file in {search_dir}: {fname}")
                             temp_path = app_settings.archive_dir / "temp" / fname
                             temp_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2526,6 +2536,148 @@ app = FastAPI(
     version=APP_VERSION,
     lifespan=lifespan,
 )
+
+
+# =============================================================================
+# Authentication Middleware - Secures ALL API routes by default
+# =============================================================================
+# Public routes that don't require authentication even when auth is enabled
+PUBLIC_API_ROUTES = {
+    # Auth routes needed before/during login
+    "/api/v1/auth/status",
+    "/api/v1/auth/login",
+    "/api/v1/auth/setup",  # Needed for initial setup and recovery
+    # Version check for updates (no sensitive data)
+    "/api/v1/updates/version",
+    # Metrics endpoint handles its own prometheus_token authentication
+    "/api/v1/metrics",
+}
+
+# Route prefixes that are public (for routes with dynamic segments)
+PUBLIC_API_PREFIXES = [
+    # WebSocket connections handle their own auth
+    "/api/v1/ws",
+]
+
+# Route patterns that are public (read-only display data)
+# These are checked with "in path" - needed because browsers load images/videos
+# via <img src> and <video src> which don't include Authorization headers
+PUBLIC_API_PATTERNS = [
+    # Thumbnails
+    "/thumbnail",  # /archives/{id}/thumbnail, /library/files/{id}/thumbnail
+    "/plate-thumbnail/",  # /archives/{id}/plate-thumbnail/{plate_id}
+    # Images and media
+    "/photos/",  # /archives/{id}/photos/{filename}
+    "/project-image/",  # /archives/{id}/project-image/{path}
+    "/qrcode",  # /archives/{id}/qrcode
+    "/timelapse",  # /archives/{id}/timelapse (video)
+    "/cover",  # /printers/{id}/cover
+    "/icon",  # /external-links/{id}/icon
+    # Camera (streams loaded via <img> tag)
+    "/camera/stream",  # /printers/{id}/camera/stream
+    "/camera/snapshot",  # /printers/{id}/camera/snapshot
+]
+
+
+@app.middleware("http")
+async def auth_middleware(request, call_next):
+    """Enforce authentication on all API routes when auth is enabled.
+
+    This middleware provides defense-in-depth by checking auth at the API gateway level,
+    regardless of whether individual routes have auth dependencies.
+    """
+    from starlette.responses import JSONResponse
+
+    path = request.url.path
+
+    # Only apply to API routes
+    if not path.startswith("/api/"):
+        return await call_next(request)
+
+    # Allow public routes
+    if path in PUBLIC_API_ROUTES:
+        return await call_next(request)
+
+    # Allow public prefixes
+    for prefix in PUBLIC_API_PREFIXES:
+        if path.startswith(prefix):
+            return await call_next(request)
+
+    # Allow public patterns (read-only display data like thumbnails)
+    for pattern in PUBLIC_API_PATTERNS:
+        if pattern in path:
+            return await call_next(request)
+
+    # Check if auth is enabled
+    try:
+        async with async_session() as db:
+            from backend.app.core.auth import is_auth_enabled
+
+            auth_enabled = await is_auth_enabled(db)
+
+        if not auth_enabled:
+            # Auth disabled, allow all requests
+            return await call_next(request)
+    except Exception:
+        # If we can't check auth status, allow request (fail open for DB issues)
+        return await call_next(request)
+
+    # Auth is enabled - require valid token
+    auth_header = request.headers.get("Authorization")
+    x_api_key = request.headers.get("X-API-Key")
+
+    # Check for API key auth first
+    if x_api_key or (auth_header and auth_header.startswith("Bearer bb_")):
+        # API key authentication - let the request through to be validated by route handler
+        # API keys are validated per-route since they have different permission levels
+        return await call_next(request)
+
+    # Check for JWT auth
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Authentication required"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Validate JWT token
+    try:
+        import jwt
+
+        from backend.app.core.auth import ALGORITHM, SECRET_KEY
+
+        token = auth_header.replace("Bearer ", "")
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if not username:
+            raise ValueError("No username in token")
+
+        # Verify user exists and is active
+        async with async_session() as db:
+            from backend.app.core.auth import get_user_by_username
+
+            user = await get_user_by_username(db, username)
+            if not user or not user.is_active:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "User not found or inactive"},
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+    except jwt.ExpiredSignatureError:
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Token has expired"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except (jwt.InvalidTokenError, ValueError, Exception):
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Invalid token"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return await call_next(request)
+
 
 # API routes
 app.include_router(auth.router, prefix=app_settings.api_prefix)

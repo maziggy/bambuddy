@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.core.auth import (
-    require_auth_if_enabled,
     require_ownership_permission,
     require_permission_if_auth_enabled,
 )
@@ -237,7 +236,11 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", "
 
 @router.get("/folders", response_model=list[FolderTreeItem])
 @router.get("/folders/", response_model=list[FolderTreeItem])
-async def list_folders(response: Response, db: AsyncSession = Depends(get_db)):
+async def list_folders(
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+):
     """Get all folders as a tree structure."""
     # Prevent browser caching of folder list
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -289,7 +292,11 @@ async def list_folders(response: Response, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/folders/by-project/{project_id}", response_model=list[FolderResponse])
-async def get_folders_by_project(project_id: int, db: AsyncSession = Depends(get_db)):
+async def get_folders_by_project(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+):
     """Get all folders linked to a specific project."""
     result = await db.execute(
         select(LibraryFolder, Project.name)
@@ -326,7 +333,11 @@ async def get_folders_by_project(project_id: int, db: AsyncSession = Depends(get
 
 
 @router.get("/folders/by-archive/{archive_id}", response_model=list[FolderResponse])
-async def get_folders_by_archive(archive_id: int, db: AsyncSession = Depends(get_db)):
+async def get_folders_by_archive(
+    archive_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+):
     """Get all folders linked to a specific archive."""
     result = await db.execute(
         select(LibraryFolder, PrintArchive.print_name)
@@ -364,7 +375,11 @@ async def get_folders_by_archive(archive_id: int, db: AsyncSession = Depends(get
 
 @router.post("/folders", response_model=FolderResponse)
 @router.post("/folders/", response_model=FolderResponse)
-async def create_folder(data: FolderCreate, db: AsyncSession = Depends(get_db)):
+async def create_folder(
+    data: FolderCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
+):
     """Create a new folder."""
     # Verify parent exists if specified
     if data.parent_id is not None:
@@ -415,7 +430,11 @@ async def create_folder(data: FolderCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/folders/{folder_id}", response_model=FolderResponse)
-async def get_folder(folder_id: int, db: AsyncSession = Depends(get_db)):
+async def get_folder(
+    folder_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+):
     """Get a folder by ID."""
     result = await db.execute(
         select(LibraryFolder, Project.name, PrintArchive.print_name)
@@ -449,8 +468,17 @@ async def get_folder(folder_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/folders/{folder_id}", response_model=FolderResponse)
-async def update_folder(folder_id: int, data: FolderUpdate, db: AsyncSession = Depends(get_db)):
-    """Update a folder."""
+async def update_folder(
+    folder_id: int,
+    data: FolderUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPDATE_ALL)),
+):
+    """Update a folder.
+
+    Note: Folders require library:update_all permission since they don't have
+    ownership tracking.
+    """
     result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
     folder = result.scalar_one_or_none()
 
@@ -595,6 +623,7 @@ async def list_files(
     folder_id: int | None = None,
     include_root: bool = True,
     db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
 ):
     """List files, optionally filtered by folder.
 
@@ -669,7 +698,7 @@ async def upload_file(
     folder_id: int | None = None,
     generate_stl_thumbnails: bool = Query(default=True),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(require_auth_if_enabled),
+    current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
 ):
     """Upload a file to the library."""
     try:
@@ -805,7 +834,7 @@ async def extract_zip_file(
     create_folder_from_zip: bool = Query(default=False),
     generate_stl_thumbnails: bool = Query(default=True),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(require_auth_if_enabled),
+    current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
 ):
     """Upload and extract a ZIP file to the library.
 
@@ -1064,8 +1093,12 @@ async def extract_zip_file(
 async def batch_generate_stl_thumbnails(
     request: BatchThumbnailRequest,
     db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPDATE_ALL)),
 ):
     """Generate thumbnails for STL files in batch.
+
+    Note: Requires library:update_all permission since this is a batch operation
+    that may affect files owned by different users.
 
     Can generate thumbnails for:
     - Specific file IDs (file_ids)
@@ -1188,6 +1221,7 @@ def is_sliced_file(filename: str) -> bool:
 async def add_files_to_queue(
     request: AddToQueueRequest,
     db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.QUEUE_CREATE)),
 ):
     """Add library files to the print queue.
 
@@ -1266,6 +1300,7 @@ async def add_files_to_queue(
 async def get_library_file_plates(
     file_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
 ):
     """Get available plates from a multi-plate 3MF library file.
 
@@ -1477,6 +1512,7 @@ async def get_library_file_filament_requirements(
     file_id: int,
     plate_id: int | None = None,
     db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
 ):
     """Get filament requirements from a library file.
 
@@ -1599,6 +1635,7 @@ async def print_library_file(
     printer_id: int,
     body: FilePrintRequest | None = None,
     db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.PRINTERS_CONTROL)),
 ):
     """Print a library file directly.
 
@@ -1786,7 +1823,11 @@ async def print_library_file(
 
 
 @router.get("/files/{file_id}", response_model=FileResponseSchema)
-async def get_file(file_id: int, db: AsyncSession = Depends(get_db)):
+async def get_file(
+    file_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+):
     """Get a file by ID with full details."""
     result = await db.execute(
         select(LibraryFile).options(selectinload(LibraryFile.created_by)).where(LibraryFile.id == file_id)
@@ -1961,7 +2002,11 @@ async def delete_file(
 
 
 @router.get("/files/{file_id}/download")
-async def download_file(file_id: int, db: AsyncSession = Depends(get_db)):
+async def download_file(
+    file_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+):
     """Download a file."""
     result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
     file = result.scalar_one_or_none()
@@ -2008,7 +2053,11 @@ async def get_thumbnail(file_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/files/{file_id}/gcode")
-async def get_gcode(file_id: int, db: AsyncSession = Depends(get_db)):
+async def get_gcode(
+    file_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+):
     """Get gcode for a file (for preview)."""
     result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
     file = result.scalar_one_or_none()
@@ -2046,8 +2095,22 @@ async def get_gcode(file_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/files/move")
-async def move_files(data: FileMoveRequest, db: AsyncSession = Depends(get_db)):
-    """Move multiple files to a folder."""
+async def move_files(
+    data: FileMoveRequest,
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_UPDATE_ALL,
+            Permission.LIBRARY_UPDATE_OWN,
+        )
+    ),
+):
+    """Move multiple files to a folder.
+
+    Files not owned by the user are skipped (unless user has *_all permission).
+    """
+    user, can_modify_all = auth_result
+
     # Verify folder exists if specified
     if data.folder_id is not None:
         folder_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == data.folder_id))
@@ -2056,14 +2119,19 @@ async def move_files(data: FileMoveRequest, db: AsyncSession = Depends(get_db)):
 
     # Update files
     moved = 0
+    skipped = 0
     for file_id in data.file_ids:
         result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
         file = result.scalar_one_or_none()
         if file:
+            # Ownership check
+            if not can_modify_all and file.created_by_id != user.id:
+                skipped += 1
+                continue
             file.folder_id = data.folder_id
             moved += 1
 
-    return {"status": "success", "moved": moved}
+    return {"status": "success", "moved": moved, "skipped": skipped}
 
 
 @router.post("/bulk-delete", response_model=BulkDeleteResponse)
@@ -2133,7 +2201,10 @@ async def bulk_delete(
 
 
 @router.get("/stats")
-async def get_library_stats(db: AsyncSession = Depends(get_db)):
+async def get_library_stats(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+):
     """Get library statistics."""
     # Total files
     total_files_result = await db.execute(select(func.count(LibraryFile.id)))

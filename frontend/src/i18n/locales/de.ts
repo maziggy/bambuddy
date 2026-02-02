@@ -232,7 +232,7 @@ export default {
       selectModel: 'Modell auswählen...',
       locationGroup: 'Standort / Gruppe',
       locationPlaceholder: 'z.B. Werkstatt, Büro, Keller',
-      locationHint: 'Wird verwendet, um Drucker im Dashboard zu gruppieren',
+      locationHint: 'Zum Gruppieren von Druckern und Filtern von Warteschlangen-Aufträgen',
       autoArchive: 'Abgeschlossene Drucke automatisch archivieren',
     },
     discovery: {
@@ -429,6 +429,7 @@ export default {
     dragToReorder: 'Ziehen zum Sortieren (nur Sofort)',
     overdue: 'Überfällig',
     dragReorderTooltip: 'Position betrifft nur Sofort-Elemente. Geplante Elemente werden zu ihrer festgelegten Zeit ausgeführt.',
+    anyModel: 'Beliebiger {{model}}{{location}}{{filaments}}',
     status: {
       pending: 'Ausstehend',
       printing: 'Druckt',
@@ -1422,6 +1423,16 @@ export default {
     customSlotMapping: 'Benutzerdefinierte Slot-Zuordnung',
     autoMatched: 'Automatisch zugeordnet',
     manuallySelected: 'Manuell ausgewählt',
+    schedulerWillAssign: 'Scheduler weist dem ersten verfügbaren {{model}}-Drucker zu',
+    inLocation: 'in {{location}}',
+    anyModel: 'Beliebiger {{model}}',
+    hiddenPrinters: '{{count}} weitere(r) Drucker ausgeblendet (anderes Modell)',
+    showOnlyModel: 'Nur {{model}}-Drucker anzeigen',
+    matchedCount: '({{matched}}/{{total}} zugeordnet)',
+    targetModelLabel: 'Zielmodell',
+    selectAModel: 'Modell auswählen...',
+    locationFilterLabel: 'Standortfilter (optional)',
+    anyLocation: 'Beliebiger Standort',
   },
 
   // Login page

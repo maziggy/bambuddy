@@ -275,7 +275,7 @@ export default {
       selectModel: 'Select model...',
       locationGroup: 'Location / Group',
       locationPlaceholder: 'e.g., Workshop, Office, Basement',
-      locationHint: 'Used to group printers on the dashboard',
+      locationHint: 'Used to group printers and filter queue jobs',
       autoArchive: 'Auto-archive completed prints',
     },
     discovery: {
@@ -623,7 +623,7 @@ export default {
     dragToReorder: 'Drag to reorder (ASAP only)',
     overdue: 'Overdue',
     dragReorderTooltip: 'Position only affects ASAP items. Scheduled items run at their set time.',
-    anyModel: 'Any {{model}}{{filaments}}',
+    anyModel: 'Any {{model}}{{location}}{{filaments}}',
     addedBy: 'Added by {{username}}',
     bulkEdit: {
       title: 'Edit {{count}} Item{{count, plural, one {} other {s}}}',
@@ -2098,6 +2098,16 @@ export default {
     customSlotMapping: 'Custom Slot Mapping',
     autoMatched: 'Auto-matched',
     manuallySelected: 'Manually selected',
+    schedulerWillAssign: 'Scheduler will assign to first available idle {{model}} printer',
+    inLocation: 'in {{location}}',
+    anyModel: 'Any {{model}}',
+    hiddenPrinters: '{{count}} other printer(s) hidden (different model)',
+    showOnlyModel: 'Show only {{model}} printers',
+    matchedCount: '({{matched}}/{{total}} matched)',
+    targetModelLabel: 'Target Model',
+    selectAModel: 'Select a model...',
+    locationFilterLabel: 'Location Filter (optional)',
+    anyLocation: 'Any location',
   },
 
   // Print options

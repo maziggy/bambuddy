@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
+import os
 import secrets
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Annotated
 
 import jwt
@@ -19,13 +22,76 @@ from backend.app.models.api_key import APIKey
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
 
+logger = logging.getLogger(__name__)
+
 # Password hashing
 # Use pbkdf2_sha256 instead of bcrypt to avoid 72-byte limit and passlib initialization issues
 # pbkdf2_sha256 is a secure password hashing algorithm without bcrypt's limitations
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
+
+def _get_jwt_secret() -> str:
+    """Get the JWT secret key from environment, file, or generate a new one.
+
+    Priority:
+    1. JWT_SECRET_KEY environment variable
+    2. .jwt_secret file in data directory
+    3. Generate new random secret and save to file
+
+    Returns:
+        The JWT secret key
+    """
+    # 1. Check environment variable first
+    env_secret = os.environ.get("JWT_SECRET_KEY")
+    if env_secret:
+        logger.info("Using JWT secret from JWT_SECRET_KEY environment variable")
+        return env_secret
+
+    # 2. Check for secret file in data directory
+    # Use DATA_DIR env var (same as rest of app), fallback to data/ subdirectory
+    data_dir_env = os.environ.get("DATA_DIR")
+    if data_dir_env:
+        data_dir = Path(data_dir_env)
+    else:
+        # Fallback to data/ subdirectory under project root (not project root itself!)
+        data_dir = Path(__file__).parent.parent.parent.parent / "data"
+    secret_file = data_dir / ".jwt_secret"
+
+    if secret_file.exists():
+        try:
+            secret = secret_file.read_text().strip()
+            if secret and len(secret) >= 32:
+                logger.info("Using JWT secret from %s", secret_file)
+                return secret
+        except Exception as e:
+            logger.warning("Failed to read JWT secret file: %s", e)
+
+    # 3. Generate new random secret
+    new_secret = secrets.token_urlsafe(64)
+
+    # Try to save it
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+        # Note: CodeQL flags this as "clear-text storage of sensitive information" but this is
+        # intentional and secure - JWT secrets must be readable by the app, we set 0600 permissions,
+        # and this is standard practice for self-hosted applications (same as .env files).
+        secret_file.write_text(new_secret)  # nosec B105 - intentional secure storage
+        # Restrict permissions (owner read/write only)
+        secret_file.chmod(0o600)
+        logger.info("Generated new JWT secret and saved to %s", secret_file)
+    except Exception as e:
+        logger.warning(
+            "Could not save JWT secret to file (%s). "
+            "Secret will be regenerated on restart, invalidating existing tokens. "
+            "Set JWT_SECRET_KEY environment variable for persistence.",
+            e,
+        )
+
+    return new_secret
+
+
 # JWT settings
-SECRET_KEY = "bambuddy-secret-key-change-in-production"  # TODO: Move to settings/env
+SECRET_KEY = _get_jwt_secret()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 

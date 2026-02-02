@@ -1067,6 +1067,7 @@ export interface PrintQueueItem {
   id: number;
   printer_id: number | null;  // null = unassigned
   target_model: string | null;  // Target printer model for model-based assignment
+  target_location: string | null;  // Target location filter for model-based assignment
   required_filament_types: string[] | null;  // Required filament types for model-based assignment
   waiting_reason: string | null;  // Why a model-based job hasn't started yet
   // Either archive_id OR library_file_id must be set (archive created at print start)
@@ -1105,6 +1106,7 @@ export interface PrintQueueItem {
 export interface PrintQueueItemCreate {
   printer_id?: number | null;  // null = unassigned
   target_model?: string | null;  // Target printer model (mutually exclusive with printer_id)
+  target_location?: string | null;  // Target location filter (only used with target_model)
   // Either archive_id OR library_file_id must be provided
   archive_id?: number | null;
   library_file_id?: number | null;
@@ -1126,6 +1128,7 @@ export interface PrintQueueItemCreate {
 export interface PrintQueueItemUpdate {
   printer_id?: number | null;  // null = unassign
   target_model?: string | null;  // Target printer model (mutually exclusive with printer_id)
+  target_location?: string | null;  // Target location filter (only used with target_model)
   position?: number;
   scheduled_time?: string | null;
   require_previous_success?: boolean;

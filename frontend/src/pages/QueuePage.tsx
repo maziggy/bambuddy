@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
@@ -229,7 +229,11 @@ function SortableQueueItem({
           <div className="flex items-center gap-3 text-sm text-bambu-gray">
             <span className={`flex items-center gap-1.5 ${item.printer_id === null ? 'text-orange-400' : ''}`}>
               <Printer className="w-3.5 h-3.5" />
-              {item.printer_id === null ? t('queue.unassigned') : (item.printer_name || t('queue.printerNumber', { id: item.printer_id }))}
+              {item.target_model
+                ? t('queue.anyModel', { model: item.target_model, location: item.target_location ? ` @ ${item.target_location}` : '', filaments: item.required_filament_types?.length ? ` (${item.required_filament_types.join(', ')})` : '' })
+                : item.printer_id === null
+                  ? t('queue.unassigned')
+                  : (item.printer_name || t('queue.printerNumber', { id: item.printer_id }))}
             </span>
             {item.print_time_seconds && (
               <span className="flex items-center gap-1.5">
@@ -379,6 +383,7 @@ export function QueuePage() {
   const { hasPermission, hasAnyPermission, canModify } = useAuth();
   const [filterPrinter, setFilterPrinter] = useState<number | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('');
+  const [filterLocation, setFilterLocation] = useState<string>('');
   const [showClearHistoryConfirm, setShowClearHistoryConfirm] = useState(false);
   const [editItem, setEditItem] = useState<PrintQueueItem | null>(null);
   const [requeueItem, setRequeueItem] = useState<PrintQueueItem | null>(null);
@@ -521,8 +526,46 @@ export function QueuePage() {
     onError: () => showToast(t('queue.toast.failedToCancelItems'), 'error'),
   });
 
+  const handleToggleSelect = (id: number) => {
+    setSelectedItems(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  // Get unique locations from printers for the filter dropdown
+  const uniqueLocations = useMemo(() => {
+    const locations = new Set<string>();
+    printers?.forEach(p => {
+      if (p.location) locations.add(p.location);
+    });
+    // Also include locations from queue items (for model-based assignments)
+    queue?.forEach(item => {
+      if (item.target_location) locations.add(item.target_location);
+    });
+    return Array.from(locations).sort();
+  }, [printers, queue]);
+
+  // Helper to check if a queue item matches the location filter
+  const matchesLocationFilter = useCallback((item: PrintQueueItem): boolean => {
+    if (!filterLocation) return true;
+    // For model-based assignments, check target_location
+    if (item.target_location) return item.target_location === filterLocation;
+    // For printer-based assignments, check the printer's location
+    if (item.printer_id) {
+      const printer = printers?.find(p => p.id === item.printer_id);
+      return printer?.location === filterLocation;
+    }
+    return false;
+  }, [filterLocation, printers]);
+
+
   const pendingItems = useMemo(() => {
-    const items = queue?.filter(i => i.status === 'pending') || [];
+    let items = queue?.filter(i => i.status === 'pending') || [];
+
+    // Apply location filter
+    if (filterLocation) {
+      items = items.filter(matchesLocationFilter);
+    }
 
     // Helper to get scheduled time as timestamp (ASAP/placeholder = 0 for earliest)
     const getScheduledTime = (item: PrintQueueItem): number => {
@@ -549,10 +592,31 @@ export function QueuePage() {
       }
       return pendingSortAsc ? cmp : -cmp;
     });
-  }, [queue, pendingSortBy, pendingSortAsc]);
-  const activeItems = queue?.filter(i => i.status === 'printing') || [];
+  }, [queue, pendingSortBy, pendingSortAsc, matchesLocationFilter, filterLocation]);
+
+  const handleSelectAll = () => {
+    const allPendingIds = pendingItems.map(i => i.id);
+    if (selectedItems.length === allPendingIds.length) {
+      setSelectedItems([]);
+    } else {
+      setSelectedItems(allPendingIds);
+    }
+  };
+
+  const activeItems = useMemo(() => {
+    let items = queue?.filter(i => i.status === 'printing') || [];
+    if (filterLocation) {
+      items = items.filter(matchesLocationFilter);
+    }
+    return items;
+  }, [queue, filterLocation, matchesLocationFilter]);
+
+
   const historyItems = useMemo(() => {
-    const items = queue?.filter(i => ['completed', 'failed', 'skipped', 'cancelled'].includes(i.status)) || [];
+    let items = queue?.filter(i => ['completed', 'failed', 'skipped', 'cancelled'].includes(i.status)) || [];
+    if (filterLocation) {
+      items = items.filter(matchesLocationFilter);
+    }
     return [...items].sort((a, b) => {
       let cmp: number;
       if (historySortBy === 'name') {
@@ -567,7 +631,7 @@ export function QueuePage() {
       }
       return historySortAsc ? -cmp : cmp;
     });
-  }, [queue, historySortBy, historySortAsc]);
+  }, [queue, historySortBy, historySortAsc, matchesLocationFilter, filterLocation]);
 
   // Calculate total queue time
   const totalQueueTime = useMemo(() => {
@@ -709,6 +773,19 @@ export function QueuePage() {
           <option value="skipped">{t('queue.status.skipped')}</option>
           <option value="cancelled">{t('queue.status.cancelled')}</option>
         </select>
+
+        {uniqueLocations.length > 0 && (
+          <select
+            className="px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+            value={filterLocation}
+            onChange={(e) => setFilterLocation(e.target.value)}
+          >
+            <option value="">All Locations</option>
+            {uniqueLocations.map((loc) => (
+              <option key={loc} value={loc}>{loc}</option>
+            ))}
+          </select>
+        )}
 
         <div className="flex-1" />
 

@@ -39,6 +39,10 @@ interface PrinterSelectorWithMappingProps extends PrinterSelectorProps {
   targetModel?: string | null;
   /** Handler for target model change */
   onTargetModelChange?: (model: string | null) => void;
+  /** Selected target location (when assignmentMode is 'model') */
+  targetLocation?: string | null;
+  /** Handler for target location change */
+  onTargetLocationChange?: (location: string | null) => void;
   /** Suggested model from sliced file (for pre-selection) */
   slicedForModel?: string | null;
 }
@@ -229,6 +233,8 @@ export function PrinterSelector({
   onAssignmentModeChange,
   targetModel,
   onTargetModelChange,
+  targetLocation,
+  onTargetLocationChange,
   slicedForModel,
 }: PrinterSelectorWithMappingProps) {
   const { t } = useTranslation();
@@ -259,6 +265,16 @@ export function PrinterSelector({
       .filter((m): m is string => Boolean(m));
     return [...new Set(models)].sort();
   }, [activePrinters]);
+
+  // Get unique locations for the selected target model (for location filtering)
+  const uniqueLocations = useMemo(() => {
+    if (!targetModel) return [];
+    const locations = activePrinters
+      .filter(p => p.model === targetModel && p.location)
+      .map(p => p.location)
+      .filter((l): l is string => Boolean(l));
+    return [...new Set(locations)].sort();
+  }, [activePrinters, targetModel]);
 
   // Check if model-based assignment is available (need callbacks and multiple printers of same model)
   const modelAssignmentAvailable = onAssignmentModeChange && onTargetModelChange && uniqueModels.length > 0;
@@ -373,11 +389,59 @@ export function PrinterSelector({
         </div>
       )}
 
-      {/* Model info (when in model mode) */}
-      {assignmentMode === 'model' && modelAssignmentAvailable && targetModel && (
-        <p className="text-xs text-bambu-gray mb-4">
-          {t('printModal.schedulerWillAssign', { model: targetModel })}
-        </p>
+      {/* Model selection and location filter (when in model mode) */}
+      {assignmentMode === 'model' && modelAssignmentAvailable && (
+        <div className="space-y-3 mb-4">
+          {/* Model selector */}
+          <div>
+            <label className="block text-xs text-bambu-gray mb-1">{t('printModal.targetModelLabel')}</label>
+            <select
+              value={targetModel || ''}
+              onChange={(e) => {
+                onTargetModelChange!(e.target.value || null);
+                // Clear location when model changes
+                if (onTargetLocationChange) {
+                  onTargetLocationChange(null);
+                }
+              }}
+              className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none text-sm"
+            >
+              <option value="">{t('printModal.selectAModel')}</option>
+              {uniqueModels.map((model) => (
+                <option key={model} value={model}>
+                  {model}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Location filter (only show when target model is selected and locations exist) */}
+          {targetModel && uniqueLocations.length > 0 && onTargetLocationChange && (
+            <div>
+              <label className="block text-xs text-bambu-gray mb-1">{t('printModal.locationFilterLabel')}</label>
+              <select
+                value={targetLocation || ''}
+                onChange={(e) => onTargetLocationChange(e.target.value || null)}
+                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none text-sm"
+              >
+                <option value="">{t('printModal.anyLocation')}</option>
+                {uniqueLocations.map((location) => (
+                  <option key={location} value={location}>
+                    {location}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Info text */}
+          {targetModel && (
+            <p className="text-xs text-bambu-gray">
+              {t('printModal.schedulerWillAssign', { model: targetModel })}
+              {targetLocation ? ` ${t('printModal.inLocation', { location: targetLocation })}` : ''}
+            </p>
+          )}
+        </div>
       )}
 
       {/* Multi-select header (only in printer mode) */}

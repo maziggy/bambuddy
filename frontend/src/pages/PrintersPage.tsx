@@ -3554,6 +3554,7 @@ function AddPrinterModal({
     ip_address: '',
     access_code: '',
     model: '',
+    location: '',
     auto_archive: true,
   });
 
@@ -3898,6 +3899,17 @@ function AddPrinterModal({
                   <option value="A1 Mini">A1 Mini</option>
                 </optgroup>
               </select>
+            </div>
+            <div>
+              <label className="block text-sm text-bambu-gray mb-1">Location / Group (optional)</label>
+              <input
+                type="text"
+                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                value={form.location || ''}
+                onChange={(e) => setForm({ ...form, location: e.target.value })}
+                placeholder="e.g., Workshop, Office, Basement"
+              />
+              <p className="text-xs text-bambu-gray mt-1">Used to group printers and filter queue jobs</p>
             </div>
             <div className="flex items-center gap-2">
               <input

@@ -162,11 +162,67 @@ if errorlevel 1 (
 )
 call :verify_sha256 "%PORTABLE%\python.zip" "%PYTHON_ZIP_HASH_EXPECTED%" "Python"
 if errorlevel 1 (
+    echo [ERROR] Failed to download Python archive.
+    pause
+    exit /b 1
+)
+
+REM Download official SHA256 checksum for the Python archive
+curl -L --progress-bar -o "%PORTABLE%\python.zip.sha256" ^
+    "https://www.python.org/ftp/python/%PYTHON_VER%/python-%PYTHON_VER%-embed-amd64.zip.sha256"
+if errorlevel 1 (
+    echo [ERROR] Failed to download Python checksum file.
     del "%PORTABLE%\python.zip" >nul 2>&1
     pause
     exit /b 1
 )
 
+REM Compute SHA256 hash of the downloaded archive
+set "PYTHON_ZIP_HASH="
+for /f "tokens=1 usebackq" %%H in (`
+    certutil -hashfile "%PORTABLE%\python.zip" SHA256 ^| findstr /R /I "^[0-9A-F][0-9A-F]"
+`) do (
+    set "PYTHON_ZIP_HASH=%%H"
+    goto :python_hash_done
+)
+
+:python_hash_done
+if not defined PYTHON_ZIP_HASH (
+    echo [ERROR] Failed to compute SHA256 hash for Python archive.
+    del "%PORTABLE%\python.zip" >nul 2>&1
+    del "%PORTABLE%\python.zip.sha256" >nul 2>&1
+    pause
+    exit /b 1
+)
+
+REM Read expected SHA256 hash from the checksum file
+set "PYTHON_ZIP_HASH_EXPECTED="
+for /f "tokens=1" %%H in ('type "%PORTABLE%\python.zip.sha256"') do (
+    set "PYTHON_ZIP_HASH_EXPECTED=%%H"
+    goto :python_expected_hash_done
+)
+
+:python_expected_hash_done
+if not defined PYTHON_ZIP_HASH_EXPECTED (
+    echo [ERROR] Failed to read expected SHA256 hash for Python archive.
+    del "%PORTABLE%\python.zip" >nul 2>&1
+    del "%PORTABLE%\python.zip.sha256" >nul 2>&1
+    pause
+    exit /b 1
+)
+
+REM Compare actual and expected hashes (case-insensitive)
+if /I not "%PYTHON_ZIP_HASH%"=="%PYTHON_ZIP_HASH_EXPECTED%" (
+    echo [ERROR] SHA256 checksum verification for Python archive failed.
+    echo [INFO] Expected: %PYTHON_ZIP_HASH_EXPECTED%
+    echo [INFO] Actual:   %PYTHON_ZIP_HASH%
+    del "%PORTABLE%\python.zip" >nul 2>&1
+    del "%PORTABLE%\python.zip.sha256" >nul 2>&1
+    pause
+    exit /b 1
+)
+
+del "%PORTABLE%\python.zip.sha256" >nul 2>&1
 echo Extracting Python...
 tar -xf "%PORTABLE%\python.zip" -C "%PYTHON_DIR%"
 if errorlevel 1 (

@@ -1004,17 +1004,22 @@ class PrintScheduler:
                 pass  # Don't fail if MQTT fails
         else:
             item.status = "failed"
-            item.error_message = "Failed to send print command"
+            item.error_message = "Failed to send print command to printer"
             item.completed_at = datetime.utcnow()
             await db.commit()
-            logger.error(f"Queue item {item.id}: Failed to start print")
+            logger.error(
+                f"Queue item {item.id}: Failed to start print on {printer.name} ({printer.model}) - "
+                f"printer_manager.start_print() returned False. "
+                f"This may indicate: printer not connected, MQTT error, unsupported model configuration, or firmware issue. "
+                f"Check printer status and backend logs for details."
+            )
 
             # Send failure notification
             await notification_service.on_queue_job_failed(
                 job_name=filename.replace(".gcode.3mf", "").replace(".3mf", ""),
                 printer_id=printer.id,
                 printer_name=printer.name,
-                reason="Failed to send print command",
+                reason="Failed to send print command to printer - check printer connection and status",
                 db=db,
             )
 

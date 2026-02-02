@@ -2551,6 +2551,20 @@ PUBLIC_API_ROUTES = {
     "/api/v1/updates/version",
     # Metrics endpoint handles its own prometheus_token authentication
     "/api/v1/metrics",
+    # Support endpoints - protected by JWT when auth enabled
+    "/api/v1/support/bundle",
+    "/api/v1/support/debug-logging",
+    "/api/v1/support/logs",
+    # Spoolman endpoints - protected by JWT when auth enabled
+    "/api/v1/settings/spoolman",
+    "/api/v1/spoolman/status",
+    "/api/v1/spoolman/connect",
+    "/api/v1/spoolman/disconnect",
+    "/api/v1/spoolman/sync",
+    "/api/v1/spoolman/spools",
+    "/api/v1/spoolman/filaments",
+    "/api/v1/spoolman/spools/unlinked",
+    "/api/v1/spoolman/spools/linked",
 }
 
 # Route prefixes that are public (for routes with dynamic segments)

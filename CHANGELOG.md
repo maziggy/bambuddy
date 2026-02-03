@@ -47,6 +47,10 @@ All notable changes to Bambuddy will be documented in this file.
   - Placeholder text shows expected format (e.g., "DD/MM/YYYY" or "HH:MM AM/PM")
   - Added date utilities: `formatDateInput`, `parseDateInput`, `getDatePlaceholder`
   - Added time utilities: `formatTimeInput`, `parseTimeInput`, `getTimePlaceholder`
+- **500 Error on Archive Detail Page**:
+  - Fixed internal server error when viewing individual archive details
+  - Root cause: `project` relationship not eagerly loaded in `get_archive()` service method
+  - Async SQLAlchemy requires explicit eager loading; lazy loading is not supported
 
 ## [0.1.6.2] - 2026-02-02
 

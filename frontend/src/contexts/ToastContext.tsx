@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
 import { CheckCircle, XCircle, AlertCircle, Info, X, Loader2 } from 'lucide-react';
 
 type ToastType = 'success' | 'error' | 'warning' | 'info' | 'loading';
@@ -44,15 +44,27 @@ const bgColors = {
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const timeoutRefs = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Clean up all timeouts on unmount
+  useEffect(() => {
+    const timeouts = timeoutRefs.current;
+    return () => {
+      timeouts.forEach((timeout) => clearTimeout(timeout));
+      timeouts.clear();
+    };
+  }, []);
 
   const showToast = useCallback((message: string, type: ToastType = 'success') => {
     const id = Math.random().toString(36).substr(2, 9);
     setToasts((prev) => [...prev, { id, message, type }]);
 
     // Auto-dismiss after 3 seconds
-    setTimeout(() => {
+    const timeout = setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
+      timeoutRefs.current.delete(id);
     }, 3000);
+    timeoutRefs.current.set(id, timeout);
   }, []);
 
   const showPersistentToast = useCallback((id: string, message: string, type: ToastType = 'info') => {
@@ -67,6 +79,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const dismissToast = useCallback((id: string) => {
+    // Clear any pending auto-dismiss timeout
+    const timeout = timeoutRefs.current.get(id);
+    if (timeout) {
+      clearTimeout(timeout);
+      timeoutRefs.current.delete(id);
+    }
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 

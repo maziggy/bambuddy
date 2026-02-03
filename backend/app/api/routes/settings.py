@@ -253,47 +253,61 @@ async def create_backup(
 
     from backend.app.core.database import engine
 
-    base_dir = app_settings.base_dir
-    db_path = Path(app_settings.database_url.replace("sqlite+aiosqlite:///", ""))
+    try:
+        base_dir = app_settings.base_dir
+        db_path = Path(app_settings.database_url.replace("sqlite+aiosqlite:///", ""))
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
 
-        # 1. Checkpoint WAL to ensure all data is in main db file
-        async with engine.begin() as conn:
-            await conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+            # 1. Checkpoint WAL to ensure all data is in main db file
+            async with engine.begin() as conn:
+                await conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
 
-        # 2. Copy database file
-        shutil.copy2(db_path, temp_path / "bambuddy.db")
+            # 2. Copy database file
+            shutil.copy2(db_path, temp_path / "bambuddy.db")
 
-        # 3. Copy data directories (if they exist)
-        dirs_to_backup = [
-            ("archive", base_dir / "archive"),
-            ("virtual_printer", base_dir / "virtual_printer"),
-            ("plate_calibration", app_settings.plate_calibration_dir),
-            ("icons", base_dir / "icons"),
-            ("projects", base_dir / "projects"),
-        ]
+            # 3. Copy data directories (if they exist)
+            dirs_to_backup = [
+                ("archive", base_dir / "archive"),
+                ("virtual_printer", base_dir / "virtual_printer"),
+                ("plate_calibration", app_settings.plate_calibration_dir),
+                ("icons", base_dir / "icons"),
+                ("projects", base_dir / "projects"),
+            ]
 
-        for name, src_dir in dirs_to_backup:
-            if src_dir.exists() and any(src_dir.iterdir()):
-                shutil.copytree(src_dir, temp_path / name)
+            for name, src_dir in dirs_to_backup:
+                if src_dir.exists() and any(src_dir.iterdir()):
+                    try:
+                        shutil.copytree(src_dir, temp_path / name)
+                    except shutil.Error as e:
+                        # Some files may have restricted permissions (e.g., SSL keys)
+                        # Log the error but continue with partial backup
+                        logger.warning(f"Some files in {name} could not be copied: {e}")
+                    except PermissionError as e:
+                        logger.warning(f"Permission denied copying {name}: {e}")
 
-        # 4. Create ZIP
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            for file_path in temp_path.rglob("*"):
-                if file_path.is_file():
-                    arcname = file_path.relative_to(temp_path)
-                    zf.write(file_path, arcname)
+            # 4. Create ZIP
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+                for file_path in temp_path.rglob("*"):
+                    if file_path.is_file():
+                        arcname = file_path.relative_to(temp_path)
+                        zf.write(file_path, arcname)
 
-        zip_buffer.seek(0)
-        filename = f"bambuddy-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
+            zip_buffer.seek(0)
+            filename = f"bambuddy-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
 
-        return StreamingResponse(
-            zip_buffer,
-            media_type="application/zip",
-            headers={"Content-Disposition": f"attachment; filename={filename}"},
+            return StreamingResponse(
+                zip_buffer,
+                media_type="application/zip",
+                headers={"Content-Disposition": f"attachment; filename={filename}"},
+            )
+    except Exception as e:
+        logger.error(f"Backup failed: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": "Backup failed. Check server logs for details."},
         )
 
 
@@ -587,9 +601,10 @@ async def update_virtual_printer_settings(
             target_printer_serial=target_printer_serial,
         )
     except ValueError as e:
+        logger.warning(f"Virtual printer configuration validation error: {e}")
         return JSONResponse(
             status_code=400,
-            content={"detail": str(e)},
+            content={"detail": "Invalid virtual printer configuration. Check the provided values."},
         )
     except Exception as e:
         logger.error(f"Failed to configure virtual printer: {e}", exc_info=True)

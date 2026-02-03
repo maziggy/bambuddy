@@ -12,6 +12,7 @@ import { useMultiPrinterFilamentMapping, type PerPrinterConfig } from '../../hoo
 import { isPlaceholderDate } from '../../utils/amsHelpers';
 import { PrinterSelector } from './PrinterSelector';
 import { PlateSelector } from './PlateSelector';
+import { PlateDetails } from './PlateDetails';
 import { FilamentMapping } from './FilamentMapping';
 import { PrintOptionsPanel } from './PrintOptions';
 import { ScheduleOptionsPanel } from './ScheduleOptions';
@@ -319,6 +320,9 @@ export function PrintModal({
 
   const isMultiPlate = platesData?.is_multi_plate ?? false;
   const plates = platesData?.plates ?? [];
+  const selectedPlateInfo = selectedPlate != null
+    ? plates.find((plate) => plate.index === selectedPlate) ?? null
+    : null;
 
   // Add to queue mutation (single printer)
   const addToQueueMutation = useMutation({
@@ -622,6 +626,8 @@ export function PrintModal({
               selectedPlate={selectedPlate}
               onSelect={setSelectedPlate}
             />
+
+            <PlateDetails plate={selectedPlateInfo} />
 
             {/* Printer selection with per-printer mapping */}
             <PrinterSelector

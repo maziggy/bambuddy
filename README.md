@@ -43,7 +43,7 @@
 
 Perfect for remote print farms, traveling makers, or accessing your home printer from work.
 
-👉 **[Setup Guide →](https://wiki.bambuddy.cool/features/virtual-printer-proxy)**
+👉 **[Setup Guide →](https://wiki.bambuddy.cool/features/virtual-printer/#proxy-mode-new-in-017)**
 
 ---
 

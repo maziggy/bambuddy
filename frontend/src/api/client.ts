@@ -769,6 +769,8 @@ export interface CloudLoginResponse {
   success: boolean;
   needs_verification: boolean;
   message: string;
+  verification_type?: 'email' | 'totp' | null;
+  tfa_key?: string | null;
 }
 
 export interface SlicerSetting {
@@ -2620,10 +2622,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email, password, region }),
     }),
-  cloudVerify: (email: string, code: string) =>
+  cloudVerify: (email: string, code: string, tfaKey?: string) =>
     request<CloudLoginResponse>('/cloud/verify', {
       method: 'POST',
-      body: JSON.stringify({ email, code }),
+      body: JSON.stringify({ email, code, tfa_key: tfaKey }),
     }),
   cloudSetToken: (access_token: string) =>
     request<CloudAuthStatus>('/cloud/token', {

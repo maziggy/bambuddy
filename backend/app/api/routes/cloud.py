@@ -93,8 +93,12 @@ async def login(request: CloudLoginRequest, db: AsyncSession = Depends(get_db)):
     """
     Initiate login to Bambu Cloud.
 
-    This will typically trigger a verification code to be sent to the user's email.
-    After receiving the code, call /cloud/verify to complete the login.
+    This will trigger either:
+    - Email verification: A code is sent to the user's email
+    - TOTP verification: User enters code from their authenticator app
+
+    After receiving/generating the code, call /cloud/verify to complete the login.
+    For TOTP, include the tfa_key from this response in the verify request.
     """
     cloud = get_cloud_service()
 
@@ -112,6 +116,8 @@ async def login(request: CloudLoginRequest, db: AsyncSession = Depends(get_db)):
             success=result.get("success", False),
             needs_verification=result.get("needs_verification", False),
             message=result.get("message", "Unknown error"),
+            verification_type=result.get("verification_type"),
+            tfa_key=result.get("tfa_key"),
         )
     except BambuCloudAuthError as e:
         raise HTTPException(status_code=401, detail=str(e))
@@ -122,15 +128,24 @@ async def login(request: CloudLoginRequest, db: AsyncSession = Depends(get_db)):
 @router.post("/verify", response_model=CloudLoginResponse)
 async def verify_code(request: CloudVerifyRequest, db: AsyncSession = Depends(get_db)):
     """
-    Complete login with verification code.
+    Complete login with verification code (email or TOTP).
 
-    After calling /cloud/login, the user will receive an email with a 6-digit code.
-    Submit that code here to complete authentication.
+    For email verification:
+    - After calling /cloud/login, the user receives an email with a 6-digit code
+    - Submit the code with email address
+
+    For TOTP verification:
+    - The user enters the 6-digit code from their authenticator app
+    - Include the tfa_key from the /cloud/login response
     """
     cloud = get_cloud_service()
 
     try:
-        result = await cloud.verify_code(request.email, request.code)
+        # Use TOTP verification if tfa_key is provided
+        if request.tfa_key:
+            result = await cloud.verify_totp(request.tfa_key, request.code)
+        else:
+            result = await cloud.verify_code(request.email, request.code)
 
         if result.get("success") and cloud.access_token:
             await store_token(db, cloud.access_token, request.email)

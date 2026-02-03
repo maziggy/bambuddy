@@ -1656,7 +1656,9 @@ export default {
       regionGlobal: 'Global',
       regionChina: 'China',
       verificationCode: 'Bestätigungscode',
+      totpCode: 'Authenticator-Code',
       checkEmail: 'Prüfen Sie Ihre E-Mail ({{email}}) für einen 6-stelligen Code',
+      enterTotpHint: 'Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein',
       accessToken: 'Zugriffstoken',
       accessTokenHint: 'Fügen Sie Ihr Bambu Lab Zugriffstoken ein (aus Bambu Studio)',
       back: 'Zurück',
@@ -1668,6 +1670,7 @@ export default {
       toast: {
         loggedIn: 'Erfolgreich angemeldet',
         codeSent: 'Bestätigungscode an Ihre E-Mail gesendet',
+        enterTotp: 'Geben Sie den Code aus Ihrer Authenticator-App ein',
         tokenSet: 'Token erfolgreich gesetzt',
       },
     },

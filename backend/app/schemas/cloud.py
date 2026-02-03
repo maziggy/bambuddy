@@ -10,10 +10,11 @@ class CloudLoginRequest(BaseModel):
 
 
 class CloudVerifyRequest(BaseModel):
-    """Request to verify login with 2FA code."""
+    """Request to verify login with 2FA code (email or TOTP)."""
 
     email: str = Field(..., description="Bambu Lab account email")
-    code: str = Field(..., description="6-digit verification code from email")
+    code: str = Field(..., description="6-digit verification code")
+    tfa_key: str | None = Field(None, description="TFA key for TOTP verification (from login response)")
 
 
 class CloudLoginResponse(BaseModel):
@@ -22,6 +23,8 @@ class CloudLoginResponse(BaseModel):
     success: bool
     needs_verification: bool = False
     message: str
+    verification_type: str | None = None  # "email" or "totp"
+    tfa_key: str | None = None  # Key needed for TOTP verification
 
 
 class CloudAuthStatus(BaseModel):

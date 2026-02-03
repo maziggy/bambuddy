@@ -117,6 +117,8 @@ function LoginForm({ onSuccess, t }: { onSuccess: () => void; t: TFunction }) {
   const [code, setCode] = useState('');
   const [token, setToken] = useState('');
   const [region, setRegion] = useState('global');
+  const [verificationType, setVerificationType] = useState<'email' | 'totp' | null>(null);
+  const [tfaKey, setTfaKey] = useState<string | null>(null);
 
   const loginMutation = useMutation({
     mutationFn: () => api.cloudLogin(email, password, region),
@@ -125,7 +127,13 @@ function LoginForm({ onSuccess, t }: { onSuccess: () => void; t: TFunction }) {
         showToast(t('profiles.login.toast.loggedIn'));
         onSuccess();
       } else if (result.needs_verification) {
-        showToast(t('profiles.login.toast.codeSent'));
+        setVerificationType(result.verification_type || 'email');
+        setTfaKey(result.tfa_key || null);
+        if (result.verification_type === 'totp') {
+          showToast(t('profiles.login.toast.enterTotp'));
+        } else {
+          showToast(t('profiles.login.toast.codeSent'));
+        }
         setStep('code');
       } else {
         showToast(result.message, 'error');
@@ -135,7 +143,7 @@ function LoginForm({ onSuccess, t }: { onSuccess: () => void; t: TFunction }) {
   });
 
   const verifyMutation = useMutation({
-    mutationFn: () => api.cloudVerify(email, code),
+    mutationFn: () => api.cloudVerify(email, code, tfaKey || undefined),
     onSuccess: (result) => {
       if (result.success) {
         showToast(t('profiles.login.toast.loggedIn'));
@@ -217,8 +225,14 @@ function LoginForm({ onSuccess, t }: { onSuccess: () => void; t: TFunction }) {
 
           {step === 'code' && (
             <div>
-              <label className="block text-sm text-bambu-gray mb-1">{t('profiles.login.verificationCode')}</label>
-              <p className="text-xs text-bambu-gray mb-2">{t('profiles.login.checkEmail', { email })}</p>
+              <label className="block text-sm text-bambu-gray mb-1">
+                {verificationType === 'totp' ? t('profiles.login.totpCode') : t('profiles.login.verificationCode')}
+              </label>
+              <p className="text-xs text-bambu-gray mb-2">
+                {verificationType === 'totp'
+                  ? t('profiles.login.enterTotpHint')
+                  : t('profiles.login.checkEmail', { email })}
+              </p>
               <input
                 type="text"
                 value={code}

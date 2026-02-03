@@ -56,9 +56,9 @@ class BambuCloudService:
 
     async def login_request(self, email: str, password: str) -> dict:
         """
-        Initiate login - this will trigger a verification code email.
+        Initiate login - this will trigger either email verification or TOTP prompt.
 
-        Returns dict with login status and whether verification is needed.
+        Returns dict with login status, verification type, and tfaKey if needed.
         """
         try:
             response = await self._client.post(
@@ -71,12 +71,33 @@ class BambuCloudService:
             )
 
             data = response.json()
+            logger.debug(
+                f"Login response: status={response.status_code}, loginType={data.get('loginType')}, hasTfaKey={'tfaKey' in data}"
+            )
 
             if response.status_code == 200:
-                # Check if we need verification code
-                # Bambu API returns loginType or may require tfaKey
-                if data.get("loginType") == "verifyCode" or "tfaKey" in data:
-                    return {"success": False, "needs_verification": True, "message": "Verification code sent to email"}
+                login_type = data.get("loginType")
+                tfa_key = data.get("tfaKey")
+
+                # TOTP authentication required
+                if login_type == "tfa" or (tfa_key and login_type != "verifyCode"):
+                    return {
+                        "success": False,
+                        "needs_verification": True,
+                        "verification_type": "totp",
+                        "tfa_key": tfa_key,
+                        "message": "Enter the code from your authenticator app",
+                    }
+
+                # Email verification required
+                if login_type == "verifyCode":
+                    return {
+                        "success": False,
+                        "needs_verification": True,
+                        "verification_type": "email",
+                        "tfa_key": None,
+                        "message": "Verification code sent to email",
+                    }
 
                 # Direct login success (rare, usually needs 2FA)
                 if "accessToken" in data:
@@ -93,7 +114,7 @@ class BambuCloudService:
 
     async def verify_code(self, email: str, code: str) -> dict:
         """
-        Complete login with verification code.
+        Complete login with email verification code.
         """
         try:
             response = await self._client.post(
@@ -106,6 +127,7 @@ class BambuCloudService:
             )
 
             data = response.json()
+            logger.debug(f"Email verify response: status={response.status_code}, hasToken={'accessToken' in data}")
 
             if response.status_code == 200 and "accessToken" in data:
                 self._set_tokens(data)
@@ -114,8 +136,88 @@ class BambuCloudService:
             return {"success": False, "message": data.get("message", "Verification failed")}
 
         except Exception as e:
-            logger.error(f"Verification failed: {e}")
+            logger.error(f"Email verification failed: {e}")
             raise BambuCloudAuthError(f"Verification failed: {e}")
+
+    async def verify_totp(self, tfa_key: str, code: str) -> dict:
+        """
+        Complete login with TOTP code from authenticator app.
+
+        Args:
+            tfa_key: The tfaKey returned from initial login request
+            code: 6-digit TOTP code from authenticator app
+        """
+        try:
+            # TFA endpoint is on bambulab.com, NOT api.bambulab.com
+            # Requires browser-like headers to bypass Cloudflare
+            tfa_url = "https://bambulab.com/api/sign-in/tfa"
+            if "bambulab.cn" in self.base_url:
+                tfa_url = "https://bambulab.cn/api/sign-in/tfa"
+
+            browser_headers = {
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Origin": "https://bambulab.com",
+                "Referer": "https://bambulab.com/",
+            }
+
+            response = await self._client.post(
+                tfa_url,
+                headers=browser_headers,
+                json={
+                    "tfaKey": tfa_key,
+                    "tfaCode": code,
+                },
+            )
+
+            logger.debug(
+                f"TOTP verify response: status={response.status_code}, body={response.text[:200] if response.text else '(empty)'}"
+            )
+
+            # Handle empty response
+            if not response.text or not response.text.strip():
+                logger.warning(f"TOTP verification returned empty response (status {response.status_code})")
+                return {"success": False, "message": "Bambu Cloud returned empty response. Please try again."}
+
+            try:
+                data = response.json()
+            except Exception as json_err:
+                logger.error(f"Failed to parse TOTP response: {json_err}, body: {response.text[:500]}")
+                return {"success": False, "message": "Invalid response from Bambu Cloud"}
+
+            # Token might be in accessToken, token field, or cookies
+            access_token = data.get("accessToken") or data.get("token")
+
+            # Also check cookies for token
+            if not access_token:
+                for cookie in response.cookies:
+                    if "token" in cookie.lower():
+                        access_token = response.cookies.get(cookie)
+                        break
+
+            if response.status_code == 200 and access_token:
+                self.access_token = access_token
+                self.refresh_token = data.get("refreshToken")
+                from datetime import datetime, timedelta
+
+                self.token_expiry = datetime.now() + timedelta(days=30)
+                return {"success": True, "message": "Login successful"}
+
+            # Provide helpful error message
+            error_msg = data.get("message", "")
+            if "expired" in error_msg.lower():
+                return {"success": False, "message": "TOTP session expired. Please try logging in again."}
+            if not error_msg:
+                error_msg = f"TOTP verification failed (status {response.status_code})"
+
+            return {"success": False, "message": error_msg}
+
+        except Exception as e:
+            logger.error(f"TOTP verification failed: {e}")
+            # Return error instead of raising - don't trigger 401/500
+            return {"success": False, "message": f"TOTP verification error: {e}"}
 
     def _set_tokens(self, data: dict):
         """Set tokens from login response."""

@@ -5,6 +5,13 @@ All notable changes to Bambuddy will be documented in this file.
 ## [0.1.7b] - Not released
 
 ### Enhancements
+- **TOTP Authenticator Support for Bambu Cloud** (Issue #182):
+  - Added support for TOTP-based two-factor authentication when connecting to Bambu Cloud
+  - Accounts with authenticator apps (Google Authenticator, Authy, etc.) now work correctly
+  - Proper detection of verification type: email code vs TOTP code
+  - Uses browser-like headers to bypass Cloudflare protection on TFA endpoint
+  - Frontend shows appropriate message for each verification type
+  - Added translations for TOTP UI in English, German, and Japanese
 - **Spoolman: Open in Spoolman Button** (Issue #210):
   - FilamentHoverCard now shows "Open in Spoolman" button when spool is already linked in Spoolman
   - Button links directly to the spool's page in Spoolman for quick editing
@@ -17,6 +24,14 @@ All notable changes to Bambuddy will be documented in this file.
   - Pages translated: Settings, Archives, File Manager, Queue, Printers, Profiles, Projects, Stats, Maintenance, Camera, Groups, Users, Login, Setup, Stream Overlay
   - Components translated: ConfirmModal, LinkSpoolModal, FilamentHoverCard, Layout
   - Added locale parity test to ensure English and German stay in sync
+
+### Fixed
+- **Authentication Required for Downloads** (Issue #231):
+  - Fixed support bundle download returning 401 Unauthorized when auth is enabled
+  - Fixed archive export (CSV/XLSX) failing with authentication enabled
+  - Fixed statistics export failing with authentication enabled
+  - Fixed printer file ZIP download failing with authentication enabled
+  - Root cause: These endpoints used raw `fetch()` without Authorization header
 
 ## [0.1.6.2] - 2026-02-02
 

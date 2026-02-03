@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { Card, CardContent } from './Card';
 import { Button } from './Button';
@@ -18,14 +19,18 @@ interface ConfirmModalProps {
 export function ConfirmModal({
   title,
   message,
-  confirmText = 'Confirm',
-  cancelText = 'Cancel',
+  confirmText,
+  cancelText,
   variant = 'default',
   isLoading = false,
   loadingText,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  const { t } = useTranslation();
+  const resolvedConfirmText = confirmText ?? t('common.confirm');
+  const resolvedCancelText = cancelText ?? t('common.cancel');
+  const resolvedLoadingText = loadingText ?? t('common.loading');
   // Close on Escape key (but not while loading)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -70,7 +75,7 @@ export function ConfirmModal({
           </div>
           <div className="flex gap-3 mt-6">
             <Button variant="secondary" onClick={onCancel} className="flex-1" disabled={isLoading}>
-              {cancelText}
+              {resolvedCancelText}
             </Button>
             <Button
               onClick={onConfirm}
@@ -80,10 +85,10 @@ export function ConfirmModal({
               {isLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  {loadingText || 'Processing...'}
+                  {resolvedLoadingText}
                 </>
               ) : (
-                confirmText
+                resolvedConfirmText
               )}
             </Button>
           </div>

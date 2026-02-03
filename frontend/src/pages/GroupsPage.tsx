@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import {
   X,
   Plus,
@@ -25,6 +26,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 
 export function GroupsPage() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const { hasPermission } = useAuth();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -74,7 +76,7 @@ export function GroupsPage() {
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       setShowCreateModal(false);
       resetForm();
-      showToast('Group created successfully');
+      showToast(t('groups.toast.created'));
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
@@ -87,7 +89,7 @@ export function GroupsPage() {
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       setEditingGroup(null);
       resetForm();
-      showToast('Group updated successfully');
+      showToast(t('groups.toast.updated'));
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
@@ -98,7 +100,7 @@ export function GroupsPage() {
     mutationFn: (id: number) => api.deleteGroup(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['groups'] });
-      showToast('Group deleted successfully');
+      showToast(t('groups.toast.deleted'));
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
@@ -112,7 +114,7 @@ export function GroupsPage() {
 
   const handleCreate = () => {
     if (!formData.name.trim()) {
-      showToast('Please enter a group name', 'error');
+      showToast(t('groups.toast.enterGroupName'), 'error');
       return;
     }
     createMutation.mutate({
@@ -125,7 +127,7 @@ export function GroupsPage() {
   const handleUpdate = () => {
     if (!editingGroup) return;
     if (!formData.name.trim()) {
-      showToast('Please enter a group name', 'error');
+      showToast(t('groups.toast.enterGroupName'), 'error');
       return;
     }
     updateMutation.mutate({
@@ -206,7 +208,7 @@ export function GroupsPage() {
           <CardContent className="py-6">
             <div className="flex items-center gap-3 text-red-400">
               <Shield className="w-5 h-5" />
-              <p className="text-white">You do not have permission to access this page.</p>
+              <p className="text-white">{t('groups.noPermission')}</p>
             </div>
           </CardContent>
         </Card>
@@ -283,17 +285,17 @@ export function GroupsPage() {
           <button
             onClick={() => navigate('/settings?tab=users')}
             className="p-2 rounded-lg bg-bambu-dark-secondary hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white transition-colors"
-            title="Back to Settings"
+            title={t('groups.backToSettings')}
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
             <h1 className="text-2xl font-bold text-white flex items-center gap-2">
               <Shield className="w-6 h-6 text-bambu-green" />
-              Group Management
+              {t('groups.title')}
             </h1>
             <p className="text-sm text-bambu-gray mt-1">
-              Manage permission groups for access control
+              {t('groups.subtitle')}
             </p>
           </div>
         </div>
@@ -305,7 +307,7 @@ export function GroupsPage() {
             }}
           >
             <Plus className="w-4 h-4" />
-            Create Group
+            {t('groups.createGroup')}
           </Button>
         )}
       </div>
@@ -335,34 +337,34 @@ export function GroupsPage() {
                     <h3 className="text-lg font-semibold text-white">{group.name}</h3>
                     {group.is_system && (
                       <span className="px-2 py-0.5 rounded text-xs bg-yellow-500/20 text-yellow-400">
-                        System
+                        {t('groups.system')}
                       </span>
                     )}
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-bambu-gray mb-4">{group.description || 'No description'}</p>
+                <p className="text-sm text-bambu-gray mb-4">{group.description || t('groups.noDescription')}</p>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-sm text-bambu-gray">
                     <Users className="w-4 h-4" />
-                    <span>{group.user_count} users</span>
+                    <span>{t('groups.usersCount', { count: group.user_count })}</span>
                   </div>
                   <div className="text-xs text-bambu-gray">
-                    {group.permissions.length} permissions
+                    {t('groups.permissionsCount', { count: group.permissions.length })}
                   </div>
                 </div>
                 <div className="flex gap-2 mt-4 pt-4 border-t border-bambu-dark-tertiary">
                   {hasPermission('groups:update') && (
                     <Button size="sm" variant="ghost" onClick={() => startEdit(group)}>
                       <Edit2 className="w-4 h-4" />
-                      Edit
+                      {t('groups.edit')}
                     </Button>
                   )}
                   {hasPermission('groups:delete') && !group.is_system && (
                     <Button size="sm" variant="ghost" onClick={() => handleDelete(group.id)}>
                       <Trash2 className="w-4 h-4" />
-                      Delete
+                      {t('groups.delete')}
                     </Button>
                   )}
                 </div>
@@ -391,7 +393,7 @@ export function GroupsPage() {
                 <div className="flex items-center gap-2">
                   <Shield className="w-5 h-5 text-bambu-green" />
                   <h2 className="text-lg font-semibold text-white">
-                    {editingGroup ? 'Edit Group' : 'Create Group'}
+                    {editingGroup ? t('groups.modal.editGroup') : t('groups.modal.createGroup')}
                   </h2>
                 </div>
                 <Button
@@ -411,7 +413,7 @@ export function GroupsPage() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    Group Name
+                    {t('groups.form.groupName')}
                   </label>
                   <input
                     type="text"
@@ -419,27 +421,27 @@ export function GroupsPage() {
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     disabled={editingGroup?.is_system}
                     className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors disabled:opacity-50"
-                    placeholder="Enter group name"
+                    placeholder={t('groups.form.groupNamePlaceholder')}
                   />
                   {editingGroup?.is_system && (
-                    <p className="text-xs text-yellow-400 mt-1">System group names cannot be changed</p>
+                    <p className="text-xs text-yellow-400 mt-1">{t('groups.form.systemGroupWarning')}</p>
                   )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    Description
+                    {t('groups.form.description')}
                   </label>
                   <textarea
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     rows={2}
                     className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors resize-none"
-                    placeholder="Enter description (optional)"
+                    placeholder={t('groups.form.descriptionPlaceholder')}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    Permissions ({formData.permissions.length} selected)
+                    {t('groups.form.permissions', { count: formData.permissions.length })}
                   </label>
                   {renderPermissionEditor()}
                 </div>
@@ -453,7 +455,7 @@ export function GroupsPage() {
                     resetForm();
                   }}
                 >
-                  Cancel
+                  {t('groups.modal.cancel')}
                 </Button>
                 <Button
                   onClick={editingGroup ? handleUpdate : handleCreate}
@@ -462,12 +464,12 @@ export function GroupsPage() {
                   {(createMutation.isPending || updateMutation.isPending) ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      {editingGroup ? 'Saving...' : 'Creating...'}
+                      {editingGroup ? t('groups.modal.saving') : t('groups.modal.creating')}
                     </>
                   ) : (
                     <>
                       <Save className="w-4 h-4" />
-                      {editingGroup ? 'Save Changes' : 'Create Group'}
+                      {editingGroup ? t('groups.modal.saveChanges') : t('groups.modal.createGroup')}
                     </>
                   )}
                 </Button>
@@ -480,9 +482,9 @@ export function GroupsPage() {
       {/* Delete Confirmation Modal */}
       {deleteGroupId !== null && (
         <ConfirmModal
-          title="Delete Group"
-          message="Are you sure you want to delete this group? Users in this group will lose these permissions."
-          confirmText="Delete Group"
+          title={t('groups.deleteModal.title')}
+          message={t('groups.deleteModal.message')}
+          confirmText={t('groups.deleteModal.confirm')}
           variant="danger"
           onConfirm={() => {
             deleteMutation.mutate(deleteGroupId);

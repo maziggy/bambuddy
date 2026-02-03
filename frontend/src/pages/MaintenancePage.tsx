@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Wrench,
@@ -73,15 +74,26 @@ function getIcon(iconName: string | null) {
   return iconMap[iconName] || Wrench;
 }
 
-function formatDuration(value: number, type: 'hours' | 'days'): string {
+type TFunction = (key: string, options?: Record<string, unknown>) => string;
+
+function formatDuration(value: number, type: 'hours' | 'days', t?: TFunction): string {
   if (type === 'days') {
-    if (value < 1) return 'Today';
-    if (value === 1) return '1 day';
-    if (value < 7) return `${Math.round(value)} days`;
+    if (value < 1) return t ? t('common.today') : 'Today';
+    if (value === 1) return t ? t('maintenance.day') : '1 day';
+    if (value < 7) {
+      const days = Math.round(value);
+      return t ? t('maintenance.days', { count: days }) : `${days} days`;
+    }
     // Show weeks for anything under 6 months for better precision
-    if (value < 180) return `${Math.round(value / 7)} weeks`;
+    if (value < 180) {
+      const weeks = Math.round(value / 7);
+      if (weeks === 1) return t ? t('maintenance.week') : '1 week';
+      return t ? t('maintenance.weeks', { count: weeks }) : `${weeks} weeks`;
+    }
     // 6+ months show as months
-    return `${Math.round(value / 30)} months`;
+    const months = Math.round(value / 30);
+    if (months === 1) return t ? t('maintenance.month') : '1 month';
+    return t ? t('maintenance.months', { count: months }) : `${months} months`;
   } else {
     // Print hours - convert to readable units
     if (value < 1) return `${Math.round(value * 60)}m`;
@@ -97,17 +109,17 @@ function formatDuration(value: number, type: 'hours' | 'days'): string {
   }
 }
 
-function formatIntervalLabel(value: number, type: 'hours' | 'days'): string {
+function formatIntervalLabel(value: number, type: 'hours' | 'days', t?: TFunction): string {
   if (type === 'days') {
-    if (value === 1) return '1 day';
-    if (value === 7) return '1 week';
-    if (value === 14) return '2 weeks';
-    if (value === 30) return '1 month';
-    if (value === 60) return '2 months';
-    if (value === 90) return '3 months';
-    if (value === 180) return '6 months';
-    if (value === 365) return '1 year';
-    return `${value} days`;
+    if (value === 1) return t ? t('maintenance.day') : '1 day';
+    if (value === 7) return t ? t('maintenance.week') : '1 week';
+    if (value === 14) return t ? t('maintenance.weeks', { count: 2 }) : '2 weeks';
+    if (value === 30) return t ? t('maintenance.month') : '1 month';
+    if (value === 60) return t ? t('maintenance.months', { count: 2 }) : '2 months';
+    if (value === 90) return t ? t('maintenance.months', { count: 3 }) : '3 months';
+    if (value === 180) return t ? t('maintenance.months', { count: 6 }) : '6 months';
+    if (value === 365) return t ? t('maintenance.year') : '1 year';
+    return t ? t('maintenance.days', { count: value }) : `${value} days`;
   }
   return `${value}h`;
 }
@@ -201,11 +213,13 @@ function MaintenanceCard({
   onPerform,
   onToggle,
   hasPermission,
+  t,
 }: {
   item: MaintenanceStatus;
   onPerform: (id: number) => void;
   onToggle: (id: number, enabled: boolean) => void;
   hasPermission: (permission: Permission) => boolean;
+  t: TFunction;
 }) {
   const Icon = getIcon(item.maintenance_type_icon);
   const intervalType = item.interval_type || 'hours';
@@ -245,17 +259,17 @@ function MaintenanceCard({
   };
 
   const getStatusText = () => {
-    if (!item.enabled) return 'Disabled';
+    if (!item.enabled) return t('common.disabled');
 
     if (intervalType === 'days') {
       const daysUntil = item.days_until_due ?? 0;
-      if (item.is_due) return `Overdue by ${formatDuration(Math.abs(daysUntil), 'days')}`;
-      if (item.is_warning) return `Due in ${formatDuration(daysUntil, 'days')}`;
-      return `${formatDuration(daysUntil, 'days')} left`;
+      if (item.is_due) return t('maintenance.overdueBy', { duration: formatDuration(Math.abs(daysUntil), 'days', t) });
+      if (item.is_warning) return t('maintenance.dueIn', { duration: formatDuration(daysUntil, 'days', t) });
+      return t('maintenance.timeLeft', { duration: formatDuration(daysUntil, 'days', t) });
     } else {
-      if (item.is_due) return `Overdue by ${formatDuration(Math.abs(item.hours_until_due), 'hours')}`;
-      if (item.is_warning) return `Due in ${formatDuration(item.hours_until_due, 'hours')}`;
-      return `${formatDuration(item.hours_until_due, 'hours')} left`;
+      if (item.is_due) return t('maintenance.overdueBy', { duration: formatDuration(Math.abs(item.hours_until_due), 'hours', t) });
+      if (item.is_warning) return t('maintenance.dueIn', { duration: formatDuration(item.hours_until_due, 'hours', t) });
+      return t('maintenance.timeLeft', { duration: formatDuration(item.hours_until_due, 'hours', t) });
     }
   };
 
@@ -283,7 +297,7 @@ function MaintenanceCard({
               {item.maintenance_type_name}
             </h3>
             {intervalType === 'days' && (
-              <span title="Time-based interval">
+              <span title={t('maintenance.timeBasedInterval')}>
                 <Calendar className="w-3.5 h-3.5 text-bambu-gray shrink-0" />
               </span>
             )}
@@ -297,7 +311,7 @@ function MaintenanceCard({
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-bambu-gray hover:text-bambu-green transition-colors shrink-0"
-                  title="View documentation"
+                  title={t('maintenance.viewDocumentation')}
                   onClick={(e) => e.stopPropagation()}
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
@@ -327,7 +341,7 @@ function MaintenanceCard({
 
         {/* Actions */}
         <div className="flex items-center gap-2 shrink-0">
-          <span title={!hasPermission('maintenance:update') ? 'You do not have permission to update maintenance items' : undefined}>
+          <span title={!hasPermission('maintenance:update') ? t('maintenance.noPermissionUpdate') : undefined}>
             <Toggle
               checked={item.enabled}
               onChange={(checked) => onToggle(item.id, checked)}
@@ -339,11 +353,11 @@ function MaintenanceCard({
             variant={item.is_due ? 'primary' : 'secondary'}
             onClick={() => onPerform(item.id)}
             disabled={!item.enabled || !hasPermission('maintenance:update')}
-            title={!hasPermission('maintenance:update') ? 'You do not have permission to perform maintenance' : undefined}
+            title={!hasPermission('maintenance:update') ? t('maintenance.noPermissionPerform') : undefined}
             className="!px-3"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            Reset
+            {t('common.reset')}
           </Button>
         </div>
       </div>
@@ -358,12 +372,14 @@ function PrinterSection({
   onToggle,
   onSetHours,
   hasPermission,
+  t,
 }: {
   overview: PrinterMaintenanceOverview;
   onPerform: (id: number) => void;
   onToggle: (id: number, enabled: boolean) => void;
   onSetHours: (printerId: number, hours: number) => void;
   hasPermission: (permission: Permission) => boolean;
+  t: TFunction;
 }) {
   const [expanded, setExpanded] = useState(true);
   const [editingHours, setEditingHours] = useState(false);
@@ -399,19 +415,19 @@ function PrinterSection({
               {overview.due_count > 0 && (
                 <span className="px-2.5 py-1 bg-red-500/20 text-red-400 text-xs font-medium rounded-full flex items-center gap-1.5">
                   <AlertTriangle className="w-3 h-3" />
-                  {overview.due_count} overdue
+                  {t('maintenance.overdueCount', { count: overview.due_count })}
                 </span>
               )}
               {overview.warning_count > 0 && (
                 <span className="px-2.5 py-1 bg-amber-500/20 text-amber-400 text-xs font-medium rounded-full flex items-center gap-1.5">
                   <Clock className="w-3 h-3" />
-                  {overview.warning_count} due soon
+                  {t('maintenance.dueSoonCount', { count: overview.warning_count })}
                 </span>
               )}
               {overview.due_count === 0 && overview.warning_count === 0 && (
                 <span className="px-2.5 py-1 bg-bambu-green/20 text-bambu-green text-xs font-medium rounded-full flex items-center gap-1.5">
                   <Check className="w-3 h-3" />
-                  All good
+                  {t('maintenance.allGood')}
                 </span>
               )}
             </div>
@@ -421,7 +437,7 @@ function PrinterSection({
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-bambu-gray hover:text-white hover:bg-bambu-dark rounded-lg transition-colors"
           >
             {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            {expanded ? 'Collapse' : 'Expand'}
+            {expanded ? t('common.collapse') : t('common.expand')}
           </button>
         </div>
 
@@ -447,9 +463,9 @@ function PrinterSection({
                   step="1"
                   autoFocus
                 />
-                <span className="text-xs text-bambu-gray">hours</span>
-                <Button size="sm" onClick={handleSaveHours}>Save</Button>
-                <Button size="sm" variant="secondary" onClick={() => setEditingHours(false)}>Cancel</Button>
+                <span className="text-xs text-bambu-gray">{t('common.hours')}</span>
+                <Button size="sm" onClick={handleSaveHours}>{t('common.save')}</Button>
+                <Button size="sm" variant="secondary" onClick={() => setEditingHours(false)}>{t('common.cancel')}</Button>
               </div>
             ) : (
               <button
@@ -459,13 +475,13 @@ function PrinterSection({
                   setEditingHours(true);
                 }}
                 className={`group ${!hasPermission('maintenance:update') ? 'cursor-not-allowed opacity-60' : ''}`}
-                title={!hasPermission('maintenance:update') ? 'You do not have permission to edit print hours' : undefined}
+                title={!hasPermission('maintenance:update') ? t('maintenance.noPermissionEditHours') : undefined}
               >
                 <div className={`text-sm font-medium text-white ${hasPermission('maintenance:update') ? 'group-hover:text-bambu-green' : ''} transition-colors flex items-center gap-1`}>
-                  {Math.round(overview.total_print_hours)} hours
+                  {Math.round(overview.total_print_hours)} {t('common.hours')}
                   <Edit3 className={`w-3 h-3 text-bambu-gray ${hasPermission('maintenance:update') ? 'group-hover:text-bambu-green' : ''}`} />
                 </div>
-                <div className="text-xs text-bambu-gray">Total print time</div>
+                <div className="text-xs text-bambu-gray">{t('maintenance.totalPrintTime')}</div>
               </button>
             )}
           </div>
@@ -489,7 +505,7 @@ function PrinterSection({
                   {nextTask.maintenance_type_name}
                 </div>
                 <div className={`text-xs ${nextTask.is_due ? 'text-red-400/70' : 'text-amber-400/70'}`}>
-                  {nextTask.is_due ? 'Overdue' : 'Due soon'}
+                  {nextTask.is_due ? t('common.overdue') : t('maintenance.dueSoon')}
                 </div>
               </div>
             </div>
@@ -508,6 +524,7 @@ function PrinterSection({
                 onPerform={onPerform}
                 onToggle={onToggle}
                 hasPermission={hasPermission}
+                t={t}
               />
             ))}
           </div>
@@ -528,6 +545,7 @@ function SettingsSection({
   onAssignType,
   onRemoveItem,
   hasPermission,
+  t,
 }: {
   overview: PrinterMaintenanceOverview[] | undefined;
   types: MaintenanceType[];
@@ -538,6 +556,7 @@ function SettingsSection({
   onAssignType: (printerId: number, typeId: number) => void;
   onRemoveItem: (itemId: number) => void;
   hasPermission: (permission: Permission) => boolean;
+  t: TFunction;
 }) {
   const [editingInterval, setEditingInterval] = useState<number | null>(null);
   const [intervalInput, setIntervalInput] = useState('');
@@ -665,16 +684,16 @@ function SettingsSection({
       <div>
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-white">Maintenance Types</h2>
-            <p className="text-sm text-bambu-gray mt-1">System types and your custom maintenance tasks</p>
+            <h2 className="text-lg font-semibold text-white">{t('maintenance.maintenanceTypes')}</h2>
+            <p className="text-sm text-bambu-gray mt-1">{t('maintenance.maintenanceTypesDescription')}</p>
           </div>
           <Button
             onClick={() => setShowAddType(!showAddType)}
             disabled={!hasPermission('maintenance:create')}
-            title={!hasPermission('maintenance:create') ? 'You do not have permission to create maintenance types' : undefined}
+            title={!hasPermission('maintenance:create') ? t('maintenance.noPermissionEditTypes') : undefined}
           >
             <Plus className="w-4 h-4" />
-            Add Custom Type
+            {t('maintenance.addCustomType')}
           </Button>
         </div>
 
@@ -685,18 +704,18 @@ function SettingsSection({
               <form onSubmit={handleAddType}>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="lg:col-span-2">
-                    <label className="block text-xs text-bambu-gray mb-1.5">Name</label>
+                    <label className="block text-xs text-bambu-gray mb-1.5">{t('common.name')}</label>
                     <input
                       type="text"
                       value={newTypeName}
                       onChange={(e) => setNewTypeName(e.target.value)}
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none"
-                      placeholder="e.g., Replace HEPA Filter"
+                      placeholder={t('maintenance.exampleName')}
                       autoFocus
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-bambu-gray mb-1.5">Interval Type</label>
+                    <label className="block text-xs text-bambu-gray mb-1.5">{t('maintenance.intervalType')}</label>
                     <select
                       value={newTypeIntervalType}
                       onChange={(e) => {
@@ -710,13 +729,13 @@ function SettingsSection({
                       }}
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none"
                     >
-                      <option value="hours">Print Hours</option>
-                      <option value="days">Calendar Days</option>
+                      <option value="hours">{t('maintenance.printHours')}</option>
+                      <option value="days">{t('maintenance.calendarDays')}</option>
                     </select>
                   </div>
                   <div>
                     <label className="block text-xs text-bambu-gray mb-1.5">
-                      Interval ({newTypeIntervalType === 'days' ? 'days' : 'hours'})
+                      {t('maintenance.intervalValue', { type: newTypeIntervalType === 'days' ? t('maintenance.calendarDays').toLowerCase() : t('common.hours') })}
                     </label>
                     <input
                       type="number"
@@ -729,7 +748,7 @@ function SettingsSection({
                 </div>
                 <div className="mt-4 flex items-end justify-between">
                   <div>
-                    <label className="block text-xs text-bambu-gray mb-1.5">Icon</label>
+                    <label className="block text-xs text-bambu-gray mb-1.5">{t('maintenance.icon')}</label>
                     <div className="flex gap-1">
                       {Object.keys(iconMap).map((iconName) => {
                         const IconComp = iconMap[iconName];
@@ -753,7 +772,7 @@ function SettingsSection({
                 </div>
                 {/* Wiki URL */}
                 <div className="mt-4">
-                  <label className="block text-xs text-bambu-gray mb-1.5">Documentation Link (optional)</label>
+                  <label className="block text-xs text-bambu-gray mb-1.5">{t('maintenance.documentationLink')}</label>
                   <input
                     type="url"
                     value={newTypeWikiUrl}
@@ -764,7 +783,7 @@ function SettingsSection({
                 </div>
                 {/* Printer selection */}
                 <div className="mt-4">
-                  <label className="block text-xs text-bambu-gray mb-1.5">Assign to Printers</label>
+                  <label className="block text-xs text-bambu-gray mb-1.5">{t('maintenance.assignToPrinters')}</label>
                   <div className="flex flex-wrap gap-2">
                     {printers.map(p => (
                       <button
@@ -782,15 +801,15 @@ function SettingsSection({
                     ))}
                   </div>
                   {selectedPrinters.size === 0 && (
-                    <p className="text-xs text-orange-400 mt-1">Select at least one printer</p>
+                    <p className="text-xs text-orange-400 mt-1">{t('maintenance.selectAtLeastOnePrinter')}</p>
                   )}
                 </div>
                 <div className="mt-4 flex justify-end gap-2">
                   <Button type="button" variant="secondary" onClick={() => { setShowAddType(false); setSelectedPrinters(new Set()); }}>
-                    Cancel
+                    {t('common.cancel')}
                   </Button>
                   <Button type="submit" disabled={!newTypeName.trim() || selectedPrinters.size === 0}>
-                    Add Type
+                    {t('maintenance.addType')}
                   </Button>
                 </div>
               </form>
@@ -814,7 +833,7 @@ function SettingsSection({
                     <div className="text-sm font-medium text-white truncate">{type.name}</div>
                     <div className="text-xs text-bambu-gray mt-0.5 flex items-center gap-1">
                       {intervalType === 'days' ? <Calendar className="w-3 h-3" /> : <Timer className="w-3 h-3" />}
-                      {formatIntervalLabel(type.default_interval_hours, intervalType)}
+                      {formatIntervalLabel(type.default_interval_hours, intervalType, t)}
                     </div>
                   </div>
                 </div>
@@ -836,7 +855,7 @@ function SettingsSection({
                       value={editTypeName}
                       onChange={(e) => setEditTypeName(e.target.value)}
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none"
-                      placeholder="Name"
+                      placeholder={t('common.name')}
                       autoFocus
                     />
                     <div className="flex gap-2">
@@ -845,8 +864,8 @@ function SettingsSection({
                         onChange={(e) => setEditTypeIntervalType(e.target.value as 'hours' | 'days')}
                         className="flex-1 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none"
                       >
-                        <option value="hours">Print Hours</option>
-                        <option value="days">Calendar Days</option>
+                        <option value="hours">{t('maintenance.printHours')}</option>
+                        <option value="days">{t('maintenance.calendarDays')}</option>
                       </select>
                       <input
                         type="number"
@@ -880,14 +899,14 @@ function SettingsSection({
                       value={editTypeWikiUrl}
                       onChange={(e) => setEditTypeWikiUrl(e.target.value)}
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none"
-                      placeholder="Documentation link (optional)"
+                      placeholder={t('maintenance.documentationLink')}
                     />
                     <div className="flex gap-2">
                       <Button size="sm" onClick={handleSaveEditType} disabled={!editTypeName.trim()}>
-                        Save
+                        {t('common.save')}
                       </Button>
                       <Button size="sm" variant="secondary" onClick={() => setEditingType(null)}>
-                        Cancel
+                        {t('common.cancel')}
                       </Button>
                     </div>
                   </div>
@@ -909,12 +928,12 @@ function SettingsSection({
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-white truncate">{type.name}</span>
                       <span className="px-1.5 py-0.5 bg-bambu-green/20 text-bambu-green text-[10px] font-medium rounded">
-                        Custom
+                        {t('maintenance.custom')}
                       </span>
                     </div>
                     <div className="text-xs text-bambu-gray mt-0.5 flex items-center gap-1">
                       {intervalType === 'days' ? <Calendar className="w-3 h-3" /> : <Timer className="w-3 h-3" />}
-                      {formatIntervalLabel(type.default_interval_hours, intervalType)}
+                      {formatIntervalLabel(type.default_interval_hours, intervalType, t)}
                     </div>
                   </div>
                   <button
@@ -924,7 +943,7 @@ function SettingsSection({
                         ? 'border-bambu-green/50 bg-bambu-green/10 text-bambu-green hover:bg-bambu-green/20'
                         : 'border-orange-400/50 bg-orange-400/10 text-orange-400 hover:bg-orange-400/20'
                     }`}
-                    title={`${assignedPrinters.length} printer(s) assigned - click to manage`}
+                    title={t('maintenance.printersAssignedClick', { count: assignedPrinters.length })}
                   >
                     <Printer className="w-3 h-3" />
                     <span className="text-xs font-medium">{assignedPrinters.length}</span>
@@ -933,19 +952,19 @@ function SettingsSection({
                   <button
                     onClick={() => startEditType(type)}
                     disabled={!hasPermission('maintenance:update')}
-                    title={!hasPermission('maintenance:update') ? 'You do not have permission to edit maintenance types' : undefined}
+                    title={!hasPermission('maintenance:update') ? t('maintenance.noPermissionEditTypes') : undefined}
                     className={`p-2 rounded-lg hover:bg-bambu-dark text-bambu-gray hover:text-white transition-colors ${!hasPermission('maintenance:update') ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <Edit3 className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => {
-                      if (confirm(`Delete "${type.name}"?`)) {
+                      if (confirm(t('maintenance.deleteTypeConfirm', { name: type.name }))) {
                         onDeleteType(type.id);
                       }
                     }}
                     disabled={!hasPermission('maintenance:delete')}
-                    title={!hasPermission('maintenance:delete') ? 'You do not have permission to delete maintenance types' : undefined}
+                    title={!hasPermission('maintenance:delete') ? t('maintenance.noPermissionDeleteTypes') : undefined}
                     className={`p-2 rounded-lg hover:bg-bambu-dark text-bambu-gray hover:text-red-400 transition-colors ${!hasPermission('maintenance:delete') ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <Trash2 className="w-4 h-4" />
@@ -955,9 +974,9 @@ function SettingsSection({
                 {/* Printer assignment management */}
                 {isExpanded && (
                   <div className="mt-3 pt-3 border-t border-bambu-dark-tertiary">
-                    <p className="text-xs text-bambu-gray mb-2">Assigned to printers:</p>
+                    <p className="text-xs text-bambu-gray mb-2">{t('maintenance.assignedToPrinters')}</p>
                     {assignedPrinters.length === 0 ? (
-                      <p className="text-xs text-orange-400">No printers assigned</p>
+                      <p className="text-xs text-orange-400">{t('maintenance.noPrintersAssigned')}</p>
                     ) : (
                       <div className="flex flex-wrap gap-1 mb-2">
                         {assignedPrinters.map(p => (
@@ -969,7 +988,7 @@ function SettingsSection({
                             <button
                               onClick={() => p.itemId && onRemoveItem(p.itemId)}
                               disabled={!hasPermission('maintenance:delete')}
-                              title={!hasPermission('maintenance:delete') ? 'You do not have permission to remove printer assignments' : 'Remove from this printer'}
+                              title={!hasPermission('maintenance:delete') ? t('maintenance.noPermissionRemovePrinter') : t('maintenance.removeFromPrinter')}
                               className={`ml-1 ${hasPermission('maintenance:delete') ? 'hover:text-red-400' : 'opacity-50 cursor-not-allowed'}`}
                             >
                               ×
@@ -980,13 +999,13 @@ function SettingsSection({
                     )}
                     {unassignedPrinters.length > 0 && (
                       <div className="flex flex-wrap gap-1">
-                        <span className="text-xs text-bambu-gray mr-1">Add:</span>
+                        <span className="text-xs text-bambu-gray mr-1">{t('maintenance.addPrinterShort')}</span>
                         {unassignedPrinters.map(p => (
                           <button
                             key={p.id}
                             onClick={() => onAssignType(p.id, type.id)}
                             disabled={!hasPermission('maintenance:create')}
-                            title={!hasPermission('maintenance:create') ? 'You do not have permission to assign printers' : undefined}
+                            title={!hasPermission('maintenance:create') ? t('maintenance.noPermissionAssignPrinter') : undefined}
                             className={`px-2 py-1 bg-bambu-dark rounded text-xs transition-colors ${hasPermission('maintenance:create') ? 'hover:bg-bambu-green/20 text-bambu-gray hover:text-bambu-green' : 'opacity-50 cursor-not-allowed text-bambu-gray'}`}
                           >
                             + {p.name}
@@ -1006,8 +1025,8 @@ function SettingsSection({
       {printerItems.length > 0 && (
         <div>
           <div className="mb-4">
-            <h2 className="text-lg font-semibold text-white">Interval Overrides</h2>
-            <p className="text-sm text-bambu-gray mt-1">Customize intervals for specific printers</p>
+            <h2 className="text-lg font-semibold text-white">{t('maintenance.intervalOverrides')}</h2>
+            <p className="text-sm text-bambu-gray mt-1">{t('maintenance.intervalOverridesDescription')}</p>
           </div>
           <div className="space-y-4">
             {printerItems.map((printer) => (
@@ -1040,8 +1059,8 @@ function SettingsSection({
                                 onChange={(e) => setIntervalTypeInput(e.target.value as 'hours' | 'days')}
                                 className="px-1.5 py-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-xs"
                               >
-                                <option value="hours">Print Hours</option>
-                                <option value="days">Calendar Days</option>
+                                <option value="hours">{t('maintenance.printHours')}</option>
+                                <option value="days">{t('maintenance.calendarDays')}</option>
                               </select>
                               <input
                                 type="number"
@@ -1065,11 +1084,11 @@ function SettingsSection({
                                 setIntervalTypeInput(intervalType);
                               }}
                               disabled={!hasPermission('maintenance:update')}
-                              title={!hasPermission('maintenance:update') ? 'You do not have permission to edit intervals' : undefined}
+                              title={!hasPermission('maintenance:update') ? t('maintenance.noPermissionEditIntervals') : undefined}
                               className={`px-2 py-1 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded text-xs font-medium text-white transition-colors flex items-center gap-1 ${hasPermission('maintenance:update') ? 'hover:bg-bambu-dark-secondary hover:border-bambu-green' : 'opacity-50 cursor-not-allowed'}`}
                             >
                               {intervalType === 'days' ? <Calendar className="w-3 h-3" /> : <Timer className="w-3 h-3" />}
-                              {formatIntervalLabel(item.interval_hours, intervalType)}
+                              {formatIntervalLabel(item.interval_hours, intervalType, t)}
                               <Edit3 className="w-3 h-3 text-bambu-gray" />
                             </button>
                           )}
@@ -1088,9 +1107,9 @@ function SettingsSection({
         <Card>
           <CardContent className="text-center py-12">
             <Clock className="w-12 h-12 mx-auto mb-4 text-bambu-gray/30" />
-            <p className="text-bambu-gray">No printers configured</p>
+            <p className="text-bambu-gray">{t('common.noPrinters')}</p>
             <p className="text-sm text-bambu-gray/70 mt-1">
-              Add printers to configure maintenance intervals
+              {t('maintenance.intervalOverridesDescription')}
             </p>
           </CardContent>
         </Card>
@@ -1102,6 +1121,7 @@ function SettingsSection({
 type TabType = 'status' | 'settings';
 
 export function MaintenancePage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
@@ -1123,7 +1143,7 @@ export function MaintenancePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['maintenanceOverview'] });
       queryClient.invalidateQueries({ queryKey: ['maintenanceSummary'] });
-      showToast('Maintenance marked as complete');
+      showToast(t('maintenance.maintenanceComplete'));
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
@@ -1150,7 +1170,7 @@ export function MaintenancePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['maintenanceTypes'] });
       queryClient.invalidateQueries({ queryKey: ['maintenanceOverview'] });
-      showToast('Maintenance type updated');
+      showToast(t('maintenance.typeUpdated'));
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
@@ -1162,7 +1182,7 @@ export function MaintenancePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['maintenanceTypes'] });
       queryClient.invalidateQueries({ queryKey: ['maintenanceOverview'] });
-      showToast('Maintenance type deleted');
+      showToast(t('maintenance.typeDeleted'));
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
@@ -1175,7 +1195,7 @@ export function MaintenancePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['maintenanceOverview'] });
       queryClient.invalidateQueries({ queryKey: ['maintenanceSummary'] });
-      showToast('Print hours updated');
+      showToast(t('maintenance.printHoursUpdated'));
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
@@ -1187,7 +1207,7 @@ export function MaintenancePage() {
       api.assignMaintenanceType(printerId, typeId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['maintenanceOverview'] });
-      showToast('Printer assigned');
+      showToast(t('maintenance.printerAssigned'));
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
@@ -1198,7 +1218,7 @@ export function MaintenancePage() {
     mutationFn: api.removeMaintenanceItem,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['maintenanceOverview'] });
-      showToast('Printer removed');
+      showToast(t('maintenance.printerRemoved'));
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
@@ -1232,17 +1252,17 @@ export function MaintenancePage() {
     <div className="p-4 md:p-8">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Maintenance</h1>
+        <h1 className="text-2xl font-bold text-white">{t('maintenance.title')}</h1>
         <p className="text-bambu-gray text-sm mt-1">
           {activeTab === 'status' ? (
             <>
-              {totalDue > 0 && <span className="text-red-400">{totalDue} task{totalDue !== 1 ? 's' : ''} overdue</span>}
+              {totalDue > 0 && <span className="text-red-400">{t('maintenance.dueCount', { count: totalDue })}</span>}
               {totalDue > 0 && totalWarning > 0 && ' · '}
-              {totalWarning > 0 && <span className="text-amber-400">{totalWarning} due soon</span>}
-              {totalDue === 0 && totalWarning === 0 && <span className="text-bambu-green">All maintenance up to date</span>}
+              {totalWarning > 0 && <span className="text-amber-400">{t('maintenance.warningCount', { count: totalWarning })}</span>}
+              {totalDue === 0 && totalWarning === 0 && <span className="text-bambu-green">{t('maintenance.allOk')}</span>}
             </>
           ) : (
-            'Configure maintenance types and intervals'
+            t('maintenance.configureSettings')
           )}
         </p>
       </div>
@@ -1257,7 +1277,7 @@ export function MaintenancePage() {
               : 'text-bambu-gray border-transparent hover:text-white'
           }`}
         >
-          Status
+          {t('maintenance.statusTab')}
         </button>
         <button
           onClick={() => setActiveTab('settings')}
@@ -1267,7 +1287,7 @@ export function MaintenancePage() {
               : 'text-bambu-gray border-transparent hover:text-white'
           }`}
         >
-          Settings
+          {t('maintenance.settingsTab')}
         </button>
       </div>
 
@@ -1289,14 +1309,15 @@ export function MaintenancePage() {
                 onToggle={handleToggle}
                 onSetHours={handleSetHours}
                 hasPermission={hasPermission}
+                t={t}
               />
             ))
           ) : (
             <Card>
               <CardContent className="text-center py-16">
                 <Wrench className="w-16 h-16 mx-auto mb-4 text-bambu-gray/30" />
-                <p className="text-lg font-medium text-white mb-2">No printers configured</p>
-                <p className="text-bambu-gray">Add printers to start tracking maintenance</p>
+                <p className="text-lg font-medium text-white mb-2">{t('common.noPrinters')}</p>
+                <p className="text-bambu-gray">{t('maintenance.configureSettings')}</p>
               </CardContent>
             </Card>
           )}
@@ -1317,13 +1338,14 @@ export function MaintenancePage() {
             }
             queryClient.invalidateQueries({ queryKey: ['maintenanceTypes'] });
             queryClient.invalidateQueries({ queryKey: ['maintenanceOverview'] });
-            showToast('Maintenance type added');
+            showToast(t('maintenance.typeUpdated'));
           }}
           onUpdateType={(id, data) => updateTypeMutation.mutate({ id, data })}
           onDeleteType={(id) => deleteTypeMutation.mutate(id)}
           onAssignType={(printerId, typeId) => assignTypeMutation.mutate({ printerId, typeId })}
           onRemoveItem={(itemId) => removeItemMutation.mutate(itemId)}
           hasPermission={hasPermission}
+          t={t}
         />
       )}
     </div>

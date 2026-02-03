@@ -2,8 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
+from backend.app.core.permissions import Permission
 from backend.app.models.filament import Filament
+from backend.app.models.user import User
 from backend.app.schemas.filament import (
     FilamentCostCalculation,
     FilamentCreate,
@@ -15,7 +18,10 @@ router = APIRouter(prefix="/filaments", tags=["filaments"])
 
 
 @router.get("/", response_model=list[FilamentResponse])
-async def list_filaments(db: AsyncSession = Depends(get_db)):
+async def list_filaments(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
+):
     """List all filaments."""
     result = await db.execute(select(Filament).order_by(Filament.type, Filament.name))
     return list(result.scalars().all())
@@ -25,6 +31,7 @@ async def list_filaments(db: AsyncSession = Depends(get_db)):
 async def create_filament(
     filament_data: FilamentCreate,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_CREATE),
 ):
     """Create a new filament entry."""
     filament = Filament(**filament_data.model_dump())
@@ -35,7 +42,11 @@ async def create_filament(
 
 
 @router.get("/{filament_id}", response_model=FilamentResponse)
-async def get_filament(filament_id: int, db: AsyncSession = Depends(get_db)):
+async def get_filament(
+    filament_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
+):
     """Get a specific filament."""
     result = await db.execute(select(Filament).where(Filament.id == filament_id))
     filament = result.scalar_one_or_none()
@@ -49,6 +60,7 @@ async def update_filament(
     filament_id: int,
     filament_data: FilamentUpdate,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
 ):
     """Update a filament."""
     result = await db.execute(select(Filament).where(Filament.id == filament_id))
@@ -65,7 +77,11 @@ async def update_filament(
 
 
 @router.delete("/{filament_id}")
-async def delete_filament(filament_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_filament(
+    filament_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_DELETE),
+):
     """Delete a filament."""
     result = await db.execute(select(Filament).where(Filament.id == filament_id))
     filament = result.scalar_one_or_none()
@@ -82,6 +98,7 @@ async def calculate_cost(
     filament_id: int,
     weight_grams: float,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
 ):
     """Calculate the cost for a given weight of filament."""
     result = await db.execute(select(Filament).where(Filament.id == filament_id))
@@ -104,6 +121,7 @@ async def calculate_cost(
 async def get_filaments_by_type(
     filament_type: str,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
 ):
     """Get all filaments of a specific type."""
     result = await db.execute(select(Filament).where(Filament.type.ilike(f"%{filament_type}%")).order_by(Filament.name))
@@ -111,7 +129,10 @@ async def get_filaments_by_type(
 
 
 @router.post("/seed-defaults")
-async def seed_default_filaments(db: AsyncSession = Depends(get_db)):
+async def seed_default_filaments(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_CREATE),
+):
     """Seed the database with common filament types."""
     defaults = [
         {

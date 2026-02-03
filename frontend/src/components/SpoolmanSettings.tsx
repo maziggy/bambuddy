@@ -6,32 +6,6 @@ import type { SpoolmanSyncResult, Printer } from '../api/client';
 import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
 
-interface SpoolmanSettingsData {
-  spoolman_enabled: string;
-  spoolman_url: string;
-  spoolman_sync_mode: string;
-}
-
-async function getSpoolmanSettings(): Promise<SpoolmanSettingsData> {
-  const response = await fetch('/api/v1/settings/spoolman');
-  if (!response.ok) {
-    throw new Error('Failed to load Spoolman settings');
-  }
-  return response.json();
-}
-
-async function updateSpoolmanSettings(data: Partial<SpoolmanSettingsData>): Promise<SpoolmanSettingsData> {
-  const response = await fetch('/api/v1/settings/spoolman', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) {
-    throw new Error('Failed to save Spoolman settings');
-  }
-  return response.json();
-}
-
 export function SpoolmanSettings() {
   const queryClient = useQueryClient();
   const [localEnabled, setLocalEnabled] = useState(false);
@@ -45,7 +19,7 @@ export function SpoolmanSettings() {
   // Fetch Spoolman settings
   const { data: settings, isLoading: settingsLoading } = useQuery({
     queryKey: ['spoolman-settings'],
-    queryFn: getSpoolmanSettings,
+    queryFn: api.getSpoolmanSettings,
   });
 
   // Fetch Spoolman status
@@ -93,7 +67,7 @@ export function SpoolmanSettings() {
   // Save mutation
   const saveMutation = useMutation({
     mutationFn: () =>
-      updateSpoolmanSettings({
+      api.updateSpoolmanSettings({
         spoolman_enabled: localEnabled ? 'true' : 'false',
         spoolman_url: localUrl,
         spoolman_sync_mode: localSyncMode,

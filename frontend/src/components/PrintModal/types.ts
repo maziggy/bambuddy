@@ -187,4 +187,8 @@ export interface PrintOptionsProps {
 export interface ScheduleOptionsProps {
   options: ScheduleOptions;
   onChange: (options: ScheduleOptions) => void;
+  /** Date format setting from user preferences */
+  dateFormat?: 'system' | 'us' | 'eu' | 'iso';
+  /** Time format setting from user preferences */
+  timeFormat?: 'system' | '12h' | '24h';
 }

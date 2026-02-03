@@ -8,9 +8,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
+from backend.app.core.permissions import Permission
 from backend.app.models.maintenance import MaintenanceHistory, MaintenanceType, PrinterMaintenance
 from backend.app.models.printer import Printer
+from backend.app.models.user import User
 from backend.app.schemas.maintenance import (
     MaintenanceHistoryResponse,
     MaintenanceStatus,
@@ -114,7 +117,10 @@ async def ensure_default_types(db: AsyncSession) -> None:
 
 
 @router.get("/types", response_model=list[MaintenanceTypeResponse])
-async def get_maintenance_types(db: AsyncSession = Depends(get_db)):
+async def get_maintenance_types(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_READ),
+):
     """Get all maintenance types."""
     await ensure_default_types(db)
     result = await db.execute(select(MaintenanceType).order_by(MaintenanceType.is_system.desc(), MaintenanceType.name))
@@ -125,6 +131,7 @@ async def get_maintenance_types(db: AsyncSession = Depends(get_db)):
 async def create_maintenance_type(
     data: MaintenanceTypeCreate,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_CREATE),
 ):
     """Create a custom maintenance type."""
     new_type = MaintenanceType(
@@ -146,6 +153,7 @@ async def update_maintenance_type(
     type_id: int,
     data: MaintenanceTypeUpdate,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
 ):
     """Update a maintenance type."""
     result = await db.execute(select(MaintenanceType).where(MaintenanceType.id == type_id))
@@ -166,6 +174,7 @@ async def update_maintenance_type(
 async def delete_maintenance_type(
     type_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
 ):
     """Delete a custom maintenance type."""
     result = await db.execute(select(MaintenanceType).where(MaintenanceType.id == type_id))
@@ -331,13 +340,17 @@ async def _get_printer_maintenance_internal(
 async def get_printer_maintenance(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_READ),
 ):
     """Get maintenance overview for a specific printer."""
     return await _get_printer_maintenance_internal(printer_id, db, commit=True)
 
 
 @router.get("/overview", response_model=list[PrinterMaintenanceOverview])
-async def get_all_maintenance_overview(db: AsyncSession = Depends(get_db)):
+async def get_all_maintenance_overview(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_READ),
+):
     """Get maintenance overview for all active printers."""
     await ensure_default_types(db)
 
@@ -361,6 +374,7 @@ async def update_printer_maintenance(
     item_id: int,
     data: PrinterMaintenanceUpdate,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
 ):
     """Update a printer maintenance item (e.g., custom interval, enabled)."""
     result = await db.execute(
@@ -386,6 +400,7 @@ async def assign_maintenance_type(
     printer_id: int,
     type_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_CREATE),
 ):
     """Assign a maintenance type to a specific printer (for custom types)."""
     # Verify printer exists
@@ -438,6 +453,7 @@ async def assign_maintenance_type(
 async def remove_maintenance_item(
     item_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
 ):
     """Remove a maintenance item (unassign a custom type from a printer)."""
     result = await db.execute(
@@ -464,6 +480,7 @@ async def perform_maintenance(
     item_id: int,
     data: PerformMaintenanceRequest,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
 ):
     """Mark maintenance as performed (reset the counter)."""
     result = await db.execute(
@@ -541,6 +558,7 @@ async def perform_maintenance(
 async def get_maintenance_history(
     item_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_READ),
 ):
     """Get maintenance history for a specific item."""
     result = await db.execute(
@@ -552,7 +570,10 @@ async def get_maintenance_history(
 
 
 @router.get("/summary")
-async def get_maintenance_summary(db: AsyncSession = Depends(get_db)):
+async def get_maintenance_summary(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_READ),
+):
     """Get a summary of maintenance status across all printers."""
     await ensure_default_types(db)
 
@@ -589,6 +610,7 @@ async def set_printer_hours(
     printer_id: int,
     total_hours: float,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
 ):
     """Set the total print hours for a printer (adjusts offset to match).
 

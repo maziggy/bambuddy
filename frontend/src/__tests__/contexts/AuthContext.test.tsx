@@ -166,4 +166,99 @@ describe('AuthContext', () => {
       expect(result.current.hasPermission('printers:read' as Permission)).toBe(false);
     });
   });
+
+  describe('CVE-2026-25505 fix: auth disabled grants all access', () => {
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/auth/status', () => {
+          return HttpResponse.json({
+            auth_enabled: false,
+            requires_setup: false,
+          });
+        })
+      );
+    });
+
+    it('isAdmin is true when auth is disabled', async () => {
+      const { result } = renderHook(() => useAuth(), {
+        wrapper: createWrapper(),
+      });
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      // When auth disabled, user is treated as admin
+      expect(result.current.isAdmin).toBe(true);
+    });
+
+    it('canModify allows all modifications when auth disabled', async () => {
+      const { result } = renderHook(() => useAuth(), {
+        wrapper: createWrapper(),
+      });
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      // All canModify checks should pass when auth is disabled
+      expect(result.current.canModify('queue', 'update', 1)).toBe(true);
+      expect(result.current.canModify('queue', 'update', 999)).toBe(true);
+      expect(result.current.canModify('queue', 'update', null)).toBe(true);
+      expect(result.current.canModify('archives', 'delete', 1)).toBe(true);
+      expect(result.current.canModify('library', 'update', null)).toBe(true);
+    });
+
+    it('all permissions are granted when auth is disabled', async () => {
+      const { result } = renderHook(() => useAuth(), {
+        wrapper: createWrapper(),
+      });
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      // All permission checks should pass
+      expect(result.current.hasPermission('archives:read' as Permission)).toBe(true);
+      expect(result.current.hasPermission('archives:delete_all' as Permission)).toBe(true);
+      expect(result.current.hasPermission('settings:update' as Permission)).toBe(true);
+      expect(result.current.hasPermission('api_keys:create' as Permission)).toBe(true);
+      expect(result.current.hasPermission('groups:delete' as Permission)).toBe(true);
+    });
+
+    it('hasAnyPermission returns true for protected permissions', async () => {
+      const { result } = renderHook(() => useAuth(), {
+        wrapper: createWrapper(),
+      });
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      expect(
+        result.current.hasAnyPermission(
+          'api_keys:create' as Permission,
+          'groups:delete' as Permission
+        )
+      ).toBe(true);
+    });
+
+    it('hasAllPermissions returns true for any combination', async () => {
+      const { result } = renderHook(() => useAuth(), {
+        wrapper: createWrapper(),
+      });
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      expect(
+        result.current.hasAllPermissions(
+          'settings:update' as Permission,
+          'api_keys:create' as Permission,
+          'groups:delete' as Permission
+        )
+      ).toBe(true);
+    });
+  });
 });

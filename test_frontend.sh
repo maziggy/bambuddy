@@ -2,5 +2,5 @@
 
 cd frontend
 npm run lint
-npm test
+npm run test:run
 cd ..

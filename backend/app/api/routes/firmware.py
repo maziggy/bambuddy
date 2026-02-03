@@ -12,8 +12,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
+from backend.app.core.permissions import Permission
 from backend.app.models.printer import Printer
+from backend.app.models.user import User
 from backend.app.services.firmware_check import get_firmware_service
 from backend.app.services.firmware_update import (
     FirmwareUploadStatus,
@@ -59,6 +62,7 @@ class LatestFirmwareInfo(BaseModel):
 @router.get("/updates", response_model=FirmwareUpdatesResponse)
 async def check_firmware_updates(
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FIRMWARE_READ),
 ):
     """
     Check for firmware updates for all connected printers.
@@ -112,6 +116,7 @@ async def check_firmware_updates(
 async def check_printer_firmware(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FIRMWARE_READ),
 ):
     """
     Check for firmware update for a specific printer.
@@ -148,7 +153,9 @@ async def check_printer_firmware(
 
 
 @router.get("/latest", response_model=list[LatestFirmwareInfo])
-async def get_all_latest_firmware():
+async def get_all_latest_firmware(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FIRMWARE_READ),
+):
     """
     Get the latest firmware versions for all Bambu Lab printer models.
 
@@ -211,6 +218,7 @@ class FirmwareUploadStartResponse(BaseModel):
 async def prepare_firmware_upload(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FIRMWARE_READ),
 ):
     """
     Check prerequisites for uploading firmware to a printer.
@@ -232,6 +240,7 @@ async def prepare_firmware_upload(
 async def start_firmware_upload(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FIRMWARE_UPDATE),
 ):
     """
     Start uploading firmware to a printer's SD card.
@@ -279,7 +288,10 @@ async def start_firmware_upload(
 
 
 @router.get("/updates/{printer_id}/upload/status", response_model=FirmwareUploadStatusResponse)
-async def get_firmware_upload_status(printer_id: int):
+async def get_firmware_upload_status(
+    printer_id: int,
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FIRMWARE_READ),
+):
     """
     Get the current status of a firmware upload operation.
 

@@ -35,8 +35,8 @@ archive/
 # Firmware cache (downloaded firmware files)
 firmware/
 
-# Virtual printer (auto-generated certs and uploads)
-virtual_printer/
+# Virtual printer (auto-generated certs and uploads at repo root)
+/virtual_printer/
 
 # IDE
 .idea/

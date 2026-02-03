@@ -1,4 +1,5 @@
 import io
+import logging
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -8,10 +9,15 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import get_db
+from backend.app.core.permissions import Permission
 from backend.app.models.settings import Settings
+from backend.app.models.user import User
 from backend.app.schemas.settings import AppSettings, AppSettingsUpdate
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -39,7 +45,10 @@ async def set_setting(db: AsyncSession, key: str, value: str) -> None:
 
 @router.get("", response_model=AppSettings)
 @router.get("/", response_model=AppSettings)
-async def get_settings(db: AsyncSession = Depends(get_db)):
+async def get_settings(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+):
     """Get all application settings."""
     settings_dict = DEFAULT_SETTINGS.model_dump()
 
@@ -96,6 +105,7 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
 async def update_settings(
     settings_update: AppSettingsUpdate,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Update application settings."""
     update_data = settings_update.model_dump(exclude_unset=True)
@@ -153,13 +163,17 @@ async def update_settings(
 async def patch_settings(
     settings_update: AppSettingsUpdate,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Partially update application settings (same as PUT, for REST compatibility)."""
-    return await update_settings(settings_update, db)
+    return await update_settings(settings_update, db, _)
 
 
 @router.post("/reset", response_model=AppSettings)
-async def reset_settings(db: AsyncSession = Depends(get_db)):
+async def reset_settings(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+):
     """Reset all settings to defaults."""
     # Delete all settings
     result = await db.execute(select(Settings))
@@ -185,7 +199,10 @@ async def check_ffmpeg():
 
 
 @router.get("/spoolman")
-async def get_spoolman_settings(db: AsyncSession = Depends(get_db)):
+async def get_spoolman_settings(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+):
     """Get Spoolman integration settings."""
     spoolman_enabled = await get_setting(db, "spoolman_enabled") or "false"
     spoolman_url = await get_setting(db, "spoolman_url") or ""
@@ -202,6 +219,7 @@ async def get_spoolman_settings(db: AsyncSession = Depends(get_db)):
 async def update_spoolman_settings(
     settings: dict,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Update Spoolman integration settings."""
     if "spoolman_enabled" in settings:
@@ -219,7 +237,10 @@ async def update_spoolman_settings(
 
 
 @router.get("/backup")
-async def create_backup(db: AsyncSession = Depends(get_db)):
+async def create_backup(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_BACKUP),
+):
     """Create a complete backup (database + all files) as a ZIP.
 
     This is a simplified backup that includes the entire SQLite database
@@ -280,6 +301,7 @@ async def create_backup(db: AsyncSession = Depends(get_db)):
 async def restore_backup(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_RESTORE),
 ):
     """Restore from a complete backup ZIP.
 
@@ -292,6 +314,7 @@ async def restore_backup(
     from fastapi import HTTPException
 
     from backend.app.core.database import close_all_connections
+    from backend.app.services.virtual_printer import virtual_printer_manager
 
     base_dir = app_settings.base_dir
     db_path = Path(app_settings.database_url.replace("sqlite+aiosqlite:///", ""))
@@ -317,39 +340,90 @@ async def restore_backup(
         if not backup_db.exists():
             raise HTTPException(400, "Invalid backup: missing bambuddy.db")
 
-        # 3. Close current database connections
-        await close_all_connections()
+        try:
+            import asyncio
 
-        # 4. Replace database
-        shutil.copy2(backup_db, db_path)
+            # 3. Stop virtual printer if running (releases file locks)
+            try:
+                if virtual_printer_manager.is_enabled:
+                    logger.info("Stopping virtual printer for restore...")
+                    await virtual_printer_manager.configure(enabled=False)
+                    # Give it time to fully release file handles
+                    await asyncio.sleep(1)
+            except Exception as e:
+                logger.warning(f"Failed to stop virtual printer: {e}")
 
-        # 5. Replace data directories
-        dirs_to_restore = [
-            ("archive", base_dir / "archive"),
-            ("virtual_printer", base_dir / "virtual_printer"),
-            ("plate_calibration", app_settings.plate_calibration_dir),
-            ("icons", base_dir / "icons"),
-            ("projects", base_dir / "projects"),
-        ]
+            # 4. Close current database connections
+            logger.info("Closing database connections...")
+            await close_all_connections()
 
-        for name, dest_dir in dirs_to_restore:
-            src_dir = temp_path / name
-            if src_dir.exists():
-                if dest_dir.exists():
-                    shutil.rmtree(dest_dir)
-                shutil.copytree(src_dir, dest_dir)
+            # 5. Replace database
+            logger.info("Restoring database from backup...")
+            shutil.copy2(backup_db, db_path)
 
-        # 6. Note: Database connection will be reinitialized on restart
-        # The application should be restarted after restore
+            # 6. Replace data directories
+            # For Docker compatibility: clear contents then copy (don't delete mount points)
+            dirs_to_restore = [
+                ("archive", base_dir / "archive"),
+                ("virtual_printer", base_dir / "virtual_printer"),
+                ("plate_calibration", app_settings.plate_calibration_dir),
+                ("icons", base_dir / "icons"),
+                ("projects", base_dir / "projects"),
+            ]
 
-        return {
-            "success": True,
-            "message": "Backup restored successfully. Please restart Bambuddy for changes to take effect.",
-        }
+            skipped_dirs = []
+            for name, dest_dir in dirs_to_restore:
+                src_dir = temp_path / name
+                if src_dir.exists():
+                    logger.info(f"Restoring {name} directory...")
+                    try:
+                        # Clear destination contents (not the dir itself - may be Docker mount)
+                        if dest_dir.exists():
+                            for item in dest_dir.iterdir():
+                                try:
+                                    if item.is_dir():
+                                        shutil.rmtree(item)
+                                    else:
+                                        item.unlink()
+                                except OSError as e:
+                                    logger.warning(f"Could not delete {item}: {e}")
+                        else:
+                            dest_dir.mkdir(parents=True, exist_ok=True)
+                        # Copy contents from backup
+                        for item in src_dir.iterdir():
+                            dest_item = dest_dir / item.name
+                            if item.is_dir():
+                                shutil.copytree(item, dest_item)
+                            else:
+                                shutil.copy2(item, dest_item)
+                    except OSError as e:
+                        logger.warning(f"Could not restore {name} directory: {e}")
+                        skipped_dirs.append(name)
+
+            # 7. Note: Virtual printer and database will be reinitialized on restart
+            # Do NOT try to restart services here - the database session is closed
+
+            logger.info("Restore complete - restart required")
+            message = "Backup restored successfully. Please restart Bambuddy for changes to take effect."
+            if skipped_dirs:
+                message += f" Note: Some directories could not be restored ({', '.join(skipped_dirs)})."
+            return {
+                "success": True,
+                "message": message,
+            }
+
+        except Exception as e:
+            logger.error(f"Restore failed: {e}", exc_info=True)
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "message": "Restore failed. Check server logs for details."},
+            )
 
 
 @router.get("/virtual-printer/models")
-async def get_virtual_printer_models():
+async def get_virtual_printer_models(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+):
     """Get available virtual printer models."""
     from backend.app.services.virtual_printer import (
         DEFAULT_VIRTUAL_PRINTER_MODEL,
@@ -363,7 +437,10 @@ async def get_virtual_printer_models():
 
 
 @router.get("/virtual-printer")
-async def get_virtual_printer_settings(db: AsyncSession = Depends(get_db)):
+async def get_virtual_printer_settings(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+):
     """Get virtual printer settings and status."""
     from backend.app.services.virtual_printer import (
         DEFAULT_VIRTUAL_PRINTER_MODEL,
@@ -374,12 +451,14 @@ async def get_virtual_printer_settings(db: AsyncSession = Depends(get_db)):
     access_code = await get_setting(db, "virtual_printer_access_code")
     mode = await get_setting(db, "virtual_printer_mode")
     model = await get_setting(db, "virtual_printer_model")
+    target_printer_id = await get_setting(db, "virtual_printer_target_printer_id")
 
     return {
         "enabled": enabled == "true" if enabled else False,
         "access_code_set": bool(access_code),
         "mode": mode or "immediate",
         "model": model or DEFAULT_VIRTUAL_PRINTER_MODEL,
+        "target_printer_id": int(target_printer_id) if target_printer_id else None,
         "status": virtual_printer_manager.get_status(),
     }
 
@@ -390,9 +469,14 @@ async def update_virtual_printer_settings(
     access_code: str = None,
     mode: str = None,
     model: str = None,
+    target_printer_id: int = None,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Update virtual printer settings and restart services if needed."""
+    from sqlalchemy import select
+
+    from backend.app.models.printer import Printer
     from backend.app.services.virtual_printer import (
         DEFAULT_VIRTUAL_PRINTER_MODEL,
         VIRTUAL_PRINTER_MODELS,
@@ -404,20 +488,24 @@ async def update_virtual_printer_settings(
     current_access_code = await get_setting(db, "virtual_printer_access_code") or ""
     current_mode = await get_setting(db, "virtual_printer_mode") or "immediate"
     current_model = await get_setting(db, "virtual_printer_model") or DEFAULT_VIRTUAL_PRINTER_MODEL
+    current_target_id_str = await get_setting(db, "virtual_printer_target_printer_id")
+    current_target_id = int(current_target_id_str) if current_target_id_str else None
 
     # Apply updates
     new_enabled = enabled if enabled is not None else current_enabled
     new_access_code = access_code if access_code is not None else current_access_code
     new_mode = mode if mode is not None else current_mode
     new_model = model if model is not None else current_model
+    new_target_id = target_printer_id if target_printer_id is not None else current_target_id
 
     # Validate mode
     # "review" is the new name for "queue" (pending review before archiving)
     # "print_queue" archives and adds to print queue (unassigned)
-    if new_mode not in ("immediate", "queue", "review", "print_queue"):
+    # "proxy" is transparent TCP proxy to a real printer
+    if new_mode not in ("immediate", "queue", "review", "print_queue", "proxy"):
         return JSONResponse(
             status_code=400,
-            content={"detail": "Mode must be 'immediate', 'review', or 'print_queue'"},
+            content={"detail": "Mode must be 'immediate', 'review', 'print_queue', or 'proxy'"},
         )
     # Normalize legacy "queue" to "review" for storage
     if new_mode == "queue":
@@ -430,19 +518,51 @@ async def update_virtual_printer_settings(
             content={"detail": f"Invalid model. Must be one of: {', '.join(VIRTUAL_PRINTER_MODELS.keys())}"},
         )
 
-    # Validate access code when enabling
-    if new_enabled and not new_access_code:
-        return JSONResponse(
-            status_code=400,
-            content={"detail": "Access code is required when enabling virtual printer"},
-        )
+    # Mode-specific validation and printer lookup
+    target_printer_ip = ""
+    target_printer_serial = ""
+    if new_mode == "proxy":
+        # Proxy mode requires target printer when enabling
+        if new_enabled and not new_target_id:
+            # If just switching to proxy mode (not explicitly enabling), auto-disable
+            if enabled is None:
+                new_enabled = False
+            else:
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": "Target printer is required for proxy mode"},
+                )
 
-    # Validate access code length (Bambu Studio requires exactly 8 characters)
-    if access_code is not None and len(access_code) != 8:
-        return JSONResponse(
-            status_code=400,
-            content={"detail": "Access code must be exactly 8 characters"},
-        )
+        # Look up printer IP and serial if we have a target
+        if new_target_id:
+            result = await db.execute(select(Printer).where(Printer.id == new_target_id))
+            printer = result.scalar_one_or_none()
+            if not printer:
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": f"Printer with ID {new_target_id} not found"},
+                )
+            target_printer_ip = printer.ip_address
+            target_printer_serial = printer.serial_number
+        # Access code not required for proxy mode
+    else:
+        # Non-proxy modes require access code when enabling
+        if new_enabled and not new_access_code:
+            # If just switching modes (not explicitly enabling), auto-disable
+            if enabled is None:
+                new_enabled = False
+            else:
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": "Access code is required when enabling virtual printer"},
+                )
+
+        # Validate access code length (Bambu Studio requires exactly 8 characters)
+        if access_code is not None and access_code and len(access_code) != 8:
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "Access code must be exactly 8 characters"},
+            )
 
     # Save settings
     await set_setting(db, "virtual_printer_enabled", "true" if new_enabled else "false")
@@ -451,6 +571,8 @@ async def update_virtual_printer_settings(
     await set_setting(db, "virtual_printer_mode", new_mode)
     if model is not None:
         await set_setting(db, "virtual_printer_model", model)
+    if target_printer_id is not None:
+        await set_setting(db, "virtual_printer_target_printer_id", str(target_printer_id))
     await db.commit()
     db.expire_all()
 
@@ -461,6 +583,8 @@ async def update_virtual_printer_settings(
             access_code=new_access_code,
             mode=new_mode,
             model=new_model,
+            target_printer_ip=target_printer_ip,
+            target_printer_serial=target_printer_serial,
         )
     except ValueError as e:
         return JSONResponse(
@@ -468,9 +592,10 @@ async def update_virtual_printer_settings(
             content={"detail": str(e)},
         )
     except Exception as e:
+        logger.error(f"Failed to configure virtual printer: {e}", exc_info=True)
         return JSONResponse(
             status_code=500,
-            content={"detail": f"Failed to configure virtual printer: {e}"},
+            content={"detail": "Failed to configure virtual printer. Check server logs for details."},
         )
 
     return await get_virtual_printer_settings(db)
@@ -482,7 +607,9 @@ async def update_virtual_printer_settings(
 
 
 @router.get("/mqtt/status")
-async def get_mqtt_status():
+async def get_mqtt_status(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+):
     """Get MQTT relay connection status."""
     from backend.app.services.mqtt_relay import mqtt_relay
 

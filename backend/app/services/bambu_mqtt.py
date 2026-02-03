@@ -249,6 +249,7 @@ class BambuMQTTClient:
         ip_address: str,
         serial_number: str,
         access_code: str,
+        model: str | None = None,
         on_state_change: Callable[[PrinterState], None] | None = None,
         on_print_start: Callable[[dict], None] | None = None,
         on_print_complete: Callable[[dict], None] | None = None,
@@ -258,6 +259,7 @@ class BambuMQTTClient:
         self.ip_address = ip_address
         self.serial_number = serial_number
         self.access_code = access_code
+        self.model = model
         self.on_state_change = on_state_change
         self.on_print_start = on_print_start
         self.on_print_complete = on_print_complete
@@ -2075,6 +2077,12 @@ class BambuMQTTClient:
                 }
             }
 
+            # P2S-specific parameter adjustments
+            # P2S printer doesn't support vibration calibration like X1/P1 series
+            if self.model and self.model.upper().strip() in ("P2S", "N7"):
+                command["print"]["vibration_cali"] = False
+                logger.info(f"[{self.serial_number}] P2S detected: disabling vibration_cali")
+
             # Add AMS mapping if provided
             if ams_mapping is not None:
                 command["print"]["ams_mapping"] = ams_mapping
@@ -2083,7 +2091,16 @@ class BambuMQTTClient:
             logger.info(f"[{self.serial_number}] Sending print command: {json.dumps(command)}")
             self._client.publish(self.topic_publish, json.dumps(command), qos=1)
             return True
-        return False
+        else:
+            # Log why we couldn't send the command
+            if not self._client:
+                logger.error(f"[{self.serial_number}] Cannot start print: MQTT client not initialized")
+            elif not self.state.connected:
+                logger.error(
+                    f"[{self.serial_number}] Cannot start print: Printer not connected (client exists but disconnected). "
+                    f"Connection state: {self.state.connected}, Last message: {self._last_message_time}"
+                )
+            return False
 
     def stop_print(self) -> bool:
         """Stop the current print job."""

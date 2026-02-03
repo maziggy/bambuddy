@@ -8,8 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
+from backend.app.core.permissions import Permission
 from backend.app.models.notification import NotificationLog, NotificationProvider
+from backend.app.models.user import User
 from backend.app.schemas.notification import (
     NotificationLogResponse,
     NotificationLogStats,
@@ -86,7 +89,10 @@ def _provider_to_dict(provider: NotificationProvider) -> dict:
 
 
 @router.get("/", response_model=list[NotificationProviderResponse])
-async def list_notification_providers(db: AsyncSession = Depends(get_db)):
+async def list_notification_providers(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_READ),
+):
     """List all notification providers."""
     result = await db.execute(select(NotificationProvider).order_by(NotificationProvider.created_at.desc()))
     providers = result.scalars().all()
@@ -98,6 +104,7 @@ async def list_notification_providers(db: AsyncSession = Depends(get_db)):
 async def create_notification_provider(
     provider_data: NotificationProviderCreate,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_CREATE),
 ):
     """Create a new notification provider."""
     provider = NotificationProvider(
@@ -153,6 +160,7 @@ async def create_notification_provider(
 async def test_notification_config(
     test_request: NotificationTestRequest,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_CREATE),
 ):
     """Test notification configuration before saving."""
     success, message = await notification_service.send_test_notification(
@@ -163,7 +171,10 @@ async def test_notification_config(
 
 
 @router.post("/test-all")
-async def test_all_notification_providers(db: AsyncSession = Depends(get_db)):
+async def test_all_notification_providers(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_UPDATE),
+):
     """Send a test notification to all enabled providers."""
     result = await db.execute(select(NotificationProvider).where(NotificationProvider.enabled.is_(True)))
     providers = result.scalars().all()
@@ -222,6 +233,7 @@ async def get_notification_logs(
     success: bool | None = Query(default=None),
     days: int | None = Query(default=7, ge=1, le=90, description="Filter logs from the last N days"),
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_READ),
 ):
     """Get notification logs with optional filters."""
     query = select(NotificationLog).order_by(desc(NotificationLog.created_at))
@@ -278,6 +290,7 @@ async def get_notification_logs(
 async def get_notification_log_stats(
     days: int = Query(default=7, ge=1, le=90, description="Statistics for the last N days"),
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_READ),
 ):
     """Get notification log statistics."""
     cutoff = datetime.utcnow() - timedelta(days=days)
@@ -323,6 +336,7 @@ async def get_notification_log_stats(
 async def clear_notification_logs(
     older_than_days: int = Query(default=30, ge=1, description="Delete logs older than N days"),
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_DELETE),
 ):
     """Clear old notification logs."""
     cutoff = datetime.utcnow() - timedelta(days=older_than_days)
@@ -345,6 +359,7 @@ async def clear_notification_logs(
 async def get_notification_provider(
     provider_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_READ),
 ):
     """Get a specific notification provider."""
     result = await db.execute(select(NotificationProvider).where(NotificationProvider.id == provider_id))
@@ -361,6 +376,7 @@ async def update_notification_provider(
     provider_id: int,
     update_data: NotificationProviderUpdate,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_UPDATE),
 ):
     """Update a notification provider."""
     result = await db.execute(select(NotificationProvider).where(NotificationProvider.id == provider_id))
@@ -392,6 +408,7 @@ async def update_notification_provider(
 async def delete_notification_provider(
     provider_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_DELETE),
 ):
     """Delete a notification provider."""
     result = await db.execute(select(NotificationProvider).where(NotificationProvider.id == provider_id))
@@ -413,6 +430,7 @@ async def delete_notification_provider(
 async def test_notification_provider(
     provider_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_UPDATE),
 ):
     """Send a test notification using an existing provider."""
     result = await db.execute(select(NotificationProvider).where(NotificationProvider.id == provider_id))

@@ -13,8 +13,11 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
+from backend.app.core.permissions import Permission
 from backend.app.models.settings import Settings
+from backend.app.models.user import User
 from backend.app.schemas.cloud import (
     CloudAuthStatus,
     CloudDevice,
@@ -74,7 +77,10 @@ async def clear_token(db: AsyncSession) -> None:
 
 
 @router.get("/status", response_model=CloudAuthStatus)
-async def get_auth_status(db: AsyncSession = Depends(get_db)):
+async def get_auth_status(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
+):
     """Get current cloud authentication status."""
     token, email = await get_stored_token(db)
     cloud = get_cloud_service()
@@ -89,12 +95,20 @@ async def get_auth_status(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login", response_model=CloudLoginResponse)
-async def login(request: CloudLoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(
+    request: CloudLoginRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
+):
     """
     Initiate login to Bambu Cloud.
 
-    This will typically trigger a verification code to be sent to the user's email.
-    After receiving the code, call /cloud/verify to complete the login.
+    This will trigger either:
+    - Email verification: A code is sent to the user's email
+    - TOTP verification: User enters code from their authenticator app
+
+    After receiving/generating the code, call /cloud/verify to complete the login.
+    For TOTP, include the tfa_key from this response in the verify request.
     """
     cloud = get_cloud_service()
 
@@ -112,6 +126,8 @@ async def login(request: CloudLoginRequest, db: AsyncSession = Depends(get_db)):
             success=result.get("success", False),
             needs_verification=result.get("needs_verification", False),
             message=result.get("message", "Unknown error"),
+            verification_type=result.get("verification_type"),
+            tfa_key=result.get("tfa_key"),
         )
     except BambuCloudAuthError as e:
         raise HTTPException(status_code=401, detail=str(e))
@@ -120,17 +136,30 @@ async def login(request: CloudLoginRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/verify", response_model=CloudLoginResponse)
-async def verify_code(request: CloudVerifyRequest, db: AsyncSession = Depends(get_db)):
+async def verify_code(
+    request: CloudVerifyRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
+):
     """
-    Complete login with verification code.
+    Complete login with verification code (email or TOTP).
 
-    After calling /cloud/login, the user will receive an email with a 6-digit code.
-    Submit that code here to complete authentication.
+    For email verification:
+    - After calling /cloud/login, the user receives an email with a 6-digit code
+    - Submit the code with email address
+
+    For TOTP verification:
+    - The user enters the 6-digit code from their authenticator app
+    - Include the tfa_key from the /cloud/login response
     """
     cloud = get_cloud_service()
 
     try:
-        result = await cloud.verify_code(request.email, request.code)
+        # Use TOTP verification if tfa_key is provided
+        if request.tfa_key:
+            result = await cloud.verify_totp(request.tfa_key, request.code)
+        else:
+            result = await cloud.verify_code(request.email, request.code)
 
         if result.get("success") and cloud.access_token:
             await store_token(db, cloud.access_token, request.email)
@@ -147,7 +176,11 @@ async def verify_code(request: CloudVerifyRequest, db: AsyncSession = Depends(ge
 
 
 @router.post("/token", response_model=CloudAuthStatus)
-async def set_token(request: CloudTokenRequest, db: AsyncSession = Depends(get_db)):
+async def set_token(
+    request: CloudTokenRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
+):
     """
     Set access token directly.
 
@@ -167,7 +200,10 @@ async def set_token(request: CloudTokenRequest, db: AsyncSession = Depends(get_d
 
 
 @router.post("/logout")
-async def logout(db: AsyncSession = Depends(get_db)):
+async def logout(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
+):
     """Log out of Bambu Cloud."""
     cloud = get_cloud_service()
     cloud.logout()
@@ -179,6 +215,7 @@ async def logout(db: AsyncSession = Depends(get_db)):
 async def get_slicer_settings(
     version: str = "02.04.00.70",
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
 ):
     """
     Get all slicer settings (filament, printer, process presets).
@@ -235,7 +272,11 @@ async def get_slicer_settings(
 
 
 @router.get("/settings/{setting_id}")
-async def get_setting_detail(setting_id: str, db: AsyncSession = Depends(get_db)):
+async def get_setting_detail(
+    setting_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+):
     """
     Get detailed information for a specific setting/preset.
 
@@ -296,7 +337,11 @@ def _filament_id_to_setting_id(filament_id: str) -> str:
 
 
 @router.post("/filament-info")
-async def get_filament_info(setting_ids: list[str] = Body(...), db: AsyncSession = Depends(get_db)):
+async def get_filament_info(
+    setting_ids: list[str] = Body(...),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
+):
     """
     Get filament preset info (name and K value) for multiple setting IDs.
 
@@ -370,7 +415,10 @@ async def get_filament_info(setting_ids: list[str] = Body(...), db: AsyncSession
 
 
 @router.get("/devices", response_model=list[CloudDevice])
-async def get_devices(db: AsyncSession = Depends(get_db)):
+async def get_devices(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+):
     """
     Get list of bound printer devices.
 
@@ -408,7 +456,10 @@ async def get_devices(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/firmware-updates", response_model=FirmwareUpdatesResponse)
-async def get_firmware_updates(db: AsyncSession = Depends(get_db)):
+async def get_firmware_updates(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FIRMWARE_READ),
+):
     """
     Check for firmware updates for all bound devices.
 
@@ -484,7 +535,11 @@ async def get_firmware_updates(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/settings")
-async def create_setting(request: SlicerSettingCreate, db: AsyncSession = Depends(get_db)):
+async def create_setting(
+    request: SlicerSettingCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+):
     """
     Create a new slicer preset/setting.
 
@@ -524,6 +579,7 @@ async def update_setting(
     setting_id: str,
     request: SlicerSettingUpdate,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """
     Update an existing slicer preset/setting.
@@ -555,7 +611,11 @@ async def update_setting(
 
 
 @router.delete("/settings/{setting_id}", response_model=SlicerSettingDeleteResponse)
-async def delete_setting(setting_id: str, db: AsyncSession = Depends(get_db)):
+async def delete_setting(
+    setting_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+):
     """
     Delete a slicer preset/setting.
 
@@ -620,7 +680,10 @@ def _load_fields(preset_type: str) -> dict:
 
 
 @router.get("/fields/{preset_type}")
-async def get_preset_fields(preset_type: Literal["filament", "print", "process", "printer"]):
+async def get_preset_fields(
+    preset_type: Literal["filament", "print", "process", "printer"],
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+):
     """
     Get field definitions for a preset type.
 
@@ -639,7 +702,9 @@ async def get_preset_fields(preset_type: Literal["filament", "print", "process",
 
 
 @router.get("/fields")
-async def get_all_preset_fields():
+async def get_all_preset_fields(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+):
     """
     Get all field definitions for all preset types.
 

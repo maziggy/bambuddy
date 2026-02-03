@@ -9,8 +9,11 @@ from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
+from backend.app.core.permissions import Permission
 from backend.app.models.printer import Printer
+from backend.app.models.user import User
 from backend.app.services.camera import (
     capture_camera_frame,
     generate_chamber_image_stream,
@@ -353,6 +356,8 @@ async def camera_stream(
     This endpoint returns a multipart MJPEG stream that can be used directly
     in an <img> tag or video player.
 
+    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
+
     Uses external camera if configured, otherwise uses built-in camera:
     - External: MJPEG, RTSP, or HTTP snapshot
     - A1/P1: Chamber image protocol (port 6000)
@@ -476,7 +481,10 @@ async def camera_stream(
 
 
 @router.api_route("/{printer_id}/camera/stop", methods=["GET", "POST"])
-async def stop_camera_stream(printer_id: int):
+async def stop_camera_stream(
+    printer_id: int,
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+):
     """Stop all active camera streams for a printer.
 
     This can be called by the frontend when the camera window is closed.
@@ -527,6 +535,8 @@ async def camera_snapshot(
     """Capture a single frame from the printer camera.
 
     Returns a JPEG image.
+
+    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
     """
     import tempfile
     from pathlib import Path
@@ -574,6 +584,7 @@ async def camera_snapshot(
 async def test_camera(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Test camera connection for a printer.
 
@@ -591,7 +602,10 @@ async def test_camera(
 
 
 @router.get("/{printer_id}/camera/status")
-async def camera_status(printer_id: int):
+async def camera_status(
+    printer_id: int,
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+):
     """Get the status of an active camera stream.
 
     Returns whether a stream is active and when the last frame was received.
@@ -658,6 +672,7 @@ async def test_external_camera(
     url: str,
     camera_type: str,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Test external camera connection.
 
@@ -684,6 +699,7 @@ async def check_plate_empty(
     use_external: bool = False,
     include_debug_image: bool = False,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Check if the build plate is empty using camera vision.
 
@@ -791,6 +807,7 @@ async def calibrate_plate_detection(
     label: str | None = None,
     use_external: bool = False,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Calibrate plate detection by capturing a reference image of the empty plate.
 
@@ -854,6 +871,7 @@ async def delete_plate_calibration(
     printer_id: int,
     plate_type: str | None = None,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Delete the plate detection calibration for a printer and plate type.
 
@@ -894,6 +912,7 @@ async def get_plate_detection_status(
     printer_id: int,
     plate_type: str | None = None,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Check plate detection status for a printer and plate type.
 
@@ -937,6 +956,7 @@ async def get_plate_detection_status(
 async def get_plate_references(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Get all calibration references for a printer with metadata.
 
@@ -971,7 +991,10 @@ async def get_reference_thumbnail(
     index: int,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get thumbnail image for a calibration reference."""
+    """Get thumbnail image for a calibration reference.
+
+    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
+    """
     from fastapi.responses import Response
 
     from backend.app.services.plate_detection import PlateDetector, is_plate_detection_available
@@ -997,6 +1020,7 @@ async def update_reference_label(
     index: int,
     label: str,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Update the label for a calibration reference."""
     from backend.app.services.plate_detection import PlateDetector, is_plate_detection_available
@@ -1021,6 +1045,7 @@ async def delete_reference(
     printer_id: int,
     index: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Delete a specific calibration reference."""
     from backend.app.services.plate_detection import PlateDetector, is_plate_detection_available

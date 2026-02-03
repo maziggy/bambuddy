@@ -9,9 +9,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.settings import get_setting
+from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
+from backend.app.core.permissions import Permission
 from backend.app.models.printer import Printer
 from backend.app.models.smart_plug import SmartPlug
+from backend.app.models.user import User
 from backend.app.schemas.smart_plug import (
     HAEntity,
     HASensorEntity,
@@ -38,7 +41,10 @@ router = APIRouter(prefix="/smart-plugs", tags=["smart-plugs"])
 
 
 @router.get("/", response_model=list[SmartPlugResponse])
-async def list_smart_plugs(db: AsyncSession = Depends(get_db)):
+async def list_smart_plugs(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
+):
     """List all smart plugs."""
     result = await db.execute(select(SmartPlug).order_by(SmartPlug.name))
     return list(result.scalars().all())
@@ -48,6 +54,7 @@ async def list_smart_plugs(db: AsyncSession = Depends(get_db)):
 async def create_smart_plug(
     data: SmartPlugCreate,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_CREATE),
 ):
     """Create a new smart plug."""
     # Validate printer_id if provided
@@ -57,21 +64,17 @@ async def create_smart_plug(
             raise HTTPException(400, "Printer not found")
 
         # Check if printer already has a plug assigned
-        # Scripts can coexist with other plugs (they're for multi-device control, not power on/off)
-        is_script = data.plug_type == "homeassistant" and data.ha_entity_id and data.ha_entity_id.startswith("script.")
-        if not is_script:
-            # For non-script plugs, check there's no other non-script plug assigned
-            result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == data.printer_id))
-            existing = result.scalar_one_or_none()
-            if existing:
-                # Allow if existing plug is a script
-                existing_is_script = (
-                    existing.plug_type == "homeassistant"
-                    and existing.ha_entity_id
-                    and existing.ha_entity_id.startswith("script.")
+        # Tasmota plugs: only one per printer (physical power device)
+        # HA entities: allow multiple per printer (for different automations)
+        if data.plug_type == "tasmota":
+            result = await db.execute(
+                select(SmartPlug).where(
+                    SmartPlug.printer_id == data.printer_id,
+                    SmartPlug.plug_type == "tasmota",
                 )
-                if not existing_is_script:
-                    raise HTTPException(400, "This printer already has a smart plug assigned")
+            )
+            if result.scalar_one_or_none():
+                raise HTTPException(400, "This printer already has a Tasmota plug assigned")
 
     # For MQTT plugs, ensure MQTT broker is configured and service is connected
     if data.plug_type == "mqtt":
@@ -103,7 +106,15 @@ async def create_smart_plug(
                     f"Failed to connect to MQTT broker at {mqtt_broker}. Please check your MQTT settings.",
                 )
 
-    plug = SmartPlug(**data.model_dump())
+    plug_data = data.model_dump()
+
+    # For HA entities, default auto_on and auto_off to False
+    # (they're for automations, not power control like Tasmota plugs)
+    if data.plug_type == "homeassistant":
+        plug_data["auto_on"] = False
+        plug_data["auto_off"] = False
+
+    plug = SmartPlug(**plug_data)
     db.add(plug)
     await db.commit()
     await db.refresh(plug)
@@ -142,7 +153,11 @@ async def create_smart_plug(
 
 
 @router.get("/by-printer/{printer_id}", response_model=SmartPlugResponse | None)
-async def get_smart_plug_by_printer(printer_id: int, db: AsyncSession = Depends(get_db)):
+async def get_smart_plug_by_printer(
+    printer_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
+):
     """Get the main smart plug assigned to a printer.
 
     When multiple plugs are assigned (e.g., a regular plug + script),
@@ -165,26 +180,25 @@ async def get_smart_plug_by_printer(printer_id: int, db: AsyncSession = Depends(
 
 
 @router.get("/by-printer/{printer_id}/scripts", response_model=list[SmartPlugResponse])
-async def get_script_plugs_by_printer(printer_id: int, db: AsyncSession = Depends(get_db)):
-    """Get all HA script plugs assigned to a printer.
+async def get_script_plugs_by_printer(
+    printer_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
+):
+    """Get all HA entities assigned to a printer for display on printer card.
 
-    Returns only script entities (script.*) for the printer that have
+    Returns HA entities (switches, scripts, lights, etc.) for the printer that have
     show_on_printer_card enabled.
-    Used to display "Run Script" buttons alongside the main power plug.
+    Used to display action buttons alongside the main power plug.
     """
     result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
     plugs = result.scalars().all()
 
-    # Filter to only scripts with show_on_printer_card enabled
-    scripts = [
-        plug
-        for plug in plugs
-        if plug.plug_type == "homeassistant"
-        and plug.ha_entity_id
-        and plug.ha_entity_id.startswith("script.")
-        and plug.show_on_printer_card
+    # Filter to HA entities with show_on_printer_card enabled
+    ha_entities = [
+        plug for plug in plugs if plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.show_on_printer_card
     ]
-    return scripts
+    return ha_entities
 
 
 # Tasmota Discovery Endpoints
@@ -244,7 +258,10 @@ class DiscoveredTasmotaDevice(BaseModel):
 
 
 @router.post("/discover/scan", response_model=TasmotaScanStatus)
-async def start_tasmota_scan(request: TasmotaScanRequest | None = Body(default=None)):
+async def start_tasmota_scan(
+    request: TasmotaScanRequest | None = Body(default=None),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
+):
     """Start an IP range scan for Tasmota devices.
 
     Auto-detects local network if no IP range provided.
@@ -268,7 +285,9 @@ async def start_tasmota_scan(request: TasmotaScanRequest | None = Body(default=N
 
 
 @router.get("/discover/status", response_model=TasmotaScanStatus)
-async def get_tasmota_scan_status():
+async def get_tasmota_scan_status(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
+):
     """Get the current Tasmota scan status."""
     scanned, total = tasmota_scanner.progress
     return TasmotaScanStatus(
@@ -279,7 +298,9 @@ async def get_tasmota_scan_status():
 
 
 @router.post("/discover/stop", response_model=TasmotaScanStatus)
-async def stop_tasmota_scan():
+async def stop_tasmota_scan(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
+):
     """Stop the current Tasmota scan."""
     tasmota_scanner.stop()
     scanned, total = tasmota_scanner.progress
@@ -291,7 +312,9 @@ async def stop_tasmota_scan():
 
 
 @router.get("/discover/devices", response_model=list[DiscoveredTasmotaDevice])
-async def get_discovered_tasmota_devices():
+async def get_discovered_tasmota_devices(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
+):
     """Get list of discovered Tasmota devices."""
     return [
         DiscoveredTasmotaDevice(
@@ -309,7 +332,10 @@ async def get_discovered_tasmota_devices():
 
 
 @router.post("/ha/test-connection", response_model=HATestConnectionResponse)
-async def test_ha_connection(request: HATestConnectionRequest):
+async def test_ha_connection(
+    request: HATestConnectionRequest,
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_CONTROL),
+):
     """Test connection to Home Assistant."""
     result = await homeassistant_service.test_connection(request.url, request.token)
     return HATestConnectionResponse(**result)
@@ -319,6 +345,7 @@ async def test_ha_connection(request: HATestConnectionRequest):
 async def list_ha_entities(
     db: AsyncSession = Depends(get_db),
     search: str | None = None,
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
 ):
     """List available Home Assistant entities.
 
@@ -340,7 +367,10 @@ async def list_ha_entities(
 
 
 @router.get("/ha/sensors", response_model=list[HASensorEntity])
-async def list_ha_sensor_entities(db: AsyncSession = Depends(get_db)):
+async def list_ha_sensor_entities(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
+):
     """List available Home Assistant sensor entities for energy monitoring.
 
     Returns sensors with power/energy units (W, kW, kWh, Wh).
@@ -359,7 +389,11 @@ async def list_ha_sensor_entities(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{plug_id}", response_model=SmartPlugResponse)
-async def get_smart_plug(plug_id: int, db: AsyncSession = Depends(get_db)):
+async def get_smart_plug(
+    plug_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
+):
     """Get a specific smart plug."""
     result = await db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
     plug = result.scalar_one_or_none()
@@ -373,6 +407,7 @@ async def update_smart_plug(
     plug_id: int,
     data: SmartPlugUpdate,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_UPDATE),
 ):
     """Update a smart plug."""
     result = await db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
@@ -391,30 +426,20 @@ async def update_smart_plug(
         if not result.scalar_one_or_none():
             raise HTTPException(400, "Printer not found")
 
-        # Check if that printer already has a different plug assigned
-        # Scripts can coexist with other plugs
-        # Determine if the plug being updated is/will be a script
-        new_entity_id = update_data.get("ha_entity_id", plug.ha_entity_id)
+        # Check if that printer already has a different Tasmota plug assigned
+        # Tasmota plugs: only one per printer (physical power device)
+        # HA entities: allow multiple per printer (for different automations)
         new_plug_type = update_data.get("plug_type", plug.plug_type)
-        is_script = new_plug_type == "homeassistant" and new_entity_id and new_entity_id.startswith("script.")
-
-        if not is_script:
+        if new_plug_type == "tasmota":
             result = await db.execute(
                 select(SmartPlug).where(
                     SmartPlug.printer_id == new_printer_id,
                     SmartPlug.id != plug_id,
+                    SmartPlug.plug_type == "tasmota",
                 )
             )
-            existing = result.scalar_one_or_none()
-            if existing:
-                # Allow if existing plug is a script
-                existing_is_script = (
-                    existing.plug_type == "homeassistant"
-                    and existing.ha_entity_id
-                    and existing.ha_entity_id.startswith("script.")
-                )
-                if not existing_is_script:
-                    raise HTTPException(400, "This printer already has a smart plug assigned")
+            if result.scalar_one_or_none():
+                raise HTTPException(400, "This printer already has a Tasmota plug assigned")
 
     # Track old MQTT settings for comparison
     old_plug_type = plug.plug_type
@@ -489,7 +514,11 @@ async def update_smart_plug(
 
 
 @router.delete("/{plug_id}")
-async def delete_smart_plug(plug_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_smart_plug(
+    plug_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_DELETE),
+):
     """Delete a smart plug."""
     result = await db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
     plug = result.scalar_one_or_none()
@@ -529,6 +558,7 @@ async def control_smart_plug(
     plug_id: int,
     control: SmartPlugControl,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_CONTROL),
 ):
     """Manual control: on/off/toggle."""
     result = await db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
@@ -635,7 +665,11 @@ async def trigger_associated_scripts(printer_id: int, plug_state: str, db: Async
 
 
 @router.get("/{plug_id}/status", response_model=SmartPlugStatus)
-async def get_plug_status(plug_id: int, db: AsyncSession = Depends(get_db)):
+async def get_plug_status(
+    plug_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
+):
     """Get current plug status from device including energy data."""
     result = await db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
     plug = result.scalar_one_or_none()
@@ -763,7 +797,10 @@ async def check_power_alerts(plug: SmartPlug, current_power: float | None, db: A
 
 
 @router.post("/test-connection")
-async def test_connection(data: SmartPlugTestConnection):
+async def test_connection(
+    data: SmartPlugTestConnection,
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_CONTROL),
+):
     """Test connection to a Tasmota device."""
     result = await tasmota_service.test_connection(
         data.ip_address,

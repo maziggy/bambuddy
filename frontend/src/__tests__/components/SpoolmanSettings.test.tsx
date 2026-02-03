@@ -18,6 +18,8 @@ vi.mock('../../api/client', () => ({
   api: {
     getSettings: vi.fn().mockResolvedValue({}),
     updateSettings: vi.fn().mockResolvedValue({}),
+    getSpoolmanSettings: vi.fn(),
+    updateSpoolmanSettings: vi.fn(),
     getSpoolmanStatus: vi.fn(),
     connectSpoolman: vi.fn(),
     disconnectSpoolman: vi.fn(),
@@ -30,17 +32,21 @@ vi.mock('../../api/client', () => ({
 // Import mocked module
 import { api } from '../../api/client';
 
-// Mock fetch for Spoolman settings endpoints
-const mockFetchResponse = (data: object) => ({
-  ok: true,
-  json: () => Promise.resolve(data),
-});
-
 describe('SpoolmanSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
     // Default API mocks
+    vi.mocked(api.getSpoolmanSettings).mockResolvedValue({
+      spoolman_enabled: 'false',
+      spoolman_url: '',
+      spoolman_sync_mode: 'auto',
+    });
+    vi.mocked(api.updateSpoolmanSettings).mockResolvedValue({
+      spoolman_enabled: 'false',
+      spoolman_url: '',
+      spoolman_sync_mode: 'auto',
+    });
     vi.mocked(api.getSpoolmanStatus).mockResolvedValue({
       enabled: false,
       connected: false,
@@ -56,26 +62,12 @@ describe('SpoolmanSettings', () => {
       skipped: [],
       errors: [],
     });
-
-    // Default fetch mock for settings - disabled state
-    global.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url.includes('/api/v1/settings/spoolman')) {
-        return Promise.resolve(
-          mockFetchResponse({
-            spoolman_enabled: 'false',
-            spoolman_url: '',
-            spoolman_sync_mode: 'auto',
-          })
-        );
-      }
-      return Promise.reject(new Error('Unknown URL'));
-    }) as any;
   });
 
   describe('rendering', () => {
     it('renders loading state initially', () => {
-      // Delay the fetch response to catch loading state
-      global.fetch = vi.fn().mockImplementation(() => new Promise(() => {})) as any;
+      // Delay the API response to catch loading state
+      vi.mocked(api.getSpoolmanSettings).mockImplementation(() => new Promise(() => {}));
       render(<SpoolmanSettings />);
 
       // Should show loading spinner
@@ -159,27 +151,16 @@ describe('SpoolmanSettings', () => {
 
   describe('enabled state', () => {
     beforeEach(() => {
-      global.fetch = vi.fn().mockImplementation((url: string) => {
-        if (url.includes('/api/v1/settings/spoolman')) {
-          if (url.includes('PUT') || (url as any).method === 'PUT') {
-            return Promise.resolve(
-              mockFetchResponse({
-                spoolman_enabled: 'true',
-                spoolman_url: 'http://localhost:7912',
-                spoolman_sync_mode: 'auto',
-              })
-            );
-          }
-          return Promise.resolve(
-            mockFetchResponse({
-              spoolman_enabled: 'true',
-              spoolman_url: 'http://localhost:7912',
-              spoolman_sync_mode: 'auto',
-            })
-          );
-        }
-        return Promise.reject(new Error('Unknown URL'));
-      }) as any;
+      vi.mocked(api.getSpoolmanSettings).mockResolvedValue({
+        spoolman_enabled: 'true',
+        spoolman_url: 'http://localhost:7912',
+        spoolman_sync_mode: 'auto',
+      });
+      vi.mocked(api.updateSpoolmanSettings).mockResolvedValue({
+        spoolman_enabled: 'true',
+        spoolman_url: 'http://localhost:7912',
+        spoolman_sync_mode: 'auto',
+      });
     });
 
     it('URL input is enabled when Spoolman is enabled', async () => {

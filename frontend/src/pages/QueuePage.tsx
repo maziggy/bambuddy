@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
@@ -64,39 +65,39 @@ function formatDuration(seconds: number | null | undefined): string {
   return `${minutes}m`;
 }
 
-function formatRelativeTime(dateString: string | null, timeFormat: TimeFormat = 'system'): string {
-  if (!dateString) return 'ASAP';
+function formatRelativeTime(dateString: string | null, timeFormat: TimeFormat = 'system', t?: (key: string, options?: Record<string, unknown>) => string): string {
+  if (!dateString) return t?.('queue.time.asap') ?? 'ASAP';
   const date = parseUTCDate(dateString);
-  if (!date) return 'ASAP';
+  if (!date) return t?.('queue.time.asap') ?? 'ASAP';
   const now = new Date();
   const diff = date.getTime() - now.getTime();
 
-  if (diff < -60000) return 'Overdue';
-  if (diff < 0) return 'Now';
-  if (diff < 60000) return 'In less than a minute';
-  if (diff < 3600000) return `In ${Math.round(diff / 60000)} min`;
-  if (diff < 86400000) return `In ${Math.round(diff / 3600000)} hours`;
+  if (diff < -60000) return t?.('queue.time.overdue') ?? 'Overdue';
+  if (diff < 0) return t?.('queue.time.now') ?? 'Now';
+  if (diff < 60000) return t?.('queue.time.lessThanMinute') ?? 'In less than a minute';
+  if (diff < 3600000) return t?.('queue.time.inMinutes', { count: Math.round(diff / 60000) }) ?? `In ${Math.round(diff / 60000)} min`;
+  if (diff < 86400000) return t?.('queue.time.inHours', { count: Math.round(diff / 3600000) }) ?? `In ${Math.round(diff / 3600000)} hours`;
   return formatDateTime(dateString, timeFormat);
 }
 
-function StatusBadge({ status, waitingReason }: { status: PrintQueueItem['status']; waitingReason?: string | null }) {
+function StatusBadge({ status, waitingReason, t }: { status: PrintQueueItem['status']; waitingReason?: string | null; t: (key: string) => string }) {
   // Special case: pending with waiting_reason shows as "Waiting"
   if (status === 'pending' && waitingReason) {
     return (
       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border text-purple-400 bg-purple-400/10 border-purple-400/20">
         <Clock className="w-3.5 h-3.5" />
-        Waiting
+        {t('queue.status.waiting')}
       </span>
     );
   }
 
   const config = {
-    pending: { icon: Clock, color: 'text-status-warning bg-status-warning/10 border-status-warning/20', label: 'Pending' },
-    printing: { icon: Play, color: 'text-blue-400 bg-blue-400/10 border-blue-400/20', label: 'Printing' },
-    completed: { icon: CheckCircle, color: 'text-status-ok bg-status-ok/10 border-status-ok/20', label: 'Completed' },
-    failed: { icon: XCircle, color: 'text-status-error bg-status-error/10 border-status-error/20', label: 'Failed' },
-    skipped: { icon: SkipForward, color: 'text-orange-400 bg-orange-400/10 border-orange-400/20', label: 'Skipped' },
-    cancelled: { icon: X, color: 'text-gray-400 bg-gray-400/10 border-gray-400/20', label: 'Cancelled' },
+    pending: { icon: Clock, color: 'text-status-warning bg-status-warning/10 border-status-warning/20', label: t('queue.status.pending') },
+    printing: { icon: Play, color: 'text-blue-400 bg-blue-400/10 border-blue-400/20', label: t('queue.status.printing') },
+    completed: { icon: CheckCircle, color: 'text-status-ok bg-status-ok/10 border-status-ok/20', label: t('queue.status.completed') },
+    failed: { icon: XCircle, color: 'text-status-error bg-status-error/10 border-status-error/20', label: t('queue.status.failed') },
+    skipped: { icon: SkipForward, color: 'text-orange-400 bg-orange-400/10 border-orange-400/20', label: t('queue.status.skipped') },
+    cancelled: { icon: X, color: 'text-gray-400 bg-gray-400/10 border-gray-400/20', label: t('queue.status.cancelled') },
   };
 
   const { icon: Icon, color, label } = config[status];
@@ -116,12 +117,14 @@ function BulkEditModal({
   onSave,
   onClose,
   isSaving,
+  t,
 }: {
   selectedCount: number;
   printers: { id: number; name: string }[];
   onSave: (data: Partial<PrintQueueBulkUpdate>) => void;
   onClose: () => void;
   isSaving: boolean;
+  t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   const [printerId, setPrinterId] = useState<number | null | 'unchanged'>('unchanged');
   const [manualStart, setManualStart] = useState<boolean | 'unchanged'>('unchanged');
@@ -158,7 +161,7 @@ function BulkEditModal({
       <div className="bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
           <h2 className="text-lg font-semibold text-white">
-            Edit {selectedCount} Item{selectedCount !== 1 ? 's' : ''}
+            {t('queue.bulkEdit.title', { count: selectedCount })}
           </h2>
           <button onClick={onClose} className="p-1 hover:bg-bambu-dark rounded">
             <X className="w-5 h-5 text-bambu-gray" />
@@ -167,12 +170,12 @@ function BulkEditModal({
 
         <div className="p-4 space-y-4">
           <p className="text-sm text-bambu-gray">
-            Only changed settings will be applied to selected items.
+            {t('queue.bulkEdit.description')}
           </p>
 
           {/* Printer Assignment */}
           <div>
-            <label className="block text-sm font-medium text-white mb-2">Printer</label>
+            <label className="block text-sm font-medium text-white mb-2">{t('queue.bulkEdit.printer')}</label>
             <select
               value={printerId === null ? 'null' : printerId === 'unchanged' ? 'unchanged' : String(printerId)}
               onChange={(e) => {
@@ -183,8 +186,8 @@ function BulkEditModal({
               }}
               className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
             >
-              <option value="unchanged">— No change —</option>
-              <option value="null">Unassigned</option>
+              <option value="unchanged">{t('queue.bulkEdit.noChange')}</option>
+              <option value="null">{t('queue.filter.unassigned')}</option>
               {printers.map(p => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
@@ -193,35 +196,35 @@ function BulkEditModal({
 
           {/* Queue Options */}
           <div>
-            <label className="block text-sm font-medium text-white mb-2">Queue Options</label>
+            <label className="block text-sm font-medium text-white mb-2">{t('queue.bulkEdit.queueOptions')}</label>
             <div className="space-y-2">
-              <TriStateToggle label="Staged (manual start)" value={manualStart} onChange={setManualStart} />
-              <TriStateToggle label="Auto power off after print" value={autoOffAfter} onChange={setAutoOffAfter} />
-              <TriStateToggle label="Require previous success" value={requirePreviousSuccess} onChange={setRequirePreviousSuccess} />
+              <TriStateToggle label={t('queue.bulkEdit.staged')} value={manualStart} onChange={setManualStart} t={t} />
+              <TriStateToggle label={t('queue.bulkEdit.autoPowerOff')} value={autoOffAfter} onChange={setAutoOffAfter} t={t} />
+              <TriStateToggle label={t('queue.bulkEdit.requirePrevious')} value={requirePreviousSuccess} onChange={setRequirePreviousSuccess} t={t} />
             </div>
           </div>
 
           {/* Print Options */}
           <div>
-            <label className="block text-sm font-medium text-white mb-2">Print Options</label>
+            <label className="block text-sm font-medium text-white mb-2">{t('queue.bulkEdit.printOptions')}</label>
             <div className="space-y-2">
-              <TriStateToggle label="Bed levelling" value={bedLevelling} onChange={setBedLevelling} />
-              <TriStateToggle label="Flow calibration" value={flowCali} onChange={setFlowCali} />
-              <TriStateToggle label="Vibration calibration" value={vibrationCali} onChange={setVibrationCali} />
-              <TriStateToggle label="First layer inspection" value={layerInspect} onChange={setLayerInspect} />
-              <TriStateToggle label="Timelapse" value={timelapse} onChange={setTimelapse} />
-              <TriStateToggle label="Use AMS" value={useAms} onChange={setUseAms} />
+              <TriStateToggle label={t('queue.bulkEdit.bedLevelling')} value={bedLevelling} onChange={setBedLevelling} t={t} />
+              <TriStateToggle label={t('queue.bulkEdit.flowCalibration')} value={flowCali} onChange={setFlowCali} t={t} />
+              <TriStateToggle label={t('queue.bulkEdit.vibrationCalibration')} value={vibrationCali} onChange={setVibrationCali} t={t} />
+              <TriStateToggle label={t('queue.bulkEdit.layerInspection')} value={layerInspect} onChange={setLayerInspect} t={t} />
+              <TriStateToggle label={t('queue.bulkEdit.timelapse')} value={timelapse} onChange={setTimelapse} t={t} />
+              <TriStateToggle label={t('queue.bulkEdit.useAms')} value={useAms} onChange={setUseAms} t={t} />
             </div>
           </div>
         </div>
 
         <div className="flex justify-end gap-3 p-4 border-t border-bambu-dark-tertiary">
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
           <Button
             onClick={handleSave}
             disabled={!hasChanges || isSaving}
           >
-            {isSaving ? 'Saving...' : 'Apply Changes'}
+            {isSaving ? t('common.saving') : t('queue.bulkEdit.applyChanges')}
           </Button>
         </div>
       </div>
@@ -234,10 +237,12 @@ function TriStateToggle({
   label,
   value,
   onChange,
+  t,
 }: {
   label: string;
   value: boolean | 'unchanged';
   onChange: (val: boolean | 'unchanged') => void;
+  t: (key: string) => string;
 }) {
   return (
     <div className="flex items-center justify-between py-1">
@@ -253,13 +258,13 @@ function TriStateToggle({
           onClick={() => onChange(false)}
           className={`px-2 py-1 text-xs rounded ${value === false ? 'bg-red-500/20 text-red-400' : 'text-bambu-gray hover:text-white'}`}
         >
-          Off
+          {t('common.off')}
         </button>
         <button
           onClick={() => onChange(true)}
           className={`px-2 py-1 text-xs rounded ${value === true ? 'bg-bambu-green/20 text-bambu-green' : 'text-bambu-gray hover:text-white'}`}
         >
-          On
+          {t('common.on')}
         </button>
       </div>
     </div>
@@ -281,6 +286,7 @@ function SortableQueueItem({
   onToggleSelect,
   hasPermission,
   canModify,
+  t,
 }: {
   item: PrintQueueItem;
   position?: number;
@@ -295,6 +301,7 @@ function SortableQueueItem({
   onToggleSelect?: () => void;
   hasPermission: (permission: Permission) => boolean;
   canModify: (resource: 'queue' | 'archives' | 'library', action: 'update' | 'delete' | 'reprint', createdById: number | null | undefined) => boolean;
+  t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   const canReorder = hasPermission('queue:reorder');
   const {
@@ -400,7 +407,7 @@ function SortableQueueItem({
               <Link
                 to={`/archives?highlight=${item.archive_id}`}
                 className="text-bambu-gray hover:text-bambu-green transition-colors flex-shrink-0"
-                title="View archive"
+                title={t('queue.viewArchive')}
               >
                 <ExternalLink className="w-3.5 h-3.5" />
               </Link>
@@ -408,7 +415,7 @@ function SortableQueueItem({
               <Link
                 to={`/library?highlight=${item.library_file_id}`}
                 className="text-bambu-gray hover:text-bambu-green transition-colors flex-shrink-0"
-                title="View in File Manager"
+                title={t('queue.viewInFileManager')}
               >
                 <ExternalLink className="w-3.5 h-3.5" />
               </Link>
@@ -419,10 +426,10 @@ function SortableQueueItem({
             <span className={`flex items-center gap-1.5 ${item.printer_id === null && !item.target_model ? 'text-orange-400' : ''} ${item.target_model ? 'text-blue-400' : ''}`}>
               <Printer className="w-3.5 h-3.5" />
               {item.target_model
-                ? `Any ${item.target_model}${item.target_location ? ` @ ${item.target_location}` : ''}${item.required_filament_types?.length ? ` (${item.required_filament_types.join(', ')})` : ''}`
+                ? `${t('queue.filter.any')} ${item.target_model}${item.target_location ? ` @ ${item.target_location}` : ''}${item.required_filament_types?.length ? ` (${item.required_filament_types.join(', ')})` : ''}`
                 : item.printer_id === null
-                  ? 'Unassigned'
-                  : (item.printer_name || `Printer #${item.printer_id}`)}
+                  ? t('queue.filter.unassigned')
+                  : (item.printer_name || `${t('common.printer')} #${item.printer_id}`)}
             </span>
             {item.print_time_seconds && (
               <span className="flex items-center gap-1.5">
@@ -431,7 +438,7 @@ function SortableQueueItem({
               </span>
             )}
             {item.created_by_username && (
-              <span className="flex items-center gap-1.5" title={`Added by ${item.created_by_username}`}>
+              <span className="flex items-center gap-1.5" title={t('queue.addedBy', { name: item.created_by_username })}>
                 <User className="w-3.5 h-3.5" />
                 {item.created_by_username}
               </span>
@@ -439,7 +446,7 @@ function SortableQueueItem({
             {isPending && !item.manual_start && (
               <span className="flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5" />
-                {formatRelativeTime(item.scheduled_time, timeFormat)}
+                {formatRelativeTime(item.scheduled_time, timeFormat, t)}
               </span>
             )}
           </div>
@@ -449,18 +456,18 @@ function SortableQueueItem({
             {item.manual_start && (
               <span className="text-xs px-2 py-0.5 bg-purple-500/10 text-purple-400 rounded-full border border-purple-500/20 flex items-center gap-1">
                 <Hand className="w-3 h-3" />
-                Staged
+                {t('queue.badges.staged')}
               </span>
             )}
             {item.require_previous_success && (
               <span className="text-xs px-2 py-0.5 bg-orange-500/10 text-orange-400 rounded-full border border-orange-500/20">
-                Requires previous success
+                {t('queue.badges.requiresPrevious')}
               </span>
             )}
             {item.auto_off_after && (
               <span className="text-xs px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded-full border border-blue-500/20 flex items-center gap-1">
                 <Power className="w-3 h-3" />
-                Auto power off
+                {t('queue.badges.autoPowerOff')}
               </span>
             )}
           </div>
@@ -471,7 +478,7 @@ function SortableQueueItem({
               <div className="h-2 bg-bambu-dark rounded-full overflow-hidden">
                 <div className="h-full bg-gradient-to-r from-blue-500 to-blue-400 animate-pulse w-full opacity-50" />
               </div>
-              <p className="text-xs text-bambu-gray mt-1">Printing in progress...</p>
+              <p className="text-xs text-bambu-gray mt-1">{t('queue.printingInProgress')}</p>
             </div>
           )}
 
@@ -493,7 +500,7 @@ function SortableQueueItem({
         </div>
 
         {/* Status badge */}
-        <StatusBadge status={item.status} waitingReason={item.waiting_reason} />
+        <StatusBadge status={item.status} waitingReason={item.waiting_reason} t={t} />
 
         {/* Actions */}
         <div className="flex items-center gap-1">
@@ -503,7 +510,7 @@ function SortableQueueItem({
               size="sm"
               onClick={onStop}
               disabled={!hasPermission('printers:control')}
-              title={!hasPermission('printers:control') ? 'You do not have permission to stop prints' : 'Stop Print'}
+              title={!hasPermission('printers:control') ? t('queue.permissions.noStopPrint') : t('queue.actions.stopPrint')}
               className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
             >
               <StopCircle className="w-4 h-4" />
@@ -517,7 +524,7 @@ function SortableQueueItem({
                   size="sm"
                   onClick={onStart}
                   disabled={!hasPermission('printers:control')}
-                  title={!hasPermission('printers:control') ? 'You do not have permission to start prints' : 'Start Print'}
+                  title={!hasPermission('printers:control') ? t('queue.permissions.noStartPrint') : t('queue.actions.startPrint')}
                   className="text-bambu-green hover:text-bambu-green-light hover:bg-bambu-green/10"
                 >
                   <Play className="w-4 h-4" />
@@ -528,7 +535,7 @@ function SortableQueueItem({
                 size="sm"
                 onClick={onEdit}
                 disabled={!canModify('queue', 'update', item.created_by_id)}
-                title={!canModify('queue', 'update', item.created_by_id) ? 'You do not have permission to edit this queue item' : 'Edit'}
+                title={!canModify('queue', 'update', item.created_by_id) ? t('queue.permissions.noEdit') : t('common.edit')}
               >
                 <Pencil className="w-4 h-4" />
               </Button>
@@ -537,7 +544,7 @@ function SortableQueueItem({
                 size="sm"
                 onClick={onCancel}
                 disabled={!canModify('queue', 'delete', item.created_by_id)}
-                title={!canModify('queue', 'delete', item.created_by_id) ? 'You do not have permission to cancel this queue item' : 'Cancel'}
+                title={!canModify('queue', 'delete', item.created_by_id) ? t('queue.permissions.noCancel') : t('common.cancel')}
                 className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
               >
                 <X className="w-4 h-4" />
@@ -551,7 +558,7 @@ function SortableQueueItem({
                 size="sm"
                 onClick={onRequeue}
                 disabled={!hasPermission('queue:create')}
-                title={!hasPermission('queue:create') ? 'You do not have permission to re-queue items' : 'Re-queue'}
+                title={!hasPermission('queue:create') ? t('queue.permissions.noRequeue') : t('queue.actions.requeue')}
                 className="text-bambu-green hover:text-bambu-green/80 hover:bg-bambu-green/10"
               >
                 <RefreshCw className="w-4 h-4" />
@@ -561,7 +568,7 @@ function SortableQueueItem({
                 size="sm"
                 onClick={onRemove}
                 disabled={!canModify('queue', 'delete', item.created_by_id)}
-                title={!canModify('queue', 'delete', item.created_by_id) ? 'You do not have permission to remove this queue item' : 'Remove'}
+                title={!canModify('queue', 'delete', item.created_by_id) ? t('queue.permissions.noRemove') : t('common.remove')}
               >
                 <Trash2 className="w-4 h-4" />
               </Button>
@@ -574,6 +581,7 @@ function SortableQueueItem({
 }
 
 export function QueuePage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission, hasAnyPermission, canModify } = useAuth();
@@ -650,36 +658,36 @@ export function QueuePage() {
     mutationFn: (id: number) => api.cancelQueueItem(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
-      showToast('Queue item cancelled');
+      showToast(t('queue.toast.cancelled'));
     },
-    onError: () => showToast('Failed to cancel item', 'error'),
+    onError: () => showToast(t('queue.toast.cancelFailed'), 'error'),
   });
 
   const removeMutation = useMutation({
     mutationFn: (id: number) => api.removeFromQueue(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
-      showToast('Queue item removed');
+      showToast(t('queue.toast.removed'));
     },
-    onError: () => showToast('Failed to remove item', 'error'),
+    onError: () => showToast(t('queue.toast.removeFailed'), 'error'),
   });
 
   const stopMutation = useMutation({
     mutationFn: (id: number) => api.stopQueueItem(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
-      showToast('Print stopped');
+      showToast(t('queue.toast.stopped'));
     },
-    onError: () => showToast('Failed to stop print', 'error'),
+    onError: () => showToast(t('queue.toast.stopFailed'), 'error'),
   });
 
   const startMutation = useMutation({
     mutationFn: (id: number) => api.startQueueItem(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
-      showToast('Print released to queue');
+      showToast(t('queue.toast.released'));
     },
-    onError: () => showToast('Failed to start print', 'error'),
+    onError: () => showToast(t('queue.toast.startFailed'), 'error'),
   });
 
   const reorderMutation = useMutation({
@@ -687,7 +695,7 @@ export function QueuePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
     },
-    onError: () => showToast('Failed to reorder queue', 'error'),
+    onError: () => showToast(t('queue.toast.reorderFailed'), 'error'),
   });
 
   const clearHistoryMutation = useMutation({
@@ -702,9 +710,9 @@ export function QueuePage() {
     },
     onSuccess: (count) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
-      showToast(`Cleared ${count} history item${count !== 1 ? 's' : ''}`);
+      showToast(t('queue.toast.historyCleared', { count }));
     },
-    onError: () => showToast('Failed to clear history', 'error'),
+    onError: () => showToast(t('queue.toast.clearHistoryFailed'), 'error'),
   });
 
   const bulkUpdateMutation = useMutation({
@@ -715,7 +723,7 @@ export function QueuePage() {
       setShowBulkEditModal(false);
       showToast(result.message);
     },
-    onError: () => showToast('Failed to update items', 'error'),
+    onError: () => showToast(t('queue.toast.updateFailed'), 'error'),
   });
 
   const bulkCancelMutation = useMutation({
@@ -728,9 +736,9 @@ export function QueuePage() {
     onSuccess: (count) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
       setSelectedItems([]);
-      showToast(`Cancelled ${count} item${count !== 1 ? 's' : ''}`);
+      showToast(t('queue.toast.bulkCancelled', { count }));
     },
-    onError: () => showToast('Failed to cancel items', 'error'),
+    onError: () => showToast(t('queue.toast.bulkCancelFailed'), 'error'),
   });
 
   const handleToggleSelect = (id: number) => {
@@ -867,9 +875,9 @@ export function QueuePage() {
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
             <ListOrdered className="w-7 h-7 text-bambu-green" />
-            Print Queue
+            {t('queue.title')}
           </h1>
-          <p className="text-bambu-gray mt-1">Schedule and manage your print jobs</p>
+          <p className="text-bambu-gray mt-1">{t('queue.subtitle')}</p>
         </div>
       </div>
 
@@ -883,7 +891,7 @@ export function QueuePage() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-white">{activeItems.length}</p>
-                <p className="text-sm text-bambu-gray">Printing</p>
+                <p className="text-sm text-bambu-gray">{t('queue.summary.printing')}</p>
               </div>
             </div>
           </CardContent>
@@ -897,7 +905,7 @@ export function QueuePage() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-white">{pendingItems.length}</p>
-                <p className="text-sm text-bambu-gray">Queued</p>
+                <p className="text-sm text-bambu-gray">{t('queue.summary.queued')}</p>
               </div>
             </div>
           </CardContent>
@@ -911,7 +919,7 @@ export function QueuePage() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-white">{formatDuration(totalQueueTime)}</p>
-                <p className="text-sm text-bambu-gray">Total Queue Time</p>
+                <p className="text-sm text-bambu-gray">{t('queue.summary.totalTime')}</p>
               </div>
             </div>
           </CardContent>
@@ -925,7 +933,7 @@ export function QueuePage() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-white">{historyItems.length}</p>
-                <p className="text-sm text-bambu-gray">History</p>
+                <p className="text-sm text-bambu-gray">{t('queue.summary.history')}</p>
               </div>
             </div>
           </CardContent>
@@ -944,8 +952,8 @@ export function QueuePage() {
             else setFilterPrinter(Number(val));
           }}
         >
-          <option value="">All Printers</option>
-          <option value="unassigned">Unassigned</option>
+          <option value="">{t('queue.filter.allPrinters')}</option>
+          <option value="unassigned">{t('queue.filter.unassigned')}</option>
           {printers?.map((p) => (
             <option key={p.id} value={p.id}>{p.name}</option>
           ))}
@@ -956,13 +964,13 @@ export function QueuePage() {
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
         >
-          <option value="">All Status</option>
-          <option value="pending">Pending</option>
-          <option value="printing">Printing</option>
-          <option value="completed">Completed</option>
-          <option value="failed">Failed</option>
-          <option value="skipped">Skipped</option>
-          <option value="cancelled">Cancelled</option>
+          <option value="">{t('queue.filter.allStatus')}</option>
+          <option value="pending">{t('queue.status.pending')}</option>
+          <option value="printing">{t('queue.status.printing')}</option>
+          <option value="completed">{t('queue.status.completed')}</option>
+          <option value="failed">{t('queue.status.failed')}</option>
+          <option value="skipped">{t('queue.status.skipped')}</option>
+          <option value="cancelled">{t('queue.status.cancelled')}</option>
         </select>
 
         {uniqueLocations.length > 0 && (
@@ -971,7 +979,7 @@ export function QueuePage() {
             value={filterLocation}
             onChange={(e) => setFilterLocation(e.target.value)}
           >
-            <option value="">All Locations</option>
+            <option value="">{t('queue.filter.allLocations')}</option>
             {uniqueLocations.map((loc) => (
               <option key={loc} value={loc}>{loc}</option>
             ))}
@@ -986,23 +994,22 @@ export function QueuePage() {
             size="sm"
             onClick={() => setShowClearHistoryConfirm(true)}
             disabled={!hasPermission('queue:delete_all')}
-            title={!hasPermission('queue:delete_all') ? 'You do not have permission to clear all history' : undefined}
+            title={!hasPermission('queue:delete_all') ? t('queue.permissions.noClearHistory') : undefined}
           >
             <Trash2 className="w-4 h-4" />
-            Clear History
+            {t('queue.clearHistory')}
           </Button>
         )}
       </div>
 
       {isLoading ? (
-        <div className="text-center py-12 text-bambu-gray">Loading...</div>
+        <div className="text-center py-12 text-bambu-gray">{t('common.loading')}</div>
       ) : queue?.length === 0 ? (
         <Card className="p-12 text-center border-dashed">
           <Calendar className="w-16 h-16 text-bambu-gray mx-auto mb-4 opacity-50" />
-          <h3 className="text-xl font-medium text-white mb-2">No prints scheduled</h3>
+          <h3 className="text-xl font-medium text-white mb-2">{t('queue.empty.title')}</h3>
           <p className="text-bambu-gray max-w-md mx-auto">
-            Schedule a print from the Archives page using the "Schedule" option in the context menu,
-            or drag and drop files to get started.
+            {t('queue.empty.description')}
           </p>
         </Card>
       ) : (
@@ -1012,7 +1019,7 @@ export function QueuePage() {
             <div>
               <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-                Currently Printing
+                {t('queue.sections.currentlyPrinting')}
               </h2>
               <div className="space-y-3">
                 {activeItems.map((item) => (
@@ -1028,6 +1035,7 @@ export function QueuePage() {
                     timeFormat={timeFormat}
                     hasPermission={hasPermission}
                     canModify={canModify}
+                    t={t}
                   />
                 ))}
               </div>
@@ -1040,12 +1048,12 @@ export function QueuePage() {
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                   <Clock className="w-5 h-5 text-yellow-400" />
-                  Queued
+                  {t('queue.sections.queued')}
                   <span className="text-sm font-normal text-bambu-gray">
-                    ({pendingItems.length} item{pendingItems.length !== 1 ? 's' : ''})
+                    ({t('queue.itemCount', { count: pendingItems.length })})
                   </span>
-                  <span className="text-xs text-bambu-gray ml-2" title="Position only affects ASAP items. Scheduled items run at their set time.">
-                    Drag to reorder (ASAP only)
+                  <span className="text-xs text-bambu-gray ml-2" title={t('queue.reorderHint')}>
+                    {t('queue.dragToReorder')}
                   </span>
                 </h2>
                 <div className="flex items-center gap-2">
@@ -1054,16 +1062,16 @@ export function QueuePage() {
                     value={pendingSortBy}
                     onChange={(e) => setPendingSortBy(e.target.value as 'position' | 'name' | 'printer' | 'time')}
                   >
-                    <option value="position">Sort by Position</option>
-                    <option value="name">Sort by Name</option>
-                    <option value="printer">Sort by Printer</option>
-                    <option value="time">Sort by Schedule</option>
+                    <option value="position">{t('queue.sort.byPosition')}</option>
+                    <option value="name">{t('queue.sort.byName')}</option>
+                    <option value="printer">{t('queue.sort.byPrinter')}</option>
+                    <option value="time">{t('queue.sort.bySchedule')}</option>
                   </select>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => setPendingSortAsc(!pendingSortAsc)}
-                    title={pendingSortAsc ? 'Ascending' : 'Descending'}
+                    title={pendingSortAsc ? t('common.ascending') : t('common.descending')}
                     className="px-2"
                   >
                     {pendingSortAsc ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
@@ -1084,12 +1092,12 @@ export function QueuePage() {
                   ) : (
                     <Square className="w-4 h-4" />
                   )}
-                  {selectedItems.length === pendingItems.length && pendingItems.length > 0 ? 'Deselect All' : 'Select All'}
+                  {selectedItems.length === pendingItems.length && pendingItems.length > 0 ? t('queue.bulkEdit.deselectAll') : t('queue.bulkEdit.selectAll')}
                 </Button>
                 {selectedItems.length > 0 && (
                   <>
                     <span className="text-sm text-bambu-gray">
-                      {selectedItems.length} selected
+                      {t('queue.bulkEdit.selected', { count: selectedItems.length })}
                     </span>
                     <div className="h-4 w-px bg-bambu-dark-tertiary" />
                     <Button
@@ -1098,10 +1106,10 @@ export function QueuePage() {
                       onClick={() => setShowBulkEditModal(true)}
                       className="flex items-center gap-2 text-bambu-green hover:text-bambu-green-light"
                       disabled={!hasAnyPermission('queue:update_own', 'queue:update_all')}
-                      title={!hasAnyPermission('queue:update_own', 'queue:update_all') ? 'You do not have permission to edit queue items' : undefined}
+                      title={!hasAnyPermission('queue:update_own', 'queue:update_all') ? t('queue.permissions.noEditItems') : undefined}
                     >
                       <Pencil className="w-4 h-4" />
-                      Edit Selected
+                      {t('queue.bulkEdit.editSelected')}
                     </Button>
                     <Button
                       variant="ghost"
@@ -1109,10 +1117,10 @@ export function QueuePage() {
                       onClick={() => bulkCancelMutation.mutate(selectedItems)}
                       className="flex items-center gap-2 text-red-400 hover:text-red-300"
                       disabled={bulkCancelMutation.isPending || !hasAnyPermission('queue:delete_own', 'queue:delete_all')}
-                      title={!hasAnyPermission('queue:delete_own', 'queue:delete_all') ? 'You do not have permission to cancel queue items' : undefined}
+                      title={!hasAnyPermission('queue:delete_own', 'queue:delete_all') ? t('queue.permissions.noCancelItems') : undefined}
                     >
                       <X className="w-4 h-4" />
-                      Cancel Selected
+                      {t('queue.bulkEdit.cancelSelected')}
                     </Button>
                   </>
                 )}
@@ -1144,6 +1152,7 @@ export function QueuePage() {
                         onToggleSelect={() => handleToggleSelect(item.id)}
                         hasPermission={hasPermission}
                         canModify={canModify}
+                        t={t}
                       />
                     ))}
                   </div>
@@ -1158,9 +1167,9 @@ export function QueuePage() {
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                   <CheckCircle className="w-5 h-5 text-bambu-gray" />
-                  History
+                  {t('queue.sections.history')}
                   <span className="text-sm font-normal text-bambu-gray">
-                    ({historyItems.length} item{historyItems.length !== 1 ? 's' : ''})
+                    ({t('queue.itemCount', { count: historyItems.length })})
                   </span>
                 </h2>
                 <div className="flex items-center gap-2">
@@ -1169,15 +1178,15 @@ export function QueuePage() {
                     value={historySortBy}
                     onChange={(e) => setHistorySortBy(e.target.value as 'date' | 'name' | 'printer')}
                   >
-                    <option value="date">Sort by Date</option>
-                    <option value="name">Sort by Name</option>
-                    <option value="printer">Sort by Printer</option>
+                    <option value="date">{t('queue.sort.byDate')}</option>
+                    <option value="name">{t('queue.sort.byName')}</option>
+                    <option value="printer">{t('queue.sort.byPrinter')}</option>
                   </select>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => setHistorySortAsc(!historySortAsc)}
-                    title={historySortAsc ? 'Ascending (oldest first)' : 'Descending (newest first)'}
+                    title={historySortAsc ? t('queue.sort.ascendingOldest') : t('queue.sort.descendingNewest')}
                     className="px-2"
                   >
                     {historySortAsc ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
@@ -1199,6 +1208,7 @@ export function QueuePage() {
                     timeFormat={timeFormat}
                     hasPermission={hasPermission}
                     canModify={canModify}
+                    t={t}
                   />
                 ))}
               </div>
@@ -1234,21 +1244,21 @@ export function QueuePage() {
       {confirmAction && (
         <ConfirmModal
           title={
-            confirmAction.type === 'cancel' ? 'Cancel Scheduled Print' :
-            confirmAction.type === 'stop' ? 'Stop Print' :
-            'Remove from History'
+            confirmAction.type === 'cancel' ? t('queue.confirm.cancelTitle') :
+            confirmAction.type === 'stop' ? t('queue.confirm.stopTitle') :
+            t('queue.confirm.removeTitle')
           }
           message={
             confirmAction.type === 'cancel'
-              ? `Are you sure you want to cancel "${confirmAction.item.archive_name || confirmAction.item.library_file_name || 'this print'}"?`
+              ? t('queue.confirm.cancelMessage', { name: confirmAction.item.archive_name || confirmAction.item.library_file_name || t('queue.confirm.thisPrint') })
               : confirmAction.type === 'stop'
-              ? `Are you sure you want to stop the current print "${confirmAction.item.archive_name || confirmAction.item.library_file_name || 'this print'}"? This will cancel the print job on the printer.`
-              : `Are you sure you want to remove "${confirmAction.item.archive_name || confirmAction.item.library_file_name || 'this item'}" from the queue history?`
+              ? t('queue.confirm.stopMessage', { name: confirmAction.item.archive_name || confirmAction.item.library_file_name || t('queue.confirm.thisPrint') })
+              : t('queue.confirm.removeMessage', { name: confirmAction.item.archive_name || confirmAction.item.library_file_name || t('queue.confirm.thisItem') })
           }
           confirmText={
-            confirmAction.type === 'cancel' ? 'Cancel Print' :
-            confirmAction.type === 'stop' ? 'Stop Print' :
-            'Remove'
+            confirmAction.type === 'cancel' ? t('queue.confirm.cancelButton') :
+            confirmAction.type === 'stop' ? t('queue.confirm.stopButton') :
+            t('common.remove')
           }
           variant="danger"
           onConfirm={() => {
@@ -1268,9 +1278,9 @@ export function QueuePage() {
       {/* Clear History Confirm Modal */}
       {showClearHistoryConfirm && (
         <ConfirmModal
-          title="Clear History"
-          message={`Are you sure you want to remove all ${historyItems.length} item${historyItems.length !== 1 ? 's' : ''} from the history?`}
-          confirmText="Clear History"
+          title={t('queue.confirm.clearHistoryTitle')}
+          message={t('queue.confirm.clearHistoryMessage', { count: historyItems.length })}
+          confirmText={t('queue.clearHistory')}
           variant="danger"
           onConfirm={() => {
             clearHistoryMutation.mutate();
@@ -1292,6 +1302,7 @@ export function QueuePage() {
           }}
           onClose={() => setShowBulkEditModal(false)}
           isSaving={bulkUpdateMutation.isPending}
+          t={t}
         />
       )}
     </div>

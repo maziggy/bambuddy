@@ -261,6 +261,83 @@ class TestSpoolmanAPI:
         assert data[0]["id"] == 2  # Only unlinked spool
 
     # =========================================================================
+    # Linked Spools Tests
+    # =========================================================================
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_linked_spools_not_enabled(self, async_client: AsyncClient):
+        """Verify get linked spools fails when not enabled."""
+        response = await async_client.get("/api/v1/spoolman/spools/linked")
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_linked_spools_success(self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client):
+        """Verify get linked spools returns map of tag -> spool_id."""
+        # Mock spool with extra.tag (linked)
+        mock_spool = {
+            "id": 42,
+            "remaining_weight": 800,
+            "extra": {"tag": '"A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"'},
+            "filament": {"id": 1, "name": "PLA Red", "material": "PLA"},
+        }
+        mock_spoolman_client.get_spools = AsyncMock(return_value=[mock_spool])
+
+        response = await async_client.get("/api/v1/spoolman/spools/linked")
+        assert response.status_code == 200
+        data = response.json()
+        assert "linked" in data
+        assert isinstance(data["linked"], dict)
+        # Tag should be uppercase and stripped of quotes
+        assert "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4" in data["linked"]
+        assert data["linked"]["A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"] == 42
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_linked_spools_excludes_unlinked(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """Verify unlinked spools (without tag) are excluded."""
+        # Mock spool with tag (linked)
+        mock_spool_linked = {
+            "id": 1,
+            "extra": {"tag": '"ABC12345678901234567890123456789A"'},
+            "filament": {"id": 1, "name": "PLA Red", "material": "PLA"},
+        }
+        # Mock spool without tag (unlinked)
+        mock_spool_unlinked = {
+            "id": 2,
+            "extra": {},
+            "filament": {"id": 2, "name": "PLA Blue", "material": "PLA"},
+        }
+        mock_spoolman_client.get_spools = AsyncMock(return_value=[mock_spool_linked, mock_spool_unlinked])
+
+        response = await async_client.get("/api/v1/spoolman/spools/linked")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["linked"]) == 1  # Only linked spool
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_linked_spools_empty_tag_excluded(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """Verify spools with empty tag (JSON-encoded empty string) are excluded."""
+        # Mock spool with empty JSON-encoded tag
+        mock_spool = {
+            "id": 1,
+            "extra": {"tag": '""'},  # JSON-encoded empty string
+            "filament": {"id": 1, "name": "PLA Red", "material": "PLA"},
+        }
+        mock_spoolman_client.get_spools = AsyncMock(return_value=[mock_spool])
+
+        response = await async_client.get("/api/v1/spoolman/spools/linked")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["linked"]) == 0  # Empty tag should be excluded
+
+    # =========================================================================
     # Link Spool Tests
     # =========================================================================
 

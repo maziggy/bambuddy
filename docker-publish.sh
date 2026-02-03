@@ -2,12 +2,13 @@
 # Build and push multi-architecture Docker image to GitHub Container Registry
 #
 # Usage:
-#   ./scripts/docker-publish.sh [version] [--parallel]
+#   ./docker-publish.sh [version] [--parallel]
 #
 # Examples:
-#   ./scripts/docker-publish.sh 0.1.6           # Sequential build (default)
-#   ./scripts/docker-publish.sh 0.1.6 --parallel # Build both archs simultaneously
-#   ./scripts/docker-publish.sh 0.1.6-beta      # Pre-release (no latest tag)
+#   ./docker-publish.sh 0.1.7b            # Sequential build (default)
+#   ./docker-publish.sh 0.1.7b --parallel # Build both archs simultaneously
+#
+# Note: All versions are also tagged as 'latest'
 #
 # Prerequisites:
 #   1. Log in to ghcr.io first:
@@ -82,11 +83,7 @@ if ! grep -q "ghcr.io" ~/.docker/config.json 2>/dev/null; then
     echo ""
 fi
 
-# Determine if this is a release version (includes betas for now)
-IS_RELEASE=false
-if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?(b[0-9]+)?$ ]]; then
-    IS_RELEASE=true
-fi
+# Always tag as latest (in addition to version tag)
 
 # Setup buildx builder if not exists
 echo -e "${BLUE}[1/4] Setting up Docker Buildx...${NC}"
@@ -113,14 +110,9 @@ if ! docker buildx inspect --bootstrap | grep -q "linux/arm64"; then
     docker run --privileged --rm tonistiigi/binfmt --install all
 fi
 
-# Build tags
-TAGS="-t ${FULL_IMAGE}:${VERSION}"
-if [ "$IS_RELEASE" = true ]; then
-    TAGS="$TAGS -t ${FULL_IMAGE}:latest"
-    echo -e "${BLUE}[3/4] Building and pushing (version + latest)...${NC}"
-else
-    echo -e "${BLUE}[3/4] Building and pushing (version only, no latest)...${NC}"
-fi
+# Build tags (always include latest)
+TAGS="-t ${FULL_IMAGE}:${VERSION} -t ${FULL_IMAGE}:latest"
+echo -e "${BLUE}[3/4] Building and pushing (version + latest)...${NC}"
 
 # Common build args (no cache to ensure clean builds)
 BUILD_ARGS="--provenance=false --sbom=false --no-cache --pull"
@@ -160,19 +152,13 @@ if [ "$PARALLEL" = true ]; then
     wait $PID_AMD64
     wait $PID_ARM64
 
-    # Create and push multi-arch manifest
+    # Create and push multi-arch manifest (version + latest)
     echo -e "${BLUE}Creating multi-arch manifest...${NC}"
     docker buildx imagetools create \
         -t "${FULL_IMAGE}:${VERSION}" \
+        -t "${FULL_IMAGE}:latest" \
         "${FULL_IMAGE}:${VERSION}-amd64" \
         "${FULL_IMAGE}:${VERSION}-arm64"
-
-    if [ "$IS_RELEASE" = true ]; then
-        docker buildx imagetools create \
-            -t "${FULL_IMAGE}:latest" \
-            "${FULL_IMAGE}:${VERSION}-amd64" \
-            "${FULL_IMAGE}:${VERSION}-arm64"
-    fi
 else
     # Sequential build (default): Build both platforms in one command
     echo -e "${YELLOW}Building sequentially with ${CPU_COUNT} cores (no cache)...${NC}"
@@ -192,9 +178,7 @@ echo -e "${GREEN}================================================${NC}"
 echo -e "${GREEN}✓ Successfully pushed multi-arch image:${NC}"
 echo -e "${GREEN}================================================${NC}"
 echo "  - ${FULL_IMAGE}:${VERSION}"
-if [ "$IS_RELEASE" = true ]; then
-    echo "  - ${FULL_IMAGE}:latest"
-fi
+echo "  - ${FULL_IMAGE}:latest"
 echo ""
 echo -e "${BLUE}Supported platforms:${NC}"
 echo "  - linux/amd64 (Intel/AMD servers, desktops)"

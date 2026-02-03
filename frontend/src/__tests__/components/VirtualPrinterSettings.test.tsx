@@ -42,6 +42,7 @@ const createMockSettings = (overrides = {}) => ({
   access_code_set: false,
   mode: 'immediate' as const,
   model: '3DPrinter-X1-Carbon',
+  target_printer_id: null as number | null,
   status: {
     enabled: false,
     running: false,
@@ -274,7 +275,7 @@ describe('VirtualPrinterSettings', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Review')).toBeInTheDocument();
-        expect(screen.getByText('Review and tag before archiving')).toBeInTheDocument();
+        expect(screen.getByText('Review before archiving')).toBeInTheDocument();
       });
     });
 
@@ -283,7 +284,7 @@ describe('VirtualPrinterSettings', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Queue')).toBeInTheDocument();
-        expect(screen.getByText('Archive and add to print queue')).toBeInTheDocument();
+        expect(screen.getByText('Archive and add to queue')).toBeInTheDocument();
       });
     });
 
@@ -469,6 +470,102 @@ describe('VirtualPrinterSettings', () => {
       await waitFor(() => {
         expect(screen.getByText('How it works:')).toBeInTheDocument();
         expect(screen.getByText(/Complete the setup guide for your platform/)).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('proxy mode', () => {
+    it('renders Proxy mode option', async () => {
+      render(<VirtualPrinterSettings />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Proxy')).toBeInTheDocument();
+        expect(screen.getByText('Relay to real printer')).toBeInTheDocument();
+      });
+    });
+
+    it('highlights proxy mode when selected', async () => {
+      vi.mocked(virtualPrinterApi.getSettings).mockResolvedValue(
+        createMockSettings({ mode: 'proxy', target_printer_id: 1 })
+      );
+
+      render(<VirtualPrinterSettings />);
+
+      await waitFor(() => {
+        const proxyButton = screen.getByText('Proxy').closest('button');
+        expect(proxyButton?.className).toContain('border-blue-500');
+      });
+    });
+
+    it('shows proxy status details when running in proxy mode', async () => {
+      vi.mocked(virtualPrinterApi.getSettings).mockResolvedValue(
+        createMockSettings({
+          enabled: true,
+          mode: 'proxy',
+          target_printer_id: 1,
+          status: {
+            enabled: true,
+            running: true,
+            mode: 'proxy',
+            name: 'Bambuddy (Proxy)',
+            serial: '00M00A391800001',
+            model: '3DPrinter-X1-Carbon',
+            model_name: 'X1C',
+            pending_files: 0,
+            proxy: {
+              running: true,
+              target_host: '192.168.1.100',
+              ftp_port: 9990,
+              mqtt_port: 8883,
+              ftp_connections: 1,
+              mqtt_connections: 2,
+            },
+          },
+        })
+      );
+
+      render(<VirtualPrinterSettings />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Running')).toBeInTheDocument();
+        expect(screen.getByText('Status Details')).toBeInTheDocument();
+        // IP address appears in multiple places (target printer and status details)
+        expect(screen.getAllByText('192.168.1.100').length).toBeGreaterThan(0);
+      });
+    });
+
+    it('shows target printer dropdown in proxy mode', async () => {
+      vi.mocked(virtualPrinterApi.getSettings).mockResolvedValue(
+        createMockSettings({ mode: 'proxy' })
+      );
+
+      render(<VirtualPrinterSettings />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Target Printer')).toBeInTheDocument();
+        expect(screen.getByText('Select a printer...')).toBeInTheDocument();
+      });
+    });
+
+    it('changes mode to proxy on click', async () => {
+      const user = userEvent.setup();
+      vi.mocked(virtualPrinterApi.updateSettings).mockResolvedValue(
+        createMockSettings({ mode: 'proxy' })
+      );
+
+      render(<VirtualPrinterSettings />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Proxy')).toBeInTheDocument();
+      });
+
+      const proxyButton = screen.getByText('Proxy').closest('button');
+      if (proxyButton) {
+        await user.click(proxyButton);
+      }
+
+      await waitFor(() => {
+        expect(virtualPrinterApi.updateSettings).toHaveBeenCalledWith({ mode: 'proxy' });
       });
     });
   });

@@ -10,6 +10,9 @@ import logging
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.permissions import Permission
+from backend.app.models.user import User
 from backend.app.services.discovery import (
     discovery_service,
     is_running_in_docker,
@@ -60,7 +63,9 @@ class DiscoveredPrinterResponse(BaseModel):
 
 
 @router.get("/info", response_model=DiscoveryInfo)
-async def get_discovery_info():
+async def get_discovery_info(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.DISCOVERY_SCAN),
+):
     """Get discovery environment info (Docker detection, etc.)."""
     return DiscoveryInfo(
         is_docker=is_running_in_docker(),
@@ -70,13 +75,18 @@ async def get_discovery_info():
 
 
 @router.get("/status", response_model=DiscoveryStatus)
-async def get_discovery_status():
+async def get_discovery_status(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.DISCOVERY_SCAN),
+):
     """Get the current SSDP discovery status."""
     return DiscoveryStatus(running=discovery_service.is_running)
 
 
 @router.post("/start", response_model=DiscoveryStatus)
-async def start_discovery(duration: float = 10.0):
+async def start_discovery(
+    duration: float = 10.0,
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.DISCOVERY_SCAN),
+):
     """Start SSDP printer discovery.
 
     Args:
@@ -87,14 +97,18 @@ async def start_discovery(duration: float = 10.0):
 
 
 @router.post("/stop", response_model=DiscoveryStatus)
-async def stop_discovery():
+async def stop_discovery(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.DISCOVERY_SCAN),
+):
     """Stop SSDP printer discovery."""
     await discovery_service.stop()
     return DiscoveryStatus(running=discovery_service.is_running)
 
 
 @router.get("/printers", response_model=list[DiscoveredPrinterResponse])
-async def get_discovered_printers():
+async def get_discovered_printers(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.DISCOVERY_SCAN),
+):
     """Get list of discovered printers (from both SSDP and subnet scan)."""
     # Combine results from both discovery methods
     printers = {}
@@ -124,7 +138,10 @@ async def get_discovered_printers():
 
 
 @router.post("/scan", response_model=SubnetScanStatus)
-async def start_subnet_scan(request: SubnetScanRequest):
+async def start_subnet_scan(
+    request: SubnetScanRequest,
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.DISCOVERY_SCAN),
+):
     """Start a subnet scan for Bambu printers.
 
     Use this when running in Docker where SSDP multicast doesn't work.
@@ -147,7 +164,9 @@ async def start_subnet_scan(request: SubnetScanRequest):
 
 
 @router.get("/scan/status", response_model=SubnetScanStatus)
-async def get_scan_status():
+async def get_scan_status(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.DISCOVERY_SCAN),
+):
     """Get the current subnet scan status."""
     scanned, total = subnet_scanner.progress
     return SubnetScanStatus(
@@ -158,7 +177,9 @@ async def get_scan_status():
 
 
 @router.post("/scan/stop", response_model=SubnetScanStatus)
-async def stop_subnet_scan():
+async def stop_subnet_scan(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.DISCOVERY_SCAN),
+):
     """Stop the current subnet scan."""
     subnet_scanner.stop()
     scanned, total = subnet_scanner.progress

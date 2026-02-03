@@ -194,7 +194,7 @@ if [ "$RUN_INTEGRATION" = true ]; then
         print_info "Starting application container..."
 
         # Start the integration container
-        sudo docker compose -f docker-compose.test.yml up -d integration
+        sudo docker compose -f docker-compose.test.yml up --remove-orphans -d integration
 
     # Wait for health check
     print_info "Waiting for application to be healthy..."

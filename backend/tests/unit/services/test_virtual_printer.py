@@ -439,3 +439,107 @@ class TestCertificateService:
 
         assert cert_path.exists()
         assert key_path.exists()
+
+
+class TestSlicerProxyManager:
+    """Tests for SlicerProxyManager (proxy mode)."""
+
+    @pytest.fixture
+    def proxy_manager(self, tmp_path):
+        """Create a SlicerProxyManager instance."""
+        from backend.app.services.virtual_printer.tcp_proxy import SlicerProxyManager
+
+        # Create dummy cert files
+        cert_path = tmp_path / "cert.pem"
+        key_path = tmp_path / "key.pem"
+        cert_path.write_text("-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----")
+        # Split string to avoid pre-commit hook false positive on test data
+        key_path.write_text("-----BEGIN " + "PRIVATE KEY-----\ntest\n-----END " + "PRIVATE KEY-----")
+
+        return SlicerProxyManager(
+            target_host="192.168.1.100",
+            cert_path=cert_path,
+            key_path=key_path,
+        )
+
+    def test_proxy_manager_initializes_ports(self, proxy_manager):
+        """Verify proxy manager has correct port constants."""
+        assert proxy_manager.LOCAL_FTP_PORT == 9990
+        assert proxy_manager.LOCAL_MQTT_PORT == 8883
+        assert proxy_manager.PRINTER_FTP_PORT == 990
+        assert proxy_manager.PRINTER_MQTT_PORT == 8883
+
+    def test_proxy_manager_stores_target_host(self, proxy_manager):
+        """Verify proxy manager stores target host."""
+        assert proxy_manager.target_host == "192.168.1.100"
+
+    def test_get_status_before_start(self, proxy_manager):
+        """Verify get_status returns zeros before start."""
+        status = proxy_manager.get_status()
+
+        assert status["running"] is False
+        assert status["ftp_connections"] == 0
+        assert status["mqtt_connections"] == 0
+
+
+class TestVirtualPrinterManagerProxyMode:
+    """Tests for VirtualPrinterManager proxy mode."""
+
+    @pytest.fixture
+    def manager(self):
+        """Create a VirtualPrinterManager instance."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterManager
+
+        return VirtualPrinterManager()
+
+    @pytest.mark.asyncio
+    async def test_configure_proxy_mode_requires_target_ip(self, manager):
+        """Verify proxy mode requires target_printer_ip."""
+        with pytest.raises(ValueError, match="Target printer IP is required"):
+            await manager.configure(
+                enabled=True,
+                mode="proxy",
+                target_printer_ip="",  # Empty target IP
+            )
+
+    @pytest.mark.asyncio
+    async def test_configure_proxy_mode_does_not_require_access_code(self, manager):
+        """Verify proxy mode does not require access code (uses real printer's)."""
+        manager._start = AsyncMock()
+
+        # Should not raise - proxy mode doesn't need access code
+        await manager.configure(
+            enabled=True,
+            mode="proxy",
+            target_printer_ip="192.168.1.100",
+        )
+
+        assert manager._mode == "proxy"
+        assert manager._target_printer_ip == "192.168.1.100"
+
+    def test_get_status_proxy_mode_includes_proxy_fields(self, manager):
+        """Verify get_status includes proxy-specific fields in proxy mode."""
+        manager._enabled = True
+        manager._mode = "proxy"
+        manager._target_printer_ip = "192.168.1.100"
+        manager._tasks = [MagicMock(done=MagicMock(return_value=False))]
+
+        # Create a mock proxy with get_status
+        mock_proxy = MagicMock()
+        mock_proxy.get_status.return_value = {
+            "running": True,
+            "ftp_port": 9990,
+            "mqtt_port": 8883,
+            "ftp_connections": 1,
+            "mqtt_connections": 2,
+            "target_host": "192.168.1.100",
+        }
+        manager._proxy = mock_proxy
+
+        status = manager.get_status()
+
+        assert status["mode"] == "proxy"
+        assert status["target_printer_ip"] == "192.168.1.100"
+        assert "proxy" in status
+        assert status["proxy"]["ftp_connections"] == 1
+        assert status["proxy"]["mqtt_connections"] == 2

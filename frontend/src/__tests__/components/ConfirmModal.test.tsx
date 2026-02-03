@@ -131,7 +131,7 @@ describe('ConfirmModal', () => {
 
     it('shows default loading text when loadingText not provided', () => {
       render(<ConfirmModal {...defaultProps} isLoading={true} />);
-      expect(screen.getByText('Processing...')).toBeInTheDocument();
+      expect(screen.getByText('Loading...')).toBeInTheDocument();
     });
 
     it('disables buttons when loading', () => {

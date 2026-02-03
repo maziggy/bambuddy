@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -8,6 +9,7 @@ import { HelpCircle, X } from 'lucide-react';
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const { login } = useAuth();
   const { showToast } = useToast();
   const { mode } = useTheme();
@@ -18,18 +20,18 @@ export function LoginPage() {
   const loginMutation = useMutation({
     mutationFn: () => login(username, password),
     onSuccess: () => {
-      showToast('Logged in successfully');
+      showToast(t('login.loginSuccess'));
       navigate('/');
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Login failed', 'error');
+      showToast(error.message || t('login.loginFailed'), 'error');
     },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!username || !password) {
-      showToast('Please enter username and password', 'error');
+      showToast(t('login.enterCredentials'), 'error');
       return;
     }
     loginMutation.mutate();
@@ -47,10 +49,10 @@ export function LoginPage() {
             />
           </div>
           <h2 className="text-3xl font-bold text-white">
-            Bambuddy Login
+            {t('login.title')}
           </h2>
           <p className="mt-2 text-sm text-bambu-gray">
-            Sign in to your account
+            {t('login.subtitle')}
           </p>
         </div>
 
@@ -58,7 +60,7 @@ export function LoginPage() {
           <div className="space-y-4">
             <div>
               <label htmlFor="username" className="block text-sm font-medium text-white mb-2">
-                Username
+                {t('login.username')}
               </label>
               <input
                 id="username"
@@ -67,14 +69,14 @@ export function LoginPage() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="block w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                placeholder="Enter your username"
+                placeholder={t('login.usernamePlaceholder')}
                 autoComplete="username"
               />
             </div>
 
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-white mb-2">
-                Password
+                {t('login.password')}
               </label>
               <input
                 id="password"
@@ -83,7 +85,7 @@ export function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="block w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                placeholder="Enter your password"
+                placeholder={t('login.passwordPlaceholder')}
                 autoComplete="current-password"
               />
             </div>
@@ -95,7 +97,7 @@ export function LoginPage() {
               disabled={loginMutation.isPending}
               className="w-full flex justify-center py-3 px-4 bg-bambu-green hover:bg-bambu-green-light text-white font-medium rounded-lg shadow-lg shadow-bambu-green/20 hover:shadow-bambu-green/30 focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:ring-offset-2 focus:ring-offset-bambu-dark-secondary transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-bambu-green"
             >
-              {loginMutation.isPending ? 'Logging in...' : 'Sign in'}
+              {loginMutation.isPending ? t('login.signingIn') : t('login.signIn')}
             </button>
           </div>
 
@@ -105,7 +107,7 @@ export function LoginPage() {
               onClick={() => setShowForgotPassword(true)}
               className="text-sm text-bambu-gray hover:text-bambu-green transition-colors"
             >
-              Forgot your password?
+              {t('login.forgotPassword')}
             </button>
           </div>
         </form>
@@ -124,7 +126,7 @@ export function LoginPage() {
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <HelpCircle className="w-5 h-5 text-bambu-green" />
-                <h2 className="text-lg font-semibold text-white">Forgot Password</h2>
+                <h2 className="text-lg font-semibold text-white">{t('login.forgotPasswordTitle')}</h2>
               </div>
               <button
                 onClick={() => setShowForgotPassword(false)}
@@ -136,16 +138,16 @@ export function LoginPage() {
 
             <div className="space-y-4">
               <p className="text-bambu-gray">
-                If you've forgotten your password, please contact your system administrator to reset it.
+                {t('login.forgotPasswordMessage')}
               </p>
 
               <div className="bg-bambu-dark rounded-lg p-4 space-y-2">
-                <p className="text-sm text-white font-medium">How to reset your password:</p>
+                <p className="text-sm text-white font-medium">{t('login.howToReset')}</p>
                 <ol className="text-sm text-bambu-gray space-y-1 list-decimal list-inside">
-                  <li>Contact your Bambuddy administrator</li>
-                  <li>Ask them to reset your password in User Management</li>
-                  <li>They can set a new temporary password for you</li>
-                  <li>Log in with the new password and change it in Settings</li>
+                  <li>{t('login.resetStep1')}</li>
+                  <li>{t('login.resetStep2')}</li>
+                  <li>{t('login.resetStep3')}</li>
+                  <li>{t('login.resetStep4')}</li>
                 </ol>
               </div>
 
@@ -153,7 +155,7 @@ export function LoginPage() {
                 onClick={() => setShowForgotPassword(false)}
                 className="w-full py-2 px-4 bg-bambu-dark-tertiary hover:bg-bambu-dark text-white rounded-lg transition-colors"
               >
-                Got it
+                {t('login.gotIt')}
               </button>
             </div>
           </div>

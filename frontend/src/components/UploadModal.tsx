@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Upload, X, File, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { api } from '../api/client';
 import type { BulkUploadResult } from '../api/client';
@@ -20,6 +21,7 @@ interface UploadModalProps {
 }
 
 export function UploadModal({ onClose, initialFiles }: UploadModalProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -150,7 +152,7 @@ export function UploadModal({ onClose, initialFiles }: UploadModalProps) {
         <CardContent className="p-0 flex flex-col h-full">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
-            <h2 className="text-xl font-semibold text-white">Upload 3MF Files</h2>
+            <h2 className="text-xl font-semibold text-white">{t('uploadModal.title')}</h2>
             <button
               onClick={onClose}
               className="text-bambu-gray hover:text-white transition-colors"
@@ -173,15 +175,15 @@ export function UploadModal({ onClose, initialFiles }: UploadModalProps) {
             >
               <Upload className="w-12 h-12 mx-auto mb-4 text-bambu-gray" />
               <p className="text-white mb-2">
-                Drag & drop .3mf files here
+                {t('uploadModal.dragDrop')}
               </p>
-              <p className="text-bambu-gray text-sm mb-4">or</p>
+              <p className="text-bambu-gray text-sm mb-4">{t('uploadModal.or')}</p>
               <Button
                 variant="secondary"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isUploading}
               >
-                Browse Files
+                {t('uploadModal.browseFiles')}
               </Button>
               <input
                 ref={fileInputRef}
@@ -197,7 +199,7 @@ export function UploadModal({ onClose, initialFiles }: UploadModalProps) {
           {/* Info about printer model extraction */}
           <div className="px-4 pb-4">
             <p className="text-xs text-bambu-gray">
-              The printer model will be automatically extracted from the 3MF file metadata.
+              {t('uploadModal.extractionInfo')}
             </p>
           </div>
 
@@ -249,9 +251,9 @@ export function UploadModal({ onClose, initialFiles }: UploadModalProps) {
             <div className="px-4 pb-4">
               <div className="p-3 bg-bambu-dark rounded-lg">
                 <p className="text-sm text-white">
-                  <span className="text-bambu-green">{uploadResult.uploaded}</span> uploaded
+                  <span className="text-bambu-green">{uploadResult.uploaded}</span> {t('uploadModal.uploaded')}
                   {uploadResult.failed > 0 && (
-                    <>, <span className="text-red-400">{uploadResult.failed}</span> failed</>
+                    <>, <span className="text-red-400">{uploadResult.failed}</span> {t('uploadModal.failed')}</>
                   )}
                 </p>
               </div>
@@ -261,7 +263,7 @@ export function UploadModal({ onClose, initialFiles }: UploadModalProps) {
           {/* Footer */}
           <div className="flex gap-3 p-4 border-t border-bambu-dark-tertiary">
             <Button variant="secondary" onClick={onClose} className="flex-1">
-              {uploadResult ? 'Close' : 'Cancel'}
+              {uploadResult ? t('common.close') : t('common.cancel')}
             </Button>
             {!uploadResult && (
               <Button
@@ -272,12 +274,12 @@ export function UploadModal({ onClose, initialFiles }: UploadModalProps) {
                 {isUploading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Uploading...
+                    {t('uploadModal.uploading')}
                   </>
                 ) : (
                   <>
                     <Upload className="w-4 h-4" />
-                    Upload {pendingCount > 0 && `(${pendingCount})`}
+                    {t('uploadModal.upload')} {pendingCount > 0 && `(${pendingCount})`}
                   </>
                 )}
               </Button>

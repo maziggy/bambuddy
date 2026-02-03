@@ -1,10 +1,12 @@
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2, AlertTriangle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { useTheme } from '../contexts/ThemeContext';
 
 export function ExternalLinkPage() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const { mode } = useTheme();
 
@@ -26,7 +28,7 @@ export function ExternalLinkPage() {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4 text-bambu-gray">
         <AlertTriangle className="w-12 h-12" />
-        <p>Link not found</p>
+        <p>{t('common.linkNotFound')}</p>
       </div>
     );
   }

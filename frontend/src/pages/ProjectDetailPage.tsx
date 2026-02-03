@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft,
   Edit3,
@@ -59,7 +60,9 @@ function formatFilament(grams: number): string {
   return `${Math.round(grams)}g`;
 }
 
-function StatusBadge({ status }: { status: string }) {
+type TFunction = (key: string, options?: Record<string, unknown>) => string;
+
+function StatusBadge({ status, t }: { status: string; t: TFunction }) {
   const colors = {
     active: 'bg-bambu-green/20 text-bambu-green',
     completed: 'bg-blue-500/20 text-blue-400',
@@ -67,9 +70,15 @@ function StatusBadge({ status }: { status: string }) {
   };
   const color = colors[status as keyof typeof colors] || colors.active;
 
+  const labels: Record<string, string> = {
+    active: t('projectDetail.status.active'),
+    completed: t('projectDetail.status.completed'),
+    archived: t('projectDetail.status.archived'),
+  };
+
   return (
     <span className={`px-2 py-1 rounded text-sm font-medium ${color}`}>
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+      {labels[status] || status.charAt(0).toUpperCase() + status.slice(1)}
     </span>
   );
 }
@@ -107,12 +116,12 @@ function StatCard({
   );
 }
 
-function ArchiveGrid({ archives }: { archives: Archive[] }) {
+function ArchiveGrid({ archives, t }: { archives: Archive[]; t: TFunction }) {
   if (archives.length === 0) {
     return (
       <div className="text-center py-8 text-bambu-gray">
         <Package className="w-12 h-12 mx-auto mb-2 opacity-50" />
-        <p>No prints in this project yet</p>
+        <p>{t('projectDetail.noPrints')}</p>
       </div>
     );
   }
@@ -159,12 +168,12 @@ function ArchiveGrid({ archives }: { archives: Archive[] }) {
   );
 }
 
-function PriorityBadge({ priority }: { priority: string }) {
+function PriorityBadge({ priority, t }: { priority: string; t: TFunction }) {
   const config = {
-    low: { color: 'bg-gray-500/20 text-gray-400', label: 'Low' },
-    normal: { color: 'bg-blue-500/20 text-blue-400', label: 'Normal' },
-    high: { color: 'bg-orange-500/20 text-orange-400', label: 'High' },
-    urgent: { color: 'bg-red-500/20 text-red-400', label: 'Urgent' },
+    low: { color: 'bg-gray-500/20 text-gray-400', label: t('projectDetail.priority.low') },
+    normal: { color: 'bg-blue-500/20 text-blue-400', label: t('projectDetail.priority.normal') },
+    high: { color: 'bg-orange-500/20 text-orange-400', label: t('projectDetail.priority.high') },
+    urgent: { color: 'bg-red-500/20 text-red-400', label: t('projectDetail.priority.urgent') },
   };
   const { color, label } = config[priority as keyof typeof config] || config.normal;
 
@@ -181,22 +190,23 @@ function formatDate(dateString: string | null): string {
   return formatDateOnly(dateString, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-function getDueDateStatus(dateString: string | null): { color: string; label: string } | null {
+function getDueDateStatus(dateString: string | null, t: TFunction): { color: string; label: string } | null {
   if (!dateString) return null;
   const dueDate = parseUTCDate(dateString);
   if (!dueDate) return null;
   const now = new Date();
   const diffDays = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
-  if (diffDays < 0) return { color: 'text-red-400', label: 'Overdue' };
-  if (diffDays === 0) return { color: 'text-orange-400', label: 'Due today' };
-  if (diffDays <= 3) return { color: 'text-yellow-400', label: `${diffDays} days left` };
-  return { color: 'text-bambu-gray', label: `${diffDays} days left` };
+  if (diffDays < 0) return { color: 'text-red-400', label: t('projectDetail.dueDate.overdue') };
+  if (diffDays === 0) return { color: 'text-orange-400', label: t('projectDetail.dueDate.today') };
+  if (diffDays <= 3) return { color: 'text-yellow-400', label: t('projectDetail.dueDate.daysLeft', { count: diffDays }) };
+  return { color: 'text-bambu-gray', label: t('projectDetail.dueDate.daysLeft', { count: diffDays }) };
 }
 
 export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
@@ -251,7 +261,7 @@ export function ProjectDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       setShowEditModal(false);
       setEditingNotes(false);
-      showToast('Project updated', 'success');
+      showToast(t('projectDetail.toast.projectUpdated'), 'success');
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
@@ -306,7 +316,7 @@ export function ProjectDetailPage() {
       setNewBomUrl('');
       setNewBomRemarks('');
       setShowBomForm(false);
-      showToast('Part added', 'success');
+      showToast(t('projectDetail.toast.partAdded'), 'success');
     },
     onError: (error: Error) => showToast(error.message, 'error'),
   });
@@ -327,7 +337,7 @@ export function ProjectDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project-bom', projectId] });
       queryClient.invalidateQueries({ queryKey: ['project', projectId] });
-      showToast('Part removed', 'success');
+      showToast(t('projectDetail.toast.partRemoved'), 'success');
     },
     onError: (error: Error) => showToast(error.message, 'error'),
   });
@@ -355,8 +365,8 @@ export function ProjectDetailPage() {
   const handleDeleteBomItem = (itemId: number, itemName: string) => {
     setConfirmModal({
       isOpen: true,
-      title: 'Delete Part',
-      message: `Are you sure you want to delete "${itemName}"?`,
+      title: t('projectDetail.bom.deletePart'),
+      message: t('projectDetail.bom.deleteConfirm', { name: itemName }),
       onConfirm: () => {
         setConfirmModal(prev => ({ ...prev, isOpen: false }));
         deleteBomMutation.mutate(itemId);
@@ -394,22 +404,14 @@ export function ProjectDetailPage() {
 
   const handleExportProject = async () => {
     try {
-      // Fetch ZIP file directly
-      const response = await fetch(`/api/v1/projects/${projectId}/export`);
-      if (!response.ok) {
-        throw new Error('Export failed');
-      }
-      const blob = await response.blob();
+      const { blob, filename } = await api.exportProjectZip(Number(projectId));
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      // Get filename from Content-Disposition header or use default
-      const contentDisposition = response.headers.get('Content-Disposition');
-      const filenameMatch = contentDisposition?.match(/filename="(.+)"/);
-      a.download = filenameMatch?.[1] || `${project?.name || 'project'}_${new Date().toISOString().split('T')[0]}.zip`;
+      a.download = filename || `${project?.name || 'project'}_${new Date().toISOString().split('T')[0]}.zip`;
       a.click();
       URL.revokeObjectURL(url);
-      showToast('Project exported', 'success');
+      showToast(t('projectDetail.toast.projectExported'), 'success');
     } catch (error) {
       showToast((error as Error).message, 'error');
     }
@@ -420,7 +422,7 @@ export function ProjectDetailPage() {
     mutationFn: () => api.createTemplateFromProject(projectId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
-      showToast('Template created', 'success');
+      showToast(t('projectDetail.toast.templateCreated'), 'success');
     },
     onError: (error: Error) => showToast(error.message, 'error'),
   });
@@ -446,10 +448,10 @@ export function ProjectDetailPage() {
     return (
       <div className="text-center py-24">
         <p className="text-bambu-gray">
-          {projectError ? `Error: ${(projectError as Error).message}` : 'Project not found'}
+          {projectError ? `${t('common.error')}: ${(projectError as Error).message}` : t('projectDetail.notFound')}
         </p>
         <Button variant="secondary" className="mt-4" onClick={() => navigate('/projects')}>
-          Back to Projects
+          {t('projectDetail.backToProjects')}
         </Button>
       </div>
     );
@@ -466,7 +468,7 @@ export function ProjectDetailPage() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-bambu-gray">
         <Link to="/projects" className="hover:text-white transition-colors">
-          Projects
+          {t('navigation.projects')}
         </Link>
         <ChevronRight className="w-4 h-4" />
         <span className="text-white">{project.name}</span>
@@ -493,25 +495,25 @@ export function ProjectDetailPage() {
               )}
             </div>
           </div>
-          <StatusBadge status={project.status} />
+          <StatusBadge status={project.status} t={t} />
         </div>
         <div className="flex gap-2">
           <Button
             variant="secondary"
             onClick={handleExportProject}
             disabled={!hasPermission('projects:read')}
-            title={!hasPermission('projects:read') ? 'You do not have permission to export projects' : 'Export project'}
+            title={!hasPermission('projects:read') ? t('projectDetail.noExportPermission') : t('projectDetail.exportProject')}
           >
             <Download className="w-4 h-4 mr-2" />
-            Export
+            {t('projectDetail.export')}
           </Button>
           <Button
             onClick={() => setShowEditModal(true)}
             disabled={!hasPermission('projects:update')}
-            title={!hasPermission('projects:update') ? 'You do not have permission to edit projects' : undefined}
+            title={!hasPermission('projects:update') ? t('projectDetail.noEditPermission') : undefined}
           >
             <Edit3 className="w-4 h-4 mr-2" />
-            Edit
+            {t('common.edit')}
           </Button>
         </div>
       </div>
@@ -524,9 +526,9 @@ export function ProjectDetailPage() {
             {project.target_count && (
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-bambu-gray">Plates Progress</span>
+                  <span className="text-sm text-bambu-gray">{t('projectDetail.progress.platesProgress')}</span>
                   <span className="text-sm font-medium text-white">
-                    {stats?.total_archives || 0} / {project.target_count} print jobs
+                    {stats?.total_archives || 0} / {project.target_count} {t('projectDetail.progress.printJobs')}
                   </span>
                 </div>
                 <div className="h-3 bg-bambu-dark rounded-full overflow-hidden">
@@ -540,11 +542,11 @@ export function ProjectDetailPage() {
                 </div>
                 <div className="flex justify-between mt-1">
                   <span className="text-xs text-bambu-gray/70">
-                    {platesProgressPercent.toFixed(0)}% complete
+                    {t('projectDetail.progress.percentComplete', { percent: platesProgressPercent.toFixed(0) })}
                   </span>
                   {stats?.remaining_prints != null && stats.remaining_prints > 0 && (
                     <span className="text-xs text-bambu-gray/70">
-                      {stats.remaining_prints} remaining
+                      {t('projectDetail.progress.remaining', { count: stats.remaining_prints })}
                     </span>
                   )}
                 </div>
@@ -554,9 +556,9 @@ export function ProjectDetailPage() {
             {project.target_parts_count && (
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-bambu-gray">Parts Progress</span>
+                  <span className="text-sm text-bambu-gray">{t('projectDetail.progress.partsProgress')}</span>
                   <span className="text-sm font-medium text-white">
-                    {stats?.completed_prints || 0} / {project.target_parts_count} parts
+                    {stats?.completed_prints || 0} / {project.target_parts_count} {t('projectDetail.progress.parts')}
                   </span>
                 </div>
                 <div className="h-3 bg-bambu-dark rounded-full overflow-hidden">
@@ -570,11 +572,11 @@ export function ProjectDetailPage() {
                 </div>
                 <div className="flex justify-between mt-1">
                   <span className="text-xs text-bambu-gray/70">
-                    {partsProgressPercent.toFixed(0)}% complete
+                    {t('projectDetail.progress.percentComplete', { percent: partsProgressPercent.toFixed(0) })}
                   </span>
                   {stats?.remaining_parts != null && stats.remaining_parts > 0 && (
                     <span className="text-xs text-bambu-gray/70">
-                      {stats.remaining_parts} remaining
+                      {t('projectDetail.progress.remaining', { count: stats.remaining_parts })}
                     </span>
                   )}
                 </div>
@@ -594,25 +596,25 @@ export function ProjectDetailPage() {
                   <Package className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="text-sm text-bambu-gray">Print Jobs</p>
-                  <p className="text-xl font-semibold text-white">{stats.total_archives} <span className="text-sm font-normal text-bambu-gray">total</span></p>
+                  <p className="text-sm text-bambu-gray">{t('projectDetail.stats.printJobs')}</p>
+                  <p className="text-xl font-semibold text-white">{stats.total_archives} <span className="text-sm font-normal text-bambu-gray">{t('projectDetail.stats.total')}</span></p>
                   {stats.failed_prints > 0 && (
-                    <p className="text-sm text-status-error">{stats.failed_prints} failed</p>
+                    <p className="text-sm text-status-error">{t('projectDetail.stats.failed', { count: stats.failed_prints })}</p>
                   )}
-                  <p className="text-sm text-bambu-gray">{stats.completed_prints} parts printed</p>
+                  <p className="text-sm text-bambu-gray">{t('projectDetail.stats.partsPrinted', { count: stats.completed_prints })}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
           <StatCard
             icon={Clock}
-            label="Print Time"
+            label={t('projectDetail.stats.printTime')}
             value={formatDuration(stats.total_print_time_hours)}
             color="text-yellow-400"
           />
           <StatCard
             icon={Printer}
-            label="Filament Used"
+            label={t('projectDetail.stats.filamentUsed')}
             value={formatFilament(stats.total_filament_grams)}
             color="text-purple-400"
           />
@@ -624,18 +626,18 @@ export function ProjectDetailPage() {
         <Card>
           <CardContent className="p-4">
             <h2 className="text-lg font-semibold text-white mb-3">
-              Cost Tracking
+              {t('projectDetail.cost.title')}
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
-                <p className="text-xs text-bambu-gray uppercase">Filament Cost</p>
+                <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.cost.filamentCost')}</p>
                 <p className="text-lg font-semibold text-white">
                   {currency}{stats.estimated_cost.toFixed(2)}
                 </p>
               </div>
               {stats.total_energy_kwh > 0 && (
                 <div>
-                  <p className="text-xs text-bambu-gray uppercase">Energy</p>
+                  <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.cost.energy')}</p>
                   <p className="text-lg font-semibold text-white">
                     {stats.total_energy_kwh.toFixed(2)} kWh
                     {stats.total_energy_cost > 0 && (
@@ -649,11 +651,11 @@ export function ProjectDetailPage() {
               {project.budget && (
                 <>
                   <div>
-                    <p className="text-xs text-bambu-gray uppercase">Budget</p>
+                    <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.cost.budget')}</p>
                     <p className="text-lg font-semibold text-white">{currency}{project.budget.toFixed(2)}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-bambu-gray uppercase">Remaining</p>
+                    <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.cost.remaining')}</p>
                     <p className={`text-lg font-semibold ${project.budget - stats.estimated_cost >= 0 ? 'text-bambu-green' : 'text-red-400'}`}>
                       {currency}{(project.budget - stats.estimated_cost).toFixed(2)}
                     </p>
@@ -671,7 +673,7 @@ export function ProjectDetailPage() {
           <CardContent className="p-4">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-3">
               <FolderTree className="w-5 h-5" />
-              Sub-projects ({project.children.length})
+              {t('projectDetail.subProjects.title', { count: project.children.length })}
             </h2>
             <div className="space-y-2">
               {project.children.map((child) => (
@@ -710,7 +712,7 @@ export function ProjectDetailPage() {
       {project.parent_id && project.parent_name && (
         <div className="flex items-center gap-2 text-sm">
           <Layers className="w-4 h-4 text-bambu-gray" />
-          <span className="text-bambu-gray">Part of:</span>
+          <span className="text-bambu-gray">{t('projectDetail.partOf')}</span>
           <Link
             to={`/projects/${project.parent_id}`}
             className="text-bambu-green hover:underline"
@@ -726,8 +728,8 @@ export function ProjectDetailPage() {
           {/* Priority */}
           {project.priority && project.priority !== 'normal' && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-bambu-gray uppercase">Priority:</span>
-              <PriorityBadge priority={project.priority} />
+              <span className="text-xs text-bambu-gray uppercase">{t('projectDetail.priorityLabel')}</span>
+              <PriorityBadge priority={project.priority} t={t} />
             </div>
           )}
 
@@ -736,9 +738,9 @@ export function ProjectDetailPage() {
             <div className="flex items-center gap-2">
               <Calendar className="w-4 h-4 text-bambu-gray" />
               <span className="text-sm text-white">{formatDate(project.due_date)}</span>
-              {getDueDateStatus(project.due_date) && (
-                <span className={`text-xs ${getDueDateStatus(project.due_date)!.color}`}>
-                  ({getDueDateStatus(project.due_date)!.label})
+              {getDueDateStatus(project.due_date, t) && (
+                <span className={`text-xs ${getDueDateStatus(project.due_date, t)!.color}`}>
+                  ({getDueDateStatus(project.due_date, t)!.label})
                 </span>
               )}
             </div>
@@ -769,7 +771,7 @@ export function ProjectDetailPage() {
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
               <FileText className="w-5 h-5" />
-              Notes
+              {t('projectDetail.notes.title')}
             </h2>
             {!editingNotes ? (
               <Button
@@ -777,10 +779,10 @@ export function ProjectDetailPage() {
                 size="sm"
                 onClick={handleStartEditNotes}
                 disabled={!hasPermission('projects:update')}
-                title={!hasPermission('projects:update') ? 'You do not have permission to edit notes' : undefined}
+                title={!hasPermission('projects:update') ? t('projectDetail.notes.noEditPermission') : undefined}
               >
                 <Edit3 className="w-4 h-4 mr-1" />
-                Edit
+                {t('common.edit')}
               </Button>
             ) : (
               <div className="flex gap-2">
@@ -791,7 +793,7 @@ export function ProjectDetailPage() {
                   disabled={updateMutation.isPending}
                 >
                   <X className="w-4 h-4 mr-1" />
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button
                   size="sm"
@@ -803,7 +805,7 @@ export function ProjectDetailPage() {
                   ) : (
                     <Save className="w-4 h-4 mr-1" />
                   )}
-                  Save
+                  {t('common.save')}
                 </Button>
               </div>
             )}
@@ -813,7 +815,7 @@ export function ProjectDetailPage() {
             <RichTextEditor
               content={notesContent}
               onChange={setNotesContent}
-              placeholder="Add notes about this project..."
+              placeholder={t('projectDetail.notes.placeholder')}
             />
           ) : project.notes ? (
             <div
@@ -822,7 +824,7 @@ export function ProjectDetailPage() {
             />
           ) : (
             <p className="text-bambu-gray/70 text-sm italic">
-              No notes yet. Click Edit to add notes.
+              {t('projectDetail.notes.empty')}
             </p>
           )}
         </CardContent>
@@ -834,15 +836,15 @@ export function ProjectDetailPage() {
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
               <FolderOpen className="w-5 h-5" />
-              Files
+              {t('projectDetail.files.title')}
             </h2>
           </div>
 
           <p className="text-xs text-bambu-gray mb-3">
             <Link to="/files" className="text-bambu-green hover:underline">
-              Link folders from the File Manager
+              {t('projectDetail.files.linkFolders')}
             </Link>
-            {' '}to this project for quick access.
+            {' '}{t('projectDetail.files.forQuickAccess')}
           </p>
 
           {linkedFolders && linkedFolders.length > 0 ? (
@@ -860,7 +862,7 @@ export function ProjectDetailPage() {
                         {folder.name}
                       </p>
                       <p className="text-xs text-bambu-gray">
-                        {folder.file_count} file{folder.file_count !== 1 ? 's' : ''}
+                        {t('projectDetail.files.fileCount', { count: folder.file_count })}
                       </p>
                     </div>
                   </div>
@@ -870,7 +872,7 @@ export function ProjectDetailPage() {
             </div>
           ) : (
             <p className="text-bambu-gray/70 text-sm italic">
-              No folders linked. Go to File Manager and link a folder to this project.
+              {t('projectDetail.files.empty')}
             </p>
           )}
         </CardContent>
@@ -882,10 +884,10 @@ export function ProjectDetailPage() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
               <ShoppingCart className="w-5 h-5" />
-              Bill of Materials
+              {t('projectDetail.bom.title')}
               {stats && stats.bom_total_items > 0 && (
                 <span className="text-sm font-normal text-bambu-gray">
-                  ({stats.bom_completed_items}/{stats.bom_total_items} acquired)
+                  ({t('projectDetail.bom.acquired', { completed: stats.bom_completed_items, total: stats.bom_total_items })})
                 </span>
               )}
             </h2>
@@ -899,7 +901,7 @@ export function ProjectDetailPage() {
                       : 'bg-bambu-dark text-bambu-gray hover:text-white'
                   }`}
                 >
-                  {hideBomCompleted ? 'Show all' : 'Hide done'}
+                  {hideBomCompleted ? t('projectDetail.bom.showAll') : t('projectDetail.bom.hideDone')}
                 </button>
               )}
               {!showBomForm && (
@@ -908,10 +910,10 @@ export function ProjectDetailPage() {
                   size="sm"
                   onClick={() => setShowBomForm(true)}
                   disabled={!hasPermission('projects:update')}
-                  title={!hasPermission('projects:update') ? 'You do not have permission to add parts' : undefined}
+                  title={!hasPermission('projects:update') ? t('projectDetail.bom.noAddPermission') : undefined}
                 >
                   <Plus className="w-4 h-4 mr-1" />
-                  Add Part
+                  {t('projectDetail.bom.addPart')}
                 </Button>
               )}
             </div>
@@ -926,7 +928,7 @@ export function ProjectDetailPage() {
                   value={newBomName}
                   onChange={(e) => setNewBomName(e.target.value)}
                   className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                  placeholder="Part name (e.g., M3x8 screws)"
+                  placeholder={t('projectDetail.bom.partNamePlaceholder')}
                   autoFocus
                 />
                 <div className="flex gap-2">
@@ -936,7 +938,7 @@ export function ProjectDetailPage() {
                     onChange={(e) => setNewBomQty(parseInt(e.target.value) || 1)}
                     className="w-20 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-bambu-green"
                     min="1"
-                    placeholder="Qty"
+                    placeholder={t('projectDetail.bom.qty')}
                   />
                   <input
                     type="number"
@@ -944,7 +946,7 @@ export function ProjectDetailPage() {
                     value={newBomPrice}
                     onChange={(e) => setNewBomPrice(e.target.value)}
                     className="flex-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                    placeholder={`Price (${currency})`}
+                    placeholder={t('projectDetail.bom.price', { currency })}
                   />
                 </div>
               </div>
@@ -953,24 +955,24 @@ export function ProjectDetailPage() {
                 value={newBomUrl}
                 onChange={(e) => setNewBomUrl(e.target.value)}
                 className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                placeholder="Sourcing URL (optional)"
+                placeholder={t('projectDetail.bom.sourcingUrlPlaceholder')}
               />
               <input
                 type="text"
                 value={newBomRemarks}
                 onChange={(e) => setNewBomRemarks(e.target.value)}
                 className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                placeholder="Remarks (optional)"
+                placeholder={t('projectDetail.bom.remarksPlaceholder')}
               />
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="secondary" size="sm" onClick={() => setShowBomForm(false)}>
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button type="submit" size="sm" disabled={!newBomName.trim() || createBomMutation.isPending}>
                   {createBomMutation.isPending ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    'Add Part'
+                    t('projectDetail.bom.addPart')
                   )}
                 </Button>
               </div>
@@ -1001,7 +1003,7 @@ export function ProjectDetailPage() {
                           value={editBomName}
                           onChange={(e) => setEditBomName(e.target.value)}
                           className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                          placeholder="Part name"
+                          placeholder={t('projectDetail.bom.partName')}
                           autoFocus
                         />
                         <div className="flex gap-2">
@@ -1011,7 +1013,7 @@ export function ProjectDetailPage() {
                             onChange={(e) => setEditBomQty(parseInt(e.target.value) || 1)}
                             className="w-20 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-bambu-green"
                             min="1"
-                            placeholder="Qty"
+                            placeholder={t('projectDetail.bom.qty')}
                           />
                           <input
                             type="number"
@@ -1019,7 +1021,7 @@ export function ProjectDetailPage() {
                             value={editBomPrice}
                             onChange={(e) => setEditBomPrice(e.target.value)}
                             className="flex-1 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                            placeholder={`Price (${currency})`}
+                            placeholder={t('projectDetail.bom.price', { currency })}
                           />
                         </div>
                       </div>
@@ -1028,24 +1030,24 @@ export function ProjectDetailPage() {
                         value={editBomUrl}
                         onChange={(e) => setEditBomUrl(e.target.value)}
                         className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                        placeholder="Sourcing URL (optional)"
+                        placeholder={t('projectDetail.bom.sourcingUrlPlaceholder')}
                       />
                       <input
                         type="text"
                         value={editBomRemarks}
                         onChange={(e) => setEditBomRemarks(e.target.value)}
                         className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                        placeholder="Remarks (optional)"
+                        placeholder={t('projectDetail.bom.remarksPlaceholder')}
                       />
                       <div className="flex justify-end gap-2">
                         <Button type="button" variant="secondary" size="sm" onClick={handleCancelBomEdit}>
-                          Cancel
+                          {t('common.cancel')}
                         </Button>
                         <Button type="submit" size="sm" disabled={!editBomName.trim() || updateBomMutation.isPending}>
                           {updateBomMutation.isPending ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
                           ) : (
-                            'Save'
+                            t('common.save')
                           )}
                         </Button>
                       </div>
@@ -1056,7 +1058,7 @@ export function ProjectDetailPage() {
                       <button
                         onClick={() => hasPermission('projects:update') && handleToggleAcquired(item)}
                         disabled={updateBomMutation.isPending || !hasPermission('projects:update')}
-                        title={!hasPermission('projects:update') ? 'You do not have permission to update parts' : undefined}
+                        title={!hasPermission('projects:update') ? t('projectDetail.bom.noUpdatePermission') : undefined}
                         className={`w-5 h-5 mt-0.5 rounded border-2 flex items-center justify-center transition-colors flex-shrink-0 ${
                           item.is_complete
                             ? 'bg-status-ok border-status-ok text-white'
@@ -1091,7 +1093,7 @@ export function ProjectDetailPage() {
                                   ? 'hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white'
                                   : 'text-bambu-gray/50 cursor-not-allowed'
                               }`}
-                              title={!hasPermission('projects:update') ? 'You do not have permission to edit parts' : 'Edit'}
+                              title={!hasPermission('projects:update') ? t('projectDetail.bom.noEditPermission') : t('common.edit')}
                             >
                               <Pencil className="w-4 h-4" />
                             </button>
@@ -1103,7 +1105,7 @@ export function ProjectDetailPage() {
                                   ? 'hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-red-400'
                                   : 'text-bambu-gray/50 cursor-not-allowed'
                               }`}
-                              title={!hasPermission('projects:update') ? 'You do not have permission to delete parts' : 'Delete'}
+                              title={!hasPermission('projects:update') ? t('projectDetail.bom.noDeletePermission') : t('common.delete')}
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -1144,7 +1146,7 @@ export function ProjectDetailPage() {
               {/* BOM Total */}
               {bomItems.some(item => item.unit_price !== null) && (
                 <div className="pt-2 mt-2 border-t border-bambu-dark-tertiary flex justify-between text-sm">
-                  <span className="text-bambu-gray">Total cost:</span>
+                  <span className="text-bambu-gray">{t('projectDetail.bom.totalCost')}</span>
                   <span className="text-white font-medium">
                     {currency}{bomItems.reduce((sum, item) => sum + (item.unit_price || 0) * item.quantity_needed, 0).toFixed(2)}
                   </span>
@@ -1153,7 +1155,7 @@ export function ProjectDetailPage() {
             </div>
           ) : (
             <p className="text-bambu-gray/70 text-sm italic">
-              No parts in the bill of materials. Add hardware, electronics, or other components to track what needs to be sourced.
+              {t('projectDetail.bom.empty')}
             </p>
           )}
         </CardContent>
@@ -1165,7 +1167,7 @@ export function ProjectDetailPage() {
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
               <History className="w-5 h-5" />
-              Activity Timeline
+              {t('projectDetail.timeline.title')}
             </h2>
           </div>
 
@@ -1201,7 +1203,7 @@ export function ProjectDetailPage() {
             </div>
           ) : (
             <p className="text-bambu-gray/70 text-sm italic">
-              No activity yet.
+              {t('projectDetail.timeline.empty')}
             </p>
           )}
         </CardContent>
@@ -1215,14 +1217,14 @@ export function ProjectDetailPage() {
             size="sm"
             onClick={() => createTemplateMutation.mutate()}
             disabled={createTemplateMutation.isPending || !hasPermission('projects:create')}
-            title={!hasPermission('projects:create') ? 'You do not have permission to create templates' : undefined}
+            title={!hasPermission('projects:create') ? t('projectDetail.template.noCreatePermission') : undefined}
           >
             {createTemplateMutation.isPending ? (
               <Loader2 className="w-4 h-4 animate-spin mr-2" />
             ) : (
               <Copy className="w-4 h-4 mr-2" />
             )}
-            Save as Template
+            {t('projectDetail.template.saveAsTemplate')}
           </Button>
         </div>
       )}
@@ -1234,24 +1236,24 @@ export function ProjectDetailPage() {
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                 <ListTodo className="w-5 h-5" />
-                Queue
+                {t('projectDetail.queue.title')}
               </h2>
               <Link
                 to={`/queue?project=${projectId}`}
                 className="text-sm text-bambu-green hover:underline"
               >
-                View all
+                {t('projectDetail.queue.viewAll')}
               </Link>
             </div>
             <div className="flex items-center gap-4 text-sm">
               {stats.in_progress_prints > 0 && (
                 <span className="text-yellow-400">
-                  {stats.in_progress_prints} printing
+                  {t('projectDetail.queue.printing', { count: stats.in_progress_prints })}
                 </span>
               )}
               {stats.queued_prints > 0 && (
                 <span className="text-bambu-gray">
-                  {stats.queued_prints} queued
+                  {t('projectDetail.queue.queued', { count: stats.queued_prints })}
                 </span>
               )}
             </div>
@@ -1264,7 +1266,7 @@ export function ProjectDetailPage() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-white flex items-center gap-2">
             <Package className="w-5 h-5" />
-            Prints ({archives?.length || 0})
+            {t('projectDetail.prints.title', { count: archives?.length || 0 })}
           </h2>
         </div>
         {archivesLoading ? (
@@ -1272,13 +1274,14 @@ export function ProjectDetailPage() {
             <Loader2 className="w-6 h-6 animate-spin text-bambu-green" />
           </div>
         ) : (
-          <ArchiveGrid archives={archives || []} />
+          <ArchiveGrid archives={archives || []} t={t} />
         )}
       </div>
 
       {/* Edit Modal */}
       {showEditModal && (
         <ProjectModal
+          t={t}
           project={{
             ...project,
             archive_count: stats?.total_archives || 0,
@@ -1300,7 +1303,7 @@ export function ProjectDetailPage() {
         <ConfirmModal
           title={confirmModal.title}
           message={confirmModal.message}
-          confirmText="Delete"
+          confirmText={t('common.delete')}
           variant="danger"
           onConfirm={confirmModal.onConfirm}
           onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}

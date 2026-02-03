@@ -14,13 +14,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.library import get_library_dir
+from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
+from backend.app.core.permissions import Permission
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.project import Project
 from backend.app.models.project_bom import ProjectBOMItem
+from backend.app.models.user import User
 from backend.app.schemas.project import (
     ArchivePreview,
     BatchAddArchives,
@@ -154,6 +157,7 @@ async def compute_project_stats(
 async def list_projects(
     status: str | None = None,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
 ):
     """List all projects with basic stats."""
     query = select(Project)
@@ -258,6 +262,7 @@ async def list_projects(
 async def create_project(
     data: ProjectCreate,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
 ):
     """Create a new project."""
     # Verify parent exists if specified
@@ -319,6 +324,7 @@ async def create_project(
 @router.get("/templates", response_model=list[ProjectListResponse])
 async def list_templates(
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
 ):
     """List all project templates."""
     result = await db.execute(select(Project).where(Project.is_template.is_(True)).order_by(Project.name))
@@ -356,6 +362,7 @@ async def create_project_from_template(
     template_id: int,
     name: str = None,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
 ):
     """Create a new project from a template."""
     result = await db.execute(select(Project).where(Project.id == template_id))
@@ -470,6 +477,7 @@ async def get_child_previews(db: AsyncSession, parent_id: int) -> list[ProjectCh
 async def get_project(
     project_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
 ):
     """Get a project by ID with detailed stats."""
     result = await db.execute(select(Project).where(Project.id == project_id))
@@ -519,6 +527,7 @@ async def update_project(
     project_id: int,
     data: ProjectUpdate,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     """Update a project."""
     result = await db.execute(select(Project).where(Project.id == project_id))
@@ -609,6 +618,7 @@ async def update_project(
 async def delete_project(
     project_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_DELETE),
 ):
     """Delete a project. Archives and queue items will have project_id set to NULL."""
     result = await db.execute(select(Project).where(Project.id == project_id))
@@ -628,6 +638,7 @@ async def list_project_archives(
     limit: int = 100,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
 ):
     """List archives in a project."""
     # Verify project exists
@@ -657,6 +668,7 @@ async def list_project_archives(
 async def list_project_queue(
     project_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
 ):
     """List queue items in a project."""
     # Verify project exists
@@ -677,6 +689,7 @@ async def add_archives_to_project(
     project_id: int,
     data: BatchAddArchives,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     """Batch add archives to a project."""
     # Verify project exists
@@ -701,6 +714,7 @@ async def add_queue_items_to_project(
     project_id: int,
     data: BatchAddQueueItems,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     """Batch add queue items to a project."""
     # Verify project exists
@@ -725,6 +739,7 @@ async def remove_archives_from_project(
     project_id: int,
     data: BatchAddArchives,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     """Remove archives from a project (sets project_id to NULL)."""
     updated = 0
@@ -811,6 +826,7 @@ async def upload_attachment(
     project_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     """Upload an attachment to a project."""
     logger.info(f"=== UPLOAD START: {file.filename} for project {project_id} ===")
@@ -888,6 +904,7 @@ async def download_attachment(
     project_id: int,
     filename: str,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
 ):
     """Download an attachment from a project."""
     # Verify project exists
@@ -919,6 +936,7 @@ async def delete_attachment(
     project_id: int,
     filename: str,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     """Delete an attachment from a project."""
     # Verify project exists
@@ -962,6 +980,7 @@ async def delete_attachment(
 async def list_bom_items(
     project_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
 ):
     """List all BOM items for a project."""
     # Verify project exists
@@ -1013,6 +1032,7 @@ async def create_bom_item(
     project_id: int,
     data: BOMItemCreate,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     """Add a BOM item to a project."""
     # Verify project exists
@@ -1072,6 +1092,7 @@ async def update_bom_item(
     item_id: int,
     data: BOMItemUpdate,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     """Update a BOM item."""
     result = await db.execute(
@@ -1135,6 +1156,7 @@ async def delete_bom_item(
     project_id: int,
     item_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     """Delete a BOM item."""
     result = await db.execute(
@@ -1157,6 +1179,7 @@ async def delete_bom_item(
 async def create_template_from_project(
     project_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
 ):
     """Create a template from an existing project."""
     result = await db.execute(select(Project).where(Project.id == project_id))
@@ -1238,6 +1261,7 @@ async def get_project_timeline(
     project_id: int,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
 ):
     """Get timeline of events for a project."""
     # Verify project exists
@@ -1338,6 +1362,7 @@ async def export_project(
     project_id: int,
     format: str = "zip",  # "zip" (with files) or "json" (metadata only)
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
 ):
     """Export a project. Use format=zip (default) for full export with files, or format=json for metadata only."""
     result = await db.execute(select(Project).where(Project.id == project_id))
@@ -1458,6 +1483,7 @@ async def export_project(
 async def import_project(
     data: ProjectImport,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
 ):
     """Import a project with optional BOM items and linked folders."""
     # Create the project
@@ -1551,6 +1577,7 @@ async def import_project(
 async def import_project_file(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
 ):
     """Import a project from a ZIP or JSON file."""
     if not file.filename:

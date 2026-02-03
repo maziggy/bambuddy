@@ -61,9 +61,10 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
       const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
       const existing = dataMap.get(key) || { date: key, filament: 0, cost: 0, prints: 0 };
-      existing.filament += archive.filament_used_grams || 0;
+      const qty = archive.quantity || 1;
+      existing.filament += (archive.filament_used_grams || 0) * qty;
       existing.cost += archive.cost || 0;
-      existing.prints += 1;
+      existing.prints += qty;
       dataMap.set(key, existing);
     });
 
@@ -89,9 +90,10 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
       const key = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
 
       const existing = dataMap.get(key) || { week: key, filament: 0, cost: 0, prints: 0 };
-      existing.filament += archive.filament_used_grams || 0;
+      const qty = archive.quantity || 1;
+      existing.filament += (archive.filament_used_grams || 0) * qty;
       existing.cost += archive.cost || 0;
-      existing.prints += 1;
+      existing.prints += qty;
       dataMap.set(key, existing);
     });
 
@@ -110,10 +112,11 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
 
     filteredArchives.forEach(archive => {
       const type = archive.filament_type || 'Unknown';
+      const qty = archive.quantity || 1;
       // Handle multiple types (e.g., "PLA, PETG")
       const types = type.split(', ');
       types.forEach(t => {
-        const grams = (archive.filament_used_grams || 0) / types.length;
+        const grams = ((archive.filament_used_grams || 0) * qty) / types.length;
         dataMap.set(t, (dataMap.get(t) || 0) + grams);
       });
     });
@@ -140,9 +143,9 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
 
       months.push({
         month: monthStr,
-        filament: Math.round(monthArchives.reduce((sum, a) => sum + (a.filament_used_grams || 0), 0)),
+        filament: Math.round(monthArchives.reduce((sum, a) => sum + (a.filament_used_grams || 0) * (a.quantity || 1), 0)),
         cost: monthArchives.reduce((sum, a) => sum + (a.cost || 0), 0),
-        prints: monthArchives.length,
+        prints: monthArchives.reduce((sum, a) => sum + (a.quantity || 1), 0),
       });
     }
 
@@ -150,8 +153,9 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
   }, [archives]);
 
   const chartData = timeRange === '7d' || timeRange === '30d' ? dailyData : weeklyData;
-  const totalFilament = filteredArchives.reduce((sum, a) => sum + (a.filament_used_grams || 0), 0);
+  const totalFilament = filteredArchives.reduce((sum, a) => sum + (a.filament_used_grams || 0) * (a.quantity || 1), 0);
   const totalCost = filteredArchives.reduce((sum, a) => sum + (a.cost || 0), 0);
+  const totalPrints = filteredArchives.reduce((sum, a) => sum + (a.quantity || 1), 0);
 
   return (
     <div className="space-y-6">
@@ -185,17 +189,17 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
         <div className="bg-bambu-dark rounded-lg p-4">
           <p className="text-sm text-bambu-gray">Period Cost</p>
           <p className="text-2xl font-bold text-white">{currency}{totalCost.toFixed(2)}</p>
-          <p className="text-xs text-bambu-gray">{filteredArchives.length} prints</p>
+          <p className="text-xs text-bambu-gray">{totalPrints} prints</p>
         </div>
         <div className="bg-bambu-dark rounded-lg p-4">
           <p className="text-sm text-bambu-gray">Avg per Print</p>
           <p className="text-2xl font-bold text-white">
-            {filteredArchives.length > 0
-              ? (totalFilament / filteredArchives.length).toFixed(0)
+            {totalPrints > 0
+              ? (totalFilament / totalPrints).toFixed(0)
               : 0}g
           </p>
           <p className="text-xs text-bambu-gray">
-            {currency}{filteredArchives.length > 0 ? (totalCost / filteredArchives.length).toFixed(2) : '0.00'} avg
+            {currency}{totalPrints > 0 ? (totalCost / totalPrints).toFixed(2) : '0.00'} avg
           </p>
         </div>
       </div>

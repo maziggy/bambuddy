@@ -9,13 +9,16 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.config import APP_VERSION, settings
 from backend.app.core.database import get_db
+from backend.app.core.permissions import Permission
 from backend.app.models.archive import PrintArchive
 from backend.app.models.filament import Filament
 from backend.app.models.printer import Printer
 from backend.app.models.project import Project
 from backend.app.models.smart_plug import SmartPlug
+from backend.app.models.user import User
 from backend.app.services.printer_manager import printer_manager
 
 router = APIRouter(prefix="/system", tags=["system"])
@@ -60,7 +63,10 @@ def format_uptime(seconds: float) -> str:
 
 
 @router.get("/info")
-async def get_system_info(db: AsyncSession = Depends(get_db)):
+async def get_system_info(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SYSTEM_READ),
+):
     """Get comprehensive system information."""
 
     # Database stats

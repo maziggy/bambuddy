@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -9,6 +10,7 @@ import { Info } from 'lucide-react';
 
 export function SetupPage() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const { showToast } = useToast();
   const { mode } = useTheme();
   const { refreshAuth } = useAuth();
@@ -30,14 +32,14 @@ export function SetupPage() {
 
       if (data.auth_enabled) {
         if (data.admin_created) {
-          showToast('Authentication enabled and admin user created');
+          showToast(t('setup.toast.authEnabledAdminCreated'));
           navigate('/login');
         } else {
-          showToast('Authentication enabled using existing admin users');
+          showToast(t('setup.toast.authEnabledExistingAdmins'));
           navigate('/login');
         }
       } else {
-        showToast('Setup completed');
+        showToast(t('setup.toast.setupCompleted'));
         navigate('/');
       }
     },
@@ -54,15 +56,15 @@ export function SetupPage() {
       // If no credentials provided, backend will use existing admin users if they exist
       if (adminUsername || adminPassword) {
         if (!adminUsername || !adminPassword) {
-          showToast('Please enter both admin username and password, or leave both empty to use existing admin users', 'error');
+          showToast(t('setup.toast.enterBothCredentials'), 'error');
           return;
         }
         if (adminPassword !== confirmPassword) {
-          showToast('Passwords do not match', 'error');
+          showToast(t('setup.toast.passwordsDoNotMatch'), 'error');
           return;
         }
         if (adminPassword.length < 6) {
-          showToast('Password must be at least 6 characters', 'error');
+          showToast(t('setup.toast.passwordTooShort'), 'error');
           return;
         }
       }
@@ -83,10 +85,10 @@ export function SetupPage() {
             />
           </div>
           <h2 className="text-3xl font-bold text-white">
-            Bambuddy Setup
+            {t('setup.title')}
           </h2>
           <p className="mt-2 text-sm text-bambu-gray">
-            Configure authentication for your Bambuddy instance
+            {t('setup.subtitle')}
           </p>
         </div>
 
@@ -101,7 +103,7 @@ export function SetupPage() {
                 className="h-4 w-4 text-bambu-green focus:ring-bambu-green border-bambu-dark-tertiary rounded bg-bambu-dark-secondary"
               />
               <label htmlFor="auth-enabled" className="ml-3 block text-sm font-medium text-white">
-                Enable Authentication
+                {t('setup.enableAuth')}
               </label>
             </div>
 
@@ -111,10 +113,9 @@ export function SetupPage() {
                   <div className="flex items-start gap-2">
                     <Info className="w-4 h-4 text-bambu-green mt-0.5 flex-shrink-0" />
                     <div className="text-sm text-bambu-gray">
-                      <p className="text-white font-medium mb-1">Admin Account</p>
+                      <p className="text-white font-medium mb-1">{t('setup.adminAccount')}</p>
                       <p>
-                        If admin users already exist, authentication will be enabled using the existing admin accounts.
-                        Leave the fields below empty to use existing admins, or enter new credentials to create a new admin user.
+                        {t('setup.adminAccountDesc')}
                       </p>
                     </div>
                   </div>
@@ -122,7 +123,7 @@ export function SetupPage() {
 
                 <div>
                   <label htmlFor="admin-username" className="block text-sm font-medium text-white mb-2">
-                    Admin Username <span className="text-bambu-gray text-xs">(optional if admin users exist)</span>
+                    {t('setup.adminUsername')} <span className="text-bambu-gray text-xs">{t('setup.optionalIfAdminExists')}</span>
                   </label>
                   <input
                     id="admin-username"
@@ -130,14 +131,14 @@ export function SetupPage() {
                     value={adminUsername}
                     onChange={(e) => setAdminUsername(e.target.value)}
                     className="block w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                    placeholder="Enter admin username (optional)"
+                    placeholder={t('setup.adminUsernamePlaceholder')}
                     autoComplete="username"
                   />
                 </div>
 
                 <div>
                   <label htmlFor="admin-password" className="block text-sm font-medium text-white mb-2">
-                    Admin Password <span className="text-bambu-gray text-xs">(optional if admin users exist)</span>
+                    {t('setup.adminPassword')} <span className="text-bambu-gray text-xs">{t('setup.optionalIfAdminExists')}</span>
                   </label>
                   <input
                     id="admin-password"
@@ -145,7 +146,7 @@ export function SetupPage() {
                     value={adminPassword}
                     onChange={(e) => setAdminPassword(e.target.value)}
                     className="block w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                    placeholder="Enter admin password (optional)"
+                    placeholder={t('setup.adminPasswordPlaceholder')}
                     minLength={6}
                     autoComplete="new-password"
                   />
@@ -154,7 +155,7 @@ export function SetupPage() {
                 {adminPassword && (
                   <div>
                     <label htmlFor="confirm-password" className="block text-sm font-medium text-white mb-2">
-                      Confirm Password
+                      {t('setup.confirmPassword')}
                     </label>
                     <input
                       id="confirm-password"
@@ -162,7 +163,7 @@ export function SetupPage() {
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       className="block w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                      placeholder="Confirm admin password"
+                      placeholder={t('setup.confirmPasswordPlaceholder')}
                       minLength={6}
                       autoComplete="new-password"
                     />
@@ -178,7 +179,7 @@ export function SetupPage() {
               disabled={setupMutation.isPending}
               className="w-full flex justify-center py-3 px-4 bg-bambu-green hover:bg-bambu-green-light text-white font-medium rounded-lg shadow-lg shadow-bambu-green/20 hover:shadow-bambu-green/30 focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:ring-offset-2 focus:ring-offset-bambu-dark-secondary transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-bambu-green"
             >
-              {setupMutation.isPending ? 'Setting up...' : 'Complete Setup'}
+              {setupMutation.isPending ? t('setup.settingUp') : t('setup.completeSetup')}
             </button>
           </div>
         </form>

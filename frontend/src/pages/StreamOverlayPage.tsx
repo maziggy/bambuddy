@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Layers, Clock, Timer, Printer } from 'lucide-react';
 import { api } from '../api/client';
 import type { PrinterStatus } from '../api/client';
+
+type TFunction = (key: string, options?: Record<string, unknown>) => string;
 
 type OverlaySize = 'small' | 'medium' | 'large';
 
@@ -49,7 +52,7 @@ function formatTime(seconds: number): string {
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
-function formatETA(remainingMinutes: number): string {
+function formatETA(remainingMinutes: number, t: TFunction): string {
   const now = new Date();
   const eta = new Date(now.getTime() + remainingMinutes * 60 * 1000);
   const today = new Date();
@@ -62,22 +65,22 @@ function formatETA(remainingMinutes: number): string {
   if (etaDay.getTime() === today.getTime()) {
     return timeStr;
   } else if (etaDay.getTime() === today.getTime() + 86400000) {
-    return `Tomorrow ${timeStr}`;
+    return `${t('streamOverlay.tomorrow')} ${timeStr}`;
   } else {
     return eta.toLocaleDateString([], { weekday: 'short' }) + ' ' + timeStr;
   }
 }
 
-function getStatusText(status: PrinterStatus): string {
+function getStatusText(status: PrinterStatus, t: TFunction): string {
   if (status.stg_cur_name) return status.stg_cur_name;
 
   switch (status.state) {
-    case 'RUNNING': return 'Printing';
-    case 'PAUSE': return 'Paused';
-    case 'FINISH': return 'Finished';
-    case 'FAILED': return 'Failed';
-    case 'IDLE': return 'Idle';
-    default: return status.state || 'Unknown';
+    case 'RUNNING': return t('streamOverlay.status.printing');
+    case 'PAUSE': return t('streamOverlay.status.paused');
+    case 'FINISH': return t('streamOverlay.status.finished');
+    case 'FAILED': return t('streamOverlay.status.failed');
+    case 'IDLE': return t('streamOverlay.status.idle');
+    default: return status.state || t('streamOverlay.status.unknown');
   }
 }
 
@@ -120,6 +123,7 @@ function getSizeClasses(size: OverlaySize) {
 export function StreamOverlayPage() {
   const { printerId } = useParams<{ printerId: string }>();
   const [searchParams] = useSearchParams();
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const id = parseInt(printerId || '0', 10);
   const [imageKey, setImageKey] = useState(Date.now());
@@ -172,11 +176,11 @@ export function StreamOverlayPage() {
 
   // Update document title
   useEffect(() => {
-    document.title = printer ? `${printer.name} - Stream Overlay` : 'Stream Overlay';
+    document.title = printer ? `${printer.name} - ${t('streamOverlay.title')}` : t('streamOverlay.title');
     return () => {
       document.title = 'Bambuddy';
     };
-  }, [printer]);
+  }, [printer, t]);
 
   // Refresh stream on error
   const handleStreamError = () => {
@@ -188,7 +192,7 @@ export function StreamOverlayPage() {
   if (!id) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
-        <p className="text-white">Invalid printer ID</p>
+        <p className="text-white">{t('streamOverlay.invalidPrinterId')}</p>
       </div>
     );
   }
@@ -196,7 +200,7 @@ export function StreamOverlayPage() {
   if (!status) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
-        <p className="text-gray-400">Loading...</p>
+        <p className="text-gray-400">{t('common.loading')}</p>
       </div>
     );
   }
@@ -212,7 +216,7 @@ export function StreamOverlayPage() {
         <img
           key={imageKey}
           src={streamUrl}
-          alt="Camera stream"
+          alt={t('streamOverlay.cameraStream')}
           className="absolute inset-0 w-full h-full object-contain"
           onError={handleStreamError}
         />
@@ -253,7 +257,7 @@ export function StreamOverlayPage() {
           {/* Status text */}
           {config.showStatus && (
             <div className={`${sizes.text} text-white/70 mb-2`}>
-              {getStatusText(status)}
+              {getStatusText(status, t)}
             </div>
           )}
 
@@ -261,7 +265,7 @@ export function StreamOverlayPage() {
           {config.showProgress && isPrinting && (
             <div className="mb-3">
               <div className={`flex items-center justify-between mb-1 ${sizes.text}`}>
-                <span className="text-white/70">Progress</span>
+                <span className="text-white/70">{t('streamOverlay.progress')}</span>
                 <span className="text-white font-bold">{Math.round(progress)}%</span>
               </div>
               <div className={`w-full bg-white/20 rounded-full ${sizes.progressHeight}`}>
@@ -301,7 +305,7 @@ export function StreamOverlayPage() {
                   <div className={`flex items-center ${sizes.gap} text-white/70`}>
                     <Clock className={sizes.icon} />
                     <span className={`${sizes.text} text-white`}>
-                      ETA {formatETA(status.remaining_time)}
+                      {t('streamOverlay.eta')} {formatETA(status.remaining_time, t)}
                     </span>
                   </div>
                 </>
@@ -312,7 +316,7 @@ export function StreamOverlayPage() {
           {/* Idle state */}
           {!isPrinting && (
             <div className={`${sizes.text} text-white/70 py-2`}>
-              {status.connected ? 'Printer is idle' : 'Printer offline'}
+              {status.connected ? t('streamOverlay.printerIdle') : t('streamOverlay.printerOffline')}
             </div>
           )}
         </div>

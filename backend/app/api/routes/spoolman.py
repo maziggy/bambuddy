@@ -7,9 +7,12 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
+from backend.app.core.permissions import Permission
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
+from backend.app.models.user import User
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.spoolman import (
     close_spoolman_client,
@@ -72,7 +75,10 @@ async def get_spoolman_settings(db: AsyncSession) -> tuple[bool, str, str]:
 
 
 @router.get("/status", response_model=SpoolmanStatus)
-async def get_spoolman_status(db: AsyncSession = Depends(get_db)):
+async def get_spoolman_status(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
+):
     """Get Spoolman integration status."""
     enabled, url, _ = await get_spoolman_settings(db)
 
@@ -89,7 +95,10 @@ async def get_spoolman_status(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/connect")
-async def connect_spoolman(db: AsyncSession = Depends(get_db)):
+async def connect_spoolman(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+):
     """Connect to Spoolman server using configured URL."""
     enabled, url, _ = await get_spoolman_settings(db)
 
@@ -119,7 +128,9 @@ async def connect_spoolman(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/disconnect")
-async def disconnect_spoolman():
+async def disconnect_spoolman(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+):
     """Disconnect from Spoolman server."""
     await close_spoolman_client()
     return {"success": True, "message": "Disconnected from Spoolman"}
@@ -129,6 +140,7 @@ async def disconnect_spoolman():
 async def sync_printer_ams(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
 ):
     """Sync AMS data from a specific printer to Spoolman."""
     # Check if Spoolman is enabled and connected
@@ -267,7 +279,10 @@ async def sync_printer_ams(
 
 
 @router.post("/sync-all", response_model=SyncResult)
-async def sync_all_printers(db: AsyncSession = Depends(get_db)):
+async def sync_all_printers(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
+):
     """Sync AMS data from all connected printers to Spoolman."""
     # Check if Spoolman is enabled
     enabled, url, _ = await get_spoolman_settings(db)
@@ -392,7 +407,10 @@ async def sync_all_printers(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/spools")
-async def get_spools(db: AsyncSession = Depends(get_db)):
+async def get_spools(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
+):
     """Get all spools from Spoolman."""
     enabled, url, _ = await get_spoolman_settings(db)
     if not enabled:
@@ -413,7 +431,10 @@ async def get_spools(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/filaments")
-async def get_filaments(db: AsyncSession = Depends(get_db)):
+async def get_filaments(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
+):
     """Get all filaments from Spoolman."""
     enabled, url, _ = await get_spoolman_settings(db)
     if not enabled:
@@ -445,7 +466,10 @@ class UnlinkedSpool(BaseModel):
 
 
 @router.get("/spools/unlinked", response_model=list[UnlinkedSpool])
-async def get_unlinked_spools(db: AsyncSession = Depends(get_db)):
+async def get_unlinked_spools(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
+):
     """Get all Spoolman spools that don't have a tag (not linked to AMS)."""
     enabled, url, _ = await get_spoolman_settings(db)
     if not enabled:
@@ -468,7 +492,9 @@ async def get_unlinked_spools(db: AsyncSession = Depends(get_db)):
         # Check if spool has a tag in extra field
         extra = spool.get("extra", {}) or {}
         tag = extra.get("tag", "")
-        if not tag:
+        # Remove quotes if present (JSON encoded string) and check if empty
+        clean_tag = tag.strip('"') if tag else ""
+        if not clean_tag:
             filament = spool.get("filament", {}) or {}
             unlinked.append(
                 UnlinkedSpool(
@@ -484,6 +510,42 @@ async def get_unlinked_spools(db: AsyncSession = Depends(get_db)):
     return unlinked
 
 
+@router.get("/spools/linked")
+async def get_linked_spools(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
+):
+    """Get a map of tag -> spool_id for all Spoolman spools that have a tag assigned."""
+    enabled, url, _ = await get_spoolman_settings(db)
+    if not enabled:
+        raise HTTPException(status_code=400, detail="Spoolman integration is not enabled")
+
+    client = await get_spoolman_client()
+    if not client:
+        if url:
+            client = await init_spoolman_client(url)
+        else:
+            raise HTTPException(status_code=400, detail="Spoolman URL is not configured")
+
+    if not await client.health_check():
+        raise HTTPException(status_code=503, detail="Spoolman is not reachable")
+
+    spools = await client.get_spools()
+    linked: dict[str, int] = {}
+
+    for spool in spools:
+        # Check if spool has a tag in extra field
+        extra = spool.get("extra", {}) or {}
+        tag = extra.get("tag", "")
+        if tag:
+            # Remove quotes if present (JSON encoded string)
+            clean_tag = tag.strip('"').upper()
+            if clean_tag:
+                linked[clean_tag] = spool["id"]
+
+    return {"linked": linked}
+
+
 class LinkSpoolRequest(BaseModel):
     """Request to link a Spoolman spool to an AMS tray."""
 
@@ -495,6 +557,7 @@ async def link_spool(
     spool_id: int,
     request: LinkSpoolRequest,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
 ):
     """Link a Spoolman spool to an AMS tray by setting the tag to tray_uuid."""
     enabled, url, _ = await get_spoolman_settings(db)

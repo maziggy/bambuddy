@@ -933,11 +933,13 @@ class ArchiveService:
         return archive
 
     async def get_archive(self, archive_id: int) -> PrintArchive | None:
-        """Get an archive by ID with creator loaded."""
+        """Get an archive by ID with relationships loaded."""
         from sqlalchemy.orm import selectinload
 
         result = await self.db.execute(
-            select(PrintArchive).options(selectinload(PrintArchive.created_by)).where(PrintArchive.id == archive_id)
+            select(PrintArchive)
+            .options(selectinload(PrintArchive.created_by), selectinload(PrintArchive.project))
+            .where(PrintArchive.id == archive_id)
         )
         return result.scalar_one_or_none()
 

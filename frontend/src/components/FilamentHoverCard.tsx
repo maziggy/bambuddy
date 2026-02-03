@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react';
-import { Droplets, Link2, Copy, Check, Settings2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Droplets, Link2, Copy, Check, Settings2, ExternalLink } from 'lucide-react';
 
 interface FilamentData {
   vendor: 'Bambu Lab' | 'Generic';
@@ -15,6 +16,8 @@ interface SpoolmanConfig {
   enabled: boolean;
   onLinkSpool?: (trayUuid: string) => void;
   hasUnlinkedSpools?: boolean; // Whether there are spools available to link
+  linkedSpoolId?: number | null; // Spoolman spool ID if this tray is already linked
+  spoolmanUrl?: string | null; // Base URL for Spoolman (for "Open in Spoolman" link)
 }
 
 interface ConfigureSlotConfig {
@@ -36,6 +39,7 @@ interface FilamentHoverCardProps {
  * Replaces the basic browser tooltip with a styled popover.
  */
 export function FilamentHoverCard({ data, children, disabled, className = '', spoolman, configureSlot }: FilamentHoverCardProps) {
+  const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState<'top' | 'bottom'>('top');
   const [copied, setCopied] = useState(false);
@@ -199,7 +203,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
               {/* Profile name */}
               <div className="flex items-center justify-between">
                 <span className="text-[10px] uppercase tracking-wider text-bambu-gray font-medium">
-                  Profile
+                  {t('ams.profile')}
                 </span>
                 <span className="text-xs text-white font-semibold truncate max-w-[120px]">
                   {data.profile}
@@ -209,7 +213,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
               {/* K Factor */}
               <div className="flex items-center justify-between">
                 <span className="text-[10px] uppercase tracking-wider text-bambu-gray font-medium">
-                  K Factor
+                  {t('ams.kFactor')}
                 </span>
                 <span className="text-xs text-bambu-green font-mono font-bold">
                   {data.kFactor}
@@ -221,7 +225,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] uppercase tracking-wider text-bambu-gray font-medium flex items-center gap-1">
                     <Droplets className="w-3 h-3" />
-                    Fill
+                    {t('ams.fill')}
                   </span>
                   <span className="text-xs text-white font-semibold">
                     {data.fillLevel !== null ? `${data.fillLevel}%` : '—'}
@@ -249,7 +253,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                   {/* Tray UUID with copy button */}
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] uppercase tracking-wider text-bambu-gray font-medium">
-                      Spool ID
+                      {t('spoolman.spoolId')}
                     </span>
                     <button
                       onClick={(e) => {
@@ -270,8 +274,23 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                     </button>
                   </div>
 
-                  {/* Link Spool button */}
-                  {spoolman.onLinkSpool && (
+                  {/* Open in Spoolman button (when already linked) */}
+                  {spoolman.linkedSpoolId && spoolman.spoolmanUrl && (
+                    <a
+                      href={`${spoolman.spoolmanUrl.replace(/\/$/, '')}/spool/show/${spoolman.linkedSpoolId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-green/20 hover:bg-bambu-green/30 text-bambu-green"
+                      title={t('spoolman.openInSpoolman')}
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      {t('spoolman.openInSpoolman')}
+                    </a>
+                  )}
+
+                  {/* Link Spool button (when not linked) */}
+                  {!spoolman.linkedSpoolId && spoolman.onLinkSpool && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -285,10 +304,10 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                           ? 'bg-bambu-gray/10 text-bambu-gray cursor-not-allowed'
                           : 'bg-bambu-green/20 hover:bg-bambu-green/30 text-bambu-green'
                       }`}
-                      title={spoolman.hasUnlinkedSpools === false ? 'No unlinked spools available' : 'Link this spool to a Spoolman spool'}
+                      title={spoolman.hasUnlinkedSpools === false ? t('spoolman.noUnlinkedSpools') : t('spoolman.linkToSpoolman')}
                     >
                       <Link2 className="w-3.5 h-3.5" />
-                      Link to Spoolman
+                      {t('spoolman.linkToSpoolman')}
                     </button>
                   )}
                 </div>
@@ -303,10 +322,10 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                       configureSlot.onConfigure?.();
                     }}
                     className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-blue/20 hover:bg-bambu-blue/30 text-bambu-blue"
-                    title="Configure slot with filament profile and K value"
+                    title={t('ams.configureSlot')}
                   >
                     <Settings2 className="w-3.5 h-3.5" />
-                    Configure
+                    {t('ams.configure')}
                   </button>
                 </div>
               )}
@@ -340,6 +359,7 @@ interface EmptySlotHoverCardProps {
  * Wrapper for empty slots - shows "Empty" on hover with optional configure button
  */
 export function EmptySlotHoverCard({ children, className = '', configureSlot }: EmptySlotHoverCardProps) {
+  const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -377,7 +397,7 @@ export function EmptySlotHoverCard({ children, className = '', configureSlot }: 
             rounded-md shadow-lg overflow-hidden
           ">
             <div className="px-3 py-1.5 text-xs text-bambu-gray whitespace-nowrap">
-              Empty slot
+              {t('ams.emptySlot')}
             </div>
             {/* Configure slot button */}
             {configureSlot?.enabled && (
@@ -388,10 +408,10 @@ export function EmptySlotHoverCard({ children, className = '', configureSlot }: 
                     configureSlot.onConfigure?.();
                   }}
                   className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-blue/20 hover:bg-bambu-blue/30 text-bambu-blue"
-                  title="Configure slot with filament profile and K value"
+                  title={t('ams.configureSlot')}
                 >
                   <Settings2 className="w-3.5 h-3.5" />
-                  Configure
+                  {t('ams.configure')}
                 </button>
               </div>
             )}

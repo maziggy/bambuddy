@@ -1,6 +1,7 @@
 // HMS Error Modal - Comprehensive error code database
 // Source: https://github.com/greghesp/ha-bambulab
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, AlertTriangle, AlertCircle, Info, ExternalLink } from 'lucide-react';
 import type { HMSError } from '../api/client';
 
@@ -904,6 +905,8 @@ function getHMSHomeUrl(): string {
 }
 
 export function HMSErrorModal({ printerName, errors, onClose }: HMSErrorModalProps) {
+  const { t } = useTranslation();
+
   // Debug: log errors to see what data we're receiving
   console.log('HMSErrorModal errors:', JSON.stringify(errors, null, 2));
 
@@ -930,7 +933,7 @@ export function HMSErrorModal({ printerName, errors, onClose }: HMSErrorModalPro
         <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-orange-400" />
-            <h2 className="text-lg font-semibold text-white">Errors - {printerName}</h2>
+            <h2 className="text-lg font-semibold text-white">{t('hmsErrors.title', { name: printerName })}</h2>
           </div>
           <button
             onClick={onClose}
@@ -945,7 +948,7 @@ export function HMSErrorModal({ printerName, errors, onClose }: HMSErrorModalPro
           {knownErrors.length === 0 ? (
             <div className="text-center py-8 text-bambu-gray">
               <AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30" />
-              <p>No errors</p>
+              <p>{t('hmsErrors.noErrors')}</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -979,7 +982,7 @@ export function HMSErrorModal({ printerName, errors, onClose }: HMSErrorModalPro
                           className="inline-flex items-center gap-1 text-xs text-bambu-green hover:underline"
                         >
                           <ExternalLink className="w-3 h-3" />
-                          View on Bambu Lab Wiki
+                          {t('hmsErrors.viewOnWiki')}
                         </a>
                       </div>
                     </div>
@@ -993,7 +996,7 @@ export function HMSErrorModal({ printerName, errors, onClose }: HMSErrorModalPro
         {/* Footer */}
         <div className="p-4 border-t border-bambu-dark-tertiary">
           <p className="text-xs text-bambu-gray">
-            Clear errors on the printer to dismiss them here.
+            {t('hmsErrors.clearInstructions')}
           </p>
         </div>
       </div>

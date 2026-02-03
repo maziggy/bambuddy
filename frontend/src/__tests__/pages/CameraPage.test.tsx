@@ -11,6 +11,8 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from '../../contexts/ThemeContext';
 import { ToastProvider } from '../../contexts/ToastContext';
+import { I18nextProvider } from 'react-i18next';
+import i18n from '../../i18n';
 
 // Mock navigator.sendBeacon which isn't available in jsdom
 vi.stubGlobal('navigator', {
@@ -39,15 +41,17 @@ function renderCameraPage(printerId: number) {
 
   return rtlRender(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`/cameras/${printerId}`]}>
-        <ThemeProvider>
-          <ToastProvider>
-            <Routes>
-              <Route path="/cameras/:printerId" element={<CameraPage />} />
-            </Routes>
-          </ToastProvider>
-        </ThemeProvider>
-      </MemoryRouter>
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter initialEntries={[`/cameras/${printerId}`]}>
+          <ThemeProvider>
+            <ToastProvider>
+              <Routes>
+                <Route path="/cameras/:printerId" element={<CameraPage />} />
+              </Routes>
+            </ToastProvider>
+          </ThemeProvider>
+        </MemoryRouter>
+      </I18nextProvider>
     </QueryClientProvider>
   );
 }
@@ -94,8 +98,9 @@ describe('CameraPage', () => {
       renderCameraPage(1);
 
       await waitFor(() => {
-        expect(screen.getByText('Live')).toBeInTheDocument();
-        expect(screen.getByText('Snapshot')).toBeInTheDocument();
+        // Check for translation key or translated text
+        expect(screen.getByText(/Live|camera\.live/)).toBeInTheDocument();
+        expect(screen.getByText(/Snapshot|camera\.snapshot/)).toBeInTheDocument();
       });
     });
 
@@ -124,7 +129,8 @@ describe('CameraPage', () => {
       renderCameraPage(0);
 
       await waitFor(() => {
-        expect(screen.getByText('Invalid printer ID')).toBeInTheDocument();
+        // Check for translation key or translated text
+        expect(screen.getByText(/Invalid printer ID|camera\.invalidPrinterId/)).toBeInTheDocument();
       });
     });
   });

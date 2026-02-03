@@ -4,6 +4,80 @@ All notable changes to Bambuddy will be documented in this file.
 
 ## [0.1.7b] - Not released
 
+### Security
+- **Critical: Missing API Endpoint Authentication** (CVE-2026-25505, CVSS 9.8):
+  - Added authentication to 200+ API endpoints that were previously unprotected
+  - All route files now use `RequirePermissionIfAuthEnabled()` for permission checks
+  - Protected endpoints: archives, projects, settings, API keys, groups, cloud, notifications, maintenance, filaments, external links, smart plugs, discovery, firmware, camera, k-profiles, AMS history, pending uploads, updates, spoolman, system, print queue, printers
+  - Image-serving endpoints (thumbnails, timelapse, photos, camera streams) remain public as they require knowing the resource ID and are loaded via `<img>` tags which cannot send Authorization headers
+  - Backend integration tests added to verify endpoint authentication enforcement
+
+### Enhancements
+- **TOTP Authenticator Support for Bambu Cloud** (Issue #182):
+  - Added support for TOTP-based two-factor authentication when connecting to Bambu Cloud
+  - Accounts with authenticator apps (Google Authenticator, Authy, etc.) now work correctly
+  - Proper detection of verification type: email code vs TOTP code
+  - Uses browser-like headers to bypass Cloudflare protection on TFA endpoint
+  - Frontend shows appropriate message for each verification type
+  - Added translations for TOTP UI in English, German, and Japanese
+- **Spoolman: Open in Spoolman Button** (Issue #210):
+  - FilamentHoverCard now shows "Open in Spoolman" button when spool is already linked in Spoolman
+  - Button links directly to the spool's page in Spoolman for quick editing
+  - "Link to Spoolman" button now only shows when spool is not yet linked
+  - Link button correctly disabled when no unlinked spools are available in Spoolman
+  - Toast notification shown on successful/failed spool linking
+  - Added `/api/v1/spoolman/spools/linked` endpoint returning map of linked spool tags to IDs
+- **Complete German Translations**:
+  - All UI strings now fully translated to German (1800+ translation keys)
+  - Pages translated: Settings, Archives, File Manager, Queue, Printers, Profiles, Projects, Stats, Maintenance, Camera, Groups, Users, Login, Setup, Stream Overlay
+  - Components translated: ConfirmModal, LinkSpoolModal, FilamentHoverCard, Layout
+  - Added locale parity test to ensure English and German stay in sync
+- **Virtual Printer Proxy Mode**:
+  - New "Proxy" mode allows remote printing over any network by relaying slicer traffic to a real printer
+  - Configure a target printer and Bambuddy acts as a TLS proxy between your slicer and the printer
+  - Supports both FTP (port 9990) and MQTT (port 8883) protocols with full TLS encryption
+  - Slicer connects to Bambuddy using the real printer's access code
+  - Real-time status display showing active FTP/MQTT connections
+  - Target printer selector with validation (must be configured in Bambuddy)
+  - Proxy mode bypasses the access code requirement (uses the real printer's credentials)
+  - Full i18n support for all proxy mode UI strings (English, German, Japanese)
+
+### Fixed
+- **Cannot Link Multiple HA Entities to Same Printer** (Issue #214):
+  - Fixed Home Assistant entities being limited to one per printer
+  - Both frontend and backend were blocking printers that already had any smart plug linked
+  - Now only Tasmota plugs are limited to one per printer (physical device constraint)
+  - Multiple HA entities (switches, scripts, lights, etc.) can be linked to the same printer
+  - Restored "Show on Printer Card" toggle for HA entities to control visibility on printer cards
+  - Fixed printer card only showing `script.*` entities; now shows all HA entities with toggle enabled
+  - HA entities now default to auto_on=False and auto_off=False (appropriate for automations)
+  - Printer cards now update immediately when HA entities are added/modified/deleted
+- **Monthly Comparison Calculation Off** (Issue #229):
+  - Fixed filament statistics not accounting for quantity multiplier
+  - Monthly comparison chart now correctly multiplies `filament_used_grams` by `quantity`
+  - Daily and weekly charts also now account for quantity
+  - Filament type breakdown includes quantity in calculations
+  - Backend stats endpoint (`/archives/stats`) and Prometheus metrics also fixed
+  - Prints count now shows total items (sum of quantities) instead of archive count
+- **Authentication Required for Downloads** (Issue #231):
+  - Fixed support bundle download returning 401 Unauthorized when auth is enabled
+  - Fixed archive export (CSV/XLSX) failing with authentication enabled
+  - Fixed statistics export failing with authentication enabled
+  - Fixed printer file ZIP download failing with authentication enabled
+  - Root cause: These endpoints used raw `fetch()` without Authorization header
+- **Queue Schedule Date Picker Ignores User Format Settings** (Issue #233):
+  - Replaced native datetime picker with custom date/time inputs respecting user settings
+  - Date input shows in user's format (DD/MM/YYYY for EU, MM/DD/YYYY for US, YYYY-MM-DD for ISO)
+  - Time input shows in user's format (24H or 12H with AM/PM)
+  - Calendar button opens native picker for convenience; selection is formatted to user's preference
+  - Placeholder text shows expected format (e.g., "DD/MM/YYYY" or "HH:MM AM/PM")
+  - Added date utilities: `formatDateInput`, `parseDateInput`, `getDatePlaceholder`
+  - Added time utilities: `formatTimeInput`, `parseTimeInput`, `getTimePlaceholder`
+- **500 Error on Archive Detail Page**:
+  - Fixed internal server error when viewing individual archive details
+  - Root cause: `project` relationship not eagerly loaded in `get_archive()` service method
+  - Async SQLAlchemy requires explicit eager loading; lazy loading is not supported
+
 ## [0.1.6.2] - 2026-02-02
 
 > **Security Release**: This release addresses critical security vulnerabilities. Users running authentication-enabled instances should upgrade immediately.

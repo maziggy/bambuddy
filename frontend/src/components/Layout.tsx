@@ -619,7 +619,7 @@ export function Layout() {
                     <button
                       onClick={() => setShowChangePasswordModal(true)}
                       className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
-                      title="Change Password"
+                      title={t('changePassword.title')}
                     >
                       <Key className="w-5 h-5" />
                     </button>
@@ -723,7 +723,7 @@ export function Layout() {
                   <button
                     onClick={() => setShowChangePasswordModal(true)}
                     className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
-                    title="Change Password"
+                    title={t('changePassword.title')}
                   >
                     <Key className="w-5 h-5" />
                   </button>
@@ -824,20 +824,19 @@ export function Layout() {
                 </svg>
               </div>
               <h2 className="text-xl font-bold text-yellow-400 mb-2">
-                Print Paused!
+                {t('plateAlert.title')}
               </h2>
               <p className="text-lg text-white mb-2">
                 {plateDetectionAlert.printer_name}
               </p>
               <p className="text-bambu-gray mb-6">
-                Objects detected on build plate. The print has been automatically paused.
-                Please clear the plate and resume the print.
+                {t('plateAlert.message')}
               </p>
               <button
                 onClick={() => setPlateDetectionAlert(null)}
                 className="w-full py-3 px-6 bg-yellow-500 hover:bg-yellow-600 text-black font-semibold rounded-lg transition-colors"
               >
-                I Understand
+                {t('plateAlert.understand')}
               </button>
             </div>
           </div>
@@ -861,7 +860,7 @@ export function Layout() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Key className="w-5 h-5 text-bambu-green" />
-                  <h2 className="text-lg font-semibold text-white">Change Password</h2>
+                  <h2 className="text-lg font-semibold text-white">{t('changePassword.title')}</h2>
                 </div>
                 <Button
                   variant="ghost"
@@ -879,34 +878,34 @@ export function Layout() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    Current Password
+                    {t('changePassword.currentPassword')}
                   </label>
                   <input
                     type="password"
                     value={changePasswordData.currentPassword}
                     onChange={(e) => setChangePasswordData({ ...changePasswordData, currentPassword: e.target.value })}
                     className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                    placeholder="Enter current password"
+                    placeholder={t('changePassword.currentPasswordPlaceholder')}
                     autoComplete="current-password"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    New Password
+                    {t('changePassword.newPassword')}
                   </label>
                   <input
                     type="password"
                     value={changePasswordData.newPassword}
                     onChange={(e) => setChangePasswordData({ ...changePasswordData, newPassword: e.target.value })}
                     className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                    placeholder="Enter new password (min 6 characters)"
+                    placeholder={t('changePassword.newPasswordPlaceholder')}
                     autoComplete="new-password"
                     minLength={6}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    Confirm New Password
+                    {t('changePassword.confirmPassword')}
                   </label>
                   <input
                     type="password"
@@ -917,12 +916,12 @@ export function Layout() {
                         ? 'border-red-500'
                         : 'border-bambu-dark-tertiary'
                     }`}
-                    placeholder="Confirm new password"
+                    placeholder={t('changePassword.confirmPasswordPlaceholder')}
                     autoComplete="new-password"
                     minLength={6}
                   />
                   {changePasswordData.confirmPassword && changePasswordData.newPassword !== changePasswordData.confirmPassword && (
-                    <p className="text-red-400 text-xs mt-1">Passwords do not match</p>
+                    <p className="text-red-400 text-xs mt-1">{t('changePassword.passwordsDoNotMatch')}</p>
                   )}
                 </div>
               </div>
@@ -934,26 +933,26 @@ export function Layout() {
                     setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
                   }}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button
                   onClick={async () => {
                     if (changePasswordData.newPassword !== changePasswordData.confirmPassword) {
-                      showToast('Passwords do not match', 'error');
+                      showToast(t('changePassword.passwordsDoNotMatch'), 'error');
                       return;
                     }
                     if (changePasswordData.newPassword.length < 6) {
-                      showToast('Password must be at least 6 characters', 'error');
+                      showToast(t('changePassword.passwordTooShort'), 'error');
                       return;
                     }
                     setChangePasswordLoading(true);
                     try {
                       await api.changePassword(changePasswordData.currentPassword, changePasswordData.newPassword);
-                      showToast('Password changed successfully', 'success');
+                      showToast(t('changePassword.success'), 'success');
                       setShowChangePasswordModal(false);
                       setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
                     } catch (error: unknown) {
-                      const message = error instanceof Error ? error.message : 'Failed to change password';
+                      const message = error instanceof Error ? error.message : t('changePassword.failed');
                       showToast(message, 'error');
                     } finally {
                       setChangePasswordLoading(false);
@@ -964,12 +963,12 @@ export function Layout() {
                   {changePasswordLoading ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Changing...
+                      {t('changePassword.changing')}
                     </>
                   ) : (
                     <>
                       <Key className="w-4 h-4" />
-                      Change Password
+                      {t('changePassword.title')}
                     </>
                   )}
                 </Button>

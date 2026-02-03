@@ -15,14 +15,17 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.config import APP_VERSION, settings
 from backend.app.core.database import async_session
+from backend.app.core.permissions import Permission
 from backend.app.models.archive import PrintArchive
 from backend.app.models.filament import Filament
 from backend.app.models.printer import Printer
 from backend.app.models.project import Project
 from backend.app.models.settings import Settings
 from backend.app.models.smart_plug import SmartPlug
+from backend.app.models.user import User
 
 router = APIRouter(prefix="/support", tags=["support"])
 logger = logging.getLogger(__name__)
@@ -107,7 +110,9 @@ def _apply_log_level(debug: bool):
 
 
 @router.get("/debug-logging", response_model=DebugLoggingState)
-async def get_debug_logging_state():
+async def get_debug_logging_state(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+):
     """Get current debug logging state."""
     global _debug_logging_enabled, _debug_logging_enabled_at
 
@@ -128,7 +133,10 @@ async def get_debug_logging_state():
 
 
 @router.post("/debug-logging", response_model=DebugLoggingState)
-async def toggle_debug_logging(toggle: DebugLoggingToggle):
+async def toggle_debug_logging(
+    toggle: DebugLoggingToggle,
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+):
     """Enable or disable debug logging."""
     global _debug_logging_enabled, _debug_logging_enabled_at
 
@@ -273,6 +281,7 @@ async def get_logs(
     limit: int = Query(200, ge=1, le=1000, description="Maximum number of entries to return"),
     level: str | None = Query(None, description="Filter by log level (DEBUG, INFO, WARNING, ERROR)"),
     search: str | None = Query(None, description="Search in message or logger name"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
 ):
     """Get recent application log entries with optional filtering."""
     entries, total_lines = _read_log_entries(limit=limit, level_filter=level, search=search)
@@ -285,7 +294,9 @@ async def get_logs(
 
 
 @router.delete("/logs")
-async def clear_logs():
+async def clear_logs(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+):
     """Clear the application log file."""
     log_file = settings.log_dir / "bambuddy.log"
 
@@ -297,8 +308,8 @@ async def clear_logs():
             logger.info("Log file cleared by user")
             return {"message": "Logs cleared successfully"}
         except Exception as e:
-            logger.error(f"Error clearing log file: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to clear logs: {e}")
+            logger.error(f"Error clearing log file: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail="Failed to clear logs. Check server logs for details.")
 
     return {"message": "Log file does not exist"}
 
@@ -445,7 +456,9 @@ def _get_log_content(max_bytes: int = 10 * 1024 * 1024) -> bytes:
 
 
 @router.get("/bundle")
-async def generate_support_bundle():
+async def generate_support_bundle(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+):
     """Generate a support bundle ZIP file for issue reporting."""
     global _debug_logging_enabled, _debug_logging_enabled_at
 

@@ -8,7 +8,10 @@ from fastapi.responses import FileResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import require_auth_if_enabled, require_ownership_permission
+from backend.app.core.auth import (
+    RequirePermissionIfAuthEnabled,
+    require_ownership_permission,
+)
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -118,6 +121,7 @@ async def list_archives(
     limit: int = 50,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
     """List archived prints."""
     service = ArchiveService(db)
@@ -148,6 +152,7 @@ async def search_archives(
     limit: int = 50,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
     """Full-text search across archives.
 
@@ -229,7 +234,10 @@ async def search_archives(
 
 
 @router.post("/search/rebuild-index")
-async def rebuild_search_index(db: AsyncSession = Depends(get_db)):
+async def rebuild_search_index(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
+):
     """Rebuild the full-text search index from existing archives.
 
     Use this if search results seem incomplete or incorrect.
@@ -267,6 +275,7 @@ async def analyze_failures(
     printer_id: int | None = None,
     project_id: int | None = None,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
     """Analyze failure patterns across prints.
 
@@ -291,6 +300,7 @@ async def analyze_failures(
 async def compare_archives(
     archive_ids: str = Query(..., description="Comma-separated archive IDs (2-5)"),
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
     """Compare multiple archives side by side.
 
@@ -331,6 +341,7 @@ async def export_archives(
     date_to: str | None = Query(None, description="End date (ISO format)"),
     search: str | None = None,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
     """Export archives to CSV or Excel format.
 
@@ -393,6 +404,7 @@ async def export_stats(
     printer_id: int | None = None,
     project_id: int | None = None,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.STATS_READ),
 ):
     """Export statistics summary to CSV or Excel format."""
     from fastapi.responses import StreamingResponse
@@ -421,7 +433,10 @@ async def export_stats(
 
 
 @router.get("/stats", response_model=ArchiveStats)
-async def get_archive_stats(db: AsyncSession = Depends(get_db)):
+async def get_archive_stats(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.STATS_READ),
+):
     """Get statistics across all archives."""
     # Total counts
     total_result = await db.execute(select(func.count(PrintArchive.id)))
@@ -451,7 +466,10 @@ async def get_archive_stats(db: AsyncSession = Depends(get_db)):
             total_seconds += print_time_seconds
     total_time = total_seconds / 3600  # Convert to hours
 
-    filament_result = await db.execute(select(func.sum(PrintArchive.filament_used_grams)))
+    # Multiply filament by quantity to account for multiple items printed
+    filament_result = await db.execute(
+        select(func.sum(PrintArchive.filament_used_grams * func.coalesce(PrintArchive.quantity, 1)))
+    )
     total_filament = filament_result.scalar() or 0
 
     cost_result = await db.execute(select(func.sum(PrintArchive.cost)))
@@ -571,7 +589,10 @@ async def get_archive_stats(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/tags")
-async def get_all_tags(db: AsyncSession = Depends(get_db)):
+async def get_all_tags(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+):
     """List all unique tags with usage counts.
 
     Returns a list of tags sorted by count (descending), then by name.
@@ -601,6 +622,7 @@ async def rename_tag(
     tag_name: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
 ):
     """Rename a tag across all archives.
 
@@ -643,7 +665,11 @@ async def rename_tag(
 
 
 @router.delete("/tags/{tag_name}")
-async def delete_tag(tag_name: str, db: AsyncSession = Depends(get_db)):
+async def delete_tag(
+    tag_name: str,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
+):
     """Delete a tag from all archives.
 
     Returns the count of affected archives.
@@ -668,7 +694,11 @@ async def delete_tag(tag_name: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{archive_id}", response_model=ArchiveResponse)
-async def get_archive(archive_id: int, db: AsyncSession = Depends(get_db)):
+async def get_archive(
+    archive_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+):
     """Get a specific archive."""
     service = ArchiveService(db)
     archive = await service.get_archive(archive_id)
@@ -691,6 +721,7 @@ async def find_similar_archives(
     archive_id: int,
     limit: int = 10,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
     """Find archives with similar settings for comparison.
 
@@ -759,6 +790,7 @@ async def update_archive(
 async def toggle_favorite(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_OWN),
 ):
     """Toggle favorite status for an archive."""
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
@@ -773,7 +805,11 @@ async def toggle_favorite(
 
 
 @router.post("/{archive_id}/rescan", response_model=ArchiveResponse)
-async def rescan_archive(archive_id: int, db: AsyncSession = Depends(get_db)):
+async def rescan_archive(
+    archive_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
+):
     """Rescan the 3MF file and update metadata."""
     from backend.app.api.routes.settings import get_setting
     from backend.app.services.archive import ThreeMFParser
@@ -832,7 +868,10 @@ async def rescan_archive(archive_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/recalculate-costs")
-async def recalculate_all_costs(db: AsyncSession = Depends(get_db)):
+async def recalculate_all_costs(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
+):
     """Recalculate costs for all archives based on filament usage and prices."""
     from backend.app.api.routes.settings import get_setting
 
@@ -862,7 +901,10 @@ async def recalculate_all_costs(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/rescan-all")
-async def rescan_all_archives(db: AsyncSession = Depends(get_db)):
+async def rescan_all_archives(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
+):
     """Rescan all archives and update their metadata."""
     from backend.app.services.archive import ThreeMFParser
 
@@ -909,7 +951,11 @@ async def rescan_all_archives(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{archive_id}/duplicates")
-async def get_archive_duplicates(archive_id: int, db: AsyncSession = Depends(get_db)):
+async def get_archive_duplicates(
+    archive_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+):
     """Get duplicates for a specific archive."""
     service = ArchiveService(db)
     archive = await service.get_archive(archive_id)
@@ -927,7 +973,10 @@ async def get_archive_duplicates(archive_id: int, db: AsyncSession = Depends(get
 
 
 @router.post("/backfill-hashes")
-async def backfill_content_hashes(db: AsyncSession = Depends(get_db)):
+async def backfill_content_hashes(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
+):
     """Compute and store content hashes for all archives missing them."""
     result = await db.execute(select(PrintArchive).where(PrintArchive.content_hash.is_(None)))
     archives = list(result.scalars().all())
@@ -988,6 +1037,7 @@ async def download_archive(
     archive_id: int,
     inline: bool = False,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
     """Download the 3MF file."""
     service = ArchiveService(db)
@@ -1015,6 +1065,7 @@ async def download_archive_with_filename(
     archive_id: int,
     filename: str,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
     """Download the 3MF file with filename in URL (for Bambu Studio protocol)."""
     service = ArchiveService(db)
@@ -1034,8 +1085,14 @@ async def download_archive_with_filename(
 
 
 @router.get("/{archive_id}/thumbnail")
-async def get_thumbnail(archive_id: int, db: AsyncSession = Depends(get_db)):
-    """Get the thumbnail image."""
+async def get_thumbnail(
+    archive_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the thumbnail image.
+
+    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
+    """
     service = ArchiveService(db)
     archive = await service.get_archive(archive_id)
     if not archive or not archive.thumbnail_path:
@@ -1059,8 +1116,14 @@ async def get_thumbnail(archive_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{archive_id}/timelapse")
-async def get_timelapse(archive_id: int, db: AsyncSession = Depends(get_db)):
-    """Get the timelapse video."""
+async def get_timelapse(
+    archive_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the timelapse video.
+
+    Note: Unauthenticated - loaded via <video> tags which can't send auth headers.
+    """
     service = ArchiveService(db)
     archive = await service.get_archive(archive_id)
     if not archive or not archive.timelapse_path:
@@ -1088,6 +1151,7 @@ async def get_timelapse(archive_id: int, db: AsyncSession = Depends(get_db)):
 async def scan_timelapse(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
 ):
     """Scan printer for timelapse matching this archive and attach it."""
     from backend.app.models.printer import Printer
@@ -1314,6 +1378,7 @@ async def select_timelapse(
     archive_id: int,
     filename: str = Query(..., description="Timelapse filename to attach"),
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
 ):
     """Manually select a timelapse from the printer to attach."""
     from backend.app.models.printer import Printer
@@ -1398,6 +1463,7 @@ async def upload_timelapse(
     archive_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
 ):
     """Manually upload a timelapse video to an archive."""
     service = ArchiveService(db)
@@ -1418,7 +1484,11 @@ async def upload_timelapse(
 
 
 @router.get("/{archive_id}/timelapse/info")
-async def get_timelapse_info(archive_id: int, db: AsyncSession = Depends(get_db)):
+async def get_timelapse_info(
+    archive_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+):
     """Get timelapse video metadata for editor."""
     from backend.app.schemas.timelapse import TimelapseInfoResponse
     from backend.app.services.timelapse_processor import TimelapseProcessor
@@ -1447,6 +1517,7 @@ async def get_timelapse_thumbnails(
     count: int = Query(10, ge=1, le=30),
     width: int = Query(160, ge=80, le=320),
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
     """Generate timeline thumbnail frames for visual scrubbing."""
     import base64
@@ -1486,6 +1557,7 @@ async def process_timelapse(
     output_filename: str = Form(None),
     audio: UploadFile = File(None),
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
 ):
     """Process timelapse with trim, speed, and optional audio overlay."""
     import shutil
@@ -1589,6 +1661,7 @@ async def upload_photo(
     archive_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_OWN),
 ):
     """Upload a photo of the printed result."""
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
@@ -1633,7 +1706,10 @@ async def get_photo(
     filename: str,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get a specific photo."""
+    """Get a specific photo.
+
+    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
+    """
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
     archive = result.scalar_one_or_none()
     if not archive:
@@ -1663,6 +1739,7 @@ async def delete_photo(
     archive_id: int,
     filename: str,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_DELETE_OWN),
 ):
     """Delete a photo."""
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
@@ -1700,7 +1777,10 @@ async def get_qrcode(
     size: int = 200,
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate a QR code that links to this archive."""
+    """Generate a QR code that links to this archive.
+
+    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
+    """
     try:
         import qrcode
         from PIL import Image as PILImage
@@ -1748,7 +1828,11 @@ async def get_qrcode(
 
 
 @router.get("/{archive_id}/capabilities")
-async def get_archive_capabilities(archive_id: int, db: AsyncSession = Depends(get_db)):
+async def get_archive_capabilities(
+    archive_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+):
     """Check what viewing capabilities are available for this 3MF file."""
     import json
     import xml.etree.ElementTree as ET
@@ -1965,7 +2049,11 @@ async def get_archive_capabilities(archive_id: int, db: AsyncSession = Depends(g
 
 
 @router.get("/{archive_id}/gcode")
-async def get_gcode(archive_id: int, db: AsyncSession = Depends(get_db)):
+async def get_gcode(
+    archive_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+):
     """Extract and return G-code from the 3MF file."""
     service = ArchiveService(db)
     archive = await service.get_archive(archive_id)
@@ -1998,11 +2086,16 @@ async def get_gcode(archive_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{archive_id}/plate-preview")
-async def get_plate_preview(archive_id: int, db: AsyncSession = Depends(get_db)):
+async def get_plate_preview(
+    archive_id: int,
+    db: AsyncSession = Depends(get_db),
+):
     """Get the plate preview image from the 3MF file.
 
     Returns the slicer-generated plate thumbnail which shows the model
     with correct colors and positioning.
+
+    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
     """
     service = ArchiveService(db)
     archive = await service.get_archive(archive_id)
@@ -2065,7 +2158,7 @@ async def upload_archive(
     file: UploadFile = File(...),
     printer_id: int | None = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(require_auth_if_enabled),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_CREATE),
 ):
     """Manually upload a 3MF file to archive."""
     if not file.filename or not file.filename.endswith(".3mf"):
@@ -2100,7 +2193,7 @@ async def upload_archives_bulk(
     files: list[UploadFile] = File(...),
     printer_id: int | None = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(require_auth_if_enabled),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_CREATE),
 ):
     """Bulk upload multiple 3MF files to archive."""
     results = []
@@ -2154,6 +2247,7 @@ async def upload_archives_bulk(
 async def get_archive_plates(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
     """Get available plates from a multi-plate 3MF archive.
 
@@ -2334,7 +2428,10 @@ async def get_plate_thumbnail(
     plate_index: int,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get the thumbnail image for a specific plate."""
+    """Get the thumbnail image for a specific plate.
+
+    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
+    """
     service = ArchiveService(db)
     archive = await service.get_archive(archive_id)
     if not archive:
@@ -2361,6 +2458,7 @@ async def get_filament_requirements(
     archive_id: int,
     plate_id: int | None = None,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
     """Get filament requirements from the archived 3MF file.
 
@@ -2656,7 +2754,11 @@ async def reprint_archive(
 
 
 @router.get("/{archive_id}/project-page")
-async def get_project_page(archive_id: int, db: AsyncSession = Depends(get_db)):
+async def get_project_page(
+    archive_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+):
     """Get the project page data from the 3MF file."""
     from backend.app.schemas.archive import ProjectPageResponse
     from backend.app.services.archive import ProjectPageParser
@@ -2681,6 +2783,7 @@ async def update_project_page(
     archive_id: int,
     update_data: dict,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_OWN),
 ):
     """Update project page metadata in the 3MF file."""
     from backend.app.services.archive import ProjectPageParser
@@ -2711,7 +2814,10 @@ async def get_project_image(
     image_path: str,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get an image from the 3MF project page."""
+    """Get an image from the 3MF project page.
+
+    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
+    """
     from backend.app.services.archive import ProjectPageParser
 
     service = ArchiveService(db)
@@ -2747,6 +2853,7 @@ async def upload_source_3mf(
     archive_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_OWN),
 ):
     """Upload the original source 3MF project file for an archive."""
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
@@ -2793,6 +2900,7 @@ async def upload_source_3mf(
 async def download_source_3mf(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
     """Download the source 3MF project file."""
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
@@ -2822,6 +2930,7 @@ async def download_source_3mf_for_slicer(
     archive_id: int,
     filename: str,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
     """Download source 3MF with filename in URL (for Bambu Studio compatibility)."""
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
@@ -2848,6 +2957,7 @@ async def upload_source_3mf_by_name(
     file: UploadFile = File(...),
     print_name: str = Query(None, description="Match archive by print name"),
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
 ):
     """Upload source 3MF and match to archive by print name.
 
@@ -2934,6 +3044,7 @@ async def upload_source_3mf_by_name(
 async def delete_source_3mf(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_DELETE_OWN),
 ):
     """Delete the source 3MF project file from an archive."""
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
@@ -2966,6 +3077,7 @@ async def upload_f3d(
     archive_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_OWN),
 ):
     """Upload a Fusion 360 design file for an archive."""
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
@@ -3012,6 +3124,7 @@ async def upload_f3d(
 async def download_f3d(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
     """Download the Fusion 360 design file."""
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
@@ -3040,6 +3153,7 @@ async def download_f3d(
 async def delete_f3d(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_DELETE_OWN),
 ):
     """Delete the Fusion 360 design file from an archive."""
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))

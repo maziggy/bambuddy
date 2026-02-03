@@ -7,8 +7,11 @@ from pydantic import BaseModel
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
+from backend.app.core.permissions import Permission
 from backend.app.models.ams_history import AMSSensorHistory
+from backend.app.models.user import User
 
 router = APIRouter(prefix="/ams-history", tags=["ams-history"])
 
@@ -38,6 +41,7 @@ async def get_ams_history(
     ams_id: int,
     hours: int = Query(default=24, ge=1, le=168, description="Hours of history (1-168)"),
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AMS_HISTORY_READ),
 ):
     """Get AMS sensor history for a specific printer and AMS unit."""
     since = datetime.now() - timedelta(hours=hours)
@@ -101,6 +105,7 @@ async def delete_old_history(
     printer_id: int,
     days: int = Query(default=30, ge=1, le=365, description="Delete data older than X days"),
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.AMS_HISTORY_READ),
 ):
     """Delete old AMS history data for a printer."""
     cutoff = datetime.now() - timedelta(days=days)

@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -38,14 +39,17 @@ const PROJECT_COLORS = [
   '#6b7280', // gray
 ];
 
+type TFunction = (key: string, options?: Record<string, unknown>) => string;
+
 interface ProjectModalProps {
   project?: ProjectListItem;
   onClose: () => void;
   onSave: (data: ProjectCreate | ProjectUpdate) => void;
   isLoading: boolean;
+  t: TFunction;
 }
 
-export function ProjectModal({ project, onClose, onSave, isLoading }: ProjectModalProps) {
+export function ProjectModal({ project, onClose, onSave, isLoading, t }: ProjectModalProps) {
   const [name, setName] = useState(project?.name || '');
   const [description, setDescription] = useState(project?.description || '');
   const [color, setColor] = useState(project?.color || PROJECT_COLORS[0]);
@@ -76,41 +80,41 @@ export function ProjectModal({ project, onClose, onSave, isLoading }: ProjectMod
       <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-md border border-bambu-dark-tertiary">
         <div className="p-4 border-b border-bambu-dark-tertiary">
           <h2 className="text-lg font-semibold text-white">
-            {project ? 'Edit Project' : 'New Project'}
+            {project ? t('projects.editProject') : t('projects.newProject')}
           </h2>
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           <div>
             <label className="block text-sm font-medium text-white mb-1">
-              Name
+              {t('common.name')}
             </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-              placeholder="e.g., Voron 2.4 Build"
+              placeholder={t('projects.namePlaceholder')}
               required
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-white mb-1">
-              Description
+              {t('common.description')}
             </label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green resize-none"
-              placeholder="Optional description..."
+              placeholder={t('projects.descriptionPlaceholder')}
               rows={2}
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-white mb-1">
-              Color
+              {t('projects.color')}
             </label>
             <div className="flex gap-2 flex-wrap">
               {PROJECT_COLORS.map((c) => (
@@ -131,45 +135,45 @@ export function ProjectModal({ project, onClose, onSave, isLoading }: ProjectMod
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-white mb-1">
-                Target Plates
+                {t('projects.targetPlates')}
               </label>
               <input
                 type="number"
                 value={targetCount}
                 onChange={(e) => setTargetCount(e.target.value)}
                 className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                placeholder="e.g., 25"
+                placeholder={t('projects.targetPlatesPlaceholder')}
                 min="1"
               />
-              <p className="text-xs text-bambu-gray mt-1">Number of print jobs</p>
+              <p className="text-xs text-bambu-gray mt-1">{t('projects.targetPlatesHelp')}</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-white mb-1">
-                Target Parts
+                {t('projects.targetParts')}
               </label>
               <input
                 type="number"
                 value={targetPartsCount}
                 onChange={(e) => setTargetPartsCount(e.target.value)}
                 className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                placeholder="e.g., 150"
+                placeholder={t('projects.targetPartsPlaceholder')}
                 min="1"
               />
-              <p className="text-xs text-bambu-gray mt-1">Total objects needed</p>
+              <p className="text-xs text-bambu-gray mt-1">{t('projects.targetPartsHelp')}</p>
             </div>
           </div>
 
           {/* Tags */}
           <div>
             <label className="block text-sm font-medium text-white mb-1">
-              Tags (comma-separated)
+              {t('projects.tagsLabel')}
             </label>
             <input
               type="text"
               value={tags}
               onChange={(e) => setTags(e.target.value)}
               className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-              placeholder="e.g., voron, functional, gift"
+              placeholder={t('projects.tagsPlaceholder')}
             />
           </div>
 
@@ -177,7 +181,7 @@ export function ProjectModal({ project, onClose, onSave, isLoading }: ProjectMod
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-white mb-1">
-                Due Date
+                {t('projects.dueDate')}
               </label>
               <input
                 type="date"
@@ -188,17 +192,17 @@ export function ProjectModal({ project, onClose, onSave, isLoading }: ProjectMod
             </div>
             <div>
               <label className="block text-sm font-medium text-white mb-1">
-                Priority
+                {t('projects.priority')}
               </label>
               <select
                 value={priority}
                 onChange={(e) => setPriority(e.target.value)}
                 className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white focus:outline-none focus:border-bambu-green"
               >
-                <option value="low">Low</option>
-                <option value="normal">Normal</option>
-                <option value="high">High</option>
-                <option value="urgent">Urgent</option>
+                <option value="low">{t('projects.priorityLow')}</option>
+                <option value="normal">{t('projects.priorityNormal')}</option>
+                <option value="high">{t('projects.priorityHigh')}</option>
+                <option value="urgent">{t('projects.priorityUrgent')}</option>
               </select>
             </div>
           </div>
@@ -206,31 +210,31 @@ export function ProjectModal({ project, onClose, onSave, isLoading }: ProjectMod
           {project && (
             <div>
               <label className="block text-sm font-medium text-white mb-1">
-                Status
+                {t('common.status')}
               </label>
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
                 className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white focus:outline-none focus:border-bambu-green"
               >
-                <option value="active">Active</option>
-                <option value="completed">Completed</option>
-                <option value="archived">Archived</option>
+                <option value="active">{t('projects.statusActive')}</option>
+                <option value="completed">{t('projects.statusCompleted')}</option>
+                <option value="archived">{t('projects.statusArchived')}</option>
               </select>
             </div>
           )}
 
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={onClose}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button type="submit" disabled={!name.trim() || isLoading}>
               {isLoading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : project ? (
-                'Save'
+                t('common.save')
               ) : (
-                'Create'
+                t('projects.create')
               )}
             </Button>
           </div>
@@ -246,9 +250,10 @@ interface ProjectCardProps {
   onEdit: () => void;
   onDelete: () => void;
   hasPermission: (permission: Permission) => boolean;
+  t: TFunction;
 }
 
-function ProjectCard({ project, onClick, onEdit, onDelete, hasPermission }: ProjectCardProps) {
+function ProjectCard({ project, onClick, onEdit, onDelete, hasPermission, t }: ProjectCardProps) {
   // Plates progress: archive_count / target_count
   const platesProgressPercent = project.target_count
     ? Math.round((project.archive_count / project.target_count) * 100)
@@ -300,7 +305,7 @@ function ProjectCard({ project, onClick, onEdit, onDelete, hasPermission }: Proj
                       ? 'bg-bambu-green/20 text-bambu-green'
                       : 'bg-bambu-dark text-bambu-gray'
                   }`}>
-                    {project.completed_count}/{project.target_parts_count} parts
+                    {project.completed_count}/{project.target_parts_count} {t('projects.parts')}
                   </span>
                 ) : project.target_count ? (
                   <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap font-medium ${
@@ -308,21 +313,21 @@ function ProjectCard({ project, onClick, onEdit, onDelete, hasPermission }: Proj
                       ? 'bg-bambu-green/20 text-bambu-green'
                       : 'bg-bambu-dark text-bambu-gray'
                   }`}>
-                    {project.archive_count}/{project.target_count} plates
+                    {project.archive_count}/{project.target_count} {t('projects.plates')}
                   </span>
                 ) : project.completed_count > 0 ? (
                   <span className="text-xs px-2 py-0.5 rounded-full whitespace-nowrap font-medium bg-bambu-dark text-bambu-gray">
-                    {project.completed_count} parts
+                    {project.completed_count} {t('projects.parts')}
                   </span>
                 ) : null}
                 {isCompleted && (
                   <span className="text-xs bg-bambu-green/20 text-bambu-green px-2 py-0.5 rounded-full whitespace-nowrap">
-                    Done
+                    {t('projects.done')}
                   </span>
                 )}
                 {isArchived && (
                   <span className="text-xs bg-bambu-gray/20 text-bambu-gray px-2 py-0.5 rounded-full whitespace-nowrap">
-                    Archived
+                    {t('projects.statusArchived')}
                   </span>
                 )}
               </div>
@@ -396,10 +401,10 @@ function ProjectCard({ project, onClick, onEdit, onDelete, hasPermission }: Proj
                     }`}
                     onClick={() => { if (hasPermission('projects:update')) { onEdit(); setShowActions(false); } }}
                     disabled={!hasPermission('projects:update')}
-                    title={!hasPermission('projects:update') ? 'You do not have permission to edit projects' : undefined}
+                    title={!hasPermission('projects:update') ? t('projects.noEditPermission') : undefined}
                   >
                     <Edit3 className="w-4 h-4" />
-                    Edit
+                    {t('common.edit')}
                   </button>
                   <button
                     className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 ${
@@ -407,10 +412,10 @@ function ProjectCard({ project, onClick, onEdit, onDelete, hasPermission }: Proj
                     }`}
                     onClick={() => { if (hasPermission('projects:delete')) { onDelete(); setShowActions(false); } }}
                     disabled={!hasPermission('projects:delete')}
-                    title={!hasPermission('projects:delete') ? 'You do not have permission to delete projects' : undefined}
+                    title={!hasPermission('projects:delete') ? t('projects.noDeletePermission') : undefined}
                   >
                     <Trash2 className="w-4 h-4" />
-                    Delete
+                    {t('common.delete')}
                   </button>
                 </div>
               </>
@@ -426,7 +431,7 @@ function ProjectCard({ project, onClick, onEdit, onDelete, hasPermission }: Proj
               {project.target_count && (
                 <div>
                   <div className="flex items-center justify-between text-xs mb-1">
-                    <span className="text-bambu-gray">Plates</span>
+                    <span className="text-bambu-gray">{t('projects.plates')}</span>
                     <span className={platesProgressPercent >= 100 ? 'text-bambu-green font-medium' : 'text-white'}>
                       {project.archive_count} / {project.target_count}
                     </span>
@@ -449,7 +454,7 @@ function ProjectCard({ project, onClick, onEdit, onDelete, hasPermission }: Proj
               {project.target_parts_count && (
                 <div>
                   <div className="flex items-center justify-between text-xs mb-1">
-                    <span className="text-bambu-gray">Parts</span>
+                    <span className="text-bambu-gray">{t('projects.parts')}</span>
                     <span className={partsProgressPercent >= 100 ? 'text-bambu-green font-medium' : 'text-white'}>
                       {project.completed_count} / {project.target_parts_count}
                     </span>
@@ -471,7 +476,7 @@ function ProjectCard({ project, onClick, onEdit, onDelete, hasPermission }: Proj
               {/* Failed count */}
               {project.failed_count > 0 && (
                 <div className="text-xs text-red-400">
-                  {project.failed_count} failed
+                  {project.failed_count} {t('projects.failed')}
                 </div>
               )}
             </div>
@@ -480,25 +485,25 @@ function ProjectCard({ project, onClick, onEdit, onDelete, hasPermission }: Proj
               {project.completed_count > 0 && (
                 <div className="flex items-center gap-1.5 text-bambu-gray">
                   <Archive className="w-3.5 h-3.5" />
-                  <span>{project.completed_count} completed</span>
+                  <span>{project.completed_count} {t('projects.completed')}</span>
                 </div>
               )}
               {project.failed_count > 0 && (
                 <div className="flex items-center gap-1.5 text-red-400">
                   <AlertTriangle className="w-3.5 h-3.5" />
-                  <span>{project.failed_count} failed</span>
+                  <span>{project.failed_count} {t('projects.failed')}</span>
                 </div>
               )}
               {project.queue_count > 0 && (
                 <div className="flex items-center gap-1.5 text-blue-400">
                   <Clock className="w-3.5 h-3.5" />
-                  <span>{project.queue_count} in queue</span>
+                  <span>{project.queue_count} {t('projects.inQueue')}</span>
                 </div>
               )}
             </div>
           ) : (
             <div className="text-xs text-bambu-gray/60 italic">
-              No prints yet
+              {t('projects.noPrintsYet')}
             </div>
           )}
         </div>
@@ -534,7 +539,7 @@ function ProjectCard({ project, onClick, onEdit, onDelete, hasPermission }: Proj
             </div>
             {project.archive_count > 4 && (
               <p className="text-xs text-bambu-gray mt-1.5 text-center">
-                +{project.archive_count - 4} more
+                {t('common.more', { count: project.archive_count - 4 })}
               </p>
             )}
           </div>
@@ -543,22 +548,22 @@ function ProjectCard({ project, onClick, onEdit, onDelete, hasPermission }: Proj
         {/* Stats footer */}
         <div className="flex items-center justify-between pt-3 border-t border-bambu-dark-tertiary">
           <div className="flex items-center gap-4 text-xs text-bambu-gray">
-            <div className="flex items-center gap-1.5" title="Print jobs (plates)">
+            <div className="flex items-center gap-1.5" title={t('projects.printJobs')}>
               <Layers className="w-3.5 h-3.5 text-blue-400" />
-              <span>{project.archive_count} plates</span>
+              <span>{project.archive_count} {t('projects.plates')}</span>
             </div>
-            <div className="flex items-center gap-1.5" title="Parts printed">
+            <div className="flex items-center gap-1.5" title={t('projects.partsPrinted')}>
               <Package className="w-3.5 h-3.5 text-bambu-green" />
-              <span>{project.completed_count} parts</span>
+              <span>{project.completed_count} {t('projects.parts')}</span>
             </div>
             {project.failed_count > 0 && (
-              <div className="flex items-center gap-1.5 text-red-400" title="Failed parts">
+              <div className="flex items-center gap-1.5 text-red-400" title={t('projects.failedParts')}>
                 <AlertTriangle className="w-3.5 h-3.5" />
                 <span>{project.failed_count}</span>
               </div>
             )}
             {project.queue_count > 0 && (
-              <div className="flex items-center gap-1.5 text-yellow-400" title="In queue">
+              <div className="flex items-center gap-1.5 text-yellow-400" title={t('projects.inQueue')}>
                 <ListTodo className="w-3.5 h-3.5" />
                 <span>{project.queue_count}</span>
               </div>
@@ -572,6 +577,7 @@ function ProjectCard({ project, onClick, onEdit, onDelete, hasPermission }: Proj
 }
 
 export function ProjectsPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -591,7 +597,7 @@ export function ProjectsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       setShowModal(false);
-      showToast('Project created', 'success');
+      showToast(t('projects.toast.created'), 'success');
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
@@ -605,7 +611,7 @@ export function ProjectsPage() {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       setShowModal(false);
       setEditingProject(undefined);
-      showToast('Project updated', 'success');
+      showToast(t('projects.toast.updated'), 'success');
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
@@ -616,7 +622,7 @@ export function ProjectsPage() {
     mutationFn: (id: number) => api.deleteProject(id),
     onSuccess: () => {
       setDeleteConfirm(null);
-      showToast('Project deleted', 'success');
+      showToast(t('projects.toast.deleted'), 'success');
       // Reload to refresh the list (React Query cache invalidation not working reliably)
       setTimeout(() => window.location.reload(), 100);
     },
@@ -630,7 +636,7 @@ export function ProjectsPage() {
     mutationFn: (data: ProjectImport) => api.importProject(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
-      showToast('Project imported', 'success');
+      showToast(t('projects.toast.imported'), 'success');
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
@@ -656,7 +662,7 @@ export function ProjectsPage() {
       a.download = `bambuddy_projects_${new Date().toISOString().split('T')[0]}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      showToast('Projects exported (metadata only)', 'success');
+      showToast(t('projects.toast.exported'), 'success');
     } catch (error) {
       showToast((error as Error).message, 'error');
     }
@@ -675,21 +681,9 @@ export function ProjectsPage() {
 
       if (filename.endsWith('.zip')) {
         // ZIP file: upload via file endpoint
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const response = await fetch('/api/v1/projects/import/file', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.detail || 'Import failed');
-        }
-
+        await api.importProjectFile(file);
         queryClient.invalidateQueries({ queryKey: ['projects'] });
-        showToast('Project imported', 'success');
+        showToast(t('projects.toast.imported'), 'success');
       } else {
         // JSON file: parse and handle bulk or single import
         const text = await file.text();
@@ -703,11 +697,11 @@ export function ProjectsPage() {
         }
 
         if (projectsToImport.length > 1) {
-          showToast(`${projectsToImport.length} projects imported`, 'success');
+          showToast(t('projects.toast.multipleImported', { count: projectsToImport.length }), 'success');
         }
       }
     } catch (error) {
-      showToast(`Import failed: ${(error as Error).message}`, 'error');
+      showToast(`${t('projects.toast.importFailed')}: ${(error as Error).message}`, 'error');
     }
 
     // Reset file input
@@ -767,10 +761,10 @@ export function ProjectsPage() {
             <div className="p-2.5 bg-bambu-green/10 rounded-xl">
               <FolderKanban className="w-6 h-6 text-bambu-green" />
             </div>
-            Projects
+            {t('projects.title')}
           </h1>
           <p className="text-sm text-bambu-gray mt-2 ml-14">
-            Organize and track your 3D printing projects
+            {t('projects.subtitle')}
           </p>
         </div>
         <div className="flex gap-2">
@@ -778,28 +772,28 @@ export function ProjectsPage() {
             variant="secondary"
             onClick={handleImportClick}
             disabled={!hasPermission('projects:create')}
-            title={!hasPermission('projects:create') ? 'You do not have permission to import projects' : 'Import project'}
+            title={!hasPermission('projects:create') ? t('projects.noImportPermission') : t('projects.importProject')}
           >
             <Upload className="w-4 h-4 mr-2" />
-            Import
+            {t('projects.import')}
           </Button>
           <Button
             variant="secondary"
             onClick={handleExportAll}
             disabled={!hasPermission('projects:read')}
-            title={!hasPermission('projects:read') ? 'You do not have permission to export projects' : 'Export all projects'}
+            title={!hasPermission('projects:read') ? t('projects.noExportPermission') : t('projects.exportAll')}
           >
             <Download className="w-4 h-4 mr-2" />
-            Export
+            {t('projects.export')}
           </Button>
           <Button
             onClick={() => setShowModal(true)}
             className="sm:w-auto w-full"
             disabled={!hasPermission('projects:create')}
-            title={!hasPermission('projects:create') ? 'You do not have permission to create projects' : undefined}
+            title={!hasPermission('projects:create') ? t('projects.noCreatePermission') : undefined}
           >
             <Plus className="w-4 h-4 mr-2" />
-            New Project
+            {t('projects.newProject')}
           </Button>
         </div>
       </div>
@@ -807,10 +801,10 @@ export function ProjectsPage() {
       {/* Filter tabs */}
       <div className="flex gap-1 p-1 bg-bambu-dark rounded-xl w-fit">
         {[
-          { key: 'active', label: 'Active', icon: Clock },
-          { key: 'completed', label: 'Completed', icon: CheckCircle2 },
-          { key: 'archived', label: 'Archived', icon: Archive },
-          { key: 'all', label: 'All', icon: FolderKanban },
+          { key: 'active', label: t('projects.statusActive'), icon: Clock },
+          { key: 'completed', label: t('projects.statusCompleted'), icon: CheckCircle2 },
+          { key: 'archived', label: t('projects.statusArchived'), icon: Archive },
+          { key: 'all', label: t('common.all'), icon: FolderKanban },
         ].map(({ key, label, icon: Icon }) => (
           <button
             key={key}
@@ -839,7 +833,7 @@ export function ProjectsPage() {
         <div className="flex items-center justify-center py-20">
           <div className="flex flex-col items-center gap-3">
             <Loader2 className="w-8 h-8 animate-spin text-bambu-green" />
-            <p className="text-sm text-bambu-gray">Loading projects...</p>
+            <p className="text-sm text-bambu-gray">{t('projects.loading')}</p>
           </div>
         </div>
       ) : projects?.length === 0 ? (
@@ -848,22 +842,22 @@ export function ProjectsPage() {
             <FolderKanban className="w-12 h-12 text-bambu-gray/50" />
           </div>
           <h3 className="text-lg font-medium text-white mb-2">
-            {statusFilter === 'all' ? 'No projects yet' : `No ${statusFilter} projects`}
+            {statusFilter === 'all' ? t('projects.noProjects') : t('projects.noProjectsFiltered', { status: statusFilter })}
           </h3>
           <p className="text-bambu-gray text-center max-w-md mb-6">
             {statusFilter === 'all'
-              ? 'Create your first project to start organizing related prints, tracking progress, and managing your builds.'
-              : `You don't have any ${statusFilter} projects. Projects will appear here when their status changes.`
+              ? t('projects.createFirst')
+              : t('projects.noProjectsFilteredHelp', { status: statusFilter })
             }
           </p>
           {statusFilter === 'all' && (
             <Button
               onClick={() => setShowModal(true)}
               disabled={!hasPermission('projects:create')}
-              title={!hasPermission('projects:create') ? 'You do not have permission to create projects' : undefined}
+              title={!hasPermission('projects:create') ? t('projects.noCreatePermission') : undefined}
             >
               <Plus className="w-4 h-4 mr-2" />
-              Create Your First Project
+              {t('projects.createFirstButton')}
             </Button>
           )}
         </div>
@@ -877,6 +871,7 @@ export function ProjectsPage() {
               onEdit={() => handleEdit(project)}
               onDelete={() => handleDeleteClick(project.id)}
               hasPermission={hasPermission}
+              t={t}
             />
           ))}
         </div>
@@ -885,9 +880,9 @@ export function ProjectsPage() {
       {/* Delete Confirmation Modal */}
       {deleteConfirm !== null && (
         <ConfirmModal
-          title="Delete Project"
-          message="Are you sure you want to delete this project? Archives and queue items will be unlinked but not deleted."
-          confirmText="Delete Project"
+          title={t('projects.deleteProject')}
+          message={t('projects.deleteConfirm')}
+          confirmText={t('projects.deleteProject')}
           variant="danger"
           onConfirm={handleDeleteConfirm}
           onCancel={() => setDeleteConfirm(null)}
@@ -904,6 +899,7 @@ export function ProjectsPage() {
           }}
           onSave={handleSave}
           isLoading={createMutation.isPending || updateMutation.isPending}
+          t={t}
         />
       )}
     </div>

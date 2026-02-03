@@ -1,4 +1,11 @@
-"""Virtual Printer Manager - coordinates SSDP, MQTT, and FTP services."""
+"""Virtual Printer Manager - coordinates SSDP, MQTT, and FTP services.
+
+Supports multiple modes:
+- immediate: Archive uploads immediately
+- review: Queue uploads for user review before archiving
+- print_queue: Archive and add to print queue (unassigned)
+- proxy: Transparent TCP proxy to a real printer (for remote slicer access)
+"""
 
 import asyncio
 import logging
@@ -11,6 +18,7 @@ from backend.app.services.virtual_printer.certificate import CertificateService
 from backend.app.services.virtual_printer.ftp_server import VirtualPrinterFTPServer
 from backend.app.services.virtual_printer.mqtt_server import SimpleMQTTServer
 from backend.app.services.virtual_printer.ssdp_server import VirtualPrinterSSDPServer
+from backend.app.services.virtual_printer.tcp_proxy import SlicerProxyManager
 
 logger = logging.getLogger(__name__)
 
@@ -83,11 +91,14 @@ class VirtualPrinterManager:
         self._access_code = ""
         self._mode = "immediate"
         self._model = DEFAULT_VIRTUAL_PRINTER_MODEL
+        self._target_printer_ip = ""  # For proxy mode
+        self._target_printer_serial = ""  # For proxy mode (real printer's serial)
 
         # Service instances
         self._ssdp: VirtualPrinterSSDPServer | None = None
         self._ftp: VirtualPrinterFTPServer | None = None
         self._mqtt: SimpleMQTTServer | None = None
+        self._proxy: SlicerProxyManager | None = None  # For proxy mode
 
         # Background tasks
         self._tasks: list[asyncio.Task] = []
@@ -144,31 +155,49 @@ class VirtualPrinterManager:
         access_code: str = "",
         mode: str = "immediate",
         model: str = "",
+        target_printer_ip: str = "",
+        target_printer_serial: str = "",
     ) -> None:
         """Configure and start/stop virtual printer.
 
         Args:
             enabled: Whether to enable the virtual printer
             access_code: Authentication password for slicer connections
-            mode: Archive mode - 'immediate' or 'queue'
+            mode: Archive mode - 'immediate', 'review', 'print_queue', or 'proxy'
             model: SSDP model code (e.g., 'BL-P001' for X1C)
+            target_printer_ip: Target printer IP for proxy mode
+            target_printer_serial: Target printer serial for proxy mode
         """
-        if enabled and not access_code:
-            raise ValueError("Access code is required when enabling virtual printer")
+        # Proxy mode has different requirements
+        if mode == "proxy":
+            if enabled and not target_printer_ip:
+                raise ValueError("Target printer IP is required for proxy mode")
+            # Access code not required for proxy mode (uses printer's credentials)
+        else:
+            if enabled and not access_code:
+                raise ValueError("Access code is required when enabling virtual printer")
 
         # Validate model if provided
         new_model = model if model and model in VIRTUAL_PRINTER_MODELS else self._model
         model_changed = new_model != self._model
-        old_model = self._model
+        mode_changed = mode != self._mode
+        target_changed = target_printer_ip != self._target_printer_ip
+        serial_changed = target_printer_serial != self._target_printer_serial
+        old_mode = self._mode
 
         logger.debug(
             f"configure() called: enabled={enabled}, self._enabled={self._enabled}, "
-            f"model={model}, new_model={new_model}, old_model={old_model}, model_changed={model_changed}"
+            f"mode={mode}, old_mode={old_mode}, model={model}, new_model={new_model}, "
+            f"target_printer_ip={target_printer_ip}, target_printer_serial={target_printer_serial}"
         )
 
         self._access_code = access_code
         self._mode = mode
         self._model = new_model
+        self._target_printer_ip = target_printer_ip
+        self._target_printer_serial = target_printer_serial
+
+        needs_restart = model_changed or mode_changed or (mode == "proxy" and (target_changed or serial_changed))
 
         if enabled and not self._enabled:
             logger.info("Starting virtual printer (was disabled)")
@@ -176,25 +205,89 @@ class VirtualPrinterManager:
         elif not enabled and self._enabled:
             logger.info("Stopping virtual printer (was enabled)")
             await self._stop()
-        elif enabled and self._enabled and model_changed:
-            # Model changed while running - restart services
-            logger.info(f"Model changed from {old_model} to {new_model}, restarting...")
+        elif enabled and self._enabled and needs_restart:
+            # Configuration changed while running - restart services
+            logger.info(f"Configuration changed (mode={old_mode}→{mode}), restarting...")
             await self._stop()
             # Give time for ports to be released
             await asyncio.sleep(0.5)
             await self._start()
-            logger.info("Virtual printer restarted with new model")
+            logger.info("Virtual printer restarted with new configuration")
         else:
-            logger.debug(
-                f"No state change needed (enabled={enabled}, self._enabled={self._enabled}, model_changed={model_changed})"
-            )
+            logger.debug(f"No state change needed (enabled={enabled}, self._enabled={self._enabled})")
 
         self._enabled = enabled
 
     async def _start(self) -> None:
         """Start all virtual printer services."""
-        logger.info("Starting virtual printer services...")
+        logger.info(f"Starting virtual printer services (mode={self._mode})...")
 
+        # Proxy mode uses different services
+        if self._mode == "proxy":
+            await self._start_proxy_mode()
+            return
+
+        # Standard modes (immediate, review, print_queue) use FTP/MQTT servers
+        await self._start_server_mode()
+
+    async def _start_proxy_mode(self) -> None:
+        """Start virtual printer in proxy mode (TLS terminating relay)."""
+        logger.info(f"Starting proxy mode to {self._target_printer_ip}")
+
+        # In proxy mode, use the REAL printer's serial number
+        # This ensures MQTT topic subscriptions match the real printer's topics
+        proxy_serial = self._target_printer_serial or self.printer_serial
+        logger.info(f"Proxy mode using serial: {proxy_serial}")
+
+        # Update certificate service with the real printer's serial
+        self._cert_service.serial = proxy_serial
+
+        # Regenerate printer cert if needed (CA is preserved)
+        self._cert_service.delete_printer_certificate()
+        cert_path, key_path = self._cert_service.generate_certificates()
+        logger.info(f"Generated certificate for proxy serial: {proxy_serial}")
+
+        # Initialize SSDP for local discovery using the real printer's serial
+        self._ssdp = VirtualPrinterSSDPServer(
+            name=f"{self.PRINTER_NAME} (Proxy)",
+            serial=proxy_serial,
+            model=self._model,
+        )
+
+        # Initialize TLS proxy with our certificates
+        self._proxy = SlicerProxyManager(
+            target_host=self._target_printer_ip,
+            cert_path=cert_path,
+            key_path=key_path,
+            on_activity=self._on_proxy_activity,
+        )
+
+        # Start services as background tasks
+        async def run_with_logging(coro, name):
+            try:
+                await coro
+            except Exception as e:
+                logger.error(f"Virtual printer {name} failed: {e}")
+
+        self._tasks = [
+            asyncio.create_task(
+                run_with_logging(self._ssdp.start(), "SSDP"),
+                name="virtual_printer_ssdp",
+            ),
+            asyncio.create_task(
+                run_with_logging(self._proxy.start(), "Proxy"),
+                name="virtual_printer_proxy",
+            ),
+        ]
+
+        logger.info(
+            f"Virtual printer proxy started: "
+            f"FTP 0.0.0.0:{SlicerProxyManager.LOCAL_FTP_PORT} → {self._target_printer_ip}:{SlicerProxyManager.PRINTER_FTP_PORT}, "
+            f"MQTT 0.0.0.0:{SlicerProxyManager.LOCAL_MQTT_PORT} → {self._target_printer_ip}:{SlicerProxyManager.PRINTER_MQTT_PORT}"
+        )
+
+    async def _start_server_mode(self) -> None:
+        """Start virtual printer in server mode (FTP/MQTT servers)."""
         # Update certificate service with current serial (based on model)
         current_serial = self.printer_serial
         self._cert_service.serial = current_serial
@@ -247,6 +340,10 @@ class VirtualPrinterManager:
 
         logger.info(f"Virtual printer '{self.PRINTER_NAME}' started (serial: {self.printer_serial})")
 
+    def _on_proxy_activity(self, name: str, message: str) -> None:
+        """Handle proxy activity for logging."""
+        logger.info(f"Proxy {name}: {message}")
+
     async def _stop(self) -> None:
         """Stop all virtual printer services."""
         logger.info("Stopping virtual printer services...")
@@ -263,6 +360,10 @@ class VirtualPrinterManager:
         if self._ssdp:
             await self._ssdp.stop()
             self._ssdp = None
+
+        if self._proxy:
+            await self._proxy.stop()
+            self._proxy = None
 
         # Cancel remaining tasks with short timeout
         for task in self._tasks:
@@ -487,7 +588,7 @@ class VirtualPrinterManager:
         Returns:
             Status dictionary with enabled, running, mode, etc.
         """
-        return {
+        status = {
             "enabled": self._enabled,
             "running": self.is_running,
             "mode": self._mode,
@@ -497,6 +598,15 @@ class VirtualPrinterManager:
             "model_name": VIRTUAL_PRINTER_MODELS.get(self._model, self._model),
             "pending_files": len(self._pending_files),
         }
+
+        # Add proxy-specific status
+        if self._mode == "proxy":
+            status["target_printer_ip"] = self._target_printer_ip
+            if self._proxy:
+                proxy_status = self._proxy.get_status()
+                status["proxy"] = proxy_status
+
+        return status
 
 
 # Global instance

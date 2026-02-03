@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import {
   X,
   Folder,
@@ -82,6 +83,7 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 ];
 
 export function FileManagerModal({ printerId, printerName, onClose }: FileManagerModalProps) {
+  const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [currentPath, setCurrentPath] = useState('/');
@@ -119,13 +121,13 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
       }
     },
     onSuccess: () => {
-      showToast(`Deleted ${filesToDelete.length} file${filesToDelete.length > 1 ? 's' : ''}`);
+      showToast(t('printerFiles.toast.filesDeleted', { count: filesToDelete.length }));
       queryClient.invalidateQueries({ queryKey: ['printerFiles', printerId] });
       setSelectedFiles(new Set());
       setFilesToDelete([]);
     },
     onError: (error: Error) => {
-      showToast(`Delete failed: ${error.message}`, 'error');
+      showToast(t('printerFiles.toast.deleteFailed', { error: error.message }), 'error');
     },
   });
 
@@ -173,8 +175,10 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
     const paths = Array.from(selectedFiles);
 
     if (paths.length === 1) {
-      // Single file - direct download
-      window.open(api.getPrinterFileDownloadUrl(printerId, paths[0]), '_blank');
+      // Single file - direct download with auth
+      api.downloadPrinterFile(printerId, paths[0]).catch((err) => {
+        console.error('Printer file download failed:', err);
+      });
       setSelectedFiles(new Set());
       return;
     }
@@ -227,7 +231,7 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
             <div className="flex items-center gap-3">
               <HardDrive className="w-5 h-5 text-bambu-green" />
               <div>
-                <h2 className="text-lg font-semibold text-white">File Manager</h2>
+                <h2 className="text-lg font-semibold text-white">{t('printerFiles.title')}</h2>
                 <p className="text-sm text-bambu-gray">{printerName}</p>
               </div>
             </div>
@@ -236,13 +240,13 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
               {storageData && (storageData.used_bytes != null || storageData.free_bytes != null) && (
                 <div className="text-sm text-bambu-gray flex items-center gap-2">
                   {storageData.used_bytes != null && (
-                    <span>Used: {formatStorageSize(storageData.used_bytes)}</span>
+                    <span>{t('printerFiles.storageUsed')} {formatStorageSize(storageData.used_bytes)}</span>
                   )}
                   {storageData.used_bytes != null && storageData.free_bytes != null && (
                     <span className="text-bambu-dark-tertiary">|</span>
                   )}
                   {storageData.free_bytes != null && (
-                    <span>Free: {formatStorageSize(storageData.free_bytes)}</span>
+                    <span>{t('printerFiles.storageFree')} {formatStorageSize(storageData.free_bytes)}</span>
                   )}
                 </div>
               )}
@@ -278,7 +282,7 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray" />
             <input
               type="text"
-              placeholder="Filter files..."
+              placeholder={t('printerFiles.filterPlaceholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-40 pl-8 pr-3 py-1.5 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none"
@@ -481,7 +485,7 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
               ) : (
                 <Trash2 className="w-4 h-4" />
               )}
-              Delete{selectedFiles.size > 1 ? ` (${selectedFiles.size})` : ''}
+              {t('printerFiles.deleteButton')}{selectedFiles.size > 1 ? ` (${selectedFiles.size})` : ''}
             </Button>
           </div>
         </div>
@@ -490,13 +494,13 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
       {/* Delete Confirmation Modal */}
       {filesToDelete.length > 0 && (
         <ConfirmModal
-          title={filesToDelete.length > 1 ? `Delete ${filesToDelete.length} Files` : 'Delete File'}
+          title={filesToDelete.length > 1 ? t('printerFiles.deleteFiles', { count: filesToDelete.length }) : t('fileManager.deleteFile')}
           message={
             filesToDelete.length > 1
-              ? `Delete ${filesToDelete.length} selected files? This cannot be undone.`
-              : `Delete "${filesToDelete[0].split('/').pop()}"? This cannot be undone.`
+              ? t('printerFiles.deleteFilesConfirm', { count: filesToDelete.length })
+              : t('printerFiles.deleteFileConfirm', { name: filesToDelete[0].split('/').pop() })
           }
-          confirmText="Delete"
+          confirmText={t('common.delete')}
           variant="danger"
           onConfirm={() => {
             deleteMutation.mutate(filesToDelete);

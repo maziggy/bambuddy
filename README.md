@@ -28,6 +28,25 @@
 
 ---
 
+## 🌐 NEW: Remote Printing with Proxy Mode
+
+<p align="center">
+  <img src="docs/images/proxy-mode-diagram.png" alt="Proxy Mode Architecture" width="800">
+</p>
+
+**Print from anywhere in the world** — Bambuddy's new Proxy Mode acts as a secure relay between your slicer and printer:
+
+- 🔒 **End-to-end TLS encryption** — Your print data is encrypted from slicer to printer
+- 🌍 **No cloud dependency** — Direct connection through your own Bambuddy server
+- 🔑 **Uses printer's access code** — No additional credentials needed
+- ⚡ **Full-speed printing** — FTP and MQTT protocols proxied transparently
+
+Perfect for remote print farms, traveling makers, or accessing your home printer from work.
+
+👉 **[Setup Guide →](https://wiki.bambuddy.cool/features/virtual-printer/#proxy-mode-new-in-017)**
+
+---
+
 > **Testers Needed!** I only have X1C and H2D devices. Help make Bambuddy work with all Bambu Lab printers by [reporting your experience](https://github.com/maziggy/bambuddy/issues)!
 
 ## Why Bambuddy?
@@ -135,13 +154,14 @@
 - Webhooks & API keys
 - Interactive API browser with live testing
 
-### 🖨️ Virtual Printer
+### 🖨️ Virtual Printer & Remote Printing
+- **🌐 Proxy Mode (NEW!)** — Print remotely from anywhere via secure TLS relay
 - Emulates a Bambu Lab printer on your network
 - Send prints directly from Bambu Studio/Orca Slicer
 - Configurable printer model (X1C, P1S, A1, H2D, etc.)
-- Queue mode or auto-start mode
+- Archive mode, Review mode, Queue mode, or Proxy mode
 - SSDP discovery (appears in slicer automatically)
-- Secure TLS/MQTT communication
+- Secure TLS/MQTT/FTP communication
 
 ### 🛠️ Maintenance & Support
 - Maintenance scheduling & tracking
@@ -158,6 +178,7 @@
 - Group-based permissions (50+ granular permissions)
 - Default groups: Administrators, Operators, Viewers
 - JWT tokens with secure password hashing
+- Comprehensive API protection (200+ endpoints secured)
 - User management (create, edit, delete, groups)
 - User activity tracking (who uploaded archives, library files, queued prints, started prints)
 

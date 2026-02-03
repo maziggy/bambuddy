@@ -184,17 +184,14 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
 
     stallCheckIntervalRef.current = setInterval(async () => {
       try {
-        const response = await fetch(`/api/v1/printers/${printerId}/camera/status`);
-        if (response.ok) {
-          const status = await response.json();
-          if (status.stalled || (!status.active && !streamError)) {
-            if (stallCheckIntervalRef.current) {
-              clearInterval(stallCheckIntervalRef.current);
-              stallCheckIntervalRef.current = null;
-            }
-            setStreamLoading(false);
-            attemptReconnect();
+        const status = await api.getCameraStatus(printerId);
+        if (status.stalled || (!status.active && !streamError)) {
+          if (stallCheckIntervalRef.current) {
+            clearInterval(stallCheckIntervalRef.current);
+            stallCheckIntervalRef.current = null;
           }
+          setStreamLoading(false);
+          attemptReconnect();
         }
       } catch {
         // Ignore errors

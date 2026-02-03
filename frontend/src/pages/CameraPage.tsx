@@ -224,21 +224,18 @@ export function CameraPage() {
     // Start stall detection after stream has loaded
     stallCheckIntervalRef.current = setInterval(async () => {
       try {
-        const response = await fetch(`/api/v1/printers/${id}/camera/status`);
-        if (response.ok) {
-          const status = await response.json();
-          // Trigger reconnect if:
-          // 1. Backend reports stall (no frames for 10+ seconds)
-          // 2. OR stream is not active anymore (process died)
-          if (status.stalled || (!status.active && !streamError)) {
-            console.log(`Stream issue detected: stalled=${status.stalled}, active=${status.active}, reconnecting...`);
-            if (stallCheckIntervalRef.current) {
-              clearInterval(stallCheckIntervalRef.current);
-              stallCheckIntervalRef.current = null;
-            }
-            setStreamLoading(false);
-            attemptReconnect();
+        const status = await api.getCameraStatus(id);
+        // Trigger reconnect if:
+        // 1. Backend reports stall (no frames for 10+ seconds)
+        // 2. OR stream is not active anymore (process died)
+        if (status.stalled || (!status.active && !streamError)) {
+          console.log(`Stream issue detected: stalled=${status.stalled}, active=${status.active}, reconnecting...`);
+          if (stallCheckIntervalRef.current) {
+            clearInterval(stallCheckIntervalRef.current);
+            stallCheckIntervalRef.current = null;
           }
+          setStreamLoading(false);
+          attemptReconnect();
         }
       } catch {
         // Ignore fetch errors - server might be temporarily unavailable

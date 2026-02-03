@@ -681,19 +681,7 @@ export function ProjectsPage() {
 
       if (filename.endsWith('.zip')) {
         // ZIP file: upload via file endpoint
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const response = await fetch('/api/v1/projects/import/file', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.detail || 'Import failed');
-        }
-
+        await api.importProjectFile(file);
         queryClient.invalidateQueries({ queryKey: ['projects'] });
         showToast(t('projects.toast.imported'), 'success');
       } else {

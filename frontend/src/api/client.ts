@@ -2969,6 +2969,13 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ tray_uuid: trayUuid }),
     }),
+  getSpoolmanSettings: () =>
+    request<{ spoolman_enabled: string; spoolman_url: string; spoolman_sync_mode: string }>('/settings/spoolman'),
+  updateSpoolmanSettings: (data: { spoolman_enabled?: string; spoolman_url?: string; spoolman_sync_mode?: string }) =>
+    request<{ spoolman_enabled: string; spoolman_url: string; spoolman_sync_mode: string }>('/settings/spoolman', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
 
   // Updates
   getVersion: () => request<VersionInfo>('/updates/version'),
@@ -3030,6 +3037,8 @@ export const api = {
     `${API_BASE}/printers/${printerId}/camera/snapshot`,
   testCameraConnection: (printerId: number) =>
     request<{ success: boolean; message?: string; error?: string }>(`/printers/${printerId}/camera/test`),
+  getCameraStatus: (printerId: number) =>
+    request<{ active: boolean; stalled: boolean }>(`/printers/${printerId}/camera/status`),
 
   // Plate Detection - Multi-reference calibration (stores up to 5 references per printer)
   checkPlateEmpty: (printerId: number, options?: { useExternal?: boolean; includeDebugImage?: boolean }) => {
@@ -3234,6 +3243,42 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  importProjectFile: async (file: File): Promise<Project> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+    const response = await fetch(`${API_BASE}/projects/import/file`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    return response.json();
+  },
+  exportProjectZip: async (projectId: number): Promise<{ blob: Blob; filename: string }> => {
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+    const response = await fetch(`${API_BASE}/projects/${projectId}/export`, {
+      headers,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    const contentDisposition = response.headers.get('Content-Disposition');
+    const filenameMatch = contentDisposition?.match(/filename="(.+)"/);
+    const filename = filenameMatch?.[1] || `project_${projectId}.zip`;
+    const blob = await response.blob();
+    return { blob, filename };
+  },
 
   // API Keys
   getAPIKeys: () => request<APIKey[]>('/api-keys/'),

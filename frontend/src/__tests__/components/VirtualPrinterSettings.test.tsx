@@ -274,7 +274,7 @@ describe('VirtualPrinterSettings', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Review')).toBeInTheDocument();
-        expect(screen.getByText('Review and tag before archiving')).toBeInTheDocument();
+        expect(screen.getByText('Review before archiving')).toBeInTheDocument();
       });
     });
 
@@ -283,7 +283,7 @@ describe('VirtualPrinterSettings', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Queue')).toBeInTheDocument();
-        expect(screen.getByText('Archive and add to print queue')).toBeInTheDocument();
+        expect(screen.getByText('Archive and add to queue')).toBeInTheDocument();
       });
     });
 

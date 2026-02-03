@@ -404,19 +404,11 @@ export function ProjectDetailPage() {
 
   const handleExportProject = async () => {
     try {
-      // Fetch ZIP file directly
-      const response = await fetch(`/api/v1/projects/${projectId}/export`);
-      if (!response.ok) {
-        throw new Error(t('projectDetail.toast.exportFailed'));
-      }
-      const blob = await response.blob();
+      const { blob, filename } = await api.exportProjectZip(Number(projectId));
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      // Get filename from Content-Disposition header or use default
-      const contentDisposition = response.headers.get('Content-Disposition');
-      const filenameMatch = contentDisposition?.match(/filename="(.+)"/);
-      a.download = filenameMatch?.[1] || `${project?.name || 'project'}_${new Date().toISOString().split('T')[0]}.zip`;
+      a.download = filename || `${project?.name || 'project'}_${new Date().toISOString().split('T')[0]}.zip`;
       a.click();
       URL.revokeObjectURL(url);
       showToast(t('projectDetail.toast.projectExported'), 'success');

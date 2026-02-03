@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
-import { X, Save, Loader2, Wifi, WifiOff, CheckCircle, Bell, Clock, LayoutGrid, Search, Plug, Power, Home, Radio } from 'lucide-react';
+import { X, Save, Loader2, Wifi, WifiOff, CheckCircle, Bell, Clock, LayoutGrid, Search, Plug, Power, Home, Radio, Eye } from 'lucide-react';
 import { api } from '../api/client';
 import type { SmartPlug, SmartPlugCreate, SmartPlugUpdate, DiscoveredTasmotaDevice } from '../api/client';
 import { Button } from './Button';
@@ -77,8 +77,9 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
   const [scheduleOnTime, setScheduleOnTime] = useState<string>(plug?.schedule_on_time || '');
   const [scheduleOffTime, setScheduleOffTime] = useState<string>(plug?.schedule_off_time || '');
 
-  // Switchbar visibility
+  // Visibility options
   const [showInSwitchbar, setShowInSwitchbar] = useState(plug?.show_in_switchbar || false);
+  const [showOnPrinterCard, setShowOnPrinterCard] = useState(plug?.show_on_printer_card ?? true);
 
   // Discovery state
   const [isScanning, setIsScanning] = useState(false);
@@ -251,6 +252,8 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
     mutationFn: (data: SmartPlugCreate) => api.createSmartPlug(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['smart-plugs'] });
+      // Also invalidate printer card HA entity queries
+      queryClient.invalidateQueries({ queryKey: ['scriptPlugsByPrinter'] });
       onClose();
     },
     onError: (err: Error) => {
@@ -263,6 +266,8 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
     mutationFn: (data: SmartPlugUpdate) => api.updateSmartPlug(plug!.id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['smart-plugs'] });
+      // Also invalidate printer card HA entity queries
+      queryClient.invalidateQueries({ queryKey: ['scriptPlugsByPrinter'] });
       onClose();
     },
     onError: (err: Error) => {
@@ -270,10 +275,17 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
     },
   });
 
-  // Filter out printers that already have a plug assigned (except current plug's printer)
+  // For Tasmota plugs, only one per printer (physical device)
+  // For HA scripts, allow multiple per printer
   const availablePrinters = printers?.filter(p => {
-    const hasPlug = existingPlugs?.some(ep => ep.printer_id === p.id && ep.id !== plug?.id);
-    return !hasPlug;
+    if (plugType === 'tasmota') {
+      const hasTasmotaPlug = existingPlugs?.some(
+        ep => ep.printer_id === p.id && ep.id !== plug?.id && ep.plug_type === 'tasmota'
+      );
+      return !hasTasmotaPlug;
+    }
+    // HA scripts can have multiple per printer
+    return true;
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -339,8 +351,9 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
       schedule_enabled: scheduleEnabled,
       schedule_on_time: scheduleOnTime || null,
       schedule_off_time: scheduleOffTime || null,
-      // Switchbar
+      // Visibility
       show_in_switchbar: showInSwitchbar,
+      show_on_printer_card: showOnPrinterCard,
     };
 
     if (isEditing) {
@@ -1307,6 +1320,30 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
               </label>
             </div>
           </div>
+
+          {/* Printer Card Visibility - only for HA entities */}
+          {plugType === 'homeassistant' && (
+            <div className="border-t border-bambu-dark-tertiary pt-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Eye className="w-4 h-4 text-bambu-green" />
+                  <div>
+                    <span className="text-white font-medium">Show on Printer Card</span>
+                    <p className="text-xs text-bambu-gray">Display button on printer card</p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showOnPrinterCard}
+                    onChange={(e) => setShowOnPrinterCard(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex gap-3 pt-2">

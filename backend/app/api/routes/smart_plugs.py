@@ -64,21 +64,17 @@ async def create_smart_plug(
             raise HTTPException(400, "Printer not found")
 
         # Check if printer already has a plug assigned
-        # Scripts can coexist with other plugs (they're for multi-device control, not power on/off)
-        is_script = data.plug_type == "homeassistant" and data.ha_entity_id and data.ha_entity_id.startswith("script.")
-        if not is_script:
-            # For non-script plugs, check there's no other non-script plug assigned
-            result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == data.printer_id))
-            existing = result.scalar_one_or_none()
-            if existing:
-                # Allow if existing plug is a script
-                existing_is_script = (
-                    existing.plug_type == "homeassistant"
-                    and existing.ha_entity_id
-                    and existing.ha_entity_id.startswith("script.")
+        # Tasmota plugs: only one per printer (physical power device)
+        # HA entities: allow multiple per printer (for different automations)
+        if data.plug_type == "tasmota":
+            result = await db.execute(
+                select(SmartPlug).where(
+                    SmartPlug.printer_id == data.printer_id,
+                    SmartPlug.plug_type == "tasmota",
                 )
-                if not existing_is_script:
-                    raise HTTPException(400, "This printer already has a smart plug assigned")
+            )
+            if result.scalar_one_or_none():
+                raise HTTPException(400, "This printer already has a Tasmota plug assigned")
 
     # For MQTT plugs, ensure MQTT broker is configured and service is connected
     if data.plug_type == "mqtt":
@@ -110,7 +106,15 @@ async def create_smart_plug(
                     f"Failed to connect to MQTT broker at {mqtt_broker}. Please check your MQTT settings.",
                 )
 
-    plug = SmartPlug(**data.model_dump())
+    plug_data = data.model_dump()
+
+    # For HA entities, default auto_on and auto_off to False
+    # (they're for automations, not power control like Tasmota plugs)
+    if data.plug_type == "homeassistant":
+        plug_data["auto_on"] = False
+        plug_data["auto_off"] = False
+
+    plug = SmartPlug(**plug_data)
     db.add(plug)
     await db.commit()
     await db.refresh(plug)
@@ -181,25 +185,20 @@ async def get_script_plugs_by_printer(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
 ):
-    """Get all HA script plugs assigned to a printer.
+    """Get all HA entities assigned to a printer for display on printer card.
 
-    Returns only script entities (script.*) for the printer that have
+    Returns HA entities (switches, scripts, lights, etc.) for the printer that have
     show_on_printer_card enabled.
-    Used to display "Run Script" buttons alongside the main power plug.
+    Used to display action buttons alongside the main power plug.
     """
     result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
     plugs = result.scalars().all()
 
-    # Filter to only scripts with show_on_printer_card enabled
-    scripts = [
-        plug
-        for plug in plugs
-        if plug.plug_type == "homeassistant"
-        and plug.ha_entity_id
-        and plug.ha_entity_id.startswith("script.")
-        and plug.show_on_printer_card
+    # Filter to HA entities with show_on_printer_card enabled
+    ha_entities = [
+        plug for plug in plugs if plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.show_on_printer_card
     ]
-    return scripts
+    return ha_entities
 
 
 # Tasmota Discovery Endpoints
@@ -427,30 +426,20 @@ async def update_smart_plug(
         if not result.scalar_one_or_none():
             raise HTTPException(400, "Printer not found")
 
-        # Check if that printer already has a different plug assigned
-        # Scripts can coexist with other plugs
-        # Determine if the plug being updated is/will be a script
-        new_entity_id = update_data.get("ha_entity_id", plug.ha_entity_id)
+        # Check if that printer already has a different Tasmota plug assigned
+        # Tasmota plugs: only one per printer (physical power device)
+        # HA entities: allow multiple per printer (for different automations)
         new_plug_type = update_data.get("plug_type", plug.plug_type)
-        is_script = new_plug_type == "homeassistant" and new_entity_id and new_entity_id.startswith("script.")
-
-        if not is_script:
+        if new_plug_type == "tasmota":
             result = await db.execute(
                 select(SmartPlug).where(
                     SmartPlug.printer_id == new_printer_id,
                     SmartPlug.id != plug_id,
+                    SmartPlug.plug_type == "tasmota",
                 )
             )
-            existing = result.scalar_one_or_none()
-            if existing:
-                # Allow if existing plug is a script
-                existing_is_script = (
-                    existing.plug_type == "homeassistant"
-                    and existing.ha_entity_id
-                    and existing.ha_entity_id.startswith("script.")
-                )
-                if not existing_is_script:
-                    raise HTTPException(400, "This printer already has a smart plug assigned")
+            if result.scalar_one_or_none():
+                raise HTTPException(400, "This printer already has a Tasmota plug assigned")
 
     # Track old MQTT settings for comparison
     old_plug_type = plug.plug_type

@@ -42,6 +42,7 @@ import {
   CheckCircle,
   XCircle,
   User,
+  Home,
 } from 'lucide-react';
 
 // Custom Skip Objects icon - arrow jumping over boxes
@@ -2774,11 +2775,11 @@ function PrinterCard({
               </div>
             </div>
 
-            {/* Script buttons row */}
+            {/* HA entity buttons row */}
             {scriptPlugs && scriptPlugs.length > 0 && (
               <div className="flex items-center gap-2 mt-2 pt-2 border-t border-bambu-dark-tertiary/50">
-                <Play className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
-                <span className="text-xs text-bambu-gray">Scripts:</span>
+                <Home className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                <span className="text-xs text-bambu-gray">HA:</span>
                 <div className="flex flex-wrap gap-1">
                   {scriptPlugs.map(script => (
                     <button

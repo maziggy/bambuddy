@@ -34,6 +34,15 @@ All notable changes to Bambuddy will be documented in this file.
   - Added locale parity test to ensure English and German stay in sync
 
 ### Fixed
+- **Cannot Link Multiple HA Entities to Same Printer** (Issue #214):
+  - Fixed Home Assistant entities being limited to one per printer
+  - Both frontend and backend were blocking printers that already had any smart plug linked
+  - Now only Tasmota plugs are limited to one per printer (physical device constraint)
+  - Multiple HA entities (switches, scripts, lights, etc.) can be linked to the same printer
+  - Restored "Show on Printer Card" toggle for HA entities to control visibility on printer cards
+  - Fixed printer card only showing `script.*` entities; now shows all HA entities with toggle enabled
+  - HA entities now default to auto_on=False and auto_off=False (appropriate for automations)
+  - Printer cards now update immediately when HA entities are added/modified/deleted
 - **Monthly Comparison Calculation Off** (Issue #229):
   - Fixed filament statistics not accounting for quantity multiplier
   - Monthly comparison chart now correctly multiplies `filament_used_grams` by `quantity`

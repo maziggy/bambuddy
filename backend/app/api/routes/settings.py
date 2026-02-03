@@ -587,9 +587,10 @@ async def update_virtual_printer_settings(
             target_printer_serial=target_printer_serial,
         )
     except ValueError as e:
+        logger.warning(f"Virtual printer configuration validation error: {e}")
         return JSONResponse(
             status_code=400,
-            content={"detail": str(e)},
+            content={"detail": "Invalid virtual printer configuration. Check the provided values."},
         )
     except Exception as e:
         logger.error(f"Failed to configure virtual printer: {e}", exc_info=True)

@@ -2543,6 +2543,38 @@ export default {
     },
   },
 
+  // Model Viewer
+  modelViewer: {
+    openInSlicer: 'Im Slicer öffnen',
+    tabs: {
+      model: '3D-Modell',
+      gcode: 'G-Code Vorschau',
+    },
+    notAvailable: 'nicht verfügbar',
+    notSliced: 'nicht geslicet',
+    plates: 'Platten',
+    allPlates: 'Alle Platten',
+    plateNumber: 'Platte {{number}}',
+    plateCount: '{{count}} Platte',
+    plateCount_other: '{{count}} Platten',
+    objectCount: '{{count}} Objekt',
+    objectCount_other: '{{count}} Objekte',
+    filamentCount: '{{count}} Filament',
+    filamentCount_other: '{{count}} Filamente',
+    eta: 'ETA {{minutes}} Min',
+    noPreview: 'Keine Vorschau für diese Datei verfügbar',
+    pagination: {
+      pageOf: 'Seite {{current}} von {{total}}',
+      prev: 'Zurück',
+      next: 'Weiter',
+    },
+    errors: {
+      failedToLoad: 'Datei konnte nicht geladen werden',
+      noMeshes: 'Keine Meshes in 3MF-Datei gefunden',
+      unsupportedFormat: 'Nicht unterstütztes Dateiformat',
+    },
+  },
+
   // Maintenance type descriptions (built-in)
   maintenanceDescriptions: {
     lubricateRails: 'Schmiermittel auf Linearschienen für sanfte Bewegung auftragen',

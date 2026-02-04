@@ -2543,6 +2543,38 @@ export default {
     },
   },
 
+  // Model Viewer
+  modelViewer: {
+    openInSlicer: 'Open in Slicer',
+    tabs: {
+      model: '3D Model',
+      gcode: 'G-code Preview',
+    },
+    notAvailable: 'not available',
+    notSliced: 'not sliced',
+    plates: 'Plates',
+    allPlates: 'All Plates',
+    plateNumber: 'Plate {{number}}',
+    plateCount: '{{count}} plate',
+    plateCount_other: '{{count}} plates',
+    objectCount: '{{count}} object',
+    objectCount_other: '{{count}} objects',
+    filamentCount: '{{count}} filament',
+    filamentCount_other: '{{count}} filaments',
+    eta: 'ETA {{minutes}} min',
+    noPreview: 'No preview available for this file',
+    pagination: {
+      pageOf: 'Page {{current}} of {{total}}',
+      prev: 'Prev',
+      next: 'Next',
+    },
+    errors: {
+      failedToLoad: 'Failed to load file',
+      noMeshes: 'No meshes found in 3MF file',
+      unsupportedFormat: 'Unsupported file format',
+    },
+  },
+
   // Maintenance type descriptions (built-in)
   maintenanceDescriptions: {
     lubricateRails: 'Apply lubricant to linear rails for smooth motion',

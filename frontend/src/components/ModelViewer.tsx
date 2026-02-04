@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -6,6 +7,7 @@ import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import JSZip from 'jszip';
 import { Loader2, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from './Button';
+import { getAuthToken } from '../api/client';
 
 interface BuildVolume {
   x: number;
@@ -585,6 +587,7 @@ export function ModelViewer({
   selectedPlateId = null,
   className = '',
 }: ModelViewerProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -677,10 +680,17 @@ export function ModelViewer({
 
     const normalizedType = (fileType || url.split('?')[0].split('.').pop() || '').toLowerCase();
 
+    // Build auth headers for fetch
+    const headers: HeadersInit = {};
+    const token = getAuthToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     if (normalizedType === 'stl') {
-      fetch(url)
+      fetch(url, { headers })
         .then((res) => {
-          if (!res.ok) throw new Error('Failed to load file');
+          if (!res.ok) throw new Error(t('modelViewer.errors.failedToLoad'));
           return res.arrayBuffer();
         })
         .then((buffer) => {
@@ -695,15 +705,15 @@ export function ModelViewer({
           setLoading(false);
         });
     } else if (normalizedType === '3mf') {
-      fetch(url)
+      fetch(url, { headers })
         .then((res) => {
-          if (!res.ok) throw new Error('Failed to load file');
+          if (!res.ok) throw new Error(t('modelViewer.errors.failedToLoad'));
           return res.arrayBuffer();
         })
         .then(parse3MF)
         .then((parsed) => {
           if (parsed.objects.size === 0) {
-            throw new Error('No meshes found in 3MF file');
+            throw new Error(t('modelViewer.errors.noMeshes'));
           }
           setParsedData(parsed);
         })
@@ -712,7 +722,7 @@ export function ModelViewer({
           setLoading(false);
         });
     } else {
-      setError('Unsupported file format');
+      setError(t('modelViewer.errors.unsupportedFormat'));
       setLoading(false);
     }
 
@@ -743,7 +753,7 @@ export function ModelViewer({
       plateRef.current = null;
       gridRef.current = null;
     };
-  }, [url, buildVolume, fileType]);
+  }, [url, buildVolume, fileType, t]);
 
   useEffect(() => {
     if (!sceneRef.current || !cameraRef.current || !controlsRef.current) return;

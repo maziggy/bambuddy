@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, ExternalLink, Box, Code2, Loader2, Layers, Check, Maximize2, Minimize2 } from 'lucide-react';
 import { ModelViewer } from './ModelViewer';
 import { GcodeViewer } from './GcodeViewer';
@@ -26,6 +27,7 @@ interface Capabilities {
 }
 
 export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, onClose }: ModelViewerModalProps) {
+  const { t } = useTranslation();
   const isLibrary = libraryFileId != null;
   const [activeTab, setActiveTab] = useState<ViewTab | null>(null);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
@@ -139,7 +141,7 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
   const getPlateObjectCount = (plate: PlateMetadata): number => plate.object_count ?? plate.objects?.length ?? 0;
   const totalObjectCount = plates.reduce((sum, plate) => sum + getPlateObjectCount(plate), 0);
   const selectedObjectCount = selectedPlate ? getPlateObjectCount(selectedPlate) : totalObjectCount;
-  const objectCountLabel = selectedPlate ? `Plate ${selectedPlate.index}` : 'All plates';
+  const objectCountLabel = selectedPlate ? t('modelViewer.plateNumber', { number: selectedPlate.index }) : t('modelViewer.allPlates');
   const hasObjectCount = plates.length > 0;
   const platesGridRef = useRef<HTMLDivElement>(null);
   const platesViewportRef = useRef<HTMLDivElement>(null);
@@ -288,14 +290,14 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
             <h2 className="text-lg font-semibold text-white truncate">{title}</h2>
             {hasObjectCount && (
               <span className="text-xs text-bambu-gray bg-bambu-dark-tertiary/70 px-2 py-1 rounded whitespace-nowrap">
-                {objectCountLabel}: {selectedObjectCount} object{selectedObjectCount !== 1 ? 's' : ''}
+                {objectCountLabel}: {t('modelViewer.objectCount', { count: selectedObjectCount })}
               </span>
             )}
           </div>
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={handleOpenInSlicer} disabled={!canOpenInSlicer}>
               <ExternalLink className="w-4 h-4" />
-              Open in Slicer
+              {t('modelViewer.openInSlicer')}
             </Button>
             <Button
               variant="secondary"
@@ -326,8 +328,8 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
               }`}
             >
               <Box className="w-4 h-4" />
-              3D Model
-              {!capabilities.has_model && <span className="text-xs">(not available)</span>}
+              {t('modelViewer.tabs.model')}
+              {!capabilities.has_model && <span className="text-xs">({t('modelViewer.notAvailable')})</span>}
             </button>
             <button
               onClick={() => capabilities.has_gcode && setActiveTab('gcode')}
@@ -341,8 +343,8 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
               }`}
             >
               <Code2 className="w-4 h-4" />
-              G-code Preview
-              {!capabilities.has_gcode && <span className="text-xs">(not sliced)</span>}
+              {t('modelViewer.tabs.gcode')}
+              {!capabilities.has_gcode && <span className="text-xs">({t('modelViewer.notSliced')})</span>}
             </button>
           </div>
         )}
@@ -366,7 +368,7 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
                 >
                   <div className="flex items-center gap-2 text-sm text-bambu-gray mb-2">
                     <Layers className="w-4 h-4" />
-                    Plates
+                    {t('modelViewer.plates')}
                     {platesLoading && <Loader2 className="w-3 h-3 animate-spin" />}
                   </div>
                   <div className={splitFullscreen ? 'flex flex-col min-h-0 flex-1' : undefined}>
@@ -396,9 +398,9 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
                             <Layers className={`${splitFullscreen ? 'w-4 h-4' : 'w-5 h-5'} text-bambu-gray`} />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className={`${splitFullscreen ? 'text-xs' : 'text-sm'} text-white font-medium truncate`}>All Plates</p>
+                            <p className={`${splitFullscreen ? 'text-xs' : 'text-sm'} text-white font-medium truncate`}>{t('modelViewer.allPlates')}</p>
                             <p className={`${splitFullscreen ? 'text-[10px]' : 'text-xs'} text-bambu-gray truncate`}>
-                              {plates.length} plate{plates.length !== 1 ? 's' : ''}
+                              {t('modelViewer.plateCount', { count: plates.length })}
                             </p>
                           </div>
                           {selectedPlateId == null && (
@@ -433,13 +435,10 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
                             )}
                             <div className="min-w-0 flex-1">
                               <p className={`${splitFullscreen ? 'text-xs' : 'text-sm'} text-white font-medium truncate`}>
-                                {plate.name || `Plate ${plate.index}`}
+                                {plate.name || t('modelViewer.plateNumber', { number: plate.index })}
                               </p>
                               <p className={`${splitFullscreen ? 'text-[10px]' : 'text-xs'} text-bambu-gray truncate`}>
-                                {(() => {
-                                  const objectCount = plate.object_count ?? plate.objects?.length ?? 0;
-                                  return `${objectCount} object${objectCount !== 1 ? 's' : ''}`;
-                                })()}
+                                {t('modelViewer.objectCount', { count: plate.object_count ?? plate.objects?.length ?? 0 })}
                               </p>
                             </div>
                             {selectedPlateId === plate.index && (
@@ -453,21 +452,21 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
                       <div className="mt-auto pt-3 flex items-center gap-4 text-xs text-bambu-gray overflow-x-auto">
                         {selectedPlate && (
                           <div className="flex items-center gap-3 whitespace-nowrap">
-                            <span>Plate {selectedPlate.index}</span>
+                            <span>{t('modelViewer.plateNumber', { number: selectedPlate.index })}</span>
                             {selectedPlate.print_time_seconds != null && (
-                              <span>ETA {Math.round(selectedPlate.print_time_seconds / 60)} min</span>
+                              <span>{t('modelViewer.eta', { minutes: Math.round(selectedPlate.print_time_seconds / 60) })}</span>
                             )}
                             {selectedPlate.filament_used_grams != null && (
                               <span>{selectedPlate.filament_used_grams.toFixed(1)} g</span>
                             )}
                             {selectedPlate.filaments.length > 0 && (
-                              <span>{selectedPlate.filaments.length} filament{selectedPlate.filaments.length !== 1 ? 's' : ''}</span>
+                              <span>{t('modelViewer.filamentCount', { count: selectedPlate.filaments.length })}</span>
                             )}
                           </div>
                         )}
                         {shouldPaginatePlates && (
                           <div className={`flex items-center gap-2 whitespace-nowrap ${selectedPlate ? 'ml-auto' : ''}`}>
-                            <span>Page {platePage + 1} of {totalPlatePages}</span>
+                            <span>{t('modelViewer.pagination.pageOf', { current: platePage + 1, total: totalPlatePages })}</span>
                             <div className="flex items-center gap-1">
                               <button
                                 type="button"
@@ -479,7 +478,7 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
                                     : 'border-bambu-dark-tertiary text-bambu-gray hover:text-white hover:border-bambu-gray'
                                 }`}
                               >
-                                Prev
+                                {t('modelViewer.pagination.prev')}
                               </button>
                               {(() => {
                                 const maxVisible = 5;
@@ -547,7 +546,7 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
                                     : 'border-bambu-dark-tertiary text-bambu-gray hover:text-white hover:border-bambu-gray'
                                 }`}
                               >
-                                Next
+                                {t('modelViewer.pagination.next')}
                               </button>
                             </div>
                           </div>
@@ -596,7 +595,7 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-bambu-gray">
-              No preview available for this file
+              {t('modelViewer.noPreview')}
             </div>
           )}
         </div>

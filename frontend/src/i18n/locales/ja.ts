@@ -3074,4 +3074,36 @@ export default {
     failedToCreateBackup: 'バックアップの作成に失敗しました',
     backupRestored: 'バックアップの復元が完了しました',
   },
+
+  // Model Viewer
+  modelViewer: {
+    openInSlicer: 'スライサーで開く',
+    tabs: {
+      model: '3Dモデル',
+      gcode: 'G-codeプレビュー',
+    },
+    notAvailable: '利用不可',
+    notSliced: '未スライス',
+    plates: 'プレート',
+    allPlates: '全プレート',
+    plateNumber: 'プレート {{number}}',
+    plateCount: '{{count}} プレート',
+    plateCount_other: '{{count}} プレート',
+    objectCount: '{{count}} オブジェクト',
+    objectCount_other: '{{count}} オブジェクト',
+    filamentCount: '{{count}} フィラメント',
+    filamentCount_other: '{{count}} フィラメント',
+    eta: '予想時間 {{minutes}} 分',
+    noPreview: 'このファイルのプレビューは利用できません',
+    pagination: {
+      pageOf: 'ページ {{current}} / {{total}}',
+      prev: '前へ',
+      next: '次へ',
+    },
+    errors: {
+      failedToLoad: 'ファイルの読み込みに失敗しました',
+      noMeshes: '3MFファイルにメッシュが見つかりません',
+      unsupportedFormat: 'サポートされていないファイル形式です',
+    },
+  },
 };

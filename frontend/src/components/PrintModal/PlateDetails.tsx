@@ -1,4 +1,4 @@
-import { CalendarDays, Clock, Layers, Package, Palette } from 'lucide-react';
+import { CalendarDays, Clock, Layers, Package, Palette, ChevronDown } from 'lucide-react';
 import { formatTime, normalizeColor } from '../../utils/amsHelpers';
 import type { PlateInfo } from './types';
 
@@ -90,13 +90,16 @@ export function PlateDetails({ plate }: PlateDetailsProps) {
       </div>
 
       {plate.objects.length > 0 && (
-        <div className="mt-3">
-          <p className="text-xs text-bambu-gray mb-1">Objects</p>
-          <p className="text-xs text-white">
+        <details className="mt-3">
+          <summary className="cursor-pointer text-xs text-bambu-gray flex items-center gap-1.5">
+            <ChevronDown className="w-3.5 h-3.5" />
+            Objects ({plate.objects.length})
+          </summary>
+          <p className="text-xs text-white mt-2">
             {plate.objects.slice(0, 6).join(', ')}
             {plate.objects.length > 6 ? ` +${plate.objects.length - 6} more` : ''}
           </p>
-        </div>
+        </details>
       )}
     </div>
   );

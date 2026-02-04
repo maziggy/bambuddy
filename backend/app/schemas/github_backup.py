@@ -2,12 +2,12 @@
 
 import re
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
 
 
-class ScheduleType(str, Enum):
+class ScheduleType(StrEnum):
     """Backup schedule types."""
 
     HOURLY = "hourly"

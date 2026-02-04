@@ -543,9 +543,9 @@ _cover_cache: dict[int, dict[tuple[str, str], bytes]] = {}
 async def get_printer_cover(
     printer_id: int,
     view: str | None = None,
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
     db: AsyncSession = Depends(get_db),
 ):
+    # Note: No auth required - this is an image asset loaded via <img src> which can't send auth headers
     """Get the cover image for the current print job.
 
     Args:

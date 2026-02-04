@@ -370,6 +370,45 @@ class TestMatchFilamentsToSlots:
         result = scheduler._match_filaments_to_slots(required, loaded)
         assert result == [0, 1]  # Each slot gets its specific tray
 
+    def test_match_non_unique_tray_info_idx_uses_color(self, scheduler):
+        """Non-unique tray_info_idx should fall back to color matching.
+
+        This is the scenario where multiple trays have the same tray_info_idx
+        (e.g., two spools of generic PLA both have GFA00). The color should
+        be used as tiebreaker instead of just picking the first match.
+        """
+        # User sliced with green PLA (tray_info_idx=GFA00)
+        # Two trays have GFA00: tray 3 (white) and tray 4 (green)
+        # Should pick tray 4 because the color matches
+        required = [
+            {"slot_id": 2, "type": "PLA", "color": "#00FF00", "tray_info_idx": "GFA00"},  # Green PLA
+        ]
+        loaded = [
+            {"type": "PLA", "color": "#FFFFFF", "global_tray_id": 3, "tray_info_idx": "GFA00"},  # White PLA
+            {"type": "PLA", "color": "#00FF00", "global_tray_id": 4, "tray_info_idx": "GFA00"},  # Green PLA
+        ]
+
+        result = scheduler._match_filaments_to_slots(required, loaded)
+        assert result == [-1, 4]  # Should pick tray 4 (color match), not tray 3 (first match)
+
+    def test_match_non_unique_tray_info_idx_same_color(self, scheduler):
+        """Non-unique tray_info_idx with identical colors picks first match.
+
+        When multiple trays have the same tray_info_idx AND same color,
+        there's no way to differentiate, so first match is used.
+        """
+        required = [
+            {"slot_id": 2, "type": "PLA", "color": "#FFFFFF", "tray_info_idx": "GFA00"},
+        ]
+        loaded = [
+            {"type": "PLA", "color": "#FFFFFF", "global_tray_id": 3, "tray_info_idx": "GFA00"},
+            {"type": "PLA", "color": "#FFFFFF", "global_tray_id": 4, "tray_info_idx": "GFA00"},
+        ]
+
+        result = scheduler._match_filaments_to_slots(required, loaded)
+        # Both have same color, so first is used
+        assert result == [-1, 3]
+
 
 class TestBuildLoadedFilamentsTrayInfoIdx:
     """Test tray_info_idx extraction in _build_loaded_filaments."""

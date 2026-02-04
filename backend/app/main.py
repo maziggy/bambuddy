@@ -727,7 +727,11 @@ async def on_print_start(printer_id: int, data: dict):
         printer = result.scalar_one_or_none()
 
         # Plate detection check - pause if objects detected on build plate
+        logger.info(
+            f"[PLATE CHECK] printer_id={printer_id}, plate_detection_enabled={printer.plate_detection_enabled if printer else 'NO PRINTER'}"
+        )
         if printer and printer.plate_detection_enabled:
+            logger.info(f"[PLATE CHECK] ENTERING plate detection code for printer {printer_id}")
             try:
                 from backend.app.services.plate_detection import check_plate_empty
 

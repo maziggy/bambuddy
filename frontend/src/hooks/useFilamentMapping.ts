@@ -62,12 +62,13 @@ export function buildLoadedFilaments(printerStatus: PrinterStatus | undefined): 
  * Compute AMS mapping for a printer given filament requirements and printer status.
  * This is a non-hook version that can be called imperatively (e.g., in a loop for multiple printers).
  *
- * Priority: tray_info_idx match > exact color match > similar color match > type-only match
+ * Priority: unique tray_info_idx match > exact color match > similar color match > type-only match
  *
- * The tray_info_idx is a unique spool identifier stored in the 3MF file when the user
- * slices in Bambu Studio. If the same spool is still loaded in the printer (same
- * tray_info_idx), we use that tray. This ensures the exact spool selected during
- * slicing is used, even if multiple trays have the same type and color.
+ * The tray_info_idx is a filament type identifier stored in the 3MF file when the user
+ * slices (e.g., "GFA00" for generic PLA, "P4d64437" for custom presets). If the same
+ * tray_info_idx appears in only ONE available tray, we use that tray. If multiple trays
+ * have the same tray_info_idx (e.g., two spools of generic PLA), we fall back to color
+ * matching among those trays.
  *
  * @param filamentReqs - Required filaments from the 3MF file
  * @param printerStatus - Current printer status with AMS information
@@ -88,43 +89,63 @@ export function computeAmsMapping(
   const comparisons = filamentReqs.filaments.map((req) => {
     const reqTrayInfoIdx = req.tray_info_idx || '';
 
-    // First priority: match by tray_info_idx (exact spool identity)
-    // Only match if both have non-empty tray_info_idx
-    const idxMatch = reqTrayInfoIdx
-      ? loadedFilaments.find(
-          (f) =>
-            !usedTrayIds.has(f.globalTrayId) &&
-            f.trayInfoIdx &&
-            f.trayInfoIdx === reqTrayInfoIdx
-        )
-      : undefined;
+    // Get available trays (not already used)
+    const available = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId));
 
-    // Fall back to type+color matching
-    const exactMatch =
-      !idxMatch &&
-      loadedFilaments.find(
+    let idxMatch: LoadedFilament | undefined;
+    let exactMatch: LoadedFilament | undefined;
+    let similarMatch: LoadedFilament | undefined;
+    let typeOnlyMatch: LoadedFilament | undefined;
+
+    // Check if tray_info_idx is unique among available trays
+    if (reqTrayInfoIdx) {
+      const idxMatches = available.filter((f) => f.trayInfoIdx === reqTrayInfoIdx);
+      if (idxMatches.length === 1) {
+        // Unique tray_info_idx - use it as definitive match
+        idxMatch = idxMatches[0];
+      } else if (idxMatches.length > 1) {
+        // Multiple trays with same tray_info_idx - use color matching among them
+        exactMatch = idxMatches.find(
+          (f) =>
+            f.type?.toUpperCase() === req.type?.toUpperCase() &&
+            normalizeColorForCompare(f.color) === normalizeColorForCompare(req.color)
+        );
+        if (!exactMatch) {
+          similarMatch = idxMatches.find(
+            (f) =>
+              f.type?.toUpperCase() === req.type?.toUpperCase() &&
+              colorsAreSimilar(f.color, req.color)
+          );
+        }
+        if (!exactMatch && !similarMatch) {
+          typeOnlyMatch = idxMatches.find(
+            (f) => f.type?.toUpperCase() === req.type?.toUpperCase()
+          );
+        }
+      }
+    }
+
+    // If no idx match, do standard type/color matching on all available trays
+    if (!idxMatch && !exactMatch && !similarMatch && !typeOnlyMatch) {
+      exactMatch = available.find(
         (f) =>
-          !usedTrayIds.has(f.globalTrayId) &&
           f.type?.toUpperCase() === req.type?.toUpperCase() &&
           normalizeColorForCompare(f.color) === normalizeColorForCompare(req.color)
       );
-    const similarMatch =
-      !idxMatch &&
-      !exactMatch &&
-      loadedFilaments.find(
-        (f) =>
-          !usedTrayIds.has(f.globalTrayId) &&
-          f.type?.toUpperCase() === req.type?.toUpperCase() &&
-          colorsAreSimilar(f.color, req.color)
-      );
-    const typeOnlyMatch =
-      !idxMatch &&
-      !exactMatch &&
-      !similarMatch &&
-      loadedFilaments.find(
-        (f) =>
-          !usedTrayIds.has(f.globalTrayId) && f.type?.toUpperCase() === req.type?.toUpperCase()
-      );
+      if (!exactMatch) {
+        similarMatch = available.find(
+          (f) =>
+            f.type?.toUpperCase() === req.type?.toUpperCase() &&
+            colorsAreSimilar(f.color, req.color)
+        );
+      }
+      if (!exactMatch && !similarMatch) {
+        typeOnlyMatch = available.find(
+          (f) => f.type?.toUpperCase() === req.type?.toUpperCase()
+        );
+      }
+    }
+
     const loaded = idxMatch || exactMatch || similarMatch || typeOnlyMatch || undefined;
 
     // Mark this tray as used so it won't be assigned to another slot
@@ -329,47 +350,67 @@ export function useFilamentMapping(
       }
 
       // Auto-match: Find a loaded filament
-      // Priority: tray_info_idx match > exact color match > similar color match > type-only match
+      // Priority: unique tray_info_idx match > exact color match > similar color match > type-only match
       // IMPORTANT: Exclude trays that are already assigned (manually or auto)
       const reqTrayInfoIdx = req.tray_info_idx || '';
 
-      // First priority: match by tray_info_idx (exact spool identity)
-      // This ensures the exact spool selected during slicing is used
-      const idxMatch = reqTrayInfoIdx
-        ? loadedFilaments.find(
-            (f) =>
-              !usedTrayIds.has(f.globalTrayId) &&
-              f.trayInfoIdx &&
-              f.trayInfoIdx === reqTrayInfoIdx
-          )
-        : undefined;
+      // Get available trays (not already used)
+      const available = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId));
 
-      // Fall back to type+color matching
-      const exactMatch =
-        !idxMatch &&
-        loadedFilaments.find(
+      let idxMatch: LoadedFilament | undefined;
+      let exactMatch: LoadedFilament | undefined;
+      let similarMatch: LoadedFilament | undefined;
+      let typeOnlyMatch: LoadedFilament | undefined;
+
+      // Check if tray_info_idx is unique among available trays
+      if (reqTrayInfoIdx) {
+        const idxMatches = available.filter((f) => f.trayInfoIdx === reqTrayInfoIdx);
+        if (idxMatches.length === 1) {
+          // Unique tray_info_idx - use it as definitive match
+          idxMatch = idxMatches[0];
+        } else if (idxMatches.length > 1) {
+          // Multiple trays with same tray_info_idx - use color matching among them
+          exactMatch = idxMatches.find(
+            (f) =>
+              f.type?.toUpperCase() === req.type?.toUpperCase() &&
+              normalizeColorForCompare(f.color) === normalizeColorForCompare(req.color)
+          );
+          if (!exactMatch) {
+            similarMatch = idxMatches.find(
+              (f) =>
+                f.type?.toUpperCase() === req.type?.toUpperCase() &&
+                colorsAreSimilar(f.color, req.color)
+            );
+          }
+          if (!exactMatch && !similarMatch) {
+            typeOnlyMatch = idxMatches.find(
+              (f) => f.type?.toUpperCase() === req.type?.toUpperCase()
+            );
+          }
+        }
+      }
+
+      // If no idx match, do standard type/color matching on all available trays
+      if (!idxMatch && !exactMatch && !similarMatch && !typeOnlyMatch) {
+        exactMatch = available.find(
           (f) =>
-            !usedTrayIds.has(f.globalTrayId) &&
             f.type?.toUpperCase() === req.type?.toUpperCase() &&
             normalizeColorForCompare(f.color) === normalizeColorForCompare(req.color)
         );
-      const similarMatch =
-        !idxMatch &&
-        !exactMatch &&
-        loadedFilaments.find(
-          (f) =>
-            !usedTrayIds.has(f.globalTrayId) &&
-            f.type?.toUpperCase() === req.type?.toUpperCase() &&
-            colorsAreSimilar(f.color, req.color)
-        );
-      const typeOnlyMatch =
-        !idxMatch &&
-        !exactMatch &&
-        !similarMatch &&
-        loadedFilaments.find(
-          (f) =>
-            !usedTrayIds.has(f.globalTrayId) && f.type?.toUpperCase() === req.type?.toUpperCase()
-        );
+        if (!exactMatch) {
+          similarMatch = available.find(
+            (f) =>
+              f.type?.toUpperCase() === req.type?.toUpperCase() &&
+              colorsAreSimilar(f.color, req.color)
+          );
+        }
+        if (!exactMatch && !similarMatch) {
+          typeOnlyMatch = available.find(
+            (f) => f.type?.toUpperCase() === req.type?.toUpperCase()
+          );
+        }
+      }
+
       const loaded = idxMatch || exactMatch || similarMatch || typeOnlyMatch || undefined;
 
       // Mark this tray as used so it won't be assigned to another slot

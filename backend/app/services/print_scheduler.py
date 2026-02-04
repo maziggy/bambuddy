@@ -591,12 +591,13 @@ class PrintScheduler:
     def _match_filaments_to_slots(self, required: list[dict], loaded: list[dict]) -> list[int] | None:
         """Match required filaments to loaded filaments and build AMS mapping.
 
-        Priority: tray_info_idx match > exact color match > similar color match > type-only match
+        Priority: unique tray_info_idx match > exact color match > similar color match > type-only match
 
-        The tray_info_idx is a unique spool identifier stored in the 3MF file when the user
-        slices in Bambu Studio. If the same spool is still loaded in the printer (same
-        tray_info_idx), we use that tray. This ensures the exact spool selected during
-        slicing is used, even if multiple trays have the same type and color.
+        The tray_info_idx is a filament type identifier stored in the 3MF file when the user
+        slices (e.g., "GFA00" for generic PLA, "P4d64437" for custom presets). If the same
+        tray_info_idx appears in only ONE available tray, we use that tray. If multiple trays
+        have the same tray_info_idx (e.g., two spools of generic PLA), we fall back to color
+        matching among those trays.
 
         Args:
             required: List of required filaments with slot_id, type, color, tray_info_idx
@@ -617,41 +618,60 @@ class PrintScheduler:
             req_color = req.get("color", "")
             req_tray_info_idx = req.get("tray_info_idx", "")
 
-            # Find best match: tray_info_idx > exact color > similar color > type-only
+            # Find best match: unique tray_info_idx > exact color > similar color > type-only
             idx_match = None
             exact_match = None
             similar_match = None
             type_only_match = None
 
-            for f in loaded:
-                if f["global_tray_id"] in used_tray_ids:
-                    continue
+            # Get available trays (not already used)
+            available = [f for f in loaded if f["global_tray_id"] not in used_tray_ids]
 
-                # First priority: match by tray_info_idx (exact spool identity)
-                # Only match if both have non-empty tray_info_idx
-                f_tray_info_idx = f.get("tray_info_idx", "")
-                if req_tray_info_idx and f_tray_info_idx and req_tray_info_idx == f_tray_info_idx:
-                    idx_match = f
+            # Check if tray_info_idx is unique among available trays
+            if req_tray_info_idx:
+                idx_matches = [f for f in available if f.get("tray_info_idx") == req_tray_info_idx]
+                if len(idx_matches) == 1:
+                    # Unique tray_info_idx - use it as definitive match
+                    idx_match = idx_matches[0]
                     logger.debug(
-                        f"Matched filament slot {req.get('slot_id')} by tray_info_idx={req_tray_info_idx} "
-                        f"-> tray {f['global_tray_id']}"
+                        f"Matched filament slot {req.get('slot_id')} by unique tray_info_idx={req_tray_info_idx} "
+                        f"-> tray {idx_match['global_tray_id']}"
                     )
-                    break  # Best possible match - exact spool
+                elif len(idx_matches) > 1:
+                    # Multiple trays with same tray_info_idx - use color matching among them
+                    logger.debug(
+                        f"Non-unique tray_info_idx={req_tray_info_idx} found in {len(idx_matches)} trays, "
+                        f"using color matching among trays: {[f['global_tray_id'] for f in idx_matches]}"
+                    )
+                    # Use color matching within this subset
+                    for f in idx_matches:
+                        f_color = f.get("color", "")
+                        if self._normalize_color_for_compare(f_color) == self._normalize_color_for_compare(req_color):
+                            if not exact_match:
+                                exact_match = f
+                        elif self._colors_are_similar(f_color, req_color):
+                            if not similar_match:
+                                similar_match = f
+                        elif not type_only_match:
+                            type_only_match = f
 
-                f_type = (f.get("type") or "").upper()
-                if f_type != req_type:
-                    continue
+            # If no idx_match yet, do standard type/color matching on all available trays
+            if not idx_match and not exact_match and not similar_match and not type_only_match:
+                for f in available:
+                    f_type = (f.get("type") or "").upper()
+                    if f_type != req_type:
+                        continue
 
-                # Type matches - check color
-                f_color = f.get("color", "")
-                if self._normalize_color_for_compare(f_color) == self._normalize_color_for_compare(req_color):
-                    if not exact_match:
-                        exact_match = f
-                elif self._colors_are_similar(f_color, req_color):
-                    if not similar_match:
-                        similar_match = f
-                elif not type_only_match:
-                    type_only_match = f
+                    # Type matches - check color
+                    f_color = f.get("color", "")
+                    if self._normalize_color_for_compare(f_color) == self._normalize_color_for_compare(req_color):
+                        if not exact_match:
+                            exact_match = f
+                    elif self._colors_are_similar(f_color, req_color):
+                        if not similar_match:
+                            similar_match = f
+                    elif not type_only_match:
+                        type_only_match = f
 
             match = idx_match or exact_match or similar_match or type_only_match
             if match:

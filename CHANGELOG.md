@@ -2,7 +2,69 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
-## [0.1.7b] - Not released
+
+## [0.1.8b] - Not released
+
+### Enhanced
+- **3D Model Viewer Improvements** (PR #262):
+  - Added plate selector for multi-plate 3MF files with thumbnail previews
+  - Object count display shows number of objects per plate and total
+  - Fullscreen toggle for immersive model viewing
+  - Resizable split view between plate selector and 3D viewer in fullscreen mode
+  - Pagination support for files with many plates (e.g., 50+ plates)
+  - Added i18n translations for all model viewer strings (English, German, Japanese)
+- **Virtual Printer Proxy Mode Improvements**:
+  - SSDP proxy for cross-network setups: select slicer network interface for automatic printer discovery via SSDP relay
+  - FTP proxy now listens on privileged port 990 (matching Bambu Studio expectations) instead of 9990
+  - For systemd: requires `AmbientCapabilities=CAP_NET_BIND_SERVICE` capability
+  - Automatic directory permission checking at startup with clear error messages for Docker/bare metal
+  - Updated translations for proxy mode steps in English, German, and Japanese
+
+### Fixed
+- **Authentication Required Error After Initial Setup** (Issue #257):
+  - Fixed "Authentication required" error when using printer controls after fresh install with auth enabled
+  - Token clearing on 401 responses is now more selective - only clears on invalid token messages
+  - Generic "Authentication required" errors (which may be timing issues) no longer clear the token
+  - Also fixed smart plug discovery scan endpoints missing auth headers
+- **Filament Hover Card Overlapping Navigation Bar** (Issue #259):
+  - Fixed filament info popup being partially covered by the navigation bar
+  - Hover card positioning now accounts for the fixed 56px header
+  - Cards near the top of the page now correctly flip to show below the slot
+- **Filament Statistics Incorrectly Multiplied by Quantity** (Issue #229):
+  - Fixed filament totals being inflated by incorrectly multiplying by quantity
+  - The `filament_used_grams` field already contains the total for the entire print job
+  - Removed incorrect `* quantity` multiplication from archive stats, Prometheus metrics, and FilamentTrends chart
+  - Example: A print with 26 objects using 126g was incorrectly shown as 3,276g
+- **Print Queue Status Does Not Match Printer Status** (Issue #249):
+  - Queue now shows "Paused" when the printer is paused instead of "Printing"
+  - Fetches real-time printer state for actively printing queue items
+  - Added translations for paused status in English, German, and Japanese
+- **Queue Scheduled Time Displayed in Wrong Timezone** (Issue #233):
+  - Fixed scheduled time being displayed in UTC instead of local timezone when editing queue items
+  - The datetime picker now correctly shows and saves times in the user's local timezone
+- **Mobile Layout Issues on Archives and Statistics Pages** (Issue #255):
+  - Fixed header buttons overflowing outside the screen on iPhone/mobile devices
+  - Headers now stack vertically on small screens with proper wrapping
+  - Applied consistent responsive pattern from PrintersPage
+- **AMS Auto-Matching Selects Wrong Slot** (Issue #245):
+  - Fixed AMS slot mapping when multiple trays have the same `tray_info_idx` (filament type identifier)
+  - `tray_info_idx` (e.g., "GFA00" for generic PLA) identifies filament TYPE, not unique spools
+  - When multiple trays match the same type, color is now used as a tiebreaker
+  - Previously used `find()` which always returned the first match regardless of color
+  - Fixed in both backend (print_scheduler.py) and frontend (useFilamentMapping.ts)
+  - Resolves wrong tray selection (e.g., A4 instead of B1) when multiple AMS units have same filament type
+
+### Added
+- **Windows Portable Launcher** (contributed by nmori):
+  - New `start_bambuddy.bat` for Windows users - double-click to run, no installation required
+  - Automatically downloads Python 3.13 and Node.js 22 on first run (portable, no system changes)
+  - Everything stored in `.portable\` folder for easy cleanup
+  - Commands: `start_bambuddy.bat` (launch), `start_bambuddy.bat update` (update deps), `start_bambuddy.bat reset` (clean start)
+  - Custom port via `set PORT=9000 & start_bambuddy.bat`
+  - Verifies all downloads with SHA256 checksums for security
+  - Supports both x64 and ARM64 Windows systems
+
+## [0.1.7] - 2026-02-03
 
 ### Security
 - **Critical: Missing API Endpoint Authentication** (CVE-2026-25505, CVSS 9.8):

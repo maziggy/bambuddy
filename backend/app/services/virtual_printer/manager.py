@@ -17,7 +17,7 @@ from backend.app.core.config import settings as app_settings
 from backend.app.services.virtual_printer.certificate import CertificateService
 from backend.app.services.virtual_printer.ftp_server import VirtualPrinterFTPServer
 from backend.app.services.virtual_printer.mqtt_server import SimpleMQTTServer
-from backend.app.services.virtual_printer.ssdp_server import VirtualPrinterSSDPServer
+from backend.app.services.virtual_printer.ssdp_server import SSDPProxy, VirtualPrinterSSDPServer
 from backend.app.services.virtual_printer.tcp_proxy import SlicerProxyManager
 
 logger = logging.getLogger(__name__)
@@ -93,9 +93,11 @@ class VirtualPrinterManager:
         self._model = DEFAULT_VIRTUAL_PRINTER_MODEL
         self._target_printer_ip = ""  # For proxy mode
         self._target_printer_serial = ""  # For proxy mode (real printer's serial)
+        self._remote_interface_ip = ""  # For proxy mode SSDP (LAN B - slicer network)
 
         # Service instances
         self._ssdp: VirtualPrinterSSDPServer | None = None
+        self._ssdp_proxy: SSDPProxy | None = None
         self._ftp: VirtualPrinterFTPServer | None = None
         self._mqtt: SimpleMQTTServer | None = None
         self._proxy: SlicerProxyManager | None = None  # For proxy mode
@@ -108,11 +110,53 @@ class VirtualPrinterManager:
         self._upload_dir = self._base_dir / "uploads"
         self._cert_dir = self._base_dir / "certs"
 
+        # Create directories early to avoid permission issues later
+        # If running in Docker, these need to be on a writable volume
+        self._ensure_directories()
+
         # Certificate service
         self._cert_service = CertificateService(self._cert_dir)
 
         # Track pending uploads for MQTT correlation
         self._pending_files: dict[str, Path] = {}
+
+    def _ensure_directories(self) -> None:
+        """Create and verify virtual printer directories are writable.
+
+        Creates all required directories at startup to catch permission
+        issues early rather than when the user tries to enable features.
+        """
+        dirs_to_create = [
+            self._base_dir,
+            self._upload_dir,
+            self._upload_dir / "cache",
+            self._cert_dir,
+        ]
+
+        logger.info(f"Checking virtual printer directories in {self._base_dir}")
+
+        for dir_path in dirs_to_create:
+            try:
+                dir_path.mkdir(parents=True, exist_ok=True)
+            except PermissionError:
+                logger.error(
+                    f"Cannot create directory {dir_path}: Permission denied. "
+                    f"For Docker: ensure the data volume is writable by the container user. "
+                    f"For bare metal: run 'sudo chown -R $(whoami) {self._base_dir}'"
+                )
+                continue
+
+            # Verify directory is writable by attempting to create a test file
+            test_file = dir_path / ".write_test"
+            try:
+                test_file.touch()
+                test_file.unlink(missing_ok=True)
+            except PermissionError:
+                logger.error(
+                    f"Directory {dir_path} exists but is not writable. "
+                    f"For Docker: ensure the data volume is writable by the container user (uid/gid). "
+                    f"For bare metal: run 'sudo chown -R $(whoami) {self._base_dir}'"
+                )
 
     def _get_serial_for_model(self, model: str) -> str:
         """Get appropriate serial number for the given model.
@@ -157,6 +201,7 @@ class VirtualPrinterManager:
         model: str = "",
         target_printer_ip: str = "",
         target_printer_serial: str = "",
+        remote_interface_ip: str = "",
     ) -> None:
         """Configure and start/stop virtual printer.
 
@@ -167,6 +212,7 @@ class VirtualPrinterManager:
             model: SSDP model code (e.g., 'BL-P001' for X1C)
             target_printer_ip: Target printer IP for proxy mode
             target_printer_serial: Target printer serial for proxy mode
+            remote_interface_ip: IP of interface on slicer network (LAN B) for SSDP proxy
         """
         # Proxy mode has different requirements
         if mode == "proxy":
@@ -183,12 +229,14 @@ class VirtualPrinterManager:
         mode_changed = mode != self._mode
         target_changed = target_printer_ip != self._target_printer_ip
         serial_changed = target_printer_serial != self._target_printer_serial
+        remote_iface_changed = remote_interface_ip != self._remote_interface_ip
         old_mode = self._mode
 
         logger.debug(
             f"configure() called: enabled={enabled}, self._enabled={self._enabled}, "
             f"mode={mode}, old_mode={old_mode}, model={model}, new_model={new_model}, "
-            f"target_printer_ip={target_printer_ip}, target_printer_serial={target_printer_serial}"
+            f"target_printer_ip={target_printer_ip}, target_printer_serial={target_printer_serial}, "
+            f"remote_interface_ip={remote_interface_ip}"
         )
 
         self._access_code = access_code
@@ -196,8 +244,13 @@ class VirtualPrinterManager:
         self._model = new_model
         self._target_printer_ip = target_printer_ip
         self._target_printer_serial = target_printer_serial
+        self._remote_interface_ip = remote_interface_ip
 
-        needs_restart = model_changed or mode_changed or (mode == "proxy" and (target_changed or serial_changed))
+        needs_restart = (
+            model_changed
+            or mode_changed
+            or (mode == "proxy" and (target_changed or serial_changed or remote_iface_changed))
+        )
 
         if enabled and not self._enabled:
             logger.info("Starting virtual printer (was disabled)")
@@ -247,13 +300,6 @@ class VirtualPrinterManager:
         cert_path, key_path = self._cert_service.generate_certificates()
         logger.info(f"Generated certificate for proxy serial: {proxy_serial}")
 
-        # Initialize SSDP for local discovery using the real printer's serial
-        self._ssdp = VirtualPrinterSSDPServer(
-            name=f"{self.PRINTER_NAME} (Proxy)",
-            serial=proxy_serial,
-            model=self._model,
-        )
-
         # Initialize TLS proxy with our certificates
         self._proxy = SlicerProxyManager(
             target_host=self._target_printer_ip,
@@ -269,21 +315,68 @@ class VirtualPrinterManager:
             except Exception as e:
                 logger.error(f"Virtual printer {name} failed: {e}")
 
-        self._tasks = [
-            asyncio.create_task(
-                run_with_logging(self._ssdp.start(), "SSDP"),
-                name="virtual_printer_ssdp",
-            ),
+        self._tasks = []
+
+        # SSDP setup: use SSDPProxy if remote interface is configured
+        # Local interface is auto-detected from target printer IP
+        if self._remote_interface_ip:
+            # Auto-detect local interface based on target printer IP
+            from backend.app.services.network_utils import find_interface_for_ip
+
+            local_iface = find_interface_for_ip(self._target_printer_ip)
+            if local_iface:
+                local_interface_ip = local_iface["ip"]
+                logger.info(
+                    f"SSDP proxy mode: LAN A ({local_interface_ip}, auto-detected) -> LAN B ({self._remote_interface_ip})"
+                )
+                self._ssdp_proxy = SSDPProxy(
+                    local_interface_ip=local_interface_ip,
+                    remote_interface_ip=self._remote_interface_ip,
+                    target_printer_ip=self._target_printer_ip,
+                )
+                self._tasks.append(
+                    asyncio.create_task(
+                        run_with_logging(self._ssdp_proxy.start(), "SSDP Proxy"),
+                        name="virtual_printer_ssdp_proxy",
+                    )
+                )
+            else:
+                logger.warning(
+                    f"Could not auto-detect local interface for printer {self._target_printer_ip}, "
+                    "falling back to single-interface SSDP"
+                )
+                self._start_fallback_ssdp(proxy_serial, run_with_logging)
+        else:
+            # Single interface: broadcast SSDP on same network (fallback)
+            self._start_fallback_ssdp(proxy_serial, run_with_logging)
+
+        # Add TLS proxy task
+        self._tasks.append(
             asyncio.create_task(
                 run_with_logging(self._proxy.start(), "Proxy"),
                 name="virtual_printer_proxy",
-            ),
-        ]
+            )
+        )
 
         logger.info(
             f"Virtual printer proxy started: "
-            f"FTP 0.0.0.0:{SlicerProxyManager.LOCAL_FTP_PORT} → {self._target_printer_ip}:{SlicerProxyManager.PRINTER_FTP_PORT}, "
-            f"MQTT 0.0.0.0:{SlicerProxyManager.LOCAL_MQTT_PORT} → {self._target_printer_ip}:{SlicerProxyManager.PRINTER_MQTT_PORT}"
+            f"FTP 0.0.0.0:{SlicerProxyManager.LOCAL_FTP_PORT} -> {self._target_printer_ip}:{SlicerProxyManager.PRINTER_FTP_PORT}, "
+            f"MQTT 0.0.0.0:{SlicerProxyManager.LOCAL_MQTT_PORT} -> {self._target_printer_ip}:{SlicerProxyManager.PRINTER_MQTT_PORT}"
+        )
+
+    def _start_fallback_ssdp(self, proxy_serial: str, run_with_logging) -> None:
+        """Start single-interface SSDP server as fallback."""
+        logger.info("SSDP broadcast mode (single interface)")
+        self._ssdp = VirtualPrinterSSDPServer(
+            name=f"{self.PRINTER_NAME} (Proxy)",
+            serial=proxy_serial,
+            model=self._model,
+        )
+        self._tasks.append(
+            asyncio.create_task(
+                run_with_logging(self._ssdp.start(), "SSDP"),
+                name="virtual_printer_ssdp",
+            )
         )
 
     async def _start_server_mode(self) -> None:
@@ -360,6 +453,10 @@ class VirtualPrinterManager:
         if self._ssdp:
             await self._ssdp.stop()
             self._ssdp = None
+
+        if self._ssdp_proxy:
+            await self._ssdp_proxy.stop()
+            self._ssdp_proxy = None
 
         if self._proxy:
             await self._proxy.stop()

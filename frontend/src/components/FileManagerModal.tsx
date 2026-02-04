@@ -20,16 +20,219 @@ import {
   CheckSquare,
   Square,
   MinusSquare,
+  Box,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
+import { ModelViewer } from './ModelViewer';
+import { GcodeViewer } from './GcodeViewer';
+import type { PlateMetadata } from '../types/plates';
 import { useToast } from '../contexts/ToastContext';
 
 interface FileManagerModalProps {
   printerId: number;
   printerName: string;
   onClose: () => void;
+}
+
+type PrinterViewerTab = '3d' | 'gcode';
+
+interface PrinterFileViewerModalProps {
+  printerId: number;
+  filePath: string;
+  filename: string;
+  onClose: () => void;
+}
+
+function PrinterFileViewerModal({ printerId, filePath, filename, onClose }: PrinterFileViewerModalProps) {
+  const [activeTab, setActiveTab] = useState<PrinterViewerTab | null>(null);
+  const [plates, setPlates] = useState<PlateMetadata[]>([]);
+  const [platesLoading, setPlatesLoading] = useState(false);
+  const [selectedPlateId, setSelectedPlateId] = useState<number | null>(null);
+
+  const ext = filename.toLowerCase().split('.').pop() || '';
+  const hasModel = ext === '3mf' || ext === 'stl';
+  const hasGcode = ext === 'gcode' || ext === '3mf';
+
+  useEffect(() => {
+    setActiveTab(hasModel ? '3d' : hasGcode ? 'gcode' : null);
+  }, [hasModel, hasGcode]);
+
+  useEffect(() => {
+    setPlates([]);
+    setSelectedPlateId(null);
+
+    if (!hasModel) return;
+
+    setPlatesLoading(true);
+    api.getPrinterFilePlates(printerId, filePath)
+      .then((data) => setPlates(data.plates || []))
+      .catch(() => setPlates([]))
+      .finally(() => setPlatesLoading(false));
+  }, [filePath, hasModel, printerId]);
+
+  const hasMultiplePlates = plates.length > 1;
+  const selectedPlate = selectedPlateId == null
+    ? null
+    : plates.find((plate) => plate.index === selectedPlateId) ?? null;
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6" onClick={onClose}>
+      <div
+        className="bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary w-full max-w-4xl h-[80vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-bambu-dark-tertiary">
+          <h2 className="text-lg font-semibold text-white truncate flex-1 mr-4">{filename}</h2>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            <X className="w-5 h-5" />
+          </Button>
+        </div>
+
+        <div className="flex border-b border-bambu-dark-tertiary">
+          <button
+            onClick={() => hasModel && setActiveTab('3d')}
+            disabled={!hasModel}
+            className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors ${
+              activeTab === '3d'
+                ? 'text-bambu-green border-b-2 border-bambu-green'
+                : hasModel
+                  ? 'text-bambu-gray hover:text-white'
+                  : 'text-bambu-gray/30 cursor-not-allowed'
+            }`}
+          >
+            <Box className="w-4 h-4" />
+            3D Model
+            {!hasModel && <span className="text-xs">(not available)</span>}
+          </button>
+          <button
+            onClick={() => hasGcode && setActiveTab('gcode')}
+            disabled={!hasGcode}
+            className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'gcode'
+                ? 'text-bambu-green border-b-2 border-bambu-green'
+                : hasGcode
+                  ? 'text-bambu-gray hover:text-white'
+                  : 'text-bambu-gray/30 cursor-not-allowed'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            G-code Preview
+            {!hasGcode && <span className="text-xs">(not sliced)</span>}
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-hidden p-4">
+          {activeTab === '3d' && hasModel ? (
+            <div className="w-full h-full flex flex-col gap-3">
+              {hasMultiplePlates && (
+                <div className="rounded-lg border border-bambu-dark-tertiary bg-bambu-dark p-3">
+                  <div className="flex items-center gap-2 text-sm text-bambu-gray mb-2">
+                    <Box className="w-4 h-4" />
+                    Plates
+                    {platesLoading && <Loader2 className="w-3 h-3 animate-spin" />}
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPlateId(null)}
+                      className={`flex items-center gap-2 rounded-lg border p-2 text-left transition-colors ${
+                        selectedPlateId == null
+                          ? 'border-bambu-green bg-bambu-green/10'
+                          : 'border-bambu-dark-tertiary bg-bambu-dark-secondary hover:border-bambu-gray'
+                      }`}
+                    >
+                      <div className="w-10 h-10 rounded bg-bambu-dark-tertiary flex items-center justify-center">
+                        <Box className="w-5 h-5 text-bambu-gray" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-white font-medium truncate">All Plates</p>
+                        <p className="text-xs text-bambu-gray truncate">
+                          {plates.length} plate{plates.length !== 1 ? 's' : ''}
+                        </p>
+                      </div>
+                      {selectedPlateId == null && (
+                        <CheckSquare className="w-4 h-4 text-bambu-green flex-shrink-0" />
+                      )}
+                    </button>
+                    {plates.map((plate) => (
+                      <button
+                        key={plate.index}
+                        type="button"
+                        onClick={() => setSelectedPlateId(plate.index)}
+                        className={`flex items-center gap-2 rounded-lg border p-2 text-left transition-colors ${
+                          selectedPlateId === plate.index
+                            ? 'border-bambu-green bg-bambu-green/10'
+                            : 'border-bambu-dark-tertiary bg-bambu-dark-secondary hover:border-bambu-gray'
+                        }`}
+                      >
+                        {plate.has_thumbnail ? (
+                          <img
+                            src={api.getPrinterFilePlateThumbnail(printerId, plate.index, filePath)}
+                            alt={`Plate ${plate.index}`}
+                            className="w-10 h-10 rounded object-cover bg-bambu-dark-tertiary"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded bg-bambu-dark-tertiary flex items-center justify-center">
+                            <Box className="w-5 h-5 text-bambu-gray" />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm text-white font-medium truncate">
+                            {plate.name || `Plate ${plate.index}`}
+                          </p>
+                          <p className="text-xs text-bambu-gray truncate">
+                            {plate.objects.length > 0
+                              ? plate.objects.slice(0, 2).join(', ') + (plate.objects.length > 2 ? '…' : '')
+                              : `${plate.filaments.length} filament${plate.filaments.length !== 1 ? 's' : ''}`}
+                          </p>
+                        </div>
+                        {selectedPlateId === plate.index && (
+                          <CheckSquare className="w-4 h-4 text-bambu-green flex-shrink-0" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  {selectedPlate && (
+                    <div className="mt-3 text-xs text-bambu-gray flex flex-wrap gap-x-4 gap-y-1">
+                      <span>Plate {selectedPlate.index}</span>
+                      {selectedPlate.print_time_seconds != null && (
+                        <span>ETA {Math.round(selectedPlate.print_time_seconds / 60)} min</span>
+                      )}
+                      {selectedPlate.filament_used_grams != null && (
+                        <span>{selectedPlate.filament_used_grams.toFixed(1)} g</span>
+                      )}
+                      {selectedPlate.filaments.length > 0 && (
+                        <span>{selectedPlate.filaments.length} filament{selectedPlate.filaments.length !== 1 ? 's' : ''}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="flex-1">
+                <ModelViewer
+                  url={api.getPrinterFileDownloadUrl(printerId, filePath)}
+                  fileType={ext}
+                  selectedPlateId={selectedPlateId}
+                  className="w-full h-full"
+                />
+              </div>
+            </div>
+          ) : activeTab === 'gcode' && hasGcode ? (
+            <GcodeViewer
+              gcodeUrl={api.getPrinterFileGcodeUrl(printerId, filePath)}
+              className="w-full h-full"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-bambu-gray">
+              No preview available for this file
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function formatFileSize(bytes: number): string {
@@ -92,6 +295,7 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
   const [filesToDelete, setFilesToDelete] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<SortOption>('name-asc');
   const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number } | null>(null);
+  const [viewerFile, setViewerFile] = useState<{ path: string; name: string } | null>(null);
 
   // Close on Escape key
   useEffect(() => {
@@ -253,6 +457,8 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
               <button
                 onClick={onClose}
                 className="text-bambu-gray hover:text-white transition-colors"
+                title="Close file manager"
+                aria-label="Close file manager"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -294,6 +500,8 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as SortOption)}
               className="appearance-none bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm py-1.5 pl-2 pr-6 focus:border-bambu-green focus:outline-none cursor-pointer"
+              title="Sort files"
+              aria-label="Sort files"
             >
               {SORT_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -318,6 +526,8 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
               onClick={navigateUp}
               disabled={currentPath === '/'}
               className="p-1 rounded hover:bg-bambu-dark-tertiary disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Go to parent folder"
+              aria-label="Go to parent folder"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
@@ -408,9 +618,23 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
                         />
                         <span className="flex-1 text-white truncate">{file.name}</span>
                         {!file.is_directory && (
-                          <span className="text-sm text-bambu-gray">
-                            {formatFileSize(file.size)}
-                          </span>
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm text-bambu-gray">
+                              {formatFileSize(file.size)}
+                            </span>
+                            {(file.name.toLowerCase().endsWith('.3mf') || file.name.toLowerCase().endsWith('.gcode') || file.name.toLowerCase().endsWith('.stl')) && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setViewerFile({ path: file.path, name: file.name });
+                                }}
+                                className="p-1 rounded hover:bg-bambu-dark text-bambu-gray hover:text-bambu-green"
+                                title="3D View"
+                              >
+                                <Box className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
                         )}
                         {file.is_directory && (
                           <ChevronLeft className="w-4 h-4 text-bambu-gray rotate-180" />
@@ -506,6 +730,15 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
             deleteMutation.mutate(filesToDelete);
           }}
           onCancel={() => setFilesToDelete([])}
+        />
+      )}
+
+      {viewerFile && (
+        <PrinterFileViewerModal
+          printerId={printerId}
+          filePath={viewerFile.path}
+          filename={viewerFile.name}
+          onClose={() => setViewerFile(null)}
         />
       )}
     </div>

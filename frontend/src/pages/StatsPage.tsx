@@ -672,12 +672,12 @@ export function StatsPage() {
 
   return (
     <div className="p-4 md:p-8">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">{t('stats.title')}</h1>
           <p className="text-bambu-gray">{t('stats.subtitle')}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Hidden widgets button - toggles panel in Dashboard */}
           {hiddenCount > 0 && (
             <Button

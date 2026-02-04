@@ -664,10 +664,12 @@ async def list_files(
         print_name = None
         print_time = None
         filament_grams = None
+        sliced_for_model = None
         if f.file_metadata:
             print_name = f.file_metadata.get("print_name")
             print_time = f.file_metadata.get("print_time_seconds")
             filament_grams = f.file_metadata.get("filament_used_grams")
+            sliced_for_model = f.file_metadata.get("sliced_for_model")
 
         file_list.append(
             FileListResponse(
@@ -685,6 +687,7 @@ async def list_files(
                 print_name=print_name,
                 print_time_seconds=print_time,
                 filament_used_grams=filament_grams,
+                sliced_for_model=sliced_for_model,
             )
         )
 
@@ -1307,6 +1310,8 @@ async def get_library_file_plates(
     Returns a list of plates with their index, name, thumbnail availability,
     and filament requirements. For single-plate exports, returns a single plate.
     """
+    import json
+    import re
     import xml.etree.ElementTree as ET
     import zipfile
 
@@ -1334,27 +1339,64 @@ async def get_library_file_plates(
             # Find all plate gcode files to determine available plates
             gcode_files = [n for n in namelist if n.startswith("Metadata/plate_") and n.endswith(".gcode")]
 
-            if not gcode_files:
-                # No sliced plates found
-                return {"file_id": file_id, "filename": lib_file.filename, "plates": [], "is_multi_plate": False}
+            # If no gcode is present (source-only or unsliced), fall back to plate JSON/PNG
+            plate_indices: list[int] = []
+            if gcode_files:
+                # Extract plate indices from gcode filenames
+                for gf in gcode_files:
+                    try:
+                        plate_str = gf[15:-6]  # Remove "Metadata/plate_" and ".gcode"
+                        plate_indices.append(int(plate_str))
+                    except ValueError:
+                        pass
+            else:
+                plate_json_files = [n for n in namelist if n.startswith("Metadata/plate_") and n.endswith(".json")]
+                plate_png_files = [
+                    n
+                    for n in namelist
+                    if n.startswith("Metadata/plate_")
+                    and n.endswith(".png")
+                    and "_small" not in n
+                    and "no_light" not in n
+                ]
+                plate_name_candidates = plate_json_files + plate_png_files
+                plate_re = re.compile(r"^Metadata/plate_(\d+)\.(json|png)$")
+                seen_indices: set[int] = set()
+                for name in plate_name_candidates:
+                    match = plate_re.match(name)
+                    if match:
+                        try:
+                            index = int(match.group(1))
+                        except ValueError:
+                            continue
+                        if index in seen_indices:
+                            continue
+                        seen_indices.add(index)
+                        plate_indices.append(index)
 
-            # Extract plate indices from gcode filenames
-            plate_indices = []
-            for gf in gcode_files:
-                try:
-                    plate_str = gf[15:-6]  # Remove "Metadata/plate_" and ".gcode"
-                    plate_indices.append(int(plate_str))
-                except ValueError:
-                    pass
+            if not plate_indices:
+                # No plate metadata found
+                return {"file_id": file_id, "filename": lib_file.filename, "plates": [], "is_multi_plate": False}
 
             plate_indices.sort()
 
-            # Parse model_settings.config for plate names
+            # Parse model_settings.config for plate names + object assignments
             plate_names = {}
+            plate_object_ids: dict[int, list[str]] = {}
+            object_names_by_id: dict[str, str] = {}
             if "Metadata/model_settings.config" in namelist:
                 try:
                     model_content = zf.read("Metadata/model_settings.config").decode()
                     model_root = ET.fromstring(model_content)
+                    for obj_elem in model_root.findall(".//object"):
+                        obj_id = obj_elem.get("id")
+                        if not obj_id:
+                            continue
+                        name_meta = obj_elem.find("metadata[@key='name']")
+                        obj_name = name_meta.get("value") if name_meta is not None else None
+                        if obj_name:
+                            object_names_by_id[obj_id] = obj_name
+
                     for plate_elem in model_root.findall(".//plate"):
                         plater_id = None
                         plater_name = None
@@ -1370,6 +1412,17 @@ async def get_library_file_plates(
                                 plater_name = value.strip()
                         if plater_id is not None and plater_name:
                             plate_names[plater_id] = plater_name
+
+                        if plater_id is not None:
+                            for instance_elem in plate_elem.findall("model_instance"):
+                                for inst_meta in instance_elem.findall("metadata"):
+                                    if inst_meta.get("key") == "object_id":
+                                        obj_id = inst_meta.get("value")
+                                        if not obj_id:
+                                            continue
+                                        plate_object_ids.setdefault(plater_id, [])
+                                        if obj_id not in plate_object_ids[plater_id]:
+                                            plate_object_ids[plater_id].append(obj_id)
                 except Exception:
                     pass
 
@@ -1443,16 +1496,53 @@ async def get_library_file_plates(
                             plate_info["name"] = plate_info["objects"][0]
                         plate_metadata[plate_index] = plate_info
 
+            # Parse plate_*.json for object lists when slice_info is missing
+            plate_json_objects: dict[int, list[str]] = {}
+            for name in namelist:
+                match = re.match(r"^Metadata/plate_(\d+)\.json$", name)
+                if not match:
+                    continue
+                try:
+                    plate_index = int(match.group(1))
+                except ValueError:
+                    continue
+                try:
+                    payload = json.loads(zf.read(name).decode())
+                    bbox_objects = payload.get("bbox_objects", [])
+                    names: list[str] = []
+                    for obj in bbox_objects:
+                        obj_name = obj.get("name") if isinstance(obj, dict) else None
+                        if obj_name and obj_name not in names:
+                            names.append(obj_name)
+                    if names:
+                        plate_json_objects[plate_index] = names
+                except Exception:
+                    continue
+
             # Build plate list
             for idx in plate_indices:
                 meta = plate_metadata.get(idx, {})
                 has_thumbnail = f"Metadata/plate_{idx}.png" in namelist
+                objects = meta.get("objects", [])
+                if not objects:
+                    objects = plate_json_objects.get(idx, [])
+                if not objects and plate_object_ids.get(idx):
+                    objects = [
+                        object_names_by_id.get(obj_id, f"Object {obj_id}") for obj_id in plate_object_ids.get(idx, [])
+                    ]
+
+                plate_name = meta.get("name")
+                if not plate_name:
+                    plate_name = plate_names.get(idx)
+                if not plate_name and objects:
+                    plate_name = objects[0]
 
                 plates.append(
                     {
                         "index": idx,
-                        "name": meta.get("name"),
-                        "objects": meta.get("objects", []),
+                        "name": plate_name,
+                        "objects": objects,
+                        "object_count": len(objects),
                         "has_thumbnail": has_thumbnail,
                         "thumbnail_url": f"/api/v1/library/files/{file_id}/plate-thumbnail/{idx}"
                         if has_thumbnail
@@ -1574,6 +1664,8 @@ async def get_library_file_filament_requirements(
                                 used_g = filament_elem.get("used_g", "0")
                                 used_m = filament_elem.get("used_m", "0")
 
+                                tray_info_idx = filament_elem.get("tray_info_idx", "")
+
                                 try:
                                     used_grams = float(used_g)
                                 except (ValueError, TypeError):
@@ -1587,6 +1679,7 @@ async def get_library_file_filament_requirements(
                                             "color": filament_color,
                                             "used_grams": round(used_grams, 1),
                                             "used_meters": float(used_m) if used_m else 0,
+                                            "tray_info_idx": tray_info_idx,
                                         }
                                     )
                             break
@@ -1598,6 +1691,8 @@ async def get_library_file_filament_requirements(
                         filament_color = filament_elem.get("color", "")
                         used_g = filament_elem.get("used_g", "0")
                         used_m = filament_elem.get("used_m", "0")
+
+                        tray_info_idx = filament_elem.get("tray_info_idx", "")
 
                         try:
                             used_grams = float(used_g)
@@ -1612,6 +1707,7 @@ async def get_library_file_filament_requirements(
                                     "color": filament_color,
                                     "used_grams": round(used_grams, 1),
                                     "used_meters": float(used_m) if used_m else 0,
+                                    "tray_info_idx": tray_info_idx,
                                 }
                             )
 
@@ -1870,6 +1966,17 @@ async def get_file(
             )
         duplicate_count = len(duplicates)
 
+    # Extract key metadata fields
+    print_name = None
+    print_time = None
+    filament_grams = None
+    sliced_for_model = None
+    if file.file_metadata:
+        print_name = file.file_metadata.get("print_name")
+        print_time = file.file_metadata.get("print_time_seconds")
+        filament_grams = file.file_metadata.get("filament_used_grams")
+        sliced_for_model = file.file_metadata.get("sliced_for_model")
+
     return FileResponseSchema(
         id=file.id,
         folder_id=file.folder_id,
@@ -1892,6 +1999,10 @@ async def get_file(
         created_by_username=file.created_by.username if file.created_by else None,
         created_at=file.created_at,
         updated_at=file.updated_at,
+        print_name=print_name,
+        print_time_seconds=print_time,
+        filament_used_grams=filament_grams,
+        sliced_for_model=sliced_for_model,
     )
 
 

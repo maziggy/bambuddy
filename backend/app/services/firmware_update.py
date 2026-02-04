@@ -11,7 +11,7 @@ Orchestrates firmware updates for Bambu Lab printers:
 import asyncio
 import logging
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,7 +30,7 @@ from backend.app.services.printer_manager import printer_manager
 logger = logging.getLogger(__name__)
 
 
-class FirmwareUploadStatus(str, Enum):
+class FirmwareUploadStatus(StrEnum):
     """Status of a firmware upload operation."""
 
     IDLE = "idle"

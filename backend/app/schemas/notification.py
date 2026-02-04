@@ -1,13 +1,13 @@
 """Pydantic schemas for notification providers."""
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
 
-class ProviderType(str, Enum):
+class ProviderType(StrEnum):
     """Supported notification provider types."""
 
     CALLMEBOT = "callmebot"

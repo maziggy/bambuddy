@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   DndContext,
@@ -46,6 +46,7 @@ import {
   CheckSquare,
   Square,
   User,
+  Pause,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { parseUTCDate, formatDateTime, type TimeFormat } from '../utils/date';
@@ -80,13 +81,23 @@ function formatRelativeTime(dateString: string | null, timeFormat: TimeFormat = 
   return formatDateTime(dateString, timeFormat);
 }
 
-function StatusBadge({ status, waitingReason, t }: { status: PrintQueueItem['status']; waitingReason?: string | null; t: (key: string) => string }) {
+function StatusBadge({ status, waitingReason, printerState, t }: { status: PrintQueueItem['status']; waitingReason?: string | null; printerState?: string | null; t: (key: string) => string }) {
   // Special case: pending with waiting_reason shows as "Waiting"
   if (status === 'pending' && waitingReason) {
     return (
       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border text-purple-400 bg-purple-400/10 border-purple-400/20">
         <Clock className="w-3.5 h-3.5" />
         {t('queue.status.waiting')}
+      </span>
+    );
+  }
+
+  // Special case: printing but printer is paused
+  if (status === 'printing' && (printerState === 'PAUSE' || printerState === 'PAUSED')) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border text-yellow-400 bg-yellow-400/10 border-yellow-400/20">
+        <Pause className="w-3.5 h-3.5" />
+        {t('queue.status.paused')}
       </span>
     );
   }
@@ -286,6 +297,7 @@ function SortableQueueItem({
   onToggleSelect,
   hasPermission,
   canModify,
+  printerState,
   t,
 }: {
   item: PrintQueueItem;
@@ -301,6 +313,7 @@ function SortableQueueItem({
   onToggleSelect?: () => void;
   hasPermission: (permission: Permission) => boolean;
   canModify: (resource: 'queue' | 'archives' | 'library', action: 'update' | 'delete' | 'reprint', createdById: number | null | undefined) => boolean;
+  printerState?: string | null;
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   const canReorder = hasPermission('queue:reorder');
@@ -500,7 +513,7 @@ function SortableQueueItem({
         </div>
 
         {/* Status badge */}
-        <StatusBadge status={item.status} waitingReason={item.waiting_reason} t={t} />
+        <StatusBadge status={item.status} waitingReason={item.waiting_reason} printerState={printerState} t={t} />
 
         {/* Actions */}
         <div className="flex items-center gap-1">
@@ -825,6 +838,36 @@ export function QueuePage() {
     return items;
   }, [queue, filterLocation, matchesLocationFilter]);
 
+  // Get unique printer IDs from active items to fetch their statuses
+  const activePrinterIds = useMemo(() => {
+    const ids = new Set<number>();
+    activeItems.forEach(item => {
+      if (item.printer_id) ids.add(item.printer_id);
+    });
+    return Array.from(ids);
+  }, [activeItems]);
+
+  // Fetch printer statuses for printers with active jobs
+  const printerStatusQueries = useQueries({
+    queries: activePrinterIds.map(printerId => ({
+      queryKey: ['printerStatus', printerId],
+      queryFn: () => api.getPrinterStatus(printerId),
+      refetchInterval: 5000,
+    })),
+  });
+
+  // Build a map of printer_id -> state for quick lookup
+  const printerStateMap = useMemo(() => {
+    const map: Record<number, string | null> = {};
+    activePrinterIds.forEach((printerId, index) => {
+      const result = printerStatusQueries[index];
+      if (result?.data?.state) {
+        map[printerId] = result.data.state;
+      }
+    });
+    return map;
+  }, [activePrinterIds, printerStatusQueries]);
+
   const historyItems = useMemo(() => {
     let items = queue?.filter(i => ['completed', 'failed', 'skipped', 'cancelled'].includes(i.status)) || [];
     if (filterLocation) {
@@ -1035,6 +1078,7 @@ export function QueuePage() {
                     timeFormat={timeFormat}
                     hasPermission={hasPermission}
                     canModify={canModify}
+                    printerState={item.printer_id ? printerStateMap[item.printer_id] : null}
                     t={t}
                   />
                 ))}

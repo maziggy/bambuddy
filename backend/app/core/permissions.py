@@ -4,10 +4,10 @@ This module defines all permissions using a string enum with `resource:action` n
 Permissions are additive across groups - a user has all permissions from all their groups.
 """
 
-from enum import Enum
+from enum import StrEnum
 
 
-class Permission(str, Enum):
+class Permission(StrEnum):
     """All available permissions in the system.
 
     Permissions follow the pattern: resource:action

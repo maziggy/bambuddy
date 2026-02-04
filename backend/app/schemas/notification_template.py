@@ -1,12 +1,12 @@
 """Pydantic schemas for notification templates."""
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 
-class EventType(str, Enum):
+class EventType(StrEnum):
     """Supported notification event types."""
 
     PRINT_START = "print_start"

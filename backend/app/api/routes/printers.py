@@ -543,9 +543,9 @@ _cover_cache: dict[int, dict[tuple[str, str], bytes]] = {}
 async def get_printer_cover(
     printer_id: int,
     view: str | None = None,
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
     db: AsyncSession = Depends(get_db),
 ):
+    # Note: No auth required - this is an image asset loaded via <img src> which can't send auth headers
     """Get the cover image for the current print job.
 
     Args:
@@ -801,6 +801,322 @@ async def download_printer_file(
         media_type=content_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/{printer_id}/files/gcode")
+async def get_printer_file_gcode(
+    printer_id: int,
+    path: str,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get gcode for a file stored on a printer (for preview)."""
+    import io
+
+    # Validate printer
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    data = await download_file_bytes_async(printer.ip_address, printer.access_code, path)
+    if data is None:
+        raise HTTPException(404, f"File not found: {path}")
+
+    filename = path.split("/")[-1]
+    lower = filename.lower()
+
+    if lower.endswith(".gcode"):
+        return Response(content=data, media_type="text/plain")
+    if lower.endswith(".3mf"):
+        try:
+            with zipfile.ZipFile(io.BytesIO(data), "r") as zf:
+                gcode_files = [n for n in zf.namelist() if n.endswith(".gcode")]
+                if not gcode_files:
+                    raise HTTPException(status_code=404, detail="No gcode found in 3MF file")
+                gcode_content = zf.read(gcode_files[0])
+                return Response(content=gcode_content, media_type="text/plain")
+        except zipfile.BadZipFile:
+            raise HTTPException(status_code=400, detail="Invalid 3MF file")
+
+    raise HTTPException(status_code=400, detail="Unsupported file type")
+
+
+@router.get("/{printer_id}/files/plates")
+async def get_printer_file_plates(
+    printer_id: int,
+    path: str = Query(..., description="Full path to the 3MF file on the printer"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get available plates from a multi-plate 3MF file stored on a printer."""
+    import io
+    import json
+    import xml.etree.ElementTree as ET
+    import zipfile
+
+    # Validate printer
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    filename = path.split("/")[-1]
+    if not filename.lower().endswith(".3mf"):
+        return {
+            "printer_id": printer_id,
+            "path": path,
+            "filename": filename,
+            "plates": [],
+            "is_multi_plate": False,
+        }
+
+    data = await download_file_bytes_async(printer.ip_address, printer.access_code, path)
+    if data is None:
+        raise HTTPException(404, f"File not found: {path}")
+
+    plates = []
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(data), "r") as zf:
+            namelist = zf.namelist()
+
+            # Find all plate gcode files to determine available plates
+            gcode_files = [n for n in namelist if n.startswith("Metadata/plate_") and n.endswith(".gcode")]
+
+            # If no gcode is present (source-only or unsliced), fall back to plate JSON/PNG
+            plate_indices: list[int] = []
+            if gcode_files:
+                for gf in gcode_files:
+                    try:
+                        plate_str = gf[15:-6]  # Remove "Metadata/plate_" and ".gcode"
+                        plate_indices.append(int(plate_str))
+                    except ValueError:
+                        pass
+            else:
+                plate_json_files = [n for n in namelist if n.startswith("Metadata/plate_") and n.endswith(".json")]
+                plate_png_files = [
+                    n
+                    for n in namelist
+                    if n.startswith("Metadata/plate_")
+                    and n.endswith(".png")
+                    and "_small" not in n
+                    and "no_light" not in n
+                ]
+                plate_name_candidates = plate_json_files + plate_png_files
+                plate_re = re.compile(r"^Metadata/plate_(\d+)\.(json|png)$")
+                seen_indices: set[int] = set()
+                for name in plate_name_candidates:
+                    match = plate_re.match(name)
+                    if match:
+                        try:
+                            index = int(match.group(1))
+                        except ValueError:
+                            continue
+                        if index in seen_indices:
+                            continue
+                        seen_indices.add(index)
+                        plate_indices.append(index)
+
+            if not plate_indices:
+                return {
+                    "printer_id": printer_id,
+                    "path": path,
+                    "filename": filename,
+                    "plates": [],
+                    "is_multi_plate": False,
+                }
+
+            plate_indices.sort()
+
+            # Parse model_settings.config for plate names
+            plate_names = {}
+            if "Metadata/model_settings.config" in namelist:
+                try:
+                    model_content = zf.read("Metadata/model_settings.config").decode()
+                    model_root = ET.fromstring(model_content)
+                    for plate_elem in model_root.findall(".//plate"):
+                        plater_id = None
+                        plater_name = None
+                        for meta in plate_elem.findall("metadata"):
+                            key = meta.get("key")
+                            value = meta.get("value")
+                            if key == "plater_id" and value:
+                                try:
+                                    plater_id = int(value)
+                                except ValueError:
+                                    pass
+                            elif key == "plater_name" and value:
+                                plater_name = value.strip()
+                        if plater_id is not None and plater_name:
+                            plate_names[plater_id] = plater_name
+                except Exception:
+                    pass
+
+            # Parse slice_info.config for plate metadata
+            plate_metadata = {}
+            if "Metadata/slice_info.config" in namelist:
+                content = zf.read("Metadata/slice_info.config").decode()
+                root = ET.fromstring(content)
+
+                for plate_elem in root.findall(".//plate"):
+                    plate_info = {"filaments": [], "prediction": None, "weight": None, "name": None, "objects": []}
+
+                    plate_index = None
+                    for meta in plate_elem.findall("metadata"):
+                        key = meta.get("key")
+                        value = meta.get("value")
+                        if key == "index" and value:
+                            try:
+                                plate_index = int(value)
+                            except ValueError:
+                                pass
+                        elif key == "prediction" and value:
+                            try:
+                                plate_info["prediction"] = int(value)
+                            except ValueError:
+                                pass
+                        elif key == "weight" and value:
+                            try:
+                                plate_info["weight"] = float(value)
+                            except ValueError:
+                                pass
+
+                    # Get filaments used in this plate
+                    for filament_elem in plate_elem.findall("filament"):
+                        filament_id = filament_elem.get("id")
+                        filament_type = filament_elem.get("type", "")
+                        filament_color = filament_elem.get("color", "")
+                        used_g = filament_elem.get("used_g", "0")
+                        used_m = filament_elem.get("used_m", "0")
+
+                        try:
+                            used_grams = float(used_g)
+                        except (ValueError, TypeError):
+                            used_grams = 0
+
+                        if used_grams > 0 and filament_id:
+                            plate_info["filaments"].append(
+                                {
+                                    "slot_id": int(filament_id),
+                                    "type": filament_type,
+                                    "color": filament_color,
+                                    "used_grams": round(used_grams, 1),
+                                    "used_meters": float(used_m) if used_m else 0,
+                                }
+                            )
+
+                    plate_info["filaments"].sort(key=lambda x: x["slot_id"])
+
+                    # Collect object names
+                    for obj_elem in plate_elem.findall("object"):
+                        obj_name = obj_elem.get("name")
+                        if obj_name and obj_name not in plate_info["objects"]:
+                            plate_info["objects"].append(obj_name)
+
+                    # Set plate name
+                    if plate_index is not None:
+                        custom_name = plate_names.get(plate_index)
+                        if custom_name:
+                            plate_info["name"] = custom_name
+                        elif plate_info["objects"]:
+                            plate_info["name"] = plate_info["objects"][0]
+                        plate_metadata[plate_index] = plate_info
+
+            # Parse plate_*.json for object lists when slice_info is missing
+            plate_json_objects: dict[int, list[str]] = {}
+            for name in namelist:
+                match = re.match(r"^Metadata/plate_(\d+)\.json$", name)
+                if not match:
+                    continue
+                try:
+                    plate_index = int(match.group(1))
+                except ValueError:
+                    continue
+                try:
+                    payload = json.loads(zf.read(name).decode())
+                    bbox_objects = payload.get("bbox_objects", [])
+                    names: list[str] = []
+                    for obj in bbox_objects:
+                        obj_name = obj.get("name") if isinstance(obj, dict) else None
+                        if obj_name and obj_name not in names:
+                            names.append(obj_name)
+                    if names:
+                        plate_json_objects[plate_index] = names
+                except Exception:
+                    continue
+
+            # Build plate list
+            for idx in plate_indices:
+                meta = plate_metadata.get(idx, {})
+                has_thumbnail = f"Metadata/plate_{idx}.png" in namelist
+                objects = meta.get("objects", [])
+                if not objects:
+                    objects = plate_json_objects.get(idx, [])
+
+                plate_name = meta.get("name")
+                if not plate_name:
+                    plate_name = plate_names.get(idx)
+                if not plate_name and objects:
+                    plate_name = objects[0]
+
+                plates.append(
+                    {
+                        "index": idx,
+                        "name": plate_name,
+                        "objects": objects,
+                        "object_count": len(objects),
+                        "has_thumbnail": has_thumbnail,
+                        "thumbnail_url": f"/api/v1/printers/{printer_id}/files/plate-thumbnail/{idx}?path={path}",
+                        "print_time_seconds": meta.get("prediction"),
+                        "filament_used_grams": meta.get("weight"),
+                        "filaments": meta.get("filaments", []),
+                    }
+                )
+
+    except Exception as e:
+        logger.warning(f"Failed to parse plates from printer file {path}: {e}")
+
+    return {
+        "printer_id": printer_id,
+        "path": path,
+        "filename": filename,
+        "plates": plates,
+        "is_multi_plate": len(plates) > 1,
+    }
+
+
+@router.get("/{printer_id}/files/plate-thumbnail/{plate_index}")
+async def get_printer_file_plate_thumbnail(
+    printer_id: int,
+    plate_index: int,
+    path: str = Query(..., description="Full path to the 3MF file on the printer"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get a plate thumbnail image from a printer-stored 3MF file."""
+    import io
+    import zipfile
+
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    data = await download_file_bytes_async(printer.ip_address, printer.access_code, path)
+    if data is None:
+        raise HTTPException(404, f"File not found: {path}")
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(data), "r") as zf:
+            thumb_path = f"Metadata/plate_{plate_index}.png"
+            if thumb_path in zf.namelist():
+                image_data = zf.read(thumb_path)
+                return Response(content=image_data, media_type="image/png")
+    except Exception:
+        pass
+
+    raise HTTPException(status_code=404, detail=f"Thumbnail for plate {plate_index} not found")
 
 
 @router.post("/{printer_id}/files/download-zip")

@@ -99,6 +99,15 @@ function isSlicedFile(filename: string | null | undefined): boolean {
   return lower.endsWith('.gcode') || lower.includes('.gcode.');
 }
 
+function getArchiveFileType(filename: string | null | undefined): string | undefined {
+  if (!filename) return undefined;
+  const lower = filename.toLowerCase();
+  if (lower.endsWith('.3mf')) return '3mf';
+  if (lower.endsWith('.stl')) return 'stl';
+  if (lower.endsWith('.gcode') || lower.includes('.gcode.')) return 'gcode';
+  return lower.split('.').pop();
+}
+
 // formatDate imported from '../utils/date' - handles UTC conversion
 
 function ArchiveCard({
@@ -1040,6 +1049,7 @@ function ArchiveCard({
         <ModelViewerModal
           archiveId={archive.id}
           title={archive.print_name || archive.filename}
+          fileType={getArchiveFileType(archive.filename)}
           onClose={() => setShowViewer(false)}
         />
       )}
@@ -1833,6 +1843,7 @@ function ArchiveListRow({
         <ModelViewerModal
           archiveId={archive.id}
           title={archive.print_name || archive.filename}
+          fileType={getArchiveFileType(archive.filename)}
           onClose={() => setShowViewer(false)}
         />
       )}
@@ -2522,7 +2533,7 @@ export function ArchivesPage() {
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold text-white">Archives</h1>
@@ -2542,7 +2553,7 @@ export function ArchivesPage() {
             {filteredArchives?.length || 0} of {archives?.length || 0} prints
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           {/* Export dropdown */}
           <div className="relative">
             <Button

@@ -5,7 +5,7 @@ from pathlib import Path
 from pydantic_settings import BaseSettings
 
 # Application version - single source of truth
-APP_VERSION = "0.1.7"
+APP_VERSION = "0.1.8b"
 GITHUB_REPO = "maziggy/bambuddy"
 
 # App directory - where the application is installed (for static files)

@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import JSZip from 'jszip';
 import { Loader2, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from './Button';
+import { getAuthToken } from '../api/client';
 
 interface BuildVolume {
   x: number;
@@ -14,8 +17,10 @@ interface BuildVolume {
 
 interface ModelViewerProps {
   url: string;
+  fileType?: string;
   buildVolume?: BuildVolume;
   filamentColors?: string[];
+  selectedPlateId?: number | null;
   className?: string;
 }
 
@@ -29,12 +34,21 @@ interface ObjectData {
   id: string;
   meshes: MeshData[];
   defaultExtruder: number; // Default extruder for object (used if mesh doesn't have specific one)
+  plateId?: number | null;
 }
 
 interface BuildItem {
   objectId: string;
   transform: THREE.Matrix4;
   extruder?: number; // Can override object's extruder
+  plateId?: number | null;
+}
+
+interface Parsed3MFData {
+  objects: Map<string, ObjectData>;
+  buildItems: BuildItem[];
+  plateBounds: Map<number, { minX: number; minY: number; maxX: number; maxY: number }>;
+  plateOffsets: Map<number, { offsetX: number; offsetY: number }>;
 }
 
 // Parse 3MF transform - keep in 3MF coordinate space (Z-up)
@@ -101,10 +115,35 @@ async function parseMeshFromDoc(doc: Document, defaultExtruder: number = 0): Pro
   return meshes;
 }
 
-async function parse3MF(arrayBuffer: ArrayBuffer): Promise<{ objects: Map<string, ObjectData>; buildItems: BuildItem[] }> {
-  const zip = await JSZip.loadAsync(arrayBuffer);
+function parsePlateIdFromAttributes(element: Element): number | null {
+  const plateAttribute = Array.from(element.attributes).find((attr) => {
+    const name = attr.name.toLowerCase();
+    return (
+      name === 'plate_id' ||
+      name === 'plater_id' ||
+      name === 'plateid' ||
+      name === 'platerid' ||
+      name.endsWith(':plate_id') ||
+      name.endsWith(':plater_id')
+    );
+  });
+
+  if (!plateAttribute?.value) return null;
+  const parsed = Number.parseInt(plateAttribute.value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+async function parse3MF(arrayBuffer: ArrayBuffer): Promise<Parsed3MFData> {
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(arrayBuffer);
+  } catch {
+    throw new Error('Unsupported file format');
+  }
   const objects = new Map<string, ObjectData>();
   const buildItems: BuildItem[] = [];
+  const plateBounds = new Map<number, { minX: number; minY: number; maxX: number; maxY: number }>();
+  const plateOffsets = new Map<number, { offsetX: number; offsetY: number }>();
   const parser = new DOMParser();
 
   // Helper to load and parse a model file from the zip
@@ -121,6 +160,8 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<{ objects: Map<string
   // Maps: object ID -> default extruder, and (object ID, part ID) -> part-specific extruder
   const extruderMapById = new Map<string, number>();
   const partExtruderMap = new Map<string, number>(); // Key: "objectId:partId"
+  const objectNameById = new Map<string, string>();
+  const plateAssignmentsByObjectId = new Map<string, number>();
   const modelSettingsFile = zip.files['Metadata/model_settings.config'];
   if (modelSettingsFile) {
     try {
@@ -132,7 +173,7 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<{ objects: Map<string
         const objectId = objEl.getAttribute('id');
         if (!objectId) continue;
 
-        // Find object-level extruder
+        // Find object-level extruder + name
         const directMetadata = Array.from(objEl.children).filter(
           (el) => el.tagName === 'metadata' && el.getAttribute('key') === 'extruder'
         );
@@ -141,6 +182,14 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<{ objects: Map<string
           if (extruderVal) {
             extruderMapById.set(objectId, Math.max(0, parseInt(extruderVal, 10) - 1));
           }
+        }
+
+        const nameMetadata = Array.from(objEl.children).find(
+          (el) => el.tagName === 'metadata' && el.getAttribute('key') === 'name'
+        );
+        const objectName = nameMetadata?.getAttribute('value');
+        if (objectName) {
+          objectNameById.set(objectId, objectName);
         }
 
         // Find part-level extruders
@@ -162,8 +211,92 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<{ objects: Map<string
           }
         }
       }
+
+      // Parse plate -> object assignments
+      const plateElements = doc.getElementsByTagName('plate');
+      for (let i = 0; i < plateElements.length; i++) {
+        const plateEl = plateElements[i];
+        let plateId: number | null = null;
+        const metadataElements = plateEl.getElementsByTagName('metadata');
+        let plateOffsetX = 0;
+        let plateOffsetY = 0;
+        for (let j = 0; j < metadataElements.length; j++) {
+          const metaEl = metadataElements[j];
+          const key = metaEl.getAttribute('key');
+          if (key === 'plater_id' || key === 'plate_id') {
+            const value = metaEl.getAttribute('value');
+            if (value) {
+              const parsed = Number.parseInt(value, 10);
+              if (Number.isFinite(parsed)) {
+                plateId = parsed;
+              }
+            }
+          } else if (key === 'pos_x') {
+            const value = metaEl.getAttribute('value');
+            const parsed = value ? Number.parseFloat(value) : Number.NaN;
+            if (Number.isFinite(parsed)) {
+              plateOffsetX = parsed;
+            }
+          } else if (key === 'pos_y') {
+            const value = metaEl.getAttribute('value');
+            const parsed = value ? Number.parseFloat(value) : Number.NaN;
+            if (Number.isFinite(parsed)) {
+              plateOffsetY = parsed;
+            }
+          }
+        }
+        if (plateId == null) continue;
+        if (plateOffsetX !== 0 || plateOffsetY !== 0) {
+          plateOffsets.set(plateId, { offsetX: plateOffsetX, offsetY: plateOffsetY });
+        }
+
+        const modelInstances = plateEl.getElementsByTagName('model_instance');
+        for (let j = 0; j < modelInstances.length; j++) {
+          const instanceEl = modelInstances[j];
+          const instanceMetadata = instanceEl.getElementsByTagName('metadata');
+          for (let k = 0; k < instanceMetadata.length; k++) {
+            const metaEl = instanceMetadata[k];
+            if (metaEl.getAttribute('key') === 'object_id') {
+              const value = metaEl.getAttribute('value');
+              if (value) {
+                plateAssignmentsByObjectId.set(value, plateId);
+              }
+            }
+          }
+        }
+      }
     } catch {
       // Silently ignore model_settings.config parsing errors
+    }
+  }
+
+  // Parse plate_*.json for plate assignments by object name (source-only / unsliced files)
+  const plateAssignmentsByName = new Map<string, number>();
+  const plateJsonNames = Object.keys(zip.files).filter(
+    (name) => name.startsWith('Metadata/plate_') && name.endsWith('.json')
+  );
+  for (const name of plateJsonNames) {
+    const match = name.match(/^Metadata\/plate_(\d+)\.json$/);
+    if (!match) continue;
+    const plateIndex = Number.parseInt(match[1], 10);
+    if (!Number.isFinite(plateIndex)) continue;
+    try {
+      const payload = await zip.files[name].async('string');
+      const json = JSON.parse(payload) as { bbox_objects?: Array<{ name?: string }>; bbox_all?: number[] };
+      const objectsList = json.bbox_objects ?? [];
+      for (const entry of objectsList) {
+        if (entry?.name) {
+          plateAssignmentsByName.set(entry.name, plateIndex);
+        }
+      }
+      if (Array.isArray(json.bbox_all) && json.bbox_all.length >= 4) {
+        const [minX, minY, maxX, maxY] = json.bbox_all;
+        if ([minX, minY, maxX, maxY].every((value) => Number.isFinite(value))) {
+          plateBounds.set(plateIndex, { minX, minY, maxX, maxY });
+        }
+      }
+    } catch {
+      // Ignore plate json parsing errors
     }
   }
 
@@ -184,11 +317,11 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<{ objects: Map<string
         }
       }
     }
-    return { objects, buildItems };
+    return { objects, buildItems, plateBounds, plateOffsets };
   }
 
   const mainDoc = await loadModelFile(mainModelPath);
-  if (!mainDoc) return { objects, buildItems };
+  if (!mainDoc) return { objects, buildItems, plateBounds, plateOffsets };
 
   // Parse objects - Bambu Studio uses components to reference external files
   const objectElements = mainDoc.getElementsByTagName('object');
@@ -196,6 +329,8 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<{ objects: Map<string
     const objEl = objectElements[i];
     const objectId = objEl.getAttribute('id');
     if (!objectId) continue;
+
+    const objectPlateId = parsePlateIdFromAttributes(objEl) ?? plateAssignmentsByObjectId.get(objectId) ?? null;
 
     // Get default extruder from model_settings.config map, falling back to attribute or default
     let defaultExtruder = extruderMapById.get(objectId) ?? -1;
@@ -279,7 +414,7 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<{ objects: Map<string
     }
 
     if (meshes.length > 0) {
-      objects.set(objectId, { id: objectId, meshes, defaultExtruder });
+      objects.set(objectId, { id: objectId, meshes, defaultExtruder, plateId: objectPlateId });
     }
   }
 
@@ -293,11 +428,15 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<{ objects: Map<string
       if (!objectId) continue;
 
       const transform = parseTransform(itemEl.getAttribute('transform'));
-      buildItems.push({ objectId, transform });
+      const itemPlateId = parsePlateIdFromAttributes(itemEl);
+      const objectPlateId = objects.get(objectId)?.plateId ?? null;
+      const objectName = objectNameById.get(objectId);
+      const namePlateId = objectName ? plateAssignmentsByName.get(objectName) ?? null : null;
+      buildItems.push({ objectId, transform, plateId: itemPlateId ?? objectPlateId ?? namePlateId ?? null });
     }
   }
 
-  return { objects, buildItems };
+  return { objects, buildItems, plateBounds, plateOffsets };
 }
 
 function createGeometryFromMesh(mesh: MeshData): THREE.BufferGeometry {
@@ -321,14 +460,146 @@ function createGeometryFromMesh(mesh: MeshData): THREE.BufferGeometry {
   return geometry;
 }
 
-export function ModelViewer({ url, buildVolume = { x: 256, y: 256, z: 256 }, filamentColors, className = '' }: ModelViewerProps) {
+function disposeGroup(group: THREE.Group) {
+  group.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      child.geometry.dispose();
+      if (Array.isArray(child.material)) {
+        for (const material of child.material) {
+          material.dispose();
+        }
+      } else {
+        child.material.dispose();
+      }
+    }
+  });
+}
+
+function buildModelGroup(
+  parsedData: Parsed3MFData,
+  selectedPlateId: number | null,
+  filamentColors?: string[],
+): THREE.Group {
+  const { objects, buildItems } = parsedData;
+  const group = new THREE.Group();
+
+  // Create materials for each extruder color
+  const getMaterial = (extruder: number): THREE.MeshPhongMaterial => {
+    const defaultColor = '#00ae42';
+    const colorStr = filamentColors?.[extruder] || defaultColor;
+    // Convert hex color string to THREE.js color
+    const color = new THREE.Color(colorStr);
+    return new THREE.MeshPhongMaterial({
+      color,
+      shininess: 30,
+      flatShading: false,
+    });
+  };
+
+  // Group geometries by extruder index (using per-mesh extruder)
+  const geometriesByExtruder = new Map<number, THREE.BufferGeometry[]>();
+
+  const hasPlateAssignments = buildItems.some((item) => item.plateId != null);
+  const plateFilteredItems = selectedPlateId == null || !hasPlateAssignments
+    ? buildItems
+    : buildItems.filter((item) => item.plateId === selectedPlateId);
+  const activeBuildItems = plateFilteredItems.length > 0 ? plateFilteredItems : buildItems;
+
+  // If we have build items, use them for positioning
+  if (activeBuildItems.length > 0) {
+    for (const item of activeBuildItems) {
+      const objectData = objects.get(item.objectId);
+      if (!objectData) continue;
+
+      for (const meshData of objectData.meshes) {
+        // Use mesh's extruder, or item override, or object default
+        const extruder = item.extruder ?? meshData.extruder;
+
+        // Apply build transform to vertices in 3MF space BEFORE coordinate conversion
+        const transformedVertices: number[] = [];
+        for (let k = 0; k < meshData.vertices.length; k += 3) {
+          const v = new THREE.Vector3(
+            meshData.vertices[k],
+            meshData.vertices[k + 1],
+            meshData.vertices[k + 2]
+          );
+          v.applyMatrix4(item.transform);
+          transformedVertices.push(v.x, v.y, v.z);
+        }
+        // Now create geometry with coordinate conversion
+        const geometry = createGeometryFromMesh({
+          vertices: transformedVertices,
+          triangles: meshData.triangles,
+          extruder: extruder,
+        });
+
+        if (!geometriesByExtruder.has(extruder)) {
+          geometriesByExtruder.set(extruder, []);
+        }
+        geometriesByExtruder.get(extruder)!.push(geometry);
+      }
+    }
+  } else {
+    // Fallback: just add all objects without transforms
+    for (const objectData of objects.values()) {
+      for (const meshData of objectData.meshes) {
+        // Use per-mesh extruder
+        const extruder = meshData.extruder;
+        const geometry = createGeometryFromMesh(meshData);
+        if (!geometriesByExtruder.has(extruder)) {
+          geometriesByExtruder.set(extruder, []);
+        }
+        geometriesByExtruder.get(extruder)!.push(geometry);
+      }
+    }
+  }
+
+  // Create meshes for each extruder group
+  for (const [extruder, geometries] of geometriesByExtruder) {
+    if (geometries.length === 0) continue;
+
+    const mergedGeometry = geometries.length === 1
+      ? geometries[0]
+      : mergeGeometries(geometries, false);
+
+    if (mergedGeometry) {
+      const material = getMaterial(extruder);
+      const mesh = new THREE.Mesh(mergedGeometry, material);
+      group.add(mesh);
+    }
+
+    // Dispose individual geometries if merged
+    if (geometries.length > 1) {
+      for (const geom of geometries) {
+        geom.dispose();
+      }
+    }
+  }
+
+  return group;
+}
+
+export function ModelViewer({
+  url,
+  fileType,
+  buildVolume = { x: 256, y: 256, z: 256 },
+  filamentColors,
+  selectedPlateId = null,
+  className = '',
+}: ModelViewerProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
+  const modelGroupRef = useRef<THREE.Group | null>(null);
+  const plateRef = useRef<THREE.Mesh | null>(null);
+  const gridRef = useRef<THREE.GridHelper | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [parsedData, setParsedData] = useState<Parsed3MFData | null>(null);
+  const [stlGeometry, setStlGeometry] = useState<THREE.BufferGeometry | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -377,6 +648,7 @@ export function ModelViewer({ url, buildVolume = { x: 256, y: 256, z: 256 }, fil
     const gridDivisions = Math.ceil(gridSize / 16);
     const gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x444444, 0x333333);
     scene.add(gridHelper);
+    gridRef.current = gridHelper;
 
     // Build plate indicator
     const plateGeometry = new THREE.PlaneGeometry(buildVolume.x, buildVolume.y);
@@ -390,6 +662,7 @@ export function ModelViewer({ url, buildVolume = { x: 256, y: 256, z: 256 }, fil
     plate.rotation.x = -Math.PI / 2;
     plate.position.y = -0.5; // Slightly below Y=0 so models sit on top
     scene.add(plate);
+    plateRef.current = plate;
 
     // Animation loop - keep it simple for reliability
     let animationId: number;
@@ -400,163 +673,183 @@ export function ModelViewer({ url, buildVolume = { x: 256, y: 256, z: 256 }, fil
     };
     animate();
 
-    // Load 3MF
-    fetch(url)
-      .then((res) => {
-        if (!res.ok) throw new Error('Failed to load file');
-        return res.arrayBuffer();
-      })
-      .then(parse3MF)
-      .then(({ objects, buildItems }) => {
-        if (objects.size === 0) {
-          throw new Error('No meshes found in 3MF file');
-        }
+    setLoading(true);
+    setError(null);
+    setParsedData(null);
+    setStlGeometry(null);
 
-        // Create materials for each extruder color
-        const getMaterial = (extruder: number): THREE.MeshPhongMaterial => {
-          const defaultColor = '#00ae42';
-          const colorStr = filamentColors?.[extruder] || defaultColor;
-          // Convert hex color string to THREE.js color
-          const color = new THREE.Color(colorStr);
-          return new THREE.MeshPhongMaterial({
-            color,
-            shininess: 30,
-            flatShading: false,
-          });
-        };
+    const normalizedType = (fileType || url.split('?')[0].split('.').pop() || '').toLowerCase();
 
-        const group = new THREE.Group();
-        // Group geometries by extruder index (using per-mesh extruder)
-        const geometriesByExtruder = new Map<number, THREE.BufferGeometry[]>();
+    // Build auth headers for fetch
+    const headers: HeadersInit = {};
+    const token = getAuthToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
 
-        // If we have build items, use them for positioning
-        if (buildItems.length > 0) {
-          for (const item of buildItems) {
-            const objectData = objects.get(item.objectId);
-            if (!objectData) continue;
-
-            for (const meshData of objectData.meshes) {
-              // Use mesh's extruder, or item override, or object default
-              const extruder = item.extruder ?? meshData.extruder;
-
-              // Apply build transform to vertices in 3MF space BEFORE coordinate conversion
-              const transformedVertices: number[] = [];
-              for (let k = 0; k < meshData.vertices.length; k += 3) {
-                const v = new THREE.Vector3(
-                  meshData.vertices[k],
-                  meshData.vertices[k + 1],
-                  meshData.vertices[k + 2]
-                );
-                v.applyMatrix4(item.transform);
-                transformedVertices.push(v.x, v.y, v.z);
-              }
-              // Now create geometry with coordinate conversion
-              const geometry = createGeometryFromMesh({
-                vertices: transformedVertices,
-                triangles: meshData.triangles,
-                extruder: extruder,
-              });
-
-              if (!geometriesByExtruder.has(extruder)) {
-                geometriesByExtruder.set(extruder, []);
-              }
-              geometriesByExtruder.get(extruder)!.push(geometry);
-            }
+    if (normalizedType === 'stl') {
+      fetch(url, { headers })
+        .then((res) => {
+          if (!res.ok) throw new Error(t('modelViewer.errors.failedToLoad'));
+          return res.arrayBuffer();
+        })
+        .then((buffer) => {
+          const loader = new STLLoader();
+          const geometry = loader.parse(buffer);
+          geometry.computeVertexNormals();
+          geometry.rotateX(-Math.PI / 2);
+          setStlGeometry(geometry);
+        })
+        .catch((err) => {
+          setError(err.message);
+          setLoading(false);
+        });
+    } else if (normalizedType === '3mf') {
+      fetch(url, { headers })
+        .then((res) => {
+          if (!res.ok) throw new Error(t('modelViewer.errors.failedToLoad'));
+          return res.arrayBuffer();
+        })
+        .then(parse3MF)
+        .then((parsed) => {
+          if (parsed.objects.size === 0) {
+            throw new Error(t('modelViewer.errors.noMeshes'));
           }
-        } else {
-          // Fallback: just add all objects without transforms
-          for (const objectData of objects.values()) {
-            for (const meshData of objectData.meshes) {
-              // Use per-mesh extruder
-              const extruder = meshData.extruder;
-              const geometry = createGeometryFromMesh(meshData);
-              if (!geometriesByExtruder.has(extruder)) {
-                geometriesByExtruder.set(extruder, []);
-              }
-              geometriesByExtruder.get(extruder)!.push(geometry);
-            }
-          }
-        }
+          setParsedData(parsed);
+        })
+        .catch((err) => {
+          setError(err.message);
+          setLoading(false);
+        });
+    } else {
+      setError(t('modelViewer.errors.unsupportedFormat'));
+      setLoading(false);
+    }
 
-        // Create meshes for each extruder group
-        for (const [extruder, geometries] of geometriesByExtruder) {
-          if (geometries.length === 0) continue;
-
-          const mergedGeometry = geometries.length === 1
-            ? geometries[0]
-            : mergeGeometries(geometries, false);
-
-          if (mergedGeometry) {
-            const material = getMaterial(extruder);
-            const mesh = new THREE.Mesh(mergedGeometry, material);
-            group.add(mesh);
-          }
-
-          // Dispose individual geometries if merged
-          if (geometries.length > 1) {
-            for (const geom of geometries) {
-              geom.dispose();
-            }
-          }
-        }
-
-        // Get bounding box to position model
-        const box = new THREE.Box3().setFromObject(group);
-        const center = box.getCenter(new THREE.Vector3());
-
-        // Always place models on the build plate (Y=0)
-        group.position.y = -box.min.y;
-
-        // For models without build transforms, also center X/Z
-        if (buildItems.length === 0) {
-          group.position.x = -center.x;
-          group.position.z = -center.z;
-        }
-
-        scene.add(group);
-
-        // Recalculate bounding box after positioning
-        const finalBox = new THREE.Box3().setFromObject(group);
-        const finalCenter = finalBox.getCenter(new THREE.Vector3());
-        const finalSize = finalBox.getSize(new THREE.Vector3());
-
-        // Adjust camera to fit model
-        const maxDim = Math.max(finalSize.x, finalSize.y, finalSize.z);
-        const cameraDistance = maxDim * 1.8;
-        camera.position.set(
-          finalCenter.x + cameraDistance * 0.7,
-          finalCenter.y + cameraDistance * 0.5,
-          finalCenter.z + cameraDistance * 0.7
-        );
-        controls.target.copy(finalCenter);
-        controls.update();
-
-        setLoading(false);
-      })
-      .catch((err) => {
-        setError(err.message);
-        setLoading(false);
-      });
-
-    // Handle resize
+    // Handle resize (window + container)
     const handleResize = () => {
       if (!container) return;
       const w = container.clientWidth;
       const h = container.clientHeight;
+      if (w === 0 || h === 0) return;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
     };
     window.addEventListener('resize', handleResize);
+    const resizeObserver = new ResizeObserver(() => {
+      handleResize();
+    });
+    resizeObserver.observe(container);
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      resizeObserver.disconnect();
       cancelAnimationFrame(animationId);
       controls.dispose();
       renderer.dispose();
       container.removeChild(renderer.domElement);
+      modelGroupRef.current = null;
+      plateRef.current = null;
+      gridRef.current = null;
     };
-  }, [url, buildVolume, filamentColors]);
+  }, [url, buildVolume, fileType, t]);
+
+  useEffect(() => {
+    if (!sceneRef.current || !cameraRef.current || !controlsRef.current) return;
+    if (!parsedData && !stlGeometry) return;
+
+    if (modelGroupRef.current) {
+      sceneRef.current.remove(modelGroupRef.current);
+      disposeGroup(modelGroupRef.current);
+    }
+
+    const isStlModel = !!stlGeometry;
+    const group = isStlModel
+      ? (() => {
+          const materialColor = filamentColors?.[0] || '#00ae42';
+          const material = new THREE.MeshPhongMaterial({ color: new THREE.Color(materialColor), shininess: 30 });
+          const mesh = new THREE.Mesh(stlGeometry!, material);
+          const stlGroup = new THREE.Group();
+          stlGroup.add(mesh);
+          return stlGroup;
+        })()
+      : buildModelGroup(parsedData!, selectedPlateId ?? null, filamentColors);
+    modelGroupRef.current = group;
+    sceneRef.current.add(group);
+
+    // Get bounding box to position model
+    const box = new THREE.Box3().setFromObject(group);
+    const center = box.getCenter(new THREE.Vector3());
+
+    // Always place models on the build plate (Y=0)
+    group.position.y = -box.min.y;
+
+    const selectedPlateBounds = (!isStlModel && selectedPlateId != null && parsedData!.buildItems.length > 0)
+      ? parsedData!.plateBounds.get(selectedPlateId)
+      : undefined;
+    const selectedPlateOffset = (!isStlModel && selectedPlateId != null)
+      ? parsedData!.plateOffsets.get(selectedPlateId)
+      : undefined;
+    const shouldCenterOnPlate = isStlModel
+      || parsedData!.buildItems.length === 0
+      || (selectedPlateId != null && !selectedPlateBounds && !selectedPlateOffset);
+    const centerOffsetX = shouldCenterOnPlate ? -center.x : 0;
+    const centerOffsetZ = shouldCenterOnPlate ? -center.z : 0;
+
+    let plateOffsetX = 0;
+    let plateOffsetZ = 0;
+    if (!isStlModel && selectedPlateId != null && parsedData!.buildItems.length > 0 && selectedPlateBounds) {
+      const plateBox = new THREE.Box3().setFromObject(group);
+      plateOffsetX = plateBox.min.x - selectedPlateBounds.minX;
+      plateOffsetZ = plateBox.min.z - selectedPlateBounds.minY;
+    }
+
+    const plateCenterX = buildVolume.x / 2;
+    const plateCenterZ = buildVolume.y / 2;
+
+    if (!isStlModel && selectedPlateId != null && parsedData!.buildItems.length > 0 && selectedPlateBounds) {
+      group.position.x = centerOffsetX - plateOffsetX;
+      group.position.z = centerOffsetZ - plateOffsetZ;
+    } else if (!isStlModel && selectedPlateId != null && selectedPlateOffset) {
+      group.position.x = centerOffsetX + (plateCenterX - selectedPlateOffset.offsetX);
+      group.position.z = centerOffsetZ + (plateCenterZ - selectedPlateOffset.offsetY);
+    } else if (shouldCenterOnPlate) {
+      group.position.x = centerOffsetX + plateCenterX;
+      group.position.z = centerOffsetZ + plateCenterZ;
+    } else {
+      group.position.x = centerOffsetX;
+      group.position.z = centerOffsetZ;
+    }
+
+    if (plateRef.current) {
+      plateRef.current.position.x = plateCenterX;
+      plateRef.current.position.z = plateCenterZ;
+    }
+
+    if (gridRef.current) {
+      gridRef.current.position.x = plateCenterX;
+      gridRef.current.position.z = plateCenterZ;
+    }
+
+    // Recalculate bounding box after positioning
+    const finalBox = new THREE.Box3().setFromObject(group);
+    const finalCenter = finalBox.getCenter(new THREE.Vector3());
+    const finalSize = finalBox.getSize(new THREE.Vector3());
+
+    // Adjust camera to fit model
+    const maxDim = Math.max(finalSize.x, finalSize.y, finalSize.z);
+    const cameraDistance = maxDim * 1.8;
+    cameraRef.current.position.set(
+      finalCenter.x + cameraDistance * 0.7,
+      finalCenter.y + cameraDistance * 0.5,
+      finalCenter.z + cameraDistance * 0.7
+    );
+    controlsRef.current.target.copy(finalCenter);
+    controlsRef.current.update();
+
+    setLoading(false);
+  }, [parsedData, stlGeometry, selectedPlateId, filamentColors, buildVolume]);
 
   const resetView = () => {
     if (cameraRef.current && controlsRef.current) {

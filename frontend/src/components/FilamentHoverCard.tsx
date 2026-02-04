@@ -87,10 +87,12 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
     if (isVisible && triggerRef.current && cardRef.current) {
       const triggerRect = triggerRef.current.getBoundingClientRect();
       const cardHeight = cardRef.current.offsetHeight;
-      const spaceAbove = triggerRect.top;
+      // Account for fixed header (56px) - space above should exclude header area
+      const headerHeight = 56;
+      const spaceAbove = triggerRect.top - headerHeight;
       const spaceBelow = window.innerHeight - triggerRect.bottom;
 
-      // Prefer top, but flip to bottom if not enough space
+      // Prefer top, but flip to bottom if not enough space (accounting for header)
       if (spaceAbove < cardHeight + 12 && spaceBelow > spaceAbove) {
         setPosition('bottom');
       } else {

@@ -2,18 +2,23 @@
 
 Responds to M-SEARCH requests from slicers and sends periodic NOTIFY
 announcements so the virtual printer appears as a discoverable Bambu printer.
+
+Also provides SSDP proxy functionality for proxy mode, where Bambuddy sits
+between two networks and re-broadcasts printer SSDP from LAN A to LAN B.
 """
 
 import asyncio
 import logging
+import re
 import socket
 import struct
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-# SSDP multicast address - Bambu uses port 2021
-SSDP_ADDR = "239.255.255.250"
+# SSDP addresses - Bambu uses port 2021
+# Real Bambu printers broadcast to 255.255.255.255, not multicast to 239.255.255.250
+SSDP_MULTICAST_ADDR = "239.255.255.250"
+SSDP_BROADCAST_ADDR = "255.255.255.255"
 SSDP_PORT = 2021
 
 # Bambu service target
@@ -60,44 +65,49 @@ class VirtualPrinterSSDPServer:
             return "127.0.0.1"
 
     def _build_notify_message(self) -> bytes:
-        """Build SSDP NOTIFY message for periodic announcements."""
+        """Build SSDP NOTIFY message for periodic announcements.
+
+        Format matches real Bambu printer SSDP broadcasts observed on the network.
+        Real printers use Host: 239.255.255.250:1990 (port 1990 in header).
+        """
         ip = self._get_local_ip()
-        # Based on: https://gist.github.com/Alex-Schaefer/72a9e2491a42da2ef99fb87601955cc3
+        # Match exact format of real Bambu printers (captured via tcpdump)
         # Key: DevBind.bambu.com: free - tells slicer printer is NOT cloud-bound
         message = (
             "NOTIFY * HTTP/1.1\r\n"
-            f"HOST: {SSDP_ADDR}:{SSDP_PORT}\r\n"
-            "Server: Buildroot/2018.02-rc3 UPnP/1.0 ssdpd/1.8\r\n"
-            "Cache-Control: max-age=1800\r\n"
+            f"Host: {SSDP_MULTICAST_ADDR}:1990\r\n"
+            "Server: UPnP/1.0\r\n"
             f"Location: {ip}\r\n"
             f"NT: {BAMBU_SEARCH_TARGET}\r\n"
             "NTS: ssdp:alive\r\n"
-            "EXT:\r\n"
             f"USN: {self.serial}\r\n"
+            "Cache-Control: max-age=1800\r\n"
             f"DevModel.bambu.com: {self.model}\r\n"
             f"DevName.bambu.com: {self.name}\r\n"
             "DevSignal.bambu.com: -44\r\n"
             "DevConnect.bambu.com: lan\r\n"
             "DevBind.bambu.com: free\r\n"
             "Devseclink.bambu.com: secure\r\n"
+            "DevInf.bambu.com: eth0\r\n"
             "DevVersion.bambu.com: 01.07.00.00\r\n"
+            "DevCap.bambu.com: 1\r\n"
             "\r\n"
         )
         return message.encode()
 
     def _build_response_message(self) -> bytes:
-        """Build SSDP response message for M-SEARCH requests."""
+        """Build SSDP response message for M-SEARCH requests.
+
+        Format matches real Bambu printer SSDP responses.
+        """
         ip = self._get_local_ip()
-        # Based on: https://gist.github.com/Alex-Schaefer/72a9e2491a42da2ef99fb87601955cc3
+        # Match format of real Bambu printers
         # Key: DevBind.bambu.com: free - tells slicer printer is NOT cloud-bound
-        # Added: Devseclink, DevVersion, DevCap for better compatibility
         message = (
             "HTTP/1.1 200 OK\r\n"
-            "Server: Buildroot/2018.02-rc3 UPnP/1.0 ssdpd/1.8\r\n"
-            f"Date: {datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT')}\r\n"
+            "Server: UPnP/1.0\r\n"
             f"Location: {ip}\r\n"
             f"ST: {BAMBU_SEARCH_TARGET}\r\n"
-            "EXT:\r\n"
             f"USN: {self.serial}\r\n"
             "Cache-Control: max-age=1800\r\n"
             f"DevModel.bambu.com: {self.model}\r\n"
@@ -106,7 +116,9 @@ class VirtualPrinterSSDPServer:
             "DevConnect.bambu.com: lan\r\n"
             "DevBind.bambu.com: free\r\n"
             "Devseclink.bambu.com: secure\r\n"
+            "DevInf.bambu.com: eth0\r\n"
             "DevVersion.bambu.com: 01.07.00.00\r\n"
+            "DevCap.bambu.com: 1\r\n"
             "\r\n"
         )
         return message.encode()
@@ -137,7 +149,7 @@ class VirtualPrinterSSDPServer:
             self._socket.bind(("", SSDP_PORT))
 
             # Join multicast group
-            mreq = struct.pack("4sl", socket.inet_aton(SSDP_ADDR), socket.INADDR_ANY)
+            mreq = struct.pack("4sl", socket.inet_aton(SSDP_MULTICAST_ADDR), socket.INADDR_ANY)
             self._socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
 
             # Enable broadcast
@@ -212,13 +224,14 @@ class VirtualPrinterSSDPServer:
             self._socket = None
 
     async def _send_notify(self) -> None:
-        """Send SSDP NOTIFY message."""
+        """Send SSDP NOTIFY message via broadcast (like real Bambu printers)."""
         if not self._socket:
             return
 
         try:
             msg = self._build_notify_message()
-            self._socket.sendto(msg, (SSDP_ADDR, SSDP_PORT))
+            # Real Bambu printers broadcast to 255.255.255.255, not multicast
+            self._socket.sendto(msg, (SSDP_BROADCAST_ADDR, SSDP_PORT))
             logger.debug(f"Sent SSDP NOTIFY for {self.name}")
         except Exception as e:
             logger.debug(f"Failed to send NOTIFY: {e}")
@@ -230,7 +243,7 @@ class VirtualPrinterSSDPServer:
 
         message = (
             "NOTIFY * HTTP/1.1\r\n"
-            f"HOST: {SSDP_ADDR}:{SSDP_PORT}\r\n"
+            f"Host: {SSDP_MULTICAST_ADDR}:1990\r\n"
             f"NT: {BAMBU_SEARCH_TARGET}\r\n"
             "NTS: ssdp:byebye\r\n"
             f"USN: {self.serial}\r\n"
@@ -238,7 +251,7 @@ class VirtualPrinterSSDPServer:
         )
 
         try:
-            self._socket.sendto(message.encode(), (SSDP_ADDR, SSDP_PORT))
+            self._socket.sendto(message.encode(), (SSDP_BROADCAST_ADDR, SSDP_PORT))
             logger.debug("Sent SSDP byebye")
         except Exception:
             pass
@@ -268,3 +281,215 @@ class VirtualPrinterSSDPServer:
                 logger.info(f"Sent SSDP response to {addr[0]} for virtual printer '{self.name}'")
             except Exception as e:
                 logger.debug(f"Failed to send SSDP response: {e}")
+
+
+class SSDPProxy:
+    """SSDP proxy that re-broadcasts printer discovery from one network to another.
+
+    Listens for SSDP broadcasts from a real printer on the local interface (LAN A),
+    then re-broadcasts them on the remote interface (LAN B) with the Location
+    header changed to point to Bambuddy's IP on LAN B.
+
+    This allows Bambu Studio on LAN B to discover the printer via Bambuddy.
+    """
+
+    def __init__(
+        self,
+        local_interface_ip: str,
+        remote_interface_ip: str,
+        target_printer_ip: str,
+    ):
+        """Initialize the SSDP proxy.
+
+        Args:
+            local_interface_ip: IP of interface on printer's network (LAN A)
+            remote_interface_ip: IP of interface on slicer's network (LAN B)
+            target_printer_ip: IP of the real printer to proxy SSDP for
+        """
+        self.local_interface_ip = local_interface_ip
+        self.remote_interface_ip = remote_interface_ip
+        self.target_printer_ip = target_printer_ip
+        self._running = False
+        self._local_socket: socket.socket | None = None
+        self._remote_socket: socket.socket | None = None
+        self._last_printer_ssdp: bytes | None = None
+        self._printer_info: dict[str, str] = {}
+
+    def _parse_ssdp_message(self, data: bytes) -> dict[str, str]:
+        """Parse SSDP message into header dict."""
+        headers = {}
+        try:
+            text = data.decode("utf-8", errors="ignore")
+            for line in text.split("\r\n"):
+                if ":" in line:
+                    key, value = line.split(":", 1)
+                    headers[key.strip().lower()] = value.strip()
+        except Exception:
+            pass
+        return headers
+
+    def _rewrite_ssdp_location(self, data: bytes) -> bytes:
+        """Rewrite SSDP message with Bambuddy's remote IP as Location."""
+        try:
+            text = data.decode("utf-8", errors="ignore")
+            original = text
+            # Replace Location header with our remote interface IP
+            text = re.sub(
+                r"(Location:\s*)[\d.]+",
+                f"\\g<1>{self.remote_interface_ip}",
+                text,
+                flags=re.IGNORECASE,
+            )
+            if text != original:
+                logger.debug(f"Rewrote SSDP Location to {self.remote_interface_ip}")
+                logger.debug(f"Rewritten SSDP packet:\n{text}")
+            else:
+                logger.warning(f"SSDP Location rewrite had no effect. Packet:\n{original}")
+            return text.encode("utf-8")
+        except Exception as e:
+            logger.error(f"Failed to rewrite SSDP: {e}")
+            return data
+
+    async def start(self) -> None:
+        """Start the SSDP proxy."""
+        if self._running:
+            return
+
+        logger.info(
+            f"Starting SSDP proxy: listening on {self.local_interface_ip} (LAN A), "
+            f"broadcasting on {self.remote_interface_ip} (LAN B), "
+            f"proxying printer {self.target_printer_ip}"
+        )
+        self._running = True
+
+        try:
+            # Create socket for listening on LAN A (printer network)
+            # Bind to 0.0.0.0 to receive broadcast packets (255.255.255.255)
+            # We filter by source IP in the handler
+            self._local_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+            self._local_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                self._local_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except (AttributeError, OSError):
+                pass
+            self._local_socket.setblocking(False)
+            # Bind to all interfaces to receive broadcasts
+            self._local_socket.bind(("", SSDP_PORT))
+
+            # Join multicast group on local interface (for multicast SSDP if used)
+            mreq = struct.pack(
+                "4s4s",
+                socket.inet_aton(SSDP_MULTICAST_ADDR),
+                socket.inet_aton(self.local_interface_ip),
+            )
+            self._local_socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+            self._local_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+
+            # Create socket for broadcasting on LAN B (slicer network)
+            self._remote_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+            self._remote_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                self._remote_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except (AttributeError, OSError):
+                pass
+            self._remote_socket.setblocking(False)
+            # Bind to remote interface
+            self._remote_socket.bind((self.remote_interface_ip, 0))
+            self._remote_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+
+            logger.info(f"SSDP proxy listening on 0.0.0.0:{SSDP_PORT} (filtering for printer {self.target_printer_ip})")
+            logger.info(f"SSDP proxy will broadcast on {self.remote_interface_ip}")
+
+            # Main loop
+            last_broadcast = 0.0
+            broadcast_interval = 30.0  # Re-broadcast every 30 seconds
+
+            while self._running:
+                # Listen for SSDP from printer on LAN A
+                try:
+                    data, addr = self._local_socket.recvfrom(4096)
+                    await self._handle_local_packet(data, addr)
+                except BlockingIOError:
+                    pass
+                except Exception as e:
+                    if self._running:
+                        logger.debug(f"SSDP proxy receive error: {e}")
+
+                # Listen for M-SEARCH from slicer on LAN B (via remote socket would need separate bind)
+                # For now, we periodically re-broadcast cached printer SSDP
+                now = asyncio.get_event_loop().time()
+                if self._last_printer_ssdp and now - last_broadcast >= broadcast_interval:
+                    await self._broadcast_to_remote()
+                    last_broadcast = now
+
+                await asyncio.sleep(0.1)
+
+        except OSError as e:
+            logger.error(f"SSDP proxy error: {e}")
+        except asyncio.CancelledError:
+            logger.debug("SSDP proxy cancelled")
+        except Exception as e:
+            logger.error(f"SSDP proxy error: {e}")
+        finally:
+            await self._cleanup()
+
+    async def stop(self) -> None:
+        """Stop the SSDP proxy."""
+        logger.info("Stopping SSDP proxy")
+        self._running = False
+        await self._cleanup()
+
+    async def _cleanup(self) -> None:
+        """Clean up resources."""
+        for sock in [self._local_socket, self._remote_socket]:
+            if sock:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+        self._local_socket = None
+        self._remote_socket = None
+
+    async def _handle_local_packet(self, data: bytes, addr: tuple[str, int]) -> None:
+        """Handle SSDP packet received on local interface (LAN A)."""
+        sender_ip = addr[0]
+
+        # Only process packets from the target printer
+        if sender_ip != self.target_printer_ip:
+            return
+
+        # Check if it's a NOTIFY message
+        if b"NOTIFY" not in data and b"HTTP/1.1 200" not in data:
+            return
+
+        # Check if it's a Bambu printer SSDP
+        if b"bambulab-com:device:3dprinter" not in data:
+            return
+
+        # Parse and store printer info
+        headers = self._parse_ssdp_message(data)
+        if headers:
+            self._printer_info = headers
+            logger.debug(f"Received SSDP from printer {sender_ip}: {headers.get('devname.bambu.com', 'unknown')}")
+
+        # Store and immediately broadcast
+        self._last_printer_ssdp = data
+        await self._broadcast_to_remote()
+
+    async def _broadcast_to_remote(self) -> None:
+        """Broadcast cached printer SSDP on remote interface (LAN B)."""
+        if not self._remote_socket or not self._last_printer_ssdp:
+            return
+
+        try:
+            # Rewrite Location to point to Bambuddy's remote interface
+            rewritten = self._rewrite_ssdp_location(self._last_printer_ssdp)
+
+            # Calculate broadcast address for remote network
+            # Use 255.255.255.255 for simplicity (works across subnets)
+            self._remote_socket.sendto(rewritten, (SSDP_BROADCAST_ADDR, SSDP_PORT))
+
+            printer_name = self._printer_info.get("devname.bambu.com", "unknown")
+            logger.debug(f"Broadcast SSDP for '{printer_name}' on LAN B ({self.remote_interface_ip})")
+        except Exception as e:
+            logger.debug(f"Failed to broadcast SSDP on remote: {e}")

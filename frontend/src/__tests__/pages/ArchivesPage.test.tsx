@@ -84,8 +84,14 @@ describe('ArchivesPage', () => {
       http.get('/api/v1/archives/tags', () => {
         return HttpResponse.json(['test', 'calibration', 'functional']);
       }),
-      http.get('/api/v1/archives/:id/plates', () => {
-        return HttpResponse.json([]);
+      http.get('/api/v1/archives/:id/plates', ({ params }) => {
+        const archiveId = Number(params.id);
+        return HttpResponse.json({
+          archive_id: Number.isFinite(archiveId) ? archiveId : 0,
+          filename: 'sample.3mf',
+          plates: [],
+          is_multi_plate: false,
+        });
       }),
       http.get('/api/v1/archives/:id/filament-requirements', () => {
         return HttpResponse.json([]);

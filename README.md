@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/maziggy/bambuddy/releases"><img src="https://img.shields.io/github/v/release/maziggy/bambuddy?style=flat-square&color=blue" alt="Release"></a>
   <img src="https://github.com/maziggy/bambuddy/actions/workflows/github-code-scanning/codeql/badge.svg">
-  <img src="https://github.com/maziggy/bambuddy/actions/workflows/ci.yml/badge.svg?branch=main">  
+  <img src="https://github.com/maziggy/bambuddy/actions/workflows/ci.yml/badge.svg?branch=main">
   <a href="https://github.com/maziggy/bambuddy/blob/main/LICENSE"><img src="https://img.shields.io/github/license/maziggy/bambuddy?style=flat-square" alt="License"></a>
   <a href="https://github.com/maziggy/bambuddy/stargazers"><img src="https://img.shields.io/github/stars/maziggy/bambuddy?style=flat-square" alt="Stars"></a>
   <a href="https://github.com/maziggy/bambuddy/issues"><img src="https://img.shields.io/github/issues/maziggy/bambuddy?style=flat-square" alt="Issues"></a>
@@ -444,7 +444,26 @@ services:
 
 </details>
 
-#### Manual Installation
+#### Windows (Portable Launcher)
+
+The easiest way to run Bambuddy on Windows - no installation required:
+
+```batch
+git clone https://github.com/maziggy/bambuddy.git
+cd bambuddy
+start_bambuddy.bat
+```
+
+Double-click `start_bambuddy.bat` and it will:
+- Download Python and Node.js automatically (portable, no system changes)
+- Install dependencies and build the frontend
+- Open your browser to http://localhost:8000
+
+Everything is stored in the `.portable\` folder. Use `start_bambuddy.bat reset` to clean up.
+
+> **Custom port:** `set PORT=9000 & start_bambuddy.bat`
+
+#### Manual Installation (Linux/macOS)
 
 ```bash
 # Clone and setup

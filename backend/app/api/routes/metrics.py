@@ -362,13 +362,11 @@ async def get_metrics(
             )
             lines.append(f"bambuddy_printer_prints_total{labels} {count}")
 
-    # Total filament used (multiply by quantity to account for multiple items printed)
+    # Total filament used - filament_used_grams already contains the total for each print job
     lines.append("")
     lines.append("# HELP bambuddy_filament_used_grams Total filament used in grams")
     lines.append("# TYPE bambuddy_filament_used_grams counter")
-    result = await db.execute(
-        select(func.coalesce(func.sum(PrintArchive.filament_used_grams * func.coalesce(PrintArchive.quantity, 1)), 0))
-    )
+    result = await db.execute(select(func.coalesce(func.sum(PrintArchive.filament_used_grams), 0)))
     total_filament = result.scalar() or 0
     lines.append(f"bambuddy_filament_used_grams {total_filament:.1f}")
 

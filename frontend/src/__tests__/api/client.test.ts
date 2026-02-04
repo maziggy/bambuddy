@@ -95,11 +95,11 @@ describe('API Client Auth Header', () => {
     expect(capturedHeaders!.get('Authorization')).toBeNull();
   });
 
-  it('clears token on 401 Unauthorized response', async () => {
+  it('clears token on 401 with invalid token message', async () => {
     server.use(
       http.get('/api/v1/settings/spoolman', () => {
         return HttpResponse.json(
-          { detail: 'Not authenticated' },
+          { detail: 'Could not validate credentials' },
           { status: 401 }
         );
       })
@@ -116,6 +116,29 @@ describe('API Client Auth Header', () => {
 
     expect(getAuthToken()).toBeNull();
     expect(localStorageMock.removeItem).toHaveBeenCalledWith('auth_token');
+  });
+
+  it('does not clear token on 401 with generic auth error', async () => {
+    server.use(
+      http.get('/api/v1/settings/spoolman', () => {
+        return HttpResponse.json(
+          { detail: 'Authentication required' },
+          { status: 401 }
+        );
+      })
+    );
+
+    setAuthToken('valid-token');
+    expect(getAuthToken()).toBe('valid-token');
+
+    try {
+      await api.getSpoolmanSettings();
+    } catch {
+      // Expected to throw
+    }
+
+    // Token should NOT be cleared for generic auth errors (might be timing issue)
+    expect(getAuthToken()).toBe('valid-token');
   });
 });
 

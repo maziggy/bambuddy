@@ -808,7 +808,11 @@ async def on_print_start(printer_id: int, data: dict):
         printer = result.scalar_one_or_none()
 
         # Plate detection check - pause if objects detected on build plate
+        logger.info(
+            f"[PLATE CHECK] printer_id={printer_id}, plate_detection_enabled={printer.plate_detection_enabled if printer else 'NO PRINTER'}"
+        )
         if printer and printer.plate_detection_enabled:
+            logger.info(f"[PLATE CHECK] ENTERING plate detection code for printer {printer_id}")
             try:
                 from backend.app.services.plate_detection import check_plate_empty
 
@@ -2527,8 +2531,6 @@ async def lifespan(app: FastAPI):
 
         # Restore MQTT smart plug subscriptions
         if mqtt_settings.get("mqtt_enabled"):
-            from sqlalchemy import select
-
             from backend.app.models.smart_plug import SmartPlug
 
             result = await db.execute(select(SmartPlug).where(SmartPlug.plug_type == "mqtt"))
@@ -2605,6 +2607,7 @@ async def lifespan(app: FastAPI):
             vp_mode = await get_setting(db, "virtual_printer_mode") or "immediate"
             vp_model = await get_setting(db, "virtual_printer_model") or ""
             vp_target_printer_id = await get_setting(db, "virtual_printer_target_printer_id")
+            vp_remote_iface = await get_setting(db, "virtual_printer_remote_interface_ip") or ""
 
             # Look up printer IP and serial if in proxy mode
             vp_target_ip = ""
@@ -2630,6 +2633,7 @@ async def lifespan(app: FastAPI):
                         model=vp_model,
                         target_printer_ip=vp_target_ip,
                         target_printer_serial=vp_target_serial,
+                        remote_interface_ip=vp_remote_iface,
                     )
                     if vp_mode == "proxy":
                         logging.info(f"Virtual printer proxy started (target={vp_target_ip})")
@@ -2766,9 +2770,9 @@ async def auth_middleware(request, call_next):
         )
 
     # Validate JWT token
-    try:
-        import jwt
+    import jwt
 
+    try:
         from backend.app.core.auth import ALGORITHM, SECRET_KEY
 
         token = auth_header.replace("Bearer ", "")

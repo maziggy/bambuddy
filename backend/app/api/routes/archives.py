@@ -466,10 +466,8 @@ async def get_archive_stats(
             total_seconds += print_time_seconds
     total_time = total_seconds / 3600  # Convert to hours
 
-    # Multiply filament by quantity to account for multiple items printed
-    filament_result = await db.execute(
-        select(func.sum(PrintArchive.filament_used_grams * func.coalesce(PrintArchive.quantity, 1)))
-    )
+    # Sum filament directly - filament_used_grams already contains the total for the print job
+    filament_result = await db.execute(select(func.coalesce(func.sum(PrintArchive.filament_used_grams), 0)))
     total_filament = filament_result.scalar() or 0
 
     cost_result = await db.execute(select(func.sum(PrintArchive.cost)))

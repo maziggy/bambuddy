@@ -5,6 +5,13 @@ All notable changes to Bambuddy will be documented in this file.
 
 ## [0.1.8b] - Not released
 
+### Fixed
+- **Filament Statistics Incorrectly Multiplied by Quantity** (Issue #229):
+  - Fixed filament totals being inflated by incorrectly multiplying by quantity
+  - The `filament_used_grams` field already contains the total for the entire print job
+  - Removed incorrect `* quantity` multiplication from archive stats, Prometheus metrics, and FilamentTrends chart
+  - Example: A print with 26 objects using 126g was incorrectly shown as 3,276g
+
 ### Added
 - **Windows Portable Launcher** (contributed by nmori):
   - New `start_bambuddy.bat` for Windows users - double-click to run, no installation required

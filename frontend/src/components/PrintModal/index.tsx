@@ -180,8 +180,15 @@ export function PrintModal({
     enabled: !!archiveId && !isLibraryFile,
   });
 
+  // Fetch library file details to get sliced_for_model
+  const { data: libraryFileDetails } = useQuery({
+    queryKey: ['library-file', libraryFileId],
+    queryFn: () => api.getLibraryFile(libraryFileId!),
+    enabled: isLibraryFile && !!libraryFileId,
+  });
+
   // Get sliced_for_model from archive or library file
-  const slicedForModel = archiveDetails?.sliced_for_model || null;
+  const slicedForModel = archiveDetails?.sliced_for_model || libraryFileDetails?.sliced_for_model || null;
 
   // Fetch plates for archives
   const { data: archivePlatesData, isError: archivePlatesError } = useQuery({

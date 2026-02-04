@@ -1873,6 +1873,17 @@ async def get_file(
             )
         duplicate_count = len(duplicates)
 
+    # Extract key metadata fields
+    print_name = None
+    print_time = None
+    filament_grams = None
+    sliced_for_model = None
+    if file.file_metadata:
+        print_name = file.file_metadata.get("print_name")
+        print_time = file.file_metadata.get("print_time_seconds")
+        filament_grams = file.file_metadata.get("filament_used_grams")
+        sliced_for_model = file.file_metadata.get("sliced_for_model")
+
     return FileResponseSchema(
         id=file.id,
         folder_id=file.folder_id,
@@ -1895,6 +1906,10 @@ async def get_file(
         created_by_username=file.created_by.username if file.created_by else None,
         created_at=file.created_at,
         updated_at=file.updated_at,
+        print_name=print_name,
+        print_time_seconds=print_time,
+        filament_used_grams=filament_grams,
+        sliced_for_model=sliced_for_model,
     )
 
 

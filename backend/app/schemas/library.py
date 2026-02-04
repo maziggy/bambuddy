@@ -130,6 +130,12 @@ class FileResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    # Metadata fields
+    print_name: str | None = None
+    print_time_seconds: int | None = None
+    filament_used_grams: float | None = None
+    sliced_for_model: str | None = None
+
     class Config:
         from_attributes = True
 

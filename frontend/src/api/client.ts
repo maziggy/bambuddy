@@ -3802,6 +3802,11 @@ export interface LibraryFile {
   created_by_username: string | null;
   created_at: string;
   updated_at: string;
+  // Metadata fields
+  print_name: string | null;
+  print_time_seconds: number | null;
+  filament_used_grams: number | null;
+  sliced_for_model: string | null;
 }
 
 export interface LibraryFileListItem {

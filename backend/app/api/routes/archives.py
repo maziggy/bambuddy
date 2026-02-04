@@ -466,10 +466,8 @@ async def get_archive_stats(
             total_seconds += print_time_seconds
     total_time = total_seconds / 3600  # Convert to hours
 
-    # Multiply filament by quantity to account for multiple items printed
-    filament_result = await db.execute(
-        select(func.sum(PrintArchive.filament_used_grams * func.coalesce(PrintArchive.quantity, 1)))
-    )
+    # Sum filament directly - filament_used_grams already contains the total for the print job
+    filament_result = await db.execute(select(func.coalesce(func.sum(PrintArchive.filament_used_grams), 0)))
     total_filament = filament_result.scalar() or 0
 
     cost_result = await db.execute(select(func.sum(PrintArchive.cost)))
@@ -2323,13 +2321,25 @@ async def get_archive_plates(
 
             plate_indices.sort()
 
-            # Parse model_settings.config for plate names
+            # Parse model_settings.config for plate names + object assignments
             # Plate names are stored with plater_id and plater_name keys
             plate_names = {}  # plater_id -> name
+            plate_object_ids: dict[int, list[str]] = {}
+            object_names_by_id: dict[str, str] = {}
             if "Metadata/model_settings.config" in namelist:
                 try:
                     model_content = zf.read("Metadata/model_settings.config").decode()
                     model_root = ET.fromstring(model_content)
+                    # Build object ID -> name map
+                    for obj_elem in model_root.findall(".//object"):
+                        obj_id = obj_elem.get("id")
+                        if not obj_id:
+                            continue
+                        name_meta = obj_elem.find("metadata[@key='name']")
+                        obj_name = name_meta.get("value") if name_meta is not None else None
+                        if obj_name:
+                            object_names_by_id[obj_id] = obj_name
+
                     for plate_elem in model_root.findall(".//plate"):
                         plater_id = None
                         plater_name = None
@@ -2345,6 +2355,17 @@ async def get_archive_plates(
                                 plater_name = value.strip()
                         if plater_id is not None and plater_name:
                             plate_names[plater_id] = plater_name
+
+                        if plater_id is not None:
+                            for instance_elem in plate_elem.findall("model_instance"):
+                                for inst_meta in instance_elem.findall("metadata"):
+                                    if inst_meta.get("key") == "object_id":
+                                        obj_id = inst_meta.get("value")
+                                        if not obj_id:
+                                            continue
+                                        plate_object_ids.setdefault(plater_id, [])
+                                        if obj_id not in plate_object_ids[plater_id]:
+                                            plate_object_ids[plater_id].append(obj_id)
                 except Exception:
                     pass  # model_settings.config parsing is optional
 
@@ -2454,6 +2475,10 @@ async def get_archive_plates(
                 objects = meta.get("objects", [])
                 if not objects:
                     objects = plate_json_objects.get(idx, [])
+                if not objects and plate_object_ids.get(idx):
+                    objects = [
+                        object_names_by_id.get(obj_id, f"Object {obj_id}") for obj_id in plate_object_ids.get(idx, [])
+                    ]
 
                 plate_name = meta.get("name")
                 if not plate_name:
@@ -2466,6 +2491,7 @@ async def get_archive_plates(
                         "index": idx,
                         "name": plate_name,
                         "objects": objects,
+                        "object_count": len(objects),
                         "has_thumbnail": has_thumbnail,
                         "thumbnail_url": f"/api/v1/archives/{archive_id}/plate-thumbnail/{idx}"
                         if has_thumbnail
@@ -2576,6 +2602,8 @@ async def get_filament_requirements(
                                 used_g = filament_elem.get("used_g", "0")
                                 used_m = filament_elem.get("used_m", "0")
 
+                                tray_info_idx = filament_elem.get("tray_info_idx", "")
+
                                 try:
                                     used_grams = float(used_g)
                                 except (ValueError, TypeError):
@@ -2589,6 +2617,7 @@ async def get_filament_requirements(
                                             "color": filament_color,
                                             "used_grams": round(used_grams, 1),
                                             "used_meters": float(used_m) if used_m else 0,
+                                            "tray_info_idx": tray_info_idx,
                                         }
                                     )
                             break
@@ -2601,6 +2630,8 @@ async def get_filament_requirements(
                         filament_color = filament_elem.get("color", "")
                         used_g = filament_elem.get("used_g", "0")
                         used_m = filament_elem.get("used_m", "0")
+
+                        tray_info_idx = filament_elem.get("tray_info_idx", "")
 
                         # Only include filaments that are actually used
                         try:
@@ -2616,6 +2647,7 @@ async def get_filament_requirements(
                                     "color": filament_color,
                                     "used_grams": round(used_grams, 1),
                                     "used_meters": float(used_m) if used_m else 0,
+                                    "tray_info_idx": tray_info_idx,
                                 }
                             )
 

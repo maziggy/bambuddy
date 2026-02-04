@@ -10,6 +10,7 @@ export interface PlateMetadata {
   index: number;
   name: string | null;
   objects: string[];
+  object_count?: number;
   has_thumbnail: boolean;
   thumbnail_url: string | null;
   print_time_seconds: number | null;

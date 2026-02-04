@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { WebGLPreview } from 'gcode-preview';
 import { Loader2, Layers, ChevronLeft, ChevronRight, FileWarning } from 'lucide-react';
+import { getAuthToken } from '../api/client';
 
 interface GcodeViewerProps {
   gcodeUrl: string;
@@ -63,7 +64,13 @@ export function GcodeViewer({
     previewRef.current = preview;
 
     // Fetch and process gcode
-    fetch(gcodeUrl)
+    const headers: HeadersInit = {};
+    const token = getAuthToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    fetch(gcodeUrl, { headers })
       .then(async response => {
         if (!response.ok) {
           if (response.status === 404) {

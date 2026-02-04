@@ -434,6 +434,17 @@ async def restore_backup(
             )
 
 
+@router.get("/network-interfaces")
+async def get_network_interfaces(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+):
+    """Get available network interfaces for SSDP proxy configuration."""
+    from backend.app.services.network_utils import get_network_interfaces
+
+    interfaces = get_network_interfaces()
+    return {"interfaces": interfaces}
+
+
 @router.get("/virtual-printer/models")
 async def get_virtual_printer_models(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
@@ -466,6 +477,7 @@ async def get_virtual_printer_settings(
     mode = await get_setting(db, "virtual_printer_mode")
     model = await get_setting(db, "virtual_printer_model")
     target_printer_id = await get_setting(db, "virtual_printer_target_printer_id")
+    remote_interface_ip = await get_setting(db, "virtual_printer_remote_interface_ip")
 
     return {
         "enabled": enabled == "true" if enabled else False,
@@ -473,6 +485,7 @@ async def get_virtual_printer_settings(
         "mode": mode or "immediate",
         "model": model or DEFAULT_VIRTUAL_PRINTER_MODEL,
         "target_printer_id": int(target_printer_id) if target_printer_id else None,
+        "remote_interface_ip": remote_interface_ip or "",
         "status": virtual_printer_manager.get_status(),
     }
 
@@ -484,10 +497,16 @@ async def update_virtual_printer_settings(
     mode: str = None,
     model: str = None,
     target_printer_id: int = None,
+    remote_interface_ip: str = None,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
-    """Update virtual printer settings and restart services if needed."""
+    """Update virtual printer settings and restart services if needed.
+
+    For proxy mode with SSDP proxy (dual-homed setup):
+    - remote_interface_ip: IP of interface on slicer's network (LAN B)
+    - Local interface is auto-detected based on target printer IP
+    """
     from sqlalchemy import select
 
     from backend.app.models.printer import Printer
@@ -504,6 +523,7 @@ async def update_virtual_printer_settings(
     current_model = await get_setting(db, "virtual_printer_model") or DEFAULT_VIRTUAL_PRINTER_MODEL
     current_target_id_str = await get_setting(db, "virtual_printer_target_printer_id")
     current_target_id = int(current_target_id_str) if current_target_id_str else None
+    current_remote_iface = await get_setting(db, "virtual_printer_remote_interface_ip") or ""
 
     # Apply updates
     new_enabled = enabled if enabled is not None else current_enabled
@@ -511,6 +531,7 @@ async def update_virtual_printer_settings(
     new_mode = mode if mode is not None else current_mode
     new_model = model if model is not None else current_model
     new_target_id = target_printer_id if target_printer_id is not None else current_target_id
+    new_remote_iface = remote_interface_ip if remote_interface_ip is not None else current_remote_iface
 
     # Validate mode
     # "review" is the new name for "queue" (pending review before archiving)
@@ -587,6 +608,8 @@ async def update_virtual_printer_settings(
         await set_setting(db, "virtual_printer_model", model)
     if target_printer_id is not None:
         await set_setting(db, "virtual_printer_target_printer_id", str(target_printer_id))
+    if remote_interface_ip is not None:
+        await set_setting(db, "virtual_printer_remote_interface_ip", remote_interface_ip)
     await db.commit()
     db.expire_all()
 
@@ -599,6 +622,7 @@ async def update_virtual_printer_settings(
             model=new_model,
             target_printer_ip=target_printer_ip,
             target_printer_serial=target_printer_serial,
+            remote_interface_ip=new_remote_iface,
         )
     except ValueError as e:
         logger.warning(f"Virtual printer configuration validation error: {e}")

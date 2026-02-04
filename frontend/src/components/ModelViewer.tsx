@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -6,6 +7,7 @@ import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import JSZip from 'jszip';
 import { Loader2, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from './Button';
+import { getAuthToken } from '../api/client';
 
 interface BuildVolume {
   x: number;
@@ -46,6 +48,7 @@ interface Parsed3MFData {
   objects: Map<string, ObjectData>;
   buildItems: BuildItem[];
   plateBounds: Map<number, { minX: number; minY: number; maxX: number; maxY: number }>;
+  plateOffsets: Map<number, { offsetX: number; offsetY: number }>;
 }
 
 // Parse 3MF transform - keep in 3MF coordinate space (Z-up)
@@ -140,6 +143,7 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<Parsed3MFData> {
   const objects = new Map<string, ObjectData>();
   const buildItems: BuildItem[] = [];
   const plateBounds = new Map<number, { minX: number; minY: number; maxX: number; maxY: number }>();
+  const plateOffsets = new Map<number, { offsetX: number; offsetY: number }>();
   const parser = new DOMParser();
 
   // Helper to load and parse a model file from the zip
@@ -214,6 +218,8 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<Parsed3MFData> {
         const plateEl = plateElements[i];
         let plateId: number | null = null;
         const metadataElements = plateEl.getElementsByTagName('metadata');
+        let plateOffsetX = 0;
+        let plateOffsetY = 0;
         for (let j = 0; j < metadataElements.length; j++) {
           const metaEl = metadataElements[j];
           const key = metaEl.getAttribute('key');
@@ -225,9 +231,24 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<Parsed3MFData> {
                 plateId = parsed;
               }
             }
+          } else if (key === 'pos_x') {
+            const value = metaEl.getAttribute('value');
+            const parsed = value ? Number.parseFloat(value) : Number.NaN;
+            if (Number.isFinite(parsed)) {
+              plateOffsetX = parsed;
+            }
+          } else if (key === 'pos_y') {
+            const value = metaEl.getAttribute('value');
+            const parsed = value ? Number.parseFloat(value) : Number.NaN;
+            if (Number.isFinite(parsed)) {
+              plateOffsetY = parsed;
+            }
           }
         }
         if (plateId == null) continue;
+        if (plateOffsetX !== 0 || plateOffsetY !== 0) {
+          plateOffsets.set(plateId, { offsetX: plateOffsetX, offsetY: plateOffsetY });
+        }
 
         const modelInstances = plateEl.getElementsByTagName('model_instance');
         for (let j = 0; j < modelInstances.length; j++) {
@@ -296,11 +317,11 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<Parsed3MFData> {
         }
       }
     }
-    return { objects, buildItems, plateBounds };
+    return { objects, buildItems, plateBounds, plateOffsets };
   }
 
   const mainDoc = await loadModelFile(mainModelPath);
-  if (!mainDoc) return { objects, buildItems, plateBounds };
+  if (!mainDoc) return { objects, buildItems, plateBounds, plateOffsets };
 
   // Parse objects - Bambu Studio uses components to reference external files
   const objectElements = mainDoc.getElementsByTagName('object');
@@ -415,7 +436,7 @@ async function parse3MF(arrayBuffer: ArrayBuffer): Promise<Parsed3MFData> {
     }
   }
 
-  return { objects, buildItems, plateBounds };
+  return { objects, buildItems, plateBounds, plateOffsets };
 }
 
 function createGeometryFromMesh(mesh: MeshData): THREE.BufferGeometry {
@@ -566,6 +587,7 @@ export function ModelViewer({
   selectedPlateId = null,
   className = '',
 }: ModelViewerProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -658,10 +680,17 @@ export function ModelViewer({
 
     const normalizedType = (fileType || url.split('?')[0].split('.').pop() || '').toLowerCase();
 
+    // Build auth headers for fetch
+    const headers: HeadersInit = {};
+    const token = getAuthToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     if (normalizedType === 'stl') {
-      fetch(url)
+      fetch(url, { headers })
         .then((res) => {
-          if (!res.ok) throw new Error('Failed to load file');
+          if (!res.ok) throw new Error(t('modelViewer.errors.failedToLoad'));
           return res.arrayBuffer();
         })
         .then((buffer) => {
@@ -676,15 +705,15 @@ export function ModelViewer({
           setLoading(false);
         });
     } else if (normalizedType === '3mf') {
-      fetch(url)
+      fetch(url, { headers })
         .then((res) => {
-          if (!res.ok) throw new Error('Failed to load file');
+          if (!res.ok) throw new Error(t('modelViewer.errors.failedToLoad'));
           return res.arrayBuffer();
         })
         .then(parse3MF)
         .then((parsed) => {
           if (parsed.objects.size === 0) {
-            throw new Error('No meshes found in 3MF file');
+            throw new Error(t('modelViewer.errors.noMeshes'));
           }
           setParsedData(parsed);
         })
@@ -693,23 +722,29 @@ export function ModelViewer({
           setLoading(false);
         });
     } else {
-      setError('Unsupported file format');
+      setError(t('modelViewer.errors.unsupportedFormat'));
       setLoading(false);
     }
 
-    // Handle resize
+    // Handle resize (window + container)
     const handleResize = () => {
       if (!container) return;
       const w = container.clientWidth;
       const h = container.clientHeight;
+      if (w === 0 || h === 0) return;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
     };
     window.addEventListener('resize', handleResize);
+    const resizeObserver = new ResizeObserver(() => {
+      handleResize();
+    });
+    resizeObserver.observe(container);
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      resizeObserver.disconnect();
       cancelAnimationFrame(animationId);
       controls.dispose();
       renderer.dispose();
@@ -718,7 +753,7 @@ export function ModelViewer({
       plateRef.current = null;
       gridRef.current = null;
     };
-  }, [url, buildVolume, fileType]);
+  }, [url, buildVolume, fileType, t]);
 
   useEffect(() => {
     if (!sceneRef.current || !cameraRef.current || !controlsRef.current) return;
@@ -750,33 +785,36 @@ export function ModelViewer({
     // Always place models on the build plate (Y=0)
     group.position.y = -box.min.y;
 
-    // For a selected plate, center the plate contents on the build plate
-    const shouldRecenter = isStlModel || parsedData!.buildItems.length === 0;
-    const centerOffsetX = shouldRecenter ? -center.x : 0;
-    const centerOffsetZ = shouldRecenter ? -center.z : 0;
+    const selectedPlateBounds = (!isStlModel && selectedPlateId != null && parsedData!.buildItems.length > 0)
+      ? parsedData!.plateBounds.get(selectedPlateId)
+      : undefined;
+    const selectedPlateOffset = (!isStlModel && selectedPlateId != null)
+      ? parsedData!.plateOffsets.get(selectedPlateId)
+      : undefined;
+    const shouldCenterOnPlate = isStlModel
+      || parsedData!.buildItems.length === 0
+      || (selectedPlateId != null && !selectedPlateBounds && !selectedPlateOffset);
+    const centerOffsetX = shouldCenterOnPlate ? -center.x : 0;
+    const centerOffsetZ = shouldCenterOnPlate ? -center.z : 0;
 
     let plateOffsetX = 0;
     let plateOffsetZ = 0;
-    if (!isStlModel && selectedPlateId != null && parsedData!.buildItems.length > 0) {
+    if (!isStlModel && selectedPlateId != null && parsedData!.buildItems.length > 0 && selectedPlateBounds) {
       const plateBox = new THREE.Box3().setFromObject(group);
-      const bounds = parsedData!.plateBounds.get(selectedPlateId);
-      if (bounds) {
-        plateOffsetX = plateBox.min.x - bounds.minX;
-        plateOffsetZ = plateBox.min.z - bounds.minY;
-      } else {
-        const epsilon = 1e-6;
-        plateOffsetX = Math.floor((plateBox.min.x + epsilon) / buildVolume.x) * buildVolume.x;
-        plateOffsetZ = Math.floor((plateBox.min.z + epsilon) / buildVolume.y) * buildVolume.y;
-      }
+      plateOffsetX = plateBox.min.x - selectedPlateBounds.minX;
+      plateOffsetZ = plateBox.min.z - selectedPlateBounds.minY;
     }
 
     const plateCenterX = buildVolume.x / 2;
     const plateCenterZ = buildVolume.y / 2;
 
-    if (!isStlModel && selectedPlateId != null && parsedData!.buildItems.length > 0) {
+    if (!isStlModel && selectedPlateId != null && parsedData!.buildItems.length > 0 && selectedPlateBounds) {
       group.position.x = centerOffsetX - plateOffsetX;
       group.position.z = centerOffsetZ - plateOffsetZ;
-    } else if (isStlModel) {
+    } else if (!isStlModel && selectedPlateId != null && selectedPlateOffset) {
+      group.position.x = centerOffsetX + (plateCenterX - selectedPlateOffset.offsetX);
+      group.position.z = centerOffsetZ + (plateCenterZ - selectedPlateOffset.offsetY);
+    } else if (shouldCenterOnPlate) {
       group.position.x = centerOffsetX + plateCenterX;
       group.position.z = centerOffsetZ + plateCenterZ;
     } else {

@@ -39,16 +39,27 @@ async function request<T>(
   });
 
   if (!response.ok) {
-    // Handle 401 Unauthorized - clear token and redirect to login
-    if (response.status === 401) {
-      setAuthToken(null);
-      // Don't throw here - let the auth context handle redirect
-    }
     const error = await response.json().catch(() => ({}));
     const detail = error.detail;
     const message = typeof detail === 'string'
       ? detail
       : (detail ? JSON.stringify(detail) : `HTTP ${response.status}`);
+
+    // Handle 401 Unauthorized - only clear token if it's actually invalid
+    // Don't clear on "Authentication required" which might be a timing issue
+    if (response.status === 401) {
+      const invalidTokenMessages = [
+        'Could not validate credentials',
+        'Token has expired',
+        'User not found or inactive',
+        'Invalid API key',
+        'API key has expired',
+      ];
+      if (invalidTokenMessages.some(m => message.includes(m))) {
+        setAuthToken(null);
+      }
+    }
+
     throw new Error(message);
   }
 
@@ -2722,6 +2733,8 @@ export const api = {
   },
   checkFfmpeg: () =>
     request<{ installed: boolean; path: string | null }>('/settings/check-ffmpeg'),
+  getNetworkInterfaces: () =>
+    request<{ interfaces: NetworkInterface[] }>('/settings/network-interfaces'),
 
   // Cloud
   getCloudStatus: () => request<CloudAuthStatus>('/cloud/status'),
@@ -2803,13 +2816,11 @@ export const api = {
 
   // Tasmota Discovery (auto-detects network)
   startTasmotaScan: () =>
-    fetch(`${API_BASE}/smart-plugs/discover/scan`, { method: 'POST' })
-      .then(res => res.ok ? res.json() : res.json().then(e => { throw new Error(e.detail || `HTTP ${res.status}`); })),
+    request<TasmotaScanStatus>('/smart-plugs/discover/scan', { method: 'POST' }),
   getTasmotaScanStatus: () =>
     request<TasmotaScanStatus>('/smart-plugs/discover/status'),
   stopTasmotaScan: () =>
-    fetch(`${API_BASE}/smart-plugs/discover/stop`, { method: 'POST' })
-      .then(res => res.ok ? res.json() : res.json().then(e => { throw new Error(e.detail || `HTTP ${res.status}`); })),
+    request<TasmotaScanStatus>('/smart-plugs/discover/stop', { method: 'POST' }),
   getDiscoveredTasmotaDevices: () =>
     request<DiscoveredTasmotaDevice[]>('/smart-plugs/discover/devices'),
 
@@ -3791,6 +3802,11 @@ export interface LibraryFile {
   created_by_username: string | null;
   created_at: string;
   updated_at: string;
+  // Metadata fields
+  print_name: string | null;
+  print_time_seconds: number | null;
+  filament_used_grams: number | null;
+  sliced_for_model: string | null;
 }
 
 export interface LibraryFileListItem {
@@ -3809,6 +3825,7 @@ export interface LibraryFileListItem {
   print_name: string | null;
   print_time_seconds: number | null;
   filament_used_grams: number | null;
+  sliced_for_model: string | null;
 }
 
 export interface LibraryFileUpdate {
@@ -3975,7 +3992,15 @@ export interface VirtualPrinterSettings {
   mode: VirtualPrinterMode;
   model: string;
   target_printer_id: number | null;  // For proxy mode
+  remote_interface_ip: string | null;  // For SSDP proxy across networks
   status: VirtualPrinterStatus;
+}
+
+export interface NetworkInterface {
+  name: string;
+  ip: string;
+  netmask: string;
+  subnet: string;
 }
 
 export interface VirtualPrinterModels {
@@ -4007,6 +4032,7 @@ export const virtualPrinterApi = {
     mode?: 'immediate' | 'review' | 'print_queue' | 'proxy';
     model?: string;
     target_printer_id?: number;
+    remote_interface_ip?: string;
   }) => {
     const params = new URLSearchParams();
     if (data.enabled !== undefined) params.set('enabled', String(data.enabled));
@@ -4014,6 +4040,7 @@ export const virtualPrinterApi = {
     if (data.mode !== undefined) params.set('mode', data.mode);
     if (data.model !== undefined) params.set('model', data.model);
     if (data.target_printer_id !== undefined) params.set('target_printer_id', String(data.target_printer_id));
+    if (data.remote_interface_ip !== undefined) params.set('remote_interface_ip', data.remote_interface_ip);
 
     return request<VirtualPrinterSettings>(`/settings/virtual-printer?${params.toString()}`, {
       method: 'PUT',

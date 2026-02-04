@@ -77,6 +77,20 @@ const mockFiles = [
     duplicate_count: 2,
     created_at: '2024-01-02T00:00:00Z',
   },
+  {
+    id: 3,
+    filename: 'cube.gcode.3mf',
+    file_path: '/library/cube.gcode.3mf',
+    file_size: 2048576,
+    file_type: '3mf',
+    folder_id: null,
+    thumbnail_path: '/thumbnails/3.png',
+    print_name: 'Cube',
+    print_time_seconds: 1800,
+    print_count: 2,
+    duplicate_count: 0,
+    created_at: '2024-01-03T00:00:00Z',
+  },
 ];
 
 const mockStats = {
@@ -459,8 +473,27 @@ describe('FileManagerPage', () => {
     });
   });
 
-  describe('add to queue', () => {
-    it('shows add to queue button for sliced files', async () => {
+  describe('schedule print', () => {
+    it('shows schedule print button when one sliced file is selected', async () => {
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Benchy')).toBeInTheDocument();
+      });
+
+      // Select a sliced file (benchy.gcode.3mf) by clicking on its card
+      const fileCard = screen.getByText('Benchy').closest('div[class*="cursor-pointer"]');
+      if (fileCard) {
+        await user.click(fileCard);
+      }
+
+      await waitFor(() => {
+        expect(screen.getByText(/Schedule/)).toBeInTheDocument();
+      });
+    });
+
+    it('hides schedule print button when multiple files are selected', async () => {
       const user = userEvent.setup();
       render(<FileManagerPage />);
 
@@ -468,11 +501,12 @@ describe('FileManagerPage', () => {
         expect(screen.getByText('Select All')).toBeInTheDocument();
       });
 
-      // Select a sliced file (benchy.gcode.3mf)
+      // Select all files
       await user.click(screen.getByText('Select All'));
 
       await waitFor(() => {
-        expect(screen.getByText(/Add to Queue/)).toBeInTheDocument();
+        // Schedule button should not be present when multiple files are selected
+        expect(screen.queryByText(/Schedule/)).not.toBeInTheDocument();
       });
     });
   });
@@ -535,7 +569,7 @@ describe('FileManagerPage', () => {
     });
   });
 
-  describe('upload modal STL options', () => {
+  describe('upload modal with advanced 3MF support', () => {
     it('opens upload modal', async () => {
       const user = userEvent.setup();
       render(<FileManagerPage />);
@@ -549,6 +583,37 @@ describe('FileManagerPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Upload Files')).toBeInTheDocument();
         expect(screen.getByText(/Drag & drop/)).toBeInTheDocument();
+      });
+    });
+
+    it('shows 3MF extraction info when 3MF file is added', async () => {
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Upload')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Upload'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Upload Files')).toBeInTheDocument();
+      });
+
+      // Create a mock 3MF file
+      const threemfFile = new File(['content'], 'model.gcode.3mf', { type: 'application/octet-stream' });
+
+      // Get the hidden file input
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      expect(fileInput).toBeInTheDocument();
+
+      // Simulate file selection
+      await user.upload(fileInput, threemfFile);
+
+      // 3MF extraction info should appear
+      await waitFor(() => {
+        expect(screen.getByText('3MF files detected')).toBeInTheDocument();
+        expect(screen.getByText(/Printer model.*will be automatically extracted/i)).toBeInTheDocument();
       });
     });
 
@@ -579,97 +644,119 @@ describe('FileManagerPage', () => {
       // STL thumbnail option should appear
       await waitFor(() => {
         expect(screen.getByText('STL thumbnail generation')).toBeInTheDocument();
-        expect(screen.getByText('Generate thumbnails for STL files')).toBeInTheDocument();
+        expect(screen.getByText(/Thumbnails can be generated/i)).toBeInTheDocument();
       });
     });
+  });
 
-    it('STL thumbnail checkbox is checked by default', async () => {
-      const user = userEvent.setup();
+  describe('authentication-based UI changes', () => {
+    it('hides "Uploaded By" column and user filter when auth is disabled', async () => {
+      // Mock auth disabled (default)
+      server.use(
+        http.get('*/api/v1/auth/status', () => {
+          return HttpResponse.json({
+            auth_enabled: false,
+            requires_setup: false,
+          });
+        }),
+        http.get('/api/v1/library/files', () => {
+          return HttpResponse.json([
+            {
+              id: 1,
+              filename: 'test.3mf',
+              file_path: '/library/test.3mf',
+              file_size: 1048576,
+              file_type: '3mf',
+              folder_id: null,
+              thumbnail_path: null,
+              print_name: 'Test File',
+              print_time_seconds: 3600,
+              print_count: 0,
+              duplicate_count: 0,
+              created_at: '2024-01-01T00:00:00Z',
+              created_by_username: 'testuser',
+            },
+          ]);
+        })
+      );
+
       render(<FileManagerPage />);
 
+      // Switch to list view to see the column headers
       await waitFor(() => {
-        expect(screen.getByText('Upload')).toBeInTheDocument();
+        expect(screen.getByText('Test File')).toBeInTheDocument();
       });
 
-      await user.click(screen.getByText('Upload'));
+      const user = userEvent.setup();
+      const listViewButton = screen.getByRole('button', { name: /list/i });
+      await user.click(listViewButton);
 
+      // "Uploaded By" column header should not be present
       await waitFor(() => {
-        expect(screen.getByText('Upload Files')).toBeInTheDocument();
+        expect(screen.queryByText('Uploaded By')).not.toBeInTheDocument();
       });
 
-      // Add an STL file
-      const stlFile = new File(['solid test'], 'model.stl', { type: 'application/sla' });
-      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-      await user.upload(fileInput, stlFile);
-
-      await waitFor(() => {
-        expect(screen.getByText('Generate thumbnails for STL files')).toBeInTheDocument();
-      });
-
-      // Checkbox should be checked by default
-      const checkbox = screen.getByRole('checkbox', { name: /Generate thumbnails for STL files/i });
-      expect(checkbox).toBeChecked();
+      // User filter dropdown should not be present
+      expect(screen.queryByPlaceholderText('Filter by user')).not.toBeInTheDocument();
     });
 
-    it('can toggle STL thumbnail checkbox', async () => {
-      const user = userEvent.setup();
+    it('shows "Uploaded By" column and user filter when auth is enabled', async () => {
+      // Mock auth enabled
+      server.use(
+        http.get('*/api/v1/auth/status', () => {
+          return HttpResponse.json({
+            auth_enabled: true,
+            requires_setup: false,
+          });
+        }),
+        http.get('/api/v1/library/files', () => {
+          return HttpResponse.json([
+            {
+              id: 1,
+              filename: 'test.3mf',
+              file_path: '/library/test.3mf',
+              file_size: 1048576,
+              file_type: '3mf',
+              folder_id: null,
+              thumbnail_path: null,
+              print_name: 'Test File',
+              print_time_seconds: 3600,
+              print_count: 0,
+              duplicate_count: 0,
+              created_at: '2024-01-01T00:00:00Z',
+              created_by_username: 'testuser',
+            },
+          ]);
+        }),
+        http.get('/api/v1/users/', () => {
+          return HttpResponse.json([
+            { id: 1, username: 'testuser' },
+            { id: 2, username: 'admin' },
+          ]);
+        })
+      );
+
       render(<FileManagerPage />);
 
+      // Switch to list view to see the column headers
       await waitFor(() => {
-        expect(screen.getByText('Upload')).toBeInTheDocument();
+        expect(screen.getByText('Test File')).toBeInTheDocument();
       });
 
-      await user.click(screen.getByText('Upload'));
-
-      await waitFor(() => {
-        expect(screen.getByText('Upload Files')).toBeInTheDocument();
-      });
-
-      // Add an STL file
-      const stlFile = new File(['solid test'], 'model.stl', { type: 'application/sla' });
-      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-      await user.upload(fileInput, stlFile);
-
-      await waitFor(() => {
-        expect(screen.getByText('Generate thumbnails for STL files')).toBeInTheDocument();
-      });
-
-      const checkbox = screen.getByRole('checkbox', { name: /Generate thumbnails for STL files/i });
-      expect(checkbox).toBeChecked();
-
-      // Toggle off
-      await user.click(checkbox);
-      expect(checkbox).not.toBeChecked();
-
-      // Toggle back on
-      await user.click(checkbox);
-      expect(checkbox).toBeChecked();
-    });
-
-    it('shows STL thumbnail option for ZIP files', async () => {
       const user = userEvent.setup();
-      render(<FileManagerPage />);
+      const listViewButton = screen.getByRole('button', { name: /list/i });
+      await user.click(listViewButton);
 
+      // "Uploaded By" column header should be present
       await waitFor(() => {
-        expect(screen.getByText('Upload')).toBeInTheDocument();
+        expect(screen.getByText('Uploaded By')).toBeInTheDocument();
       });
 
-      await user.click(screen.getByText('Upload'));
+      // User filter dropdown should be present
+      expect(screen.getByPlaceholderText('Filter by user')).toBeInTheDocument();
 
-      await waitFor(() => {
-        expect(screen.getByText('Upload Files')).toBeInTheDocument();
-      });
-
-      // Create a mock ZIP file
-      const zipFile = new File(['PK'], 'models.zip', { type: 'application/zip' });
-      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-      await user.upload(fileInput, zipFile);
-
-      // STL thumbnail option should appear for ZIP files (may contain STLs)
-      await waitFor(() => {
-        expect(screen.getByText('STL thumbnail generation')).toBeInTheDocument();
-        expect(screen.getByText(/ZIP files may contain STL files/)).toBeInTheDocument();
-      });
+      // Username should be displayed in the column
+      expect(screen.getByText('testuser')).toBeInTheDocument();
     });
   });
 });

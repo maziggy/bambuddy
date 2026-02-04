@@ -10,6 +10,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useFilamentMapping } from '../../hooks/useFilamentMapping';
 import { useMultiPrinterFilamentMapping, type PerPrinterConfig } from '../../hooks/useMultiPrinterFilamentMapping';
 import { isPlaceholderDate } from '../../utils/amsHelpers';
+import { toDateTimeLocalValue } from '../../utils/date';
 import { PrinterSelector } from './PrinterSelector';
 import { PlateSelector } from './PlateSelector';
 import { PlateDetails } from './PlateDetails';
@@ -91,7 +92,8 @@ export function PrintModal({
       let scheduledTime = '';
       if (queueItem.scheduled_time && !isPlaceholderDate(queueItem.scheduled_time)) {
         const date = new Date(queueItem.scheduled_time);
-        scheduledTime = date.toISOString().slice(0, 16);
+        // Use toDateTimeLocalValue to convert UTC to local time for datetime-local input
+        scheduledTime = toDateTimeLocalValue(date);
       }
 
       return {
@@ -181,8 +183,15 @@ export function PrintModal({
     enabled: !!archiveId && !isLibraryFile,
   });
 
+  // Fetch library file details to get sliced_for_model
+  const { data: libraryFileDetails } = useQuery({
+    queryKey: ['library-file', libraryFileId],
+    queryFn: () => api.getLibraryFile(libraryFileId!),
+    enabled: isLibraryFile && !!libraryFileId,
+  });
+
   // Get sliced_for_model from archive or library file
-  const slicedForModel = archiveDetails?.sliced_for_model || null;
+  const slicedForModel = archiveDetails?.sliced_for_model || libraryFileDetails?.sliced_for_model || null;
 
   // Fetch plates for archives
   const { data: archivePlatesData, isError: archivePlatesError } = useQuery({

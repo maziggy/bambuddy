@@ -2533,7 +2533,7 @@ export function ArchivesPage() {
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold text-white">Archives</h1>
@@ -2553,7 +2553,7 @@ export function ArchivesPage() {
             {filteredArchives?.length || 0} of {archives?.length || 0} prints
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           {/* Export dropdown */}
           <div className="relative">
             <Button

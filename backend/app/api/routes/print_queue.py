@@ -98,6 +98,49 @@ def _extract_filament_types_from_3mf(file_path: Path, plate_id: int | None = Non
     return sorted(types)
 
 
+def _extract_plate_print_time_from_3mf(file_path: Path, plate_id: int) -> int | None:
+    """Extract plate-specific print time (prediction) from a 3MF file.
+
+    Args:
+        file_path: Path to the 3MF file
+        plate_id: Plate index to match (1-indexed)
+
+    Returns:
+        Plate prediction time in seconds if found, otherwise None.
+    """
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            if "Metadata/slice_info.config" not in zf.namelist():
+                return None
+
+            content = zf.read("Metadata/slice_info.config").decode()
+            root = ET.fromstring(content)
+
+            for plate_elem in root.findall(".//plate"):
+                plate_index = None
+                prediction = None
+                for meta in plate_elem.findall("metadata"):
+                    key = meta.get("key")
+                    value = meta.get("value")
+                    if key == "index" and value:
+                        try:
+                            plate_index = int(value)
+                        except ValueError:
+                            plate_index = None
+                    elif key == "prediction" and value:
+                        try:
+                            prediction = int(value)
+                        except ValueError:
+                            prediction = None
+
+                if plate_index == plate_id and prediction:
+                    return prediction
+    except Exception as e:
+        logger.warning(f"Failed to extract plate print time from {file_path}: {e}")
+
+    return None
+
+
 def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
     """Add nested archive/printer/library_file info to response."""
     # Parse ams_mapping from JSON string BEFORE model_validate
@@ -165,6 +208,20 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
             response.print_time_seconds = item.library_file.file_metadata.get("print_time_seconds")
     if item.printer:
         response.printer_name = item.printer.name
+
+    # Override print_time_seconds with plate-specific prediction when available
+    if item.plate_id is not None:
+        file_path = None
+        if item.archive and item.archive.file_path:
+            file_path = settings.base_dir / item.archive.file_path
+        elif item.library_file and item.library_file.file_path:
+            lib_path = Path(item.library_file.file_path)
+            file_path = lib_path if lib_path.is_absolute() else settings.base_dir / item.library_file.file_path
+
+        if file_path and file_path.exists():
+            plate_time = _extract_plate_print_time_from_3mf(file_path, item.plate_id)
+            if plate_time:
+                response.print_time_seconds = plate_time
     return response
 
 

@@ -1015,7 +1015,7 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
                   title={!hasPermission('queue:create') ? t('fileManager.noPermissionAddToQueue') : undefined}
                 >
                   <Clock className="w-3.5 h-3.5" />
-                  {t('fileManager.addToQueue')}
+                  {t('fileManager.schedulePrint')}
                 </button>
               )}
               <button
@@ -1104,6 +1104,7 @@ export function FileManagerPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'file' | 'folder' | 'bulk'; id: number; count?: number } | null>(null);
   const [printFile, setPrintFile] = useState<LibraryFileListItem | null>(null);
   const [printMultiFile, setPrintMultiFile] = useState<LibraryFileListItem | null>(null);
+  const [scheduleFile, setScheduleFile] = useState<LibraryFileListItem | null>(null);
   const [renameItem, setRenameItem] = useState<{ type: 'file' | 'folder'; id: number; name: string } | null>(null);
   const [thumbnailVersions, setThumbnailVersions] = useState<Record<number, number>>({});
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
@@ -1349,31 +1350,6 @@ export function FileManagerPage() {
       setLinkFolder(null);
       const isUnlink = variables.data.project_id === 0 && variables.data.archive_id === 0;
       showToast(isUnlink ? t('fileManager.toast.folderUnlinked') : t('fileManager.toast.folderLinked'), 'success');
-    },
-    onError: (error: Error) => showToast(error.message, 'error'),
-  });
-
-  const addToQueueMutation = useMutation({
-    mutationFn: (fileIds: number[]) => api.addLibraryFilesToQueue(fileIds),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ['library-files'] });
-      queryClient.invalidateQueries({ queryKey: ['queue'] });
-      queryClient.invalidateQueries({ queryKey: ['archives'] }); // Archives are created when adding to queue
-      setSelectedFiles([]);
-
-      if (result.added.length > 0 && result.errors.length === 0) {
-        showToast(
-          t('fileManager.toast.addedToQueue', { count: result.added.length }),
-          'success'
-        );
-      } else if (result.added.length > 0 && result.errors.length > 0) {
-        showToast(
-          t('fileManager.toast.addedToQueuePartial', { added: result.added.length, failed: result.errors.length }),
-          'success'
-        );
-      } else {
-        showToast(t('fileManager.toast.failedToAddToQueue', { error: result.errors[0]?.error || 'Unknown error' }), 'error');
-      }
     },
     onError: (error: Error) => showToast(error.message, 'error'),
   });
@@ -1859,12 +1835,12 @@ export function FileManagerPage() {
                       <Button
                         variant={selectedSlicedFiles.length === 1 ? 'secondary' : 'primary'}
                         size="sm"
-                        onClick={() => addToQueueMutation.mutate(selectedSlicedFiles.map(f => f.id))}
-                        disabled={addToQueueMutation.isPending || !hasPermission('queue:create')}
+                        onClick={() => setScheduleFile(selectedSlicedFiles[0])}
+                        disabled={!hasPermission('queue:create')}
                         title={!hasPermission('queue:create') ? t('fileManager.noPermissionAddToQueue') : undefined}
                       >
                         <Clock className="w-4 h-4 sm:mr-1" />
-                        <span className="hidden sm:inline">{addToQueueMutation.isPending ? t('fileManager.adding') : `${t('fileManager.addToQueue')}${selectedSlicedFiles.length < selectedFiles.length ? ` (${selectedSlicedFiles.length})` : ''}`}</span>
+                        <span className="hidden sm:inline">{`${t('fileManager.schedulePrint')}${selectedSlicedFiles.length < selectedFiles.length ? ` (${selectedSlicedFiles.length})` : ''}`}</span>
                       </Button>
                     )}
                     <Button
@@ -1963,7 +1939,10 @@ export function FileManagerPage() {
                     onSelect={handleFileSelect}
                     onDelete={(id) => setDeleteConfirm({ type: 'file', id })}
                     onDownload={handleDownload}
-                    onAddToQueue={(id) => addToQueueMutation.mutate([id])}
+                    onAddToQueue={(id) => {
+                      const file = files?.find(f => f.id === id);
+                      if (file) setScheduleFile(file);
+                    }}
                     onPrint={setPrintFile}
                     onRename={(f) => setRenameItem({ type: 'file', id: f.id, name: f.filename })}
                     onGenerateThumbnail={(f) => singleThumbnailMutation.mutate(f.id)}
@@ -2068,14 +2047,18 @@ export function FileManagerPage() {
                             <Printer className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => hasPermission('queue:create') && addToQueueMutation.mutate([file.id])}
+                            onClick={() => {
+                              if (hasPermission('queue:create')) {
+                                setScheduleFile(file);
+                              }
+                            }}
                             className={`p-1.5 rounded transition-colors ${
                               hasPermission('queue:create')
                                 ? 'hover:bg-bambu-dark text-bambu-gray hover:text-white'
                                 : 'text-bambu-gray/50 cursor-not-allowed'
                             }`}
-                            title={hasPermission('queue:create') ? t('fileManager.addToQueue') : t('fileManager.noPermissionAddToQueue')}
-                            disabled={addToQueueMutation.isPending || !hasPermission('queue:create')}
+                            title={hasPermission('queue:create') ? t('fileManager.schedulePrint') : t('fileManager.noPermissionAddToQueue')}
+                            disabled={!hasPermission('queue:create')}
                           >
                             <Clock className="w-4 h-4" />
                           </button>
@@ -2231,6 +2214,22 @@ export function FileManagerPage() {
             setPrintMultiFile(null);
             setSelectedFiles([]);
             queryClient.invalidateQueries({ queryKey: ['library-files'] });
+            queryClient.invalidateQueries({ queryKey: ['archives'] });
+          }}
+        />
+      )}
+
+      {scheduleFile && (
+        <PrintModal
+          mode="add-to-queue"
+          libraryFileId={scheduleFile.id}
+          archiveName={scheduleFile.print_name || scheduleFile.filename}
+          onClose={() => setScheduleFile(null)}
+          onSuccess={() => {
+            setScheduleFile(null);
+            setSelectedFiles([]);
+            queryClient.invalidateQueries({ queryKey: ['library-files'] });
+            queryClient.invalidateQueries({ queryKey: ['queue'] });
             queryClient.invalidateQueries({ queryKey: ['archives'] });
           }}
         />

@@ -1590,7 +1590,10 @@ async def process_timelapse(
             raise HTTPException(400, "Audio must be .mp3, .wav, .m4a, .aac, or .ogg")
 
         audio_content = await audio.read()
-        suffix = Path(audio.filename).suffix
+        # Extract and validate suffix to prevent path injection
+        suffix = Path(audio.filename).suffix.lower()
+        if suffix not in (".mp3", ".wav", ".m4a", ".aac", ".ogg"):
+            raise HTTPException(400, "Invalid audio file extension")
         audio_temp_path = Path(tempfile.gettempdir()) / f"audio_{archive_id}{suffix}"
         audio_temp_path.write_bytes(audio_content)
 
@@ -1605,8 +1608,11 @@ async def process_timelapse(
         else:
             # Save as new file alongside original
             filename = output_filename or f"{archive.print_name or 'timelapse'}_edited.mp4"
-            # Sanitize filename
+            # Sanitize filename - remove path separators and traversal sequences
             filename = "".join(c for c in filename if c.isalnum() or c in "._- ")
+            # Prevent path traversal
+            if ".." in filename or not filename or filename.startswith("."):
+                filename = f"timelapse_{archive_id}_edited"
             if not filename.endswith(".mp4"):
                 filename += ".mp4"
             output_path = archive_dir / filename

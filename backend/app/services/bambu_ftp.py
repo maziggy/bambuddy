@@ -77,9 +77,13 @@ class BambuFTPClient:
 
     FTP_PORT = 990
     DEFAULT_TIMEOUT = 30  # Default timeout in seconds (increased for A1 printers)
-    # Models that need SSL session reuse disabled (A1 series has FTP issues with session reuse)
-    # X1C/X1E/P1S/P1P/P2S use vsFTPd which requires SSL session reuse - do NOT add them here
-    SKIP_SESSION_REUSE_MODELS = ("A1", "A1 Mini")
+    # Models that may need SSL mode fallback (try prot_p first, fall back to prot_c)
+    # These models have varying FTP SSL behavior depending on firmware version
+    A1_MODELS = ("A1", "A1 Mini")
+
+    # Cache for working FTP modes per printer IP
+    # Maps IP -> "prot_p" or "prot_c"
+    _mode_cache: dict[str, str] = {}
 
     def __init__(
         self,
@@ -87,45 +91,70 @@ class BambuFTPClient:
         access_code: str,
         timeout: float | None = None,
         printer_model: str | None = None,
+        force_prot_c: bool = False,
     ):
         self.ip_address = ip_address
         self.access_code = access_code
         self.timeout = timeout if timeout is not None else self.DEFAULT_TIMEOUT
         self.printer_model = printer_model
+        self.force_prot_c = force_prot_c
         self._ftp: ImplicitFTP_TLS | None = None
 
-    def _should_skip_session_reuse(self) -> bool:
-        """Check if this printer model needs SSL session reuse disabled."""
+    def _is_a1_model(self) -> bool:
+        """Check if this is an A1 series printer."""
         if not self.printer_model:
             return False
-        return self.printer_model in self.SKIP_SESSION_REUSE_MODELS
+        return self.printer_model in self.A1_MODELS
+
+    def _get_cached_mode(self) -> str | None:
+        """Get cached FTP mode for this printer."""
+        return self._mode_cache.get(self.ip_address)
+
+    @classmethod
+    def cache_mode(cls, ip_address: str, mode: str):
+        """Cache the working FTP mode for a printer."""
+        cls._mode_cache[ip_address] = mode
+        logger.info(f"FTP mode cached for {ip_address}: {mode}")
+
+    def _should_use_prot_c(self) -> bool:
+        """Determine if we should use prot_c (clear) mode."""
+        # If explicitly forced, use prot_c
+        if self.force_prot_c:
+            return True
+        # Check cache first
+        cached = self._get_cached_mode()
+        if cached:
+            return cached == "prot_c"
+        # Default: try prot_p first (will fall back if needed)
+        return False
 
     def connect(self) -> bool:
         """Connect to the printer FTP server (implicit FTPS on port 990)."""
         try:
-            skip_reuse = self._should_skip_session_reuse()
+            use_prot_c = self._should_use_prot_c()
             logger.debug(
                 f"FTP connecting to {self.ip_address}:{self.FTP_PORT} "
-                f"(timeout={self.timeout}s, model={self.printer_model}, skip_session_reuse={skip_reuse})"
+                f"(timeout={self.timeout}s, model={self.printer_model}, prot_c={use_prot_c})"
             )
-            self._ftp = ImplicitFTP_TLS(skip_session_reuse=skip_reuse)
+            self._ftp = ImplicitFTP_TLS(skip_session_reuse=use_prot_c)
             self._ftp.connect(self.ip_address, self.FTP_PORT, timeout=self.timeout)
             logger.debug("FTP connected, logging in as bblp")
             self._ftp.login("bblp", self.access_code)
-            if skip_reuse:
-                # A1/A1 Mini: Use clear (unencrypted) data channel
-                # These printers have issues with SSL on the data channel
-                logger.debug("FTP logged in, setting prot_c (clear) and passive mode for A1")
+            if use_prot_c:
+                # Use clear (unencrypted) data channel
+                logger.debug("FTP logged in, setting prot_c (clear) and passive mode")
                 self._ftp.prot_c()
             else:
-                # X1C/P1S/etc: Use protected (encrypted) data channel with session reuse
+                # Use protected (encrypted) data channel with session reuse
                 logger.debug("FTP logged in, setting prot_p (protected) and passive mode")
                 self._ftp.prot_p()
             self._ftp.set_pasv(True)
             # Log welcome message for debugging
             if hasattr(self._ftp, "welcome") and self._ftp.welcome:
                 logger.debug(f"FTP server welcome: {self._ftp.welcome}")
-            logger.info(f"FTP connected successfully to {self.ip_address} (model={self.printer_model})")
+            logger.info(
+                f"FTP connected successfully to {self.ip_address} (model={self.printer_model}, prot_c={use_prot_c})"
+            )
             return True
         except ftplib.error_perm as e:
             logger.warning(f"FTP connection permission error to {self.ip_address}: {e}")
@@ -462,6 +491,9 @@ async def download_file_async(
 ) -> bool:
     """Async wrapper for downloading a file with timeout.
 
+    For A1/A1 Mini printers, automatically tries prot_p first, then falls back
+    to prot_c if the download fails. The working mode is cached for future operations.
+
     Args:
         ip_address: Printer IP address
         access_code: Printer access code
@@ -472,18 +504,47 @@ async def download_file_async(
         printer_model: Printer model for A1-specific workarounds
     """
     loop = asyncio.get_event_loop()
+    is_a1 = printer_model in BambuFTPClient.A1_MODELS if printer_model else False
 
-    def _download():
-        client = BambuFTPClient(ip_address, access_code, timeout=socket_timeout, printer_model=printer_model)
+    def _download(force_prot_c: bool = False) -> bool:
+        mode_str = "prot_c" if force_prot_c else "prot_p"
+        client = BambuFTPClient(
+            ip_address, access_code, timeout=socket_timeout, printer_model=printer_model, force_prot_c=force_prot_c
+        )
         if client.connect():
             try:
-                return client.download_to_file(remote_path, local_path)
+                result = client.download_to_file(remote_path, local_path)
+                if result:
+                    # Cache the working mode
+                    BambuFTPClient.cache_mode(ip_address, mode_str)
+                return result
             finally:
                 client.disconnect()
         return False
 
     try:
-        return await asyncio.wait_for(loop.run_in_executor(None, _download), timeout=timeout)
+        # Check if we have a cached mode for this printer
+        cached_mode = BambuFTPClient._mode_cache.get(ip_address)
+
+        if cached_mode:
+            # Use cached mode
+            force_prot_c = cached_mode == "prot_c"
+            return await asyncio.wait_for(loop.run_in_executor(None, lambda: _download(force_prot_c)), timeout=timeout)
+
+        # No cached mode - try prot_p first
+        result = await asyncio.wait_for(loop.run_in_executor(None, lambda: _download(False)), timeout=timeout)
+
+        if result:
+            return True
+
+        # Download failed - for A1 models, try prot_c fallback
+        if is_a1:
+            logger.info("FTP download failed with prot_p for A1 model, trying prot_c fallback...")
+            result = await asyncio.wait_for(loop.run_in_executor(None, lambda: _download(True)), timeout=timeout)
+            return result
+
+        return False
+
     except TimeoutError:
         logger.warning(f"FTP download timed out after {timeout}s for {remote_path}")
         return False
@@ -530,6 +591,9 @@ async def upload_file_async(
 ) -> bool:
     """Async wrapper for uploading a file with timeout and progress callback.
 
+    For A1/A1 Mini printers, automatically tries prot_p first, then falls back
+    to prot_c if the upload fails. The working mode is cached for future uploads.
+
     Args:
         ip_address: Printer IP address
         access_code: Printer access code
@@ -541,23 +605,53 @@ async def upload_file_async(
         printer_model: Printer model for A1-specific workarounds
     """
     loop = asyncio.get_event_loop()
+    is_a1 = printer_model in BambuFTPClient.A1_MODELS if printer_model else False
 
-    def _upload():
+    def _upload(force_prot_c: bool = False) -> bool:
+        mode_str = "prot_c" if force_prot_c else "prot_p"
         logger.info(
-            f"FTP connecting to {ip_address} for upload (model={printer_model}, socket_timeout={socket_timeout}s)..."
+            f"FTP connecting to {ip_address} for upload (model={printer_model}, "
+            f"mode={mode_str}, socket_timeout={socket_timeout}s)..."
         )
-        client = BambuFTPClient(ip_address, access_code, timeout=socket_timeout, printer_model=printer_model)
+        client = BambuFTPClient(
+            ip_address, access_code, timeout=socket_timeout, printer_model=printer_model, force_prot_c=force_prot_c
+        )
         if client.connect():
             logger.info(f"FTP connected to {ip_address}")
             try:
-                return client.upload_file(local_path, remote_path, progress_callback)
+                result = client.upload_file(local_path, remote_path, progress_callback)
+                if result:
+                    # Cache the working mode
+                    BambuFTPClient.cache_mode(ip_address, mode_str)
+                return result
             finally:
                 client.disconnect()
         logger.warning(f"FTP connection failed to {ip_address}")
         return False
 
     try:
-        return await asyncio.wait_for(loop.run_in_executor(None, _upload), timeout=timeout)
+        # Check if we have a cached mode for this printer
+        cached_mode = BambuFTPClient._mode_cache.get(ip_address)
+
+        if cached_mode:
+            # Use cached mode
+            force_prot_c = cached_mode == "prot_c"
+            return await asyncio.wait_for(loop.run_in_executor(None, lambda: _upload(force_prot_c)), timeout=timeout)
+
+        # No cached mode - try prot_p first
+        result = await asyncio.wait_for(loop.run_in_executor(None, lambda: _upload(False)), timeout=timeout)
+
+        if result:
+            return True
+
+        # Upload failed - for A1 models, try prot_c fallback
+        if is_a1:
+            logger.info("FTP upload failed with prot_p for A1 model, trying prot_c fallback...")
+            result = await asyncio.wait_for(loop.run_in_executor(None, lambda: _upload(True)), timeout=timeout)
+            return result
+
+        return False
+
     except TimeoutError:
         logger.warning(f"FTP upload timed out after {timeout}s for {remote_path}")
         return False

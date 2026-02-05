@@ -4,6 +4,22 @@ on:
   schedule:
     # Run weekly on Monday at 6:00 UTC
     - cron: '0 6 * * 1'
+  push:
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'Dockerfile'
+      - 'docker-compose*.yml'
+      - 'requirements.txt'
+      - 'frontend/package*.json'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'Dockerfile'
+      - 'docker-compose*.yml'
+      - 'requirements.txt'
+      - 'frontend/package*.json'
   workflow_dispatch:
     # Allow manual trigger
 
@@ -16,6 +32,77 @@ permissions:
   contents: read
 
 jobs:
+  bandit:
+    name: Python Security Analysis (Bandit)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Bandit
+        run: pip install bandit[sarif]
+
+      - name: Run Bandit
+        run: |
+          bandit -r backend/ -f sarif -o bandit-results.sarif --severity-level medium || true
+
+      - name: Upload Bandit results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: bandit-results.sarif
+          category: bandit
+
+  trivy:
+    name: Container Security Scan (Trivy)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t bambuddy:security-scan .
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@v0.33.1
+        with:
+          image-ref: 'bambuddy:security-scan'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
+
+      - name: Run Trivy for Dockerfile/IaC
+        uses: aquasecurity/trivy-action@v0.33.1
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-config-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Upload Trivy config results
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy-config-results.sarif
+          category: trivy-config
+
   backend-audit:
     name: Backend Security Audit
     runs-on: ubuntu-latest

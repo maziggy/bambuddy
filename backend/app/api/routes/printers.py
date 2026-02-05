@@ -852,8 +852,9 @@ async def get_printer_file_plates(
     """Get available plates from a multi-plate 3MF file stored on a printer."""
     import io
     import json
-    import xml.etree.ElementTree as ET
     import zipfile
+
+    import defusedxml.ElementTree as ET
 
     # Validate printer
     result = await db.execute(select(Printer).where(Printer.id == printer_id))

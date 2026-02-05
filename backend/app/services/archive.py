@@ -6,8 +6,8 @@ import shutil
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from xml.etree import ElementTree as ET
 
+from defusedxml import ElementTree as ET
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

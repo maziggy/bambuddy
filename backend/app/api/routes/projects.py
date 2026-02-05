@@ -907,6 +907,10 @@ async def download_attachment(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
 ):
     """Download an attachment from a project."""
+    # Validate filename to prevent path traversal
+    if "/" in filename or "\\" in filename or ".." in filename or not filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
     # Verify project exists
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
@@ -939,6 +943,10 @@ async def delete_attachment(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     """Delete an attachment from a project."""
+    # Validate filename to prevent path traversal
+    if "/" in filename or "\\" in filename or ".." in filename or not filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
     # Verify project exists
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()

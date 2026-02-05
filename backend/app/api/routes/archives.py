@@ -1590,7 +1590,10 @@ async def process_timelapse(
             raise HTTPException(400, "Audio must be .mp3, .wav, .m4a, .aac, or .ogg")
 
         audio_content = await audio.read()
-        suffix = Path(audio.filename).suffix
+        # Extract and validate suffix to prevent path injection
+        suffix = Path(audio.filename).suffix.lower()
+        if suffix not in (".mp3", ".wav", ".m4a", ".aac", ".ogg"):
+            raise HTTPException(400, "Invalid audio file extension")
         audio_temp_path = Path(tempfile.gettempdir()) / f"audio_{archive_id}{suffix}"
         audio_temp_path.write_bytes(audio_content)
 
@@ -1605,8 +1608,11 @@ async def process_timelapse(
         else:
             # Save as new file alongside original
             filename = output_filename or f"{archive.print_name or 'timelapse'}_edited.mp4"
-            # Sanitize filename
+            # Sanitize filename - remove path separators and traversal sequences
             filename = "".join(c for c in filename if c.isalnum() or c in "._- ")
+            # Prevent path traversal
+            if ".." in filename or not filename or filename.startswith("."):
+                filename = f"timelapse_{archive_id}_edited"
             if not filename.endswith(".mp4"):
                 filename += ".mp4"
             output_path = archive_dir / filename
@@ -1833,7 +1839,8 @@ async def get_archive_capabilities(
 ):
     """Check what viewing capabilities are available for this 3MF file."""
     import json
-    import xml.etree.ElementTree as ET
+
+    import defusedxml.ElementTree as ET
 
     service = ArchiveService(db)
     archive = await service.get_archive(archive_id)
@@ -2113,7 +2120,7 @@ async def get_plate_preview(
             plate_num = 1
             if "Metadata/slice_info.config" in names:
                 try:
-                    import xml.etree.ElementTree as ET
+                    import defusedxml.ElementTree as ET
 
                     slice_content = zf.read("Metadata/slice_info.config").decode("utf-8")
                     root = ET.fromstring(slice_content)
@@ -2254,7 +2261,8 @@ async def get_archive_plates(
     """
     import json
     import re
-    import xml.etree.ElementTree as ET
+
+    import defusedxml.ElementTree as ET
 
     service = ArchiveService(db)
     archive = await service.get_archive(archive_id)
@@ -2560,7 +2568,7 @@ async def get_filament_requirements(
         archive_id: The archive ID
         plate_id: Optional plate index to filter filaments for (for multi-plate files)
     """
-    import xml.etree.ElementTree as ET
+    import defusedxml.ElementTree as ET
 
     service = ArchiveService(db)
     archive = await service.get_archive(archive_id)

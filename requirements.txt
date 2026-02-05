@@ -20,6 +20,7 @@ pyftpdlib>=2.0.0
 cryptography>=41.0.0
 
 # 3MF Processing (standard zipfile is sufficient for Bambu 3MF files)
+defusedxml>=0.7.0  # Safe XML parsing (prevents XXE attacks)
 
 # Excel Export
 openpyxl>=3.1.0

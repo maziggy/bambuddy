@@ -3,11 +3,11 @@
 import asyncio
 import json
 import logging
-import xml.etree.ElementTree as ET
 import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import defusedxml.ElementTree as ET
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

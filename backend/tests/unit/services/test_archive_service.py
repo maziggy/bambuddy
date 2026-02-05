@@ -221,7 +221,7 @@ class TestPrintableObjectsExtraction:
 
     def test_extract_printable_objects_from_slice_info(self):
         """Test parsing printable objects from slice_info.config XML."""
-        from xml.etree import ElementTree as ET
+        from defusedxml import ElementTree as ET
 
         # Example slice_info.config content with 4 objects
         slice_info_xml = """<?xml version="1.0" encoding="UTF-8"?>
@@ -250,7 +250,7 @@ class TestPrintableObjectsExtraction:
 
     def test_extract_printable_objects_empty_plate(self):
         """Test handling plate with no objects."""
-        from xml.etree import ElementTree as ET
+        from defusedxml import ElementTree as ET
 
         slice_info_xml = """<?xml version="1.0" encoding="UTF-8"?>
         <config>
@@ -272,7 +272,7 @@ class TestPrintableObjectsExtraction:
 
     def test_extract_printable_objects_all_skipped(self):
         """Test handling plate where all objects are skipped."""
-        from xml.etree import ElementTree as ET
+        from defusedxml import ElementTree as ET
 
         slice_info_xml = """<?xml version="1.0" encoding="UTF-8"?>
         <config>
@@ -299,7 +299,7 @@ class TestThreeMFPlateIndexExtraction:
 
     def test_extract_plate_index_from_slice_info(self):
         """Test parsing plate index from slice_info.config metadata."""
-        from xml.etree import ElementTree as ET
+        from defusedxml import ElementTree as ET
 
         # Single-plate export from plate 5 of a multi-plate project
         slice_info_xml = """<?xml version="1.0" encoding="UTF-8"?>
@@ -325,7 +325,7 @@ class TestThreeMFPlateIndexExtraction:
 
     def test_extract_plate_index_plate_1(self):
         """Test parsing plate index when it's plate 1."""
-        from xml.etree import ElementTree as ET
+        from defusedxml import ElementTree as ET
 
         slice_info_xml = """<?xml version="1.0" encoding="UTF-8"?>
         <config>
@@ -402,7 +402,7 @@ class TestThreeMFPlateIndexExtraction:
 
     def test_high_plate_number_extraction(self):
         """Test extracting high plate numbers (e.g., plate 28)."""
-        from xml.etree import ElementTree as ET
+        from defusedxml import ElementTree as ET
 
         slice_info_xml = """<?xml version="1.0" encoding="UTF-8"?>
         <config>
@@ -433,7 +433,7 @@ class TestMultiPlate3MFParsing:
 
     def test_parse_multiple_plates_from_slice_info(self):
         """Test parsing multiple plates from slice_info.config."""
-        from xml.etree import ElementTree as ET
+        from defusedxml import ElementTree as ET
 
         # Multi-plate 3MF with 3 plates
         slice_info_xml = """<?xml version="1.0" encoding="UTF-8"?>
@@ -510,7 +510,7 @@ class TestMultiPlate3MFParsing:
 
     def test_filter_filaments_by_plate_id(self):
         """Test filtering filaments for a specific plate."""
-        from xml.etree import ElementTree as ET
+        from defusedxml import ElementTree as ET
 
         slice_info_xml = """<?xml version="1.0" encoding="UTF-8"?>
         <config>

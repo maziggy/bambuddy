@@ -2,11 +2,11 @@
 
 import json
 import logging
-import xml.etree.ElementTree as ET
 import zipfile
 from datetime import datetime
 from pathlib import Path
 
+import defusedxml.ElementTree as ET
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -98,6 +98,58 @@ def _extract_filament_types_from_3mf(file_path: Path, plate_id: int | None = Non
     return sorted(types)
 
 
+def _extract_print_time_from_3mf(file_path: Path, plate_id: int | None = None) -> int | None:
+    """Extract print time (prediction) from a 3MF file.
+
+    Args:
+        file_path: Path to the 3MF file
+        plate_id: Optional plate index to filter for (for multi-plate files)
+
+    Returns:
+        Print time in seconds, or None if not found
+    """
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            if "Metadata/slice_info.config" not in zf.namelist():
+                return None
+
+            content = zf.read("Metadata/slice_info.config").decode()
+            root = ET.fromstring(content)
+
+            if plate_id is not None:
+                for plate_elem in root.findall(".//plate"):
+                    plate_index = None
+                    for meta in plate_elem.findall("metadata"):
+                        if meta.get("key") == "index":
+                            try:
+                                plate_index = int(meta.get("value", "0"))
+                            except ValueError:
+                                pass
+                            break
+
+                    if plate_index == plate_id:
+                        for meta in plate_elem.findall("metadata"):
+                            if meta.get("key") == "prediction":
+                                try:
+                                    return int(meta.get("value", "0"))
+                                except ValueError:
+                                    return None
+                        break
+            else:
+                plate_elem = root.find(".//plate")
+                if plate_elem is not None:
+                    for meta in plate_elem.findall("metadata"):
+                        if meta.get("key") == "prediction":
+                            try:
+                                return int(meta.get("value", "0"))
+                            except ValueError:
+                                return None
+    except Exception as e:
+        logger.warning(f"Failed to extract print time from {file_path}: {e}")
+
+    return None
+
+
 def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
     """Add nested archive/printer/library_file info to response."""
     # Parse ams_mapping from JSON string BEFORE model_validate
@@ -153,6 +205,12 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         response.archive_name = item.archive.print_name or item.archive.filename
         response.archive_thumbnail = item.archive.thumbnail_path
         response.print_time_seconds = item.archive.print_time_seconds
+        if item.plate_id:
+            archive_path = settings.base_dir / item.archive.file_path
+            if archive_path.exists():
+                plate_time = _extract_print_time_from_3mf(archive_path, item.plate_id)
+                if plate_time is not None:
+                    response.print_time_seconds = plate_time
     if item.library_file:
         response.library_file_name = (
             item.library_file.file_metadata.get("print_name") if item.library_file.file_metadata else None
@@ -163,6 +221,13 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         # Get print time from library file metadata if no archive
         if not item.archive and item.library_file.file_metadata:
             response.print_time_seconds = item.library_file.file_metadata.get("print_time_seconds")
+        if item.plate_id:
+            lib_path = Path(item.library_file.file_path)
+            library_file_path = lib_path if lib_path.is_absolute() else settings.base_dir / item.library_file.file_path
+            if library_file_path.exists():
+                plate_time = _extract_print_time_from_3mf(library_file_path, item.plate_id)
+                if plate_time is not None:
+                    response.print_time_seconds = plate_time
     if item.printer:
         response.printer_name = item.printer.name
     return response

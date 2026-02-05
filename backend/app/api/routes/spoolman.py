@@ -252,9 +252,7 @@ async def sync_printer_ams(
                 current_tray_uuids.add(spool_tag.upper())
 
             try:
-                sync_result = await client.sync_ams_tray(
-                    tray, printer.name, disable_weight_sync=disable_weight_sync
-                )
+                sync_result = await client.sync_ams_tray(tray, printer.name, disable_weight_sync=disable_weight_sync)
                 if sync_result:
                     synced += 1
                     logger.info(f"Synced {tray.tray_sub_brands} from {printer.name} AMS {ams_id} tray {tray.tray_id}")
@@ -387,7 +385,9 @@ async def sync_all_printers(
                     printer_tray_uuids[printer.name].add(spool_tag.upper())
 
                 try:
-                    sync_result = await client.sync_ams_tray(tray, printer.name, disable_weight_sync=disable_weight_sync)
+                    sync_result = await client.sync_ams_tray(
+                        tray, printer.name, disable_weight_sync=disable_weight_sync
+                    )
                     if sync_result:
                         total_synced += 1
                 except Exception as e:

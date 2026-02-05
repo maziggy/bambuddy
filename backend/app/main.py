@@ -556,9 +556,7 @@ async def _report_partial_spoolman_usage(printer_id: int, tracking, logger):
                     # Get spool identifier (prefer tray_uuid over tag_uid)
                     tray_uuid = tray_info.get("tray_uuid", "")
                     tag_uid = tray_info.get("tag_uid", "")
-                    spool_tag = (
-                        tray_uuid if tray_uuid and tray_uuid != "00000000000000000000000000000000" else tag_uid
-                    )
+                    spool_tag = tray_uuid if tray_uuid and tray_uuid != "00000000000000000000000000000000" else tag_uid
 
                     if not spool_tag:
                         logger.debug(f"[SPOOLMAN] Slot {slot_id}: no identifier for tray {global_tray_id}")
@@ -635,9 +633,7 @@ async def _report_partial_spoolman_usage(printer_id: int, tracking, logger):
             # Get spool identifier
             tray_uuid = tray_info.get("tray_uuid", "")
             tag_uid = tray_info.get("tag_uid", "")
-            spool_tag = (
-                tray_uuid if tray_uuid and tray_uuid != "00000000000000000000000000000000" else tag_uid
-            )
+            spool_tag = tray_uuid if tray_uuid and tray_uuid != "00000000000000000000000000000000" else tag_uid
 
             if not spool_tag:
                 continue
@@ -737,9 +733,7 @@ async def _report_spoolman_usage(printer_id: int, archive_id: int, logger):
             # Get spool identifier (prefer tray_uuid over tag_uid)
             tray_uuid = tray_info.get("tray_uuid", "")
             tag_uid = tray_info.get("tag_uid", "")
-            spool_tag = (
-                tray_uuid if tray_uuid and tray_uuid != "00000000000000000000000000000000" else tag_uid
-            )
+            spool_tag = tray_uuid if tray_uuid and tray_uuid != "00000000000000000000000000000000" else tag_uid
 
             if not spool_tag:
                 logger.debug(f"[SPOOLMAN] Slot {slot_id}: no identifier for tray {global_tray_id}")

@@ -9,6 +9,10 @@ set -e
 # Configuration
 PORT=${PORT:-8000}
 
+# Enable BuildKit for better caching and parallel builds
+export DOCKER_BUILDKIT=1
+export COMPOSE_DOCKER_CLI_BUILD=1
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -57,6 +61,7 @@ RUN_BUILD=true
 RUN_BACKEND=true
 RUN_FRONTEND=true
 RUN_INTEGRATION=true
+FRESH_BUILD=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -92,6 +97,10 @@ while [[ $# -gt 0 ]]; do
             RUN_INTEGRATION=false
             shift
             ;;
+        --fresh)
+            FRESH_BUILD=true
+            shift
+            ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -102,6 +111,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --integration-only  Only run integration tests"
             echo "  --skip-build        Skip build test"
             echo "  --skip-integration  Skip integration tests"
+            echo "  --fresh             Force fresh build (no cache)"
             echo "  -h, --help          Show this help"
             exit 0
             ;;
@@ -112,16 +122,50 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Set cache flag based on --fresh option
+CACHE_FLAG=""
+if [ "$FRESH_BUILD" = true ]; then
+    CACHE_FLAG="--no-cache"
+    print_info "Fresh build enabled (--no-cache)"
+fi
+
 print_header "BamBuddy Docker Test Suite"
 
 # ============================================
-# Test 1: Docker Build
+# Pre-build: Build all test images in parallel
+# ============================================
+print_header "Pre-building Docker Images"
+
+# Determine which images to build
+IMAGES_TO_BUILD=""
+if [ "$RUN_BACKEND" = true ]; then
+    IMAGES_TO_BUILD="$IMAGES_TO_BUILD backend-test"
+fi
+if [ "$RUN_FRONTEND" = true ]; then
+    IMAGES_TO_BUILD="$IMAGES_TO_BUILD frontend-test"
+fi
+if [ "$RUN_INTEGRATION" = true ]; then
+    IMAGES_TO_BUILD="$IMAGES_TO_BUILD integration integration-test-runner"
+fi
+
+if [ -n "$IMAGES_TO_BUILD" ]; then
+    print_info "Building test images in parallel:$IMAGES_TO_BUILD"
+    if sudo docker compose -f docker-compose.test.yml build --parallel $CACHE_FLAG $IMAGES_TO_BUILD; then
+        print_success "Test images built successfully"
+    else
+        print_failure "Test image build failed"
+        exit 1
+    fi
+fi
+
+# ============================================
+# Test 1: Docker Build (Production Image)
 # ============================================
 if [ "$RUN_BUILD" = true ]; then
-    print_header "Test 1: Docker Build"
+    print_header "Test 1: Docker Build (Production)"
     print_info "Building production Docker image..."
 
-    if sudo docker build -t bambuddy:test . --pull --no-cache --progress=plain; then
+    if sudo docker build -t bambuddy:test . $CACHE_FLAG --progress=plain; then
         print_success "Production image builds successfully"
 
         # Verify image has expected labels/structure
@@ -147,17 +191,11 @@ fi
 # ============================================
 if [ "$RUN_BACKEND" = true ]; then
     print_header "Test 2: Backend Unit Tests"
-    print_info "Building backend test image..."
-
-    if sudo docker compose -f docker-compose.test.yml build backend-test --pull --no-cache --progress=plain; then
-        print_info "Running backend tests..."
-        if sudo docker compose -f docker-compose.test.yml run --rm backend-test; then
-            print_success "Backend unit tests passed"
-        else
-            print_failure "Backend unit tests failed"
-        fi
+    print_info "Running backend tests..."
+    if sudo docker compose -f docker-compose.test.yml run --rm backend-test; then
+        print_success "Backend unit tests passed"
     else
-        print_failure "Backend test image build failed"
+        print_failure "Backend unit tests failed"
     fi
 fi
 
@@ -166,17 +204,11 @@ fi
 # ============================================
 if [ "$RUN_FRONTEND" = true ]; then
     print_header "Test 3: Frontend Unit Tests"
-    print_info "Building frontend test image..."
-
-    if sudo docker compose -f docker-compose.test.yml build frontend-test --pull --no-cache --progress=plain; then
-        print_info "Running frontend tests..."
-        if sudo docker compose -f docker-compose.test.yml run --rm frontend-test; then
-            print_success "Frontend unit tests passed"
-        else
-            print_failure "Frontend unit tests failed"
-        fi
+    print_info "Running frontend tests..."
+    if sudo docker compose -f docker-compose.test.yml run --rm frontend-test; then
+        print_success "Frontend unit tests passed"
     else
-        print_failure "Frontend test image build failed"
+        print_failure "Frontend unit tests failed"
     fi
 fi
 
@@ -185,16 +217,10 @@ fi
 # ============================================
 if [ "$RUN_INTEGRATION" = true ]; then
     print_header "Test 4: Integration Tests"
-    print_info "Building integration container..."
+    print_info "Starting application container..."
 
-    # Build the integration container first to ensure latest code
-    if ! sudo docker compose -f docker-compose.test.yml build integration --pull --no-cache --progress=plain; then
-        print_failure "Integration container build failed"
-    else
-        print_info "Starting application container..."
-
-        # Start the integration container
-        sudo docker compose -f docker-compose.test.yml up --remove-orphans -d integration
+    # Start the integration container
+    sudo docker compose -f docker-compose.test.yml up --remove-orphans -d integration
 
     # Wait for health check
     print_info "Waiting for application to be healthy..."
@@ -247,7 +273,6 @@ if [ "$RUN_INTEGRATION" = true ]; then
         else
             print_info "No Docker-specific integration tests found (this is OK)"
         fi
-    fi
     fi
 
     # Cleanup integration containers

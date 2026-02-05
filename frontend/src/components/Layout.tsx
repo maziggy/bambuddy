@@ -313,8 +313,13 @@ export function Layout() {
   }, [location.pathname, isMobile]);
 
   // Listen for plate detection warnings (objects on plate, print paused)
+  // Only show to users with printers:control permission
   useEffect(() => {
     const handlePlateNotEmpty = (event: Event) => {
+      // Only show alert to users who can control printers
+      if (!hasPermission('printers:control')) {
+        return;
+      }
       const detail = (event as CustomEvent).detail;
       setPlateDetectionAlert({
         printer_id: detail.printer_id,
@@ -324,7 +329,7 @@ export function Layout() {
     };
     window.addEventListener('plate-not-empty', handlePlateNotEmpty);
     return () => window.removeEventListener('plate-not-empty', handlePlateNotEmpty);
-  }, []);
+  }, [hasPermission]);
 
   // Global keyboard shortcuts for navigation
   const handleKeyDown = useCallback((e: KeyboardEvent) => {

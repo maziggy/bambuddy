@@ -38,7 +38,7 @@ ignore = [
     "SIM108", # ternary operator (readability preference)
     "SIM102", # nested if (readability preference)
     "SIM105", # contextlib.suppress (readability preference)
-    "UP038",  # isinstance tuple syntax (readability preference)
+    "UP017",  # datetime.UTC alias (Python 3.11+ only, we support 3.10)
 ]
 
 # Allow autofix for all enabled rules

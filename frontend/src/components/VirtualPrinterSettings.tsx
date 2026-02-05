@@ -19,8 +19,9 @@ export function VirtualPrinterSettings() {
   const [localMode, setLocalMode] = useState<LocalMode>('immediate');
   const [localModel, setLocalModel] = useState('3DPrinter-X1-Carbon');
   const [localTargetPrinterId, setLocalTargetPrinterId] = useState<number | null>(null);
+  const [localRemoteInterfaceIp, setLocalRemoteInterfaceIp] = useState('');
   const [showAccessCode, setShowAccessCode] = useState(false);
-  const [pendingAction, setPendingAction] = useState<'toggle' | 'accessCode' | 'mode' | 'model' | 'targetPrinter' | null>(null);
+  const [pendingAction, setPendingAction] = useState<'toggle' | 'accessCode' | 'mode' | 'model' | 'targetPrinter' | 'remoteInterface' | null>(null);
 
   // Fetch current settings
   const { data: settings, isLoading } = useQuery({
@@ -41,6 +42,13 @@ export function VirtualPrinterSettings() {
     queryFn: api.getPrinters,
   });
 
+  // Fetch network interfaces for SSDP proxy (only in proxy mode)
+  const { data: networkInterfaces } = useQuery({
+    queryKey: ['network-interfaces'],
+    queryFn: () => api.getNetworkInterfaces().then(res => res.interfaces),
+    enabled: localMode === 'proxy',
+  });
+
   // Initialize local state from settings
   useEffect(() => {
     if (settings) {
@@ -53,12 +61,13 @@ export function VirtualPrinterSettings() {
       setLocalMode(mode);
       setLocalModel(settings.model);
       setLocalTargetPrinterId(settings.target_printer_id);
+      setLocalRemoteInterfaceIp(settings.remote_interface_ip || '');
     }
   }, [settings]);
 
   // Update mutation
   const updateMutation = useMutation({
-    mutationFn: (data: { enabled?: boolean; access_code?: string; mode?: LocalMode; model?: string; target_printer_id?: number }) =>
+    mutationFn: (data: { enabled?: boolean; access_code?: string; mode?: LocalMode; model?: string; target_printer_id?: number; remote_interface_ip?: string }) =>
       virtualPrinterApi.updateSettings(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['virtual-printer-settings'] });
@@ -146,6 +155,12 @@ export function VirtualPrinterSettings() {
     setLocalModel(model);
     setPendingAction('model');
     updateMutation.mutate({ model });
+  };
+
+  const handleRemoteInterfaceChange = (ip: string) => {
+    setLocalRemoteInterfaceIp(ip);
+    setPendingAction('remoteInterface');
+    updateMutation.mutate({ remote_interface_ip: ip });
   };
 
   if (isLoading) {
@@ -350,6 +365,45 @@ export function VirtualPrinterSettings() {
             </div>
           )}
 
+          {/* Remote Interface - only for proxy mode (SSDP proxy) */}
+          {localMode === 'proxy' && (
+            <div className="py-3 border-t border-bambu-dark-tertiary">
+              <div className="text-white font-medium mb-2">{t('virtualPrinter.remoteInterface.title')}</div>
+              <div className="text-sm text-bambu-gray mb-3">
+                {localRemoteInterfaceIp ? (
+                  <span className="flex items-center gap-1 text-green-400">
+                    <Check className="w-4 h-4" />
+                    {t('virtualPrinter.remoteInterface.configured')}
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-bambu-gray">
+                    <Info className="w-4 h-4" />
+                    {t('virtualPrinter.remoteInterface.optional')}
+                  </span>
+                )}
+              </div>
+              <div className="relative">
+                <select
+                  value={localRemoteInterfaceIp}
+                  onChange={(e) => handleRemoteInterfaceChange(e.target.value)}
+                  disabled={pendingAction === 'remoteInterface'}
+                  className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-md px-3 py-2 text-white appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed pr-10"
+                >
+                  <option value="">{t('virtualPrinter.remoteInterface.placeholder')}</option>
+                  {networkInterfaces?.map((iface) => (
+                    <option key={iface.ip} value={iface.ip}>
+                      {iface.name} ({iface.ip}) - {iface.subnet}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+              </div>
+              <p className="text-xs text-bambu-gray mt-2">
+                {t('virtualPrinter.remoteInterface.hint')}
+              </p>
+            </div>
+          )}
+
           {/* Mode */}
           <div className="py-3 border-t border-bambu-dark-tertiary">
             <div className="text-white font-medium mb-2">{t('virtualPrinter.mode.title')}</div>
@@ -504,11 +558,11 @@ export function VirtualPrinterSettings() {
                   </div>
                   <div>
                     <div className="text-bambu-gray">{t('virtualPrinter.status.ftpConnections')}</div>
-                    <div className="text-white">{status.proxy.ftp_connections}</div>
+                    <div className="text-white">{status.proxy.ftp_connections ?? 0}</div>
                   </div>
                   <div>
                     <div className="text-bambu-gray">{t('virtualPrinter.status.mqttConnections')}</div>
-                    <div className="text-white">{status.proxy.mqtt_connections}</div>
+                    <div className="text-white">{status.proxy.mqtt_connections ?? 0}</div>
                   </div>
                 </div>
               ) : (

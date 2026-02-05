@@ -5,7 +5,7 @@ import json
 import logging
 import xml.etree.ElementTree as ET
 import zipfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import func, select
@@ -74,6 +74,18 @@ class PrintScheduler:
             for item in items:
                 # Check scheduled time first (scheduled_time is stored in UTC from ISO string)
                 if item.scheduled_time and item.scheduled_time > datetime.utcnow():
+                    continue
+
+                # Safety: Skip stale items (older than 24 hours) to prevent phantom reprints
+                # This protects against items that got stuck in "pending" status due to
+                # crashes/restarts after the print already started
+                stale_threshold = timedelta(hours=24)
+                if item.created_at and datetime.utcnow() - item.created_at.replace(tzinfo=None) > stale_threshold:
+                    logger.warning(f"Queue item {item.id} is stale (created {item.created_at}), marking as expired")
+                    item.status = "expired"
+                    item.error_message = "Queue item expired - older than 24 hours"
+                    item.completed_at = datetime.utcnow()
+                    await db.commit()
                     continue
 
                 # Skip items that require manual start
@@ -434,6 +446,8 @@ class PrintScheduler:
                                 filament_id = filament_elem.get("id")
                                 filament_type = filament_elem.get("type", "")
                                 filament_color = filament_elem.get("color", "")
+                                # tray_info_idx identifies the specific spool selected when slicing
+                                tray_info_idx = filament_elem.get("tray_info_idx", "")
                                 used_g = filament_elem.get("used_g", "0")
                                 try:
                                     used_grams = float(used_g)
@@ -443,6 +457,7 @@ class PrintScheduler:
                                                 "slot_id": int(filament_id),
                                                 "type": filament_type,
                                                 "color": filament_color,
+                                                "tray_info_idx": tray_info_idx,
                                                 "used_grams": round(used_grams, 1),
                                             }
                                         )
@@ -455,6 +470,8 @@ class PrintScheduler:
                         filament_id = filament_elem.get("id")
                         filament_type = filament_elem.get("type", "")
                         filament_color = filament_elem.get("color", "")
+                        # tray_info_idx identifies the specific spool selected when slicing
+                        tray_info_idx = filament_elem.get("tray_info_idx", "")
                         used_g = filament_elem.get("used_g", "0")
                         try:
                             used_grams = float(used_g)
@@ -464,6 +481,7 @@ class PrintScheduler:
                                         "slot_id": int(filament_id),
                                         "type": filament_type,
                                         "color": filament_color,
+                                        "tray_info_idx": tray_info_idx,
                                         "used_grams": round(used_grams, 1),
                                     }
                                 )
@@ -500,6 +518,8 @@ class PrintScheduler:
                 if tray_type:
                     tray_id = tray.get("id", 0)
                     tray_color = tray.get("tray_color", "")
+                    # tray_info_idx identifies the specific spool (e.g., "GFA00", "P4d64437")
+                    tray_info_idx = tray.get("tray_info_idx", "")
                     # Normalize color: remove alpha, add hash
                     color = self._normalize_color(tray_color)
                     # Calculate global tray ID
@@ -509,6 +529,7 @@ class PrintScheduler:
                         {
                             "type": tray_type,
                             "color": color,
+                            "tray_info_idx": tray_info_idx,
                             "ams_id": ams_id,
                             "tray_id": tray_id,
                             "is_ht": is_ht,
@@ -525,6 +546,7 @@ class PrintScheduler:
                 {
                     "type": vt_tray["tray_type"],
                     "color": color,
+                    "tray_info_idx": vt_tray.get("tray_info_idx", ""),
                     "ams_id": -1,
                     "tray_id": 0,
                     "is_ht": False,
@@ -569,11 +591,17 @@ class PrintScheduler:
     def _match_filaments_to_slots(self, required: list[dict], loaded: list[dict]) -> list[int] | None:
         """Match required filaments to loaded filaments and build AMS mapping.
 
-        Priority: exact color match > similar color match > type-only match
+        Priority: unique tray_info_idx match > exact color match > similar color match > type-only match
+
+        The tray_info_idx is a filament type identifier stored in the 3MF file when the user
+        slices (e.g., "GFA00" for generic PLA, "P4d64437" for custom presets). If the same
+        tray_info_idx appears in only ONE available tray, we use that tray. If multiple trays
+        have the same tray_info_idx (e.g., two spools of generic PLA), we fall back to color
+        matching among those trays.
 
         Args:
-            required: List of required filaments with slot_id, type, color
-            loaded: List of loaded filaments with type, color, global_tray_id
+            required: List of required filaments with slot_id, type, color, tray_info_idx
+            loaded: List of loaded filaments with type, color, tray_info_idx, global_tray_id
 
         Returns:
             AMS mapping array (position = slot_id - 1, value = global_tray_id or -1)
@@ -588,31 +616,64 @@ class PrintScheduler:
         for req in required:
             req_type = (req.get("type") or "").upper()
             req_color = req.get("color", "")
+            req_tray_info_idx = req.get("tray_info_idx", "")
 
-            # Find best match: exact color > similar color > type-only
+            # Find best match: unique tray_info_idx > exact color > similar color > type-only
+            idx_match = None
             exact_match = None
             similar_match = None
             type_only_match = None
 
-            for f in loaded:
-                if f["global_tray_id"] in used_tray_ids:
-                    continue
-                f_type = (f.get("type") or "").upper()
-                if f_type != req_type:
-                    continue
+            # Get available trays (not already used)
+            available = [f for f in loaded if f["global_tray_id"] not in used_tray_ids]
 
-                # Type matches - check color
-                f_color = f.get("color", "")
-                if self._normalize_color_for_compare(f_color) == self._normalize_color_for_compare(req_color):
-                    exact_match = f
-                    break  # Best possible match
-                elif self._colors_are_similar(f_color, req_color):
-                    if not similar_match:
-                        similar_match = f
-                elif not type_only_match:
-                    type_only_match = f
+            # Check if tray_info_idx is unique among available trays
+            if req_tray_info_idx:
+                idx_matches = [f for f in available if f.get("tray_info_idx") == req_tray_info_idx]
+                if len(idx_matches) == 1:
+                    # Unique tray_info_idx - use it as definitive match
+                    idx_match = idx_matches[0]
+                    logger.debug(
+                        f"Matched filament slot {req.get('slot_id')} by unique tray_info_idx={req_tray_info_idx} "
+                        f"-> tray {idx_match['global_tray_id']}"
+                    )
+                elif len(idx_matches) > 1:
+                    # Multiple trays with same tray_info_idx - use color matching among them
+                    logger.debug(
+                        f"Non-unique tray_info_idx={req_tray_info_idx} found in {len(idx_matches)} trays, "
+                        f"using color matching among trays: {[f['global_tray_id'] for f in idx_matches]}"
+                    )
+                    # Use color matching within this subset
+                    for f in idx_matches:
+                        f_color = f.get("color", "")
+                        if self._normalize_color_for_compare(f_color) == self._normalize_color_for_compare(req_color):
+                            if not exact_match:
+                                exact_match = f
+                        elif self._colors_are_similar(f_color, req_color):
+                            if not similar_match:
+                                similar_match = f
+                        elif not type_only_match:
+                            type_only_match = f
 
-            match = exact_match or similar_match or type_only_match
+            # If no idx_match yet, do standard type/color matching on all available trays
+            if not idx_match and not exact_match and not similar_match and not type_only_match:
+                for f in available:
+                    f_type = (f.get("type") or "").upper()
+                    if f_type != req_type:
+                        continue
+
+                    # Type matches - check color
+                    f_color = f.get("color", "")
+                    if self._normalize_color_for_compare(f_color) == self._normalize_color_for_compare(req_color):
+                        if not exact_match:
+                            exact_match = f
+                    elif self._colors_are_similar(f_color, req_color):
+                        if not similar_match:
+                            similar_match = f
+                    elif not type_only_match:
+                        type_only_match = f
+
+            match = idx_match or exact_match or similar_match or type_only_match
             if match:
                 used_tray_ids.add(match["global_tray_id"])
                 comparisons.append({"slot_id": req.get("slot_id", 0), "global_tray_id": match["global_tray_id"]})
@@ -809,6 +870,28 @@ class PrintScheduler:
                 logger.error(f"Queue item {item.id}: Archive {item.archive_id} not found")
                 await self._power_off_if_needed(db, item)
                 return
+
+            # Safety: Check if this archive was printed recently (within 4 hours)
+            # This prevents phantom reprints if a queue item got stuck in "pending"
+            # after its print already started due to a crash/restart
+            if archive.status == "completed" and archive.completed_at:
+                completed_at = (
+                    archive.completed_at.replace(tzinfo=None) if archive.completed_at.tzinfo else archive.completed_at
+                )
+                time_since_completed = datetime.utcnow() - completed_at
+                if time_since_completed < timedelta(hours=4):
+                    logger.warning(
+                        f"Queue item {item.id}: Archive {item.archive_id} was already printed "
+                        f"{time_since_completed.total_seconds() / 3600:.1f} hours ago, skipping to prevent duplicate"
+                    )
+                    item.status = "skipped"
+                    item.error_message = (
+                        f"Archive was already printed {time_since_completed.total_seconds() / 3600:.1f} hours ago"
+                    )
+                    item.completed_at = datetime.utcnow()
+                    await db.commit()
+                    return
+
             file_path = settings.base_dir / archive.file_path
             filename = archive.filename
 
@@ -953,6 +1036,17 @@ class PrintScheduler:
             except json.JSONDecodeError:
                 logger.warning(f"Queue item {item.id}: Invalid AMS mapping JSON, ignoring")
 
+        # IMPORTANT: Set status to "printing" BEFORE sending the print command.
+        # This prevents phantom reprints if the backend crashes/restarts after the
+        # print command is sent but before the status update is committed.
+        # If we crash after this commit but before start_print(), the item will be
+        # in "printing" status without actually printing - but that's safer than
+        # accidentally reprinting the same file hours later.
+        item.status = "printing"
+        item.started_at = datetime.utcnow()
+        await db.commit()
+        logger.info(f"Queue item {item.id}: Status set to 'printing', sending print command...")
+
         # Start the print with AMS mapping, plate_id and print options
         started = printer_manager.start_print(
             item.printer_id,
@@ -968,10 +1062,7 @@ class PrintScheduler:
         )
 
         if started:
-            item.status = "printing"
-            item.started_at = datetime.utcnow()
-            await db.commit()
-            logger.info(f"Queue item {item.id}: Print started - {filename}")
+            logger.info(f"Queue item {item.id}: Print started successfully - {filename}")
 
             # Get estimated time for notification
             estimated_time = None
@@ -1003,6 +1094,7 @@ class PrintScheduler:
             except Exception:
                 pass  # Don't fail if MQTT fails
         else:
+            # Print command failed - revert status
             item.status = "failed"
             item.error_message = "Failed to send print command to printer"
             item.completed_at = datetime.utcnow()

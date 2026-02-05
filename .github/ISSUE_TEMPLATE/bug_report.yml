@@ -121,7 +121,9 @@ body:
     id: logs
     attributes:
       label: Relevant Logs / Support Package
-      description: Attach a support package (.zip) or paste relevant logs here. Enable DEBUG mode for verbose logging.
+      description: |
+        Attach a support package (.zip) or paste relevant logs here. Enable DEBUG mode for verbose logging.
+        💡 Tip: You can drag and drop files directly into this text box.
       render: shell
       placeholder: |
         Drag and drop your support package .zip file here, or paste logs...
@@ -130,7 +132,9 @@ body:
     id: screenshots
     attributes:
       label: Screenshots
-      description: If applicable, add screenshots to help explain your problem.
+      description: |
+        If applicable, add screenshots to help explain your problem.
+        💡 Tip: You can drag and drop images directly into this text box.
 
   - type: textarea
     id: additional

@@ -43,6 +43,7 @@ const createMockSettings = (overrides = {}) => ({
   mode: 'immediate' as const,
   model: '3DPrinter-X1-Carbon',
   target_printer_id: null as number | null,
+  remote_interface_ip: null as string | null,
   status: {
     enabled: false,
     running: false,
@@ -515,7 +516,7 @@ describe('VirtualPrinterSettings', () => {
             proxy: {
               running: true,
               target_host: '192.168.1.100',
-              ftp_port: 9990,
+              ftp_port: 990,  // Privileged port for Bambu Studio compatibility
               mqtt_port: 8883,
               ftp_connections: 1,
               mqtt_connections: 2,

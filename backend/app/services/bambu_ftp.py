@@ -78,8 +78,8 @@ class BambuFTPClient:
     FTP_PORT = 990
     DEFAULT_TIMEOUT = 30  # Default timeout in seconds (increased for A1 printers)
     # Models that need SSL session reuse disabled (A1 series has FTP issues with session reuse)
-    # P2S should use normal session reuse like X1C/P1S, not skip it
-    SKIP_SESSION_REUSE_MODELS = ("A1", "A1 Mini", "P1S", "P1P")
+    # X1C/X1E/P1S/P1P/P2S use vsFTPd which requires SSL session reuse - do NOT add them here
+    SKIP_SESSION_REUSE_MODELS = ("A1", "A1 Mini")
 
     def __init__(
         self,
@@ -112,8 +112,15 @@ class BambuFTPClient:
             self._ftp.connect(self.ip_address, self.FTP_PORT, timeout=self.timeout)
             logger.debug("FTP connected, logging in as bblp")
             self._ftp.login("bblp", self.access_code)
-            logger.debug("FTP logged in, setting prot_p and passive mode")
-            self._ftp.prot_p()
+            if skip_reuse:
+                # A1/A1 Mini: Use clear (unencrypted) data channel
+                # These printers have issues with SSL on the data channel
+                logger.debug("FTP logged in, setting prot_c (clear) and passive mode for A1")
+                self._ftp.prot_c()
+            else:
+                # X1C/P1S/etc: Use protected (encrypted) data channel with session reuse
+                logger.debug("FTP logged in, setting prot_p (protected) and passive mode")
+                self._ftp.prot_p()
             self._ftp.set_pasv(True)
             # Log welcome message for debugging
             if hasattr(self._ftp, "welcome") and self._ftp.welcome:
@@ -334,9 +341,6 @@ class BambuFTPClient:
                     progress_callback(uploaded, file_size)
 
             with open(local_path, "rb") as f:
-                if self._should_skip_session_reuse():
-                    ftplib._SSLSocket = None
-
                 logger.debug(f"FTP STOR command starting for {remote_path}")
                 self._ftp.storbinary(f"STOR {remote_path}", f, callback=on_block)
             logger.info(f"FTP upload complete: {remote_path}")

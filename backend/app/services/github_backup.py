@@ -9,7 +9,7 @@ import hashlib
 import json
 import logging
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from sqlalchemy import desc, select
@@ -85,19 +85,19 @@ class GitHubBackupService:
             )
             configs = result.scalars().all()
 
-            now = datetime.now(UTC)
+            now = datetime.now(timezone.utc)
             for config in configs:
                 # Handle both naive (from DB) and aware datetimes
                 next_run = config.next_scheduled_run
                 if next_run and next_run.tzinfo is None:
-                    next_run = next_run.replace(tzinfo=UTC)
+                    next_run = next_run.replace(tzinfo=timezone.utc)
                 if next_run and next_run <= now:
                     logger.info(f"Running scheduled backup for config {config.id}")
                     await self.run_backup(config.id, trigger="scheduled")
 
     def _calculate_next_run(self, schedule_type: str, from_time: datetime | None = None) -> datetime:
         """Calculate the next scheduled run time."""
-        now = from_time or datetime.now(UTC)
+        now = from_time or datetime.now(timezone.utc)
         interval = SCHEDULE_INTERVALS.get(schedule_type, SCHEDULE_INTERVALS["daily"])
         return now + timedelta(seconds=interval)
 
@@ -237,9 +237,9 @@ class GitHubBackupService:
                     if not backup_data:
                         # No data to backup
                         log.status = "skipped"
-                        log.completed_at = datetime.now(UTC)
+                        log.completed_at = datetime.now(timezone.utc)
                         log.error_message = "No data to backup"
-                        config.last_backup_at = datetime.now(UTC)
+                        config.last_backup_at = datetime.now(timezone.utc)
                         config.last_backup_status = "skipped"
                         config.last_backup_message = "No data to backup"
                         if config.schedule_enabled:
@@ -259,12 +259,12 @@ class GitHubBackupService:
 
                     # Update log and config
                     log.status = push_result["status"]
-                    log.completed_at = datetime.now(UTC)
+                    log.completed_at = datetime.now(timezone.utc)
                     log.commit_sha = push_result.get("commit_sha")
                     log.files_changed = push_result.get("files_changed", 0)
                     log.error_message = push_result.get("error")
 
-                    config.last_backup_at = datetime.now(UTC)
+                    config.last_backup_at = datetime.now(timezone.utc)
                     config.last_backup_status = push_result["status"]
                     config.last_backup_message = push_result.get("message", "")
                     config.last_backup_commit_sha = push_result.get("commit_sha")
@@ -285,10 +285,10 @@ class GitHubBackupService:
                 except Exception as e:
                     logger.error(f"Backup failed: {e}")
                     log.status = "failed"
-                    log.completed_at = datetime.now(UTC)
+                    log.completed_at = datetime.now(timezone.utc)
                     log.error_message = str(e)
 
-                    config.last_backup_at = datetime.now(UTC)
+                    config.last_backup_at = datetime.now(timezone.utc)
                     config.last_backup_status = "failed"
                     config.last_backup_message = str(e)
 
@@ -572,7 +572,7 @@ class GitHubBackupService:
             new_tree_sha = tree_response.json()["sha"]
 
             # Create commit
-            commit_message = f"Bambuddy backup - {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}"
+            commit_message = f"Bambuddy backup - {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
             commit_response = await client.post(
                 f"https://api.github.com/repos/{owner}/{repo}/git/commits",
                 headers=headers,
@@ -689,7 +689,7 @@ class GitHubBackupService:
                 f"https://api.github.com/repos/{owner}/{repo}/git/commits",
                 headers=headers,
                 json={
-                    "message": f"Initial Bambuddy backup - {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}",
+                    "message": f"Initial Bambuddy backup - {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
                     "tree": tree_sha,
                 },
             )

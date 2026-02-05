@@ -1,3 +1,5 @@
+import type { ArchivePlatesResponse, LibraryFilePlatesResponse } from '../types/plates';
+
 const API_BASE = '/api/v1';
 
 // Auth token storage
@@ -37,16 +39,27 @@ async function request<T>(
   });
 
   if (!response.ok) {
-    // Handle 401 Unauthorized - clear token and redirect to login
-    if (response.status === 401) {
-      setAuthToken(null);
-      // Don't throw here - let the auth context handle redirect
-    }
     const error = await response.json().catch(() => ({}));
     const detail = error.detail;
     const message = typeof detail === 'string'
       ? detail
       : (detail ? JSON.stringify(detail) : `HTTP ${response.status}`);
+
+    // Handle 401 Unauthorized - only clear token if it's actually invalid
+    // Don't clear on "Authentication required" which might be a timing issue
+    if (response.status === 401) {
+      const invalidTokenMessages = [
+        'Could not validate credentials',
+        'Token has expired',
+        'User not found or inactive',
+        'Invalid API key',
+        'API key has expired',
+      ];
+      if (invalidTokenMessages.some(m => message.includes(m))) {
+        setAuthToken(null);
+      }
+    }
+
     throw new Error(message);
   }
 
@@ -2063,6 +2076,33 @@ export const api = {
     }>(`/printers/${printerId}/files?path=${encodeURIComponent(path)}`),
   getPrinterFileDownloadUrl: (printerId: number, path: string) =>
     `${API_BASE}/printers/${printerId}/files/download?path=${encodeURIComponent(path)}`,
+  getPrinterFileGcodeUrl: (printerId: number, path: string) =>
+    `${API_BASE}/printers/${printerId}/files/gcode?path=${encodeURIComponent(path)}`,
+  getPrinterFilePlates: (printerId: number, path: string) =>
+    request<{
+      printer_id: number;
+      path: string;
+      filename: string;
+      plates: Array<{
+        index: number;
+        name: string | null;
+        objects: string[];
+        has_thumbnail: boolean;
+        thumbnail_url: string | null;
+        print_time_seconds: number | null;
+        filament_used_grams: number | null;
+        filaments: Array<{
+          slot_id: number;
+          type: string;
+          color: string;
+          used_grams: number;
+          used_meters: number;
+        }>;
+      }>;
+      is_multi_plate: boolean;
+    }>(`/printers/${printerId}/files/plates?path=${encodeURIComponent(path)}`),
+  getPrinterFilePlateThumbnail: (printerId: number, plateIndex: number, path: string) =>
+    `${API_BASE}/printers/${printerId}/files/plate-thumbnail/${plateIndex}?path=${encodeURIComponent(path)}`,
   downloadPrinterFile: async (printerId: number, path: string): Promise<void> => {
     const headers: Record<string, string> = {};
     if (authToken) {
@@ -2557,27 +2597,7 @@ export const api = {
   getArchiveForSlicer: (id: number, filename: string) =>
     `${API_BASE}/archives/${id}/file/${encodeURIComponent(filename.endsWith('.3mf') ? filename : filename + '.3mf')}`,
   getArchivePlates: (archiveId: number) =>
-    request<{
-      archive_id: number;
-      filename: string;
-      plates: Array<{
-        index: number;
-        name: string | null;
-        objects: string[];
-        has_thumbnail: boolean;
-        thumbnail_url: string | null;
-        print_time_seconds: number | null;
-        filament_used_grams: number | null;
-        filaments: Array<{
-          slot_id: number;
-          type: string;
-          color: string;
-          used_grams: number;
-          used_meters: number;
-        }>;
-      }>;
-      is_multi_plate: boolean;
-    }>(`/archives/${archiveId}/plates`),
+    request<ArchivePlatesResponse>(`/archives/${archiveId}/plates`),
   getArchiveFilamentRequirements: (archiveId: number, plateId?: number) =>
     request<{
       archive_id: number;
@@ -2713,6 +2733,8 @@ export const api = {
   },
   checkFfmpeg: () =>
     request<{ installed: boolean; path: string | null }>('/settings/check-ffmpeg'),
+  getNetworkInterfaces: () =>
+    request<{ interfaces: NetworkInterface[] }>('/settings/network-interfaces'),
 
   // Cloud
   getCloudStatus: () => request<CloudAuthStatus>('/cloud/status'),
@@ -2794,13 +2816,11 @@ export const api = {
 
   // Tasmota Discovery (auto-detects network)
   startTasmotaScan: () =>
-    fetch(`${API_BASE}/smart-plugs/discover/scan`, { method: 'POST' })
-      .then(res => res.ok ? res.json() : res.json().then(e => { throw new Error(e.detail || `HTTP ${res.status}`); })),
+    request<TasmotaScanStatus>('/smart-plugs/discover/scan', { method: 'POST' }),
   getTasmotaScanStatus: () =>
     request<TasmotaScanStatus>('/smart-plugs/discover/status'),
   stopTasmotaScan: () =>
-    fetch(`${API_BASE}/smart-plugs/discover/stop`, { method: 'POST' })
-      .then(res => res.ok ? res.json() : res.json().then(e => { throw new Error(e.detail || `HTTP ${res.status}`); })),
+    request<TasmotaScanStatus>('/smart-plugs/discover/stop', { method: 'POST' }),
   getDiscoveredTasmotaDevices: () =>
     request<DiscoveredTasmotaDevice[]>('/smart-plugs/discover/devices'),
 
@@ -3565,27 +3585,7 @@ export const api = {
       }
     ),
   getLibraryFilePlates: (fileId: number) =>
-    request<{
-      file_id: number;
-      filename: string;
-      plates: Array<{
-        index: number;
-        name: string | null;
-        objects: string[];
-        has_thumbnail: boolean;
-        thumbnail_url: string | null;
-        print_time_seconds: number | null;
-        filament_used_grams: number | null;
-        filaments: Array<{
-          slot_id: number;
-          type: string;
-          color: string;
-          used_grams: number;
-          used_meters: number;
-        }>;
-      }>;
-      is_multi_plate: boolean;
-    }>(`/library/files/${fileId}/plates`),
+    request<LibraryFilePlatesResponse>(`/library/files/${fileId}/plates`),
   getLibraryFileFilamentRequirements: (fileId: number, plateId?: number) =>
     request<{
       file_id: number;
@@ -3802,6 +3802,11 @@ export interface LibraryFile {
   created_by_username: string | null;
   created_at: string;
   updated_at: string;
+  // Metadata fields
+  print_name: string | null;
+  print_time_seconds: number | null;
+  filament_used_grams: number | null;
+  sliced_for_model: string | null;
 }
 
 export interface LibraryFileListItem {
@@ -3820,6 +3825,7 @@ export interface LibraryFileListItem {
   print_name: string | null;
   print_time_seconds: number | null;
   filament_used_grams: number | null;
+  sliced_for_model: string | null;
 }
 
 export interface LibraryFileUpdate {
@@ -3986,7 +3992,15 @@ export interface VirtualPrinterSettings {
   mode: VirtualPrinterMode;
   model: string;
   target_printer_id: number | null;  // For proxy mode
+  remote_interface_ip: string | null;  // For SSDP proxy across networks
   status: VirtualPrinterStatus;
+}
+
+export interface NetworkInterface {
+  name: string;
+  ip: string;
+  netmask: string;
+  subnet: string;
 }
 
 export interface VirtualPrinterModels {
@@ -4018,6 +4032,7 @@ export const virtualPrinterApi = {
     mode?: 'immediate' | 'review' | 'print_queue' | 'proxy';
     model?: string;
     target_printer_id?: number;
+    remote_interface_ip?: string;
   }) => {
     const params = new URLSearchParams();
     if (data.enabled !== undefined) params.set('enabled', String(data.enabled));
@@ -4025,6 +4040,7 @@ export const virtualPrinterApi = {
     if (data.mode !== undefined) params.set('mode', data.mode);
     if (data.model !== undefined) params.set('model', data.model);
     if (data.target_printer_id !== undefined) params.set('target_printer_id', String(data.target_printer_id));
+    if (data.remote_interface_ip !== undefined) params.set('remote_interface_ip', data.remote_interface_ip);
 
     return request<VirtualPrinterSettings>(`/settings/virtual-printer?${params.toString()}`, {
       method: 'PUT',

@@ -1,6 +1,6 @@
 // Bambuddy Service Worker
-const CACHE_NAME = 'bambuddy-v23';
-const STATIC_CACHE = 'bambuddy-static-v23';
+const CACHE_NAME = 'bambuddy-v24';
+const STATIC_CACHE = 'bambuddy-static-v24';
 
 // Static assets to cache on install
 const STATIC_ASSETS = [
@@ -59,6 +59,11 @@ self.addEventListener('fetch', (event) => {
 
   // Skip WebSocket connections
   if (url.protocol === 'ws:' || url.protocol === 'wss:') {
+    return;
+  }
+
+  // Skip camera stream/snapshot requests - Safari has issues with streaming through SW
+  if (url.pathname.includes('/camera/stream') || url.pathname.includes('/camera/snapshot')) {
     return;
   }
 

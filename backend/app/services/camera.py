@@ -301,11 +301,10 @@ async def capture_camera_frame(
     output_path: Path,
     timeout: int = 30,
 ) -> bool:
-    """Capture a single frame from the printer's camera stream.
+    """Capture a single frame from the printer's camera stream and save to disk.
 
-    Uses the appropriate protocol based on printer model:
-    - A1/P1: Chamber image protocol (port 6000)
-    - X1/H2/P2: RTSP via ffmpeg (port 322)
+    Uses capture_camera_frame_bytes() internally for protocol selection,
+    then writes the result to the specified output path.
 
     Args:
         ip_address: Printer IP address
@@ -317,36 +316,57 @@ async def capture_camera_frame(
     Returns:
         True if capture was successful, False otherwise
     """
-    # Ensure output directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Use chamber image protocol for A1/P1 models
-    if is_chamber_image_model(model):
-        logger.info(f"Capturing camera frame from {ip_address} using chamber image protocol (model: {model})")
-        jpeg_data = await read_chamber_image_frame(ip_address, access_code, timeout=float(timeout))
-        if jpeg_data:
-            try:
-                with open(output_path, "wb") as f:
-                    f.write(jpeg_data)
-                logger.info(f"Successfully captured camera frame: {output_path}")
-                return True
-            except Exception as e:
-                logger.error(f"Failed to write camera frame: {e}")
-                return False
-        return False
+    jpeg_data = await capture_camera_frame_bytes(ip_address, access_code, model, timeout)
+    if jpeg_data:
+        try:
+            with open(output_path, "wb") as f:
+                f.write(jpeg_data)
+            logger.info(f"Saved camera frame to: {output_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to write camera frame: {e}")
+            return False
+    return False
 
-    # Use RTSP/ffmpeg for X1/H2/P2 models
+
+async def capture_camera_frame_bytes(
+    ip_address: str,
+    access_code: str,
+    model: str | None,
+    timeout: int = 15,
+) -> bytes | None:
+    """Capture a single frame and return as JPEG bytes (no disk write).
+
+    Uses the same protocol selection as capture_camera_frame but returns
+    bytes directly instead of writing to disk.
+
+    Args:
+        ip_address: Printer IP address
+        access_code: Printer access code
+        model: Printer model (X1, H2D, P1, A1, etc.)
+        timeout: Timeout in seconds for the capture operation
+
+    Returns:
+        JPEG bytes if capture was successful, None otherwise
+    """
+    # Chamber image models: A1/P1 - returns bytes directly
+    if is_chamber_image_model(model):
+        logger.info(f"Capturing camera frame bytes from {ip_address} using chamber image protocol (model: {model})")
+        return await read_chamber_image_frame(ip_address, access_code, timeout=float(timeout))
+
+    # RTSP models: X1/H2/P2 - use ffmpeg piping to stdout
     camera_url = build_camera_url(ip_address, access_code, model)
 
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
-        logger.error("ffmpeg not found. Please install ffmpeg to enable camera capture.")
-        return False
+        logger.error("ffmpeg not found for camera frame capture")
+        return None
 
-    # ffmpeg command to capture a single frame from RTSPS stream
     cmd = [
         ffmpeg,
-        "-y",  # Overwrite output
+        "-y",
         "-rtsp_transport",
         "tcp",
         "-rtsp_flags",
@@ -355,14 +375,16 @@ async def capture_camera_frame(
         camera_url,
         "-frames:v",
         "1",
-        "-update",
-        "1",
+        "-f",
+        "image2pipe",
+        "-vcodec",
+        "mjpeg",
         "-q:v",
         "2",
-        str(output_path),
+        "-",
     ]
 
-    logger.info(f"Capturing camera frame from {ip_address} using RTSP (model: {model})")
+    logger.info(f"Capturing camera frame bytes from {ip_address} using RTSP (model: {model})")
 
     try:
         process = await asyncio.create_subprocess_exec(
@@ -376,27 +398,23 @@ async def capture_camera_frame(
         except TimeoutError:
             process.kill()
             await process.wait()
-            logger.error(f"Camera capture timed out after {timeout}s")
-            return False
+            logger.error(f"Camera frame bytes capture timed out after {timeout}s")
+            return None
 
-        if process.returncode != 0:
-            stderr_text = stderr.decode() if stderr else "Unknown error"
-            logger.error(f"ffmpeg failed with code {process.returncode}: {stderr_text}")
-            return False
-
-        if output_path.exists() and output_path.stat().st_size > 0:
-            logger.info(f"Successfully captured camera frame: {output_path}")
-            return True
+        if process.returncode == 0 and stdout and len(stdout) >= 100:
+            logger.info(f"Successfully captured camera frame bytes: {len(stdout)} bytes")
+            return stdout
         else:
-            logger.error("Camera capture produced no output file")
-            return False
+            stderr_text = stderr.decode() if stderr else "Unknown error"
+            logger.error(f"ffmpeg frame bytes capture failed (code {process.returncode}): {stderr_text[:200]}")
+            return None
 
     except FileNotFoundError:
-        logger.error("ffmpeg not found. Please install ffmpeg to enable camera capture.")
-        return False
+        logger.error("ffmpeg not found for camera frame capture")
+        return None
     except Exception as e:
-        logger.exception(f"Camera capture failed: {e}")
-        return False
+        logger.exception(f"Camera frame bytes capture failed: {e}")
+        return None
 
 
 async def capture_finish_photo(

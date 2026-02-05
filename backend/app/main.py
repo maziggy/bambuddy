@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 
 
@@ -456,8 +456,19 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                     # remaining_time is in minutes, convert to seconds for notification
                     remaining_time_seconds = state.remaining_time * 60 if state.remaining_time else None
 
+                    # Capture camera snapshot for notification image attachment
+                    image_data = await _capture_snapshot_for_notification(
+                        printer_id, printer, logging.getLogger(__name__)
+                    )
+
                     await notification_service.on_print_progress(
-                        printer_id, printer_name, filename, current_milestone, db, remaining_time_seconds
+                        printer_id,
+                        printer_name,
+                        filename,
+                        current_milestone,
+                        db,
+                        remaining_time_seconds,
+                        image_data=image_data,
                     )
             except Exception as e:
                 logging.getLogger(__name__).warning(f"Progress milestone notification failed: {e}")
@@ -477,7 +488,8 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
 
         if new_error_codes:
             # Get the actual new errors for the notification
-            new_errors = [e for e in current_hms_errors if f"{e.attr:08x}" in new_error_codes]
+            # Filter to severity >= 2 (skip informational/status messages like H2D sends)
+            new_errors = [e for e in current_hms_errors if f"{e.attr:08x}" in new_error_codes and e.severity >= 2]
 
             try:
                 async with async_session() as db:
@@ -499,11 +511,18 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
 
                     from backend.app.services.hms_errors import get_error_description
 
+                    # Capture camera snapshot once for all error notifications
+                    error_image_data = await _capture_snapshot_for_notification(
+                        printer_id, printer, logging.getLogger(__name__)
+                    )
+
                     for error in new_errors:
                         module_name = module_names.get(error.module, f"Module 0x{error.module:02X}")
                         # Build short code like "0700_8010"
+                        # Mask to 16 bits to handle printers that send larger values
                         error_code_int = int(error.code.replace("0x", ""), 16) if error.code else 0
-                        short_code = f"{(error.attr >> 16) & 0xFFFF:04X}_{error_code_int:04X}"
+                        error_code_masked = error_code_int & 0xFFFF
+                        short_code = f"{(error.attr >> 16) & 0xFFFF:04X}_{error_code_masked:04X}"
 
                         error_type = f"{module_name} Error"
                         # Look up human-readable description
@@ -511,7 +530,7 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                         error_detail = description if description else f"Error code: {short_code}"
 
                         await notification_service.on_printer_error(
-                            printer_id, printer_name, error_type, db, error_detail
+                            printer_id, printer_name, error_type, db, error_detail, image_data=error_image_data
                         )
 
                     logging.getLogger(__name__).info(
@@ -639,6 +658,63 @@ async def on_ams_change(printer_id: int, ams_data: list):
         logging.getLogger(__name__).warning(f"Spoolman AMS sync failed: {e}")
 
 
+async def _capture_snapshot_for_notification(printer_id: int, printer, logger) -> bytes | None:
+    """Capture a camera snapshot for notification image attachment.
+
+    Returns JPEG bytes (max 2.5MB) or None if capture fails or is unavailable.
+    Uses: external camera > buffered frame > fresh capture.
+    """
+    if not printer:
+        return None
+
+    try:
+        from backend.app.api.routes.settings import get_setting
+
+        async with async_session() as db:
+            capture_enabled = await get_setting(db, "capture_finish_photo")
+
+        if capture_enabled is not None and capture_enabled.lower() != "true":
+            return None
+
+        # Try external camera first
+        if printer.external_camera_enabled and printer.external_camera_url:
+            logger.info(f"[SNAPSHOT] Capturing from external camera for printer {printer_id}")
+            from backend.app.services.external_camera import capture_frame
+
+            frame_data = await capture_frame(printer.external_camera_url, printer.external_camera_type or "mjpeg")
+            if frame_data and len(frame_data) <= 2_500_000:
+                logger.info(f"[SNAPSHOT] External camera frame: {len(frame_data)} bytes")
+                return frame_data
+
+        # Try buffered frame from active stream
+        from backend.app.api.routes.camera import _active_chamber_streams, _active_streams, get_buffered_frame
+
+        active_for_printer = [k for k in _active_streams if k.startswith(f"{printer_id}-")]
+        active_chamber = [k for k in _active_chamber_streams if k.startswith(f"{printer_id}-")]
+        buffered_frame = get_buffered_frame(printer_id)
+
+        if (active_for_printer or active_chamber) and buffered_frame:
+            logger.info(f"[SNAPSHOT] Using buffered frame for printer {printer_id}: {len(buffered_frame)} bytes")
+            if len(buffered_frame) <= 2_500_000:
+                return buffered_frame
+
+        # Fresh capture from printer camera
+        logger.info(f"[SNAPSHOT] Capturing fresh frame for printer {printer_id}")
+        from backend.app.services.camera import capture_camera_frame_bytes
+
+        frame_data = await capture_camera_frame_bytes(
+            printer.ip_address, printer.access_code, printer.model, timeout=15
+        )
+        if frame_data and len(frame_data) <= 2_500_000:
+            logger.info(f"[SNAPSHOT] Fresh camera frame: {len(frame_data)} bytes")
+            return frame_data
+
+    except Exception as e:
+        logger.warning(f"[SNAPSHOT] Failed to capture snapshot for printer {printer_id}: {e}")
+
+    return None
+
+
 async def _send_print_start_notification(
     printer_id: int,
     data: dict,
@@ -658,6 +734,14 @@ async def _send_print_start_notification(
             result = await db.execute(select(Printer).where(Printer.id == printer_id))
             printer = result.scalar_one_or_none()
             printer_name = printer.name if printer else f"Printer {printer_id}"
+
+            # Capture camera snapshot for notification image attachment
+            image_data = await _capture_snapshot_for_notification(printer_id, printer, logger)
+            if image_data:
+                if archive_data is None:
+                    archive_data = {}
+                archive_data["image_data"] = image_data
+
             await notification_service.on_print_start(printer_id, printer_name, data, db, archive_data=archive_data)
     except Exception as e:
         logger.warning(f"Notification on_print_start failed: {e}")
@@ -727,7 +811,11 @@ async def on_print_start(printer_id: int, data: dict):
         printer = result.scalar_one_or_none()
 
         # Plate detection check - pause if objects detected on build plate
+        logger.info(
+            f"[PLATE CHECK] printer_id={printer_id}, plate_detection_enabled={printer.plate_detection_enabled if printer else 'NO PRINTER'}"
+        )
         if printer and printer.plate_detection_enabled:
+            logger.info(f"[PLATE CHECK] ENTERING plate detection code for printer {printer_id}")
             try:
                 from backend.app.services.plate_detection import check_plate_empty
 
@@ -939,7 +1027,7 @@ async def on_print_start(printer_id: int, data: dict):
         if existing_archive:
             # Check if archive is stale (older than 4 hours) - likely a failed/cancelled print
             # that didn't get properly updated
-            archive_age = datetime.now(UTC) - existing_archive.created_at.replace(tzinfo=UTC)
+            archive_age = datetime.now(timezone.utc) - existing_archive.created_at.replace(tzinfo=timezone.utc)
             if archive_age.total_seconds() > 4 * 60 * 60:  # 4 hours
                 logger.warning(
                     f"Found stale 'printing' archive {existing_archive.id} (age: {archive_age}), "
@@ -1851,7 +1939,7 @@ async def on_print_complete(printer_id: int, data: dict):
                             "actual_filament_grams": archive.filament_used_grams,
                             "failure_reason": archive.failure_reason,
                         }
-                        # Add finish photo URL if available
+                        # Add finish photo URL and image bytes if available
                         if finish_photo_filename:
                             from backend.app.api.routes.settings import get_setting
 
@@ -1866,6 +1954,29 @@ async def on_print_complete(printer_id: int, data: dict):
                                 archive_data["finish_photo_url"] = (
                                     f"/api/v1/archives/{archive_id}/photos/{finish_photo_filename}"
                                 )
+
+                            # Read finish photo bytes for image attachment (e.g. Pushover)
+                            try:
+                                from pathlib import Path
+
+                                photo_path = (
+                                    app_settings.base_dir
+                                    / Path(archive.file_path).parent
+                                    / "photos"
+                                    / finish_photo_filename
+                                )
+                                if photo_path.exists():
+                                    photo_bytes = await asyncio.to_thread(photo_path.read_bytes)
+                                    if len(photo_bytes) <= 2_500_000:
+                                        archive_data["image_data"] = photo_bytes
+                                        logger.info(f"[NOTIFY-BG] Loaded finish photo bytes: {len(photo_bytes)} bytes")
+                                    else:
+                                        logger.warning(
+                                            f"[NOTIFY-BG] Finish photo too large for attachment: "
+                                            f"{len(photo_bytes)} bytes"
+                                        )
+                            except Exception as e:
+                                logger.warning(f"[NOTIFY-BG] Failed to read finish photo bytes: {e}")
 
                 await notification_service.on_print_complete(
                     printer_id, printer_name, print_status, data, db, archive_data=archive_data
@@ -2423,8 +2534,6 @@ async def lifespan(app: FastAPI):
 
         # Restore MQTT smart plug subscriptions
         if mqtt_settings.get("mqtt_enabled"):
-            from sqlalchemy import select
-
             from backend.app.models.smart_plug import SmartPlug
 
             result = await db.execute(select(SmartPlug).where(SmartPlug.plug_type == "mqtt"))
@@ -2501,6 +2610,7 @@ async def lifespan(app: FastAPI):
             vp_mode = await get_setting(db, "virtual_printer_mode") or "immediate"
             vp_model = await get_setting(db, "virtual_printer_model") or ""
             vp_target_printer_id = await get_setting(db, "virtual_printer_target_printer_id")
+            vp_remote_iface = await get_setting(db, "virtual_printer_remote_interface_ip") or ""
 
             # Look up printer IP and serial if in proxy mode
             vp_target_ip = ""
@@ -2526,6 +2636,7 @@ async def lifespan(app: FastAPI):
                         model=vp_model,
                         target_printer_ip=vp_target_ip,
                         target_printer_serial=vp_target_serial,
+                        remote_interface_ip=vp_remote_iface,
                     )
                     if vp_mode == "proxy":
                         logging.info(f"Virtual printer proxy started (target={vp_target_ip})")
@@ -2662,9 +2773,9 @@ async def auth_middleware(request, call_next):
         )
 
     # Validate JWT token
-    try:
-        import jwt
+    import jwt
 
+    try:
         from backend.app.core.auth import ALGORITHM, SECRET_KEY
 
         token = auth_header.replace("Bearer ", "")

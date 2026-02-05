@@ -37,6 +37,8 @@ import {
   Pencil,
   Play,
   Image,
+  User,
+  Box,
 } from 'lucide-react';
 import { api } from '../api/client';
 import type {
@@ -51,6 +53,7 @@ import type {
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { PrintModal } from '../components/PrintModal';
+import { ModelViewerModal } from '../components/ModelViewerModal';
 import { useToast } from '../contexts/ToastContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useAuth } from '../contexts/AuthContext';
@@ -429,6 +432,7 @@ interface UploadFile {
   status: 'pending' | 'uploading' | 'success' | 'error';
   error?: string;
   isZip?: boolean;
+  is3mf?: boolean;
   extractedCount?: number;
 }
 
@@ -469,6 +473,7 @@ function UploadModal({ folderId, onClose, onUploadComplete, t }: UploadModalProp
       file,
       status: 'pending',
       isZip: file.name.toLowerCase().endsWith('.zip'),
+      is3mf: file.name.toLowerCase().endsWith('.3mf'),
     }));
     setFiles((prev) => [...prev, ...uploadFiles]);
   };
@@ -479,12 +484,14 @@ function UploadModal({ folderId, onClose, onUploadComplete, t }: UploadModalProp
 
   const hasZipFiles = files.some((f) => f.isZip && f.status === 'pending');
   const hasStlFiles = files.some((f) => f.file.name.toLowerCase().endsWith('.stl') && f.status === 'pending');
+  const has3mfFiles = files.some((f) => f.is3mf && f.status === 'pending');
 
   const handleUpload = async () => {
     if (files.length === 0) return;
 
     setIsUploading(true);
 
+    // Handle all files with library upload (ZIP and regular files including .3mf)
     for (let i = 0; i < files.length; i++) {
       if (files[i].status !== 'pending') continue;
 
@@ -509,7 +516,7 @@ function UploadModal({ folderId, onClose, onUploadComplete, t }: UploadModalProp
             )
           );
         } else {
-          // Regular file upload
+          // Regular file upload (STL, .3mf, etc.) - .3mf files automatically get metadata extracted
           await api.uploadLibraryFile(files[i].file, folderId, generateStlThumbnails);
           setFiles((prev) =>
             prev.map((f, idx) => (idx === i ? { ...f, status: 'success' } : f))
@@ -604,6 +611,21 @@ function UploadModal({ folderId, onClose, onUploadComplete, t }: UploadModalProp
                     />
                     <span className="text-sm text-white">{t('fileManager.createFolderFromZip')}</span>
                   </label>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 3MF File Info - Advanced Extraction */}
+          {has3mfFiles && (
+            <div className="p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
+              <div className="flex items-start gap-3">
+                <Printer className="w-5 h-5 text-purple-400 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm text-purple-300 font-medium">{t('fileManager.threemfDetected')}</p>
+                  <p className="text-xs text-purple-300/70 mt-1">
+                    {t('fileManager.threemfExtractionInfo')}
+                  </p>
                 </div>
               </div>
             </div>
@@ -887,20 +909,22 @@ interface FileCardProps {
   onDownload: (id: number) => void;
   onAddToQueue?: (id: number) => void;
   onPrint?: (file: LibraryFileListItem) => void;
+  onPreview3d?: (file: LibraryFileListItem) => void;
   onRename?: (file: LibraryFileListItem) => void;
   onGenerateThumbnail?: (file: LibraryFileListItem) => void;
   thumbnailVersion?: number;
   hasPermission: (permission: Permission) => boolean;
   canModify: (resource: 'queue' | 'archives' | 'library', action: 'update' | 'delete' | 'reprint', createdById: number | null | undefined) => boolean;
+  authEnabled: boolean;
   t: TFunction;
 }
 
-function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onAddToQueue, onPrint, onRename, onGenerateThumbnail, thumbnailVersion, hasPermission, canModify, t }: FileCardProps) {
+function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onAddToQueue, onPrint, onPreview3d, onRename, onGenerateThumbnail, thumbnailVersion, hasPermission, canModify, authEnabled, t }: FileCardProps) {
   const [showActions, setShowActions] = useState(false);
 
   return (
     <div
-      className={`group relative bg-bambu-card rounded-lg border transition-all cursor-pointer overflow-hidden ${
+      className={`group relative bg-bambu-dark-secondary rounded-lg border transition-all cursor-pointer overflow-hidden ${
         isSelected
           ? 'border-bambu-green ring-1 ring-bambu-green'
           : 'border-bambu-dark-tertiary hover:border-bambu-green/50'
@@ -943,14 +967,21 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
             </span>
           )}
         </div>
+        {file.sliced_for_model && (
+          <div className="mt-1 text-xs text-bambu-gray flex items-center gap-1">
+            <Printer className="w-3 h-3" />
+            {file.sliced_for_model}
+          </div>
+        )}
         {file.print_count > 0 && (
           <div className="mt-1 text-xs text-bambu-green">
             {t('fileManager.printedCount', { count: file.print_count })}
           </div>
         )}
-        {file.created_by_username && (
-          <div className="mt-1 text-xs text-bambu-gray">
-            {t('fileManager.uploadedBy', { name: file.created_by_username })}
+        {authEnabled && file.created_by_username && (
+          <div className="mt-1 text-xs text-bambu-gray flex items-center gap-1">
+            <User className="w-3 h-3" />
+            {file.created_by_username}
           </div>
         )}
       </div>
@@ -990,7 +1021,20 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
                   title={!hasPermission('queue:create') ? t('fileManager.noPermissionAddToQueue') : undefined}
                 >
                   <Clock className="w-3.5 h-3.5" />
-                  {t('fileManager.addToQueue')}
+                  {t('fileManager.schedulePrint')}
+                </button>
+              )}
+              {onPreview3d && (file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'stl') && (
+                <button
+                  className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
+                    hasPermission('library:read') ? 'text-white hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
+                  }`}
+                  onClick={() => { if (hasPermission('library:read')) { onPreview3d(file); setShowActions(false); } }}
+                  disabled={!hasPermission('library:read')}
+                  title={!hasPermission('library:read') ? 'You do not have permission to preview files' : undefined}
+                >
+                  <Box className="w-3.5 h-3.5" />
+                  3D Preview
                 </button>
               )}
               <button
@@ -1062,7 +1106,7 @@ export function FileManagerPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const { hasPermission, hasAnyPermission, canModify } = useAuth();
+  const { hasPermission, hasAnyPermission, canModify, authEnabled } = useAuth();
   const [searchParams] = useSearchParams();
 
   // Read folder ID from URL query parameter
@@ -1079,8 +1123,10 @@ export function FileManagerPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'file' | 'folder' | 'bulk'; id: number; count?: number } | null>(null);
   const [printFile, setPrintFile] = useState<LibraryFileListItem | null>(null);
   const [printMultiFile, setPrintMultiFile] = useState<LibraryFileListItem | null>(null);
+  const [scheduleFile, setScheduleFile] = useState<LibraryFileListItem | null>(null);
   const [renameItem, setRenameItem] = useState<{ type: 'file' | 'folder'; id: number; name: string } | null>(null);
   const [thumbnailVersions, setThumbnailVersions] = useState<Record<number, number>>({});
+  const [viewerFile, setViewerFile] = useState<LibraryFileListItem | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
     return (localStorage.getItem('library-view-mode') as 'grid' | 'list') || 'grid';
   });
@@ -1137,6 +1183,7 @@ export function FileManagerPage() {
   // Filter and sort state (persist sort preferences to localStorage)
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
+  const [filterUsername, setFilterUsername] = useState('');
   const [sortField, setSortField] = useState<SortField>(() => {
     const saved = localStorage.getItem('library-sort-field');
     return (saved as SortField) || 'name';
@@ -1178,6 +1225,12 @@ export function FileManagerPage() {
     queryFn: () => api.getLibraryStats(),
   });
 
+  // Get users for the username filter autocomplete
+  const { data: users } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => api.getUsers(),
+  });
+
   // Get unique file types for filter dropdown
   const fileTypes = useMemo(() => {
     if (!files) return [];
@@ -1206,6 +1259,14 @@ export function FileManagerPage() {
       result = result.filter((f) => f.file_type === filterType);
     }
 
+    // Apply username filter
+    if (filterUsername.trim()) {
+      const query = filterUsername.toLowerCase();
+      result = result.filter(
+        (f) => f.created_by_username && f.created_by_username.toLowerCase().includes(query)
+      );
+    }
+
     // Apply sorting
     result.sort((a, b) => {
       let comparison = 0;
@@ -1230,7 +1291,7 @@ export function FileManagerPage() {
     });
 
     return result;
-  }, [files, searchQuery, filterType, sortField, sortDirection]);
+  }, [files, searchQuery, filterType, filterUsername, sortField, sortDirection]);
 
   // Check if disk space is low
   const isDiskSpaceLow = useMemo(() => {
@@ -1324,31 +1385,6 @@ export function FileManagerPage() {
       setLinkFolder(null);
       const isUnlink = variables.data.project_id === 0 && variables.data.archive_id === 0;
       showToast(isUnlink ? t('fileManager.toast.folderUnlinked') : t('fileManager.toast.folderLinked'), 'success');
-    },
-    onError: (error: Error) => showToast(error.message, 'error'),
-  });
-
-  const addToQueueMutation = useMutation({
-    mutationFn: (fileIds: number[]) => api.addLibraryFilesToQueue(fileIds),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ['library-files'] });
-      queryClient.invalidateQueries({ queryKey: ['queue'] });
-      queryClient.invalidateQueries({ queryKey: ['archives'] }); // Archives are created when adding to queue
-      setSelectedFiles([]);
-
-      if (result.added.length > 0 && result.errors.length === 0) {
-        showToast(
-          t('fileManager.toast.addedToQueue', { count: result.added.length }),
-          'success'
-        );
-      } else if (result.added.length > 0 && result.errors.length > 0) {
-        showToast(
-          t('fileManager.toast.addedToQueuePartial', { added: result.added.length, failed: result.errors.length }),
-          'success'
-        );
-      } else {
-        showToast(t('fileManager.toast.failedToAddToQueue', { error: result.errors[0]?.error || 'Unknown error' }), 'error');
-      }
     },
     onError: (error: Error) => showToast(error.message, 'error'),
   });
@@ -1512,7 +1548,7 @@ export function FileManagerPage() {
             <button
               onClick={() => handleViewModeChange('grid')}
               className={`p-1.5 rounded transition-colors ${
-                viewMode === 'grid' ? 'bg-bambu-card text-white' : 'text-bambu-gray hover:text-white'
+                viewMode === 'grid' ? 'bg-bambu-dark-secondary text-white' : 'text-bambu-gray hover:text-white'
               }`}
               title={t('fileManager.gridView')}
             >
@@ -1521,7 +1557,7 @@ export function FileManagerPage() {
             <button
               onClick={() => handleViewModeChange('list')}
               className={`p-1.5 rounded transition-colors ${
-                viewMode === 'list' ? 'bg-bambu-card text-white' : 'text-bambu-gray hover:text-white'
+                viewMode === 'list' ? 'bg-bambu-dark-secondary text-white' : 'text-bambu-gray hover:text-white'
               }`}
               title={t('fileManager.listView')}
             >
@@ -1576,7 +1612,7 @@ export function FileManagerPage() {
 
       {/* Stats bar */}
       {stats && (
-        <div className="flex flex-wrap items-center gap-3 sm:gap-6 mb-6 p-3 bg-bambu-card rounded-lg border border-bambu-dark-tertiary">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-6 mb-6 p-3 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary">
           <div className="flex items-center gap-2 text-sm">
             <File className="w-4 h-4 text-bambu-green" />
             <span className="text-bambu-gray">{t('fileManager.files')}:</span>
@@ -1608,7 +1644,7 @@ export function FileManagerPage() {
           <select
             value={selectedFolderId ?? ''}
             onChange={(e) => setSelectedFolderId(e.target.value ? parseInt(e.target.value, 10) : null)}
-            className="w-full bg-bambu-card border border-bambu-dark-tertiary rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-bambu-green"
+            className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-bambu-green"
           >
             <option value="">📁 {t('fileManager.allFiles')}</option>
             {folders && (() => {
@@ -1635,7 +1671,7 @@ export function FileManagerPage() {
         {/* Folder sidebar - resizable, hidden on mobile */}
         <div
           ref={sidebarRef}
-          className="hidden lg:flex flex-shrink-0 bg-bambu-card rounded-lg border border-bambu-dark-tertiary overflow-hidden flex-col relative"
+          className="hidden lg:flex flex-shrink-0 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary overflow-hidden flex-col relative"
           style={{ width: `${sidebarWidth}px` }}
         >
           {/* Resize handle - drag to resize, double-click to reset */}
@@ -1714,7 +1750,7 @@ export function FileManagerPage() {
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
           {/* Search, Filter, Sort toolbar - sticky on mobile for easier access */}
           {files && files.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4 p-2 sm:p-3 bg-bambu-card rounded-lg border border-bambu-dark-tertiary sticky top-0 z-10 lg:static">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4 p-2 sm:p-3 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary sticky top-0 z-10 lg:static">
               {/* Search */}
               <div className="relative w-full sm:w-auto sm:flex-1 sm:max-w-xs">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray" />
@@ -1743,6 +1779,34 @@ export function FileManagerPage() {
                   ))}
                 </select>
               </div>
+
+              {/* Username filter with autocomplete - only show when auth is enabled */}
+              {authEnabled && (
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder={t('fileManager.filterByUser', { defaultValue: 'Filter by user' })}
+                    value={filterUsername}
+                    onChange={(e) => setFilterUsername(e.target.value)}
+                    list="usernames-list"
+                    className={`w-32 sm:w-40 px-2 py-1.5 bg-bambu-dark border border-bambu-dark-tertiary rounded text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green ${filterUsername ? 'pr-7' : ''}`}
+                    style={filterUsername ? { WebkitAppearance: 'none', MozAppearance: 'textfield' } : undefined}
+                  />
+                  {filterUsername && (
+                    <button
+                      onClick={() => setFilterUsername('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-bambu-gray hover:text-white z-10"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                  <datalist id="usernames-list">
+                    {users?.map((user) => (
+                      <option key={user.id} value={user.username} />
+                    ))}
+                  </datalist>
+                </div>
+              )}
 
               {/* Sort */}
               <div className="flex items-center gap-2">
@@ -1779,7 +1843,7 @@ export function FileManagerPage() {
               </div>
 
               {/* Results count */}
-              {(searchQuery || filterType !== 'all') && (
+              {(searchQuery || filterType !== 'all' || filterUsername) && (
                 <span className="text-sm text-bambu-gray hidden sm:inline">
                   {t('fileManager.resultsCount', { showing: filteredAndSortedFiles.length, total: files.length })}
                 </span>
@@ -1789,7 +1853,7 @@ export function FileManagerPage() {
 
           {/* Selection toolbar - sticky on mobile below search bar */}
           {filteredAndSortedFiles.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 mb-4 p-2 bg-bambu-card rounded-lg border border-bambu-dark-tertiary sticky top-[52px] z-10 lg:static">
+            <div className="flex flex-wrap items-center gap-2 mb-4 p-2 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary sticky top-[52px] z-10 lg:static">
               {/* Select all / Deselect all */}
               {selectedFiles.length === filteredAndSortedFiles.length && selectedFiles.length > 0 ? (
                 <Button
@@ -1830,16 +1894,19 @@ export function FileManagerPage() {
                         <span className="hidden sm:inline">{t('common.print')}</span>
                       </Button>
                     )}
-                    {selectedSlicedFiles.length > 0 && (
+                    {selectedSlicedFiles.length === 1 && (
                       <Button
-                        variant={selectedSlicedFiles.length === 1 ? 'secondary' : 'primary'}
+                        variant="secondary"
                         size="sm"
-                        onClick={() => addToQueueMutation.mutate(selectedSlicedFiles.map(f => f.id))}
-                        disabled={addToQueueMutation.isPending || !hasPermission('queue:create')}
+                        // Note: Schedule dialog (PrintModal) is designed for single file at a time
+                        // but supports scheduling to multiple printers. This provides more control
+                        // over scheduling options compared to the previous bulk queue mutation.
+                        onClick={() => setScheduleFile(selectedSlicedFiles[0])}
+                        disabled={!hasPermission('queue:create')}
                         title={!hasPermission('queue:create') ? t('fileManager.noPermissionAddToQueue') : undefined}
                       >
                         <Clock className="w-4 h-4 sm:mr-1" />
-                        <span className="hidden sm:inline">{addToQueueMutation.isPending ? t('fileManager.adding') : `${t('fileManager.addToQueue')}${selectedSlicedFiles.length < selectedFiles.length ? ` (${selectedSlicedFiles.length})` : ''}`}</span>
+                        <span className="hidden sm:inline">{t('fileManager.schedulePrint')}</span>
                       </Button>
                     )}
                     <Button
@@ -1938,24 +2005,30 @@ export function FileManagerPage() {
                     onSelect={handleFileSelect}
                     onDelete={(id) => setDeleteConfirm({ type: 'file', id })}
                     onDownload={handleDownload}
-                    onAddToQueue={(id) => addToQueueMutation.mutate([id])}
+                    onAddToQueue={(id) => {
+                      const file = files?.find(f => f.id === id);
+                      if (file) setScheduleFile(file);
+                    }}
                     onPrint={setPrintFile}
+                    onPreview3d={setViewerFile}
                     onRename={(f) => setRenameItem({ type: 'file', id: f.id, name: f.filename })}
                     onGenerateThumbnail={(f) => singleThumbnailMutation.mutate(f.id)}
                     thumbnailVersion={thumbnailVersions[file.id]}
                     hasPermission={hasPermission}
                     canModify={canModify}
+                    authEnabled={authEnabled}
                   />
                 ))}
               </div>
             </div>
           ) : (
             <div className="flex-1 lg:overflow-y-auto">
-              <div className="bg-bambu-card rounded-lg border border-bambu-dark-tertiary overflow-hidden">
+              <div className="bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary overflow-hidden">
                 {/* List header - hidden on mobile, show simplified on small screens */}
-                <div className="hidden sm:grid grid-cols-[auto_1fr_100px_100px_100px_80px] gap-4 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium">
+                <div className={`hidden sm:grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_80px]' : 'grid-cols-[auto_1fr_100px_100px_100px_80px]'} gap-4 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium`}>
                   <div className="w-6" />
                   <div>{t('common.name')}</div>
+                  {authEnabled && <div>{t('fileManager.uploadedBy', { defaultValue: 'Uploaded By' })}</div>}
                   <div>{t('common.type')}</div>
                   <div>{t('fileManager.size')}</div>
                   <div>{t('fileManager.prints')}</div>
@@ -1965,7 +2038,7 @@ export function FileManagerPage() {
                 {filteredAndSortedFiles.map((file) => (
                   <div
                     key={file.id}
-                    className={`grid grid-cols-[auto_1fr_100px_100px_100px_80px] gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
+                    className={`grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_80px]' : 'grid-cols-[auto_1fr_100px_100px_100px_80px]'} gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
                       selectedFiles.includes(file.id) ? 'bg-bambu-green/10' : ''
                     }`}
                     onClick={() => handleFileSelect(file.id)}
@@ -2011,6 +2084,19 @@ export function FileManagerPage() {
                         <div className="text-sm text-white truncate">{file.print_name || file.filename}</div>
                       </div>
                     </div>
+                    {/* Uploaded By - only show when auth is enabled */}
+                    {authEnabled && (
+                      <div className="text-sm text-bambu-gray flex items-center gap-1">
+                        {file.created_by_username ? (
+                          <>
+                            <User className="w-3 h-3" />
+                            <span className="truncate">{file.created_by_username}</span>
+                          </>
+                        ) : (
+                          '-'
+                        )}
+                      </div>
+                    )}
                     {/* Type */}
                     <div>
                       <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
@@ -2043,18 +2129,36 @@ export function FileManagerPage() {
                             <Printer className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => hasPermission('queue:create') && addToQueueMutation.mutate([file.id])}
+                            onClick={() => {
+                              if (hasPermission('queue:create')) {
+                                setScheduleFile(file);
+                              }
+                            }}
                             className={`p-1.5 rounded transition-colors ${
                               hasPermission('queue:create')
                                 ? 'hover:bg-bambu-dark text-bambu-gray hover:text-white'
                                 : 'text-bambu-gray/50 cursor-not-allowed'
                             }`}
-                            title={hasPermission('queue:create') ? t('fileManager.addToQueue') : t('fileManager.noPermissionAddToQueue')}
-                            disabled={addToQueueMutation.isPending || !hasPermission('queue:create')}
+                            title={hasPermission('queue:create') ? t('fileManager.schedulePrint') : t('fileManager.noPermissionAddToQueue')}
+                            disabled={!hasPermission('queue:create')}
                           >
                             <Clock className="w-4 h-4" />
                           </button>
                         </>
+                      )}
+                      {(file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'stl') && (
+                        <button
+                          onClick={() => hasPermission('library:read') && setViewerFile(file)}
+                          className={`p-1.5 rounded transition-colors ${
+                            hasPermission('library:read')
+                              ? 'hover:bg-bambu-dark text-bambu-gray hover:text-bambu-green'
+                              : 'text-bambu-gray/50 cursor-not-allowed'
+                          }`}
+                          title={hasPermission('library:read') ? '3D Preview' : 'You do not have permission to preview files'}
+                          disabled={!hasPermission('library:read')}
+                        >
+                          <Box className="w-4 h-4" />
+                        </button>
                       )}
                       <button
                         onClick={() => hasPermission('library:read') && handleDownload(file.id)}
@@ -2208,6 +2312,31 @@ export function FileManagerPage() {
             queryClient.invalidateQueries({ queryKey: ['library-files'] });
             queryClient.invalidateQueries({ queryKey: ['archives'] });
           }}
+        />
+      )}
+
+      {scheduleFile && (
+        <PrintModal
+          mode="add-to-queue"
+          libraryFileId={scheduleFile.id}
+          archiveName={scheduleFile.print_name || scheduleFile.filename}
+          onClose={() => setScheduleFile(null)}
+          onSuccess={() => {
+            setScheduleFile(null);
+            setSelectedFiles([]);
+            queryClient.invalidateQueries({ queryKey: ['library-files'] });
+            queryClient.invalidateQueries({ queryKey: ['queue'] });
+            queryClient.invalidateQueries({ queryKey: ['archives'] });
+          }}
+        />
+      )}
+
+      {viewerFile && (
+        <ModelViewerModal
+          libraryFileId={viewerFile.id}
+          title={viewerFile.print_name || viewerFile.filename}
+          fileType={viewerFile.file_type}
+          onClose={() => setViewerFile(null)}
         />
       )}
 

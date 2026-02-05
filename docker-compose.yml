@@ -6,6 +6,9 @@ services:
     #   docker compose up -d          → pulls pre-built image from ghcr.io
     #   docker compose up -d --build  → builds locally from source
     container_name: bambuddy
+    # Run as current user to avoid permission issues with mounted volumes
+    # Override with: PUID=$(id -u) PGID=$(id -g) docker compose up -d
+    user: "${PUID:-1000}:${PGID:-1000}"
     #
     # LINUX: Use host mode for printer discovery and camera streaming
     network_mode: host

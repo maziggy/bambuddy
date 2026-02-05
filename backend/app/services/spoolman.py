@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import httpx
 
@@ -355,7 +355,7 @@ class SpoolmanClient:
                 data["extra"] = extra
 
             # Always update last_used
-            data["last_used"] = datetime.now(UTC).isoformat()
+            data["last_used"] = datetime.now(timezone.utc).isoformat()
 
             client = await self._get_client()
             response = await client.patch(f"{self.api_url}/spool/{spool_id}", json=data)

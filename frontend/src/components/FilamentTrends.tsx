@@ -143,7 +143,7 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
 
       months.push({
         month: monthStr,
-        filament: Math.round(monthArchives.reduce((sum, a) => sum + (a.filament_used_grams || 0) * (a.quantity || 1), 0)),
+        filament: Math.round(monthArchives.reduce((sum, a) => sum + (a.filament_used_grams || 0), 0)),
         cost: monthArchives.reduce((sum, a) => sum + (a.cost || 0), 0),
         prints: monthArchives.reduce((sum, a) => sum + (a.quantity || 1), 0),
       });
@@ -153,7 +153,7 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
   }, [archives]);
 
   const chartData = timeRange === '7d' || timeRange === '30d' ? dailyData : weeklyData;
-  const totalFilament = filteredArchives.reduce((sum, a) => sum + (a.filament_used_grams || 0) * (a.quantity || 1), 0);
+  const totalFilament = filteredArchives.reduce((sum, a) => sum + (a.filament_used_grams || 0), 0);
   const totalCost = filteredArchives.reduce((sum, a) => sum + (a.cost || 0), 0);
   const totalPrints = filteredArchives.reduce((sum, a) => sum + (a.quantity || 1), 0);
 

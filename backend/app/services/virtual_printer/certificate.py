@@ -10,7 +10,7 @@ This allows users to add the CA to their slicer's trust store once.
 
 import logging
 import socket
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from ipaddress import IPv4Address
 from pathlib import Path
 
@@ -89,7 +89,7 @@ class CertificateService:
             ca_cert = x509.load_pem_x509_certificate(ca_cert_pem)
 
             # Check if CA is expired or about to expire
-            now = datetime.now(UTC)
+            now = datetime.now(timezone.utc)
             days_remaining = (ca_cert.not_valid_after_utc - now).days
             if days_remaining < CA_EXPIRY_THRESHOLD_DAYS:
                 logger.warning(f"CA certificate expires in {days_remaining} days, will regenerate")
@@ -160,7 +160,7 @@ class CertificateService:
             ]
         )
 
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
 
         ca_cert = (
             x509.CertificateBuilder()
@@ -227,7 +227,7 @@ class CertificateService:
         # Issuer is the CA
         issuer = ca_cert.subject
 
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         local_ip = _get_local_ip()
         logger.info(f"Generating printer certificate with CN={self.serial}, local IP: {local_ip}")
 

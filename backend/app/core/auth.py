@@ -158,6 +158,29 @@ async def is_auth_enabled(db: AsyncSession) -> bool:
         return False
 
 
+async def _validate_api_key(db: AsyncSession, api_key_value: str) -> APIKey | None:
+    """Validate an API key and return the APIKey object if valid, None otherwise.
+
+    This is an internal helper used by auth functions to check API keys.
+    """
+    try:
+        result = await db.execute(select(APIKey).where(APIKey.enabled.is_(True)))
+        api_keys = result.scalars().all()
+
+        for api_key in api_keys:
+            if verify_password(api_key_value, api_key.key_hash):
+                # Check expiration
+                if api_key.expires_at and api_key.expires_at < datetime.now():
+                    return None  # Expired
+                # Update last_used timestamp
+                api_key.last_used = datetime.now()
+                await db.commit()
+                return api_key
+    except Exception as e:
+        logger.warning(f"API key validation error: {e}")
+    return None
+
+
 async def get_current_user_optional(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
 ) -> User | None:
@@ -220,45 +243,70 @@ async def get_current_active_user(current_user: Annotated[User, Depends(get_curr
 
 async def require_auth_if_enabled(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
 ) -> User | None:
-    """Require authentication if auth is enabled, otherwise return None."""
+    """Require authentication if auth is enabled, otherwise return None.
+
+    Accepts both JWT tokens (via Authorization: Bearer header) and API keys
+    (via X-API-Key header or Authorization: Bearer bb_xxx).
+    """
     async with async_session() as db:
         auth_enabled = await is_auth_enabled(db)
         if not auth_enabled:
             return None
 
-        if credentials is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication required",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        # Check for API key first (X-API-Key header)
+        if x_api_key:
+            api_key = await _validate_api_key(db, x_api_key)
+            if api_key:
+                return None  # API key valid, allow access
 
-        try:
+        # Check for Bearer token (could be JWT or API key)
+        if credentials is not None:
             token = credentials.credentials
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            username: str = payload.get("sub")
-            if username is None:
+            # Check if it's an API key (starts with bb_)
+            if token.startswith("bb_"):
+                api_key = await _validate_api_key(db, token)
+                if api_key:
+                    return None  # API key valid, allow access
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid API key",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            # Otherwise treat as JWT
+            try:
+                payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                username: str = payload.get("sub")
+                if username is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Could not validate credentials",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+            except JWTError:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Could not validate credentials",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
-        except JWTError:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not validate credentials",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
 
-        user = await get_user_by_username(db, username)
-        if user is None or not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not validate credentials",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        return user
+            user = await get_user_by_username(db, username)
+            if user is None or not user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Could not validate credentials",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            return user
+
+        # No credentials provided
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 def require_role(required_role: str):
@@ -420,6 +468,9 @@ def RequireAdminIfAuthEnabled():
 def require_permission(*permissions: str | Permission):
     """Dependency factory that requires user to have ALL specified permissions.
 
+    Accepts both JWT tokens (via Authorization: Bearer header) and API keys
+    (via X-API-Key header or Authorization: Bearer bb_xxx).
+
     Args:
         *permissions: Permission strings or Permission enum values to require
 
@@ -431,25 +482,45 @@ def require_permission(*permissions: str | Permission):
 
     async def permission_checker(
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
-    ) -> User:
-        credentials_exception = HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-        if credentials is None:
-            raise credentials_exception
-
-        try:
-            token = credentials.credentials
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            username: str = payload.get("sub")
-            if username is None:
-                raise credentials_exception
-        except JWTError:
-            raise credentials_exception
-
+        x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+    ) -> User | None:
         async with async_session() as db:
+            # Check for API key first (X-API-Key header)
+            if x_api_key:
+                api_key = await _validate_api_key(db, x_api_key)
+                if api_key:
+                    return None  # API key valid, allow access
+
+            credentials_exception = HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+            if credentials is None:
+                raise credentials_exception
+
+            token = credentials.credentials
+            # Check if it's an API key (starts with bb_)
+            if token.startswith("bb_"):
+                api_key = await _validate_api_key(db, token)
+                if api_key:
+                    return None  # API key valid, allow access
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid API key",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            # Otherwise treat as JWT
+            try:
+                payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                username: str = payload.get("sub")
+                if username is None:
+                    raise credentials_exception
+            except JWTError:
+                raise credentials_exception
+
             user = await get_user_by_username(db, username)
             if user is None or not user.is_active:
                 raise credentials_exception
@@ -468,6 +539,8 @@ def require_permission_if_auth_enabled(*permissions: str | Permission):
     """Dependency factory that checks permissions only if auth is enabled.
 
     This provides backward compatibility - when auth is disabled, all access is allowed.
+    Accepts both JWT tokens (via Authorization: Bearer header) and API keys
+    (via X-API-Key header or Authorization: Bearer bb_xxx).
 
     Args:
         *permissions: Permission strings or Permission enum values to require
@@ -480,50 +553,71 @@ def require_permission_if_auth_enabled(*permissions: str | Permission):
 
     async def permission_checker(
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+        x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
     ) -> User | None:
         async with async_session() as db:
             auth_enabled = await is_auth_enabled(db)
             if not auth_enabled:
                 return None  # Auth disabled, allow access
 
-            if credentials is None:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Authentication required",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
+            # Check for API key first (X-API-Key header)
+            if x_api_key:
+                api_key = await _validate_api_key(db, x_api_key)
+                if api_key:
+                    return None  # API key valid, allow access
 
-            try:
+            # Check for Bearer token (could be JWT or API key)
+            if credentials is not None:
                 token = credentials.credentials
-                payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-                username: str = payload.get("sub")
-                if username is None:
+                # Check if it's an API key (starts with bb_)
+                if token.startswith("bb_"):
+                    api_key = await _validate_api_key(db, token)
+                    if api_key:
+                        return None  # API key valid, allow access
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid API key",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+
+                # Otherwise treat as JWT
+                try:
+                    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                    username: str = payload.get("sub")
+                    if username is None:
+                        raise HTTPException(
+                            status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Could not validate credentials",
+                            headers={"WWW-Authenticate": "Bearer"},
+                        )
+                except JWTError:
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Could not validate credentials",
                         headers={"WWW-Authenticate": "Bearer"},
                     )
-            except JWTError:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Could not validate credentials",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
 
-            user = await get_user_by_username(db, username)
-            if user is None or not user.is_active:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Could not validate credentials",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
+                user = await get_user_by_username(db, username)
+                if user is None or not user.is_active:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Could not validate credentials",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
 
-            if not user.has_all_permissions(*perm_strings):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Missing required permissions: {', '.join(perm_strings)}",
-                )
-            return user
+                if not user.has_all_permissions(*perm_strings):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Missing required permissions: {', '.join(perm_strings)}",
+                    )
+                return user
+
+            # No credentials provided
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
     return permission_checker
 
@@ -547,6 +641,7 @@ def require_ownership_permission(
     - User with `all_permission` can modify any item
     - User with `own_permission` can only modify items where created_by_id == user.id
     - Ownerless items (created_by_id = null) require `all_permission`
+    - API keys (via X-API-Key header or Bearer bb_xxx) get full access (can_modify_all=True)
 
     Returns:
         A dependency function that returns (user, can_modify_all).
@@ -558,6 +653,7 @@ def require_ownership_permission(
 
     async def checker(
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+        x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
     ) -> tuple[User | None, bool]:
         """Returns (user, can_modify_all).
 
@@ -569,46 +665,66 @@ def require_ownership_permission(
             if not auth_enabled:
                 return None, True  # Auth disabled, allow all
 
-            if credentials is None:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Authentication required",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
+            # Check for API key first (X-API-Key header)
+            if x_api_key:
+                api_key = await _validate_api_key(db, x_api_key)
+                if api_key:
+                    return None, True  # API key valid, allow all
 
-            try:
+            # Check for Bearer token (could be JWT or API key)
+            if credentials is not None:
                 token = credentials.credentials
-                payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-                username: str = payload.get("sub")
-                if username is None:
+                # Check if it's an API key (starts with bb_)
+                if token.startswith("bb_"):
+                    api_key = await _validate_api_key(db, token)
+                    if api_key:
+                        return None, True  # API key valid, allow all
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid API key",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+
+                # Otherwise treat as JWT
+                try:
+                    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                    username: str = payload.get("sub")
+                    if username is None:
+                        raise HTTPException(
+                            status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Could not validate credentials",
+                            headers={"WWW-Authenticate": "Bearer"},
+                        )
+                except JWTError:
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Could not validate credentials",
                         headers={"WWW-Authenticate": "Bearer"},
                     )
-            except JWTError:
+
+                user = await get_user_by_username(db, username)
+                if user is None or not user.is_active:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Could not validate credentials",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+
+                if user.has_permission(all_perm):
+                    return user, True
+                if user.has_permission(own_perm):
+                    return user, False
+
                 raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Could not validate credentials",
-                    headers={"WWW-Authenticate": "Bearer"},
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Missing permission: {own_perm} or {all_perm}",
                 )
 
-            user = await get_user_by_username(db, username)
-            if user is None or not user.is_active:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Could not validate credentials",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-
-            if user.has_permission(all_perm):
-                return user, True
-            if user.has_permission(own_perm):
-                return user, False
-
+            # No credentials provided
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Missing permission: {own_perm} or {all_perm}",
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required",
+                headers={"WWW-Authenticate": "Bearer"},
             )
 
     return checker

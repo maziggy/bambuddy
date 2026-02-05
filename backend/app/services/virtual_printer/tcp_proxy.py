@@ -289,8 +289,9 @@ class SlicerProxyManager:
     PRINTER_FTP_PORT = 990
     PRINTER_MQTT_PORT = 8883
 
-    # Local listen ports (same as virtual printer)
-    LOCAL_FTP_PORT = 9990
+    # Local listen ports - must match what Bambu Studio expects
+    # Note: Port 990 requires root or CAP_NET_BIND_SERVICE capability
+    LOCAL_FTP_PORT = 990
     LOCAL_MQTT_PORT = 8883
 
     def __init__(

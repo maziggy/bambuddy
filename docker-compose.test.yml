@@ -56,7 +56,7 @@ services:
     environment:
       - BAMBUDDY_TEST_URL=http://integration:8000
       - TESTING=1
-    command: ["pytest", "backend/tests/integration/", "-v", "--tb=short", "-p", "no:cacheprovider"]
+    command: ["pytest", "backend/tests/integration/", "-v", "--tb=short", "-p", "no:cacheprovider", "-n", "auto"]
     volumes:
       - ./backend:/app/backend:ro
 

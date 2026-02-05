@@ -2049,6 +2049,10 @@ class BambuMQTTClient:
                         slot_id = tray_id % 4
                         ams_mapping2.append({"ams_id": ams_id, "slot_id": slot_id})
 
+            # H2D series requires integer values (0/1) for boolean fields
+            # Other printers (X1C, P1S, A1, etc.) require actual booleans
+            is_h2d = self.model and self.model.upper().strip() in ("H2D", "H2D PRO", "H2DPRO", "H2C", "H2S")
+
             command = {
                 "print": {
                     "sequence_id": "20000",
@@ -2058,13 +2062,13 @@ class BambuMQTTClient:
                     "file": filename,
                     "md5": "",
                     "bed_type": "auto",
-                    "timelapse": timelapse,
-                    "bed_leveling": bed_levelling,
+                    "timelapse": (1 if timelapse else 0) if is_h2d else timelapse,
+                    "bed_leveling": (1 if bed_levelling else 0) if is_h2d else bed_levelling,
                     "auto_bed_leveling": 1 if bed_levelling else 0,
-                    "flow_cali": flow_cali,
-                    "vibration_cali": vibration_cali,
-                    "layer_inspect": layer_inspect,
-                    "use_ams": use_ams,
+                    "flow_cali": (1 if flow_cali else 0) if is_h2d else flow_cali,
+                    "vibration_cali": (1 if vibration_cali else 0) if is_h2d else vibration_cali,
+                    "layer_inspect": (1 if layer_inspect else 0) if is_h2d else layer_inspect,
+                    "use_ams": (1 if use_ams else 0) if is_h2d else use_ams,
                     "cfg": "0",
                     "extrude_cali_flag": 0,
                     "extrude_cali_manual_mode": 0,
@@ -2076,6 +2080,9 @@ class BambuMQTTClient:
                     "task_id": "0",
                 }
             }
+
+            if is_h2d:
+                logger.info(f"[{self.serial_number}] H2D series detected: using integer format for boolean fields")
 
             # P2S-specific parameter adjustments
             # P2S printer doesn't support vibration calibration like X1/P1 series

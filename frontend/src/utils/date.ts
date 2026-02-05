@@ -95,8 +95,21 @@ export function formatTimeInput(date: Date, timeFormat: TimeFormat = 'system'): 
 }
 
 /**
+ * Split a date string by common separators (/, ., -).
+ */
+function splitDateParts(value: string): string[] | null {
+  // Try common separators: /, ., -
+  for (const sep of ['/', '.', '-']) {
+    const parts = value.split(sep);
+    if (parts.length === 3) return parts;
+  }
+  return null;
+}
+
+/**
  * Parse a date string based on format setting.
  * Returns null if parsing fails.
+ * Supports common separators: / . -
  */
 export function parseDateInput(value: string, dateFormat: DateFormat = 'system'): Date | null {
   if (!value) return null;
@@ -106,27 +119,27 @@ export function parseDateInput(value: string, dateFormat: DateFormat = 'system')
   try {
     switch (dateFormat) {
       case 'us': {
-        // MM/DD/YYYY
-        const parts = value.split('/');
-        if (parts.length !== 3) return null;
+        // MM/DD/YYYY (also accepts . and - separators)
+        const parts = splitDateParts(value);
+        if (!parts) return null;
         month = parseInt(parts[0], 10);
         day = parseInt(parts[1], 10);
         year = parseInt(parts[2], 10);
         break;
       }
       case 'eu': {
-        // DD/MM/YYYY
-        const parts = value.split('/');
-        if (parts.length !== 3) return null;
+        // DD/MM/YYYY (also accepts . and - separators)
+        const parts = splitDateParts(value);
+        if (!parts) return null;
         day = parseInt(parts[0], 10);
         month = parseInt(parts[1], 10);
         year = parseInt(parts[2], 10);
         break;
       }
       case 'iso': {
-        // YYYY-MM-DD
-        const parts = value.split('-');
-        if (parts.length !== 3) return null;
+        // YYYY-MM-DD (also accepts . and / separators)
+        const parts = splitDateParts(value);
+        if (!parts) return null;
         year = parseInt(parts[0], 10);
         month = parseInt(parts[1], 10);
         day = parseInt(parts[2], 10);
@@ -134,15 +147,29 @@ export function parseDateInput(value: string, dateFormat: DateFormat = 'system')
       }
       case 'system':
       default: {
-        // Try common formats
-        const date = new Date(value);
-        if (!isNaN(date.getTime())) return date;
-        // Try EU format
-        const euParts = value.split('/');
-        if (euParts.length === 3) {
-          day = parseInt(euParts[0], 10);
-          month = parseInt(euParts[1], 10);
-          year = parseInt(euParts[2], 10);
+        // Detect system format and parse accordingly
+        const testDate = new Date(2000, 11, 31); // Dec 31, 2000
+        const formatted = testDate.toLocaleDateString();
+        const parts = splitDateParts(value);
+
+        if (parts) {
+          // Detect format from system locale
+          if (formatted.startsWith('12')) {
+            // US format: MM/DD/YYYY
+            month = parseInt(parts[0], 10);
+            day = parseInt(parts[1], 10);
+            year = parseInt(parts[2], 10);
+          } else if (formatted.startsWith('31')) {
+            // EU format: DD/MM/YYYY
+            day = parseInt(parts[0], 10);
+            month = parseInt(parts[1], 10);
+            year = parseInt(parts[2], 10);
+          } else {
+            // ISO format: YYYY-MM-DD
+            year = parseInt(parts[0], 10);
+            month = parseInt(parts[1], 10);
+            day = parseInt(parts[2], 10);
+          }
           break;
         }
         return null;

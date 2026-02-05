@@ -37,7 +37,8 @@ COPY backend/ ./backend/
 COPY --from=frontend-builder /app/static ./static
 
 # Create data directory for persistent storage
-RUN mkdir -p /app/data /app/logs
+# chmod 777 allows running as non-root user (e.g., with docker compose user: directive)
+RUN mkdir -p /app/data /app/logs && chmod 777 /app/data /app/logs
 
 # Environment variables
 ENV PYTHONUNBUFFERED=1

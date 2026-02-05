@@ -71,7 +71,9 @@ body:
     id: mockups
     attributes:
       label: Mockups or Examples
-      description: If you have any mockups, screenshots, or examples from other software, please share them.
+      description: |
+        If you have any mockups, screenshots, or examples from other software, please share them.
+        💡 Tip: You can drag and drop images directly into this text box.
 
   - type: checkboxes
     id: contribution

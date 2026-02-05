@@ -211,8 +211,17 @@ class NotificationService:
         else:
             return False, f"HTTP {response.status_code}: {response.text[:200]}"
 
-    async def _send_pushover(self, config: dict, title: str, message: str) -> tuple[bool, str]:
-        """Send notification via Pushover."""
+    async def _send_pushover(
+        self, config: dict, title: str, message: str, image_data: bytes | None = None
+    ) -> tuple[bool, str]:
+        """Send notification via Pushover.
+
+        Args:
+            config: Provider configuration with user_key, app_token, priority
+            title: Notification title
+            message: Notification body
+            image_data: Optional JPEG image bytes to attach (max 2.5MB)
+        """
         user_key = config.get("user_key", "").strip()
         app_token = config.get("app_token", "").strip()
         priority = config.get("priority", 0)
@@ -230,7 +239,13 @@ class NotificationService:
         }
 
         client = await self._get_client()
-        response = await client.post(url, data=data)
+
+        if image_data:
+            # Pushover supports image attachments via multipart form-data
+            files = {"attachment": ("photo.jpg", image_data, "image/jpeg")}
+            response = await client.post(url, data=data, files=files)
+        else:
+            response = await client.post(url, data=data)
 
         if response.status_code == 200:
             return True, "Message sent successfully"
@@ -407,7 +422,12 @@ class NotificationService:
             return False, f"Webhook error: {str(e)}"
 
     async def _send_to_provider(
-        self, provider: NotificationProvider, title: str, message: str, db: AsyncSession | None = None
+        self,
+        provider: NotificationProvider,
+        title: str,
+        message: str,
+        db: AsyncSession | None = None,
+        image_data: bytes | None = None,
     ) -> tuple[bool, str]:
         """Send notification to a specific provider."""
         # Check quiet hours
@@ -423,7 +443,7 @@ class NotificationService:
             elif provider.provider_type == "ntfy":
                 return await self._send_ntfy(config, title, message)
             elif provider.provider_type == "pushover":
-                return await self._send_pushover(config, title, message)
+                return await self._send_pushover(config, title, message, image_data=image_data)
             elif provider.provider_type == "telegram":
                 return await self._send_telegram(config, f"*{title}*\n{message}")
             elif provider.provider_type == "email":
@@ -513,6 +533,7 @@ class NotificationService:
         printer_id: int | None = None,
         printer_name: str | None = None,
         force_immediate: bool = False,
+        image_data: bytes | None = None,
     ):
         """Send notification to multiple providers and log the results.
 
@@ -522,7 +543,7 @@ class NotificationService:
         for provider in providers:
             try:
                 # Always send notification immediately
-                success, error = await self._send_to_provider(provider, title, message, db)
+                success, error = await self._send_to_provider(provider, title, message, db, image_data=image_data)
 
                 # Also queue for digest if enabled (digest is a summary, not a queue)
                 if provider.daily_digest_enabled and provider.daily_digest_time:
@@ -629,9 +650,16 @@ class NotificationService:
             "estimated_time": time_str,
         }
 
+        # Extract image data for providers that support attachments (e.g. Pushover)
+        image_data = None
+        if archive_data:
+            image_data = archive_data.get("image_data")
+
         logger.info(f"Found {len(providers)} providers for print_start: {[p.name for p in providers]}")
         title, message = await self._build_message_from_template(db, "print_start", variables)
-        await self._send_to_providers(providers, title, message, db, "print_start", printer_id, printer_name)
+        await self._send_to_providers(
+            providers, title, message, db, "print_start", printer_id, printer_name, image_data=image_data
+        )
 
     async def on_print_complete(
         self,
@@ -690,11 +718,16 @@ class NotificationService:
             if archive_data.get("finish_photo_url"):
                 variables["finish_photo_url"] = archive_data["finish_photo_url"]
 
-        logger.info(f"on_print_complete variables: {variables}, archive_data: {archive_data}")
+        # Extract image data for providers that support attachments (e.g. Pushover)
+        image_data = None
+        if archive_data:
+            image_data = archive_data.get("image_data")
 
         logger.info(f"Found {len(providers)} providers for {event_field}: {[p.name for p in providers]}")
         title, message = await self._build_message_from_template(db, event_type, variables)
-        await self._send_to_providers(providers, title, message, db, event_type, printer_id, printer_name)
+        await self._send_to_providers(
+            providers, title, message, db, event_type, printer_id, printer_name, image_data=image_data
+        )
 
     async def on_print_progress(
         self,
@@ -704,6 +737,7 @@ class NotificationService:
         progress: int,
         db: AsyncSession,
         remaining_time: int | None = None,
+        image_data: bytes | None = None,
     ):
         """Handle print progress milestone (25%, 50%, 75%)."""
         providers = await self._get_providers_for_event(db, "on_print_progress", printer_id)
@@ -718,7 +752,9 @@ class NotificationService:
         }
 
         title, message = await self._build_message_from_template(db, "print_progress", variables)
-        await self._send_to_providers(providers, title, message, db, "print_progress", printer_id, printer_name)
+        await self._send_to_providers(
+            providers, title, message, db, "print_progress", printer_id, printer_name, image_data=image_data
+        )
 
     async def on_printer_offline(self, printer_id: int, printer_name: str, db: AsyncSession):
         """Handle printer offline event."""
@@ -738,6 +774,7 @@ class NotificationService:
         error_type: str,
         db: AsyncSession,
         error_detail: str | None = None,
+        image_data: bytes | None = None,
     ):
         """Handle printer error event (AMS issues, etc.)."""
         providers = await self._get_providers_for_event(db, "on_printer_error", printer_id)
@@ -751,7 +788,9 @@ class NotificationService:
         }
 
         title, message = await self._build_message_from_template(db, "printer_error", variables)
-        await self._send_to_providers(providers, title, message, db, "printer_error", printer_id, printer_name)
+        await self._send_to_providers(
+            providers, title, message, db, "printer_error", printer_id, printer_name, image_data=image_data
+        )
 
     async def on_plate_not_empty(
         self,

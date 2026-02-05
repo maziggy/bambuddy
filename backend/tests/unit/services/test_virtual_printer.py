@@ -464,7 +464,8 @@ class TestSlicerProxyManager:
 
     def test_proxy_manager_initializes_ports(self, proxy_manager):
         """Verify proxy manager has correct port constants."""
-        assert proxy_manager.LOCAL_FTP_PORT == 9990
+        # FTP proxy uses privileged port 990 to match what Bambu Studio expects
+        assert proxy_manager.LOCAL_FTP_PORT == 990
         assert proxy_manager.LOCAL_MQTT_PORT == 8883
         assert proxy_manager.PRINTER_FTP_PORT == 990
         assert proxy_manager.PRINTER_MQTT_PORT == 8883
@@ -480,6 +481,125 @@ class TestSlicerProxyManager:
         assert status["running"] is False
         assert status["ftp_connections"] == 0
         assert status["mqtt_connections"] == 0
+
+
+class TestSSDPProxy:
+    """Tests for SSDPProxy (cross-network SSDP relay)."""
+
+    @pytest.fixture
+    def ssdp_proxy(self):
+        """Create an SSDPProxy instance."""
+        from backend.app.services.virtual_printer.ssdp_server import SSDPProxy
+
+        return SSDPProxy(
+            local_interface_ip="192.168.1.100",
+            remote_interface_ip="10.0.0.100",
+            target_printer_ip="192.168.1.50",
+        )
+
+    def test_ssdp_proxy_stores_interface_ips(self, ssdp_proxy):
+        """Verify SSDPProxy stores interface IPs correctly."""
+        assert ssdp_proxy.local_interface_ip == "192.168.1.100"
+        assert ssdp_proxy.remote_interface_ip == "10.0.0.100"
+        assert ssdp_proxy.target_printer_ip == "192.168.1.50"
+
+    def test_rewrite_ssdp_location(self, ssdp_proxy):
+        """Verify SSDP Location header is rewritten to remote interface IP."""
+        original_packet = b"NOTIFY * HTTP/1.1\r\nLocation: 192.168.1.50\r\nDevName.bambu.com: TestPrinter\r\n\r\n"
+
+        rewritten = ssdp_proxy._rewrite_ssdp_location(original_packet)
+
+        # Location should be changed to remote interface IP
+        assert b"Location: 10.0.0.100" in rewritten
+        assert b"Location: 192.168.1.50" not in rewritten
+        # Other headers should be preserved
+        assert b"DevName.bambu.com: TestPrinter" in rewritten
+
+    def test_rewrite_ssdp_location_case_insensitive(self, ssdp_proxy):
+        """Verify SSDP Location rewrite is case insensitive."""
+        original_packet = b"NOTIFY * HTTP/1.1\r\nlocation: 192.168.1.50\r\n\r\n"
+
+        rewritten = ssdp_proxy._rewrite_ssdp_location(original_packet)
+
+        assert b"10.0.0.100" in rewritten
+
+    def test_rewrite_ssdp_location_no_match(self, ssdp_proxy):
+        """Verify packet without Location header is returned unchanged."""
+        original_packet = b"NOTIFY * HTTP/1.1\r\nDevName.bambu.com: Test\r\n\r\n"
+
+        rewritten = ssdp_proxy._rewrite_ssdp_location(original_packet)
+
+        # Should be unchanged (no Location header to rewrite)
+        assert rewritten == original_packet
+
+    def test_parse_ssdp_message(self, ssdp_proxy):
+        """Verify SSDP message parsing extracts headers."""
+        packet = (
+            b"NOTIFY * HTTP/1.1\r\n"
+            b"Location: 192.168.1.50\r\n"
+            b"DevName.bambu.com: TestPrinter\r\n"
+            b"DevModel.bambu.com: BL-P001\r\n"
+            b"\r\n"
+        )
+
+        headers = ssdp_proxy._parse_ssdp_message(packet)
+
+        assert headers["location"] == "192.168.1.50"
+        assert headers["devname.bambu.com"] == "TestPrinter"
+        assert headers["devmodel.bambu.com"] == "BL-P001"
+
+
+class TestVirtualPrinterManagerDirectories:
+    """Tests for VirtualPrinterManager directory management."""
+
+    def test_ensure_directories_creates_subdirs(self, tmp_path):
+        """Verify _ensure_directories creates all required subdirectories."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterManager
+
+        # Create a manager and manually call _ensure_directories with our tmp path
+        manager = VirtualPrinterManager()
+        # Override the paths
+        manager._base_dir = tmp_path / "virtual_printer"
+        manager._upload_dir = manager._base_dir / "uploads"
+        manager._cert_dir = manager._base_dir / "certs"
+
+        # Call the method
+        manager._ensure_directories()
+
+        # All directories should be created
+        assert (tmp_path / "virtual_printer").exists()
+        assert (tmp_path / "virtual_printer" / "uploads").exists()
+        assert (tmp_path / "virtual_printer" / "uploads" / "cache").exists()
+        assert (tmp_path / "virtual_printer" / "certs").exists()
+
+    def test_ensure_directories_handles_permission_error(self, tmp_path, caplog):
+        """Verify _ensure_directories logs error on permission failure."""
+        import logging
+        from unittest.mock import patch
+
+        from backend.app.services.virtual_printer.manager import VirtualPrinterManager
+
+        # Create manager and override paths
+        manager = VirtualPrinterManager()
+        vp_dir = tmp_path / "virtual_printer"
+
+        manager._base_dir = vp_dir
+        manager._upload_dir = vp_dir / "uploads"
+        manager._cert_dir = vp_dir / "certs"
+
+        # Mock mkdir to raise PermissionError (chmod doesn't work as root in Docker)
+        original_mkdir = type(vp_dir).mkdir
+
+        def mock_mkdir(self, *args, **kwargs):
+            if "virtual_printer" in str(self):
+                raise PermissionError("Permission denied")
+            return original_mkdir(self, *args, **kwargs)
+
+        with caplog.at_level(logging.ERROR), patch.object(type(vp_dir), "mkdir", mock_mkdir):
+            # This should log errors but not raise
+            manager._ensure_directories()
+            # Check that error was logged
+            assert "Permission denied" in caplog.text
 
 
 class TestVirtualPrinterManagerProxyMode:
@@ -528,7 +648,7 @@ class TestVirtualPrinterManagerProxyMode:
         mock_proxy = MagicMock()
         mock_proxy.get_status.return_value = {
             "running": True,
-            "ftp_port": 9990,
+            "ftp_port": 990,  # Privileged port for Bambu Studio compatibility
             "mqtt_port": 8883,
             "ftp_connections": 1,
             "mqtt_connections": 2,
@@ -541,5 +661,46 @@ class TestVirtualPrinterManagerProxyMode:
         assert status["mode"] == "proxy"
         assert status["target_printer_ip"] == "192.168.1.100"
         assert "proxy" in status
+        assert status["proxy"]["ftp_port"] == 990  # Privileged port for Bambu Studio compatibility
+        assert status["proxy"]["mqtt_port"] == 8883
         assert status["proxy"]["ftp_connections"] == 1
         assert status["proxy"]["mqtt_connections"] == 2
+
+    @pytest.mark.asyncio
+    async def test_configure_proxy_mode_with_remote_interface(self, manager):
+        """Verify proxy mode accepts remote_interface_ip for SSDP proxy."""
+        manager._start = AsyncMock()
+
+        await manager.configure(
+            enabled=True,
+            mode="proxy",
+            target_printer_ip="192.168.1.100",
+            remote_interface_ip="10.0.0.50",
+        )
+
+        assert manager._mode == "proxy"
+        assert manager._target_printer_ip == "192.168.1.100"
+        assert manager._remote_interface_ip == "10.0.0.50"
+
+    @pytest.mark.asyncio
+    async def test_configure_proxy_mode_restarts_on_remote_interface_change(self, manager):
+        """Verify changing remote_interface_ip restarts services."""
+        # Simulate running state
+        manager._enabled = True
+        manager._mode = "proxy"
+        manager._target_printer_ip = "192.168.1.100"
+        manager._remote_interface_ip = "10.0.0.50"
+        manager._tasks = [MagicMock(done=MagicMock(return_value=False))]
+        manager._stop = AsyncMock()
+        manager._start = AsyncMock()
+
+        await manager.configure(
+            enabled=True,
+            mode="proxy",
+            target_printer_ip="192.168.1.100",
+            remote_interface_ip="10.0.0.99",  # Changed
+        )
+
+        # Should have stopped and started
+        manager._stop.assert_called_once()
+        manager._start.assert_called_once()

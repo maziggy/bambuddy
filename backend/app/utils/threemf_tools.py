@@ -10,7 +10,7 @@ import math
 import re
 import zipfile
 from pathlib import Path
-from xml.etree import ElementTree as ET
+import defusedxml.ElementTree as ET
 
 # Default filament properties
 DEFAULT_FILAMENT_DIAMETER = 1.75  # mm

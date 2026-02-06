@@ -29,8 +29,11 @@ ts="$(date +%Y%m%d-%H%M%S)"
 [[ -f "$CSV_COLOR" ]] && mv -- "$CSV_COLOR" "${CSV_COLOR}.${ts}.bak"
 [[ -f "$CSV_SPOOL" ]] && mv -- "$CSV_SPOOL" "${CSV_SPOOL}.${ts}.bak"
 
-# Escapar comillas simples para ATTACH
-SRC_DB_ESC="${SRC_DB//\'/\'\'}"
+# Escapar comillas simples para ATTACH (SQLite usa '' para una comilla)
+SRC_DB_ESC="${SRC_DB//\'/''}"
+
+# Spoolman (si no quieres sync, ejecuta con: SPOOLMAN_URL="" ./scripts/bambuddy_etl_spools.sh)
+SPOOLMAN_URL="${SPOOLMAN_URL:-http://localhost:7912}"
 
 # 0) Esquema (tracking.db) + mapas de color + spoolman_map
 sqlite3 "$DST_DB" <<'SQL'
@@ -77,17 +80,16 @@ CREATE TABLE IF NOT EXISTS color_to_tag_uid (
   tag_uid TEXT NOT NULL
 );
 
--- Mapa de nombres legibles (amplíalo cuando quieras)
+-- Mapa de nombres legibles:
+-- - Se autopoblará desde Spoolman más abajo (filament.color_hex -> filament.name).
+-- - Estas entradas son overrides locales (se mantienen aunque Spoolman tenga otro nombre).
 CREATE TABLE IF NOT EXISTS color_map (
   color_hex  TEXT PRIMARY KEY,   -- #RRGGBB o #RRGGBBAA
   color_name TEXT NOT NULL
 );
 
 INSERT OR REPLACE INTO color_map(color_hex, color_name) VALUES
-  ('#000000',   'NegroMate'),
   ('#00000000', 'Transparente'),
-  ('#3F8E43',   'Verde'),
-  ('#8E9089',   'Gris'),
   ('#MULTI',    'MultipleColor');
 
 -- Spoolman mapping (tag_uid -> spool_id)
@@ -99,6 +101,16 @@ CREATE TABLE IF NOT EXISTS spoolman_map (
 CREATE INDEX IF NOT EXISTS idx_alloc_tag_uid ON allocations(tag_uid);
 CREATE INDEX IF NOT EXISTS idx_print_facts_completed ON print_facts(completed_at);
 SQL
+
+# 0.1) (Opcional) Seed del spoolman_map para que sobreviva a borrados de tracking.db
+# Se aplica SOLO si spoolman_map está vacío, para no pisar cambios manuales.
+SEED_SQL="$REPO_DIR/spoolman_map.seed.sql"
+if [[ -f "$SEED_SQL" ]]; then
+  rows="$(sqlite3 "$DST_DB" "SELECT COUNT(*) FROM spoolman_map;")"
+  if [[ "${rows:-0}" == "0" ]]; then
+    sqlite3 "$DST_DB" < "$SEED_SQL"
+  fi
+fi
 
 # 1) Ingest incremental desde SRC_DB -> DST_DB
 sqlite3 "$DST_DB" <<SQL
@@ -142,22 +154,56 @@ SELECT
 FROM newprints np
 JOIN json_each(np.extra_data, '$."_print_data"."raw_data".ams[0].tray') jt;
 
-WITH m AS (
-  SELECT
-    np.archive_id,
-    je.value AS tray_index
-  FROM newprints np
-  JOIN json_each(np.map_json) je
-  WHERE np.map_json IS NOT NULL
-    AND (SELECT COUNT(*) FROM json_each(np.map_json)) = 1
-),
-resolved AS (
+-- 1.A) Allocations (method=map, high): prints con map_json y 1 key (mono-extrusor).
+-- FIX: elige tag_uid por match de color (filament_color vs tray_color), y si no hay match, fallback al tray_index del map_json.
+WITH base AS (
   SELECT
     np.archive_id,
     np.filament_used_grams AS used_g,
-    json_extract(np.extra_data, '$."_print_data"."raw_data".ams[0].tray[' || m.tray_index || '].tag_uid') AS tag_uid
+    upper(replace(np.filament_color,'#','')) AS fc,
+    np.map_json,
+    np.extra_data
   FROM newprints np
-  JOIN m ON m.archive_id = np.archive_id
+  WHERE np.map_json IS NOT NULL
+    AND (SELECT COUNT(*) FROM json_each(np.map_json)) = 1
+    AND np.filament_color IS NOT NULL
+    AND np.filament_color NOT LIKE '%,%'
+),
+m AS (
+  SELECT
+    b.archive_id,
+    b.used_g,
+    b.fc,
+    je.value AS tray_index,
+    b.extra_data
+  FROM base b
+  JOIN json_each(b.map_json) je
+),
+resolved AS (
+  SELECT
+    m.archive_id,
+    m.used_g,
+    COALESCE(
+      (
+        SELECT pt.tag_uid
+        FROM print_trays pt
+        WHERE pt.archive_id = m.archive_id
+          AND pt.tag_uid IS NOT NULL
+          AND pt.tag_uid <> '0000000000000000'
+          AND pt.tray_color IS NOT NULL
+          AND pt.tray_color <> ''
+          AND (
+            (length(m.fc) >= 8 AND substr(upper(replace(pt.tray_color,'#','')),1,8) = substr(m.fc,1,8))
+            OR
+            (length(m.fc) = 6 AND substr(upper(replace(pt.tray_color,'#','')),1,6) = m.fc
+                           AND substr(upper(replace(pt.tray_color,'#','')),7,2) <> '00')
+          )
+        ORDER BY pt.tray_index
+        LIMIT 1
+      ),
+      json_extract(m.extra_data, '$."_print_data"."raw_data".ams[0].tray[' || m.tray_index || '].tag_uid')
+    ) AS tag_uid
+  FROM m
 )
 INSERT OR IGNORE INTO allocations(archive_id, tag_uid, used_g, method, confidence)
 SELECT
@@ -169,6 +215,42 @@ SELECT
 FROM resolved
 WHERE tag_uid IS NOT NULL
   AND tag_uid <> '0000000000000000';
+
+-- 1.B) Reparación idempotente: si mono-color y existe un tray cuyo color coincide,
+-- fuerza el tag_uid correcto (solo en prints nuevos; no toca backfill_color).
+WITH expected AS (
+  SELECT
+    np.archive_id AS archive_id,
+    (
+      SELECT pt.tag_uid
+      FROM print_trays pt
+      WHERE pt.archive_id = np.archive_id
+        AND pt.tag_uid IS NOT NULL
+        AND pt.tag_uid <> '0000000000000000'
+        AND pt.tray_color IS NOT NULL
+        AND pt.tray_color <> ''
+        AND (
+          (length(upper(replace(np.filament_color,'#',''))) >= 8 AND
+            substr(upper(replace(pt.tray_color,'#','')),1,8) = substr(upper(replace(np.filament_color,'#','')),1,8))
+          OR
+          (length(upper(replace(np.filament_color,'#',''))) = 6 AND
+            substr(upper(replace(pt.tray_color,'#','')),1,6) = upper(replace(np.filament_color,'#',''))
+            AND substr(upper(replace(pt.tray_color,'#','')),7,2) <> '00')
+        )
+      ORDER BY pt.tray_index
+      LIMIT 1
+    ) AS expected_tag_uid
+  FROM newprints np
+  WHERE np.filament_color IS NOT NULL
+    AND np.filament_color NOT LIKE '%,%'
+)
+UPDATE allocations
+SET tag_uid = (SELECT expected_tag_uid FROM expected e WHERE e.archive_id = allocations.archive_id)
+WHERE archive_id IN (SELECT archive_id FROM expected WHERE expected_tag_uid IS NOT NULL)
+  AND method='map'
+  AND confidence='high'
+  AND archive_id IN (SELECT archive_id FROM newprints)
+  AND tag_uid <> (SELECT expected_tag_uid FROM expected e WHERE e.archive_id = allocations.archive_id);
 
 UPDATE ingest_state
 SET v = CAST((SELECT COALESCE(MAX(id), CAST(v AS INTEGER)) FROM src.print_archives WHERE status='completed') AS TEXT)
@@ -241,21 +323,135 @@ SELECT archive_id, tag_uid, used_g, 'backfill_color', 'medium'
 FROM resolved;
 SQL
 
-# 4) CSV por color (total)
+# 3.1) Autocomplete spoolman_map consultando Spoolman por tray_uuid (extra.tag)
+#      + Autopoblar color_map desde Spoolman (filament.color_hex -> filament.name)
+if [[ -n "$SPOOLMAN_URL" ]] && command -v curl >/dev/null 2>&1; then
+  if command -v jq >/dev/null 2>&1; then
+    spools_json="$(curl -sSf "$SPOOLMAN_URL/api/v1/spool?limit=5000" 2>/dev/null || echo '[]')"
+
+    # 3.1.A) Autopoblar color_map (NO pisa overrides locales)
+    jq -r '
+      .[]
+      | select(.filament? and .filament.color_hex? and .filament.name?)
+      | [.filament.color_hex, .filament.name]
+      | @tsv
+    ' <<<"$spools_json" | while IFS=$'\t' read -r hex name; do
+          [[ -n "${hex:-}" && -n "${name:-}" ]] || continue
+          hex_uc="#${hex^^}"                  # -> #RRGGBB (o #RRGGBBAA si viniera con alpha)
+          name_esc="${name//\'/\'\'}"         # escapar ' para SQLite
+          sqlite3 "$DST_DB" \
+            "INSERT OR IGNORE INTO color_map(color_hex, color_name)
+             VALUES ('$hex_uc', '$name_esc');"
+        done
+
+    # 3.1.B) Autopoblar spoolman_map (tag_uid -> spool_id) usando tray_uuid <-> extra.tag
+    sqlite3 -csv -noheader "$DST_DB" "
+    SELECT
+      a.tag_uid,
+      COALESCE(
+        (SELECT pt.tray_uuid
+         FROM print_trays pt
+         WHERE pt.tag_uid = a.tag_uid
+           AND pt.tray_uuid IS NOT NULL AND pt.tray_uuid <> ''
+         ORDER BY pt.archive_id DESC
+         LIMIT 1),
+        ''
+      ) AS tray_uuid
+    FROM (SELECT DISTINCT tag_uid FROM allocations) a
+    LEFT JOIN spoolman_map sm ON sm.tag_uid = a.tag_uid
+    WHERE sm.spool_id IS NULL;
+    " | while IFS=, read -r tag_uid tray_uuid; do
+          [[ -n "${tray_uuid:-}" ]] || continue
+
+          spool_id="$(jq -r --arg uuid "$tray_uuid" '
+            def clean_tag:
+              (try (fromjson) catch .) | tostring | gsub("^\"|\"$";"");
+            .[]
+            | select(.extra? and .extra.tag?)
+            | select((.extra.tag | clean_tag) == $uuid)
+            | .id
+          ' <<<"$spools_json" | head -n1)"
+
+          if [[ -n "${spool_id:-}" && "$spool_id" != "null" ]]; then
+            sqlite3 "$DST_DB" \
+              "INSERT OR REPLACE INTO spoolman_map(tag_uid, spool_id)
+               VALUES ('$tag_uid', $spool_id);"
+          fi
+        done
+  else
+    echo "WARN: jq no instalado, se omite auto-mapping Spoolman y autopoblado de color_map." >&2
+  fi
+fi
+
+# 4) CSV por color (total) = allocations (por bobina) + #MULTI (lo no asignable)
 sqlite3 -header -csv "$DST_DB" "
-WITH by_color AS (
+WITH tray_colors AS (
   SELECT
+    tag_uid,
+    upper(replace(tray_color,'#','')) AS rgba
+  FROM print_trays
+  WHERE tag_uid IS NOT NULL
+    AND tray_color IS NOT NULL
+    AND tray_color <> ''
+),
+tag_color AS (
+  SELECT
+    tag_uid,
+    (SELECT rgba
+     FROM tray_colors t2
+     WHERE t2.tag_uid = t.tag_uid
+     GROUP BY rgba
+     ORDER BY count(*) DESC
+     LIMIT 1
+    ) AS rgba
+  FROM tray_colors t
+  GROUP BY tag_uid
+),
+tag_color_hex AS (
+  SELECT
+    tag_uid,
     CASE
-      WHEN filament_color LIKE '%,%' THEN '#MULTI'
-      WHEN length(ltrim(filament_color,'#')) >= 8 THEN '#' || upper(substr(ltrim(filament_color,'#'),1,8))
-      ELSE '#' || upper(substr(ltrim(filament_color,'#'),1,6))
-    END AS color_hex,
-    round(total(filament_used_grams), 2) AS grams
-  FROM print_facts
-  GROUP BY color_hex
+      WHEN length(rgba) >= 8 AND substr(rgba,7,2)='00' THEN '#' || substr(rgba,1,8)
+      ELSE '#' || substr(rgba,1,6)
+    END AS color_hex
+  FROM tag_color
+),
+alloc_by_color AS (
+  SELECT
+    t.color_hex AS color_hex,
+    COALESCE(cm.color_name, t.color_hex) AS color_name,
+    round(total(a.used_g), 2) AS grams
+  FROM allocations a
+  JOIN tag_color_hex t ON a.tag_uid = t.tag_uid
+  LEFT JOIN color_map cm ON cm.color_hex = t.color_hex
+  GROUP BY 1, 2
+),
+multi_missing AS (
+  SELECT
+    '#MULTI' AS color_hex,
+    'MultipleColor' AS color_name,
+    round(
+      max(
+        0,
+        (SELECT COALESCE(total(filament_used_grams), 0)
+         FROM print_facts
+         WHERE filament_color LIKE '%,%')
+        -
+        (SELECT COALESCE(total(used_g), 0)
+         FROM allocations
+         WHERE archive_id IN (
+           SELECT archive_id FROM print_facts WHERE filament_color LIKE '%,%'
+         ))
+      ),
+      2
+    ) AS grams
 )
-SELECT color_hex, grams
-FROM by_color
+SELECT color_hex, color_name, grams
+FROM alloc_by_color
+UNION ALL
+SELECT color_hex, color_name, grams
+FROM multi_missing
+WHERE grams > 0
 ORDER BY grams DESC;
 " > "$CSV_COLOR"
 
@@ -315,8 +511,8 @@ best_type AS (
 SELECT
   n.tag_uid,
   sm.spool_id,
-  coalesce(cm8.color_hex, cm6.color_hex, '(desconocido)') AS color_hex,
-  coalesce(cm8.color_name, cm6.color_name, '(desconocido)') AS color_name,
+  coalesce(cm8.color_hex, cm6.color_hex, n.color_hex6, '(desconocido)') AS color_hex,
+  coalesce(cm8.color_name, cm6.color_name, n.color_hex6, '(desconocido)') AS color_name,
   coalesce(bt.filament_type, '(desconocido)') AS filament_type,
   n.nominal_g,
   n.used_g,
@@ -350,15 +546,11 @@ if [[ "${missing:-0}" != "0" ]]; then
 fi
 
 # 7) Sync a Spoolman (overwrite remaining_weight) + fail-soft + log
-# Default embebido; puedes sobreescribirlo desde fuera si quieres:
-SPOOLMAN_URL="${SPOOLMAN_URL:-http://localhost:7912}"
-
 if [[ -n "$SPOOLMAN_URL" ]]; then
   need_cmd curl
   echo "" >> "$SPOOLMAN_LOG"
   echo "[$(date -Is)] Spoolman sync (overwrite remaining_weight) -> $SPOOLMAN_URL" | tee -a "$SPOOLMAN_LOG" >/dev/null
 
-  # Solo sincroniza spools que estén mapeados (JOIN spoolman_map)
   sqlite3 -csv -noheader "$DST_DB" "
   SELECT
     sm.spool_id,

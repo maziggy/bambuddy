@@ -1022,7 +1022,7 @@ export function SettingsPage() {
           <Users className="w-4 h-4" />
           {t('settings.tabs.users')}
           {authEnabled && (
-            <span className={`w-2 h-2 rounded-full ${authEnabled ? 'bg-green-400' : 'bg-gray-500'}`} />
+            <span className="w-2 h-2 rounded-full bg-green-400" />
           )}
         </button>
         <button
@@ -2406,9 +2406,9 @@ export function SettingsPage() {
                         {plugEnergySummary.totalToday.toFixed(2)}
                         <span className="text-sm font-normal text-bambu-gray ml-1">kWh</span>
                       </div>
-                      {localSettings && localSettings.energy_cost_per_kwh > 0 && (
+                      {(localSettings?.energy_cost_per_kwh ?? 0) > 0 && (
                         <div className="text-xs text-bambu-gray mt-1">
-                          ~{(plugEnergySummary.totalToday * localSettings.energy_cost_per_kwh).toFixed(2)} {localSettings.currency}
+                          ~{(plugEnergySummary.totalToday * (localSettings?.energy_cost_per_kwh ?? 0)).toFixed(2)} {localSettings?.currency}
                         </div>
                       )}
                     </div>
@@ -2423,9 +2423,9 @@ export function SettingsPage() {
                         {plugEnergySummary.totalYesterday.toFixed(2)}
                         <span className="text-sm font-normal text-bambu-gray ml-1">kWh</span>
                       </div>
-                      {localSettings && localSettings.energy_cost_per_kwh > 0 && (
+                      {(localSettings?.energy_cost_per_kwh ?? 0) > 0 && (
                         <div className="text-xs text-bambu-gray mt-1">
-                          ~{(plugEnergySummary.totalYesterday * localSettings.energy_cost_per_kwh).toFixed(2)} {localSettings.currency}
+                          ~{(plugEnergySummary.totalYesterday * (localSettings?.energy_cost_per_kwh ?? 0)).toFixed(2)} {localSettings?.currency}
                         </div>
                       )}
                     </div>
@@ -2440,9 +2440,9 @@ export function SettingsPage() {
                         {plugEnergySummary.totalLifetime.toFixed(1)}
                         <span className="text-sm font-normal text-bambu-gray ml-1">kWh</span>
                       </div>
-                      {localSettings && localSettings.energy_cost_per_kwh > 0 && (
+                      {(localSettings?.energy_cost_per_kwh ?? 0) > 0 && (
                         <div className="text-xs text-bambu-gray mt-1">
-                          ~{(plugEnergySummary.totalLifetime * localSettings.energy_cost_per_kwh).toFixed(2)} {localSettings.currency}
+                          ~{(plugEnergySummary.totalLifetime * (localSettings?.energy_cost_per_kwh ?? 0)).toFixed(2)} {localSettings?.currency}
                         </div>
                       )}
                     </div>

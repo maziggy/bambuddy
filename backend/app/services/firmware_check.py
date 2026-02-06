@@ -135,9 +135,11 @@ class FirmwareCheckService:
                         release_time=latest.get("release_time"),
                     )
             else:
+                # api_key is a printer model identifier (e.g. "x1", "p1"), not a secret
                 logger.warning("Failed to fetch firmware for %s: %s", api_key, response.status_code)
 
         except (httpx.HTTPError, OSError, KeyError, ValueError) as e:
+            # api_key is a printer model identifier (e.g. "x1", "p1"), not a secret
             logger.error("Error fetching firmware for %s: %s", api_key, e)
 
         return None

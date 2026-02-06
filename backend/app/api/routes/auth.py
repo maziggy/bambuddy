@@ -87,21 +87,6 @@ async def setup_auth(request: SetupRequest, db: AsyncSession = Depends(get_db)):
     logger = logging.getLogger(__name__)
 
     try:
-        # Check if auth is already configured (prevent re-setup)
-        result = await db.execute(select(Settings).where(Settings.key == "auth_enabled"))
-        _existing_setting = result.scalar_one_or_none()
-
-        # Check if users exist
-        user_count_result = await db.execute(select(User))
-        _user_count = len(user_count_result.scalars().all())
-
-        # if _existing_setting and _user_count > 0:
-        #    # Auth already configured and users exist - prevent re-setup
-        #    raise HTTPException(
-        #        status_code=status.HTTP_400_BAD_REQUEST,
-        #        detail="Authentication is already configured. Use user management to modify users.",
-        #    )
-
         # If auth_enabled is true but no users exist, allow re-setup (recovery scenario)
 
         admin_created = False

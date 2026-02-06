@@ -398,9 +398,7 @@ function hexToBasicColorName(hex: string | null | undefined): string {
   if (h < 200) return 'Cyan';
   if (h < 260) return 'Blue';
   if (h < 290) return 'Purple';
-  if (h < 345) return 'Pink';
-
-  return 'Unknown';
+  return 'Pink';
 }
 
 // Format K value with 3 decimal places, default to 0.020 if null
@@ -707,8 +705,7 @@ function getPrinterImage(model: string | null | undefined): string {
   return '/img/printers/default.png';
 }
 
-function getWifiStrength(rssi: number | null | undefined): { labelKey: string; color: string; bars: number } {
-  if (rssi == null) return { labelKey: '', color: 'text-bambu-gray', bars: 0 };
+function getWifiStrength(rssi: number): { labelKey: string; color: string; bars: number } {
   if (rssi >= -50) return { labelKey: 'printers.wifiSignal.excellent', color: 'text-bambu-green', bars: 4 };
   if (rssi >= -60) return { labelKey: 'printers.wifiSignal.good', color: 'text-bambu-green', bars: 3 };
   if (rssi >= -70) return { labelKey: 'printers.wifiSignal.fair', color: 'text-yellow-400', bars: 2 };

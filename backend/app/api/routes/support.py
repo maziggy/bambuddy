@@ -30,10 +30,6 @@ from backend.app.models.user import User
 router = APIRouter(prefix="/support", tags=["support"])
 logger = logging.getLogger(__name__)
 
-# In-memory state for debug logging (persisted to settings DB)
-_debug_logging_enabled = False
-_debug_logging_enabled_at: datetime | None = None
-
 
 class DebugLoggingState(BaseModel):
     enabled: bool
@@ -114,12 +110,8 @@ async def get_debug_logging_state(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
 ):
     """Get current debug logging state."""
-    global _debug_logging_enabled, _debug_logging_enabled_at
-
     async with async_session() as db:
         enabled, enabled_at = await _get_debug_setting(db)
-        _debug_logging_enabled = enabled
-        _debug_logging_enabled_at = enabled_at
 
     duration = None
     if enabled and enabled_at:
@@ -138,12 +130,8 @@ async def toggle_debug_logging(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Enable or disable debug logging."""
-    global _debug_logging_enabled, _debug_logging_enabled_at
-
     async with async_session() as db:
         enabled_at = await _set_debug_setting(db, toggle.enabled)
-        _debug_logging_enabled = toggle.enabled
-        _debug_logging_enabled_at = enabled_at
 
     _apply_log_level(toggle.enabled)
 
@@ -458,13 +446,9 @@ async def generate_support_bundle(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
 ):
     """Generate a support bundle ZIP file for issue reporting."""
-    global _debug_logging_enabled, _debug_logging_enabled_at
-
     # Check if debug logging is enabled
     async with async_session() as db:
-        enabled, enabled_at = await _get_debug_setting(db)
-        _debug_logging_enabled = enabled
-        _debug_logging_enabled_at = enabled_at
+        enabled, _enabled_at = await _get_debug_setting(db)
 
     if not enabled:
         raise HTTPException(
@@ -500,13 +484,9 @@ async def generate_support_bundle(
 
 async def init_debug_logging():
     """Initialize debug logging state from database on startup."""
-    global _debug_logging_enabled, _debug_logging_enabled_at
-
     try:
         async with async_session() as db:
-            enabled, enabled_at = await _get_debug_setting(db)
-            _debug_logging_enabled = enabled
-            _debug_logging_enabled_at = enabled_at
+            enabled, _ = await _get_debug_setting(db)
 
             if enabled:
                 _apply_log_level(True)

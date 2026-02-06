@@ -90,8 +90,7 @@ export function hexToColorName(hex: string | null | undefined): string {
   if (h < 200) return 'Cyan';
   if (h < 260) return 'Blue';
   if (h < 290) return 'Purple';
-  if (h < 345) return 'Pink';
-  return 'Unknown';
+  return 'Pink';
 }
 
 /**

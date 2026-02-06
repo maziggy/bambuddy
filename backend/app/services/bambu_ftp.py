@@ -80,6 +80,9 @@ class BambuFTPClient:
     # Models that may need SSL mode fallback (try prot_p first, fall back to prot_c)
     # These models have varying FTP SSL behavior depending on firmware version
     A1_MODELS = ("A1", "A1 Mini")
+    # Chunk size for manual upload transfer (1MB)
+    # Larger chunks reduce overhead and work better with A1 printers
+    CHUNK_SIZE = 1024 * 1024
 
     # Cache for working FTP modes per printer IP
     # Maps IP -> "prot_p" or "prot_c"
@@ -363,15 +366,37 @@ class BambuFTPClient:
 
             uploaded = 0
 
-            def on_block(block: bytes):
-                nonlocal uploaded
-                uploaded += len(block)
-                if progress_callback:
-                    progress_callback(uploaded, file_size)
-
+            # Use manual transfer instead of storbinary() for A1 compatibility
+            # A1 printers have issues with storbinary's voidresp() hanging after transfer
             with open(local_path, "rb") as f:
                 logger.debug(f"FTP STOR command starting for {remote_path}")
-                self._ftp.storbinary(f"STOR {remote_path}", f, callback=on_block)
+                conn = self._ftp.transfercmd(f"STOR {remote_path}")
+
+                # Set explicit socket options for reliable transfer
+                conn.setblocking(True)
+                conn.settimeout(120)  # 2 minute timeout per chunk
+
+                try:
+                    while True:
+                        chunk = f.read(self.CHUNK_SIZE)
+                        if not chunk:
+                            logger.debug("FTP upload: final chunk reached")
+                            break
+
+                        conn.sendall(chunk)
+                        uploaded += len(chunk)
+                        logger.debug(f"FTP upload progress: {uploaded}/{file_size} bytes")
+
+                        if progress_callback:
+                            progress_callback(uploaded, file_size)
+
+                except OSError as e:
+                    logger.error(f"FTP connection lost during upload: {e}")
+                    conn.close()
+                    raise
+
+                conn.close()
+
             logger.info(f"FTP upload complete: {remote_path}")
             return True
         except ftplib.error_perm as e:
@@ -399,8 +424,24 @@ class BambuFTPClient:
             return False
 
         try:
-            buffer = BytesIO(data)
-            self._ftp.storbinary(f"STOR {remote_path}", buffer)
+            # Use manual transfer instead of storbinary() for A1 compatibility
+            conn = self._ftp.transfercmd(f"STOR {remote_path}")
+            conn.setblocking(True)
+            conn.settimeout(120)
+
+            try:
+                # Send data in chunks
+                offset = 0
+                while offset < len(data):
+                    chunk = data[offset : offset + self.CHUNK_SIZE]
+                    conn.sendall(chunk)
+                    offset += len(chunk)
+            except OSError as e:
+                logger.error(f"FTP connection lost during upload_bytes: {e}")
+                conn.close()
+                raise
+
+            conn.close()
             return True
         except Exception:
             return False

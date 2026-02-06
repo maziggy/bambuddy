@@ -64,6 +64,8 @@ async def get_settings(
                 "save_thumbnails",
                 "capture_finish_photo",
                 "spoolman_enabled",
+                "spoolman_disable_weight_sync",
+                "spoolman_report_partial_usage",
                 "check_updates",
                 "check_printer_firmware",
                 "virtual_printer_enabled",
@@ -89,6 +91,7 @@ async def get_settings(
                 "ams_history_retention_days",
                 "ftp_retry_count",
                 "ftp_retry_delay",
+                "ftp_timeout",
                 "mqtt_port",
             ]:
                 settings_dict[setting.key] = int(setting.value)
@@ -207,11 +210,15 @@ async def get_spoolman_settings(
     spoolman_enabled = await get_setting(db, "spoolman_enabled") or "false"
     spoolman_url = await get_setting(db, "spoolman_url") or ""
     spoolman_sync_mode = await get_setting(db, "spoolman_sync_mode") or "auto"
+    spoolman_disable_weight_sync = await get_setting(db, "spoolman_disable_weight_sync") or "false"
+    spoolman_report_partial_usage = await get_setting(db, "spoolman_report_partial_usage") or "true"
 
     return {
         "spoolman_enabled": spoolman_enabled,
         "spoolman_url": spoolman_url,
         "spoolman_sync_mode": spoolman_sync_mode,
+        "spoolman_disable_weight_sync": spoolman_disable_weight_sync,
+        "spoolman_report_partial_usage": spoolman_report_partial_usage,
     }
 
 
@@ -228,6 +235,10 @@ async def update_spoolman_settings(
         await set_setting(db, "spoolman_url", settings["spoolman_url"])
     if "spoolman_sync_mode" in settings:
         await set_setting(db, "spoolman_sync_mode", settings["spoolman_sync_mode"])
+    if "spoolman_disable_weight_sync" in settings:
+        await set_setting(db, "spoolman_disable_weight_sync", settings["spoolman_disable_weight_sync"])
+    if "spoolman_report_partial_usage" in settings:
+        await set_setting(db, "spoolman_report_partial_usage", settings["spoolman_report_partial_usage"])
 
     await db.commit()
     db.expire_all()

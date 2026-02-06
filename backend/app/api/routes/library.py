@@ -1312,8 +1312,9 @@ async def get_library_file_plates(
     """
     import json
     import re
-    import xml.etree.ElementTree as ET
     import zipfile
+
+    import defusedxml.ElementTree as ET
 
     # Get the library file
     result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
@@ -1613,8 +1614,9 @@ async def get_library_file_filament_requirements(
         file_id: The library file ID
         plate_id: Optional plate index to get filaments for a specific plate
     """
-    import xml.etree.ElementTree as ET
     import zipfile
+
+    import defusedxml.ElementTree as ET
 
     # Get the library file
     result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))

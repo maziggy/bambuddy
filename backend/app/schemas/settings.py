@@ -23,6 +23,14 @@ class AppSettings(BaseModel):
     spoolman_sync_mode: str = Field(
         default="auto", description="Sync mode: 'auto' syncs immediately, 'manual' requires button press"
     )
+    spoolman_disable_weight_sync: bool = Field(
+        default=False,
+        description="Disable remaining_weight sync. When enabled, only location is updated for existing spools.",
+    )
+    spoolman_report_partial_usage: bool = Field(
+        default=True,
+        description="Report Partial Usage for Failed Prints. When a print fails or is cancelled, report the estimated filament used up to that point based on layer progress.",
+    )
 
     # Updates
     check_updates: bool = Field(default=True, description="Automatically check for updates on startup")
@@ -78,6 +86,7 @@ class AppSettings(BaseModel):
     ftp_retry_enabled: bool = Field(default=True, description="Enable automatic retry for FTP operations")
     ftp_retry_count: int = Field(default=3, description="Number of retry attempts for FTP operations (1-10)")
     ftp_retry_delay: int = Field(default=2, description="Seconds to wait between FTP retry attempts (1-30)")
+    ftp_timeout: int = Field(default=30, description="FTP connection timeout in seconds (10-120)")
 
     # MQTT Relay settings for publishing events to external broker
     mqtt_enabled: bool = Field(default=False, description="Enable MQTT event publishing to external broker")
@@ -134,6 +143,8 @@ class AppSettingsUpdate(BaseModel):
     spoolman_enabled: bool | None = None
     spoolman_url: str | None = None
     spoolman_sync_mode: str | None = None
+    spoolman_disable_weight_sync: bool | None = None
+    spoolman_report_partial_usage: bool | None = None
     check_updates: bool | None = None
     check_printer_firmware: bool | None = None
     notification_language: str | None = None
@@ -158,6 +169,7 @@ class AppSettingsUpdate(BaseModel):
     ftp_retry_enabled: bool | None = None
     ftp_retry_count: int | None = None
     ftp_retry_delay: int | None = None
+    ftp_timeout: int | None = None
     mqtt_enabled: bool | None = None
     mqtt_broker: str | None = None
     mqtt_port: int | None = None

@@ -1,8 +1,7 @@
 """Unit tests for plate object extraction from 3MF model_settings.config."""
 
-from xml.etree import ElementTree as ET
-
 import pytest
+from defusedxml import ElementTree as ET
 
 
 class TestPlateObjectExtraction:

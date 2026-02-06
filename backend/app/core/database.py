@@ -54,6 +54,7 @@ async def get_db() -> AsyncSession:
 async def init_db():
     # Import models to register them with SQLAlchemy
     from backend.app.models import (  # noqa: F401
+        active_print_spoolman,
         ams_history,
         api_key,
         archive,
@@ -1076,6 +1077,26 @@ async def run_migrations(conn):
             WHERE thumbnail_path LIKE :pattern
         """),
             {"base_dir": base_dir_str, "pattern": base_dir_str + "%"},
+        )
+    except Exception:
+        pass
+
+    # Create active_print_spoolman table for Spoolman per-filament tracking
+    try:
+        await conn.execute(
+            text("""
+            CREATE TABLE IF NOT EXISTS active_print_spoolman (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
+                archive_id INTEGER NOT NULL REFERENCES print_archives(id) ON DELETE CASCADE,
+                filament_usage TEXT NOT NULL,
+                ams_trays TEXT NOT NULL,
+                slot_to_tray TEXT,
+                layer_usage TEXT,
+                filament_properties TEXT,
+                UNIQUE(printer_id, archive_id)
+            )
+        """)
         )
     except Exception:
         pass

@@ -2181,6 +2181,10 @@ export default {
     spoolId: 'Spool ID',
     weight: 'Weight',
     remaining: 'Remaining',
+    disableWeightSync: 'Disable AMS Estimated Weight Sync',
+    disableWeightSyncDesc: "Don't update remaining capacity from AMS estimates. Use this if you prefer Spoolman's usage tracking over AMS percentage-based estimates. New spools will still use the AMS estimate as their initial weight.",
+    reportPartialUsage: 'Report Partial Usage for Failed Prints',
+    reportPartialUsageDesc: 'When a print fails or is cancelled, report the estimated filament used up to that point based on layer progress.',
   },
 
   // Timelapse

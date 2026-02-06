@@ -41,11 +41,15 @@ describe('SpoolmanSettings', () => {
       spoolman_enabled: 'false',
       spoolman_url: '',
       spoolman_sync_mode: 'auto',
+      spoolman_disable_weight_sync: 'false',
+      spoolman_report_partial_usage: 'true',
     });
     vi.mocked(api.updateSpoolmanSettings).mockResolvedValue({
       spoolman_enabled: 'false',
       spoolman_url: '',
       spoolman_sync_mode: 'auto',
+      spoolman_disable_weight_sync: 'false',
+      spoolman_report_partial_usage: 'true',
     });
     vi.mocked(api.getSpoolmanStatus).mockResolvedValue({
       enabled: false,
@@ -155,11 +159,15 @@ describe('SpoolmanSettings', () => {
         spoolman_enabled: 'true',
         spoolman_url: 'http://localhost:7912',
         spoolman_sync_mode: 'auto',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'true',
       });
       vi.mocked(api.updateSpoolmanSettings).mockResolvedValue({
         spoolman_enabled: 'true',
         spoolman_url: 'http://localhost:7912',
         spoolman_sync_mode: 'auto',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'true',
       });
     });
 
@@ -250,6 +258,87 @@ describe('SpoolmanSettings', () => {
       await waitFor(() => {
         expect(screen.getByRole('option', { name: 'All Printers' })).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('weight sync toggle', () => {
+    it('shows weight sync toggle when sync mode is auto and enabled', async () => {
+      vi.mocked(api.getSpoolmanSettings).mockResolvedValue({
+        spoolman_enabled: 'true',
+        spoolman_url: 'http://localhost:7912',
+        spoolman_sync_mode: 'auto',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'true',
+      });
+
+      render(<SpoolmanSettings />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Disable AMS Estimated Weight Sync')).toBeInTheDocument();
+      });
+    });
+
+    it('does not show weight sync toggle when sync mode is manual', async () => {
+      vi.mocked(api.getSpoolmanSettings).mockResolvedValue({
+        spoolman_enabled: 'true',
+        spoolman_url: 'http://localhost:7912',
+        spoolman_sync_mode: 'manual',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'true',
+      });
+
+      render(<SpoolmanSettings />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Spoolman Integration')).toBeInTheDocument();
+      });
+
+      expect(screen.queryByText('Disable AMS Estimated Weight Sync')).not.toBeInTheDocument();
+    });
+
+    it('shows weight sync toggle in disabled state when sync mode is auto', async () => {
+      render(<SpoolmanSettings />);
+
+      await waitFor(() => {
+        // Toggle label is visible since sync mode defaults to auto
+        expect(screen.getByText('Disable AMS Estimated Weight Sync')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('partial usage toggle', () => {
+    it('shows partial usage toggle when weight sync is disabled', async () => {
+      vi.mocked(api.getSpoolmanSettings).mockResolvedValue({
+        spoolman_enabled: 'true',
+        spoolman_url: 'http://localhost:7912',
+        spoolman_sync_mode: 'auto',
+        spoolman_disable_weight_sync: 'true',
+        spoolman_report_partial_usage: 'true',
+      });
+
+      render(<SpoolmanSettings />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Report Partial Usage for Failed Prints')).toBeInTheDocument();
+      });
+    });
+
+    it('does not show partial usage toggle when weight sync is enabled', async () => {
+      vi.mocked(api.getSpoolmanSettings).mockResolvedValue({
+        spoolman_enabled: 'true',
+        spoolman_url: 'http://localhost:7912',
+        spoolman_sync_mode: 'auto',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'true',
+      });
+
+      render(<SpoolmanSettings />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Spoolman Integration')).toBeInTheDocument();
+      });
+
+      expect(screen.queryByText('Report Partial Usage for Failed Prints')).not.toBeInTheDocument();
     });
   });
 

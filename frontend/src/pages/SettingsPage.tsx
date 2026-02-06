@@ -1890,63 +1890,59 @@ export function SettingsPage() {
                     <label className="block text-sm text-bambu-gray mb-1">
                       Retry attempts
                     </label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min="1"
-                        max="10"
+                    <div className="relative w-44">
+                      <select
                         value={localSettings.ftp_retry_count ?? 3}
-                        onChange={(e) => updateSetting('ftp_retry_count', Math.min(10, Math.max(1, parseInt(e.target.value) || 3)))}
-                        className="w-24 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                      />
-                      <span className="text-bambu-gray">times</span>
+                        onChange={(e) => updateSetting('ftp_retry_count', parseInt(e.target.value))}
+                        className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
+                      >
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
+                          <option key={n} value={n}>{n} {n === 1 ? 'time' : 'times'}</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
                     </div>
-                    <p className="text-xs text-bambu-gray mt-1">
-                      Number of retry attempts before giving up (1-10)
-                    </p>
                   </div>
 
                   <div>
                     <label className="block text-sm text-bambu-gray mb-1">
                       Retry delay
                     </label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min="1"
-                        max="30"
+                    <div className="relative w-44">
+                      <select
                         value={localSettings.ftp_retry_delay ?? 2}
-                        onChange={(e) => updateSetting('ftp_retry_delay', Math.min(30, Math.max(1, parseInt(e.target.value) || 2)))}
-                        className="w-24 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                      />
-                      <span className="text-bambu-gray">seconds</span>
+                        onChange={(e) => updateSetting('ftp_retry_delay', parseInt(e.target.value))}
+                        className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
+                      >
+                        {[1, 2, 3, 5, 10, 15, 20, 30].map(n => (
+                          <option key={n} value={n}>{n} {n === 1 ? 'second' : 'seconds'}</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-bambu-gray mb-1">
+                      Connection timeout
+                    </label>
+                    <div className="relative w-44">
+                      <select
+                        value={localSettings.ftp_timeout ?? 30}
+                        onChange={(e) => updateSetting('ftp_timeout', parseInt(e.target.value))}
+                        className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
+                      >
+                        {[10, 15, 20, 30, 45, 60, 90, 120].map(n => (
+                          <option key={n} value={n}>{n} seconds</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
                     </div>
                     <p className="text-xs text-bambu-gray mt-1">
-                      Wait time between retries (1-30)
+                      Increase for printers with weak WiFi
                     </p>
                   </div>
                 </div>
               )}
-
-              <div className="pt-2 border-t border-bambu-dark-tertiary">
-                <label className="block text-sm text-bambu-gray mb-1">
-                  Connection timeout
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="10"
-                    max="120"
-                    value={localSettings.ftp_timeout ?? 30}
-                    onChange={(e) => updateSetting('ftp_timeout', Math.min(120, Math.max(10, parseInt(e.target.value) || 30)))}
-                    className="w-24 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                  />
-                  <span className="text-bambu-gray">seconds</span>
-                </div>
-                <p className="text-xs text-bambu-gray mt-1">
-                  Socket timeout for slow connections. Increase for A1/A1 Mini printers with weak WiFi (10-120)
-                </p>
-              </div>
             </CardContent>
           </Card>
 

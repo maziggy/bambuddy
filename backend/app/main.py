@@ -224,6 +224,11 @@ from backend.app.services.printer_manager import (
 )
 from backend.app.services.smart_plug_manager import smart_plug_manager
 from backend.app.services.spoolman import close_spoolman_client, get_spoolman_client, init_spoolman_client
+from backend.app.services.spoolman_tracking import (
+    cleanup_tracking as _cleanup_spoolman_tracking,
+    report_usage as _report_spoolman_usage,
+    store_print_data as _store_spoolman_print_data,
+)
 from backend.app.services.tasmota import tasmota_service
 
 # Track active prints: {(printer_id, filename): archive_id}
@@ -292,87 +297,6 @@ def register_expected_print(printer_id: int, filename: str, archive_id: int):
 
 _last_status_broadcast: dict[int, str] = {}
 _nozzle_count_updated: set[int] = set()  # Track printers where we've updated nozzle_count
-
-
-async def _report_spoolman_usage(printer_id: int, archive_id: int, logger):
-    """Report filament usage to Spoolman after print completion.
-
-    This finds the spool by RFID tag_uid from current AMS state and reports
-    the filament_used_grams from the archive metadata.
-    """
-    async with async_session() as db:
-        from backend.app.api.routes.settings import get_setting
-        from backend.app.models.archive import PrintArchive
-
-        # Check if Spoolman is enabled
-        spoolman_enabled = await get_setting(db, "spoolman_enabled")
-        if not spoolman_enabled or spoolman_enabled.lower() != "true":
-            return
-
-        # Get Spoolman URL
-        spoolman_url = await get_setting(db, "spoolman_url")
-        if not spoolman_url:
-            return
-
-        # Get or create Spoolman client
-        client = await get_spoolman_client()
-        if not client:
-            client = await init_spoolman_client(spoolman_url)
-
-        # Check if Spoolman is reachable
-        if not await client.health_check():
-            logger.warning("Spoolman not reachable for usage reporting")
-            return
-
-        # Get archive to find filament usage
-        result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-        archive = result.scalar_one_or_none()
-        if not archive or not archive.filament_used_grams:
-            logger.debug(f"No filament usage data for archive {archive_id}")
-            return
-
-        filament_used = archive.filament_used_grams
-        logger.info(f"[SPOOLMAN] Archive {archive_id} used {filament_used}g of filament")
-
-        # Get current AMS state from printer to find the active spool
-        state = printer_manager.get_status(printer_id)
-        if not state or not state.raw_data:
-            logger.debug("No printer state available for usage reporting")
-            return
-
-        ams_data = state.raw_data.get("ams")
-        if not ams_data:
-            logger.debug("No AMS data available for usage reporting")
-            return
-
-        # Find spools with RFID tags in Spoolman and report usage
-        # For now, we report usage to the first spool found with a matching tag
-        # TODO: In future, track which specific trays were used during the print
-        spools_updated = 0
-        for ams_unit in ams_data:
-            trays = ams_unit.get("tray", [])
-
-            for tray_data in trays:
-                tag_uid = tray_data.get("tag_uid")
-                if not tag_uid:
-                    continue
-
-                # Find spool in Spoolman by tag
-                spool = await client.find_spool_by_tag(tag_uid)
-                if spool:
-                    # Report usage to Spoolman
-                    result = await client.use_spool(spool["id"], filament_used)
-                    if result:
-                        logger.info(
-                            f"[SPOOLMAN] Reported {filament_used}g usage to spool {spool['id']} (tag: {tag_uid})"
-                        )
-                        spools_updated += 1
-                        # Only report to one spool for single-material prints
-                        # Multi-material prints would need more sophisticated tracking
-                        return
-
-        if spools_updated == 0:
-            logger.debug(f"No matching Spoolman spools found for printer {printer_id}")
 
 
 async def on_printer_status_change(printer_id: int, state: PrinterState):
@@ -611,6 +535,10 @@ async def on_ams_change(printer_id: int, ams_data: list):
             if sync_mode and sync_mode != "auto":
                 return  # Only sync on auto mode
 
+            # Check if weight sync is disabled
+            disable_weight_sync_str = await get_setting(db, "spoolman_disable_weight_sync")
+            disable_weight_sync = disable_weight_sync_str and disable_weight_sync_str.lower() == "true"
+
             # Get Spoolman URL
             spoolman_url = await get_setting(db, "spoolman_url")
             if not spoolman_url:
@@ -643,7 +571,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
                         continue  # Empty tray
 
                     try:
-                        result = await client.sync_ams_tray(tray, printer_name)
+                        result = await client.sync_ams_tray(tray, printer_name, disable_weight_sync=disable_weight_sync)
                         if result:
                             synced += 1
                     except Exception as e:
@@ -1008,6 +936,12 @@ async def on_print_start(printer_id: int, data: dict):
                 # Extract printable objects from the archived 3MF file
                 _load_objects_from_archive(archive, printer_id, logger)
 
+                # Store Spoolman tracking data for per-filament usage reporting
+                try:
+                    await _store_spoolman_print_data(printer_id, archive.id, archive.file_path, db, printer_manager)
+                except Exception as e:
+                    logger.warning(f"[SPOOLMAN] Failed to store tracking data: {e}")
+
             return  # Skip creating a new archive
 
         # Check if there's already a "printing" archive for this printer/file
@@ -1302,6 +1236,14 @@ async def on_print_start(printer_id: int, data: dict):
                 except Exception:
                     pass  # Don't fail if MQTT fails
 
+                # Store Spoolman tracking data (may not work for fallback since no 3MF)
+                try:
+                    await _store_spoolman_print_data(
+                        printer_id, fallback_archive.id, fallback_archive.file_path, db, printer_manager
+                    )
+                except Exception as e:
+                    logger.debug(f"[SPOOLMAN] Could not store tracking for fallback archive: {e}")
+
                 # Send notification without archive data (file not found)
                 if not notification_sent:
                     await _send_print_start_notification(printer_id, data, logger=logger)
@@ -1413,6 +1355,12 @@ async def on_print_start(printer_id: int, data: dict):
                             logger.info(f"Loaded {len(printable_objects)} printable objects for printer {printer_id}")
                 except Exception as e:
                     logger.debug(f"Failed to extract printable objects: {e}")
+
+                # Store Spoolman tracking data for per-filament usage reporting
+                try:
+                    await _store_spoolman_print_data(printer_id, archive.id, archive.file_path, db, printer_manager)
+                except Exception as e:
+                    logger.warning(f"[SPOOLMAN] Failed to store tracking data: {e}")
         finally:
             if temp_path and temp_path.exists():
                 temp_path.unlink()
@@ -1760,10 +1708,17 @@ async def on_print_complete(printer_id: int, data: dict):
     # Report filament usage to Spoolman if print completed successfully
     if data.get("status") == "completed":
         try:
-            await _report_spoolman_usage(printer_id, archive_id, logger)
+            await _report_spoolman_usage(printer_id, archive_id)
             log_timing("Spoolman usage report")
         except Exception as e:
             logger.warning(f"Spoolman usage reporting failed: {e}")
+    else:
+        # Report partial usage if tracking data exists (only stored when weight sync is disabled)
+        try:
+            async with async_session() as db:
+                await _cleanup_spoolman_tracking(printer_id, archive_id, db)
+        except Exception as e:
+            logger.debug(f"[SPOOLMAN] Cleanup failed: {e}")
 
     # Run slow operations as background tasks to avoid blocking the event loop
     # These operations can take 5-10+ seconds and would freeze the UI if awaited

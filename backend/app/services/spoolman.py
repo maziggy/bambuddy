@@ -662,7 +662,7 @@ class SpoolmanClient:
         """
         return (remain_percent / 100.0) * spool_weight
 
-    async def sync_ams_tray(self, tray: AMSTray, printer_name: str) -> dict | None:
+    async def sync_ams_tray(self, tray: AMSTray, printer_name: str, disable_weight_sync: bool = False) -> dict | None:
         """Sync a single AMS tray to Spoolman.
 
         Only syncs trays with valid Bambu Lab tray_uuid (32 hex characters).
@@ -674,6 +674,8 @@ class SpoolmanClient:
         Args:
             tray: The AMSTray to sync
             printer_name: Name of the printer for location
+            disable_weight_sync: If True, skip updating remaining_weight for existing spools.
+                This allows Spoolman's granular usage tracking to maintain accurate weights.
 
         Returns:
             Synced spool dictionary or None if skipped or failed.
@@ -720,7 +722,7 @@ class SpoolmanClient:
             logger.info(f"Updating existing spool {existing['id']} for tag {spool_tag[:16]}...")
             return await self.update_spool(
                 spool_id=existing["id"],
-                remaining_weight=remaining,
+                remaining_weight=None if disable_weight_sync else remaining,
                 location=location,
             )
 

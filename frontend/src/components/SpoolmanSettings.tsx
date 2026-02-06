@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Check, X, RefreshCw, Link2, Link2Off, Database, ChevronDown, Info, AlertTriangle } from 'lucide-react';
 import { api } from '../api/client';
@@ -7,10 +8,13 @@ import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
 
 export function SpoolmanSettings() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [localEnabled, setLocalEnabled] = useState(false);
   const [localUrl, setLocalUrl] = useState('');
   const [localSyncMode, setLocalSyncMode] = useState('auto');
+  const [localDisableWeightSync, setLocalDisableWeightSync] = useState(false);
+  const [localReportPartialUsage, setLocalReportPartialUsage] = useState(true);
   const [showSaved, setShowSaved] = useState(false);
   const [selectedPrinterId, setSelectedPrinterId] = useState<number | 'all'>('all');
   const [isInitialized, setIsInitialized] = useState(false);
@@ -41,6 +45,8 @@ export function SpoolmanSettings() {
       setLocalEnabled(settings.spoolman_enabled === 'true');
       setLocalUrl(settings.spoolman_url || '');
       setLocalSyncMode(settings.spoolman_sync_mode || 'auto');
+      setLocalDisableWeightSync(settings.spoolman_disable_weight_sync === 'true');
+      setLocalReportPartialUsage(settings.spoolman_report_partial_usage !== 'false');
       setIsInitialized(true);
     }
   }, [settings]);
@@ -53,7 +59,9 @@ export function SpoolmanSettings() {
     const hasChanges =
       (settings.spoolman_enabled === 'true') !== localEnabled ||
       (settings.spoolman_url || '') !== localUrl ||
-      (settings.spoolman_sync_mode || 'auto') !== localSyncMode;
+      (settings.spoolman_sync_mode || 'auto') !== localSyncMode ||
+      (settings.spoolman_disable_weight_sync === 'true') !== localDisableWeightSync ||
+      (settings.spoolman_report_partial_usage !== 'false') !== localReportPartialUsage;
 
     if (hasChanges) {
       const timeoutId = setTimeout(() => {
@@ -62,7 +70,7 @@ export function SpoolmanSettings() {
       return () => clearTimeout(timeoutId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [localEnabled, localUrl, localSyncMode, isInitialized]);
+  }, [localEnabled, localUrl, localSyncMode, localDisableWeightSync, localReportPartialUsage, isInitialized]);
 
   // Save mutation
   const saveMutation = useMutation({
@@ -71,6 +79,8 @@ export function SpoolmanSettings() {
         spoolman_enabled: localEnabled ? 'true' : 'false',
         spoolman_url: localUrl,
         spoolman_sync_mode: localSyncMode,
+        spoolman_disable_weight_sync: localDisableWeightSync ? 'true' : 'false',
+        spoolman_report_partial_usage: localReportPartialUsage ? 'true' : 'false',
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['spoolman-settings'] });
@@ -245,6 +255,50 @@ export function SpoolmanSettings() {
               : 'Only sync when manually triggered'}
           </p>
         </div>
+
+        {/* Disable Weight Sync toggle - only show when sync mode is auto */}
+        {localSyncMode === 'auto' && (
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-white">{t('spoolman.disableWeightSync')}</p>
+              <p className="text-sm text-bambu-gray">
+                {t('spoolman.disableWeightSyncDesc')}
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={localDisableWeightSync}
+                onChange={(e) => setLocalDisableWeightSync(e.target.checked)}
+                disabled={!localEnabled}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+            </label>
+          </div>
+        )}
+
+        {/* Report Partial Usage toggle - only show when weight sync is disabled */}
+        {localDisableWeightSync && (
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-white">{t('spoolman.reportPartialUsage')}</p>
+              <p className="text-sm text-bambu-gray">
+                {t('spoolman.reportPartialUsageDesc')}
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={localReportPartialUsage}
+                onChange={(e) => setLocalReportPartialUsage(e.target.checked)}
+                disabled={!localEnabled}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+            </label>
+          </div>
+        )}
 
         {/* Connection status */}
         {localEnabled && (

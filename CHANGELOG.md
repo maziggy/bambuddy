@@ -3,9 +3,33 @@
 All notable changes to Bambuddy will be documented in this file.
 
 
-## [0.1.8b] - Not released
+## [0.1.8] - Not released
+
+### Security
+- **XML External Entity (XXE) Prevention**:
+  - Replaced `xml.etree.ElementTree` with `defusedxml` across all 3MF parsing code
+  - Prevents XXE attacks through malicious 3MF files
+  - Detected by Bandit B314 security scanner
+- **Path Injection Vulnerabilities Fixed**:
+  - Added path traversal validation to project attachment endpoints
+  - Strengthened filename sanitization in timelapse processing
+  - Prevents directory traversal attacks via `../` sequences
+  - Detected by CodeQL security scanner
+- **Security Scanning in CI/CD**:
+  - Added Bandit (Python security analyzer) with SARIF upload to GitHub Security
+  - Added Trivy (container/IaC scanner) for Docker image and Dockerfile analysis
+  - Added pip-audit and npm-audit for dependency vulnerability scanning
+  - Automatic GitHub issue creation for detected vulnerabilities
+  - Security scan results visible in GitHub Security tab
 
 ### Enhanced
+- **Per-Filament Spoolman Usage Tracking** (PR #277):
+  - Reports exact filament consumption per spool to Spoolman after each print
+  - Parses G-code from 3MF files for layer-by-layer extrusion data (multi-material support)
+  - New setting: "Disable AMS Estimated Weight Sync" to prefer Spoolman usage tracking over AMS weight estimates
+  - New setting: "Report Partial Usage for Failed Prints" estimates filament used up to the failure point based on layer progress
+  - Persists tracking data in SQLite for reliability across restarts
+  - Extracted Spoolman tracking into dedicated service module with DRY helpers
 - **3D Model Viewer Improvements** (PR #262):
   - Added plate selector for multi-plate 3MF files with thumbnail previews
   - Object count display shows number of objects per plate and total
@@ -53,6 +77,31 @@ All notable changes to Bambuddy will be documented in this file.
   - Previously used `find()` which always returned the first match regardless of color
   - Fixed in both backend (print_scheduler.py) and frontend (useFilamentMapping.ts)
   - Resolves wrong tray selection (e.g., A4 instead of B1) when multiple AMS units have same filament type
+- **A1/A1 Mini FTP Upload Failures** (Issue #271):
+  - Fixed FTP uploads hanging/timing out on A1 and A1 Mini printers
+  - Replaced `storbinary()` with manual chunked transfer using `transfercmd()`
+  - A1's FTP server has issues with Python's `storbinary()` waiting for completion response
+  - Uses 1MB chunks with explicit 120s socket timeout for reliable transfers
+  - Works for all printer models (X1C, P1S, P1P, A1, A1 Mini)
+- **P1S/P1P FTP Upload Failures**:
+  - Fixed FTP uploads failing with EOFError on P1S and P1P printers
+  - These printers use vsFTPd which requires SSL session reuse on data channel
+  - Removed P1S/P1P from skip-session-reuse list (they were incorrectly added)
+- **FTP Auto-Detection for A1 Printers**:
+  - Automatically detects working FTP mode (prot_p vs prot_c) for A1/A1 Mini
+  - Tries encrypted data channel first, falls back to clear if needed
+  - Caches working mode per printer IP to avoid repeated detection
+- **Safari Camera Stream Failing**:
+  - Fixed camera streams not loading in Safari due to Service Worker error
+  - Safari has stricter Service Worker scope requirements
+- **Queue Print Time for Multi-Plate Files** (PR #274):
+  - Fixed print time showing total for all plates instead of selected plate
+  - Now extracts per-plate print time from 3MF slice_info.config
+  - Contributed by MisterBeardy
+- **Docker Permissions**:
+  - Added user directive to docker-compose.yml using PUID/PGID environment variables
+  - Allows container to run as host user, fixing permission issues with bind-mounted volumes
+  - Usage: `PUID=$(id -u) PGID=$(id -g) docker compose up -d`
 
 ### Added
 - **Windows Portable Launcher** (contributed by nmori):

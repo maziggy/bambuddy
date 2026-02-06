@@ -3,11 +3,11 @@
 import asyncio
 import json
 import logging
-import xml.etree.ElementTree as ET
 import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import defusedxml.ElementTree as ET
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -74,18 +74,6 @@ class PrintScheduler:
             for item in items:
                 # Check scheduled time first (scheduled_time is stored in UTC from ISO string)
                 if item.scheduled_time and item.scheduled_time > datetime.utcnow():
-                    continue
-
-                # Safety: Skip stale items (older than 24 hours) to prevent phantom reprints
-                # This protects against items that got stuck in "pending" status due to
-                # crashes/restarts after the print already started
-                stale_threshold = timedelta(hours=24)
-                if item.created_at and datetime.utcnow() - item.created_at.replace(tzinfo=None) > stale_threshold:
-                    logger.warning(f"Queue item {item.id} is stale (created {item.created_at}), marking as expired")
-                    item.status = "expired"
-                    item.error_message = "Queue item expired - older than 24 hours"
-                    item.completed_at = datetime.utcnow()
-                    await db.commit()
                     continue
 
                 # Skip items that require manual start

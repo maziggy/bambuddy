@@ -2181,6 +2181,10 @@ export default {
     spoolId: 'Spulen-ID',
     weight: 'Gewicht',
     remaining: 'Verbleibend',
+    disableWeightSync: 'AMS-Gewichtsschätzung deaktivieren',
+    disableWeightSyncDesc: 'Verbleibende Kapazität nicht aus AMS-Schätzungen aktualisieren. Verwenden Sie dies, wenn Sie die Verbrauchserfassung von Spoolman gegenüber den prozentualen AMS-Schätzungen bevorzugen. Neue Spulen verwenden weiterhin die AMS-Schätzung als Anfangsgewicht.',
+    reportPartialUsage: 'Teilverbrauch bei fehlgeschlagenen Drucken melden',
+    reportPartialUsageDesc: 'Wenn ein Druck fehlschlägt oder abgebrochen wird, den geschätzten Filamentverbrauch bis zu diesem Zeitpunkt basierend auf dem Schichtfortschritt melden.',
   },
 
   // Timelapse

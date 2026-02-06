@@ -499,3 +499,209 @@ class TestSpoolmanAPI:
         assert isinstance(data["filaments"], list)
         assert len(data["filaments"]) == 1
         assert data["filaments"][0]["name"] == "PLA Basic"
+
+    # =========================================================================
+    # Disable Weight Sync Tests
+    # =========================================================================
+
+    @pytest.fixture
+    async def spoolman_settings_weight_sync_disabled(self, db_session):
+        """Create Spoolman settings with weight sync disabled."""
+        from backend.app.models.settings import Settings
+
+        enabled_setting = Settings(key="spoolman_enabled", value="true")
+        url_setting = Settings(key="spoolman_url", value="http://localhost:7912")
+        disable_weight_setting = Settings(key="spoolman_disable_weight_sync", value="true")
+        partial_usage_setting = Settings(key="spoolman_report_partial_usage", value="true")
+        db_session.add(enabled_setting)
+        db_session.add(url_setting)
+        db_session.add(disable_weight_setting)
+        db_session.add(partial_usage_setting)
+        await db_session.commit()
+        return {
+            "enabled": enabled_setting,
+            "url": url_setting,
+            "disable_weight": disable_weight_setting,
+            "partial_usage": partial_usage_setting,
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_settings_returns_disable_weight_sync(
+        self, async_client: AsyncClient, spoolman_settings_weight_sync_disabled
+    ):
+        """Verify settings endpoint returns the disable_weight_sync setting."""
+        response = await async_client.get("/api/v1/settings/spoolman")
+        assert response.status_code == 200
+        data = response.json()
+        assert "spoolman_disable_weight_sync" in data
+        assert data["spoolman_disable_weight_sync"] == "true"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_settings_update_disable_weight_sync(self, async_client: AsyncClient, spoolman_settings):
+        """Verify settings endpoint can update the disable_weight_sync setting."""
+        # First verify it's false by default
+        response = await async_client.get("/api/v1/settings/spoolman")
+        assert response.status_code == 200
+        data = response.json()
+        assert data.get("spoolman_disable_weight_sync", "false") == "false"
+
+        # Update the setting
+        response = await async_client.put(
+            "/api/v1/settings/spoolman",
+            json={"spoolman_disable_weight_sync": "true"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["spoolman_disable_weight_sync"] == "true"
+
+        # Verify it persisted
+        response = await async_client.get("/api/v1/settings/spoolman")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["spoolman_disable_weight_sync"] == "true"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_sync_with_weight_sync_disabled_updates_location_only(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings_weight_sync_disabled,
+        mock_spoolman_client,
+        printer_factory,
+    ):
+        """Verify sync only updates location when disable_weight_sync is enabled."""
+        printer = await printer_factory()
+
+        # Mock existing spool
+        mock_existing_spool = {
+            "id": 42,
+            "remaining_weight": 800,
+            "extra": {"tag": '"A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"'},
+            "filament": {"id": 1, "name": "PLA Red", "material": "PLA"},
+        }
+        mock_spoolman_client.find_spool_by_tag = AsyncMock(return_value=mock_existing_spool)
+        mock_spoolman_client.parse_ams_tray = MagicMock()
+
+        # Create mock AMSTray
+        from backend.app.services.spoolman import AMSTray
+
+        mock_tray = AMSTray(
+            ams_id=0,
+            tray_id=0,
+            tray_type="PLA",
+            tray_sub_brands="PLA Basic",
+            tray_color="FF0000FF",
+            remain=50,
+            tag_uid="",
+            tray_uuid="A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4",
+            tray_info_idx="GFA00",
+            tray_weight=1000,
+        )
+        mock_spoolman_client.parse_ams_tray.return_value = mock_tray
+        mock_spoolman_client.is_bambu_lab_spool = MagicMock(return_value=True)
+        mock_spoolman_client.convert_ams_slot_to_location = MagicMock(return_value="AMS A1")
+        mock_spoolman_client.sync_ams_tray = AsyncMock(return_value={"id": 42})
+        mock_spoolman_client.clear_location_for_removed_spools = AsyncMock(return_value=0)
+
+        with patch("backend.app.api.routes.spoolman.printer_manager") as pm_mock:
+            mock_state = MagicMock()
+            mock_state.raw_data = {
+                "ams": [
+                    {
+                        "id": 0,
+                        "tray": [
+                            {
+                                "id": 0,
+                                "tray_type": "PLA",
+                                "tray_sub_brands": "PLA Basic",
+                                "tray_color": "FF0000FF",
+                                "remain": 50,
+                                "tag_uid": "",
+                                "tray_uuid": "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4",
+                                "tray_info_idx": "GFA00",
+                                "tray_weight": 1000,
+                            }
+                        ],
+                    }
+                ]
+            }
+            pm_mock.get_status = MagicMock(return_value=mock_state)
+
+            response = await async_client.post(f"/api/v1/spoolman/sync/{printer.id}")
+            assert response.status_code == 200
+
+            # Verify sync_ams_tray was called with disable_weight_sync=True
+            mock_spoolman_client.sync_ams_tray.assert_called()
+            call_kwargs = mock_spoolman_client.sync_ams_tray.call_args.kwargs
+            assert call_kwargs.get("disable_weight_sync") is True
+
+    # =========================================================================
+    # Report Partial Usage Tests
+    # =========================================================================
+
+    @pytest.fixture
+    async def spoolman_settings_partial_usage_disabled(self, db_session):
+        """Create Spoolman settings with partial usage reporting disabled."""
+        from backend.app.models.settings import Settings
+
+        enabled_setting = Settings(key="spoolman_enabled", value="true")
+        url_setting = Settings(key="spoolman_url", value="http://localhost:7912")
+        partial_usage_setting = Settings(key="spoolman_report_partial_usage", value="false")
+        db_session.add(enabled_setting)
+        db_session.add(url_setting)
+        db_session.add(partial_usage_setting)
+        await db_session.commit()
+        return {
+            "enabled": enabled_setting,
+            "url": url_setting,
+            "partial_usage": partial_usage_setting,
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_settings_returns_report_partial_usage(
+        self, async_client: AsyncClient, spoolman_settings_partial_usage_disabled
+    ):
+        """Verify settings endpoint returns the report_partial_usage setting."""
+        response = await async_client.get("/api/v1/settings/spoolman")
+        assert response.status_code == 200
+        data = response.json()
+        assert "spoolman_report_partial_usage" in data
+        assert data["spoolman_report_partial_usage"] == "false"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_settings_update_report_partial_usage(self, async_client: AsyncClient, spoolman_settings):
+        """Verify settings endpoint can update the report_partial_usage setting."""
+        # First verify it's true by default
+        response = await async_client.get("/api/v1/settings/spoolman")
+        assert response.status_code == 200
+        data = response.json()
+        assert data.get("spoolman_report_partial_usage", "true") == "true"
+
+        # Update the setting to false
+        response = await async_client.put(
+            "/api/v1/settings/spoolman",
+            json={"spoolman_report_partial_usage": "false"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["spoolman_report_partial_usage"] == "false"
+
+        # Verify it persisted
+        response = await async_client.get("/api/v1/settings/spoolman")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["spoolman_report_partial_usage"] == "false"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_settings_report_partial_usage_defaults_to_true(self, async_client: AsyncClient, spoolman_settings):
+        """Verify report_partial_usage defaults to true (unlike disable_weight_sync which defaults to false)."""
+        response = await async_client.get("/api/v1/settings/spoolman")
+        assert response.status_code == 200
+        data = response.json()
+        # Should default to "true"
+        assert data["spoolman_report_partial_usage"] == "true"

@@ -79,6 +79,7 @@ jobs:
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM'
+          version: 'v0.69.1'
 
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
@@ -95,6 +96,7 @@ jobs:
           format: 'sarif'
           output: 'trivy-config-results.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM'
+          version: 'v0.69.1'
 
       - name: Upload Trivy config results
         uses: github/codeql-action/upload-sarif@v4

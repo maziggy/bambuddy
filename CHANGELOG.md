@@ -3,7 +3,7 @@
 All notable changes to Bambuddy will be documented in this file.
 
 
-## [0.1.8] - Not released
+## [0.1.8] - 2026-02-06
 
 ### Security
 - **XML External Entity (XXE) Prevention**:
@@ -44,7 +44,7 @@ All notable changes to Bambuddy will be documented in this file.
   - `test_security.sh` uses `--threads=0` for all CodeQL commands (auto-detects CPU cores)
   - Added `.trivyignore` to suppress accepted Dockerfile USER directive finding
 
-### Enhanced
+### Enhancements
 - **Per-Filament Spoolman Usage Tracking** (PR #277):
   - Reports exact filament consumption per spool to Spoolman after each print
   - Parses G-code from 3MF files for layer-by-layer extrusion data (multi-material support)

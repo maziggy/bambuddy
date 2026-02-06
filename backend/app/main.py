@@ -495,8 +495,6 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
 
 async def on_ams_change(printer_id: int, ams_data: list):
     """Handle AMS data changes - sync to Spoolman if enabled and auto mode."""
-    import logging
-
     logger = logging.getLogger(__name__)
 
     # MQTT relay - publish AMS change
@@ -581,8 +579,6 @@ async def on_ams_change(printer_id: int, ams_data: list):
                 logger.info("Auto-synced %s AMS trays to Spoolman for printer %s", synced, printer_id)
 
     except Exception as e:
-        import logging
-
         logging.getLogger(__name__).warning(f"Spoolman AMS sync failed: {e}")
 
 
@@ -651,8 +647,6 @@ async def _send_print_start_notification(
 ):
     """Helper to send print start notification with optional archive data."""
     if logger is None:
-        import logging
-
         logger = logging.getLogger(__name__)
 
     try:
@@ -699,8 +693,6 @@ def _load_objects_from_archive(archive, printer_id: int, logger) -> None:
 
 async def on_print_start(printer_id: int, data: dict):
     """Handle print start - archive the 3MF file immediately."""
-    import logging
-
     logger = logging.getLogger(__name__)
 
     logger.info("[CALLBACK] on_print_start called for printer %s, data keys: %s", printer_id, list(data.keys()))
@@ -1378,8 +1370,6 @@ async def _scan_for_timelapse_with_retries(archive_id: int):
     Since we KNOW timelapse was active (from MQTT ipcam data), the most recent
     file in /timelapse is our target. Retries handle FTP connection issues.
     """
-    import logging
-
     logger = logging.getLogger(__name__)
 
     # Short delays - printer usually finishes encoding within seconds
@@ -1487,7 +1477,6 @@ async def _scan_for_timelapse_with_retries(archive_id: int):
 
 async def on_print_complete(printer_id: int, data: dict):
     """Handle print completion - update the archive status."""
-    import logging
     import time
 
     logger = logging.getLogger(__name__)
@@ -2141,8 +2130,6 @@ async def on_print_complete(printer_id: int, data: dict):
 
                         asyncio.create_task(cooldown_and_poweroff(printer_id, plug.id))
     except Exception as e:
-        import logging
-
         logging.getLogger(__name__).warning(f"Queue item update failed: {e}")
 
     log_timing("Queue item update")
@@ -2160,8 +2147,6 @@ AMS_ALARM_COOLDOWN_MINUTES = 60  # Don't send same alarm more than once per hour
 
 async def record_ams_history():
     """Background task to record AMS humidity and temperature data."""
-    import logging
-
     logger = logging.getLogger(__name__)
 
     # Wait a short time for MQTT connections to establish on startup
@@ -2367,8 +2352,6 @@ RUNTIME_TRACKING_INTERVAL = 30  # Update every 30 seconds
 
 async def track_printer_runtime():
     """Background task to track printer active runtime (RUNNING/PAUSE states)."""
-    import logging
-
     logger = logging.getLogger(__name__)
 
     # Wait for MQTT connections to establish on startup

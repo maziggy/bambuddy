@@ -171,8 +171,6 @@ class ThreeMFParser:
 
     def _parse_gcode_header(self, zf: zipfile.ZipFile):
         """Parse G-code file header for total layer count and printer model."""
-        import re
-
         try:
             # Look for plate_1.gcode or similar
             gcode_files = [f for f in zf.namelist() if f.endswith(".gcode")]
@@ -315,8 +313,6 @@ class ThreeMFParser:
 
     def _parse_3dmodel(self, zf: zipfile.ZipFile):
         """Parse 3D/3dmodel.model for MakerWorld metadata."""
-        import re
-
         try:
             model_path = "3D/3dmodel.model"
             if model_path not in zf.namelist():
@@ -404,7 +400,6 @@ def extract_printable_objects_from_3mf(
         If include_positions=False: Dictionary mapping identify_id (int) to object name (str)
         If include_positions=True: Tuple of (dict mapping identify_id to {name, x, y}, bbox_all list or None)
     """
-    import json
     from io import BytesIO
 
     printable_objects: dict = {}
@@ -500,7 +495,6 @@ class ProjectPageParser:
     def parse(self, archive_id: int) -> dict:
         """Extract project page metadata and images from 3MF file."""
         import html
-        import re
 
         result = {
             "title": None,
@@ -643,7 +637,6 @@ class ProjectPageParser:
             True if successful, False otherwise.
         """
         import html
-        import re
         import tempfile
 
         try:

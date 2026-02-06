@@ -851,7 +851,6 @@ async def extract_zip_file(
         generate_stl_thumbnails: If True, generate thumbnails for STL files
     """
     import tempfile
-    import zipfile
 
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="Only ZIP files are supported")
@@ -1313,8 +1312,6 @@ async def get_library_file_plates(
     and filament requirements. For single-plate exports, returns a single plate.
     """
     import json
-    import re
-    import zipfile
 
     import defusedxml.ElementTree as ET
 
@@ -1574,8 +1571,6 @@ async def get_library_file_plate_thumbnail(
     db: AsyncSession = Depends(get_db),
 ):
     """Get the thumbnail image for a specific plate from a library file."""
-    import zipfile
-
     from starlette.responses import Response
 
     result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
@@ -1616,8 +1611,6 @@ async def get_library_file_filament_requirements(
         file_id: The library file ID
         plate_id: Optional plate index to get filaments for a specific plate
     """
-    import zipfile
-
     import defusedxml.ElementTree as ET
 
     # Get the library file
@@ -1746,8 +1739,6 @@ async def print_library_file(
 
     Only sliced files (.gcode or .gcode.3mf) can be printed.
     """
-    import zipfile
-
     from backend.app.main import register_expected_print
     from backend.app.models.printer import Printer
     from backend.app.services.bambu_ftp import (
@@ -2188,8 +2179,6 @@ async def get_gcode(
         return FastAPIFileResponse(str(abs_path), media_type="text/plain")
     elif file.file_type == "3mf":
         # Extract gcode from 3mf
-        import zipfile
-
         try:
             with zipfile.ZipFile(str(abs_path), "r") as zf:
                 # Find gcode file

@@ -852,7 +852,6 @@ async def get_printer_file_plates(
     """Get available plates from a multi-plate 3MF file stored on a printer."""
     import io
     import json
-    import zipfile
 
     import defusedxml.ElementTree as ET
 
@@ -1097,7 +1096,6 @@ async def get_printer_file_plate_thumbnail(
 ):
     """Get a plate thumbnail image from a printer-stored 3MF file."""
     import io
-    import zipfile
 
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
@@ -1594,8 +1592,6 @@ async def configure_ams_slot(
         kprofile_filament_id: K profile's filament_id for proper K profile linking
         k_value: Direct K value to set (0.0 to skip direct K value setting)
     """
-    import logging
-
     logger = logging.getLogger(__name__)
     logger.info("[configure_ams_slot] printer_id=%s, ams_id=%s, tray_id=%s", printer_id, ams_id, tray_id)
     logger.info(

@@ -435,7 +435,6 @@ class TestLibraryZipExtractAPI:
     async def test_extract_zip_basic(self, async_client: AsyncClient, db_session):
         """Verify basic ZIP extraction works."""
         import io
-        import zipfile
 
         # Create a simple ZIP file in memory
         zip_buffer = io.BytesIO()
@@ -457,7 +456,6 @@ class TestLibraryZipExtractAPI:
     async def test_extract_zip_with_folders(self, async_client: AsyncClient, db_session):
         """Verify ZIP extraction preserves folder structure."""
         import io
-        import zipfile
 
         # Create a ZIP file with folder structure
         zip_buffer = io.BytesIO()
@@ -480,7 +478,6 @@ class TestLibraryZipExtractAPI:
     async def test_extract_zip_flat(self, async_client: AsyncClient, db_session):
         """Verify ZIP extraction can extract flat (no folders)."""
         import io
-        import zipfile
 
         # Create a ZIP file with folder structure
         zip_buffer = io.BytesIO()
@@ -502,7 +499,6 @@ class TestLibraryZipExtractAPI:
     async def test_extract_zip_skips_macos_files(self, async_client: AsyncClient, db_session):
         """Verify ZIP extraction skips __MACOSX and hidden files."""
         import io
-        import zipfile
 
         # Create a ZIP file with macOS junk files
         zip_buffer = io.BytesIO()
@@ -524,7 +520,6 @@ class TestLibraryZipExtractAPI:
     async def test_extract_zip_create_folder_from_zip(self, async_client: AsyncClient, db_session):
         """Verify ZIP extraction creates a folder from the ZIP filename."""
         import io
-        import zipfile
 
         # Create a ZIP file with some files
         zip_buffer = io.BytesIO()

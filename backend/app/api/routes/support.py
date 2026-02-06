@@ -413,8 +413,6 @@ async def _collect_support_info() -> dict:
 
 def _sanitize_log_content(content: str) -> str:
     """Remove sensitive data from log content."""
-    import re
-
     # Replace IP addresses with [IP]
     content = re.sub(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b", "[IP]", content)
 

@@ -2638,6 +2638,7 @@ export default {
     skipForward: '5秒進む',
     refreshStream: 'ストリームを更新',
     dragToResize: 'ドラッグしてリサイズ',
+    chamberLight: 'チャンバーライト切替',
   },
 
   // アーカイブカードラベル

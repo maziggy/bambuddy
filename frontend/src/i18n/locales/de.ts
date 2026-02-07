@@ -1506,6 +1506,7 @@ export default {
     recording: 'Aufnahme',
     startRecording: 'Aufnahme starten',
     stopRecording: 'Aufnahme stoppen',
+    chamberLight: 'Kammerbeleuchtung umschalten',
   },
 
   // Groups management

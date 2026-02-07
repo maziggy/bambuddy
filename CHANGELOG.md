@@ -4,6 +4,17 @@ All notable changes to Bambuddy will be documented in this file.
 
 ## [0.1.9b] - Not released
 
+### Testing
+- **Mock FTPS Server & Comprehensive FTP Test Suite** — Added 67 automated test cases against a real implicit FTPS mock server, covering every known FTP failure mode from 0.1.8+:
+  - Mock server (`mock_ftp_server.py`) implements implicit TLS, custom AVBL command, and per-command failure injection
+  - Connection tests: auth, SSL modes (prot_p/prot_c), timeout, cache, disconnect edge cases
+  - Upload tests: chunked transfer via `transfercmd()`, progress callbacks, 553/550/552 error handling
+  - Download tests: bytes, to-file, 0-byte regression, large files, missing file cleanup
+  - Model-specific tests: X1C session reuse, A1/A1 Mini prot_c fallback, P1S, unknown model defaults
+  - Async wrapper tests: upload/download/list/delete with A1 fallback and multi-path download
+  - Failure injection tests: regressions for `error_perm` hierarchy, `diagnose_storage` CWD propagation, injection count decrement
+  - Added `pyOpenSSL` to `requirements-dev.txt` for Docker test image compatibility
+
 ## [0.1.8.1] - 2026-02-07
 
 ### Fixed

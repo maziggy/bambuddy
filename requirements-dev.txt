@@ -6,6 +6,9 @@ pytest-xdist>=3.5.0
 httpx>=0.27.0
 ruff>=0.8.0
 
+# Required by pyftpdlib TLS_FTPHandler for mock FTP server tests
+pyOpenSSL>=24.0.0
+
 # Security scanning
 bandit[sarif]>=1.7.0
 pip-audit>=2.7.0

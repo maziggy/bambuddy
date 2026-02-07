@@ -515,12 +515,6 @@ class FTPTLSProxy(TLSProxy):
 
                     cmd_upper = line.strip().upper()
 
-                    # Log all FTP commands from slicer
-                    try:
-                        logger.info("FTP cmd  >>> %s", line.decode("utf-8", errors="replace"))
-                    except Exception:
-                        pass
-
                     # Replace EPSV with PASV so response includes an IP
                     if cmd_upper == b"EPSV":
                         line = b"PASV"
@@ -592,12 +586,6 @@ class FTPTLSProxy(TLSProxy):
                     idx = buffer.index(b"\r\n")
                     line = buffer[:idx]
                     buffer = buffer[idx + 2 :]
-
-                    # Log all FTP responses from printer
-                    try:
-                        logger.info("FTP resp <<< %s", line.decode("utf-8", errors="replace"))
-                    except Exception:
-                        pass
 
                     rewritten = await self._maybe_rewrite_pasv(line, local_ip, session_state)
                     output += rewritten + b"\r\n"

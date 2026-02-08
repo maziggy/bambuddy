@@ -9,6 +9,8 @@ Thank you for your interest in contributing to Bambuddy! This document provides 
 - [Development Setup](#development-setup)
 - [Making Changes](#making-changes)
 - [Code Style](#code-style)
+- [Internationalization (i18n)](#internationalization-i18n)
+- [Authentication & Permissions](#authentication--permissions)
 - [Testing](#testing)
 - [CI Pipeline](#ci-pipeline)
 - [Submitting Changes](#submitting-changes)
@@ -151,6 +153,98 @@ Pre-commit hooks run automatically on `git commit` and include Ruff linting/form
 ```bash
 pre-commit run --all-files
 ```
+
+## Internationalization (i18n)
+
+The frontend uses [react-i18next](https://react.i18next.com/) for all user-facing text. **Never hardcode user-visible strings** — always use translation keys.
+
+### Locale Files
+
+Translations live in `frontend/src/i18n/locales/`:
+
+| File | Language |
+|------|----------|
+| `en.ts` | English (primary) |
+| `de.ts` | German |
+| `ja.ts` | Japanese |
+
+### Adding New Strings
+
+1. Add the key to the appropriate section in **all three** locale files
+2. Use the `useTranslation` hook in your component:
+
+```tsx
+import { useTranslation } from 'react-i18next';
+
+function MyComponent() {
+  const { t } = useTranslation();
+  return <span>{t('section.myNewKey')}</span>;
+}
+```
+
+3. Keys are organized by feature (e.g., `spoolman.`, `nav.`, `common.`)
+
+### Important Notes
+
+- All three locale files must use the **same key structure** — same nesting, same key paths
+- Always add keys to all three locales to maintain parity
+- Run frontend tests after changes — locale parity is validated
+- If you find structural inconsistencies between locales, fix them — different key paths cause silent fallback to English
+
+## Authentication & Permissions
+
+Bambuddy has an optional authentication system. When auth is enabled, API endpoints are protected by granular permissions.
+
+### How It Works
+
+Authentication is **opt-in** — when disabled, all endpoints are open. The system uses `RequirePermissionIfAuthEnabled` which:
+
+- Checks if auth is enabled in settings
+- If disabled: allows the request through (no-op)
+- If enabled: validates JWT token/API key and checks the user has the required permission
+
+### Adding Auth to New Endpoints
+
+Use the `RequirePermissionIfAuthEnabled` dependency in your route:
+
+```python
+from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.permissions import Permission
+
+@router.get("/my-resource")
+async def get_my_resource(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.RESOURCE_READ),
+):
+    ...
+```
+
+### Permission Convention
+
+Permissions follow the `resource:action` pattern (e.g., `filaments:read`, `printers:control`). Standard actions:
+
+| Action | Usage |
+|--------|-------|
+| `read` | View/list resources |
+| `create` | Create new resources |
+| `update` | Modify existing resources |
+| `delete` | Remove resources |
+
+Some resources have additional actions (e.g., `printers:control` for start/stop, `printers:files` for file transfer).
+
+### Adding New Permissions
+
+1. Add the permission to the `Permission` enum in `backend/app/core/permissions.py`
+2. Add it to the appropriate category in `PERMISSION_CATEGORIES`
+3. Add it to the relevant default groups (`Administrators` gets all, `Operators` and `Viewers` as appropriate)
+4. Use it in your route with `RequirePermissionIfAuthEnabled`
+
+### Default Groups
+
+| Group | Access Level |
+|-------|-------------|
+| **Administrators** | All permissions |
+| **Operators** | Full control of printers, own items in archives/queue, read-only settings |
+| **Viewers** | Read-only access to all resources |
 
 ## Testing
 

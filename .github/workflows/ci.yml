@@ -291,6 +291,13 @@ jobs:
           echo "Static files HTTP status: $STATUS"
           [ "$STATUS" = "200" ]
 
+      # Test 5: Integration Test Suite (pytest)
+      - name: Build integration test runner
+        run: docker compose -f docker-compose.test.yml build integration-test-runner
+
+      - name: Run integration test suite
+        run: docker compose -f docker-compose.test.yml run --rm integration-test-runner
+
       - name: Show logs on failure
         if: failure()
         run: docker compose -f docker-compose.test.yml logs

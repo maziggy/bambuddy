@@ -504,6 +504,7 @@ class VirtualPrinterFTPServer:
         self._ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         self._ssl_context.load_cert_chain(str(self.cert_path), str(self.key_path))
         self._ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
+        self._ssl_context.maximum_version = ssl.TLSVersion.TLSv1_2
 
         # Use standard TLS settings for compatibility
         self._ssl_context.set_ciphers("HIGH:!aNULL:!MD5:!RC4")

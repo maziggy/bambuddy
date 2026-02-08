@@ -8,15 +8,12 @@ import smtplib
 import string
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.settings import Settings
-
-if TYPE_CHECKING:
-    from backend.app.schemas.auth import SMTPSettings
+from backend.app.schemas.auth import SMTPSettings
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +62,6 @@ async def get_smtp_settings(db: AsyncSession) -> SMTPSettings | None:
     Returns:
         SMTPSettings object or None if not configured
     """
-    from backend.app.schemas.auth import SMTPSettings
-    
     # Fetch all SMTP-related settings
     result = await db.execute(
         select(Settings).where(

@@ -32,7 +32,7 @@ export function EmailSettings() {
   });
 
   // Fetch advanced auth status
-  const { data: advancedAuthStatus, refetch: refetchAuthStatus } = useQuery({
+  const { data: advancedAuthStatus } = useQuery({
     queryKey: ['advancedAuthStatus'],
     queryFn: () => api.getAdvancedAuthStatus(),
   });

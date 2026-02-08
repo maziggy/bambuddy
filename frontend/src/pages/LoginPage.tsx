@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { HelpCircle, X, Mail } from 'lucide-react';
+import { X, Mail } from 'lucide-react';
 import { api } from '../api/client';
 
 export function LoginPage() {

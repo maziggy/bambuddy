@@ -25,9 +25,24 @@ class TestDiscoveryAPI:
         assert "is_docker" in data
         assert "ssdp_running" in data
         assert "scan_running" in data
+        assert "subnets" in data
         assert isinstance(data["is_docker"], bool)
         assert isinstance(data["ssdp_running"], bool)
         assert isinstance(data["scan_running"], bool)
+        assert isinstance(data["subnets"], list)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_discovery_info_subnets_are_cidr(self, async_client: AsyncClient):
+        """Verify subnets are valid CIDR notation strings."""
+        response = await async_client.get("/api/v1/discovery/info")
+
+        assert response.status_code == 200
+        data = response.json()
+        for subnet in data["subnets"]:
+            assert isinstance(subnet, str)
+            # Should contain a slash for CIDR notation
+            assert "/" in subnet, f"Subnet {subnet} is not in CIDR notation"
 
     # ========================================================================
     # SSDP Discovery endpoints
@@ -140,3 +155,14 @@ class TestDiscoveryService:
         assert response1.status_code == 200
         assert response2.status_code == 200
         assert response1.json()["is_docker"] == response2.json()["is_docker"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_subnets_consistent_across_calls(self, async_client: AsyncClient):
+        """Verify subnet detection returns consistent results."""
+        response1 = await async_client.get("/api/v1/discovery/info")
+        response2 = await async_client.get("/api/v1/discovery/info")
+
+        assert response1.status_code == 200
+        assert response2.status_code == 200
+        assert response1.json()["subnets"] == response2.json()["subnets"]

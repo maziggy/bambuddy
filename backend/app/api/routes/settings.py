@@ -101,6 +101,10 @@ async def get_settings(
             else:
                 settings_dict[setting.key] = setting.value
 
+    # Get Home Assistant settings (with environment variable overrides)
+    ha_settings = await get_homeassistant_settings(db)
+    settings_dict.update(ha_settings)
+
     return AppSettings(**settings_dict)
 
 
@@ -245,6 +249,43 @@ async def update_spoolman_settings(
 
     # Return updated settings
     return await get_spoolman_settings(db)
+
+
+async def get_homeassistant_settings(db: AsyncSession) -> dict:
+    """
+    Get Home Assistant integration settings.
+    Environment variables (HA_URL, HA_TOKEN) take precedence over database settings.
+    """
+    import os
+
+    # Check environment variables first
+    ha_url_env = os.environ.get("HA_URL")
+    ha_token_env = os.environ.get("HA_TOKEN")
+
+    # Fall back to database values
+    ha_url = ha_url_env or await get_setting(db, "ha_url") or ""
+    ha_token = ha_token_env or await get_setting(db, "ha_token") or ""
+    ha_enabled_db = await get_setting(db, "ha_enabled") or "false"
+
+    # Track which settings come from environment
+    ha_url_from_env = bool(ha_url_env)
+    ha_token_from_env = bool(ha_token_env)
+    ha_env_managed = ha_url_from_env and ha_token_from_env
+
+    # Auto-enable when both env vars are set, otherwise use database value
+    if ha_url_env and ha_token_env:
+        ha_enabled = True
+    else:
+        ha_enabled = ha_enabled_db.lower() == "true"
+
+    return {
+        "ha_enabled": ha_enabled,
+        "ha_url": ha_url,
+        "ha_token": ha_token,
+        "ha_url_from_env": ha_url_from_env,
+        "ha_token_from_env": ha_token_from_env,
+        "ha_env_managed": ha_env_managed,
+    }
 
 
 @router.get("/backup")

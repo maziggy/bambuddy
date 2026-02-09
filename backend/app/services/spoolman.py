@@ -1,5 +1,6 @@
 """Spoolman integration service for syncing AMS filament data."""
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -68,9 +69,22 @@ class SpoolmanClient:
         self._connected = False
 
     async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create the HTTP client."""
+        """Get or create the HTTP client with connection pooling limits.
+
+        Configures the client to prevent idle connection issues:
+        - max_keepalive_connections=5: Limit number of persistent connections
+        - keepalive_expiry=30: Close idle connections after 30 seconds
+        - max_connections=10: Limit total connections to prevent resource exhaustion
+        """
         if self._client is None:
-            self._client = httpx.AsyncClient(timeout=10.0)
+            self._client = httpx.AsyncClient(
+                timeout=10.0,
+                limits=httpx.Limits(
+                    max_keepalive_connections=5,
+                    max_connections=10,
+                    keepalive_expiry=30.0,
+                ),
+            )
         return self._client
 
     async def close(self):
@@ -101,19 +115,59 @@ class SpoolmanClient:
         return self._connected
 
     async def get_spools(self) -> list[dict]:
-        """Get all spools from Spoolman.
+        """Get all spools from Spoolman with retry logic.
+
+        Attempts to fetch spools up to 3 times with 500ms delay between attempts.
+        This handles transient network errors like closed connections.
 
         Returns:
             List of spool dictionaries.
+
+        Raises:
+            Exception: If all 3 retry attempts fail.
         """
-        try:
-            client = await self._get_client()
-            response = await client.get(f"{self.api_url}/spool")
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logger.error("Failed to get spools from Spoolman: %s", e)
-            return []
+        max_attempts = 3
+        retry_delay = 0.5  # 500ms
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                client = await self._get_client()
+                response = await client.get(f"{self.api_url}/spool")
+                response.raise_for_status()
+                spools = response.json()
+                if attempt > 1:
+                    logger.info("Successfully fetched %d spools on attempt %d", len(spools), attempt)
+                return spools
+            except (httpx.ReadError, httpx.RemoteProtocolError, httpx.ConnectError) as e:
+                # Connection-related errors - close and recreate client for next attempt
+                if attempt < max_attempts:
+                    logger.warning(
+                        "Connection error getting spools (attempt %d/%d): %s. Recreating client and retrying in %dms...",
+                        attempt,
+                        max_attempts,
+                        e,
+                        int(retry_delay * 1000),
+                    )
+                    # Close the stale client and recreate it
+                    await self.close()
+                    await asyncio.sleep(retry_delay)
+                else:
+                    logger.error("Failed to get spools from Spoolman after %d attempts: %s", max_attempts, e)
+                    raise
+            except Exception as e:
+                # Other errors (HTTP errors, JSON decode errors, etc.)
+                if attempt < max_attempts:
+                    logger.warning(
+                        "Failed to get spools from Spoolman (attempt %d/%d): %s. Retrying in %dms...",
+                        attempt,
+                        max_attempts,
+                        e,
+                        int(retry_delay * 1000),
+                    )
+                    await asyncio.sleep(retry_delay)
+                else:
+                    logger.error("Failed to get spools from Spoolman after %d attempts: %s", max_attempts, e)
+                    raise
 
     async def get_filaments(self) -> list[dict]:
         """Get all internal filaments from Spoolman.
@@ -387,16 +441,18 @@ class SpoolmanClient:
             logger.error("Failed to record spool usage in Spoolman: %s", e)
             return None
 
-    async def find_spool_by_tag(self, tag_uid: str) -> dict | None:
+    async def find_spool_by_tag(self, tag_uid: str, cached_spools: list[dict] | None = None) -> dict | None:
         """Find a spool by its RFID tag UID.
 
         Args:
             tag_uid: The RFID tag UID to search for
+            cached_spools: Optional pre-fetched list of spools to search (avoids API call)
 
         Returns:
             Spool dictionary or None if not found.
         """
-        spools = await self.get_spools()
+        # Use cached spools if provided, otherwise fetch from API
+        spools = cached_spools if cached_spools is not None else await self.get_spools()
         # Normalize tag_uid for comparison (uppercase, strip quotes)
         search_tag = tag_uid.strip('"').upper()
 
@@ -412,16 +468,20 @@ class SpoolmanClient:
                         return spool
         return None
 
-    async def find_spools_by_location_prefix(self, location_prefix: str) -> list[dict]:
+    async def find_spools_by_location_prefix(
+        self, location_prefix: str, cached_spools: list[dict] | None = None
+    ) -> list[dict]:
         """Find all spools with locations starting with a given prefix.
 
         Args:
             location_prefix: The location prefix to search for (e.g., "PrinterName - ")
+            cached_spools: Optional pre-fetched list of spools to search (avoids API call)
 
         Returns:
             List of spool dictionaries with matching locations.
         """
-        spools = await self.get_spools()
+        # Use cached spools if provided, otherwise fetch from API
+        spools = cached_spools if cached_spools is not None else await self.get_spools()
         matching = []
         for spool in spools:
             location = spool.get("location", "")
@@ -433,6 +493,7 @@ class SpoolmanClient:
         self,
         printer_name: str,
         current_tray_uuids: set[str],
+        cached_spools: list[dict] | None = None,
     ) -> int:
         """Clear location for spools that are no longer in the AMS.
 
@@ -443,12 +504,13 @@ class SpoolmanClient:
         Args:
             printer_name: The printer name used as location prefix
             current_tray_uuids: Set of tray_uuids currently in the AMS
+            cached_spools: Optional pre-fetched list of spools to search (avoids API call)
 
         Returns:
             Number of spools whose location was cleared.
         """
         location_prefix = f"{printer_name} - "
-        spools_at_printer = await self.find_spools_by_location_prefix(location_prefix)
+        spools_at_printer = await self.find_spools_by_location_prefix(location_prefix, cached_spools=cached_spools)
         cleared_count = 0
 
         for spool in spools_at_printer:
@@ -662,7 +724,13 @@ class SpoolmanClient:
         """
         return (remain_percent / 100.0) * spool_weight
 
-    async def sync_ams_tray(self, tray: AMSTray, printer_name: str, disable_weight_sync: bool = False) -> dict | None:
+    async def sync_ams_tray(
+        self,
+        tray: AMSTray,
+        printer_name: str,
+        disable_weight_sync: bool = False,
+        cached_spools: list[dict] | None = None,
+    ) -> dict | None:
         """Sync a single AMS tray to Spoolman.
 
         Only syncs trays with valid Bambu Lab tray_uuid (32 hex characters).
@@ -676,6 +744,9 @@ class SpoolmanClient:
             printer_name: Name of the printer for location
             disable_weight_sync: If True, skip updating remaining_weight for existing spools.
                 This allows Spoolman's granular usage tracking to maintain accurate weights.
+            cached_spools: Optional pre-fetched list of spools to search (avoids API calls).
+                When provided, this cache is passed to find_spool_by_tag to avoid redundant
+                API calls during batch sync operations.
 
         Returns:
             Synced spool dictionary or None if skipped or failed.
@@ -716,7 +787,7 @@ class SpoolmanClient:
         location = f"{printer_name} - {self.convert_ams_slot_to_location(tray.ams_id, tray.tray_id)}"
 
         # Find existing spool by tag (tray_uuid or tag_uid, stored as "tag" in Spoolman)
-        existing = await self.find_spool_by_tag(spool_tag)
+        existing = await self.find_spool_by_tag(spool_tag, cached_spools=cached_spools)
         if existing:
             # Update existing spool
             logger.info("Updating existing spool %s for tag %s...", existing["id"], spool_tag[:16])

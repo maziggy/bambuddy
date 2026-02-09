@@ -3,6 +3,8 @@
 Tests the full request/response cycle for /api/v1/settings/ endpoints.
 """
 
+import os
+
 import pytest
 from httpx import AsyncClient
 
@@ -392,6 +394,252 @@ class TestSettingsAPI:
         assert "per_printer_mapping_expanded" in result
         # Default is False as defined in schema
         assert isinstance(result["per_printer_mapping_expanded"], bool)
+
+    # ========================================================================
+    # Home Assistant environment variable tests
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_ha_settings_default_no_env_vars(self, async_client: AsyncClient):
+        """Verify HA settings work without environment variables (default behavior)."""
+        # Ensure no env vars are set
+        os.environ.pop("HA_URL", None)
+        os.environ.pop("HA_TOKEN", None)
+
+        response = await async_client.get("/api/v1/settings/")
+        result = response.json()
+
+        assert response.status_code == 200
+        assert "ha_enabled" in result
+        assert "ha_url" in result
+        assert "ha_token" in result
+        assert "ha_url_from_env" in result
+        assert "ha_token_from_env" in result
+        assert "ha_env_managed" in result
+
+        # Default values without env vars
+        assert result["ha_url_from_env"] is False
+        assert result["ha_token_from_env"] is False
+        assert result["ha_env_managed"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_ha_settings_with_both_env_vars(self, async_client: AsyncClient):
+        """Verify HA settings are overridden when both env vars are set."""
+        # Set environment variables
+        os.environ["HA_URL"] = "http://supervisor/core"
+        os.environ["HA_TOKEN"] = "test-token-12345"
+
+        try:
+            response = await async_client.get("/api/v1/settings/")
+            result = response.json()
+
+            assert response.status_code == 200
+
+            # Verify env var values are used
+            assert result["ha_url"] == "http://supervisor/core"
+            assert result["ha_token"] == "test-token-12345"
+
+            # Verify metadata fields
+            assert result["ha_url_from_env"] is True
+            assert result["ha_token_from_env"] is True
+            assert result["ha_env_managed"] is True
+
+            # Verify auto-enable behavior
+            assert result["ha_enabled"] is True
+
+        finally:
+            # Clean up
+            os.environ.pop("HA_URL", None)
+            os.environ.pop("HA_TOKEN", None)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_ha_settings_with_only_url_env_var(self, async_client: AsyncClient):
+        """Verify partial configuration when only HA_URL is set."""
+        # Set only URL env var
+        os.environ["HA_URL"] = "http://supervisor/core"
+        os.environ.pop("HA_TOKEN", None)
+
+        try:
+            response = await async_client.get("/api/v1/settings/")
+            result = response.json()
+
+            assert response.status_code == 200
+
+            # Verify URL is from env, token is from database
+            assert result["ha_url"] == "http://supervisor/core"
+            assert result["ha_url_from_env"] is True
+            assert result["ha_token_from_env"] is False
+            assert result["ha_env_managed"] is False
+
+            # No auto-enable with partial config
+            assert result["ha_enabled"] is False  # Database default
+
+        finally:
+            os.environ.pop("HA_URL", None)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_ha_settings_with_only_token_env_var(self, async_client: AsyncClient):
+        """Verify partial configuration when only HA_TOKEN is set."""
+        # Set only token env var
+        os.environ.pop("HA_URL", None)
+        os.environ["HA_TOKEN"] = "test-token-12345"
+
+        try:
+            response = await async_client.get("/api/v1/settings/")
+            result = response.json()
+
+            assert response.status_code == 200
+
+            # Verify token is from env, URL is from database
+            assert result["ha_token"] == "test-token-12345"
+            assert result["ha_url_from_env"] is False
+            assert result["ha_token_from_env"] is True
+            assert result["ha_env_managed"] is False
+
+            # No auto-enable with partial config
+            assert result["ha_enabled"] is False  # Database default
+
+        finally:
+            os.environ.pop("HA_TOKEN", None)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_ha_settings_env_vars_override_database(self, async_client: AsyncClient):
+        """Verify environment variables take precedence over database values."""
+        # First, set database values
+        await async_client.put(
+            "/api/v1/settings/",
+            json={
+                "ha_enabled": True,
+                "ha_url": "http://database-url:8123",
+                "ha_token": "database-token",
+            },
+        )
+
+        # Verify database values are set
+        response = await async_client.get("/api/v1/settings/")
+        result = response.json()
+        assert result["ha_url"] == "http://database-url:8123"
+        assert result["ha_token"] == "database-token"
+
+        # Now set environment variables
+        os.environ["HA_URL"] = "http://env-url/core"
+        os.environ["HA_TOKEN"] = "env-token-xyz"
+
+        try:
+            response = await async_client.get("/api/v1/settings/")
+            result = response.json()
+
+            # Verify env vars override database
+            assert result["ha_url"] == "http://env-url/core"
+            assert result["ha_token"] == "env-token-xyz"
+            assert result["ha_url_from_env"] is True
+            assert result["ha_token_from_env"] is True
+            assert result["ha_env_managed"] is True
+            assert result["ha_enabled"] is True
+
+        finally:
+            os.environ.pop("HA_URL", None)
+            os.environ.pop("HA_TOKEN", None)
+
+        # Verify database values are still there after removing env vars
+        response = await async_client.get("/api/v1/settings/")
+        result = response.json()
+        assert result["ha_url"] == "http://database-url:8123"
+        assert result["ha_token"] == "database-token"
+        assert result["ha_url_from_env"] is False
+        assert result["ha_token_from_env"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_ha_settings_database_updates_accepted_but_ignored(self, async_client: AsyncClient):
+        """Verify database updates are accepted but have no effect when env vars are set."""
+        # Set environment variables
+        os.environ["HA_URL"] = "http://supervisor/core"
+        os.environ["HA_TOKEN"] = "env-token"
+
+        try:
+            # Attempt to update via API
+            response = await async_client.put(
+                "/api/v1/settings/",
+                json={
+                    "ha_url": "http://different-url:8123",
+                    "ha_token": "different-token",
+                },
+            )
+
+            # Update should succeed
+            assert response.status_code == 200
+
+            # But values should still be from env vars
+            result = response.json()
+            assert result["ha_url"] == "http://supervisor/core"
+            assert result["ha_token"] == "env-token"
+            assert result["ha_url_from_env"] is True
+            assert result["ha_token_from_env"] is True
+
+        finally:
+            os.environ.pop("HA_URL", None)
+            os.environ.pop("HA_TOKEN", None)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_ha_settings_empty_env_vars_treated_as_not_set(self, async_client: AsyncClient):
+        """Verify empty environment variables are treated as not set."""
+        # Set empty env vars
+        os.environ["HA_URL"] = ""
+        os.environ["HA_TOKEN"] = ""
+
+        try:
+            response = await async_client.get("/api/v1/settings/")
+            result = response.json()
+
+            # Empty env vars should be treated as not set
+            assert result["ha_url_from_env"] is False
+            assert result["ha_token_from_env"] is False
+            assert result["ha_env_managed"] is False
+
+        finally:
+            os.environ.pop("HA_URL", None)
+            os.environ.pop("HA_TOKEN", None)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_ha_settings_can_be_updated_normally_without_env_vars(self, async_client: AsyncClient):
+        """Verify HA settings can be updated normally when env vars are not set."""
+        # Ensure no env vars
+        os.environ.pop("HA_URL", None)
+        os.environ.pop("HA_TOKEN", None)
+
+        # Update HA settings
+        response = await async_client.put(
+            "/api/v1/settings/",
+            json={
+                "ha_enabled": True,
+                "ha_url": "http://192.168.1.100:8123",
+                "ha_token": "my-long-lived-token",
+            },
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["ha_enabled"] is True
+        assert result["ha_url"] == "http://192.168.1.100:8123"
+        assert result["ha_token"] == "my-long-lived-token"
+        assert result["ha_url_from_env"] is False
+        assert result["ha_token_from_env"] is False
+        assert result["ha_env_managed"] is False
+
+        # Verify persistence
+        response = await async_client.get("/api/v1/settings/")
+        result = response.json()
+        assert result["ha_enabled"] is True
+        assert result["ha_url"] == "http://192.168.1.100:8123"
+        assert result["ha_token"] == "my-long-lived-token"
 
 
 class TestSimplifiedBackupRestore:

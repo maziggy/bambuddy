@@ -47,6 +47,9 @@ ENV LOG_DIR=/app/logs
 ENV PORT=8000
 
 EXPOSE 8000
+EXPOSE 8883
+EXPOSE 9990
+EXPOSE 50000-50100
 
 # Health check (uses PORT env var via shell)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \

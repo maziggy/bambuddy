@@ -9,6 +9,7 @@ immediately upon connection, before any FTP commands are exchanged.
 
 import asyncio
 import logging
+import os
 import random
 import ssl
 from collections.abc import Callable
@@ -31,6 +32,8 @@ class FTPSession:
         access_code: str,
         ssl_context: ssl.SSLContext,
         on_file_received: Callable[[Path, str], None] | None,
+        passive_port_range: tuple[int, int] = (50000, 50100),
+        pasv_address: str = "",
     ):
         self.reader = reader
         self.writer = writer
@@ -38,6 +41,8 @@ class FTPSession:
         self.access_code = access_code
         self.ssl_context = ssl_context
         self.on_file_received = on_file_received
+        self.passive_port_range = passive_port_range
+        self.pasv_address = pasv_address
 
         self.authenticated = False
         self.username: str | None = None
@@ -50,6 +55,7 @@ class FTPSession:
         self._data_reader: asyncio.StreamReader | None = None
         self._data_writer: asyncio.StreamWriter | None = None
         self._data_connected = asyncio.Event()
+        self._transfer_done = asyncio.Event()
 
         peername = writer.get_extra_info("peername")
         self.remote_ip = peername[0] if peername else "unknown"
@@ -113,6 +119,9 @@ class FTPSession:
 
     async def _cleanup(self) -> None:
         """Clean up session resources."""
+        # Release any waiting data connection callback
+        self._transfer_done.set()
+
         if self.data_server:
             self.data_server.close()
             try:
@@ -159,6 +168,7 @@ class FTPSession:
         features = [
             "211-Features:",
             " PASV",
+            " EPSV",
             " UTF8",
             " SIZE",
             "211 End",
@@ -196,6 +206,28 @@ class FTPSession:
         else:
             await self.send(504, "Type not supported")
 
+    async def _bind_passive_port(self) -> bool:
+        """Try to bind a passive data port with retries.
+
+        Returns True if a port was successfully bound, False otherwise.
+        Sets self.data_server and self.data_port on success.
+        """
+        port_min, port_max = self.passive_port_range
+        for attempt in range(10):
+            port = random.randint(port_min, port_max)
+            try:
+                self.data_server = await asyncio.start_server(
+                    self._handle_data_connection,
+                    "0.0.0.0",  # nosec B104
+                    port,
+                    ssl=self.ssl_context,
+                )
+                self.data_port = port
+                return True
+            except OSError:
+                logger.debug("FTP passive port %s in use, retrying (%s/10)", port, attempt + 1)
+        return False
+
     async def cmd_EPSV(self, arg: str) -> None:
         """Handle EPSV command - Extended Passive Mode (IPv6 compatible)."""
         if not self.authenticated:
@@ -205,29 +237,18 @@ class FTPSession:
         # Close any existing data connection/server
         await self._close_data_connection()
 
-        # Reset connection state
+        # Reset connection state for the new transfer
         self._data_connected.clear()
         self._data_reader = None
         self._data_writer = None
+        self._transfer_done = asyncio.Event()
 
-        # Find a free port for passive data connection
-        self.data_port = random.randint(50000, 60000)
-
-        try:
-            # Create data server with TLS - use same context for session reuse
-            self.data_server = await asyncio.start_server(
-                self._handle_data_connection,
-                "0.0.0.0",  # nosec B104
-                self.data_port,
-                ssl=self.ssl_context,
-            )
-
+        if await self._bind_passive_port():
             # EPSV response format: 229 Entering Extended Passive Mode (|||port|)
             await self.send(229, f"Entering Extended Passive Mode (|||{self.data_port}|)")
             logger.info("FTP EPSV listening on port %s", self.data_port)
-
-        except Exception as e:
-            logger.error("Failed to create EPSV data connection: %s", e)
+        else:
+            logger.error("Failed to bind any passive port for EPSV")
             await self.send(425, "Cannot open data connection")
 
     async def cmd_PASV(self, arg: str) -> None:
@@ -239,27 +260,24 @@ class FTPSession:
         # Close any existing data connection/server
         await self._close_data_connection()
 
-        # Reset connection state
+        # Reset connection state for the new transfer
         self._data_connected.clear()
         self._data_reader = None
         self._data_writer = None
+        self._transfer_done = asyncio.Event()
 
-        # Find a free port for passive data connection
-        self.data_port = random.randint(50000, 60000)
-
-        try:
-            # Create data server with TLS
-            self.data_server = await asyncio.start_server(
-                self._handle_data_connection,
-                "0.0.0.0",  # nosec B104
-                self.data_port,
-                ssl=self.ssl_context,
-            )
-
-            # Get server's IP for response
-            # Use the IP the client connected to
-            sockname = self.writer.get_extra_info("sockname")
-            ip = sockname[0] if sockname else "127.0.0.1"
+        if await self._bind_passive_port():
+            # Determine the IP to advertise in PASV response
+            if self.pasv_address:
+                # Explicit override (e.g., for Docker bridge mode behind NAT)
+                ip = self.pasv_address
+            else:
+                # Use the local IP of the control connection
+                sockname = self.writer.get_extra_info("sockname")
+                ip = sockname[0] if sockname else "127.0.0.1"
+                # 0.0.0.0 is not routable — fall back to control connection IP
+                if ip == "0.0.0.0":
+                    ip = "127.0.0.1"
 
             # Format IP and port for PASV response
             ip_parts = ip.split(".")
@@ -270,14 +288,30 @@ class FTPSession:
                 227,
                 f"Entering Passive Mode ({ip_parts[0]},{ip_parts[1]},{ip_parts[2]},{ip_parts[3]},{port_hi},{port_lo})",
             )
-            logger.info("FTP PASV listening on port %s", self.data_port)
-
-        except Exception as e:
-            logger.error("Failed to create passive data connection: %s", e)
+            logger.info("FTP PASV listening on %s:%s", ip, self.data_port)
+        else:
+            logger.error("Failed to bind any passive port for PASV")
             await self.send(425, "Cannot open data connection")
 
     async def _handle_data_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        """Handle incoming data connection (used by PASV)."""
+        """Handle incoming data connection (used by PASV/EPSV).
+
+        This callback stays alive until the transfer completes to ensure the
+        asyncio task holds strong references to the reader/writer throughout
+        the data transfer.  If the callback returned immediately, the task
+        would complete and the StreamReaderProtocol could release its strong
+        reader reference, potentially destabilising the connection.
+        """
+        # Reject duplicate connections — only one data connection per transfer
+        if self._data_reader is not None:
+            logger.warning("FTP rejecting duplicate data connection from %s", self.remote_ip)
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except OSError:
+                pass
+            return
+
         # Log TLS details for debugging
         ssl_obj = writer.get_extra_info("ssl_object")
         if ssl_obj:
@@ -291,12 +325,25 @@ class FTPSession:
         logger.info("FTP data connection established from %s", self.remote_ip)
         self._data_reader = reader
         self._data_writer = writer
+
+        # Stop accepting further connections on the passive port
+        if self.data_server:
+            self.data_server.close()
+
         self._data_connected.set()
-        # Don't close - let the transfer command handle it
+
+        # Keep this callback alive until the transfer command (STOR/RETR)
+        # finishes. This ensures the asyncio server-handler task holds strong
+        # references to reader/writer for the entire transfer lifetime.
+        await self._transfer_done.wait()
 
     async def _close_data_connection(self) -> None:
         """Close the data connection and server."""
         had_connection = self._data_writer is not None or self.data_server is not None
+
+        # Signal the _handle_data_connection callback to return, allowing
+        # its asyncio task to complete cleanly.
+        self._transfer_done.set()
 
         if self._data_writer:
             try:
@@ -325,7 +372,7 @@ class FTPSession:
             await self.send(530, "Not logged in")
             return
 
-        if not self.data_server:
+        if not self.data_server and not self._data_connected.is_set():
             await self.send(425, "Use PASV first")
             return
 
@@ -352,20 +399,28 @@ class FTPSession:
 
         # Receive data
         data_content: list[bytes] = []
+        total_received = 0
         try:
             while True:
                 chunk = await asyncio.wait_for(self._data_reader.read(65536), timeout=60)
                 if not chunk:
                     break
                 data_content.append(chunk)
-                logger.debug("FTP received chunk: %s bytes", len(chunk))
+                total_received += len(chunk)
+                logger.debug("FTP received chunk: %s bytes (total: %s)", len(chunk), total_received)
         except TimeoutError:
-            logger.error("FTP data transfer timeout")
+            logger.error("FTP data transfer timeout after %s bytes for %s", total_received, filename)
             await self.send(426, "Transfer timeout")
             await self._close_data_connection()
             return
         except Exception as e:
-            logger.error("FTP data transfer error: %s", e)
+            logger.error(
+                "FTP data transfer error after %s bytes for %s: %s(%s)",
+                total_received,
+                filename,
+                type(e).__name__,
+                e,
+            )
             await self.send(426, f"Transfer failed: {e}")
             await self._close_data_connection()
             return
@@ -458,6 +513,9 @@ class FTPSession:
 class VirtualPrinterFTPServer:
     """Implicit FTPS server that accepts uploads from slicers."""
 
+    PASSIVE_PORT_MIN = 50000
+    PASSIVE_PORT_MAX = 50100
+
     def __init__(
         self,
         upload_dir: Path,
@@ -487,6 +545,8 @@ class VirtualPrinterFTPServer:
         self._running = False
         self._ssl_context: ssl.SSLContext | None = None
         self._active_sessions: list[asyncio.Task] = []
+        # Override PASV response IP for Docker bridge mode / NAT environments
+        self._pasv_address = os.environ.get("VIRTUAL_PRINTER_PASV_ADDRESS", "")
 
     async def start(self) -> None:
         """Start the implicit FTPS server."""
@@ -522,6 +582,13 @@ class VirtualPrinterFTPServer:
             self._running = True
 
             logger.info("Implicit FTPS server started on port %s", self.port)
+            logger.info(
+                "FTP passive data port range: %s-%s",
+                self.PASSIVE_PORT_MIN,
+                self.PASSIVE_PORT_MAX,
+            )
+            if self._pasv_address:
+                logger.info("FTP PASV address override: %s", self._pasv_address)
 
             async with self._server:
                 await self._server.serve_forever()
@@ -550,6 +617,8 @@ class VirtualPrinterFTPServer:
             access_code=self.access_code,
             ssl_context=self._ssl_context,
             on_file_received=self.on_file_received,
+            passive_port_range=(self.PASSIVE_PORT_MIN, self.PASSIVE_PORT_MAX),
+            pasv_address=self._pasv_address,
         )
 
         # Track the session task so we can cancel it on stop

@@ -328,8 +328,13 @@ class SSDPProxy:
             pass  # Return partial headers if parsing fails; malformed packets are common
         return headers
 
-    def _rewrite_ssdp_location(self, data: bytes) -> bytes:
-        """Rewrite SSDP message with Bambuddy's remote IP as Location."""
+    def _rewrite_ssdp(self, data: bytes) -> bytes:
+        """Rewrite SSDP message for proxy re-broadcast.
+
+        - Location: changed to Bambuddy's remote interface IP
+        - DevBind: forced to 'free' so the slicer treats the proxy as a
+          LAN-only printer (avoids cloud auth requirement for sending prints)
+        """
         try:
             text = data.decode("utf-8", errors="ignore")
             original = text
@@ -340,11 +345,25 @@ class SSDPProxy:
                 text,
                 flags=re.IGNORECASE,
             )
+            # Force DevBind to 'free' - ensures slicer uses LAN mode for
+            # both monitoring AND sending prints through the proxy
+            text = re.sub(
+                r"(DevBind\.bambu\.com:\s*)\S+",
+                r"\g<1>free",
+                text,
+                flags=re.IGNORECASE,
+            )
+            # Append " - Proxy" to printer name so it's distinguishable
+            text = re.sub(
+                r"(DevName\.bambu\.com:\s*)(.+)",
+                r"\g<1>\g<2> - Proxy",
+                text,
+                flags=re.IGNORECASE,
+            )
             if text != original:
-                logger.debug("Rewrote SSDP Location to %s", self.remote_interface_ip)
-                logger.debug("Rewritten SSDP packet:\n%s", text)
+                logger.debug("Rewrote SSDP for proxy:\n%s", text)
             else:
-                logger.warning("SSDP Location rewrite had no effect. Packet:\n%s", original)
+                logger.warning("SSDP rewrite had no effect. Packet:\n%s", original)
             return text.encode("utf-8")
         except Exception as e:
             logger.error("Failed to rewrite SSDP: %s", e)
@@ -453,12 +472,25 @@ class SSDPProxy:
         self._remote_socket = None
 
     async def _handle_local_packet(self, data: bytes, addr: tuple[str, int]) -> None:
-        """Handle SSDP packet received on local interface (LAN A)."""
+        """Handle SSDP packet received on local interface (LAN A).
+
+        Processes two types of traffic:
+        - NOTIFY from the real printer → cache and re-broadcast on LAN B
+        - M-SEARCH from slicers on LAN B → respond with cached printer info
+        """
         sender_ip = addr[0]
 
-        # Only process packets from the target printer
-        if sender_ip != self.target_printer_ip:
+        # Ignore packets from our own interfaces (prevent loops)
+        if sender_ip in (self.local_interface_ip, self.remote_interface_ip):
             return
+
+        # Handle M-SEARCH from slicers (any IP that's not the target printer)
+        if sender_ip != self.target_printer_ip:
+            if b"M-SEARCH" in data:
+                await self._respond_to_msearch(data, addr)
+            return
+
+        # Below: NOTIFY handling from the real printer
 
         # Check if it's a NOTIFY message
         if b"NOTIFY" not in data and b"HTTP/1.1 200" not in data:
@@ -478,6 +510,44 @@ class SSDPProxy:
         self._last_printer_ssdp = data
         await self._broadcast_to_remote()
 
+    async def _respond_to_msearch(self, data: bytes, addr: tuple[str, int]) -> None:
+        """Respond to M-SEARCH from a slicer with cached, rewritten printer info.
+
+        When Bambu Studio sends an M-SEARCH (e.g., before sending a print),
+        we respond with the cached printer info, rewritten to point to the
+        proxy's LAN B IP. Without this, the slicer thinks the printer is
+        offline and shows a 'connect to printer' modal.
+        """
+        # Check if it's a relevant M-SEARCH
+        if b"bambulab-com:device:3dprinter" not in data and b"ssdp:all" not in data.lower():
+            return
+
+        if not self._last_printer_ssdp:
+            logger.debug("M-SEARCH from %s but no cached printer SSDP yet", addr[0])
+            return
+
+        logger.debug("Received M-SEARCH from slicer %s", addr[0])
+
+        # Rewrite the cached printer SSDP (Location → proxy IP, DevBind → free)
+        rewritten = self._rewrite_ssdp(self._last_printer_ssdp)
+        text = rewritten.decode("utf-8", errors="ignore")
+
+        # Convert NOTIFY format to M-SEARCH response format:
+        #   "NOTIFY * HTTP/1.1" → "HTTP/1.1 200 OK"
+        #   NT: → ST: (Notification Type → Search Target)
+        #   Remove NTS: header (only in NOTIFY)
+        text = re.sub(r"^NOTIFY \* HTTP/1\.1", "HTTP/1.1 200 OK", text)
+        text = re.sub(r"^NT:", "ST:", text, flags=re.MULTILINE)
+        text = re.sub(r"^NTS:.*\r\n", "", text, flags=re.MULTILINE)
+
+        # Send unicast response directly to the slicer via remote socket
+        if self._remote_socket:
+            try:
+                self._remote_socket.sendto(text.encode("utf-8"), addr)
+                logger.info("Sent SSDP M-SEARCH response to %s", addr[0])
+            except OSError as e:
+                logger.debug("Failed to send M-SEARCH response to %s: %s", addr[0], e)
+
     async def _broadcast_to_remote(self) -> None:
         """Broadcast cached printer SSDP on remote interface (LAN B)."""
         if not self._remote_socket or not self._last_printer_ssdp:
@@ -485,7 +555,7 @@ class SSDPProxy:
 
         try:
             # Rewrite Location to point to Bambuddy's remote interface
-            rewritten = self._rewrite_ssdp_location(self._last_printer_ssdp)
+            rewritten = self._rewrite_ssdp(self._last_printer_ssdp)
 
             # Calculate broadcast address for remote network
             # Use 255.255.255.255 for simplicity (works across subnets)

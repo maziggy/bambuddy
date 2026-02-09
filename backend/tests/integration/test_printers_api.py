@@ -65,6 +65,58 @@ class TestPrintersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_create_printer_with_hostname(self, async_client: AsyncClient):
+        """Verify printer can be created with a hostname instead of IP address."""
+        data = {
+            "name": "DNS Printer",
+            "serial_number": "00M09A555555555",
+            "ip_address": "printer.local",
+            "access_code": "12345678",
+            "model": "P1S",
+        }
+
+        response = await async_client.post("/api/v1/printers/", json=data)
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["name"] == "DNS Printer"
+        assert result["ip_address"] == "printer.local"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_printer_with_fqdn(self, async_client: AsyncClient):
+        """Verify printer can be created with a fully qualified domain name."""
+        data = {
+            "name": "FQDN Printer",
+            "serial_number": "00M09A666666666",
+            "ip_address": "my-printer.home.lan",
+            "access_code": "12345678",
+            "model": "X1C",
+        }
+
+        response = await async_client.post("/api/v1/printers/", json=data)
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["ip_address"] == "my-printer.home.lan"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_printer_invalid_hostname(self, async_client: AsyncClient):
+        """Verify invalid hostnames are rejected."""
+        data = {
+            "name": "Bad Printer",
+            "serial_number": "00M09A777777777",
+            "ip_address": "-invalid",
+            "access_code": "12345678",
+        }
+
+        response = await async_client.post("/api/v1/printers/", json=data)
+
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_create_printer_duplicate_serial(self, async_client: AsyncClient, printer_factory, db_session):
         """Verify duplicate serial number is rejected."""
         await printer_factory(serial_number="00M09A222222222")

@@ -2,6 +2,46 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
+## [0.1.9b] - Not released
+
+### New Features
+- **Hostname Support for Printers** ([#290](https://github.com/maziggy/bambuddy/issues/290)) — Printers can now be added using hostnames (e.g., `printer.local`, `my-printer.home.lan`) in addition to IPv4 addresses. Updated backend validation, frontend forms, and all locale labels.
+- **Camera View Controls** ([#291](https://github.com/maziggy/bambuddy/issues/291)) — Added chamber light toggle and skip objects buttons to both embedded camera viewer and standalone camera page. Extracted skip objects modal into a reusable `SkipObjectsModal` component shared across PrintersPage and both camera views.
+- **Per-Filament Spoolman Usage Tracking** ([#277](https://github.com/maziggy/bambuddy/pull/277)) — Accurate per-filament usage tracking for Spoolman integration with G-code parsing. Parses 3MF files at print start to build per-layer, per-filament extrusion maps. Reports accurate partial usage when prints fail or are cancelled based on actual layer progress. Tracking data stored in database to survive server restarts. Uses Spoolman's filament density for mm-to-grams conversion. Prefers `tray_uuid` over `tag_uid` for spool identification.
+- **Disable AMS Weight Sync Setting** ([#277](https://github.com/maziggy/bambuddy/pull/277)) — New toggle to prevent AMS percentage-based weight estimates from overwriting Spoolman's granular usage-based calculations. Includes conditional "Report Partial Usage for Failed Prints" toggle.
+- **Home Assistant Environment Variables** ([#283](https://github.com/maziggy/bambuddy/issues/283)) — Configure Home Assistant integration via `HA_URL` and `HA_TOKEN` environment variables for zero-configuration add-on deployments. Auto-enables when both variables are set. UI fields become read-only with lock icons when env-managed. Database values preserved as fallback.
+- **Spoolman Fill Level for AMS Lite / External Spools** ([#293](https://github.com/maziggy/bambuddy/issues/293)) — AMS Lite (no weight sensor) always reported 0% fill level. Now uses Spoolman's remaining weight as a fallback when AMS reports 0%. External spools also show fill level from Spoolman data. Fill bars and hover cards indicate "(Spoolman)" when the data source is Spoolman rather than AMS.
+
+### Improved
+- **Auto-Detect Subnet for Printer Discovery** — Docker users no longer need to manually enter a subnet in the Add Printer dialog. Bambuddy auto-detects available network subnets and pre-selects the first one. When multiple subnets are available (e.g., eth0 + wlan0), a dropdown lets users choose. Falls back to manual text input if no subnets are detected.
+- **Japanese Locale Complete Overhaul** — Restructured `ja.ts` from a divergent format (different key structure, 12 structural conflicts, 1,366 missing translations) to match the English/German locale structure exactly. Translated all 2,083 keys into Japanese, achieving full parity with EN/DE. Zero structural divergences, zero missing keys.
+
+### Fixed
+- **Virtual Printer FTP Transfer Fails With Connection Reset** ([#58](https://github.com/maziggy/bambuddy/issues/58)) — Large 3MF uploads to the virtual printer intermittently failed with `[Errno 104] Connection reset by peer` while the small verify_job always succeeded. The `_handle_data_connection` callback returned immediately, allowing the asyncio server-handler task to complete while the data connection was still in active use. The passive port listener also stayed open during transfers, risking duplicate data connections. Fixed by keeping the callback alive until the transfer completes (`_transfer_done` event), closing the passive listener after accepting the connection, and rejecting duplicate data connections. Also added a 5-second drain timeout to MQTT status pushes to prevent blocking when the slicer is busy uploading.
+- **Camera Stop 401 When Auth Enabled** — Camera stop requests (`sendBeacon`) failed with 401 Unauthorized when authentication was enabled because `sendBeacon` cannot send auth headers. Replaced with `fetch` + `keepalive: true` which supports Authorization headers while remaining reliable during page unload.
+- **Spoolman Creates Duplicate Spools on Startup** ([#295](https://github.com/maziggy/bambuddy/pull/295)) — Each AMS tray independently fetched all spools from Spoolman, causing redundant API calls and duplicate spool creation with large databases (300+ spools). Now fetches spools once and reuses cached data across all tray operations. Added retry logic (3 attempts, 500ms delay) with connection recreation for transient network errors.
+- **Filament Usage Charts Inflated by Quantity Multiplier** ([#229](https://github.com/maziggy/bambuddy/issues/229)) — Daily, weekly, and filament-type charts were multiplying `filament_used_grams` by print quantity, even though the value already represents the total for the entire job. A 26-object print using 126g was counted as 3,276g. Removed the erroneous multiplier from three aggregations in `FilamentTrends.tsx`.
+- **Energy Cost Shows 0.00 in "Total Consumption" Mode** ([#284](https://github.com/maziggy/bambuddy/issues/284)) — Statistics Quick Stats showed 0.00 energy cost when Energy Display Mode was set to "Total Consumption" with Home Assistant smart plugs. The `homeassistant_service` was not configured with HA URL/token before querying plug energy data, causing it to silently return nothing.
+- **H2D Pro Prints Fail at ~75% With Extrusion Motor Overload** ([#245](https://github.com/maziggy/bambuddy/issues/245)) — H2D Pro firmware interprets `use_ams: 1` (integer) as a nozzle index, routing filament to the deputy nozzle instead of the main nozzle. Bambu Studio sends `use_ams: true` (boolean) while using integers for other fields. Fixed by keeping `use_ams` as boolean for all printers including H2D series.
+
+### Documentation
+- **CONTRIBUTING.md: i18n & Authentication Guides** — Added Internationalization (i18n) section with locale file conventions, code examples, and parity rules. Added Authentication & Permissions section covering the opt-in auth pattern, permission conventions, and default group structure.
+- **Proxy Mode Security Warning** — Added FTP data channel security warning to wiki, README, and website. Bambu Studio does not encrypt the FTP data channel despite negotiating PROT P; MQTT and FTP control channels are fully TLS-encrypted. VPN (Tailscale/WireGuard) recommended for full data encryption.
+- **Docker Proxy Mode Ports** — Documented FTP passive data ports 50000-50100 required for proxy mode in Docker bridge mode. Updated port mappings in wiki virtual-printer and docker guides.
+- **SSDP Discovery Limitations** — Added table showing when SSDP discovery works (same LAN, dual-homed, Docker host mode) vs when manual IP entry is required (VPN, Docker bridge, port forwarding). Updated wiki, README, and website.
+- **Firewall Rules Updated** — Added port 50000-50100/tcp to all UFW, firewalld, and iptables examples for proxy mode FTP passive data.
+
+### Testing
+- **Mock FTPS Server & Comprehensive FTP Test Suite** — Added 67 automated test cases against a real implicit FTPS mock server, covering every known FTP failure mode from 0.1.8+:
+  - Mock server (`mock_ftp_server.py`) implements implicit TLS, custom AVBL command, and per-command failure injection
+  - Connection tests: auth, SSL modes (prot_p/prot_c), timeout, cache, disconnect edge cases
+  - Upload tests: chunked transfer via `transfercmd()`, progress callbacks, 553/550/552 error handling
+  - Download tests: bytes, to-file, 0-byte regression, large files, missing file cleanup
+  - Model-specific tests: X1C session reuse, A1/A1 Mini prot_c fallback, P1S, unknown model defaults
+  - Async wrapper tests: upload/download/list/delete with A1 fallback and multi-path download
+  - Failure injection tests: regressions for `error_perm` hierarchy, `diagnose_storage` CWD propagation, injection count decrement
+  - Added `pyOpenSSL` to `requirements-dev.txt` for Docker test image compatibility
+
 ## [0.1.8.1] - 2026-02-07
 
 ### Fixed

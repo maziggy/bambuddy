@@ -11,6 +11,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from '../../contexts/ThemeContext';
 import { ToastProvider } from '../../contexts/ToastContext';
+import { AuthProvider } from '../../contexts/AuthContext';
 import { I18nextProvider } from 'react-i18next';
 import i18n from '../../i18n';
 
@@ -44,11 +45,13 @@ function renderCameraPage(printerId: number) {
       <I18nextProvider i18n={i18n}>
         <MemoryRouter initialEntries={[`/cameras/${printerId}`]}>
           <ThemeProvider>
-            <ToastProvider>
-              <Routes>
-                <Route path="/cameras/:printerId" element={<CameraPage />} />
-              </Routes>
-            </ToastProvider>
+            <AuthProvider>
+              <ToastProvider>
+                <Routes>
+                  <Route path="/cameras/:printerId" element={<CameraPage />} />
+                </Routes>
+              </ToastProvider>
+            </AuthProvider>
           </ThemeProvider>
         </MemoryRouter>
       </I18nextProvider>

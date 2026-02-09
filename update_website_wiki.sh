@@ -10,9 +10,9 @@ git add .
 git commit -m "Updated Wiki"
 git push
 
-cd ../bambuddy-languages
+cd ../bambuddy-telemetry/
 git add .
-git commit -m "Updated Bambuddy Languages"
+git commit -m "Updated Stats"
 git push
 
 cd ../spoolbuddy-website

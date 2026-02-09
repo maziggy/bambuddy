@@ -280,7 +280,7 @@ class TestSpoolmanAPI:
             "id": 42,
             "remaining_weight": 800,
             "extra": {"tag": '"A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"'},
-            "filament": {"id": 1, "name": "PLA Red", "material": "PLA"},
+            "filament": {"id": 1, "name": "PLA Red", "material": "PLA", "weight": 1000},
         }
         mock_spoolman_client.get_spools = AsyncMock(return_value=[mock_spool])
 
@@ -291,7 +291,10 @@ class TestSpoolmanAPI:
         assert isinstance(data["linked"], dict)
         # Tag should be uppercase and stripped of quotes
         assert "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4" in data["linked"]
-        assert data["linked"]["A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"] == 42
+        linked_info = data["linked"]["A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"]
+        assert linked_info["id"] == 42
+        assert linked_info["remaining_weight"] == 800
+        assert linked_info["filament_weight"] == 1000
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -336,6 +339,71 @@ class TestSpoolmanAPI:
         assert response.status_code == 200
         data = response.json()
         assert len(data["linked"]) == 0  # Empty tag should be excluded
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_linked_spools_includes_weight_data(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """Verify linked spools response includes remaining_weight and filament_weight."""
+        mock_spool = {
+            "id": 10,
+            "remaining_weight": 500.5,
+            "extra": {"tag": '"AABB11223344556677889900AABBCCDD"'},
+            "filament": {"id": 1, "name": "PETG Blue", "material": "PETG", "weight": 750},
+        }
+        mock_spoolman_client.get_spools = AsyncMock(return_value=[mock_spool])
+
+        response = await async_client.get("/api/v1/spoolman/spools/linked")
+        assert response.status_code == 200
+        data = response.json()
+        info = data["linked"]["AABB11223344556677889900AABBCCDD"]
+        assert info["id"] == 10
+        assert info["remaining_weight"] == 500.5
+        assert info["filament_weight"] == 750
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_linked_spools_missing_weight_fields(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """Verify linked spools handles missing weight data gracefully."""
+        mock_spool = {
+            "id": 5,
+            "extra": {"tag": '"CCDD11223344556677889900AABBCCDD"'},
+            "filament": {"id": 1, "name": "PLA Red", "material": "PLA"},
+        }
+        mock_spoolman_client.get_spools = AsyncMock(return_value=[mock_spool])
+
+        response = await async_client.get("/api/v1/spoolman/spools/linked")
+        assert response.status_code == 200
+        data = response.json()
+        info = data["linked"]["CCDD11223344556677889900AABBCCDD"]
+        assert info["id"] == 5
+        assert info["remaining_weight"] is None
+        assert info["filament_weight"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_linked_spools_null_filament(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """Verify linked spools handles null filament object."""
+        mock_spool = {
+            "id": 7,
+            "remaining_weight": 300,
+            "extra": {"tag": '"EEFF11223344556677889900AABBCCDD"'},
+            "filament": None,
+        }
+        mock_spoolman_client.get_spools = AsyncMock(return_value=[mock_spool])
+
+        response = await async_client.get("/api/v1/spoolman/spools/linked")
+        assert response.status_code == 200
+        data = response.json()
+        info = data["linked"]["EEFF11223344556677889900AABBCCDD"]
+        assert info["id"] == 7
+        assert info["remaining_weight"] == 300
+        assert info["filament_weight"] is None
 
     # =========================================================================
     # Link Spool Tests

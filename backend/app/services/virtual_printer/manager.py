@@ -296,8 +296,12 @@ class VirtualPrinterManager:
         self._cert_service.serial = proxy_serial
 
         # Regenerate printer cert if needed (CA is preserved)
+        # Include remote interface IP in SAN so slicer TLS succeeds
+        additional_ips = []
+        if self._remote_interface_ip:
+            additional_ips.append(self._remote_interface_ip)
         self._cert_service.delete_printer_certificate()
-        cert_path, key_path = self._cert_service.generate_certificates()
+        cert_path, key_path = self._cert_service.generate_certificates(additional_ips=additional_ips or None)
         logger.info("Generated certificate for proxy serial: %s", proxy_serial)
 
         # Initialize TLS proxy with our certificates
@@ -359,9 +363,11 @@ class VirtualPrinterManager:
         )
 
         logger.info(
-            f"Virtual printer proxy started: "
-            f"FTP 0.0.0.0:{SlicerProxyManager.LOCAL_FTP_PORT} -> {self._target_printer_ip}:{SlicerProxyManager.PRINTER_FTP_PORT}, "
-            f"MQTT 0.0.0.0:{SlicerProxyManager.LOCAL_MQTT_PORT} -> {self._target_printer_ip}:{SlicerProxyManager.PRINTER_MQTT_PORT}"
+            "Virtual printer proxy target: FTP %s:%d, MQTT %s:%d",
+            self._target_printer_ip,
+            SlicerProxyManager.PRINTER_FTP_PORT,
+            self._target_printer_ip,
+            SlicerProxyManager.PRINTER_MQTT_PORT,
         )
 
     def _start_fallback_ssdp(self, proxy_serial: str, run_with_logging) -> None:
@@ -500,6 +506,11 @@ class VirtualPrinterManager:
             # "review" mode (or legacy "queue" mode)
             await self._queue_file(file_path, source_ip)
 
+        # Reset MQTT status back to IDLE after file processing
+        # This tells the slicer the printer is done with the file
+        if self._mqtt and file_path.suffix.lower() == ".3mf":
+            self._mqtt.set_gcode_state("IDLE")
+
     async def _on_print_command(self, filename: str, data: dict) -> None:
         """Handle print command from MQTT.
 
@@ -584,7 +595,12 @@ class VirtualPrinterManager:
 
         # Only queue 3MF files
         if file_path.suffix.lower() != ".3mf":
-            logger.warning("Skipping non-3MF file: %s", file_path.name)
+            logger.debug("Skipping non-3MF file: %s", file_path.name)
+            self._pending_files.pop(file_path.name, None)
+            try:
+                file_path.unlink()
+            except OSError:
+                pass  # Best-effort removal of non-3MF file; may already be gone
             return
 
         try:

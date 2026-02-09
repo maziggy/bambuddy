@@ -61,10 +61,9 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
       const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
       const existing = dataMap.get(key) || { date: key, filament: 0, cost: 0, prints: 0 };
-      const qty = archive.quantity || 1;
-      existing.filament += (archive.filament_used_grams || 0) * qty;
+      existing.filament += archive.filament_used_grams || 0;
       existing.cost += archive.cost || 0;
-      existing.prints += qty;
+      existing.prints += archive.quantity || 1;
       dataMap.set(key, existing);
     });
 
@@ -90,10 +89,9 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
       const key = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
 
       const existing = dataMap.get(key) || { week: key, filament: 0, cost: 0, prints: 0 };
-      const qty = archive.quantity || 1;
-      existing.filament += (archive.filament_used_grams || 0) * qty;
+      existing.filament += archive.filament_used_grams || 0;
       existing.cost += archive.cost || 0;
-      existing.prints += qty;
+      existing.prints += archive.quantity || 1;
       dataMap.set(key, existing);
     });
 
@@ -112,11 +110,10 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
 
     filteredArchives.forEach(archive => {
       const type = archive.filament_type || 'Unknown';
-      const qty = archive.quantity || 1;
       // Handle multiple types (e.g., "PLA, PETG")
       const types = type.split(', ');
       types.forEach(t => {
-        const grams = ((archive.filament_used_grams || 0) * qty) / types.length;
+        const grams = (archive.filament_used_grams || 0) / types.length;
         dataMap.set(t, (dataMap.get(t) || 0) + grams);
       });
     });

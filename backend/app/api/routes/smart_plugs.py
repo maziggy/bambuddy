@@ -354,8 +354,11 @@ async def list_ha_entities(
 
     Requires HA connection settings to be configured in Settings.
     """
-    ha_url = await get_setting(db, "ha_url") or ""
-    ha_token = await get_setting(db, "ha_token") or ""
+    from backend.app.api.routes.settings import get_homeassistant_settings
+
+    ha_settings = await get_homeassistant_settings(db)
+    ha_url = ha_settings["ha_url"]
+    ha_token = ha_settings["ha_token"]
 
     if not ha_url or not ha_token:
         raise HTTPException(
@@ -376,8 +379,11 @@ async def list_ha_sensor_entities(
     Returns sensors with power/energy units (W, kW, kWh, Wh).
     Requires HA connection settings to be configured in Settings.
     """
-    ha_url = await get_setting(db, "ha_url") or ""
-    ha_token = await get_setting(db, "ha_token") or ""
+    from backend.app.api.routes.settings import get_homeassistant_settings
+
+    ha_settings = await get_homeassistant_settings(db)
+    ha_url = ha_settings["ha_url"]
+    ha_token = ha_settings["ha_token"]
 
     if not ha_url or not ha_token:
         raise HTTPException(
@@ -546,9 +552,10 @@ async def _get_service_for_plug(plug: SmartPlug, db: AsyncSession):
     """
     if plug.plug_type == "homeassistant":
         # Configure HA service with current settings
-        ha_url = await get_setting(db, "ha_url") or ""
-        ha_token = await get_setting(db, "ha_token") or ""
-        homeassistant_service.configure(ha_url, ha_token)
+        from backend.app.api.routes.settings import get_homeassistant_settings
+
+        ha_settings = await get_homeassistant_settings(db)
+        homeassistant_service.configure(ha_settings["ha_url"], ha_settings["ha_token"])
         return homeassistant_service
     return tasmota_service
 

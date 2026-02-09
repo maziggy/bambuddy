@@ -181,6 +181,11 @@ class SimpleMQTTServer:
         self._status_push_task: asyncio.Task | None = None
         self._sequence_id = 0
 
+        # Dynamic state for status reports
+        self._gcode_state = "IDLE"
+        self._current_file = ""
+        self._prepare_percent = "0"
+
     async def start(self) -> None:
         """Start the MQTT server."""
         if self._running:
@@ -521,10 +526,10 @@ class SimpleMQTTServer:
                     "sequence_id": str(self._sequence_id),
                     "command": "push_status",
                     "msg": 0,
-                    "gcode_state": "IDLE",
-                    "gcode_file": "",
-                    "gcode_file_prepare_percent": "0",
-                    "subtask_name": "",
+                    "gcode_state": self._gcode_state,
+                    "gcode_file": self._current_file,
+                    "gcode_file_prepare_percent": self._prepare_percent,
+                    "subtask_name": self._current_file.replace(".3mf", "") if self._current_file else "",
                     "mc_print_stage": "",
                     "mc_percent": 0,
                     "mc_remaining_time": 0,
@@ -589,38 +594,7 @@ class SimpleMQTTServer:
                 }
             }
 
-            topic = f"device/{self.serial}/report"
-            message = json.dumps(status)
-
-            # Build MQTT PUBLISH packet
-            topic_bytes = topic.encode("utf-8")
-            message_bytes = message.encode("utf-8")
-
-            # Calculate remaining length
-            remaining = 2 + len(topic_bytes) + len(message_bytes)
-
-            # Build packet
-            packet = bytes([0x30])  # PUBLISH, QoS 0
-
-            # Encode remaining length
-            while remaining > 0:
-                byte = remaining % 128
-                remaining //= 128
-                if remaining > 0:
-                    byte |= 0x80
-                packet += bytes([byte])
-
-            # Topic length and topic
-            packet += bytes([len(topic_bytes) >> 8, len(topic_bytes) & 0xFF])
-            packet += topic_bytes
-
-            # Message payload
-            packet += message_bytes
-
-            writer.write(packet)
-            await writer.drain()
-
-            logger.info("Sent initial status report on %s", topic)
+            await self._publish_to_report(writer, status)
 
         except OSError as e:
             logger.error("Failed to send status report: %s", e)
@@ -684,41 +658,79 @@ class SimpleMQTTServer:
                 }
             }
 
-            topic = f"device/{self.serial}/report"
-            message = json.dumps(version_info)
-
-            # Build MQTT PUBLISH packet
-            topic_bytes = topic.encode("utf-8")
-            message_bytes = message.encode("utf-8")
-
-            # Calculate remaining length
-            remaining = 2 + len(topic_bytes) + len(message_bytes)
-
-            # Build packet
-            packet = bytes([0x30])  # PUBLISH, QoS 0
-
-            # Encode remaining length
-            while remaining > 0:
-                byte = remaining % 128
-                remaining //= 128
-                if remaining > 0:
-                    byte |= 0x80
-                packet += bytes([byte])
-
-            # Topic length and topic
-            packet += bytes([len(topic_bytes) >> 8, len(topic_bytes) & 0xFF])
-            packet += topic_bytes
-
-            # Message payload
-            packet += message_bytes
-
-            writer.write(packet)
-            await writer.drain()
-
-            logger.info("Sent version response on %s", topic)
+            await self._publish_to_report(writer, version_info)
+            logger.info("Sent version response")
 
         except OSError as e:
             logger.error("Failed to send version response: %s", e)
+
+    def set_gcode_state(self, state: str, filename: str = "", prepare_percent: str = "0") -> None:
+        """Update the gcode state reported to connected slicers.
+
+        Called by the manager to reflect FTP upload progress/completion.
+        """
+        self._gcode_state = state
+        self._current_file = filename
+        self._prepare_percent = prepare_percent
+
+    async def _publish_to_report(self, writer: asyncio.StreamWriter, payload: dict) -> None:
+        """Publish a message on the device report topic."""
+        topic = f"device/{self.serial}/report"
+        message = json.dumps(payload)
+
+        topic_bytes = topic.encode("utf-8")
+        message_bytes = message.encode("utf-8")
+
+        remaining = 2 + len(topic_bytes) + len(message_bytes)
+        packet = bytes([0x30])  # PUBLISH, QoS 0
+
+        while remaining > 0:
+            byte = remaining % 128
+            remaining //= 128
+            if remaining > 0:
+                byte |= 0x80
+            packet += bytes([byte])
+
+        packet += bytes([len(topic_bytes) >> 8, len(topic_bytes) & 0xFF])
+        packet += topic_bytes
+        packet += message_bytes
+
+        writer.write(packet)
+        # Timeout the drain to prevent blocking the event loop if the
+        # MQTT client stops reading (e.g. slicer busy with FTP upload).
+        try:
+            await asyncio.wait_for(writer.drain(), timeout=5)
+        except TimeoutError:
+            logger.debug("MQTT drain timeout for %s — client may be busy", topic)
+
+    async def _send_print_response(self, writer: asyncio.StreamWriter, sequence_id: str, filename: str) -> None:
+        """Send project_file acknowledgment matching real Bambu printer behavior."""
+        # Update state so periodic status pushes reflect preparation
+        self._gcode_state = "PREPARE"
+        self._current_file = filename
+        self._prepare_percent = "0"
+
+        try:
+            # Send command acknowledgment — slicer expects to see
+            # command: "project_file" echoed back before starting FTP upload
+            subtask_name = filename.replace(".3mf", "") if filename else ""
+            response = {
+                "print": {
+                    "command": "project_file",
+                    "sequence_id": sequence_id,
+                    "param": "Metadata/plate_1.gcode",
+                    "subtask_name": subtask_name,
+                    "gcode_state": "PREPARE",
+                    "gcode_file": filename,
+                    "gcode_file_prepare_percent": "0",
+                    "result": "SUCCESS",
+                    "msg": 0,
+                }
+            }
+            await self._publish_to_report(writer, response)
+            logger.info("Sent project_file acknowledgment for %s", filename)
+        except OSError as e:
+            logger.error("Failed to send print response: %s", e)
 
     async def _handle_publish(self, header: int, payload: bytes, writer: asyncio.StreamWriter) -> None:
         """Handle MQTT PUBLISH packet."""
@@ -776,11 +788,17 @@ class SimpleMQTTServer:
                         print_data = data["print"]
                         command = print_data.get("command", "")
                         filename = print_data.get("subtask_name", "")
+                        sequence_id = print_data.get("sequence_id", "0")
 
                         logger.info("MQTT print command: %s for %s", command, filename)
 
-                        if self.on_print_command and command == "project_file":
-                            await self._notify_print_command(filename, print_data)
+                        if command == "project_file":
+                            # Respond with PREPARE status so slicer proceeds with FTP upload
+                            file_3mf = print_data.get("file", filename)
+                            await self._send_print_response(writer, sequence_id, file_3mf)
+
+                            if self.on_print_command:
+                                await self._notify_print_command(filename, print_data)
 
                 except json.JSONDecodeError:
                     pass  # Non-JSON payloads on request topic are safely ignored

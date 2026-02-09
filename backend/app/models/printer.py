@@ -12,7 +12,7 @@ class Printer(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
     serial_number: Mapped[str] = mapped_column(String(50), unique=True)
-    ip_address: Mapped[str] = mapped_column(String(45))
+    ip_address: Mapped[str] = mapped_column(String(253))
     access_code: Mapped[str] = mapped_column(String(20))
     model: Mapped[str | None] = mapped_column(String(50))
     location: Mapped[str | None] = mapped_column(String(100))  # Group/location name

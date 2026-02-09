@@ -4,7 +4,7 @@ These tests specifically target the sync_ams_tray method's disable_weight_sync
 functionality that controls whether remaining_weight is updated.
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -172,3 +172,205 @@ class TestSpoolmanClient:
                 assert call_kwargs["remaining_weight"] == expected, (
                     f"Expected {expected}g for {remain}% of {weight}g, got {call_kwargs['remaining_weight']}"
                 )
+
+    # ========================================================================
+    # Tests for caching functionality
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    async def test_find_spool_by_tag_with_cached_spools(self, client):
+        """Verify find_spool_by_tag uses cached spools when provided (no API call)."""
+        cached = [
+            {"id": 1, "extra": {"tag": '"ABC123"'}},
+            {"id": 2, "extra": {"tag": '"XYZ789"'}},
+        ]
+
+        with patch.object(client, "get_spools", AsyncMock()) as mock_get:
+            result = await client.find_spool_by_tag("ABC123", cached_spools=cached)
+            assert result["id"] == 1
+            mock_get.assert_not_called()  # Should NOT call get_spools
+
+    @pytest.mark.asyncio
+    async def test_find_spool_by_tag_without_cached_spools(self, client):
+        """Verify find_spool_by_tag fetches spools when cache not provided."""
+        mock_spools = [{"id": 1, "extra": {"tag": '"ABC123"'}}]
+
+        with patch.object(client, "get_spools", AsyncMock(return_value=mock_spools)) as mock_get:
+            result = await client.find_spool_by_tag("ABC123")
+            assert result["id"] == 1
+            mock_get.assert_called_once()  # Should call get_spools
+
+    @pytest.mark.asyncio
+    async def test_find_spools_by_location_prefix_with_cached_spools(self, client):
+        """Verify find_spools_by_location_prefix uses cached spools when provided."""
+        cached = [
+            {"id": 1, "location": "Printer1 - AMS A1"},
+            {"id": 2, "location": "Printer2 - AMS A1"},
+            {"id": 3, "location": "Printer1 - AMS A2"},
+        ]
+
+        with patch.object(client, "get_spools", AsyncMock()) as mock_get:
+            result = await client.find_spools_by_location_prefix("Printer1 - ", cached_spools=cached)
+            assert len(result) == 2
+            assert result[0]["id"] == 1
+            assert result[1]["id"] == 3
+            mock_get.assert_not_called()  # Should NOT call get_spools
+
+    @pytest.mark.asyncio
+    async def test_sync_ams_tray_with_cached_spools(self, client, sample_tray, existing_spool):
+        """Verify sync_ams_tray passes cached_spools to find_spool_by_tag."""
+        cached = [existing_spool]
+
+        with (
+            patch.object(client, "get_spools", AsyncMock()) as mock_get,
+            patch.object(client, "update_spool", AsyncMock(return_value={"id": 42})),
+        ):
+            await client.sync_ams_tray(sample_tray, "TestPrinter", cached_spools=cached)
+            mock_get.assert_not_called()  # Should NOT call get_spools
+
+    @pytest.mark.asyncio
+    async def test_clear_location_for_removed_spools_with_cached_spools(self, client):
+        """Verify clear_location_for_removed_spools uses cached spools."""
+        cached = [
+            {"id": 1, "location": "Printer1 - AMS A1", "extra": {"tag": '"TAG1"'}},
+            {"id": 2, "location": "Printer1 - AMS A2", "extra": {"tag": '"TAG2"'}},
+            {"id": 3, "location": "Printer1 - AMS A3", "extra": {"tag": '"TAG3"'}},
+        ]
+        current_tags = {"TAG1", "TAG2"}  # TAG3 was removed
+
+        with (
+            patch.object(client, "get_spools", AsyncMock()) as mock_get,
+            patch.object(client, "update_spool", AsyncMock(return_value={"id": 3})) as mock_update,
+        ):
+            cleared = await client.clear_location_for_removed_spools("Printer1", current_tags, cached_spools=cached)
+            assert cleared == 1
+            mock_get.assert_not_called()  # Should NOT call get_spools
+            mock_update.assert_called_once()
+            # Verify it cleared TAG3 (not in current_tags)
+            call_kwargs = mock_update.call_args.kwargs
+            assert call_kwargs["spool_id"] == 3
+            assert call_kwargs.get("clear_location") is True
+
+    # ========================================================================
+    # Tests for retry logic in get_spools
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    async def test_get_spools_succeeds_on_first_attempt(self, client):
+        """Verify get_spools succeeds immediately when no errors occur."""
+        mock_spools = [{"id": 1}, {"id": 2}]
+
+        with patch.object(client, "_get_client") as mock_get_client:
+            mock_http_client = AsyncMock()
+            mock_response = Mock()
+            mock_response.raise_for_status = Mock()
+            mock_response.json = Mock(return_value=mock_spools)
+            mock_http_client.get = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_http_client
+
+            result = await client.get_spools()
+
+            assert result == mock_spools
+            mock_get_client.assert_called_once()
+            mock_http_client.get.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_spools_retries_on_connection_error(self, client):
+        """Verify get_spools retries up to 3 times on connection errors."""
+        import httpx
+
+        mock_spools = [{"id": 1}]
+
+        with (
+            patch.object(client, "_get_client") as mock_get_client,
+            patch.object(client, "close", AsyncMock()) as mock_close,
+            patch("asyncio.sleep", AsyncMock()) as mock_sleep,
+        ):
+            mock_http_client = AsyncMock()
+            mock_get_client.return_value = mock_http_client
+
+            # First 2 attempts fail with ReadError, 3rd succeeds
+            mock_response = Mock()
+            mock_response.raise_for_status = Mock()
+            mock_response.json = Mock(return_value=mock_spools)
+
+            mock_http_client.get = AsyncMock(
+                side_effect=[
+                    httpx.ReadError("Connection closed"),
+                    httpx.ReadError("Connection closed"),
+                    mock_response,
+                ]
+            )
+
+            result = await client.get_spools()
+
+            assert result == mock_spools
+            assert mock_get_client.call_count == 3
+            assert mock_http_client.get.call_count == 3
+            # Should close client twice (after each failed attempt)
+            assert mock_close.call_count == 2
+            # Should sleep twice (after first 2 attempts)
+            assert mock_sleep.call_count == 2
+            mock_sleep.assert_called_with(0.5)
+
+    @pytest.mark.asyncio
+    async def test_get_spools_raises_after_3_failed_attempts(self, client):
+        """Verify get_spools raises exception after 3 failed attempts."""
+        import httpx
+
+        with (
+            patch.object(client, "_get_client", AsyncMock()) as mock_get_client,
+            patch.object(client, "close", AsyncMock()) as mock_close,
+            patch("asyncio.sleep", AsyncMock()) as mock_sleep,
+        ):
+            mock_http_client = AsyncMock()
+            mock_get_client.return_value = mock_http_client
+
+            # All 3 attempts fail
+            mock_http_client.get.side_effect = httpx.ReadError("Connection closed")
+
+            with pytest.raises(httpx.ReadError):
+                await client.get_spools()
+
+            assert mock_get_client.call_count == 3
+            assert mock_http_client.get.call_count == 3
+            # Should close client twice (after first 2 failed attempts, not after 3rd)
+            assert mock_close.call_count == 2
+            # Should sleep twice (after first 2 attempts, not after 3rd)
+            assert mock_sleep.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_get_spools_handles_non_connection_errors(self, client):
+        """Verify get_spools retries on non-connection errors without recreating client."""
+        import httpx
+
+        mock_spools = [{"id": 1}]
+
+        with (
+            patch.object(client, "_get_client") as mock_get_client,
+            patch.object(client, "close", AsyncMock()) as mock_close,
+            patch("asyncio.sleep", AsyncMock()) as mock_sleep,
+        ):
+            mock_http_client = AsyncMock()
+            mock_get_client.return_value = mock_http_client
+
+            # First attempt fails with HTTP error, 2nd succeeds
+            mock_response_error = Mock()
+            mock_response_error.raise_for_status = Mock(
+                side_effect=httpx.HTTPStatusError("500 Server Error", request=Mock(), response=Mock())
+            )
+
+            mock_response_success = Mock()
+            mock_response_success.raise_for_status = Mock()
+            mock_response_success.json = Mock(return_value=mock_spools)
+
+            mock_http_client.get = AsyncMock(side_effect=[mock_response_error, mock_response_success])
+
+            result = await client.get_spools()
+
+            assert result == mock_spools
+            assert mock_get_client.call_count == 2
+            # Should NOT close client for HTTP errors (only connection errors)
+            mock_close.assert_not_called()
+            # Should sleep once (after first failed attempt)
+            assert mock_sleep.call_count == 1

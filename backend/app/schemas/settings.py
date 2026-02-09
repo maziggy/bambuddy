@@ -106,6 +106,13 @@ class AppSettings(BaseModel):
     ha_enabled: bool = Field(default=False, description="Enable Home Assistant integration for smart plug control")
     ha_url: str = Field(default="", description="Home Assistant URL (e.g., http://192.168.1.100:8123)")
     ha_token: str = Field(default="", description="Home Assistant Long-Lived Access Token")
+    ha_url_from_env: bool = Field(default=False, description="Whether HA URL is set via HA_URL environment variable")
+    ha_token_from_env: bool = Field(
+        default=False, description="Whether HA token is set via HA_TOKEN environment variable"
+    )
+    ha_env_managed: bool = Field(
+        default=False, description="Whether HA integration is fully managed by environment variables"
+    )
 
     # File Manager / Library settings
     library_archive_mode: str = Field(

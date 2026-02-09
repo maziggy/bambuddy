@@ -751,6 +751,9 @@ export interface AppSettings {
   ha_enabled: boolean;
   ha_url: string;
   ha_token: string;
+  ha_url_from_env: boolean;
+  ha_token_from_env: boolean;
+  ha_env_managed: boolean;
   // File Manager / Library settings
   library_archive_mode: 'always' | 'never' | 'ask';
   library_disk_warning_gb: number;
@@ -1619,8 +1622,14 @@ export interface UnlinkedSpool {
   location: string | null;
 }
 
+export interface LinkedSpoolInfo {
+  id: number;
+  remaining_weight: number | null;
+  filament_weight: number | null;
+}
+
 export interface LinkedSpoolsMap {
-  linked: Record<string, number>; // tag (uppercase) -> spool_id
+  linked: Record<string, LinkedSpoolInfo>; // tag (uppercase) -> spool info
 }
 
 // Update types
@@ -3925,6 +3934,7 @@ export interface DiscoveryInfo {
   is_docker: boolean;
   ssdp_running: boolean;
   scan_running: boolean;
+  subnets: string[];
 }
 
 export interface SubnetScanStatus {

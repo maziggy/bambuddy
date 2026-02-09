@@ -193,12 +193,38 @@ class CertificateService:
 
         return ca_key, ca_cert
 
-    def generate_certificates(self) -> tuple[Path, Path]:
+    def _build_san_entries(self, local_ip: str, additional_ips: list[str] | None) -> list[x509.GeneralName]:
+        """Build Subject Alternative Name entries for the printer certificate."""
+        entries: list[x509.GeneralName] = [
+            x509.DNSName("localhost"),
+            x509.DNSName("bambuddy"),
+            x509.DNSName(self.serial),
+            x509.IPAddress(IPv4Address(local_ip)),
+            x509.IPAddress(IPv4Address("127.0.0.1")),
+        ]
+        seen_ips = {local_ip, "127.0.0.1"}
+        if additional_ips:
+            for ip in additional_ips:
+                if ip and ip not in seen_ips:
+                    try:
+                        entries.append(x509.IPAddress(IPv4Address(ip)))
+                        seen_ips.add(ip)
+                        logger.info("Added additional SAN IP: %s", ip)
+                    except ValueError:
+                        logger.warning("Skipping invalid additional SAN IP: %s", ip)
+        return entries
+
+    def generate_certificates(self, additional_ips: list[str] | None = None) -> tuple[Path, Path]:
         """Generate printer certificate (reusing existing CA if available).
 
         Creates a certificate chain mimicking real Bambu printers:
         - CA certificate (reused if exists and valid, otherwise generated)
         - Printer certificate (CN=serial, signed by CA)
+
+        Args:
+            additional_ips: Extra IP addresses to include in certificate SAN.
+                Used in proxy mode to include the remote interface IP so the
+                slicer's TLS handshake succeeds when connecting to the proxy.
 
         Returns:
             Tuple of (cert_path, key_path)
@@ -245,15 +271,7 @@ class CertificateService:
                 critical=True,
             )
             .add_extension(
-                x509.SubjectAlternativeName(
-                    [
-                        x509.DNSName("localhost"),
-                        x509.DNSName("bambuddy"),
-                        x509.DNSName(self.serial),
-                        x509.IPAddress(IPv4Address(local_ip)),
-                        x509.IPAddress(IPv4Address("127.0.0.1")),
-                    ]
-                ),
+                x509.SubjectAlternativeName(self._build_san_entries(local_ip, additional_ips)),
                 critical=False,
             )
             .add_extension(

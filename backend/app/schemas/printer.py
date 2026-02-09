@@ -6,7 +6,11 @@ from pydantic import BaseModel, Field
 class PrinterBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     serial_number: str = Field(..., min_length=1, max_length=50)
-    ip_address: str = Field(..., pattern=r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
+    ip_address: str = Field(
+        ...,
+        max_length=253,
+        pattern=r"^(\d{1,3}(\.\d{1,3}){3}|[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*)$",
+    )
     access_code: str = Field(..., min_length=1, max_length=20)
     model: str | None = None
     location: str | None = None  # Group/location name
@@ -31,7 +35,11 @@ class PlateDetectionROI(BaseModel):
 
 class PrinterUpdate(BaseModel):
     name: str | None = None
-    ip_address: str | None = None
+    ip_address: str | None = Field(
+        default=None,
+        max_length=253,
+        pattern=r"^(\d{1,3}(\.\d{1,3}){3}|[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*)$",
+    )
     access_code: str | None = None
     model: str | None = None
     location: str | None = None

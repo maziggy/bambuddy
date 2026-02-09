@@ -40,28 +40,20 @@ class SmartPlugManager:
 
     async def _configure_ha_service(self, db: AsyncSession | None = None):
         """Configure the HA service with URL and token from settings."""
-        from backend.app.models.settings import Settings
+        from backend.app.api.routes.settings import get_homeassistant_settings
 
         try:
             if db:
                 # Use provided session
-                result = await db.execute(select(Settings).where(Settings.key == "ha_url"))
-                ha_url_setting = result.scalar_one_or_none()
-                result = await db.execute(select(Settings).where(Settings.key == "ha_token"))
-                ha_token_setting = result.scalar_one_or_none()
+                ha_settings = await get_homeassistant_settings(db)
             else:
                 # Create new session
                 from backend.app.core.database import async_session
 
                 async with async_session() as session:
-                    result = await session.execute(select(Settings).where(Settings.key == "ha_url"))
-                    ha_url_setting = result.scalar_one_or_none()
-                    result = await session.execute(select(Settings).where(Settings.key == "ha_token"))
-                    ha_token_setting = result.scalar_one_or_none()
+                    ha_settings = await get_homeassistant_settings(session)
 
-            ha_url = ha_url_setting.value if ha_url_setting else ""
-            ha_token = ha_token_setting.value if ha_token_setting else ""
-            homeassistant_service.configure(ha_url, ha_token)
+            homeassistant_service.configure(ha_settings["ha_url"], ha_settings["ha_token"])
         except Exception as e:
             logger.warning("Failed to configure HA service: %s", e)
 

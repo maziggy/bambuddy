@@ -18,6 +18,7 @@ from backend.app.services.discovery import (
     is_running_in_docker,
     subnet_scanner,
 )
+from backend.app.services.network_utils import get_network_interfaces
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/discovery", tags=["discovery"])
@@ -35,6 +36,7 @@ class DiscoveryInfo(BaseModel):
     is_docker: bool
     ssdp_running: bool
     scan_running: bool
+    subnets: list[str] = []
 
 
 class SubnetScanRequest(BaseModel):
@@ -67,10 +69,12 @@ async def get_discovery_info(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.DISCOVERY_SCAN),
 ):
     """Get discovery environment info (Docker detection, etc.)."""
+    subnets = [iface["subnet"] for iface in get_network_interfaces()]
     return DiscoveryInfo(
         is_docker=is_running_in_docker(),
         ssdp_running=discovery_service.is_running,
         scan_running=subnet_scanner.is_running,
+        subnets=subnets,
     )
 
 

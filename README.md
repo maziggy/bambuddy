@@ -39,7 +39,8 @@
 
 **Print from anywhere in the world** — Bambuddy's new Proxy Mode acts as a secure relay between your slicer and printer:
 
-- 🔒 **End-to-end TLS encryption** — Your print data is encrypted from slicer to printer
+- 🔒 **TLS-encrypted control channels** — MQTT and FTP control fully encrypted
+- 🛡️ **VPN recommended** — Use Tailscale/WireGuard for full data encryption ([details](https://wiki.bambuddy.cool/features/virtual-printer/))
 - 🌍 **No cloud dependency** — Direct connection through your own Bambuddy server
 - 🔑 **Uses printer's access code** — No additional credentials needed
 - ⚡ **Full-speed printing** — FTP and MQTT protocols proxied transparently
@@ -147,7 +148,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Queue events (waiting, skipped, failed)
 
 ### 🔧 Integrations
-- [Spoolman](https://github.com/Donkie/Spoolman) filament sync
+- [Spoolman](https://github.com/Donkie/Spoolman) filament sync with per-filament usage tracking and fill level display
 - MQTT publishing for Home Assistant, Node-RED, etc.
 - **Prometheus metrics** - Export printer telemetry for Grafana dashboards
 - Bambu Cloud profile management
@@ -163,7 +164,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Send prints directly from Bambu Studio/Orca Slicer
 - Configurable printer model (X1C, P1S, A1, H2D, etc.)
 - Archive mode, Review mode, Queue mode, or Proxy mode
-- SSDP discovery (appears in slicer automatically)
+- SSDP discovery (same LAN) or manual IP entry (VPN/remote)
 - Secure TLS/MQTT/FTP communication
 
 ### 🛠️ Maintenance & Support
@@ -452,7 +453,7 @@ services:
     network_mode: host
 ```
 
-> **Note:** Docker's default bridge networking cannot receive SSDP multicast packets for automatic printer discovery. When using `network_mode: host`, Bambuddy can discover printers via subnet scanning - enter your network range (e.g., `192.168.1.0/24`) in the Add Printer dialog.
+> **Note:** Docker's default bridge networking cannot receive SSDP multicast packets for automatic printer discovery. When using `network_mode: host`, Bambuddy auto-detects your network subnet and can discover printers via subnet scanning in the Add Printer dialog.
 
 </details>
 

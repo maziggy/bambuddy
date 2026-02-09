@@ -1974,18 +1974,29 @@ export function SettingsPage() {
               </p>
 
               <div className="flex items-center justify-between">
-                <div>
+                <div className="flex-1">
                   <p className="text-white">{t('settings.enableHomeAssistant')}</p>
                   <p className="text-xs text-bambu-gray">{t('settings.homeAssistantDescription')}</p>
+                  {localSettings.ha_env_managed && (
+                    <div className="flex items-center gap-1 mt-1">
+                      <Lock className="w-3 h-3 text-bambu-green" />
+                      <span className="text-xs text-bambu-green">
+                        {t('settings.autoEnabledViaEnv')}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
                     type="checkbox"
                     checked={localSettings.ha_enabled ?? false}
                     onChange={(e) => updateSetting('ha_enabled', e.target.checked)}
+                    disabled={localSettings.ha_env_managed}
                     className="sr-only peer"
                   />
-                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                  <div className={`w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green ${
+                    localSettings.ha_env_managed ? 'opacity-60 cursor-not-allowed' : ''
+                  }`}></div>
                 </label>
               </div>
 
@@ -1994,30 +2005,67 @@ export function SettingsPage() {
                   <div>
                     <label className="block text-sm text-bambu-gray mb-1">
                       Home Assistant URL
+                      {localSettings.ha_url_from_env && (
+                        <span className="ml-2 text-xs text-bambu-green">
+                          {t('settings.environmentManagedLabel')}
+                        </span>
+                      )}
                     </label>
-                    <input
-                      type="text"
-                      value={localSettings.ha_url ?? ''}
-                      onChange={(e) => updateSetting('ha_url', e.target.value)}
-                      placeholder="http://192.168.1.100:8123"
-                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={localSettings.ha_url ?? ''}
+                        onChange={(e) => updateSetting('ha_url', e.target.value)}
+                        placeholder="http://192.168.1.100:8123"
+                        disabled={localSettings.ha_url_from_env}
+                        className={`w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none ${
+                          localSettings.ha_url_from_env ? 'opacity-60 cursor-not-allowed' : ''
+                        }`}
+                      />
+                      {localSettings.ha_url_from_env && (
+                        <Lock className="absolute right-3 top-2.5 w-4 h-4 text-bambu-gray" />
+                      )}
+                    </div>
+                    {localSettings.ha_url_from_env && (
+                      <p className="text-xs text-bambu-gray mt-1">
+                        {t('settings.urlFromEnvReadOnly')}
+                      </p>
+                    )}
                   </div>
 
                   <div>
                     <label className="block text-sm text-bambu-gray mb-1">
                       Long-Lived Access Token
+                      {localSettings.ha_token_from_env && (
+                        <span className="ml-2 text-xs text-bambu-green">
+                          {t('settings.environmentManagedLabel')}
+                        </span>
+                      )}
                     </label>
-                    <input
-                      type="password"
-                      value={localSettings.ha_token ?? ''}
-                      onChange={(e) => updateSetting('ha_token', e.target.value)}
-                      placeholder="eyJ0eXAiOiJKV1QiLC..."
-                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                    />
-                    <p className="text-xs text-bambu-gray mt-1">
-                      Create a token in HA: Profile → Long-Lived Access Tokens → Create Token
-                    </p>
+                    <div className="relative">
+                      <input
+                        type="password"
+                        value={localSettings.ha_token ?? ''}
+                        onChange={(e) => updateSetting('ha_token', e.target.value)}
+                        placeholder="eyJ0eXAiOiJKV1QiLC..."
+                        disabled={localSettings.ha_token_from_env}
+                        className={`w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none ${
+                          localSettings.ha_token_from_env ? 'opacity-60 cursor-not-allowed' : ''
+                        }`}
+                      />
+                      {localSettings.ha_token_from_env && (
+                        <Lock className="absolute right-3 top-2.5 w-4 h-4 text-bambu-gray" />
+                      )}
+                    </div>
+                    {localSettings.ha_token_from_env ? (
+                      <p className="text-xs text-bambu-gray mt-1">
+                        {t('settings.tokenFromEnvReadOnly')}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-bambu-gray mt-1">
+                        Create a token in HA: Profile → Long-Lived Access Tokens → Create Token
+                      </p>
+                    )}
                   </div>
 
                   {localSettings.ha_url && localSettings.ha_token && (

@@ -115,7 +115,7 @@ export default {
     deletePrinter: 'Delete Printer',
     printerName: 'Printer Name',
     serialNumber: 'Serial Number',
-    ipAddress: 'IP Address',
+    ipAddress: 'IP Address / Hostname',
     accessCode: 'Access Code',
     model: 'Model',
     nozzleCount: 'Nozzle Count',
@@ -1093,6 +1093,10 @@ export default {
     enableRetry: 'Enable retry',
     // Home Assistant
     homeAssistantDescription: 'Control smart plugs via Home Assistant',
+    environmentManagedLabel: '(Environment Managed)',
+    autoEnabledViaEnv: 'Automatically enabled via environment variables',
+    urlFromEnvReadOnly: 'Value set by HA_URL environment variable (read-only)',
+    tokenFromEnvReadOnly: 'Value set by HA_TOKEN environment variable (read-only)',
     // MQTT
     mqttConnectedTo: 'Connected to',
     // Prometheus
@@ -1506,6 +1510,7 @@ export default {
     recording: 'Recording',
     startRecording: 'Start Recording',
     stopRecording: 'Stop Recording',
+    chamberLight: 'Toggle chamber light',
   },
 
   // Groups management
@@ -2179,6 +2184,7 @@ export default {
     linkSuccess: 'Spool linked to Spoolman successfully',
     linkFailed: 'Failed to link spool',
     spoolId: 'Spool ID',
+    fillSourceLabel: '(Spoolman)',
     weight: 'Weight',
     remaining: 'Remaining',
     disableWeightSync: 'Disable AMS Estimated Weight Sync',

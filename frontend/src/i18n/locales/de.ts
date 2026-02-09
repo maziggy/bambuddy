@@ -115,7 +115,7 @@ export default {
     deletePrinter: 'Drucker löschen',
     printerName: 'Druckername',
     serialNumber: 'Seriennummer',
-    ipAddress: 'IP-Adresse',
+    ipAddress: 'IP-Adresse / Hostname',
     accessCode: 'Zugangscode',
     model: 'Modell',
     nozzleCount: 'Düsenanzahl',
@@ -1093,6 +1093,10 @@ export default {
     enableRetry: 'Wiederholung aktivieren',
     // Home Assistant
     homeAssistantDescription: 'Smart Plugs über Home Assistant steuern',
+    environmentManagedLabel: '(Umgebungsvariable)',
+    autoEnabledViaEnv: 'Automatisch über Umgebungsvariablen aktiviert',
+    urlFromEnvReadOnly: 'Wert wird über HA_URL Umgebungsvariable gesetzt (schreibgeschützt)',
+    tokenFromEnvReadOnly: 'Wert wird über HA_TOKEN Umgebungsvariable gesetzt (schreibgeschützt)',
     // MQTT
     mqttConnectedTo: 'Verbunden mit',
     // Prometheus
@@ -1506,6 +1510,7 @@ export default {
     recording: 'Aufnahme',
     startRecording: 'Aufnahme starten',
     stopRecording: 'Aufnahme stoppen',
+    chamberLight: 'Kammerbeleuchtung umschalten',
   },
 
   // Groups management
@@ -2179,6 +2184,7 @@ export default {
     linkSuccess: 'Spule erfolgreich mit Spoolman verknüpft',
     linkFailed: 'Verknüpfung mit Spoolman fehlgeschlagen',
     spoolId: 'Spulen-ID',
+    fillSourceLabel: '(Spoolman)',
     weight: 'Gewicht',
     remaining: 'Verbleibend',
     disableWeightSync: 'AMS-Gewichtsschätzung deaktivieren',

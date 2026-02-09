@@ -545,6 +545,11 @@ async def get_archive_stats(
         plugs_result = await db.execute(select(SmartPlug))
         plugs = list(plugs_result.scalars().all())
 
+        # Configure HA service once (needed for homeassistant-type plugs)
+        ha_url = await get_setting(db, "ha_url") or ""
+        ha_token = await get_setting(db, "ha_token") or ""
+        homeassistant_service.configure(ha_url, ha_token)
+
         total_energy_kwh = 0.0
         for plug in plugs:
             if plug.plug_type == "tasmota":

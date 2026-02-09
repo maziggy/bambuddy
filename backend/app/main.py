@@ -260,11 +260,10 @@ async def _get_plug_energy(plug, db) -> dict | None:
     For MQTT plugs, returns data from the subscription service.
     """
     if plug.plug_type == "homeassistant":
-        from backend.app.api.routes.settings import get_setting
+        from backend.app.api.routes.settings import get_homeassistant_settings
 
-        ha_url = await get_setting(db, "ha_url") or ""
-        ha_token = await get_setting(db, "ha_token") or ""
-        homeassistant_service.configure(ha_url, ha_token)
+        ha_settings = await get_homeassistant_settings(db)
+        homeassistant_service.configure(ha_settings["ha_url"], ha_settings["ha_token"])
         return await homeassistant_service.get_energy(plug)
     elif plug.plug_type == "mqtt":
         # MQTT plugs report "today" energy, not lifetime total
@@ -557,6 +556,20 @@ async def on_ams_change(printer_id: int, ams_data: list):
             printer = result.scalar_one_or_none()
             printer_name = printer.name if printer else f"Printer {printer_id}"
 
+            # OPTIMIZATION: Fetch all spools once before processing trays
+            # This eliminates redundant API calls (one per tray) when syncing multiple trays
+            logger.debug("[Printer %s] Fetching spools cache for AMS sync...", printer_id)
+            try:
+                cached_spools = await client.get_spools()
+                logger.debug("[Printer %s] Cached %d spools for batch sync", printer_id, len(cached_spools))
+            except Exception as e:
+                logger.error(
+                    "[Printer %s] Failed to fetch spools cache after retries, aborting AMS sync: %s",
+                    printer_id,
+                    e,
+                )
+                return
+
             # Sync each AMS tray
             synced = 0
             for ams_unit in ams_data:
@@ -569,9 +582,26 @@ async def on_ams_change(printer_id: int, ams_data: list):
                         continue  # Empty tray
 
                     try:
-                        result = await client.sync_ams_tray(tray, printer_name, disable_weight_sync=disable_weight_sync)
+                        result = await client.sync_ams_tray(
+                            tray,
+                            printer_name,
+                            disable_weight_sync=disable_weight_sync,
+                            cached_spools=cached_spools,
+                        )
                         if result:
                             synced += 1
+                            # If a new spool was created, add it to the cache
+                            # so subsequent trays can find it if they reference the same tag
+                            if result.get("id"):
+                                # Check if this spool already exists in cache
+                                spool_exists = any(s.get("id") == result["id"] for s in cached_spools)
+                                if not spool_exists:
+                                    cached_spools.append(result)
+                                    logger.debug(
+                                        "[Printer %s] Added newly created spool %s to cache",
+                                        printer_id,
+                                        result["id"],
+                                    )
                     except Exception as e:
                         logger.error("Error syncing AMS %s tray %s: %s", ams_id, tray.tray_id, e)
 

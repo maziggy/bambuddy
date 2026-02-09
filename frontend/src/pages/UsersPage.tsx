@@ -37,9 +37,10 @@ export function UsersPage() {
   });
 
   // Check if advanced auth is enabled
-  const { data: advancedAuthStatus } = useQuery({
+  const { data: advancedAuthStatus, isLoading: isLoadingAdvancedAuth } = useQuery({
     queryKey: ['advancedAuthStatus'],
     queryFn: () => api.getAdvancedAuthStatus(),
+    initialData: { advanced_auth_enabled: false, smtp_configured: false },
   });
 
   // Close modal on Escape key

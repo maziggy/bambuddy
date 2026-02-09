@@ -68,7 +68,7 @@ export function CreateUserAdvancedAuthModal({
                 <UsersIcon className="w-5 h-5 text-bambu-green" />
                 <h2 className="text-lg font-semibold text-white">{t('users.modal.createUser')}</h2>
               </div>
-              <p className="text-sm text-bambu-gray ml-7">with Advanced Authentication</p>
+              <p className="text-sm text-bambu-gray ml-7">{t('users.modal.advancedAuthSubtitle') || 'with Advanced Authentication'}</p>
             </div>
             <Button
               variant="ghost"

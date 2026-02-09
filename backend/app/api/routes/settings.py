@@ -32,6 +32,27 @@ async def get_setting(db: AsyncSession, key: str) -> str | None:
     return setting.value if setting else None
 
 
+async def get_external_login_url(db: AsyncSession) -> str:
+    """Get the external URL for the login page.
+    
+    Uses external_url from settings if available, otherwise falls back to APP_URL env var.
+    
+    Args:
+        db: Database session
+        
+    Returns:
+        Full URL to the login page
+    """
+    import os
+    
+    external_url = await get_setting(db, "external_url")
+    if external_url:
+        external_url = external_url.rstrip("/")
+    else:
+        external_url = os.environ.get("APP_URL", "http://localhost:5173")
+    return external_url + "/login"
+
+
 async def set_setting(db: AsyncSession, key: str, value: str) -> None:
     """Set a single setting value."""
     from sqlalchemy import func

@@ -3435,9 +3435,9 @@ export function SettingsPage() {
                     <Mail className="w-5 h-5 text-blue-400" />
                   </div>
                   <div>
-                    <h3 className="text-white font-medium">{t('settings.email.advancedAuthEnabled') || 'Advanced Authentication is enabled'}</h3>
+                    <h3 className="text-white font-medium">{t('settings.email.advancedAuthEnabled')}</h3>
                     <p className="text-sm text-bambu-gray mt-1">
-                      {t('settings.email.advancedAuthEnabledDesc') || 'Email-based user management features are active. New users will receive auto-generated passwords via email, and users can reset their passwords through the forgot password feature.'}
+                      {t('settings.email.advancedAuthEnabledDesc')}
                     </p>
                   </div>
                 </div>

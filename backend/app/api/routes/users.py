@@ -24,7 +24,7 @@ from backend.app.services.email_service import (
     get_smtp_settings,
     send_email,
 )
-from backend.app.api.routes.settings import get_setting
+from backend.app.api.routes.settings import get_external_login_url
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -71,7 +71,6 @@ async def create_user(
     - Admin cannot set or see the password
     """
     import logging
-    import os
 
     logger = logging.getLogger(__name__)
 
@@ -153,13 +152,7 @@ async def create_user(
         try:
             smtp_settings = await get_smtp_settings(db)
             if smtp_settings:
-                # Use external_url from settings if available, otherwise fall back to APP_URL env var
-                external_url = await get_setting(db, "external_url")
-                if external_url:
-                    external_url = external_url.rstrip("/")
-                else:
-                    external_url = os.environ.get("APP_URL", "http://localhost:5173")
-                login_url = external_url + "/login"
+                login_url = await get_external_login_url(db)
                 subject, text_body, html_body = create_welcome_email(new_user.username, password, login_url)
                 send_email(smtp_settings, new_user.email, subject, text_body, html_body)
                 logger.info(f"Welcome email sent to {new_user.email}")

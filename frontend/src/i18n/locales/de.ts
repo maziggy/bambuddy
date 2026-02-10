@@ -2286,6 +2286,9 @@ export default {
     noPrintersAvailable: 'Keine Drucker verfügbar',
     printerBusy: 'Drucker ist beschäftigt',
     printerOffline: 'Drucker ist offline',
+    sameTypeDifferentColor: 'Gleicher Typ, andere Farbe',
+    filamentTypeNotLoaded: 'Filamenttyp nicht geladen',
+    openCalendar: 'Kalender öffnen',
   },
 
   // Backup
@@ -2358,6 +2361,10 @@ export default {
     addMoreTags: 'Weitere Tags hinzufügen...',
     matchingTags: 'Übereinstimmend mit "{{query}}"',
     existingTags: 'Vorhandene Tags',
+    placeholders: {
+      copies: '1',
+      sourceUrl: 'https://printables.com/model/...',
+    },
     clickToAdd: '(zum Hinzufügen klicken)',
     status: 'Status',
     failureReason: 'Fehlergrund',
@@ -2910,14 +2917,6 @@ export default {
     },
   },
 
-  // Edit Archive Modal
-  editArchive: {
-    placeholders: {
-      copies: '1',
-      sourceUrl: 'https://printables.com/model/...',
-    },
-  },
-
   // Photo Gallery Modal
   photoGallery: {
     deletePhoto: 'Foto löschen',
@@ -2957,13 +2956,6 @@ export default {
     sortFiles: 'Dateien sortieren',
     goToParentFolder: 'Zum übergeordneten Ordner gehen',
     threeView: '3D-Ansicht',
-  },
-
-  // Print Modal
-  printModal: {
-    sameTypeDifferentColor: 'Gleicher Typ, andere Farbe',
-    filamentTypeNotLoaded: 'Filamenttyp nicht geladen',
-    openCalendar: 'Kalender öffnen',
   },
 
   // Embedded Camera Viewer

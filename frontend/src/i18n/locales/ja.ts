@@ -1801,6 +1801,20 @@ export default {
       ams_humidity_high: 'AMS湿度高',
       ams_temperature_high: 'AMS温度高',
       test: 'テスト',
+      printStarted: '印刷開始',
+      printComplete: '印刷完了',
+      printFailed: '印刷失敗',
+      printStopped: '印刷停止',
+      progress: '進捗',
+      printerOffline: 'プリンターオフライン',
+      printerError: 'プリンターエラー',
+      lowFilament: 'フィラメント残量少',
+      maintenanceDue: 'メンテナンス期限',
+    },
+    timeAgo: {
+      justNow: 'たった今',
+      minutesAgo: '{{minutes}}分前',
+      hoursAgo: '{{hours}}時間前',
     },
   },
 
@@ -2078,6 +2092,7 @@ export default {
     selectAModel: 'モデルを選択...',
     locationFilterLabel: 'ロケーションフィルター（任意）',
     anyLocation: 'すべてのロケーション',
+    openCalendar: 'カレンダーを開く',
   },
 
   // ログインページ
@@ -2514,6 +2529,19 @@ export default {
     discardedCount: '{{count}}ファイルを破棄しました',
     archiveAllFailed: 'すべてのアーカイブに失敗しました',
     discardAllFailed: 'すべての破棄に失敗しました',
+    placeholders: {
+      tags: '例: 機能的、プロトタイプ、ギフト',
+      notes: 'この印刷についてのメモを追加...',
+    },
+    discardUpload: 'アップロードを破棄',
+    archiveAllUploads: 'すべてのアップロードをアーカイブ',
+    discardAllUploads: 'すべてのアップロードを破棄',
+    timeAgo: {
+      justNow: 'たった今',
+      minutesAgo: '{{minutes}}分前',
+      hoursAgo: '{{hours}}時間前',
+      daysAgo: '{{days}}日前',
+    },
   },
 
   // キーボードショートカット
@@ -2558,6 +2586,7 @@ export default {
     emptyLog: 'ログファイルが空またはクリアされています',
     autoRefreshing: '2秒ごとに自動更新中',
     clickStart: '開始をクリックしてライブログストリーミングを有効にする',
+    noLogEntries: 'ログエントリが見つかりません',
   },
 
   // アーカイブ編集モーダル
@@ -2604,6 +2633,10 @@ export default {
     printResult: '印刷結果',
     photosDescription: '+をクリックして印刷結果の写真を追加',
     saving: '保存中...',
+    placeholders: {
+      copies: '1',
+      sourceUrl: 'https://printables.com/model/...',
+    },
   },
 
   // MQTTデバッグ
@@ -3097,6 +3130,10 @@ export default {
     collapseAll: 'すべて折りたたむ',
     swaggerUI: 'Swagger UI',
     endpointCount: '{{categories}}カテゴリー内{{count}}エンドポイント',
+    placeholders: {
+      requestBody: 'JSONリクエストボディ...',
+      searchEndpoints: 'エンドポイントを検索...',
+    },
   },
   githubBackup: {
     title: 'GitHubバックアップ',
@@ -3242,20 +3279,6 @@ export default {
     },
   },
 
-  // Rich Text Editor
-  richTextEditor: {
-    bold: '太字',
-    italic: '斜体',
-    underline: '下線',
-    bulletList: '箇条書きリスト',
-    numberedList: '番号付きリスト',
-    alignLeft: '左揃え',
-    alignCenter: '中央揃え',
-    alignRight: '右揃え',
-    addLink: 'リンクを追加',
-    removeLink: 'リンクを削除',
-  },
-
   // External Links
   externalLinks: {
     noLinksConfigured: '外部リンクが設定されていません',
@@ -3293,29 +3316,7 @@ export default {
     footer: 'Escキーを押すか外側をクリックして閉じます',
   },
 
-  // Notification Log
-  notificationLog: {
-    title: '通知ログ',
-    events: {
-      printStarted: '印刷開始',
-      printComplete: '印刷完了',
-      printFailed: '印刷失敗',
-      printStopped: '印刷停止',
-      progress: '進捗',
-      printerOffline: 'プリンターオフライン',
-      printerError: 'プリンターエラー',
-      lowFilament: 'フィラメント残量少',
-      maintenanceDue: 'メンテナンス期限',
-      test: 'テスト',
-    },
-    timeAgo: {
-      justNow: 'たった今',
-      minutesAgo: '{{minutes}}分前',
-      hoursAgo: '{{hours}}時間前',
-    },
-  },
-
-  // Restore/Backup Modal
+  // Keyboard Shortcuts Modal
   restoreBackup: {
     title: 'バックアップを復元',
     restoring: '復元中...',
@@ -3391,32 +3392,6 @@ export default {
     categoriesSelected: '{{selectedCount}}カテゴリー選択済み',
   },
 
-  // Pending Uploads Panel
-  pendingUploads: {
-    placeholders: {
-      tags: '例: 機能的、プロトタイプ、ギフト',
-      notes: 'この印刷についてのメモを追加...',
-    },
-    discardUpload: 'アップロードを破棄',
-    archiveAllUploads: 'すべてのアップロードをアーカイブ',
-    discardAllUploads: 'すべてのアップロードを破棄',
-    archive: 'アーカイブ',
-    timeAgo: {
-      justNow: 'たった今',
-      minutesAgo: '{{minutes}}分前',
-      hoursAgo: '{{hours}}時間前',
-      daysAgo: '{{days}}日前',
-    },
-  },
-
-  // API Browser
-  apiBrowser: {
-    placeholders: {
-      requestBody: 'JSONリクエストボディ...',
-      searchEndpoints: 'エンドポイントを検索...',
-    },
-  },
-
   // Configure AMS Slot Modal
   configureAmsSlot: {
     searchPresets: 'プリセットを検索...',
@@ -3471,14 +3446,6 @@ export default {
     },
   },
 
-  // Edit Archive Modal
-  editArchive: {
-    placeholders: {
-      copies: '1',
-      sourceUrl: 'https://printables.com/model/...',
-    },
-  },
-
   // Photo Gallery Modal
   photoGallery: {
     deletePhoto: '写真を削除',
@@ -3501,12 +3468,6 @@ export default {
     noPermissionSystemInfo: 'システム情報を表示する権限がありません',
   },
 
-  // Dashboard
-  dashboard: {
-    dragToReorder: 'ドラッグして並べ替え',
-    hideWidget: 'ウィジェットを非表示',
-  },
-
   // Notification Provider Card
   notificationProviderCard: {
     deleteNotificationProvider: '通知プロバイダーを削除',
@@ -3518,13 +3479,6 @@ export default {
     sortFiles: 'ファイルを並べ替え',
     goToParentFolder: '親フォルダーへ移動',
     threeView: '3Dビュー',
-  },
-
-  // Print Modal
-  printModal: {
-    sameTypeDifferentColor: '同じタイプ、異なる色',
-    filamentTypeNotLoaded: 'フィラメントタイプが読み込まれていません',
-    openCalendar: 'カレンダーを開く',
   },
 
   // Embedded Camera Viewer
@@ -3554,12 +3508,6 @@ export default {
       callmebot: 'CallMeBot経由の無料WhatsApp通知',
       webhook: '任意のURLへのジェネリックHTTP POST',
     },
-  },
-
-  // Log Viewer
-  logViewer: {
-    searchPlaceholder: 'メッセージまたはロガー名を検索...',
-    noLogEntries: 'ログエントリが見つかりません',
   },
 
   // Switchbar Popover

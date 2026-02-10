@@ -185,6 +185,10 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Comprehensive API protection (200+ endpoints secured)
 - User management (create, edit, delete, groups)
 - User activity tracking (who uploaded archives, library files, queued prints, started prints)
+- **Advanced Auth via Email** — SMTP integration for automated user onboarding and self-service password resets
+- Admin creates users with email — system sends secure random password automatically
+- Users can reset their own password from the login screen (no admin needed)
+- Customizable email templates (welcome email, password reset)
 
 </td>
 </tr>

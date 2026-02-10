@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { X, Loader2, Settings2, ChevronDown, CheckCircle2, RotateCcw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { KProfile } from '../api/client';
 import { Button } from './Button';
@@ -216,6 +217,7 @@ export function ConfigureAmsSlotModal({
   nozzleDiameter = '0.4',
   onSuccess,
 }: ConfigureAmsSlotModalProps) {
+  const { t } = useTranslation();
   const [selectedPresetId, setSelectedPresetId] = useState<string>('');
   const [selectedKProfile, setSelectedKProfile] = useState<KProfile | null>(null);
   const [colorHex, setColorHex] = useState<string>(''); // Just the 6-char hex, no alpha
@@ -569,7 +571,7 @@ export function ConfigureAmsSlotModal({
               <div className="text-center space-y-3">
                 <CheckCircle2 className="w-16 h-16 text-bambu-green mx-auto" />
                 <p className="text-lg font-semibold text-white">Slot Configured!</p>
-                <p className="text-sm text-bambu-gray">Settings sent to printer</p>
+                <p className="text-sm text-bambu-gray">{t('configureAmsSlot.settingsSentToPrinter')}</p>
               </div>
             </div>
           )}
@@ -607,7 +609,7 @@ export function ConfigureAmsSlotModal({
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="Search presets..."
+                    placeholder={t('configureAmsSlot.searchPresets')}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white placeholder:text-bambu-gray focus:border-bambu-green focus:outline-none mb-2"
@@ -634,7 +636,7 @@ export function ConfigureAmsSlotModal({
                             <span className="text-white text-sm truncate">{preset.name}</span>
                             {isUserPreset(preset.setting_id) && (
                               <span className="text-xs px-1.5 py-0.5 rounded bg-bambu-blue/20 text-bambu-blue">
-                                Custom
+                                {t('configureAmsSlot.custom')}
                               </span>
                             )}
                           </div>
@@ -750,7 +752,7 @@ export function ConfigureAmsSlotModal({
                   />
                   <input
                     type="text"
-                    placeholder="Color name or hex (e.g., brown, FF8800)"
+                    placeholder={t('configureAmsSlot.colorPlaceholder')}
                     value={colorInput}
                     onChange={(e) => {
                       const input = e.target.value;
@@ -780,7 +782,7 @@ export function ConfigureAmsSlotModal({
                         setColorInput('');
                       }}
                       className="px-2 py-1 text-xs text-bambu-gray hover:text-white bg-bambu-dark-tertiary rounded"
-                      title="Clear custom color"
+                      title={t('configureAmsSlot.clearCustomColor')}
                     >
                       Clear
                     </button>

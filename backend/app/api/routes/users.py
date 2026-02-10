@@ -3,6 +3,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from backend.app.api.routes.settings import get_external_login_url
 from backend.app.core.auth import (
     RequirePermissionIfAuthEnabled,
     get_current_user_optional,
@@ -19,12 +20,11 @@ from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.schemas.auth import ChangePasswordRequest, GroupBrief, UserCreate, UserResponse, UserUpdate
 from backend.app.services.email_service import (
-    create_welcome_email,
+    create_welcome_email_from_template,
     generate_secure_password,
     get_smtp_settings,
     send_email,
 )
-from backend.app.api.routes.settings import get_external_login_url
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -64,7 +64,7 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new user.
-    
+
     When advanced authentication is enabled:
     - Email is required
     - Password is auto-generated and emailed to user
@@ -153,7 +153,9 @@ async def create_user(
             smtp_settings = await get_smtp_settings(db)
             if smtp_settings:
                 login_url = await get_external_login_url(db)
-                subject, text_body, html_body = create_welcome_email(new_user.username, password, login_url)
+                subject, text_body, html_body = await create_welcome_email_from_template(
+                    db, new_user.username, password, login_url
+                )
                 send_email(smtp_settings, new_user.email, subject, text_body, html_body)
                 logger.info(f"Welcome email sent to {new_user.email}")
             else:

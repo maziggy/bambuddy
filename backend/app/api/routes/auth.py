@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from backend.app.api.routes.settings import get_external_login_url
 from backend.app.core.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     authenticate_user,
@@ -35,13 +36,12 @@ from backend.app.schemas.auth import (
     UserResponse,
 )
 from backend.app.services.email_service import (
-    create_password_reset_email,
+    create_password_reset_email_from_template,
     generate_secure_password,
     get_smtp_settings,
     save_smtp_settings,
     send_email,
 )
-from backend.app.api.routes.settings import get_external_login_url
 
 
 def _user_to_response(user: User) -> UserResponse:
@@ -263,7 +263,7 @@ async def disable_auth(
 @router.post("/login", response_model=LoginResponse)
 async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     """Login and get access token.
-    
+
     Supports username or email-based login. Username lookup is case-insensitive.
     """
     # Check if auth is enabled
@@ -276,13 +276,13 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
 
     # Try username-based authentication first
     user = await authenticate_user(db, request.username, request.password)
-    
+
     # If username auth failed and advanced auth is enabled, try email-based authentication
     if not user:
         advanced_auth = await is_advanced_auth_enabled(db)
         if advanced_auth:
             user = await authenticate_user_by_email(db, request.username, request.password)
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -437,7 +437,7 @@ async def enable_advanced_auth(
     db: AsyncSession = Depends(get_db),
 ):
     """Enable advanced authentication (admin only).
-    
+
     Requires SMTP settings to be configured and tested first.
     """
     import logging
@@ -546,7 +546,7 @@ async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Dep
 
     # Find user by email
     user = await get_user_by_email(db, request.email)
-    
+
     # Always return success message to prevent email enumeration
     # but only send email if user exists
     if user and user.is_active:
@@ -559,7 +559,9 @@ async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Dep
             login_url = await get_external_login_url(db)
 
             # Send password reset email
-            subject, text_body, html_body = create_password_reset_email(user.username, new_password, login_url)
+            subject, text_body, html_body = await create_password_reset_email_from_template(
+                db, user.username, new_password, login_url
+            )
             send_email(smtp_settings, user.email, subject, text_body, html_body)
 
             logger.info(f"Password reset email sent to {user.email}")
@@ -633,7 +635,9 @@ async def reset_user_password(
         login_url = await get_external_login_url(db)
 
         # Send password reset email
-        subject, text_body, html_body = create_password_reset_email(user.username, new_password, login_url)
+        subject, text_body, html_body = await create_password_reset_email_from_template(
+            db, user.username, new_password, login_url
+        )
         send_email(smtp_settings, user.email, subject, text_body, html_body)
 
         logger.info(f"Password reset by admin {admin_user.username} for user {user.username}")

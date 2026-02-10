@@ -2118,7 +2118,6 @@ async def get_runtime_debug(
 @router.post("/{printer_id}/collect-part")
 async def collect_part(
     printer_id: int,
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
     db: AsyncSession = Depends(get_db),
 ):
     """Acknowledge that the build plate has been cleared and part collected.

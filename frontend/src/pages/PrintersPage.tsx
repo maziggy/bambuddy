@@ -2444,22 +2444,20 @@ function PrinterCard({
                     </div>
                   )}
                 </div>
-                {hasPermission('printers:control') && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setShowCollectConfirm(true)}
-                    disabled={collectPartMutation.isPending}
-                    className="w-full !border-orange-500 !text-orange-400 hover:!bg-orange-500/20"
-                  >
-                    {collectPartMutation.isPending ? (
-                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                    ) : (
-                      <Hand className="w-4 h-4 mr-2" />
-                    )}
-                    {t('printers.partRemoval.collectButton')}
-                  </Button>
-                )}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowCollectConfirm(true)}
+                  disabled={collectPartMutation.isPending}
+                  className="w-full !border-orange-500 !text-orange-400 hover:!bg-orange-500/20"
+                >
+                  {collectPartMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  ) : (
+                    <Hand className="w-4 h-4 mr-2" />
+                  )}
+                  {t('printers.partRemoval.collectButton')}
+                </Button>
               </div>
             )}
 

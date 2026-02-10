@@ -51,6 +51,7 @@ class PrinterUpdate(BaseModel):
     external_camera_enabled: bool | None = None
     plate_detection_enabled: bool | None = None
     plate_detection_roi: PlateDetectionROI | None = None
+    part_removal_enabled: bool | None = None
 
 
 class PrinterResponse(PrinterBase):
@@ -63,6 +64,12 @@ class PrinterResponse(PrinterBase):
     external_camera_enabled: bool = False
     plate_detection_enabled: bool = False
     plate_detection_roi: PlateDetectionROI | None = None
+    part_removal_enabled: bool = False
+    part_removal_required: bool = False
+    last_job_name: str | None = None
+    last_job_user: str | None = None
+    last_job_start: datetime | None = None
+    last_job_end: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -88,6 +95,12 @@ class PrinterResponse(PrinterBase):
             "nozzle_count": printer.nozzle_count,
             "print_hours_offset": printer.print_hours_offset,
             "plate_detection_enabled": printer.plate_detection_enabled,
+            "part_removal_enabled": printer.part_removal_enabled,
+            "part_removal_required": printer.part_removal_required,
+            "last_job_name": printer.last_job_name,
+            "last_job_user": printer.last_job_user,
+            "last_job_start": printer.last_job_start,
+            "last_job_end": printer.last_job_end,
             "created_at": printer.created_at,
             "updated_at": printer.updated_at,
         }

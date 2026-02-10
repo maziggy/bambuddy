@@ -35,6 +35,13 @@ class Printer(Base):
     plate_detection_roi_y: Mapped[float | None] = mapped_column(Float, nullable=True)  # Y start %
     plate_detection_roi_w: Mapped[float | None] = mapped_column(Float, nullable=True)  # Width %
     plate_detection_roi_h: Mapped[float | None] = mapped_column(Float, nullable=True)  # Height %
+    # Part removal confirmation - require confirmation that build plate is clear before next job
+    part_removal_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    part_removal_required: Mapped[bool] = mapped_column(Boolean, default=False)  # Active when job needs collection
+    last_job_name: Mapped[str | None] = mapped_column(String(500), nullable=True)  # Last completed job name
+    last_job_user: Mapped[str | None] = mapped_column(String(100), nullable=True)  # User who submitted last job
+    last_job_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # Job start time
+    last_job_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # Job end time
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

@@ -1837,6 +1837,50 @@ async def on_print_complete(printer_id: int, data: dict):
 
     log_timing("Archive status update")
 
+    # Update printer with last completed job info for part removal confirmation
+    if data.get("status") == "completed":
+        try:
+            async with async_session() as db:
+                from backend.app.models.printer import Printer
+                from backend.app.models.archive import PrintArchive
+
+                result = await db.execute(select(Printer).where(Printer.id == printer_id))
+                printer = result.scalar_one_or_none()
+                
+                if printer and printer.part_removal_enabled:
+                    # Get archive to extract start time and user
+                    archive = None
+                    if archive_id:
+                        archive_result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
+                        archive = archive_result.scalar_one_or_none()
+                    
+                    # Get the username who started this print
+                    current_user = printer_manager.get_current_print_user(printer_id)
+                    
+                    # Update printer with last job info
+                    printer.part_removal_required = True
+                    printer.last_job_name = subtask_name or filename
+                    printer.last_job_user = current_user
+                    printer.last_job_start = archive.created_at if archive else None
+                    printer.last_job_end = datetime.now()
+                    
+                    await db.commit()
+                    logger.info(
+                        "[PART-REMOVAL] Updated printer %s with last job: %s by %s", 
+                        printer_id, printer.last_job_name, printer.last_job_user
+                    )
+                    
+                    # Send WebSocket update to notify frontend
+                    await ws_manager.send_printer_updated(printer_id, {
+                        "part_removal_required": True,
+                        "last_job_name": printer.last_job_name,
+                        "last_job_user": printer.last_job_user,
+                        "last_job_start": printer.last_job_start.isoformat() if printer.last_job_start else None,
+                        "last_job_end": printer.last_job_end.isoformat() if printer.last_job_end else None,
+                    })
+        except Exception as e:
+            logger.warning("[PART-REMOVAL] Failed to update printer with last job info: %s", e)
+
     # Report filament usage to Spoolman if print completed successfully
     if data.get("status") == "completed":
         try:

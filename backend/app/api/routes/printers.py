@@ -2113,3 +2113,42 @@ async def get_runtime_debug(
         else None,
         "is_active": printer.is_active,
     }
+
+
+@router.post("/{printer_id}/collect-part")
+async def collect_part(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Acknowledge that the build plate has been cleared and part collected.
+    
+    This clears the part removal requirement and allows the printer to accept new jobs.
+    """
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    # Clear the part removal requirement
+    printer.part_removal_required = False
+    printer.last_job_name = None
+    printer.last_job_user = None
+    printer.last_job_start = None
+    printer.last_job_end = None
+    
+    await db.commit()
+    
+    # Import websocket manager from main
+    from backend.app.main import ws_manager
+    
+    # Send WebSocket update to notify frontend
+    await ws_manager.send_printer_updated(printer_id, {
+        "part_removal_required": False,
+        "last_job_name": None,
+        "last_job_user": None,
+        "last_job_start": None,
+        "last_job_end": None,
+    })
+    
+    return {"success": True, "message": "Part collected, build plate cleared"}

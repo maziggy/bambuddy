@@ -43,7 +43,6 @@ import {
   User,
   Home,
   Hand,
-  SquareDashedMousePointer,
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
@@ -3460,7 +3459,7 @@ function PrinterCard({
                   {partRemovalMutation.isPending ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    <SquareDashedMousePointer className="w-4 h-4" />
+                    <Hand className="w-4 h-4" />
                   )}
                 </Button>
               )}

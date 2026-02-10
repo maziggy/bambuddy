@@ -2286,6 +2286,9 @@ export default {
     noPrintersAvailable: 'No printers available',
     printerBusy: 'Printer is busy',
     printerOffline: 'Printer is offline',
+    sameTypeDifferentColor: 'Same type, different color',
+    filamentTypeNotLoaded: 'Filament type not loaded',
+    openCalendar: 'Open calendar',
   },
 
   // Backup
@@ -2338,6 +2341,7 @@ export default {
   },
 
   // Edit archive modal
+  // Edit Archive Modal
   editArchive: {
     title: 'Edit Archive',
     name: 'Name',
@@ -2366,6 +2370,10 @@ export default {
     photosHelp: 'Click + to add photos of your printed result',
     printResult: 'Print result',
     saving: 'Saving...',
+    placeholders: {
+      copies: '1',
+      sourceUrl: 'https://printables.com/model/...',
+    },
     // Failure reasons
     failureReasons: {
       adhesionFailure: 'Adhesion failure',
@@ -2639,5 +2647,374 @@ export default {
     replaceHepaFilter: 'Replace HEPA filter for air quality',
     replaceCarbonFilter: 'Replace activated carbon filter',
     lubricateLeftNozzleRail: 'Lubricate left nozzle rail (H2 series)',
+  },
+
+  // Smart Plugs
+  smartPlugs: {
+    offline: 'Offline',
+    admin: 'Admin',
+    openPlugAdminPage: 'Open plug admin page',
+    deleteSmartPlug: 'Delete Smart Plug',
+    turnOnSmartPlug: 'Turn On Smart Plug',
+    turnOffSmartPlug: 'Turn Off Smart Plug',
+    turnOn: 'Turn On',
+    turnOff: 'Turn Off',
+    addSmartPlug: {
+      scanningNetwork: 'Scanning network...',
+      chooseEntity: 'Choose an entity...',
+      connectionFailed: 'Connection failed',
+      searchEntities: 'Search entities...',
+      searchPowerSensors: 'Search power sensors...',
+      searchEnergySensors: 'Search energy sensors...',
+      placeholders: {
+        mqttTopic: 'zigbee2mqtt/shelly-working-room',
+        mqttPowerPath: 'power_l1',
+        mqttEnergyPath: 'energy_l1',
+        mqttStatePath: 'state_l1',
+        mqttStateOnValue: 'ON, true, 1',
+        mqttMultiplier: '1',
+        ipAddress: '192.168.1.100',
+        plugName: 'Living Room Plug',
+        username: 'admin',
+        password: '********',
+        wattThreshold: 'e.g. 200',
+        kwThreshold: 'e.g. 10',
+        mqttSameAsPower: 'Same as power topic, or different',
+      },
+    },
+  },
+
+  // Rich Text Editor
+  richTextEditor: {
+    bold: 'Bold',
+    italic: 'Italic',
+    underline: 'Underline',
+    bulletList: 'Bullet List',
+    numberedList: 'Numbered List',
+    alignLeft: 'Align Left',
+    alignCenter: 'Align Center',
+    alignRight: 'Align Right',
+    addLink: 'Add Link',
+    removeLink: 'Remove Link',
+  },
+
+  // External Links
+  externalLinks: {
+    noLinksConfigured: 'No external links configured',
+    deleteLink: 'Delete Link',
+    removeCustomIcon: 'Remove custom icon',
+    placeholders: {
+      linkName: 'My Link',
+      linkUrl: 'https://example.com',
+    },
+  },
+
+  // Keyboard Shortcuts Modal
+  keyboardShortcuts: {
+    title: 'Keyboard Shortcuts',
+    navigation: 'Navigation',
+    archivesSection: 'Archives',
+    kProfilesSection: 'K-Profiles',
+    generalSection: 'General',
+    shortcuts: {
+      goToPrinters: 'Go to Printers',
+      goToArchives: 'Go to Archives',
+      goToQueue: 'Go to Queue',
+      goToStats: 'Go to Statistics',
+      goToProfiles: 'Go to Cloud Profiles',
+      goToSettings: 'Go to Settings',
+      focusSearch: 'Focus search',
+      openUploadModal: 'Open upload modal',
+      clearSelection: 'Clear selection / blur input',
+      contextMenu: 'Context menu on cards',
+      refreshProfiles: 'Refresh profiles',
+      newProfile: 'New profile',
+      exitSelectionMode: 'Exit selection mode',
+      showHelp: 'Show this help',
+    },
+    footer: 'Press Esc or click outside to close',
+  },
+
+  // Notification Log
+  notificationLog: {
+    title: 'Notification Log',
+    events: {
+      printStarted: 'Print Started',
+      printComplete: 'Print Complete',
+      printFailed: 'Print Failed',
+      printStopped: 'Print Stopped',
+      progress: 'Progress',
+      printerOffline: 'Printer Offline',
+      printerError: 'Printer Error',
+      lowFilament: 'Low Filament',
+      maintenanceDue: 'Maintenance Due',
+      test: 'Test',
+    },
+    timeAgo: {
+      justNow: 'Just now',
+      minutesAgo: '{{minutes}}m ago',
+      hoursAgo: '{{hours}}h ago',
+    },
+  },
+
+  // Restore/Backup Modal
+  restoreBackup: {
+    title: 'Restore Backup',
+    restoring: 'Restoring...',
+    restoreComplete: 'Restore Complete',
+    restoreFailed: 'Restore Failed',
+    importSettings: 'Import settings from a backup file',
+    pleaseWait: 'Please wait while your data is being restored',
+    clickToSelect: 'Click to select backup file (.json or .zip)',
+    howDuplicateHandling: 'How duplicate handling works:',
+    categories: {
+      printers: 'Printers',
+      smartPlugs: 'Smart Plugs',
+      notificationProviders: 'Notification Providers',
+      filaments: 'Filaments',
+      archives: 'Archives',
+      pendingUploads: 'Pending Uploads',
+      settingsTemplates: 'Settings & Templates',
+    },
+    matchingInfo: {
+      printers: 'matched by serial number',
+      smartPlugs: 'matched by IP address',
+      notificationProviders: 'matched by name',
+      filaments: 'matched by name + type + brand',
+      archives: 'matched by content hash',
+      pendingUploads: 'matched by filename',
+      settingsTemplates: 'always overwritten',
+    },
+    replaceExisting: 'Replace existing data',
+    keepExisting: 'Keep existing data',
+    replaceDescription: 'Overwrite items that already exist with backup data',
+    keepDescription: 'Only restore items that don\'t already exist',
+    caution: 'Caution:',
+    cautionText: 'Overwriting will replace your current configurations with backup data. Printer access codes are never overwritten for security.',
+    itemsRestored: 'Items Restored',
+    itemsSkipped: 'Items Skipped',
+    restored: 'Restored',
+    skipped: 'Skipped (already exist)',
+    filesLabel: 'Files (3MF, thumbnails, etc.)',
+    newApiKeysGenerated: 'New API Keys Generated',
+    newApiKeysWarning: 'These keys are only shown once. Copy them now!',
+    processingBackup: 'Processing backup file...',
+    noDataFound: 'No data was found to restore in the backup file.',
+    failedToRestore: 'Failed to restore backup. Please check the file format.',
+  },
+
+  // Backup Export Modal
+  backupExport: {
+    title: 'Export Backup',
+    selectData: 'Select data to include',
+    selectAll: 'Select All',
+    selectNone: 'Select None',
+    categoryDescriptions: {
+      settings: 'Language, theme, update preferences',
+      notifications: 'ntfy, Pushover, Discord, etc.',
+      templates: 'Custom message templates',
+      smartPlugs: 'Tasmota plug configurations',
+      externalLinks: 'Sidebar links to external services',
+      printers: 'Printer info (access codes excluded)',
+      plateDetection: 'Empty plate reference images',
+      filaments: 'Filament types and costs',
+      maintenance: 'Custom maintenance schedules',
+      archives: 'All print data + files (3MF, thumbnails, photos)',
+      projects: 'Projects, BOM items, and attachments',
+      pendingUploads: 'Virtual printer uploads awaiting review',
+      apiKeys: 'Webhook API keys (new keys generated on import)',
+    },
+    requiresPrinters: 'Requires Printers to be selected',
+    zipFileWarning: 'ZIP file will be created.',
+    zipFileDescription: 'Includes all 3MF files, thumbnails, timelapses, and photos. This may take a while and result in a large file.',
+    includeAccessCodes: 'Include Access Codes',
+    includeAccessCodesDescription: 'For transferring to another machine',
+    includeAccessCodesWarning: 'Access codes will be included in plain text. Keep this backup file secure!',
+    categoriesSelected: '{{selectedCount}} categories selected',
+  },
+
+  // Pending Uploads Panel
+  pendingUploads: {
+    placeholders: {
+      tags: 'e.g., functional, prototype, gift',
+      notes: 'Add notes about this print...',
+    },
+    discardUpload: 'Discard Upload',
+    archiveAllUploads: 'Archive All Uploads',
+    discardAllUploads: 'Discard All Uploads',
+    archive: 'Archive',
+    timeAgo: {
+      justNow: 'Just now',
+      minutesAgo: '{{minutes}}m ago',
+      hoursAgo: '{{hours}}h ago',
+      daysAgo: '{{days}}d ago',
+    },
+  },
+
+  // API Browser
+  apiBrowser: {
+    placeholders: {
+      requestBody: 'JSON request body...',
+      searchEndpoints: 'Search endpoints...',
+    },
+  },
+
+  // Configure AMS Slot Modal
+  configureAmsSlot: {
+    searchPresets: 'Search presets...',
+    colorPlaceholder: 'Color name or hex (e.g., brown, FF8800)',
+    clearCustomColor: 'Clear custom color',
+    noCloudPresets: 'No cloud presets. Login to Bambu Cloud to sync.',
+    noMatchingPresets: 'No matching presets found.',
+    custom: 'Custom',
+    settingsSentToPrinter: 'Settings sent to printer',
+    filamentProfile: 'Filament Profile',
+  },
+
+  // GitHub Backup Settings
+  githubBackup: {
+    title: 'GitHub Backup',
+    history: 'History',
+    downloadBackup: 'Download Backup',
+    restoreBackup: 'Restore Backup',
+    noBackupsYet: 'No backups yet',
+    placeholders: {
+      repoUrl: 'https://github.com/username/bambuddy-backup',
+      branch: 'main',
+    },
+  },
+
+  // Email Settings
+  emailSettings: {
+    placeholders: {
+      smtpServer: 'smtp.gmail.com',
+      smtpPort: '587',
+      smtpUser: 'your.email@gmail.com',
+      fromAddress: 'your@email.com',
+      fromName: 'BamBuddy',
+      testEmail: 'test@example.com',
+    },
+  },
+
+  // Tag Management Modal
+  tagManagement: {
+    searchTags: 'Search tags...',
+    renameTag: 'Rename tag',
+    deleteTag: 'Delete tag',
+  },
+
+  // Notification Template Editor
+  notificationTemplates: {
+    placeholders: {
+      title: 'Notification title...',
+      body: 'Notification body...',
+    },
+  },
+
+  // Batch Tag Modal
+  batchTag: {
+    placeholders: {
+      newTag: 'Enter new tag...',
+    },
+  },
+
+  // Photo Gallery Modal
+  photoGallery: {
+    deletePhoto: 'Delete Photo',
+  },
+
+  // Filament Hover Card
+  filamentHoverCard: {
+    copySpoolUuid: 'Copy spool UUID',
+  },
+
+  // K Profiles View
+  kProfilesView: {
+    hasNote: 'Has note',
+    copyProfile: 'Copy profile',
+  },
+
+  // Layout/Navigation
+  layout: {
+    openMenu: 'Open menu',
+    noPermissionSystemInfo: 'You do not have permission to view system information',
+  },
+
+  // Dashboard
+  dashboard: {
+    dragToReorder: 'Drag to reorder',
+    hideWidget: 'Hide widget',
+  },
+
+  // Notification Provider Card
+  notificationProviderCard: {
+    deleteNotificationProvider: 'Delete Notification Provider',
+  },
+
+  // File Manager Modal
+  fileManagerModal: {
+    closeFileManager: 'Close file manager',
+    sortFiles: 'Sort files',
+    goToParentFolder: 'Go to parent folder',
+    threeView: '3D View',
+  },
+
+  // Embedded Camera Viewer
+  embeddedCameraViewer: {
+    refreshStream: 'Refresh stream',
+    close: 'Close',
+    zoomOut: 'Zoom out',
+    resetZoom: 'Reset zoom',
+    zoomIn: 'Zoom in',
+    dragToResize: 'Drag to resize',
+  },
+
+  // Timelapse Viewer
+  timelapseViewer: {
+    skipBack5s: 'Skip back 5s',
+    skipForward5s: 'Skip forward 5s',
+  },
+
+  // Notification Providers
+  notificationProviders: {
+    descriptions: {
+      email: 'SMTP email notifications',
+      telegram: 'Notifications via Telegram bot',
+      discord: 'Send to Discord channel via webhook',
+      ntfy: 'Free, self-hostable push notifications',
+      pushover: 'Simple, reliable push notifications',
+      callmebot: 'Free WhatsApp notifications via CallMeBot',
+      webhook: 'Generic HTTP POST to any URL',
+    },
+  },
+
+  // Log Viewer
+  logViewer: {
+    searchPlaceholder: 'Search message or logger name...',
+    noLogEntries: 'No log entries found',
+  },
+
+  // Switchbar Popover
+  switchbarPopover: {
+    noSwitchesInSwitchbar: 'No switches in switchbar',
+  },
+
+  // Project Page Modal
+  projectPageModal: {
+    placeholders: {
+      title: 'Title',
+      designer: 'Designer',
+      license: 'License',
+      description: 'Enter description...',
+      profileTitle: 'Profile Title',
+      profileDescription: 'Profile description...',
+    },
+  },
+
+  // Spoolman Settings
+  spoolmanSettings: {
+    placeholders: {
+      serverUrl: 'http://192.168.1.100:7912',
+    },
   },
 };

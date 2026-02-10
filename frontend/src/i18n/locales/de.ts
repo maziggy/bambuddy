@@ -2640,4 +2640,388 @@ export default {
     replaceCarbonFilter: 'Aktivkohlefilter ersetzen',
     lubricateLeftNozzleRail: 'Linke Düsenschiene schmieren (H2-Serie)',
   },
+
+  // Smart Plugs
+  smartPlugs: {
+    offline: 'Offline',
+    admin: 'Admin',
+    openPlugAdminPage: 'Plug-Admin-Seite öffnen',
+    deleteSmartPlug: 'Smart Plug löschen',
+    turnOnSmartPlug: 'Smart Plug einschalten',
+    turnOffSmartPlug: 'Smart Plug ausschalten',
+    turnOn: 'Einschalten',
+    turnOff: 'Ausschalten',
+    addSmartPlug: {
+      scanningNetwork: 'Netzwerk wird durchsucht...',
+      chooseEntity: 'Entität auswählen...',
+      connectionFailed: 'Verbindung fehlgeschlagen',
+      searchEntities: 'Entitäten suchen...',
+      searchPowerSensors: 'Leistungssensoren suchen...',
+      searchEnergySensors: 'Energiesensoren suchen...',
+      placeholders: {
+        mqttTopic: 'zigbee2mqtt/shelly-working-room',
+        mqttPowerPath: 'power_l1',
+        mqttEnergyPath: 'energy_l1',
+        mqttStatePath: 'state_l1',
+        mqttStateOnValue: 'ON, true, 1',
+        mqttMultiplier: '1',
+        ipAddress: '192.168.1.100',
+        plugName: 'Wohnzimmer Steckdose',
+        username: 'admin',
+        password: '********',
+        wattThreshold: 'z.B. 200',
+        kwThreshold: 'z.B. 10',
+        mqttSameAsPower: 'Gleich wie Leistungs-Topic oder anders',
+      },
+    },
+  },
+
+  // Rich Text Editor
+  richTextEditor: {
+    bold: 'Fett',
+    italic: 'Kursiv',
+    underline: 'Unterstrichen',
+    bulletList: 'Aufzählungsliste',
+    numberedList: 'Nummerierte Liste',
+    alignLeft: 'Linksbündig',
+    alignCenter: 'Zentriert',
+    alignRight: 'Rechtsbündig',
+    addLink: 'Link hinzufügen',
+    removeLink: 'Link entfernen',
+  },
+
+  // External Links
+  externalLinks: {
+    noLinksConfigured: 'Keine externen Links konfiguriert',
+    deleteLink: 'Link löschen',
+    removeCustomIcon: 'Benutzerdefiniertes Symbol entfernen',
+    placeholders: {
+      linkName: 'Mein Link',
+      linkUrl: 'https://example.com',
+    },
+  },
+
+  // Keyboard Shortcuts Modal
+  keyboardShortcuts: {
+    title: 'Tastaturkürzel',
+    navigation: 'Navigation',
+    archivesSection: 'Archive',
+    kProfilesSection: 'K-Profile',
+    generalSection: 'Allgemein',
+    shortcuts: {
+      goToPrinters: 'Zu Drucker gehen',
+      goToArchives: 'Zu Archiv gehen',
+      goToQueue: 'Zur Warteschlange gehen',
+      goToStats: 'Zu Statistiken gehen',
+      goToProfiles: 'Zu Cloud-Profilen gehen',
+      goToSettings: 'Zu Einstellungen gehen',
+      focusSearch: 'Suche fokussieren',
+      openUploadModal: 'Upload-Modal öffnen',
+      clearSelection: 'Auswahl löschen / Eingabe aufheben',
+      contextMenu: 'Kontextmenü auf Karten',
+      refreshProfiles: 'Profile aktualisieren',
+      newProfile: 'Neues Profil',
+      exitSelectionMode: 'Auswahlmodus beenden',
+      showHelp: 'Diese Hilfe anzeigen',
+    },
+    footer: 'Drücken Sie Esc oder klicken Sie außerhalb, um zu schließen',
+  },
+
+  // Notification Log
+  notificationLog: {
+    title: 'Benachrichtigungsprotokoll',
+    events: {
+      printStarted: 'Druck gestartet',
+      printComplete: 'Druck abgeschlossen',
+      printFailed: 'Druck fehlgeschlagen',
+      printStopped: 'Druck gestoppt',
+      progress: 'Fortschritt',
+      printerOffline: 'Drucker offline',
+      printerError: 'Druckerfehler',
+      lowFilament: 'Wenig Filament',
+      maintenanceDue: 'Wartung fällig',
+      test: 'Test',
+    },
+    timeAgo: {
+      justNow: 'Gerade eben',
+      minutesAgo: 'vor {{minutes}}m',
+      hoursAgo: 'vor {{hours}}h',
+    },
+  },
+
+  // Restore/Backup Modal
+  restoreBackup: {
+    title: 'Backup wiederherstellen',
+    restoring: 'Wird wiederhergestellt...',
+    restoreComplete: 'Wiederherstellung abgeschlossen',
+    restoreFailed: 'Wiederherstellung fehlgeschlagen',
+    importSettings: 'Einstellungen aus Backup-Datei importieren',
+    pleaseWait: 'Bitte warten Sie, während Ihre Daten wiederhergestellt werden',
+    clickToSelect: 'Klicken Sie, um Backup-Datei auszuwählen (.json oder .zip)',
+    howDuplicateHandling: 'So funktioniert die Duplikatbehandlung:',
+    categories: {
+      printers: 'Drucker',
+      smartPlugs: 'Smart Plugs',
+      notificationProviders: 'Benachrichtigungsanbieter',
+      filaments: 'Filamente',
+      archives: 'Archive',
+      pendingUploads: 'Ausstehende Uploads',
+      settingsTemplates: 'Einstellungen & Vorlagen',
+    },
+    matchingInfo: {
+      printers: 'abgeglichen nach Seriennummer',
+      smartPlugs: 'abgeglichen nach IP-Adresse',
+      notificationProviders: 'abgeglichen nach Name',
+      filaments: 'abgeglichen nach Name + Typ + Marke',
+      archives: 'abgeglichen nach Inhalts-Hash',
+      pendingUploads: 'abgeglichen nach Dateiname',
+      settingsTemplates: 'immer überschrieben',
+    },
+    replaceExisting: 'Vorhandene Daten ersetzen',
+    keepExisting: 'Vorhandene Daten behalten',
+    replaceDescription: 'Bereits vorhandene Elemente mit Backup-Daten überschreiben',
+    keepDescription: 'Nur Elemente wiederherstellen, die noch nicht existieren',
+    caution: 'Vorsicht:',
+    cautionText: 'Das Überschreiben ersetzt Ihre aktuellen Konfigurationen durch Backup-Daten. Drucker-Zugangscodes werden aus Sicherheitsgründen niemals überschrieben.',
+    itemsRestored: 'Wiederhergestellte Elemente',
+    itemsSkipped: 'Übersprungene Elemente',
+    restored: 'Wiederhergestellt',
+    skipped: 'Übersprungen (existieren bereits)',
+    filesLabel: 'Dateien (3MF, Thumbnails, etc.)',
+    newApiKeysGenerated: 'Neue API-Schlüssel generiert',
+    newApiKeysWarning: 'Diese Schlüssel werden nur einmal angezeigt. Kopieren Sie sie jetzt!',
+    processingBackup: 'Backup-Datei wird verarbeitet...',
+    noDataFound: 'In der Backup-Datei wurden keine wiederherzustellenden Daten gefunden.',
+    failedToRestore: 'Backup konnte nicht wiederhergestellt werden. Bitte überprüfen Sie das Dateiformat.',
+  },
+
+  // Backup Export Modal
+  backupExport: {
+    title: 'Backup exportieren',
+    selectData: 'Zu exportierende Daten auswählen',
+    selectAll: 'Alle auswählen',
+    selectNone: 'Keine auswählen',
+    categoryDescriptions: {
+      settings: 'Sprache, Theme, Update-Einstellungen',
+      notifications: 'ntfy, Pushover, Discord, usw.',
+      templates: 'Benutzerdefinierte Nachrichtenvorlagen',
+      smartPlugs: 'Tasmota-Plug-Konfigurationen',
+      externalLinks: 'Seitenleiste Links zu externen Diensten',
+      printers: 'Druckerinformationen (Zugangscodes ausgeschlossen)',
+      plateDetection: 'Leere Platten-Referenzbilder',
+      filaments: 'Filamenttypen und -kosten',
+      maintenance: 'Benutzerdefinierte Wartungspläne',
+      archives: 'Alle Druckdaten + Dateien (3MF, Thumbnails, Fotos)',
+      projects: 'Projekte, BOM-Elemente und Anhänge',
+      pendingUploads: 'Virtueller Drucker-Uploads zur Überprüfung',
+      apiKeys: 'Webhook-API-Schlüssel (neue Schlüssel bei Import generiert)',
+    },
+    requiresPrinters: 'Drucker müssen ausgewählt sein',
+    zipFileWarning: 'ZIP-Datei wird erstellt.',
+    zipFileDescription: 'Enthält alle 3MF-Dateien, Thumbnails, Zeitraffer und Fotos. Dies kann eine Weile dauern und zu einer großen Datei führen.',
+    includeAccessCodes: 'Zugangscodes einschließen',
+    includeAccessCodesDescription: 'Für die Übertragung auf eine andere Maschine',
+    includeAccessCodesWarning: 'Zugangscodes werden im Klartext eingeschlossen. Bewahren Sie diese Backup-Datei sicher auf!',
+    categoriesSelected: '{{selectedCount}} Kategorien ausgewählt',
+  },
+
+  // Pending Uploads Panel
+  pendingUploads: {
+    placeholders: {
+      tags: 'z.B. funktional, Prototyp, Geschenk',
+      notes: 'Notizen zu diesem Druck hinzufügen...',
+    },
+    discardUpload: 'Upload verwerfen',
+    archiveAllUploads: 'Alle Uploads archivieren',
+    discardAllUploads: 'Alle Uploads verwerfen',
+    archive: 'Archivieren',
+    timeAgo: {
+      justNow: 'Gerade eben',
+      minutesAgo: 'vor {{minutes}}m',
+      hoursAgo: 'vor {{hours}}h',
+      daysAgo: 'vor {{days}}d',
+    },
+  },
+
+  // API Browser
+  apiBrowser: {
+    placeholders: {
+      requestBody: 'JSON-Anforderungstext...',
+      searchEndpoints: 'Endpunkte suchen...',
+    },
+  },
+
+  // Configure AMS Slot Modal
+  configureAmsSlot: {
+    searchPresets: 'Voreinstellungen suchen...',
+    colorPlaceholder: 'Farbname oder Hex (z.B. braun, FF8800)',
+    clearCustomColor: 'Benutzerdefinierte Farbe löschen',
+    noCloudPresets: 'Keine Cloud-Voreinstellungen. Melden Sie sich bei Bambu Cloud an, um zu synchronisieren.',
+    noMatchingPresets: 'Keine passenden Voreinstellungen gefunden.',
+    custom: 'Benutzerdefiniert',
+    settingsSentToPrinter: 'Einstellungen an Drucker gesendet',
+    filamentProfile: 'Filamentprofil',
+  },
+
+  // GitHub Backup Settings
+  githubBackup: {
+    title: 'GitHub-Backup',
+    history: 'Verlauf',
+    downloadBackup: 'Backup herunterladen',
+    restoreBackup: 'Backup wiederherstellen',
+    noBackupsYet: 'Noch keine Backups',
+    placeholders: {
+      repoUrl: 'https://github.com/benutzername/bambuddy-backup',
+      branch: 'main',
+    },
+  },
+
+  // Email Settings
+  emailSettings: {
+    placeholders: {
+      smtpServer: 'smtp.gmail.com',
+      smtpPort: '587',
+      smtpUser: 'ihre.email@gmail.com',
+      fromAddress: 'ihre@email.com',
+      fromName: 'BamBuddy',
+      testEmail: 'test@example.com',
+    },
+  },
+
+  // Tag Management Modal
+  tagManagement: {
+    searchTags: 'Tags suchen...',
+    renameTag: 'Tag umbenennen',
+    deleteTag: 'Tag löschen',
+  },
+
+  // Notification Template Editor
+  notificationTemplates: {
+    placeholders: {
+      title: 'Benachrichtigungstitel...',
+      body: 'Benachrichtigungstext...',
+    },
+  },
+
+  // Batch Tag Modal
+  batchTag: {
+    placeholders: {
+      newTag: 'Neuen Tag eingeben...',
+    },
+  },
+
+  // Edit Archive Modal
+  editArchive: {
+    placeholders: {
+      copies: '1',
+      sourceUrl: 'https://printables.com/model/...',
+    },
+  },
+
+  // Photo Gallery Modal
+  photoGallery: {
+    deletePhoto: 'Foto löschen',
+  },
+
+  // Filament Hover Card
+  filamentHoverCard: {
+    copySpoolUuid: 'Spulen-UUID kopieren',
+  },
+
+  // K Profiles View
+  kProfilesView: {
+    hasNote: 'Hat Notiz',
+    copyProfile: 'Profil kopieren',
+  },
+
+  // Layout/Navigation
+  layout: {
+    openMenu: 'Menü öffnen',
+    noPermissionSystemInfo: 'Sie haben keine Berechtigung zum Anzeigen von Systeminformationen',
+  },
+
+  // Dashboard
+  dashboard: {
+    dragToReorder: 'Ziehen zum Neuordnen',
+    hideWidget: 'Widget ausblenden',
+  },
+
+  // Notification Provider Card
+  notificationProviderCard: {
+    deleteNotificationProvider: 'Benachrichtigungsanbieter löschen',
+  },
+
+  // File Manager Modal
+  fileManagerModal: {
+    closeFileManager: 'Dateimanager schließen',
+    sortFiles: 'Dateien sortieren',
+    goToParentFolder: 'Zum übergeordneten Ordner gehen',
+    threeView: '3D-Ansicht',
+  },
+
+  // Print Modal
+  printModal: {
+    sameTypeDifferentColor: 'Gleicher Typ, andere Farbe',
+    filamentTypeNotLoaded: 'Filamenttyp nicht geladen',
+    openCalendar: 'Kalender öffnen',
+  },
+
+  // Embedded Camera Viewer
+  embeddedCameraViewer: {
+    refreshStream: 'Stream aktualisieren',
+    close: 'Schließen',
+    zoomOut: 'Verkleinern',
+    resetZoom: 'Zoom zurücksetzen',
+    zoomIn: 'Vergrößern',
+    dragToResize: 'Ziehen zum Größe ändern',
+  },
+
+  // Timelapse Viewer
+  timelapseViewer: {
+    skipBack5s: '5s zurückspringen',
+    skipForward5s: '5s vorspringen',
+  },
+
+  // Notification Providers
+  notificationProviders: {
+    descriptions: {
+      email: 'SMTP-E-Mail-Benachrichtigungen',
+      telegram: 'Benachrichtigungen über Telegram-Bot',
+      discord: 'An Discord-Kanal über Webhook senden',
+      ntfy: 'Kostenlose, selbst hostbare Push-Benachrichtigungen',
+      pushover: 'Einfache, zuverlässige Push-Benachrichtigungen',
+      callmebot: 'Kostenlose WhatsApp-Benachrichtigungen über CallMeBot',
+      webhook: 'Generischer HTTP POST zu beliebiger URL',
+    },
+  },
+
+  // Log Viewer
+  logViewer: {
+    searchPlaceholder: 'Nachricht oder Logger-Name suchen...',
+    noLogEntries: 'Keine Logeinträge gefunden',
+  },
+
+  // Switchbar Popover
+  switchbarPopover: {
+    noSwitchesInSwitchbar: 'Keine Schalter in Schalterleiste',
+  },
+
+  // Project Page Modal
+  projectPageModal: {
+    placeholders: {
+      title: 'Titel',
+      designer: 'Designer',
+      license: 'Lizenz',
+      description: 'Beschreibung eingeben...',
+      profileTitle: 'Profil-Titel',
+      profileDescription: 'Profilbeschreibung...',
+    },
+  },
+
+  // Spoolman Settings
+  spoolmanSettings: {
+    placeholders: {
+      serverUrl: 'http://192.168.1.100:7912',
+    },
+  },
 };

@@ -3190,4 +3190,399 @@ export default {
       unsupportedFormat: 'サポートされていないファイル形式です',
     },
   },
+
+  // Maintenance type descriptions (built-in)
+  maintenanceDescriptions: {
+    lubricateRails: 'リニアレールに潤滑剤を塗布してスムーズな動きを実現',
+    cleanNozzle: 'ホットエンドとノズルを清掃して詰まりを防止',
+    checkBelts: 'ベルトの張力を確認して正確な印刷を実現',
+    cleanBuildPlate: 'ビルドプレートを清掃して接着力を向上',
+    checkExtruder: 'エクストルーダーギアの摩耗を検査',
+    checkCooling: '冷却ファンが正常に動作していることを確認',
+    generalInspection: 'プリンターの一般的な点検',
+    cleanCarbonRods: 'カーボンロッドを清掃して摩擦を軽減',
+    checkPtfeTube: 'PTFEチューブの摩耗や損傷を検査',
+    replaceHepaFilter: 'HEPAフィルターを交換して空気品質を向上',
+    replaceCarbonFilter: '活性炭フィルターを交換',
+    lubricateLeftNozzleRail: '左ノズルレールに潤滑剤を塗布（H2シリーズ）',
+  },
+
+  // Smart Plugs
+  smartPlugs: {
+    offline: 'オフライン',
+    admin: '管理',
+    openPlugAdminPage: 'プラグ管理ページを開く',
+    deleteSmartPlug: 'スマートプラグを削除',
+    turnOnSmartPlug: 'スマートプラグをオンにする',
+    turnOffSmartPlug: 'スマートプラグをオフにする',
+    turnOn: 'オンにする',
+    turnOff: 'オフにする',
+    addSmartPlug: {
+      scanningNetwork: 'ネットワークをスキャン中...',
+      chooseEntity: 'エンティティを選択...',
+      connectionFailed: '接続失敗',
+      searchEntities: 'エンティティを検索...',
+      searchPowerSensors: '電力センサーを検索...',
+      searchEnergySensors: 'エネルギーセンサーを検索...',
+      placeholders: {
+        mqttTopic: 'zigbee2mqtt/shelly-working-room',
+        mqttPowerPath: 'power_l1',
+        mqttEnergyPath: 'energy_l1',
+        mqttStatePath: 'state_l1',
+        mqttStateOnValue: 'ON, true, 1',
+        mqttMultiplier: '1',
+        ipAddress: '192.168.1.100',
+        plugName: 'リビングルームプラグ',
+        username: 'admin',
+        password: '********',
+        wattThreshold: '例: 200',
+        kwThreshold: '例: 10',
+        mqttSameAsPower: '電力トピックと同じ、または異なる',
+      },
+    },
+  },
+
+  // Rich Text Editor
+  richTextEditor: {
+    bold: '太字',
+    italic: '斜体',
+    underline: '下線',
+    bulletList: '箇条書きリスト',
+    numberedList: '番号付きリスト',
+    alignLeft: '左揃え',
+    alignCenter: '中央揃え',
+    alignRight: '右揃え',
+    addLink: 'リンクを追加',
+    removeLink: 'リンクを削除',
+  },
+
+  // External Links
+  externalLinks: {
+    noLinksConfigured: '外部リンクが設定されていません',
+    deleteLink: 'リンクを削除',
+    removeCustomIcon: 'カスタムアイコンを削除',
+    placeholders: {
+      linkName: 'マイリンク',
+      linkUrl: 'https://example.com',
+    },
+  },
+
+  // Keyboard Shortcuts Modal
+  keyboardShortcuts: {
+    title: 'キーボードショートカット',
+    navigation: 'ナビゲーション',
+    archivesSection: 'アーカイブ',
+    kProfilesSection: 'Kプロファイル',
+    generalSection: '全般',
+    shortcuts: {
+      goToPrinters: 'プリンターへ移動',
+      goToArchives: 'アーカイブへ移動',
+      goToQueue: 'キューへ移動',
+      goToStats: '統計へ移動',
+      goToProfiles: 'クラウドプロファイルへ移動',
+      goToSettings: '設定へ移動',
+      focusSearch: '検索にフォーカス',
+      openUploadModal: 'アップロードモーダルを開く',
+      clearSelection: '選択をクリア / 入力をぼかす',
+      contextMenu: 'カードのコンテキストメニュー',
+      refreshProfiles: 'プロファイルを更新',
+      newProfile: '新しいプロファイル',
+      exitSelectionMode: '選択モードを終了',
+      showHelp: 'このヘルプを表示',
+    },
+    footer: 'Escキーを押すか外側をクリックして閉じます',
+  },
+
+  // Notification Log
+  notificationLog: {
+    title: '通知ログ',
+    events: {
+      printStarted: '印刷開始',
+      printComplete: '印刷完了',
+      printFailed: '印刷失敗',
+      printStopped: '印刷停止',
+      progress: '進捗',
+      printerOffline: 'プリンターオフライン',
+      printerError: 'プリンターエラー',
+      lowFilament: 'フィラメント残量少',
+      maintenanceDue: 'メンテナンス期限',
+      test: 'テスト',
+    },
+    timeAgo: {
+      justNow: 'たった今',
+      minutesAgo: '{{minutes}}分前',
+      hoursAgo: '{{hours}}時間前',
+    },
+  },
+
+  // Restore/Backup Modal
+  restoreBackup: {
+    title: 'バックアップを復元',
+    restoring: '復元中...',
+    restoreComplete: '復元完了',
+    restoreFailed: '復元失敗',
+    importSettings: 'バックアップファイルから設定をインポート',
+    pleaseWait: 'データの復元中です。しばらくお待ちください',
+    clickToSelect: 'クリックしてバックアップファイルを選択（.jsonまたは.zip）',
+    howDuplicateHandling: '重複の処理方法:',
+    categories: {
+      printers: 'プリンター',
+      smartPlugs: 'スマートプラグ',
+      notificationProviders: '通知プロバイダー',
+      filaments: 'フィラメント',
+      archives: 'アーカイブ',
+      pendingUploads: '保留中のアップロード',
+      settingsTemplates: '設定とテンプレート',
+    },
+    matchingInfo: {
+      printers: 'シリアル番号で照合',
+      smartPlugs: 'IPアドレスで照合',
+      notificationProviders: '名前で照合',
+      filaments: '名前+タイプ+ブランドで照合',
+      archives: 'コンテンツハッシュで照合',
+      pendingUploads: 'ファイル名で照合',
+      settingsTemplates: '常に上書き',
+    },
+    replaceExisting: '既存データを置き換え',
+    keepExisting: '既存データを保持',
+    replaceDescription: '既に存在するアイテムをバックアップデータで上書き',
+    keepDescription: 'まだ存在しないアイテムのみを復元',
+    caution: '注意:',
+    cautionText: '上書きすると現在の構成がバックアップデータに置き換えられます。セキュリティ上の理由から、プリンターのアクセスコードは上書きされません。',
+    itemsRestored: '復元されたアイテム',
+    itemsSkipped: 'スキップされたアイテム',
+    restored: '復元済み',
+    skipped: 'スキップ（既に存在）',
+    filesLabel: 'ファイル（3MF、サムネイルなど）',
+    newApiKeysGenerated: '新しいAPIキーが生成されました',
+    newApiKeysWarning: 'これらのキーは一度だけ表示されます。今すぐコピーしてください！',
+    processingBackup: 'バックアップファイルを処理中...',
+    noDataFound: 'バックアップファイルに復元するデータが見つかりませんでした。',
+    failedToRestore: 'バックアップの復元に失敗しました。ファイル形式を確認してください。',
+  },
+
+  // Backup Export Modal
+  backupExport: {
+    title: 'バックアップをエクスポート',
+    selectData: '含めるデータを選択',
+    selectAll: 'すべて選択',
+    selectNone: 'なし',
+    categoryDescriptions: {
+      settings: '言語、テーマ、更新設定',
+      notifications: 'ntfy、Pushover、Discordなど',
+      templates: 'カスタムメッセージテンプレート',
+      smartPlugs: 'Tasmotaプラグ設定',
+      externalLinks: 'サイドバーの外部サービスへのリンク',
+      printers: 'プリンター情報（アクセスコード除外）',
+      plateDetection: '空プレート参照画像',
+      filaments: 'フィラメントの種類とコスト',
+      maintenance: 'カスタムメンテナンススケジュール',
+      archives: 'すべての印刷データ+ファイル（3MF、サムネイル、写真）',
+      projects: 'プロジェクト、BOMアイテム、添付ファイル',
+      pendingUploads: '仮想プリンターアップロード待機中',
+      apiKeys: 'Webhook APIキー（インポート時に新しいキーが生成されます）',
+    },
+    requiresPrinters: 'プリンターを選択する必要があります',
+    zipFileWarning: 'ZIPファイルが作成されます。',
+    zipFileDescription: 'すべての3MFファイル、サムネイル、タイムラプス、写真が含まれます。これには時間がかかり、大きなファイルになる可能性があります。',
+    includeAccessCodes: 'アクセスコードを含める',
+    includeAccessCodesDescription: '別のマシンへの転送用',
+    includeAccessCodesWarning: 'アクセスコードはプレーンテキストで含まれます。このバックアップファイルを安全に保管してください！',
+    categoriesSelected: '{{selectedCount}}カテゴリー選択済み',
+  },
+
+  // Pending Uploads Panel
+  pendingUploads: {
+    placeholders: {
+      tags: '例: 機能的、プロトタイプ、ギフト',
+      notes: 'この印刷についてのメモを追加...',
+    },
+    discardUpload: 'アップロードを破棄',
+    archiveAllUploads: 'すべてのアップロードをアーカイブ',
+    discardAllUploads: 'すべてのアップロードを破棄',
+    archive: 'アーカイブ',
+    timeAgo: {
+      justNow: 'たった今',
+      minutesAgo: '{{minutes}}分前',
+      hoursAgo: '{{hours}}時間前',
+      daysAgo: '{{days}}日前',
+    },
+  },
+
+  // API Browser
+  apiBrowser: {
+    placeholders: {
+      requestBody: 'JSONリクエストボディ...',
+      searchEndpoints: 'エンドポイントを検索...',
+    },
+  },
+
+  // Configure AMS Slot Modal
+  configureAmsSlot: {
+    searchPresets: 'プリセットを検索...',
+    colorPlaceholder: '色名またはHex（例: 茶色、FF8800）',
+    clearCustomColor: 'カスタム色をクリア',
+    noCloudPresets: 'クラウドプリセットがありません。Bambu Cloudにログインして同期してください。',
+    noMatchingPresets: '一致するプリセットが見つかりません。',
+    custom: 'カスタム',
+    settingsSentToPrinter: '設定をプリンターに送信しました',
+    filamentProfile: 'フィラメントプロファイル',
+  },
+
+  // GitHub Backup Settings (additional keys)
+  githubBackupSettings: {
+    placeholders: {
+      repoUrl: 'https://github.com/username/bambuddy-backup',
+      branch: 'main',
+    },
+  },
+
+  // Email Settings
+  emailSettings: {
+    placeholders: {
+      smtpServer: 'smtp.gmail.com',
+      smtpPort: '587',
+      smtpUser: 'your.email@gmail.com',
+      fromAddress: 'your@email.com',
+      fromName: 'BamBuddy',
+      testEmail: 'test@example.com',
+    },
+  },
+
+  // Tag Management Modal
+  tagManagement: {
+    searchTags: 'タグを検索...',
+    renameTag: 'タグ名を変更',
+    deleteTag: 'タグを削除',
+  },
+
+  // Notification Template Editor
+  notificationTemplates: {
+    placeholders: {
+      title: '通知タイトル...',
+      body: '通知本文...',
+    },
+  },
+
+  // Batch Tag Modal
+  batchTag: {
+    placeholders: {
+      newTag: '新しいタグを入力...',
+    },
+  },
+
+  // Edit Archive Modal
+  editArchive: {
+    placeholders: {
+      copies: '1',
+      sourceUrl: 'https://printables.com/model/...',
+    },
+  },
+
+  // Photo Gallery Modal
+  photoGallery: {
+    deletePhoto: '写真を削除',
+  },
+
+  // Filament Hover Card
+  filamentHoverCard: {
+    copySpoolUuid: 'スプールUUIDをコピー',
+  },
+
+  // K Profiles View
+  kProfilesView: {
+    hasNote: 'メモあり',
+    copyProfile: 'プロファイルをコピー',
+  },
+
+  // Layout/Navigation
+  layout: {
+    openMenu: 'メニューを開く',
+    noPermissionSystemInfo: 'システム情報を表示する権限がありません',
+  },
+
+  // Dashboard
+  dashboard: {
+    dragToReorder: 'ドラッグして並べ替え',
+    hideWidget: 'ウィジェットを非表示',
+  },
+
+  // Notification Provider Card
+  notificationProviderCard: {
+    deleteNotificationProvider: '通知プロバイダーを削除',
+  },
+
+  // File Manager Modal
+  fileManagerModal: {
+    closeFileManager: 'ファイルマネージャーを閉じる',
+    sortFiles: 'ファイルを並べ替え',
+    goToParentFolder: '親フォルダーへ移動',
+    threeView: '3Dビュー',
+  },
+
+  // Print Modal
+  printModal: {
+    sameTypeDifferentColor: '同じタイプ、異なる色',
+    filamentTypeNotLoaded: 'フィラメントタイプが読み込まれていません',
+    openCalendar: 'カレンダーを開く',
+  },
+
+  // Embedded Camera Viewer
+  embeddedCameraViewer: {
+    refreshStream: 'ストリームを更新',
+    close: '閉じる',
+    zoomOut: 'ズームアウト',
+    resetZoom: 'ズームをリセット',
+    zoomIn: 'ズームイン',
+    dragToResize: 'ドラッグしてサイズ変更',
+  },
+
+  // Timelapse Viewer
+  timelapseViewer: {
+    skipBack5s: '5秒戻る',
+    skipForward5s: '5秒進む',
+  },
+
+  // Notification Providers
+  notificationProviders: {
+    descriptions: {
+      email: 'SMTP電子メール通知',
+      telegram: 'Telegramボット経由の通知',
+      discord: 'Webhookを介してDiscordチャンネルに送信',
+      ntfy: '無料でセルフホスト可能なプッシュ通知',
+      pushover: 'シンプルで信頼性の高いプッシュ通知',
+      callmebot: 'CallMeBot経由の無料WhatsApp通知',
+      webhook: '任意のURLへのジェネリックHTTP POST',
+    },
+  },
+
+  // Log Viewer
+  logViewer: {
+    searchPlaceholder: 'メッセージまたはロガー名を検索...',
+    noLogEntries: 'ログエントリが見つかりません',
+  },
+
+  // Switchbar Popover
+  switchbarPopover: {
+    noSwitchesInSwitchbar: 'スイッチバーにスイッチがありません',
+  },
+
+  // Project Page Modal
+  projectPageModal: {
+    placeholders: {
+      title: 'タイトル',
+      designer: 'デザイナー',
+      license: 'ライセンス',
+      description: '説明を入力...',
+      profileTitle: 'プロファイルタイトル',
+      profileDescription: 'プロファイルの説明...',
+    },
+  },
+
+  // Spoolman Settings
+  spoolmanSettings: {
+    placeholders: {
+      serverUrl: 'http://192.168.1.100:7912',
+    },
+  },
 };

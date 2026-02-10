@@ -102,7 +102,7 @@ jobs:
         timeout-minutes: 10
         run: |
           cd backend
-          python -m pytest tests/ -v --tb=short --timeout=60 --timeout-method=thread
+          python -m pytest tests/ -v --tb=short --timeout=60 --timeout-method=thread -n auto
 
   # ============================================================================
   # Frontend Checks

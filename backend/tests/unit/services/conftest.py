@@ -2,8 +2,13 @@
 
 Provides a real implicit FTPS server (via mock_ftp_server) and client factory
 for integration-style testing of BambuFTPClient against a live server.
+
+The server fixture is class-scoped to avoid the overhead of starting a new
+TLS server for every test (~67 TLS handshakes → ~9 per class).
 """
 
+import os
+import shutil
 import socket
 from unittest.mock import patch
 
@@ -12,6 +17,8 @@ import pytest
 from backend.app.services.bambu_ftp import BambuFTPClient
 from backend.app.services.virtual_printer.certificate import CertificateService
 from backend.tests.unit.services.mock_ftp_server import MockBambuFTPServer
+
+BAMBU_DIRS = ("cache", "timelapse", "model", "data", "data/Metadata")
 
 
 @pytest.fixture(scope="session")
@@ -30,15 +37,16 @@ def _find_free_port() -> int:
         return s.getsockname()[1]
 
 
-@pytest.fixture()
-def ftp_root(tmp_path):
+@pytest.fixture(scope="class")
+def ftp_root(tmp_path_factory):
     """Create temp directory with standard Bambu printer directory structure."""
-    for d in ("cache", "timelapse", "model", "data", "data/Metadata"):
-        (tmp_path / d).mkdir(parents=True, exist_ok=True)
-    return tmp_path
+    root = tmp_path_factory.mktemp("ftp_root")
+    for d in BAMBU_DIRS:
+        (root / d).mkdir(parents=True, exist_ok=True)
+    return root
 
 
-@pytest.fixture()
+@pytest.fixture(scope="class")
 def ftp_server(ftp_certs, ftp_root):
     """Start a mock implicit FTPS server, yield it, stop on cleanup."""
     cert_path, key_path = ftp_certs
@@ -54,6 +62,35 @@ def ftp_server(ftp_certs, ftp_root):
     server.start()
     yield server
     server.stop()
+
+
+@pytest.fixture(autouse=True)
+def _ftp_test_cleanup(request):
+    """Reset server state between tests within a class.
+
+    Clears injected failures and restores the Bambu directory structure
+    so each test starts with a clean filesystem.  Skips cleanup for test
+    classes that don't use the class-scoped ftp_server (e.g.
+    TestDisconnectServerGone).
+    """
+    yield
+    # Only clean up if this test class uses the class-scoped fixtures
+    ftp_root = request.node.funcargs.get("ftp_root")
+    if ftp_root is None:
+        return
+    server = request.node.funcargs.get("ftp_server")
+    if server is not None:
+        server.clear_failures()
+    # Restore clean directory structure
+    root = str(ftp_root)
+    for entry in os.listdir(root):
+        path = os.path.join(root, entry)
+        if os.path.isdir(path):
+            shutil.rmtree(path)
+        else:
+            os.remove(path)
+    for d in BAMBU_DIRS:
+        os.makedirs(os.path.join(root, d), exist_ok=True)
 
 
 @pytest.fixture()

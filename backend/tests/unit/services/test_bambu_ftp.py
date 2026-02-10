@@ -85,32 +85,6 @@ class TestConnection:
         client.disconnect()  # Should not raise
         assert client._ftp is None
 
-    def test_disconnect_after_server_gone(self, ftp_certs, ftp_root):
-        """Disconnect after server has stopped raises EOFError.
-
-        Note: The current disconnect() catches (OSError, ftplib.Error) but
-        EOFError is neither. This documents actual behavior — a future fix
-        could add EOFError to the except clause.
-        """
-        from backend.tests.unit.services.mock_ftp_server import (
-            MockBambuFTPServer,
-        )
-
-        from .conftest import _find_free_port
-
-        cert_path, key_path = ftp_certs
-        port = _find_free_port()
-        server = MockBambuFTPServer("127.0.0.1", port, str(ftp_root), cert_path, key_path)
-        server.start()
-
-        client = BambuFTPClient("127.0.0.1", "12345678", timeout=5.0)
-        client.FTP_PORT = port
-        client.connect()
-
-        server.stop()
-        with pytest.raises(EOFError):
-            client.disconnect()
-
     def test_x1c_uses_prot_p(self, ftp_client_factory):
         """X1C model connects with prot_p (protected data channel)."""
         client = ftp_client_factory(printer_model="X1C")
@@ -139,6 +113,40 @@ class TestConnection:
         assert client._should_use_prot_c() is True
         assert client.connect() is True
         client.disconnect()
+
+
+# ---------------------------------------------------------------------------
+# TestDisconnectServerGone — isolated class because server.stop() calls
+# close_all() which nukes all asyncore sockets globally.
+# ---------------------------------------------------------------------------
+class TestDisconnectServerGone:
+    """Test disconnect behavior when the server has stopped."""
+
+    def test_disconnect_after_server_gone(self, ftp_certs, tmp_path):
+        """Disconnect after server has stopped raises EOFError.
+
+        Note: The current disconnect() catches (OSError, ftplib.Error) but
+        EOFError is neither. This documents actual behavior — a future fix
+        could add EOFError to the except clause.
+        """
+        from backend.tests.unit.services.mock_ftp_server import (
+            MockBambuFTPServer,
+        )
+
+        from .conftest import _find_free_port
+
+        cert_path, key_path = ftp_certs
+        port = _find_free_port()
+        server = MockBambuFTPServer("127.0.0.1", port, str(tmp_path), cert_path, key_path)
+        server.start()
+
+        client = BambuFTPClient("127.0.0.1", "12345678", timeout=5.0)
+        client.FTP_PORT = port
+        client.connect()
+
+        server.stop()
+        with pytest.raises(EOFError):
+            client.disconnect()
 
 
 # ---------------------------------------------------------------------------

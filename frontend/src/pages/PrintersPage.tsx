@@ -3433,16 +3433,18 @@ function PrinterCard({
                 </Button>
               </div>
               {/* Part Removal Confirmation Button */}
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setShowCollectConfirm(true)}
-                disabled={!printer.part_removal_required}
-                title={printer.part_removal_required ? t('printers.partRemoval.confirmRemoval') : t('printers.partRemoval.noRemovalRequired')}
-                className={printer.part_removal_required ? "!border-orange-500 !text-orange-400 hover:!bg-orange-500/20 ring-1 ring-orange-500" : ""}
-              >
-                <Hand className="w-4 h-4" />
-              </Button>
+              {hasPermission('printers:control') && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowCollectConfirm(true)}
+                  disabled={!printer.part_removal_required}
+                  title={printer.part_removal_required ? t('printers.partRemoval.confirmRemoval') : t('printers.partRemoval.noRemovalRequired')}
+                  className={printer.part_removal_required ? "!border-orange-500 !text-orange-400 hover:!bg-orange-500/20 ring-1 ring-orange-500" : ""}
+                >
+                  <Hand className="w-4 h-4" />
+                </Button>
+              )}
               <Button
                 variant="secondary"
                 size="sm"

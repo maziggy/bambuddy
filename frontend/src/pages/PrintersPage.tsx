@@ -1992,7 +1992,7 @@ function PrinterCard({
                 </button>
               )}
               {/* Firmware Version Badge */}
-              {firmwareInfo?.current_version && (
+              {firmwareInfo?.current_version && firmwareInfo?.latest_version && (
                 <button
                   onClick={() => setShowFirmwareModal(true)}
                   className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs hover:opacity-80 transition-opacity ${

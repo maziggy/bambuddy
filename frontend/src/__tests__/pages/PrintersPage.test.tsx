@@ -274,5 +274,38 @@ describe('PrintersPage', () => {
       expect(screen.queryByText('01.09.00.00')).not.toBeInTheDocument();
       expect(screen.queryByText('01.08.00.00')).not.toBeInTheDocument();
     });
+
+    it('hides badge when API has no firmware data for the model', async () => {
+      const firmwareNoData = {
+        printer_id: 1,
+        current_version: '01.01.03.00',
+        latest_version: null,
+        update_available: false,
+        download_url: null,
+        release_notes: null,
+      };
+
+      server.use(
+        http.get('/api/v1/firmware/updates/:id', () => {
+          return HttpResponse.json(firmwareNoData);
+        }),
+        http.get('/api/v1/settings/', () => {
+          return HttpResponse.json({
+            check_printer_firmware: true,
+            auto_archive: true,
+            save_thumbnails: true,
+          });
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Badge should not appear when API returns no latest_version
+      expect(screen.queryByText('01.01.03.00')).not.toBeInTheDocument();
+    });
   });
 });

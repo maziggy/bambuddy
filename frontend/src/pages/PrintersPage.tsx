@@ -1688,9 +1688,9 @@ function PrinterCard({
   // Part removal confirmation setting mutation
   const partRemovalMutation = useMutation({
     mutationFn: (enabled: boolean) => api.updatePrinter(printer.id, { part_removal_enabled: enabled }),
-    onSuccess: () => {
+    onSuccess: (_, enabled) => {
       queryClient.invalidateQueries({ queryKey: ['printers'] });
-      showToast(partRemovalMutation.variables ? t('printers.toast.partRemovalEnabled') : t('printers.toast.partRemovalDisabled'));
+      showToast(enabled ? t('printers.toast.partRemovalEnabled') : t('printers.toast.partRemovalDisabled'));
     },
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToUpdateSetting'), 'error'),
   });
@@ -3453,8 +3453,8 @@ function PrinterCard({
                   variant="secondary"
                   size="sm"
                   onClick={handleTogglePartRemoval}
-                  disabled={!status?.connected || partRemovalMutation.isPending || !hasPermission('printers:update') || printer.plate_detection_enabled}
-                  title={!hasPermission('printers:update') ? t('printers.plateDetection.noPermission') : printer.plate_detection_enabled ? t('printers.partRemoval.disabledDuringPlateCheck') : (printer.part_removal_enabled ? t('printers.partRemoval.enabled') : t('printers.partRemoval.disabled'))}
+                  disabled={!status?.connected || partRemovalMutation.isPending || printer.plate_detection_enabled}
+                  title={printer.plate_detection_enabled ? t('printers.partRemoval.disabledDuringPlateCheck') : (printer.part_removal_enabled ? t('printers.partRemoval.enabled') : t('printers.partRemoval.disabled'))}
                   className={printer.part_removal_enabled && !printer.plate_detection_enabled ? "!border-orange-500 !text-orange-400 hover:!bg-orange-500/20 ring-1 ring-orange-500" : ""}
                 >
                   {partRemovalMutation.isPending ? (

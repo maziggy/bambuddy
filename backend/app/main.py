@@ -336,8 +336,6 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                 await db.commit()
                 
                 # Send WebSocket update to notify frontend
-                from backend.app.main import ws_manager
-                
                 await ws_manager.send_printer_updated(printer_id, {
                     "part_removal_required": False,
                     "last_job_name": None,

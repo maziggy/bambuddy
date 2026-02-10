@@ -2389,6 +2389,26 @@ function PrinterCard({
                   </div>
                 </div>
 
+                {/* Warning: Print Paused for Part Removal */}
+                {printer.part_removal_required && (status.state === 'PAUSE' || status.state === 'PAUSED') && viewMode === 'expanded' && (
+                  <div className="mb-4 p-3 bg-orange-500/10 border border-orange-500/50 rounded-lg">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-5 h-5 text-orange-400 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-orange-400">
+                          {t('printers.partRemoval.pausedForRemoval')}
+                        </p>
+                        <p className="text-xs text-bambu-gray mt-1">
+                          {t('printers.partRemoval.pausedMessage', { jobName: printer.last_job_name })}
+                        </p>
+                        <p className="text-xs text-bambu-gray mt-1">
+                          {t('printers.partRemoval.resumeInstructions')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Queue Widget - shows next scheduled print */}
                 {status.state !== 'RUNNING' && (
                   <PrinterQueueWidget printerId={printer.id} />

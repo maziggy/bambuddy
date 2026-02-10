@@ -424,6 +424,9 @@ export default {
       confirmMessage: 'Have you visually confirmed the printer build plate is clear and ready for the next job?',
       confirmButton: 'Build Plate Clear',
       plateClearMessage: 'Build Plate Clear',
+      pausedForRemoval: 'Print Paused - Part Removal Required',
+      pausedMessage: 'Previous job "{{jobName}}" must be collected before this print can continue.',
+      resumeInstructions: 'Click "Collect" button below or press Resume on the printer to clear and continue.',
     },
     // Fans
     fans: {

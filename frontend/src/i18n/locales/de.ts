@@ -424,6 +424,9 @@ export default {
       confirmMessage: 'Haben Sie visuell bestätigt, dass die Druckplatte leer und bereit für den nächsten Druckauftrag ist?',
       confirmButton: 'Druckplatte leer',
       plateClearMessage: 'Druckplatte leer',
+      pausedForRemoval: 'Druck Pausiert - Teileentnahme Erforderlich',
+      pausedMessage: 'Vorheriger Auftrag "{{jobName}}" muss entnommen werden, bevor dieser Druck fortgesetzt werden kann.',
+      resumeInstructions: 'Klicken Sie unten auf "Entnehmen" oder drücken Sie Fortsetzen am Drucker, um fortzufahren.',
     },
     // Fans
     fans: {

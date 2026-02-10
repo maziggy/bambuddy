@@ -418,6 +418,9 @@ export default {
       confirmMessage: 'Hai confermato visivamente che il piatto di stampa è libero e pronto per il prossimo lavoro?',
       confirmButton: 'Piatto di Stampa Libero',
       plateClearMessage: 'Piatto di Stampa Libero',
+      pausedForRemoval: 'Stampa in Pausa - Rimozione Pezzo Richiesta',
+      pausedMessage: 'Il lavoro precedente "{{jobName}}" deve essere raccolto prima che questa stampa possa continuare.',
+      resumeInstructions: 'Clicca sul pulsante "Raccogli" qui sotto o premi Riprendi sulla stampante per continuare.',
     },
     // Fans
     fans: {

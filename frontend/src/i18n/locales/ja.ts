@@ -392,6 +392,9 @@ export default {
       confirmMessage: 'プリンタービルドプレートが空で、次のジョブの準備ができていることを視覚的に確認しましたか？',
       confirmButton: 'ビルドプレートをクリア',
       plateClearMessage: 'ビルドプレートをクリア',
+      pausedForRemoval: '印刷一時停止 - パーツ取り出しが必要',
+      pausedMessage: '前のジョブ "{{jobName}}" を回収してから、この印刷を続行する必要があります。',
+      resumeInstructions: '下の「回収」ボタンをクリックするか、プリンターで再開を押して続行してください。',
     },
     fans: {
       partCooling: 'パーツ冷却ファン',

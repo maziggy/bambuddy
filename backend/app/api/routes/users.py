@@ -3,6 +3,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from backend.app.api.routes.settings import get_external_login_url
 from backend.app.core.auth import (
     RequirePermissionIfAuthEnabled,
     get_current_user_optional,
@@ -24,7 +25,6 @@ from backend.app.services.email_service import (
     get_smtp_settings,
     send_email,
 )
-from backend.app.api.routes.settings import get_external_login_url
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -64,7 +64,7 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new user.
-    
+
     When advanced authentication is enabled:
     - Email is required
     - Password is auto-generated and emailed to user

@@ -738,6 +738,7 @@ export default {
       failed: 'Failed',
       skipped: 'Skipped',
       cancelled: 'Cancelled',
+      notCollected: 'Not yet Collected',
     },
     // Summary cards
     summary: {
@@ -789,6 +790,7 @@ export default {
       stopPrint: 'Stop Print',
       startPrint: 'Start Print',
       requeue: 'Re-queue',
+      collect: 'Collect',
     },
     // Bulk edit
     bulkEdit: {
@@ -825,6 +827,7 @@ export default {
       removeMessage: 'Are you sure you want to remove "{{name}}" from the queue history?',
       clearHistoryTitle: 'Clear History',
       clearHistoryMessage: 'Are you sure you want to remove all {{count}} item(s) from the history?',
+      clearHistoryMessageWithKept: 'Are you sure you want to remove {{toClear}} item(s) from the history? {{toKeep}} item(s) that need to be collected will be kept.',
       cancelButton: 'Cancel Print',
       stopButton: 'Stop Print',
       thisPrint: 'this print',
@@ -842,6 +845,7 @@ export default {
       startFailed: 'Failed to start print',
       reorderFailed: 'Failed to reorder queue',
       historyCleared: 'Cleared {{count}} history item(s)',
+      historyClearedWithKept: 'Cleared {{cleared}} history item(s). {{kept}} item(s) needing collection were kept.',
       clearHistoryFailed: 'Failed to clear history',
       updateFailed: 'Failed to update items',
       bulkCancelled: 'Cancelled {{count}} item(s)',

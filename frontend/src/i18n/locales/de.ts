@@ -738,6 +738,7 @@ export default {
       failed: 'Fehlgeschlagen',
       skipped: 'Übersprungen',
       cancelled: 'Abgebrochen',
+      notCollected: 'Noch nicht abgeholt',
     },
     // Summary cards
     summary: {
@@ -789,6 +790,7 @@ export default {
       stopPrint: 'Druck stoppen',
       startPrint: 'Druck starten',
       requeue: 'Erneut einreihen',
+      collect: 'Abholen',
     },
     // Bulk edit
     bulkEdit: {
@@ -825,6 +827,7 @@ export default {
       removeMessage: 'Möchten Sie "{{name}}" wirklich aus dem Warteschlangenverlauf entfernen?',
       clearHistoryTitle: 'Verlauf löschen',
       clearHistoryMessage: 'Möchten Sie alle {{count}} Element(e) aus dem Verlauf entfernen?',
+      clearHistoryMessageWithKept: 'Möchten Sie {{toClear}} Element(e) aus dem Verlauf entfernen? {{toKeep}} Element(e), die noch abgeholt werden müssen, werden beibehalten.',
       cancelButton: 'Druck abbrechen',
       stopButton: 'Druck stoppen',
       thisPrint: 'diesen Druck',
@@ -842,6 +845,7 @@ export default {
       startFailed: 'Druck konnte nicht gestartet werden',
       reorderFailed: 'Warteschlange konnte nicht neu geordnet werden',
       historyCleared: '{{count}} Verlaufselement(e) gelöscht',
+      historyClearedWithKept: '{{cleared}} Verlaufselement(e) gelöscht. {{kept}} Element(e), die abgeholt werden müssen, wurden beibehalten.',
       clearHistoryFailed: 'Verlauf konnte nicht gelöscht werden',
       updateFailed: 'Elemente konnten nicht aktualisiert werden',
       bulkCancelled: '{{count}} Element(e) abgebrochen',

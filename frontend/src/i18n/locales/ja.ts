@@ -808,6 +808,7 @@ export default {
       failed: '失敗',
       skipped: 'スキップ',
       cancelled: 'キャンセル済み',
+      notCollected: 'まだ回収されていません',
     },
     summary: {
       printing: '印刷中',
@@ -852,6 +853,7 @@ export default {
       stopPrint: '印刷を停止',
       startPrint: '印刷を開始',
       requeue: '再キュー',
+      collect: '回収',
     },
     bulkEdit: {
       title: '{{count}}件のアイテムを編集',
@@ -885,6 +887,7 @@ export default {
       removeTitle: '履歴から削除',
       removeMessage: '「{{name}}」をキュー履歴から削除しますか？',
       clearHistoryMessage: '{{count}}件の履歴をすべて削除しますか？',
+      clearHistoryMessageWithKept: '{{toClear}}件の履歴を削除しますか？回収が必要な{{toKeep}}件は保持されます。',
       cancelButton: '印刷をキャンセル',
       stopButton: '印刷を停止',
       thisPrint: 'この印刷',
@@ -902,6 +905,7 @@ export default {
       startFailed: '印刷の開始に失敗しました',
       reorderFailed: 'キューの並べ替えに失敗しました',
       historyCleared: '{{count}}件の履歴をクリアしました',
+      historyClearedWithKept: '{{cleared}}件の履歴をクリアしました。回収が必要な{{kept}}件は保持されました。',
       clearHistoryFailed: '履歴のクリアに失敗しました',
       updateFailed: 'アイテムの更新に失敗しました',
       bulkCancelled: '{{count}}件のアイテムをキャンセルしました',

@@ -732,6 +732,7 @@ export default {
       failed: 'Fallito',
       skipped: 'Saltato',
       cancelled: 'Annullato',
+      notCollected: 'Non ancora ritirato',
     },
     // Summary cards
     summary: {
@@ -783,6 +784,7 @@ export default {
       stopPrint: 'Ferma Stampa',
       startPrint: 'Avvia Stampa',
       requeue: 'Rimetti in coda',
+      collect: 'Ritira',
     },
     // Bulk edit
     bulkEdit: {
@@ -819,6 +821,7 @@ export default {
       removeMessage: 'Sei sicuro di rimuovere "{{name}}" dalla cronologia coda?',
       clearHistoryTitle: 'Svuota cronologia',
       clearHistoryMessage: 'Sei sicuro di rimuovere {{count}} elemento(i) dalla cronologia?',
+      clearHistoryMessageWithKept: 'Sei sicuro di rimuovere {{toClear}} elemento(i) dalla cronologia? {{toKeep}} elemento(i) che devono essere ritirati saranno mantenuti.',
       cancelButton: 'Annulla Stampa',
       stopButton: 'Ferma Stampa',
       thisPrint: 'questa stampa',
@@ -836,6 +839,7 @@ export default {
       startFailed: 'Avvio stampa non riuscito',
       reorderFailed: 'Riordino coda non riuscito',
       historyCleared: 'Cancellati {{count}} elementi cronologia',
+      historyClearedWithKept: 'Cancellati {{cleared}} elementi cronologia. {{kept}} elemento(i) da ritirare sono stati mantenuti.',
       clearHistoryFailed: 'Svuotamento cronologia non riuscito',
       updateFailed: 'Aggiornamento elementi non riuscito',
       bulkCancelled: 'Annullati {{count}} elementi',

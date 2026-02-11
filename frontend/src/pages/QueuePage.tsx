@@ -292,6 +292,7 @@ function SortableQueueItem({
   onStop,
   onRequeue,
   onStart,
+  onCollect,
   timeFormat = 'system',
   isSelected = false,
   onToggleSelect,
@@ -308,6 +309,7 @@ function SortableQueueItem({
   onStop: () => void;
   onRequeue: () => void;
   onStart: () => void;
+  onCollect?: () => void;
   timeFormat?: TimeFormat;
   isSelected?: boolean;
   onToggleSelect?: () => void;
@@ -566,6 +568,18 @@ function SortableQueueItem({
           )}
           {isHistory && (
             <>
+              {onCollect && item.status === 'completed' && item.part_removal_required && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onCollect}
+                  disabled={!hasPermission('printers:update')}
+                  title={!hasPermission('printers:update') ? t('printers.partRemoval.noPermission') : t('queue.actions.collect')}
+                  className="text-orange-400 hover:text-orange-300 hover:bg-orange-500/10"
+                >
+                  <Hand className="w-4 h-4" />
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
@@ -703,6 +717,16 @@ export function QueuePage() {
     onError: () => showToast(t('queue.toast.startFailed'), 'error'),
   });
 
+  const collectMutation = useMutation({
+    mutationFn: (printerId: number) => api.collectPart(printerId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['printers'] });
+      showToast(t('printers.partRemoval.collected'));
+    },
+    onError: () => showToast(t('printers.partRemoval.collectFailed'), 'error'),
+  });
+
   const reorderMutation = useMutation({
     mutationFn: (items: { id: number; position: number }[]) => api.reorderQueue(items),
     onSuccess: () => {
@@ -713,17 +737,30 @@ export function QueuePage() {
 
   const clearHistoryMutation = useMutation({
     mutationFn: async () => {
-      const historyItems = queue?.filter(i =>
+      // Get all history items
+      const allHistoryItems = queue?.filter(i =>
         ['completed', 'failed', 'skipped', 'cancelled'].includes(i.status)
       ) || [];
-      for (const item of historyItems) {
+      
+      // Filter out items that still need to be collected (part_removal_required)
+      const itemsToClear = allHistoryItems.filter(i => !i.part_removal_required);
+      
+      for (const item of itemsToClear) {
         await api.removeFromQueue(item.id);
       }
-      return historyItems.length;
+      
+      return {
+        cleared: itemsToClear.length,
+        kept: allHistoryItems.length - itemsToClear.length
+      };
     },
-    onSuccess: (count) => {
+    onSuccess: ({ cleared, kept }) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
-      showToast(t('queue.toast.historyCleared', { count }));
+      if (kept > 0) {
+        showToast(t('queue.toast.historyClearedWithKept', { cleared, kept }));
+      } else {
+        showToast(t('queue.toast.historyCleared', { count: cleared }));
+      }
     },
     onError: () => showToast(t('queue.toast.clearHistoryFailed'), 'error'),
   });
@@ -1014,6 +1051,7 @@ export function QueuePage() {
           <option value="failed">{t('queue.status.failed')}</option>
           <option value="skipped">{t('queue.status.skipped')}</option>
           <option value="cancelled">{t('queue.status.cancelled')}</option>
+          <option value="not_collected">{t('queue.status.notCollected')}</option>
         </select>
 
         {uniqueLocations.length > 0 && (
@@ -1249,6 +1287,7 @@ export function QueuePage() {
                     onStop={() => {}}
                     onRequeue={() => setRequeueItem(item)}
                     onStart={() => {}}
+                    onCollect={item.printer_id ? () => collectMutation.mutate(item.printer_id!) : undefined}
                     timeFormat={timeFormat}
                     hasPermission={hasPermission}
                     canModify={canModify}
@@ -1320,19 +1359,31 @@ export function QueuePage() {
       )}
 
       {/* Clear History Confirm Modal */}
-      {showClearHistoryConfirm && (
-        <ConfirmModal
-          title={t('queue.confirm.clearHistoryTitle')}
-          message={t('queue.confirm.clearHistoryMessage', { count: historyItems.length })}
-          confirmText={t('queue.clearHistory')}
-          variant="danger"
-          onConfirm={() => {
-            clearHistoryMutation.mutate();
-            setShowClearHistoryConfirm(false);
-          }}
-          onCancel={() => setShowClearHistoryConfirm(false)}
-        />
-      )}
+      {showClearHistoryConfirm && (() => {
+        const itemsNeedingCollection = historyItems.filter(i => i.part_removal_required);
+        const itemsToClear = historyItems.filter(i => !i.part_removal_required);
+        
+        return (
+          <ConfirmModal
+            title={t('queue.confirm.clearHistoryTitle')}
+            message={
+              itemsNeedingCollection.length > 0
+                ? t('queue.confirm.clearHistoryMessageWithKept', { 
+                    toClear: itemsToClear.length, 
+                    toKeep: itemsNeedingCollection.length 
+                  })
+                : t('queue.confirm.clearHistoryMessage', { count: itemsToClear.length })
+            }
+            confirmText={t('queue.clearHistory')}
+            variant="danger"
+            onConfirm={() => {
+              clearHistoryMutation.mutate();
+              setShowClearHistoryConfirm(false);
+            }}
+            onCancel={() => setShowClearHistoryConfirm(false)}
+          />
+        );
+      })()}
 
       {/* Bulk Edit Modal */}
       {showBulkEditModal && (

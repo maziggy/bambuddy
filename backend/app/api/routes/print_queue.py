@@ -230,6 +230,9 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
                     response.print_time_seconds = plate_time
     if item.printer:
         response.printer_name = item.printer.name
+        # Include part_removal_required for completed jobs
+        if item.status == "completed" and item.printer.part_removal_enabled:
+            response.part_removal_required = item.printer.part_removal_required
     return response
 
 
@@ -258,7 +261,18 @@ async def list_queue(
             query = query.where(PrintQueueItem.printer_id.is_(None))
         else:
             query = query.where(PrintQueueItem.printer_id == printer_id)
-    if status:
+
+    # Special status filter for "not_collected" - completed jobs with part_removal_required
+    if status == "not_collected":
+        # Join with printer to filter by part_removal_required
+        from backend.app.models.printer import Printer
+        query = (
+            query.join(Printer, PrintQueueItem.printer_id == Printer.id)
+            .where(PrintQueueItem.status == "completed")
+            .where(Printer.part_removal_enabled == True)  # noqa: E712
+            .where(Printer.part_removal_required == True)  # noqa: E712
+        )
+    elif status:
         query = query.where(PrintQueueItem.status == status)
 
     result = await db.execute(query)

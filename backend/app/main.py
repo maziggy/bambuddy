@@ -170,6 +170,7 @@ logging.info("Bambuddy starting - debug=%s, log_level=%s", app_settings.debug, l
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import delete, or_, select
+from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes import (
     ams_history,
@@ -1939,16 +1940,27 @@ async def on_print_complete(printer_id: int, data: dict):
                     # Get archive to extract start time and user
                     archive = None
                     if archive_id:
-                        archive_result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
+                        archive_result = await db.execute(
+                            select(PrintArchive)
+                            .options(selectinload(PrintArchive.created_by))
+                            .where(PrintArchive.id == archive_id)
+                        )
                         archive = archive_result.scalar_one_or_none()
                     
                     # Get the username who started this print
-                    current_user = printer_manager.get_current_print_user(printer_id)
+                    # Try current user first (from queue tracking), then fall back to archive owner
+                    current_user_dict = printer_manager.get_current_print_user(printer_id)
+                    username = None
+                    if current_user_dict:
+                        username = current_user_dict.get("username")
+                    # Fallback to archive creator if no current user
+                    if not username and archive and archive.created_by:
+                        username = archive.created_by.username
                     
                     # Update printer with last job info
                     printer.part_removal_required = True
                     printer.last_job_name = subtask_name or filename
-                    printer.last_job_user = current_user
+                    printer.last_job_user = username
                     # Use archive's actual start/end times, not created_at or current time
                     printer.last_job_start = archive.started_at if archive else None
                     # Fallback to current time if completed_at is not set (shouldn't happen for completed prints)

@@ -1177,6 +1177,7 @@ export interface PrintQueueItem {
   library_file_thumbnail?: string | null;
   printer_name?: string | null;
   print_time_seconds?: number | null;  // Estimated print time from archive or library file
+  part_removal_required?: boolean;  // Whether this completed job needs to be collected
   // User tracking (Issue #206)
   created_by_id?: number | null;
   created_by_username?: string | null;

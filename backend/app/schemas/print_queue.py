@@ -97,6 +97,7 @@ class PrintQueueItemResponse(BaseModel):
     library_file_thumbnail: str | None = None  # Thumbnail of library file
     printer_name: str | None = None
     print_time_seconds: int | None = None  # Estimated print time from archive or library file
+    part_removal_required: bool = False  # Whether this completed job needs to be collected
 
     # User tracking (Issue #206)
     created_by_id: int | None = None

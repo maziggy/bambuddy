@@ -414,7 +414,7 @@ export default {
     },
     // Part removal confirmation
     partRemoval: {
-      title: 'Part Removal Confirmation',
+      title: 'Part Removal Confirmation Required',
       confirmRemoval: 'Confirm part removal',
       noRemovalRequired: 'No part removal required',
       plateCheckDisabledDuringRemoval: 'Plate check disabled until part is collected',

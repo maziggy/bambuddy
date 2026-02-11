@@ -105,7 +105,12 @@ class FirmwareCheckService:
                     return self._build_id
             logger.warning("Failed to get Bambu Lab page: %s", response.status_code)
         except Exception as e:
-            logger.error("Error fetching Bambu Lab build ID: %s", e)
+            # Log SSL certificate errors at warning level since they're expected in some environments
+            # and don't affect core functionality
+            if "CERTIFICATE_VERIFY_FAILED" in str(e) or "SSL" in str(e):
+                logger.warning("SSL certificate validation failed for Bambu Lab: %s. Using cached data if available.", e)
+            else:
+                logger.error("Error fetching Bambu Lab build ID: %s", e)
 
         return self._build_id  # Return cached value if available
 

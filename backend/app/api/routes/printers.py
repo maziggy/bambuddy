@@ -2185,12 +2185,9 @@ async def create_dummy_part_removal(
     if not printer:
         raise HTTPException(404, "Printer not found")
     
-    # Check if part removal is enabled
+    # Enable part removal confirmation if not already enabled
     if not printer.part_removal_enabled:
-        raise HTTPException(
-            400,
-            "Part removal confirmation must be enabled before creating dummy data"
-        )
+        printer.part_removal_enabled = True
     
     # Create realistic dummy data
     now = datetime.now()

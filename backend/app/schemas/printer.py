@@ -70,6 +70,7 @@ class PrinterResponse(PrinterBase):
     last_job_user: str | None = None
     last_job_start: datetime | None = None
     last_job_end: datetime | None = None
+    last_job_queue_item_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -101,6 +102,7 @@ class PrinterResponse(PrinterBase):
             "last_job_user": printer.last_job_user,
             "last_job_start": printer.last_job_start,
             "last_job_end": printer.last_job_end,
+            "last_job_queue_item_id": printer.last_job_queue_item_id,
             "created_at": printer.created_at,
             "updated_at": printer.updated_at,
         }

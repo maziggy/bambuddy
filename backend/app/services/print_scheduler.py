@@ -1036,6 +1036,22 @@ class PrintScheduler:
         await db.commit()
         logger.info("Queue item %s: Status set to 'printing', sending print command...", item.id)
 
+        # Track current print user (Issue #206)
+        # Load the created_by relationship if not already loaded
+        if item.created_by_id:
+            from backend.app.models.user import User
+            if not item.created_by:
+                user_result = await db.execute(select(User).where(User.id == item.created_by_id))
+                user = user_result.scalar_one_or_none()
+                if user:
+                    printer_manager.set_current_print_user(item.printer_id, user.id, user.username)
+                    logger.info("Queue item %s: Tracking user %s", item.id, user.username)
+            else:
+                printer_manager.set_current_print_user(
+                    item.printer_id, item.created_by.id, item.created_by.username
+                )
+                logger.info("Queue item %s: Tracking user %s", item.id, item.created_by.username)
+
         # Start the print with AMS mapping, plate_id and print options
         started = printer_manager.start_print(
             item.printer_id,

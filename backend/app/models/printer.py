@@ -42,6 +42,7 @@ class Printer(Base):
     last_job_user: Mapped[str | None] = mapped_column(String(100), nullable=True)  # User who submitted last job
     last_job_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # Job start time
     last_job_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # Job end time
+    last_job_queue_item_id: Mapped[int | None] = mapped_column(nullable=True)  # Queue item ID that needs collection
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

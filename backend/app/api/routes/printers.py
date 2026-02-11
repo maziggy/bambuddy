@@ -2135,6 +2135,7 @@ async def collect_part(
     printer.last_job_user = None
     printer.last_job_start = None
     printer.last_job_end = None
+    printer.last_job_queue_item_id = None
 
     await db.commit()
 
@@ -2150,6 +2151,7 @@ async def collect_part(
             "last_job_user": None,
             "last_job_start": None,
             "last_job_end": None,
+            "last_job_queue_item_id": None,
         },
     )
 
@@ -2202,6 +2204,7 @@ async def create_dummy_part_removal(
     printer.last_job_user = "Admin (Debug)"
     printer.last_job_start = start_time
     printer.last_job_end = now
+    printer.last_job_queue_item_id = -1  # Use -1 for debug mode (no real queue item)
 
     await db.commit()
 
@@ -2218,6 +2221,7 @@ async def create_dummy_part_removal(
             "last_job_user": "Admin (Debug)",
             "last_job_start": start_time.isoformat(),
             "last_job_end": now.isoformat(),
+            "last_job_queue_item_id": -1,
         },
     )
 

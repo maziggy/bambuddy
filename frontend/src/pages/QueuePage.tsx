@@ -568,7 +568,8 @@ function SortableQueueItem({
           )}
           {isHistory && (
             <>
-              {onCollect && item.status === 'completed' && item.part_removal_required && (
+              {onCollect && item.status === 'completed' && item.part_removal_required && 
+               item.last_job_queue_item_id === item.id && (
                 <Button
                   variant="ghost"
                   size="sm"

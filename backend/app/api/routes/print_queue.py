@@ -233,6 +233,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         # Include part_removal_required for completed jobs
         if item.status == "completed" and item.printer.part_removal_enabled:
             response.part_removal_required = item.printer.part_removal_required
+            response.last_job_queue_item_id = item.printer.last_job_queue_item_id
     return response
 
 

@@ -197,6 +197,11 @@ class PrintScheduler:
                         # Assign printer and start - clear waiting reason
                         item.printer_id = printer_id
                         item.waiting_reason = None
+                        # IMPORTANT: Commit printer assignment BEFORE sending notifications.
+                        # This prevents the same bug that existed for specific printer assignments:
+                        # if the backend crashes after sending the notification but before the
+                        # assignment is committed, the item will remain in pending status with
+                        # no printer assigned, and the user will see "job assigned" but it never starts.
                         await db.commit()
                         logger.info("Model-based assignment: queue item %s assigned to printer %s", item.id, printer_id)
 

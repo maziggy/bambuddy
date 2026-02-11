@@ -2170,7 +2170,19 @@ class BambuMQTTClient:
         """Stop the current print job."""
         if self._client and self.state.connected:
             command = {"print": {"command": "stop", "sequence_id": "0"}}
-            self._client.publish(self.topic_publish, json.dumps(command), qos=1)
+            try:
+                result = self._client.publish(self.topic_publish, json.dumps(command), qos=1)
+                if result.rc != mqtt.MQTT_ERR_SUCCESS:
+                    logger.error(
+                        "[%s] Failed to publish stop command: rc=%d (%s)",
+                        self.serial_number,
+                        result.rc,
+                        mqtt.error_string(result.rc),
+                    )
+                    return False
+            except Exception as e:
+                logger.error("[%s] Exception publishing stop command: %s", self.serial_number, e, exc_info=True)
+                return False
             logger.info("[%s] Sent stop print command", self.serial_number)
             return True
         return False

@@ -1708,7 +1708,10 @@ function PrinterCard({
       showToast(t('printers.toast.partCollected'));
       setShowCollectConfirm(false);
     },
-    onError: (error: Error) => showToast(error.message || t('printers.toast.failedToCollectPart'), 'error'),
+    onError: (error: Error) => {
+      showToast(error.message || t('printers.toast.failedToCollectPart'), 'error');
+      setShowCollectConfirm(false);
+    },
   });
 
   // DEBUG: Create dummy part removal data mutation (admin only)

@@ -253,6 +253,10 @@ _last_progress_milestone: dict[int, int] = {}
 # This prevents sending duplicate notifications for the same error
 _notified_hms_errors: dict[int, set[str]] = {}
 
+# Track timelapse file baselines at print start: {printer_id: set of MP4 filenames}
+# Used for snapshot-diff detection at print completion
+_timelapse_baselines: dict[int, set[str]] = {}
+
 
 async def _get_plug_energy(plug, db) -> dict | None:
     """Get energy from plug regardless of type (Tasmota, Home Assistant, or MQTT).
@@ -1404,6 +1408,18 @@ async def on_print_start(printer_id: int, data: dict):
                     await _store_spoolman_print_data(printer_id, archive.id, archive.file_path, db, printer_manager)
                 except Exception as e:
                     logger.warning("[SPOOLMAN] Failed to store tracking data: %s", e)
+
+                # Capture timelapse file baseline for snapshot-diff on completion
+                try:
+                    baseline_files, _ = await _list_timelapse_mp4s(printer)
+                    _timelapse_baselines[printer_id] = {f.get("name", "") for f in baseline_files}
+                    logger.info(
+                        "[TIMELAPSE] Baseline at print start: %s MP4 files for printer %s",
+                        len(_timelapse_baselines[printer_id]),
+                        printer_id,
+                    )
+                except Exception as e:
+                    logger.warning("[TIMELAPSE] Failed to capture baseline at print start: %s", e)
         finally:
             if temp_path and temp_path.exists():
                 temp_path.unlink()
@@ -1435,13 +1451,17 @@ async def _list_timelapse_mp4s(printer) -> tuple[list[dict], str | None]:
     return [], None
 
 
-async def _scan_for_timelapse_with_retries(archive_id: int):
+async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[str] | None = None):
     """
     Scan for timelapse with retries using a snapshot-diff approach.
 
     Instead of picking the "most recent by mtime" (unreliable when the printer
     clock is wrong in LAN-only mode), we snapshot existing MP4 filenames BEFORE
     waiting, then look for any NEW filename that appears after each delay.
+
+    If baseline_names is provided (captured at print start), it is used directly.
+    Otherwise falls back to taking a baseline at completion time (best-effort
+    for prints started before app restart).
 
     Falls back to name-matching (print name contained in MP4 filename) if no
     new file appears after all retries.
@@ -1468,18 +1488,28 @@ async def _scan_for_timelapse_with_retries(archive_id: int):
                 logger.warning("[TIMELAPSE] Archive %s has no printer, aborting", archive_id)
                 return
 
-            result = await db.execute(select(Printer).where(Printer.id == archive.printer_id))
-            printer = result.scalar_one_or_none()
-            if not printer:
-                logger.warning("[TIMELAPSE] Printer not found for archive %s, aborting", archive_id)
-                return
+            if baseline_names is not None:
+                # Use pre-captured baseline from print start (no race condition)
+                logger.info(
+                    "[TIMELAPSE] Using print-start baseline: %s existing MP4 files for archive %s",
+                    len(baseline_names),
+                    archive_id,
+                )
+            else:
+                # Fallback: take baseline now (e.g. app restarted mid-print)
+                result = await db.execute(select(Printer).where(Printer.id == archive.printer_id))
+                printer = result.scalar_one_or_none()
+                if not printer:
+                    logger.warning("[TIMELAPSE] Printer not found for archive %s, aborting", archive_id)
+                    return
 
-            # Snapshot current MP4 filenames as baseline
-            baseline_files, _ = await _list_timelapse_mp4s(printer)
-            baseline_names: set[str] = {f.get("name", "") for f in baseline_files}
-            logger.info(
-                "[TIMELAPSE] Baseline snapshot: %s existing MP4 files for archive %s", len(baseline_names), archive_id
-            )
+                baseline_files, _ = await _list_timelapse_mp4s(printer)
+                baseline_names = {f.get("name", "") for f in baseline_files}
+                logger.info(
+                    "[TIMELAPSE] Baseline snapshot (fallback): %s existing MP4 files for archive %s",
+                    len(baseline_names),
+                    archive_id,
+                )
 
             # Derive base_name for name-matching fallback
             base_name = Path(archive.filename).stem if archive.filename else ""
@@ -2179,7 +2209,8 @@ async def on_print_complete(printer_id: int, data: dict):
         logger.info("[TIMELAPSE] Timelapse was active during print, scheduling auto-scan for archive %s", archive_id)
         # Schedule timelapse scan as background task with retries
         # The printer needs time to encode the video after print completion
-        asyncio.create_task(_scan_for_timelapse_with_retries(archive_id))
+        baseline = _timelapse_baselines.pop(printer_id, None)
+        asyncio.create_task(_scan_for_timelapse_with_retries(archive_id, baseline))
         log_timing("Timelapse scan scheduled")
 
     # Update queue item if this was a scheduled print

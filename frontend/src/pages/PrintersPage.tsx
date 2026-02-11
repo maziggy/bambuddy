@@ -1411,6 +1411,12 @@ function PrinterCard({
   const [showCollectConfirm, setShowCollectConfirm] = useState(false);
   const [isSavingRoi, setIsSavingRoi] = useState(false);
   const [plateCheckLightWasOff, setPlateCheckLightWasOff] = useState(false);
+  
+  // Long-press state for debug dummy part creation
+  const [longPressProgress, setLongPressProgress] = useState(0);
+  const [showRotateAnimation, setShowRotateAnimation] = useState(false);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const longPressIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const { data: status } = useQuery({
     queryKey: ['printerStatus', printer.id],
@@ -1705,6 +1711,16 @@ function PrinterCard({
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToCollectPart'), 'error'),
   });
 
+  // DEBUG: Create dummy part removal data mutation (admin only)
+  const createDummyPartMutation = useMutation({
+    mutationFn: () => api.createDummyPartRemoval(printer.id),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['printers'] });
+      showToast(`DEBUG: Created test data - ${data.job_name}`, 'success');
+    },
+    onError: (error: Error) => showToast(error.message || 'Failed to create dummy data', 'error'),
+  });
+
   // Query for printable objects (for skip functionality)
   // Fetch when printing with 2+ objects OR when modal is open
   const isPrintingWithObjects = (status?.state === 'RUNNING' || status?.state === 'PAUSE' || status?.state === 'PAUSED') && (status?.printable_objects_count ?? 0) >= 2;
@@ -1783,6 +1799,61 @@ function PrinterCard({
   const handleTogglePartRemoval = () => {
     partRemovalMutation.mutate(!printer.part_removal_enabled);
   };
+
+  // Long-press handlers for debug dummy part creation (admin only)
+  const LONG_PRESS_DURATION = 2500; // 2.5 seconds
+  const PROGRESS_INTERVAL = 50; // Update every 50ms
+
+  const handleLongPressStart = () => {
+    // Only allow for admins when part removal is enabled
+    if (!hasPermission('printers:update') || !printer.part_removal_enabled) {
+      return;
+    }
+
+    setLongPressProgress(0);
+    
+    // Progress update interval
+    const startTime = Date.now();
+    longPressIntervalRef.current = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min((elapsed / LONG_PRESS_DURATION) * 100, 100);
+      setLongPressProgress(progress);
+    }, PROGRESS_INTERVAL);
+
+    // Completion timer
+    longPressTimerRef.current = setTimeout(() => {
+      if (longPressIntervalRef.current) {
+        clearInterval(longPressIntervalRef.current);
+      }
+      setLongPressProgress(0);
+      
+      // Trigger rotation animation
+      setShowRotateAnimation(true);
+      setTimeout(() => setShowRotateAnimation(false), 1000); // Animation duration: 1s (2 rotations at 0.5s each)
+      
+      createDummyPartMutation.mutate();
+    }, LONG_PRESS_DURATION);
+  };
+
+  const handleLongPressEnd = () => {
+    // Clear timers
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    if (longPressIntervalRef.current) {
+      clearInterval(longPressIntervalRef.current);
+      longPressIntervalRef.current = null;
+    }
+    setLongPressProgress(0);
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      handleLongPressEnd();
+    };
+  }, []);
 
   // Open plate detection management modal (for calibration/references)
   const handleOpenPlateManagement = async () => {
@@ -2431,7 +2502,7 @@ function PrinterCard({
             )}
 
             {/* Part Removal Confirmation Info Box */}
-            {printer.part_removal_required && printer.last_job_name && viewMode === 'expanded' && (
+            {printer.part_removal_enabled && printer.last_job_name && viewMode === 'expanded' && (
               <div className="p-3 bg-bambu-dark rounded-lg border border-orange-500/50 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -3448,20 +3519,38 @@ function PrinterCard({
               </div>
               {/* Part Removal Confirmation Button */}
               {hasPermission('printers:update') && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleTogglePartRemoval}
-                  disabled={!status?.connected || partRemovalMutation.isPending || printer.plate_detection_enabled}
-                  title={printer.plate_detection_enabled ? t('printers.partRemoval.disabledDuringPlateCheck') : (printer.part_removal_enabled ? t('printers.partRemoval.enabled') : t('printers.partRemoval.disabled'))}
-                  className={printer.part_removal_enabled && !printer.plate_detection_enabled ? "!border-orange-500 !text-orange-400 hover:!bg-orange-500/20 ring-1 ring-orange-500" : ""}
-                >
-                  {partRemovalMutation.isPending ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Hand className="w-4 h-4" />
+                <div className="relative">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleTogglePartRemoval}
+                    onMouseDown={handleLongPressStart}
+                    onMouseUp={handleLongPressEnd}
+                    onMouseLeave={handleLongPressEnd}
+                    onTouchStart={handleLongPressStart}
+                    onTouchEnd={handleLongPressEnd}
+                    disabled={!status?.connected || partRemovalMutation.isPending || printer.plate_detection_enabled}
+                    title={printer.plate_detection_enabled ? t('printers.partRemoval.disabledDuringPlateCheck') : (printer.part_removal_enabled ? t('printers.partRemoval.enabled') : t('printers.partRemoval.disabled'))}
+                    className={printer.part_removal_enabled && !printer.plate_detection_enabled ? "!border-orange-500 !text-orange-400 hover:!bg-orange-500/20 ring-1 ring-orange-500" : ""}
+                  >
+                    {partRemovalMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Hand 
+                        className={`w-4 h-4 ${showRotateAnimation ? 'animate-[spin_0.5s_ease-in-out_2]' : ''}`}
+                      />
+                    )}
+                  </Button>
+                  {/* Long-press progress indicator */}
+                  {longPressProgress > 0 && (
+                    <div
+                      className="absolute inset-0 pointer-events-none rounded-lg border-2 border-orange-500"
+                      style={{
+                        background: `linear-gradient(to right, rgba(251, 146, 60, 0.3) ${longPressProgress}%, transparent ${longPressProgress}%)`,
+                      }}
+                    />
                   )}
-                </Button>
+                </div>
               )}
               <Button
                 variant="secondary"

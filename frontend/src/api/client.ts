@@ -2169,6 +2169,15 @@ export const api = {
       method: 'POST',
     }),
 
+  // DEBUG: Create dummy part removal data for testing (admin only)
+  createDummyPartRemoval: (printerId: number) =>
+    request<{ success: boolean; message: string; job_name: string; job_user: string }>(
+      `/printers/${printerId}/debug/create-dummy-part`,
+      {
+        method: 'POST',
+      }
+    ),
+
   // Get current print user (for reprint tracking - Issue #206)
   getCurrentPrintUser: (printerId: number) =>
     request<{ user_id?: number; username?: string }>(`/printers/${printerId}/current-print-user`),

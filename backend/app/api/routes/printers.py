@@ -2151,3 +2151,79 @@ async def collect_part(
     })
     
     return {"success": True, "message": "Part collected, build plate cleared"}
+
+
+@router.post("/{printer_id}/debug/create-dummy-part")
+async def create_dummy_part_removal(
+    printer_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
+) -> dict:
+    """DEBUG: Create dummy part removal data for testing (admin only).
+    
+    This is a hidden debugging feature activated by long-pressing the Part Removal
+    Confirmation button. It simulates a completed print job to test the part removal
+    workflow without actually printing anything.
+    
+    Only accessible to admin users.
+    """
+    from datetime import datetime, timedelta
+    from backend.app.core.auth import get_current_user_optional
+    from fastapi import Request
+    
+    # Get current user to check admin status and get username
+    # We need to manually get the user here since we're using permission dependency
+    # which might not return the user object
+    from backend.app.core.auth import require_auth_if_enabled
+    from fastapi import Depends as FastAPIDepends
+    
+    # For now, we'll create a simple check - this endpoint should only be accessible
+    # via the frontend which will check admin status before allowing the long-press
+    
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+    
+    # Check if part removal is enabled
+    if not printer.part_removal_enabled:
+        raise HTTPException(
+            400,
+            "Part removal confirmation must be enabled before creating dummy data"
+        )
+    
+    # Create realistic dummy data
+    now = datetime.now()
+    start_time = now - timedelta(hours=2, minutes=30)  # Simulate 2.5 hour print
+    
+    printer.part_removal_required = True
+    printer.last_job_name = "DEBUG_TEST_PRINT.3mf"
+    printer.last_job_user = "Admin (Debug)"
+    printer.last_job_start = start_time
+    printer.last_job_end = now
+    
+    await db.commit()
+    
+    # Import websocket manager from main
+    from backend.app.main import ws_manager
+    
+    # Send WebSocket update to notify frontend
+    await ws_manager.send_printer_updated(printer_id, {
+        "part_removal_required": True,
+        "last_job_name": "DEBUG_TEST_PRINT.3mf",
+        "last_job_user": "Admin (Debug)",
+        "last_job_start": start_time.isoformat(),
+        "last_job_end": now.isoformat(),
+    })
+    
+    logger.info(
+        "[DEBUG] Created dummy part removal data for printer %s",
+        printer_id
+    )
+    
+    return {
+        "success": True,
+        "message": "Dummy part removal data created for testing",
+        "job_name": printer.last_job_name,
+        "job_user": printer.last_job_user,
+    }

@@ -380,4 +380,153 @@ describe('PrintersPage', () => {
       expect(screen.queryByText('01.01.03.00')).not.toBeInTheDocument();
     });
   });
+
+  describe('part removal actions box', () => {
+    it('shows part removal actions box when part_removal_enabled is true and last_job_name is set', async () => {
+      const printerWithPartRemoval = {
+        ...mockPrinters[0],
+        part_removal_enabled: true,
+        part_removal_required: false,
+        last_job_name: 'test_print.3mf',
+        last_job_user: 'testuser',
+        last_job_start: '2024-01-01T10:00:00Z',
+        last_job_end: '2024-01-01T12:00:00Z',
+      };
+
+      server.use(
+        http.get('/api/v1/printers/', () => {
+          return HttpResponse.json([printerWithPartRemoval]);
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Click the XL button to ensure we're in expanded mode
+      const xlButton = screen.getByTitle('Extra large cards');
+      xlButton.click();
+
+      await waitFor(() => {
+        // Should show the part removal box when part_removal_enabled is true
+        expect(screen.getByText('test_print.3mf')).toBeInTheDocument();
+      });
+    });
+
+    it('hides part removal actions box when part_removal_enabled is false', async () => {
+      const printerWithoutPartRemoval = {
+        ...mockPrinters[0],
+        part_removal_enabled: false,
+        part_removal_required: false,
+        last_job_name: 'test_print.3mf',
+        last_job_user: 'testuser',
+        last_job_start: '2024-01-01T10:00:00Z',
+        last_job_end: '2024-01-01T12:00:00Z',
+      };
+
+      server.use(
+        http.get('/api/v1/printers/', () => {
+          return HttpResponse.json([printerWithoutPartRemoval]);
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Click the XL button to ensure we're in expanded mode
+      const xlButton = screen.getByTitle('Extra large cards');
+      xlButton.click();
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Should not show the part removal box when part_removal_enabled is false
+      // Even if last_job_name is set
+      expect(screen.queryByText('test_print.3mf')).not.toBeInTheDocument();
+    });
+
+    it('hides part removal actions box when last_job_name is null', async () => {
+      const printerWithoutJobName = {
+        ...mockPrinters[0],
+        part_removal_enabled: true,
+        part_removal_required: false,
+        last_job_name: null,
+        last_job_user: null,
+        last_job_start: null,
+        last_job_end: null,
+      };
+
+      server.use(
+        http.get('/api/v1/printers/', () => {
+          return HttpResponse.json([printerWithoutJobName]);
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Click the XL button to ensure we're in expanded mode
+      const xlButton = screen.getByTitle('Extra large cards');
+      xlButton.click();
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Should not show the part removal box when last_job_name is null
+      // We need to ensure it's not rendered somehow by checking for the unique collect button
+      const buttons = screen.getAllByRole('button');
+      const collectButton = buttons.find(btn => btn.textContent?.includes('Collect'));
+      expect(collectButton).toBeUndefined();
+    });
+
+    it('simulates state after part collection - no stale data shown', async () => {
+      // This test simulates the state AFTER a user has clicked "Collect Part"
+      // Backend clears all job data when part is collected (see printers.py:2133-2137)
+      const printerAfterCollection = {
+        ...mockPrinters[0],
+        part_removal_enabled: true,      // Feature still enabled
+        part_removal_required: false,    // Part was collected
+        last_job_name: null,            // Backend cleared job data
+        last_job_user: null,            // Backend cleared job data
+        last_job_start: null,           // Backend cleared job data
+        last_job_end: null,             // Backend cleared job data
+      };
+
+      server.use(
+        http.get('/api/v1/printers/', () => {
+          return HttpResponse.json([printerAfterCollection]);
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Click the XL button to ensure we're in expanded mode
+      const xlButton = screen.getByTitle('Extra large cards');
+      xlButton.click();
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Box should be hidden because last_job_name is null (no stale data)
+      // Even though part_removal_enabled is still true
+      const buttons = screen.getAllByRole('button');
+      const collectButton = buttons.find(btn => btn.textContent?.includes('Collect'));
+      expect(collectButton).toBeUndefined();
+    });
+  });
 });

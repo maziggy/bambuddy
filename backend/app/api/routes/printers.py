@@ -2185,7 +2185,8 @@ async def create_dummy_part_removal(
     if not printer:
         raise HTTPException(404, "Printer not found")
     
-    # Enable part removal confirmation if not already enabled
+    # Auto-enable part removal confirmation for convenience in debug mode
+    # This allows testing the part removal workflow without manual configuration
     if not printer.part_removal_enabled:
         printer.part_removal_enabled = True
     

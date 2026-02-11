@@ -1118,6 +1118,12 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already applied
 
+    # Migration: Add last_job_queue_item_id column to printers for precise part removal tracking
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN last_job_queue_item_id INTEGER"))
+    except OperationalError:
+        pass  # Already applied
+
 
 async def seed_notification_templates():
     """Seed default notification templates if they don't exist."""

@@ -333,6 +333,7 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                 printer.last_job_user = None
                 printer.last_job_start = None
                 printer.last_job_end = None
+                printer.last_job_queue_item_id = None
                 
                 await db.commit()
                 
@@ -343,6 +344,7 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                     "last_job_user": None,
                     "last_job_start": None,
                     "last_job_end": None,
+                    "last_job_queue_item_id": None,
                 })
                 
                 logger.info(
@@ -1932,11 +1934,26 @@ async def on_print_complete(printer_id: int, data: dict):
             async with async_session() as db:
                 from backend.app.models.printer import Printer
                 from backend.app.models.archive import PrintArchive
+                from backend.app.models.print_queue import PrintQueueItem
 
                 result = await db.execute(select(Printer).where(Printer.id == printer_id))
                 printer = result.scalar_one_or_none()
                 
                 if printer and printer.part_removal_enabled:
+                    # Get queue item if this was a queue print
+                    # NOTE: At this point the queue item is still marked as "printing"
+                    # (it gets updated to "completed" later in this function)
+                    # There should only be one item with status "printing" per printer
+                    queue_item = None
+                    queue_result = await db.execute(
+                        select(PrintQueueItem)
+                        .options(selectinload(PrintQueueItem.created_by))
+                        .where(PrintQueueItem.printer_id == printer_id)
+                        .where(PrintQueueItem.status == "printing")
+                        .limit(1)
+                    )
+                    queue_item = queue_result.scalar_one_or_none()
+                    
                     # Get archive to extract start time and user
                     archive = None
                     if archive_id:
@@ -1948,12 +1965,22 @@ async def on_print_complete(printer_id: int, data: dict):
                         archive = archive_result.scalar_one_or_none()
                     
                     # Get the username who started this print
-                    # Try current user first (from queue tracking), then fall back to archive owner
-                    current_user_dict = printer_manager.get_current_print_user(printer_id)
+                    # Priority: queue item creator > current user tracking > archive owner
                     username = None
-                    if current_user_dict:
-                        username = current_user_dict.get("username")
-                    # Fallback to archive creator if no current user
+                    queue_item_id = None
+                    
+                    if queue_item:
+                        queue_item_id = queue_item.id
+                        if queue_item.created_by:
+                            username = queue_item.created_by.username
+                    
+                    # Fallback to current user tracking if no queue item
+                    if not username:
+                        current_user_dict = printer_manager.get_current_print_user(printer_id)
+                        if current_user_dict:
+                            username = current_user_dict.get("username")
+                    
+                    # Final fallback to archive creator
                     if not username and archive and archive.created_by:
                         username = archive.created_by.username
                     
@@ -1961,6 +1988,7 @@ async def on_print_complete(printer_id: int, data: dict):
                     printer.part_removal_required = True
                     printer.last_job_name = subtask_name or filename
                     printer.last_job_user = username
+                    printer.last_job_queue_item_id = queue_item_id
                     # Use archive's actual start/end times, not created_at or current time
                     printer.last_job_start = archive.started_at if archive else None
                     # Fallback to current time if completed_at is not set (shouldn't happen for completed prints)
@@ -1968,8 +1996,8 @@ async def on_print_complete(printer_id: int, data: dict):
                     
                     await db.commit()
                     logger.info(
-                        "[PART-REMOVAL] Updated printer %s with last job: %s by %s", 
-                        printer_id, printer.last_job_name, printer.last_job_user
+                        "[PART-REMOVAL] Updated printer %s with last job: %s by %s (queue_item_id=%s)", 
+                        printer_id, printer.last_job_name, printer.last_job_user, queue_item_id
                     )
                     
                     # Send WebSocket update to notify frontend
@@ -1979,6 +2007,7 @@ async def on_print_complete(printer_id: int, data: dict):
                         "last_job_user": printer.last_job_user,
                         "last_job_start": printer.last_job_start.isoformat() if printer.last_job_start else None,
                         "last_job_end": printer.last_job_end.isoformat() if printer.last_job_end else None,
+                        "last_job_queue_item_id": queue_item_id,
                     })
         except Exception as e:
             logger.warning("[PART-REMOVAL] Failed to update printer with last job info: %s", e)

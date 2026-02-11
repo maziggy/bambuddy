@@ -95,6 +95,7 @@ export interface Printer {
   last_job_user: string | null;  // User who submitted last job
   last_job_start: string | null;  // Job start time
   last_job_end: string | null;  // Job end time
+  last_job_queue_item_id: number | null;  // Queue item ID that needs collection
   created_at: string;
   updated_at: string;
 }
@@ -1178,6 +1179,7 @@ export interface PrintQueueItem {
   printer_name?: string | null;
   print_time_seconds?: number | null;  // Estimated print time from archive or library file
   part_removal_required?: boolean;  // Whether this completed job needs to be collected
+  last_job_queue_item_id?: number | null;  // Queue item ID that needs collection (matches printer.last_job_queue_item_id)
   // User tracking (Issue #206)
   created_by_id?: number | null;
   created_by_username?: string | null;

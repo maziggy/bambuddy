@@ -164,6 +164,72 @@ class TestBuildLoadedFilaments:
         assert len(result) == 1
         assert result[0]["type"] == "PLA"
 
+    def test_build_loaded_filaments_handles_string_ids(self, scheduler):
+        """IDs should be converted to integers even if they come as strings."""
+
+        class MockStatus:
+            raw_data = {
+                "ams": [
+                    {
+                        "id": "0",  # String ID
+                        "tray": [
+                            {"id": "0", "tray_type": "PLA", "tray_color": "FF0000"},  # String tray ID
+                            {"id": "1", "tray_type": "PETG", "tray_color": "00FF00"},
+                        ],
+                    },
+                    {
+                        "id": "128",  # String AMS-HT ID
+                        "tray": [{"id": "0", "tray_type": "PLA-CF", "tray_color": "000000"}],
+                    },
+                ]
+            }
+
+        result = scheduler._build_loaded_filaments(MockStatus())
+        assert len(result) == 3
+
+        # Regular AMS trays with string IDs should be converted
+        assert result[0]["ams_id"] == 0
+        assert result[0]["tray_id"] == 0
+        assert result[0]["global_tray_id"] == 0  # 0 * 4 + 0
+
+        assert result[1]["ams_id"] == 0
+        assert result[1]["tray_id"] == 1
+        assert result[1]["global_tray_id"] == 1  # 0 * 4 + 1
+
+        # AMS-HT with string ID should be converted and handle >= 128 check correctly
+        assert result[2]["ams_id"] == 128
+        assert result[2]["tray_id"] == 0
+        assert result[2]["global_tray_id"] == 128  # Should use ams_id directly since >= 128
+
+    def test_build_loaded_filaments_handles_invalid_ids(self, scheduler):
+        """Invalid IDs should be logged and skipped gracefully."""
+
+        class MockStatus:
+            raw_data = {
+                "ams": [
+                    {
+                        "id": "invalid",  # Invalid AMS ID - entire unit should be skipped
+                        "tray": [
+                            {"id": "0", "tray_type": "PLA", "tray_color": "FF0000"},
+                        ],
+                    },
+                    {
+                        "id": 0,  # Valid AMS ID
+                        "tray": [
+                            {"id": "abc", "tray_type": "PLA", "tray_color": "FF0000"},  # Invalid tray ID - should be skipped
+                            {"id": 1, "tray_type": "PETG", "tray_color": "00FF00"},  # Valid tray
+                        ],
+                    },
+                ]
+            }
+
+        result = scheduler._build_loaded_filaments(MockStatus())
+        # Should only contain the one valid tray from the second AMS unit
+        assert len(result) == 1
+        assert result[0]["type"] == "PETG"
+        assert result[0]["ams_id"] == 0
+        assert result[0]["tray_id"] == 1
+
 
 class TestMatchFilamentsToSlots:
     """Test the _match_filaments_to_slots method."""

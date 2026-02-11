@@ -1418,6 +1418,9 @@ function PrinterCard({
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const longPressIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Track previous part_removal_required state to detect transitions
+  const prevPartRemovalRequiredRef = useRef<boolean>(printer.part_removal_required);
+
   const { data: status } = useQuery({
     queryKey: ['printerStatus', printer.id],
     queryFn: () => api.getPrinterStatus(printer.id),
@@ -1862,6 +1865,32 @@ function PrinterCard({
       handleLongPressEnd();
     };
   }, []);
+
+  // Auto-show Part Removal Confirmation modal when print completes and part removal is required
+  useEffect(() => {
+    // Only show modal if:
+    // 1. Part removal just became required (transition from false to true)
+    // 2. Printer has part_removal_enabled
+    // 3. There's a job name to show
+    // 4. We're in expanded view mode (modal is only shown in this mode)
+    // 5. The modal is not already showing
+    const partRemovalJustRequired = 
+      printer.part_removal_required && 
+      !prevPartRemovalRequiredRef.current;
+
+    if (
+      partRemovalJustRequired &&
+      printer.part_removal_enabled &&
+      printer.last_job_name &&
+      viewMode === 'expanded' &&
+      !showCollectConfirm
+    ) {
+      setShowCollectConfirm(true);
+    }
+
+    // Update the ref for next render
+    prevPartRemovalRequiredRef.current = printer.part_removal_required;
+  }, [printer.part_removal_required, printer.part_removal_enabled, printer.last_job_name, viewMode, showCollectConfirm]);
 
   // Open plate detection management modal (for calibration/references)
   const handleOpenPlateManagement = async () => {

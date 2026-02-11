@@ -7,6 +7,7 @@ Also provides firmware download functionality for offline updates.
 
 import logging
 import re
+import ssl
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -104,13 +105,12 @@ class FirmwareCheckService:
                     logger.info("Got Bambu Lab build ID: %s", self._build_id)
                     return self._build_id
             logger.warning("Failed to get Bambu Lab page: %s", response.status_code)
+        except (ssl.SSLError, httpx.ConnectError) as e:
+            # Log SSL/connection errors at warning level since they're expected in some environments
+            # and don't affect core functionality (cached data will be used)
+            logger.warning("Connection/SSL error fetching Bambu Lab build ID: %s. Using cached data if available.", e)
         except Exception as e:
-            # Log SSL certificate errors at warning level since they're expected in some environments
-            # and don't affect core functionality
-            if "CERTIFICATE_VERIFY_FAILED" in str(e) or "SSL" in str(e):
-                logger.warning("SSL certificate validation failed for Bambu Lab: %s. Using cached data if available.", e)
-            else:
-                logger.error("Error fetching Bambu Lab build ID: %s", e)
+            logger.error("Error fetching Bambu Lab build ID: %s", e)
 
         return self._build_id  # Return cached value if available
 

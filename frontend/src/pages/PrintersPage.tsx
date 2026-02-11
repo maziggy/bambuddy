@@ -2486,7 +2486,7 @@ function PrinterCard({
                       <AlertTriangle className="w-5 h-5 text-orange-400 flex-shrink-0 mt-0.5" />
                       <div className="flex-1">
                         <p className="text-sm font-medium text-orange-400">
-                          {t('printers.partRemoval.pausedForRemoval')}
+                          {t('printers.partRemoval.pausedForRemoval', { jobName: status.subtask_name || status.current_print || 'Print' })}
                         </p>
                         <p className="text-xs text-bambu-gray mt-1">
                           {t('printers.partRemoval.pausedMessage', { jobName: printer.last_job_name })}
@@ -2703,16 +2703,16 @@ function PrinterCard({
                       {/* Stop button */}
                       <button
                         onClick={() => setShowStopConfirm(true)}
-                        disabled={!isPrinting || isControlBusy || !hasPermission('printers:control')}
+                        disabled={!isPrinting || isControlBusy || !hasPermission('printers:control') || printer.part_removal_required}
                         className={`
                           flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium
                           transition-colors
-                          ${isPrinting && hasPermission('printers:control')
+                          ${isPrinting && hasPermission('printers:control') && !printer.part_removal_required
                             ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
                             : 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
                           }
                         `}
-                        title={!hasPermission('printers:control') ? t('printers.permission.noControl') : t('printers.stop')}
+                        title={!hasPermission('printers:control') ? t('printers.permission.noControl') : printer.part_removal_required ? t('printers.partRemoval.plateCheckDisabledDuringRemoval') : t('printers.stop')}
                       >
                         <Square className="w-3 h-3" />
                         {t('printers.stop')}
@@ -2721,18 +2721,18 @@ function PrinterCard({
                       {/* Pause/Resume button */}
                       <button
                         onClick={() => isPaused ? setShowResumeConfirm(true) : setShowPauseConfirm(true)}
-                        disabled={!isPrinting || isControlBusy || !hasPermission('printers:control')}
+                        disabled={!isPrinting || isControlBusy || !hasPermission('printers:control') || (isPaused && printer.part_removal_required)}
                         className={`
                           flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium
                           transition-colors
-                          ${isPrinting && hasPermission('printers:control')
+                          ${isPrinting && hasPermission('printers:control') && !(isPaused && printer.part_removal_required)
                             ? isPaused
                               ? 'bg-bambu-green/20 text-bambu-green hover:bg-bambu-green/30'
                               : 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30'
                             : 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
                           }
                         `}
-                        title={!hasPermission('printers:control') ? t('printers.permission.noControl') : (isPaused ? t('printers.resume') : t('printers.pause'))}
+                        title={!hasPermission('printers:control') ? t('printers.permission.noControl') : (isPaused && printer.part_removal_required) ? t('printers.partRemoval.plateCheckDisabledDuringRemoval') : (isPaused ? t('printers.resume') : t('printers.pause'))}
                       >
                         {isPaused ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
                         {isPaused ? t('printers.resume') : t('printers.pause')}

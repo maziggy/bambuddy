@@ -617,4 +617,183 @@ describe('PrintersPage', () => {
       }
     });
   });
+
+  describe('collect part confirmation dialog', () => {
+    it('closes dialog on successful part collection', async () => {
+      const printerWithPartRemoval = {
+        ...mockPrinters[0],
+        part_removal_enabled: true,
+        part_removal_required: false,
+        last_job_name: 'test_print.3mf',
+        last_job_user: 'testuser',
+        last_job_start: '2024-01-01T10:00:00Z',
+        last_job_end: '2024-01-01T12:00:00Z',
+      };
+
+      server.use(
+        http.get('/api/v1/printers/', () => {
+          return HttpResponse.json([printerWithPartRemoval]);
+        }),
+        http.post('/api/v1/printers/:id/collect-part', () => {
+          return HttpResponse.json({ success: true, message: 'Part collected' });
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Click the XL button to ensure we're in expanded mode
+      const xlButton = screen.getByTitle('Extra large cards');
+      xlButton.click();
+
+      await waitFor(() => {
+        expect(screen.getByText('test_print.3mf')).toBeInTheDocument();
+      });
+
+      // Find and click the "Collect Part" button
+      const collectButtons = screen.getAllByRole('button');
+      const collectButton = collectButtons.find(btn => btn.textContent?.includes('Collect'));
+      expect(collectButton).toBeDefined();
+      collectButton!.click();
+
+      // Wait for the confirmation dialog to appear
+      await waitFor(() => {
+        expect(screen.getByText('Confirm Part Removal')).toBeInTheDocument();
+      });
+
+      // Find and click the confirm button (Build Plate Clear) - it's inside the modal
+      const confirmButtons = screen.getAllByRole('button', { name: /build plate clear/i });
+      const confirmButton = confirmButtons.find(btn => btn.textContent === 'Build Plate Clear');
+      expect(confirmButton).toBeDefined();
+      confirmButton!.click();
+
+      // Wait for the dialog to close
+      await waitFor(() => {
+        expect(screen.queryByText('Confirm Part Removal')).not.toBeInTheDocument();
+      }, { timeout: 3000 });
+    });
+
+    it('closes dialog on error (500) during part collection', async () => {
+      const printerWithPartRemoval = {
+        ...mockPrinters[0],
+        part_removal_enabled: true,
+        part_removal_required: false,
+        last_job_name: 'test_print.3mf',
+        last_job_user: 'testuser',
+        last_job_start: '2024-01-01T10:00:00Z',
+        last_job_end: '2024-01-01T12:00:00Z',
+      };
+
+      server.use(
+        http.get('/api/v1/printers/', () => {
+          return HttpResponse.json([printerWithPartRemoval]);
+        }),
+        http.post('/api/v1/printers/:id/collect-part', () => {
+          return new HttpResponse(null, { 
+            status: 500,
+            statusText: 'Internal Server Error'
+          });
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Click the XL button to ensure we're in expanded mode
+      const xlButton = screen.getByTitle('Extra large cards');
+      xlButton.click();
+
+      await waitFor(() => {
+        expect(screen.getByText('test_print.3mf')).toBeInTheDocument();
+      });
+
+      // Find and click the "Collect Part" button
+      const collectButtons = screen.getAllByRole('button');
+      const collectButton = collectButtons.find(btn => btn.textContent?.includes('Collect'));
+      expect(collectButton).toBeDefined();
+      collectButton!.click();
+
+      // Wait for the confirmation dialog to appear
+      await waitFor(() => {
+        expect(screen.getByText('Confirm Part Removal')).toBeInTheDocument();
+      });
+
+      // Find and click the confirm button (Build Plate Clear) - it's inside the modal
+      const confirmButtons = screen.getAllByRole('button', { name: /build plate clear/i });
+      const confirmButton = confirmButtons.find(btn => btn.textContent === 'Build Plate Clear');
+      expect(confirmButton).toBeDefined();
+      confirmButton!.click();
+
+      // Wait for the dialog to close even on error
+      await waitFor(() => {
+        expect(screen.queryByText('Confirm Part Removal')).not.toBeInTheDocument();
+      }, { timeout: 3000 });
+    });
+
+    it('closes dialog on 404 error during part collection', async () => {
+      const printerWithPartRemoval = {
+        ...mockPrinters[0],
+        part_removal_enabled: true,
+        part_removal_required: false,
+        last_job_name: 'test_print.3mf',
+        last_job_user: 'testuser',
+        last_job_start: '2024-01-01T10:00:00Z',
+        last_job_end: '2024-01-01T12:00:00Z',
+      };
+
+      server.use(
+        http.get('/api/v1/printers/', () => {
+          return HttpResponse.json([printerWithPartRemoval]);
+        }),
+        http.post('/api/v1/printers/:id/collect-part', () => {
+          return new HttpResponse(null, { 
+            status: 404,
+            statusText: 'Not Found'
+          });
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Click the XL button to ensure we're in expanded mode
+      const xlButton = screen.getByTitle('Extra large cards');
+      xlButton.click();
+
+      await waitFor(() => {
+        expect(screen.getByText('test_print.3mf')).toBeInTheDocument();
+      });
+
+      // Find and click the "Collect Part" button
+      const collectButtons = screen.getAllByRole('button');
+      const collectButton = collectButtons.find(btn => btn.textContent?.includes('Collect'));
+      expect(collectButton).toBeDefined();
+      collectButton!.click();
+
+      // Wait for the confirmation dialog to appear
+      await waitFor(() => {
+        expect(screen.getByText('Confirm Part Removal')).toBeInTheDocument();
+      });
+
+      // Find and click the confirm button (Build Plate Clear) - it's inside the modal
+      const confirmButtons = screen.getAllByRole('button', { name: /build plate clear/i });
+      const confirmButton = confirmButtons.find(btn => btn.textContent === 'Build Plate Clear');
+      expect(confirmButton).toBeDefined();
+      confirmButton!.click();
+
+      // Wait for the dialog to close even on error
+      await waitFor(() => {
+        expect(screen.queryByText('Confirm Part Removal')).not.toBeInTheDocument();
+      }, { timeout: 3000 });
+    });
+  });
 });

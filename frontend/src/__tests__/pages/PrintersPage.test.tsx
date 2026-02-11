@@ -488,5 +488,45 @@ describe('PrintersPage', () => {
       const collectButton = buttons.find(btn => btn.textContent?.includes('Collect'));
       expect(collectButton).toBeUndefined();
     });
+
+    it('simulates state after part collection - no stale data shown', async () => {
+      // This test simulates the state AFTER a user has clicked "Collect Part"
+      // Backend clears all job data when part is collected (see printers.py:2133-2137)
+      const printerAfterCollection = {
+        ...mockPrinters[0],
+        part_removal_enabled: true,      // Feature still enabled
+        part_removal_required: false,    // Part was collected
+        last_job_name: null,            // Backend cleared job data
+        last_job_user: null,            // Backend cleared job data
+        last_job_start: null,           // Backend cleared job data
+        last_job_end: null,             // Backend cleared job data
+      };
+
+      server.use(
+        http.get('/api/v1/printers/', () => {
+          return HttpResponse.json([printerAfterCollection]);
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Click the XL button to ensure we're in expanded mode
+      const xlButton = screen.getByTitle('Extra large cards');
+      xlButton.click();
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Box should be hidden because last_job_name is null (no stale data)
+      // Even though part_removal_enabled is still true
+      const buttons = screen.getAllByRole('button');
+      const collectButton = buttons.find(btn => btn.textContent?.includes('Collect'));
+      expect(collectButton).toBeUndefined();
+    });
   });
 });

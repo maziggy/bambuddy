@@ -9,6 +9,7 @@ from pathlib import Path
 
 import defusedxml.ElementTree as ET
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -1055,7 +1056,9 @@ class PrintScheduler:
                         item.printer_id, item.created_by.id, item.created_by.username
                     )
                     logger.info("Queue item %s: Tracking user %s", item.id, item.created_by.username)
-        except Exception as e:
+        except (AttributeError, SQLAlchemyError) as e:
+            # AttributeError: accessing detached relationship after commit
+            # SQLAlchemyError: database/session errors during user lookup
             logger.warning("Queue item %s: Failed to track user: %s", item.id, e)
 
         # Start the print with AMS mapping, plate_id and print options

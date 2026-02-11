@@ -2047,7 +2047,7 @@ class BambuMQTTClient:
         layer_inspect: bool = False,
         timelapse: bool = False,
         use_ams: bool = True,
-    ):
+    ) -> bool:
         """Start a print job on the printer.
 
         The file should already be uploaded to the printer's root directory via FTP.
@@ -2141,7 +2141,19 @@ class BambuMQTTClient:
                 command["print"]["ams_mapping2"] = ams_mapping2
 
             logger.info("[%s] Sending print command: %s", self.serial_number, json.dumps(command))
-            self._client.publish(self.topic_publish, json.dumps(command), qos=1)
+            try:
+                result = self._client.publish(self.topic_publish, json.dumps(command), qos=1)
+                if result.rc != mqtt.MQTT_ERR_SUCCESS:
+                    logger.error(
+                        "[%s] Failed to publish print command: rc=%d (%s)",
+                        self.serial_number,
+                        result.rc,
+                        mqtt.error_string(result.rc),
+                    )
+                    return False
+            except Exception as e:
+                logger.error("[%s] Exception publishing print command: %s", self.serial_number, e, exc_info=True)
+                return False
             return True
         else:
             # Log why we couldn't send the command

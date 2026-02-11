@@ -211,6 +211,12 @@ export function useWebSocket() {
         debouncedInvalidate('archives');
         break;
 
+      case 'printer_updated':
+        // Printer data changed (e.g., part removal status cleared)
+        // Invalidate printers list to refresh the UI
+        debouncedInvalidate('printers');
+        break;
+
       case 'pong':
         // Keepalive response, ignore
         break;

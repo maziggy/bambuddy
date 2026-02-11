@@ -91,6 +91,16 @@ class ConnectionManager:
             }
         )
 
+    async def send_printer_updated(self, printer_id: int, data: dict):
+        """Send printer update to all clients."""
+        await self.broadcast(
+            {
+                "type": "printer_updated",
+                "printer_id": printer_id,
+                "data": data,
+            }
+        )
+
 
 # Global connection manager
 ws_manager = ConnectionManager()

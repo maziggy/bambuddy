@@ -158,4 +158,73 @@ describe('useLongPress', () => {
     expect(onClick).toHaveBeenCalled();
     expect(onLongPress).not.toHaveBeenCalled();
   });
+
+  it('only responds to left mouse button', () => {
+    const onLongPress = vi.fn();
+    const onClick = vi.fn();
+
+    const { result } = renderHook(() =>
+      useLongPress({ onLongPress, onClick, delay: 500 })
+    );
+
+    // Simulate right mouse button down (button = 2)
+    act(() => {
+      result.current.onMouseDown({ button: 2 } as React.MouseEvent);
+    });
+
+    // Fast forward past the delay
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+
+    // Should not trigger long press
+    expect(onLongPress).not.toHaveBeenCalled();
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it('only responds to left mouse button - middle button test', () => {
+    const onLongPress = vi.fn();
+    const onClick = vi.fn();
+
+    const { result } = renderHook(() =>
+      useLongPress({ onLongPress, onClick, delay: 500 })
+    );
+
+    // Simulate middle mouse button down (button = 1)
+    act(() => {
+      result.current.onMouseDown({ button: 1 } as React.MouseEvent);
+    });
+
+    // Fast forward past the delay
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+
+    // Should not trigger long press
+    expect(onLongPress).not.toHaveBeenCalled();
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it('responds to left mouse button', () => {
+    const onLongPress = vi.fn();
+    const onClick = vi.fn();
+
+    const { result } = renderHook(() =>
+      useLongPress({ onLongPress, onClick, delay: 500 })
+    );
+
+    // Simulate left mouse button down (button = 0)
+    act(() => {
+      result.current.onMouseDown({ button: 0 } as React.MouseEvent);
+    });
+
+    // Fast forward past the delay
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+
+    // Should trigger long press
+    expect(onLongPress).toHaveBeenCalled();
+    expect(onClick).not.toHaveBeenCalled();
+  });
 });

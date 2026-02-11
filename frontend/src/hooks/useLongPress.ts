@@ -13,6 +13,11 @@ export function useLongPress({ onLongPress, onClick, delay = 500 }: LongPressOpt
 
   const start = useCallback(
     (e: React.TouchEvent | React.MouseEvent) => {
+      // Only respond to left mouse button (button 0) for mouse events
+      if ('button' in e && e.button !== 0) {
+        return;
+      }
+
       longPressTriggered.current = false;
       targetRef.current = e.target;
       timeoutRef.current = window.setTimeout(() => {

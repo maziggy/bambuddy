@@ -529,4 +529,92 @@ describe('PrintersPage', () => {
       expect(collectButton).toBeUndefined();
     });
   });
+
+  describe('part removal button long press', () => {
+    it('ignores right mouse button on part removal button', async () => {
+      const printerWithPartRemoval = {
+        ...mockPrinters[0],
+        part_removal_enabled: true,
+        part_removal_required: false,
+      };
+
+      server.use(
+        http.get('/api/v1/printers/', () => {
+          return HttpResponse.json([printerWithPartRemoval]);
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Find the part removal button by its icon
+      const buttons = screen.getAllByRole('button');
+      const partRemovalButton = buttons.find(btn => {
+        const svg = btn.querySelector('svg');
+        return svg && btn.title?.includes('Part Removal');
+      });
+
+      expect(partRemovalButton).toBeDefined();
+
+      if (partRemovalButton) {
+        // Simulate right mouse button down (button = 2)
+        const rightClickEvent = new MouseEvent('mousedown', {
+          bubbles: true,
+          button: 2, // Right mouse button
+        });
+        
+        partRemovalButton.dispatchEvent(rightClickEvent);
+
+        // Long press progress indicator should not appear
+        // (If it did, it would have the class 'border-orange-500')
+        const progressIndicators = document.querySelectorAll('.border-orange-500.pointer-events-none');
+        expect(progressIndicators.length).toBe(0);
+      }
+    });
+
+    it('ignores middle mouse button on part removal button', async () => {
+      const printerWithPartRemoval = {
+        ...mockPrinters[0],
+        part_removal_enabled: true,
+        part_removal_required: false,
+      };
+
+      server.use(
+        http.get('/api/v1/printers/', () => {
+          return HttpResponse.json([printerWithPartRemoval]);
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      const buttons = screen.getAllByRole('button');
+      const partRemovalButton = buttons.find(btn => {
+        const svg = btn.querySelector('svg');
+        return svg && btn.title?.includes('Part Removal');
+      });
+
+      expect(partRemovalButton).toBeDefined();
+
+      if (partRemovalButton) {
+        // Simulate middle mouse button down (button = 1)
+        const middleClickEvent = new MouseEvent('mousedown', {
+          bubbles: true,
+          button: 1, // Middle mouse button
+        });
+        
+        partRemovalButton.dispatchEvent(middleClickEvent);
+
+        // Long press progress indicator should not appear
+        const progressIndicators = document.querySelectorAll('.border-orange-500.pointer-events-none');
+        expect(progressIndicators.length).toBe(0);
+      }
+    });
+  });
 });

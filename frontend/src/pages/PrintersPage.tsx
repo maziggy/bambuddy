@@ -1804,7 +1804,12 @@ function PrinterCard({
   const LONG_PRESS_DURATION = 2500; // 2.5 seconds
   const PROGRESS_INTERVAL = 50; // Update every 50ms
 
-  const handleLongPressStart = () => {
+  const handleLongPressStart = (e: React.MouseEvent | React.TouchEvent) => {
+    // Only allow left mouse button for mouse events
+    if ('button' in e && e.button !== 0) {
+      return;
+    }
+
     // Only allow for admins when part removal is enabled
     if (!hasPermission('printers:update') || !printer.part_removal_enabled) {
       return;

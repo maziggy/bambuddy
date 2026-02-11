@@ -530,6 +530,113 @@ describe('PrintersPage', () => {
     });
   });
 
+  describe('part removal warning message', () => {
+    it('shows "On Deck" message when part removal required and job is queued', async () => {
+      const printerWithPartRemovalRequired = {
+        ...mockPrinters[0],
+        part_removal_enabled: true,
+        part_removal_required: true,
+        last_job_name: 'previous_print.3mf',
+        last_job_user: 'testuser',
+        last_job_start: '2024-01-01T10:00:00Z',
+        last_job_end: '2024-01-01T12:00:00Z',
+      };
+
+      const pausedStatus = {
+        ...mockPrinterStatus,
+        state: 'PAUSED',
+        current_print: 'queued_print.3mf',
+      };
+
+      const mockQueue = [
+        {
+          id: 1,
+          printer_id: 1,
+          archive_id: 123,
+          archive_name: 'next_job.3mf',
+          library_file_name: null,
+          scheduled_time: null,
+          status: 'pending',
+          created_at: '2024-01-01T13:00:00Z',
+          created_by_username: 'testuser',
+        },
+      ];
+
+      server.use(
+        http.get('/api/v1/printers/', () => {
+          return HttpResponse.json([printerWithPartRemovalRequired]);
+        }),
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json(pausedStatus);
+        }),
+        http.get('/api/v1/queue/', () => {
+          return HttpResponse.json(mockQueue);
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Click the XL button to ensure we're in expanded mode
+      const xlButton = screen.getByTitle('Extra large cards');
+      xlButton.click();
+
+      await waitFor(() => {
+        // Should show "On Deck: next_job.3mf - Paused: Part Removal Required"
+        expect(screen.getByText(/On Deck: next_job\.3mf - Paused: Part Removal Required/)).toBeInTheDocument();
+      });
+    });
+
+    it('shows regular paused message when no job is queued', async () => {
+      const printerWithPartRemovalRequired = {
+        ...mockPrinters[0],
+        part_removal_enabled: true,
+        part_removal_required: true,
+        last_job_name: 'previous_print.3mf',
+        last_job_user: 'testuser',
+        last_job_start: '2024-01-01T10:00:00Z',
+        last_job_end: '2024-01-01T12:00:00Z',
+      };
+
+      const pausedStatus = {
+        ...mockPrinterStatus,
+        state: 'PAUSED',
+        current_print: 'current_print.3mf',
+      };
+
+      server.use(
+        http.get('/api/v1/printers/', () => {
+          return HttpResponse.json([printerWithPartRemovalRequired]);
+        }),
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json(pausedStatus);
+        }),
+        http.get('/api/v1/queue/', () => {
+          return HttpResponse.json([]);
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Click the XL button to ensure we're in expanded mode
+      const xlButton = screen.getByTitle('Extra large cards');
+      xlButton.click();
+
+      await waitFor(() => {
+        // Should show regular message without "On Deck"
+        expect(screen.getByText(/current_print\.3mf Paused - Part Removal Required/)).toBeInTheDocument();
+        expect(screen.queryByText(/On Deck:/)).not.toBeInTheDocument();
+      });
+    });
+  });
+
   describe('part removal button long press', () => {
     it('ignores right mouse button on part removal button', async () => {
       const printerWithPartRemoval = {

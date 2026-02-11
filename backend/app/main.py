@@ -1949,8 +1949,9 @@ async def on_print_complete(printer_id: int, data: dict):
                     printer.part_removal_required = True
                     printer.last_job_name = subtask_name or filename
                     printer.last_job_user = current_user
-                    printer.last_job_start = archive.created_at if archive else None
-                    printer.last_job_end = datetime.now()
+                    # Use archive's actual start/end times, not created_at or current time
+                    printer.last_job_start = archive.started_at if archive else None
+                    printer.last_job_end = archive.completed_at if archive else None
                     
                     await db.commit()
                     logger.info(

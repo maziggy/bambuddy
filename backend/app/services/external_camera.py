@@ -362,7 +362,7 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
     ]
 
     try:
-        print(f"[EXT-CAM] Running ffmpeg command: {' '.join(cmd[:6])}...")
+        logger.debug(f"Running ffmpeg command: {' '.join(cmd[:6])}...")
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -370,13 +370,12 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
         )
 
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
-        print(
-            f"[EXT-CAM] ffmpeg returned: code={process.returncode}, stdout={len(stdout)} bytes, stderr={len(stderr)} bytes"
+        logger.debug(
+            f"ffmpeg returned: code={process.returncode}, stdout={len(stdout)} bytes, stderr={len(stderr)} bytes"
         )
 
         if process.returncode != 0:
             logger.error("ffmpeg RTSP capture failed: %s", stderr.decode()[:200])
-            print(f"[EXT-CAM] ffmpeg error: {stderr.decode()[:300]}")
             return None
 
         if not stdout or len(stdout) < 100:
@@ -440,11 +439,9 @@ async def test_connection(url: str, camera_type: str) -> dict:
     Returns:
         Dict with {success: bool, error?: str, resolution?: str}
     """
-    print(f"[EXT-CAM] Testing camera connection: type={camera_type}, url={url[:50]}...")
     logger.info("Testing camera connection: type=%s, url=%s...", camera_type, url[:50])
     try:
         frame = await capture_frame(url, camera_type, timeout=10)
-        print(f"[EXT-CAM] Capture result: {len(frame) if frame else 0} bytes")
         logger.info("Capture result: %s bytes", len(frame) if frame else 0)
 
         if frame:

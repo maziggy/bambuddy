@@ -127,4 +127,63 @@ describe('PrinterQueueWidget', () => {
       });
     });
   });
+
+  describe('file manager (library file) items', () => {
+    it('shows library_file_name for items from file manager', async () => {
+      const libraryFileItem = {
+        id: 3,
+        printer_id: 1,
+        library_file_id: 5,
+        archive_id: null,
+        position: 1,
+        status: 'pending',
+        library_file_name: 'MyModel.3mf',
+        printer_name: 'X1 Carbon',
+        print_time_seconds: 3600,
+        scheduled_time: null,
+      };
+
+      server.use(
+        http.get('/api/v1/queue/', () => {
+          return HttpResponse.json([libraryFileItem]);
+        })
+      );
+
+      render(<PrinterQueueWidget printerId={1} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('MyModel.3mf')).toBeInTheDocument();
+      });
+    });
+
+    it('shows library_file_name even when archive_name is null', async () => {
+      const libraryFileItem = {
+        id: 3,
+        printer_id: 1,
+        library_file_id: 5,
+        archive_id: null,
+        position: 1,
+        status: 'pending',
+        archive_name: null,
+        library_file_name: 'TestPrint.3mf',
+        printer_name: 'X1 Carbon',
+        print_time_seconds: 3600,
+        scheduled_time: null,
+      };
+
+      server.use(
+        http.get('/api/v1/queue/', () => {
+          return HttpResponse.json([libraryFileItem]);
+        })
+      );
+
+      render(<PrinterQueueWidget printerId={1} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('TestPrint.3mf')).toBeInTheDocument();
+        // Should NOT show "Archive #null"
+        expect(screen.queryByText('Archive #null')).not.toBeInTheDocument();
+      });
+    });
+  });
 });

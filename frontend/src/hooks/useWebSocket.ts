@@ -212,9 +212,18 @@ export function useWebSocket() {
         break;
 
       case 'printer_updated':
-        // Printer data changed (e.g., part removal status cleared)
-        // Invalidate printers list to refresh the UI
-        debouncedInvalidate('printers');
+        // Printer data changed (e.g., part removal status updated)
+        // Update the printer data immediately in the cache to show part removal without delay
+        if (message.printer_id !== undefined && message.data) {
+          queryClient.setQueryData(['printers'], (old: any) => {
+            if (!old) return old;
+            return old.map((printer: any) =>
+              printer.id === message.printer_id
+                ? { ...printer, ...message.data }
+                : printer
+            );
+          });
+        }
         break;
 
       case 'pong':

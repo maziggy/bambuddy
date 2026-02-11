@@ -47,7 +47,7 @@ export function PrinterQueueWidget({ printerId }: PrinterQueueWidgetProps) {
           <div className="min-w-0 flex-1">
             <p className="text-xs text-bambu-gray">Next in queue</p>
             <p className="text-sm text-white truncate">
-              {nextItem?.archive_name || `Archive #${nextItem?.archive_id}`}
+              {nextItem?.archive_name || nextItem?.library_file_name || `Archive #${nextItem?.archive_id}`}
             </p>
           </div>
         </div>

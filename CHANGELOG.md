@@ -6,6 +6,7 @@ All notable changes to Bambuddy will be documented in this file.
 
 ### Fixed
 - **External Camera Not Used for Snapshot + Stream Dropping** ([#325](https://github.com/maziggy/bambuddy/issues/325)) — The snapshot endpoint (`/camera/snapshot`) always used the internal printer camera even when an external camera was configured. Now checks for external camera first, matching the existing stream endpoint behavior. Also fixed external MJPEG and RTSP streams silently dropping every ~60 seconds due to missing reconnect logic — the underlying stream generators exit on read timeout, and the caller now retries up to 3 times with a 2-second delay instead of ending the stream.
+- **H2C Nozzle Rack Text Unreadable on Light Filament Colors** ([#300](https://github.com/maziggy/bambuddy/issues/300)) — Nozzle rack slots use the loaded filament color as background, but white/light filaments made the white "0.4" text nearly invisible. Now uses a luminance check to switch to dark text on light backgrounds.
 
 ## [0.1.9] - 2026-02-10
 

@@ -421,6 +421,14 @@ function parseFilamentColor(rgba: string): string | null {
   return `rgba(${parseInt(r, 16)}, ${parseInt(g, 16)}, ${parseInt(b, 16)}, ${a})`;
 }
 
+function isLightFilamentColor(rgba: string): boolean {
+  if (!rgba || rgba.length < 6) return false;
+  const r = parseInt(rgba.slice(0, 2), 16);
+  const g = parseInt(rgba.slice(2, 4), 16);
+  const b = parseInt(rgba.slice(4, 6), 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6;
+}
+
 // Expand nozzle type codes to material names
 // Handles full text ("hardened_steel"), 2-char codes ("HS"/"HH"), and 4-char codes ("HS01")
 // Material mapping: 00=stainless steel, 01=hardened steel, 05=tungsten carbide
@@ -798,6 +806,7 @@ function NozzleRackCard({ slots, filamentInfo }: { slots: import('../api/client'
         {rackSlots.map((slot, i) => {
           const isEmpty = !slot.nozzle_diameter && !slot.nozzle_type;
           const filamentBg = !isEmpty ? parseFilamentColor(slot.filament_color) : null;
+          const lightBg = filamentBg ? isLightFilamentColor(slot.filament_color) : false;
 
           return (
             <NozzleSlotHoverCard key={slot.id >= 0 ? slot.id : `empty-${i}`} slot={slot} index={i} filamentName={slot.filament_id ? filamentInfo?.[slot.filament_id]?.name : undefined}>
@@ -809,8 +818,8 @@ function NozzleRackCard({ slots, filamentInfo }: { slots: import('../api/client'
                 }`}
                 style={filamentBg ? { backgroundColor: filamentBg } : undefined}
               >
-                <span className={`text-[10px] font-semibold ${isEmpty ? 'text-bambu-gray/30' : 'text-white'}`}
-                      style={filamentBg ? { textShadow: '0 1px 3px rgba(0,0,0,0.9)' } : undefined}
+                <span className={`text-[10px] font-semibold ${isEmpty ? 'text-bambu-gray/30' : lightBg ? 'text-black/80' : 'text-white'}`}
+                      style={filamentBg && !lightBg ? { textShadow: '0 1px 3px rgba(0,0,0,0.9)' } : undefined}
                 >
                   {isEmpty ? '—' : (slot.nozzle_diameter || '?')}
                 </span>

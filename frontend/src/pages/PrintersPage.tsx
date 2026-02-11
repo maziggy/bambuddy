@@ -2115,10 +2115,12 @@ function PrinterCard({
                   )}
                   {/* Part removal indicator for compact mode */}
                   {viewMode === 'compact' && printer.part_removal_required && (
-                    <Hand
-                      className="w-4 h-4 text-orange-400 flex-shrink-0"
+                    <span
+                      className="flex-shrink-0"
                       title={t('printers.partRemoval.title')}
-                    />
+                    >
+                      <Hand className="w-4 h-4 text-orange-400" />
+                    </span>
                   )}
                 </div>
                 <p className="text-sm text-bambu-gray">

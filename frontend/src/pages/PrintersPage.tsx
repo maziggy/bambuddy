@@ -2527,7 +2527,12 @@ function PrinterCard({
                       <div className="flex-1">
                         {/* Current paused job name */}
                         <p className="text-sm font-medium text-orange-400">
-                          {t('printers.partRemoval.pausedForRemoval', { jobName: getCurrentJobName() })}
+                          {queueItems?.[0] 
+                            ? t('printers.partRemoval.onDeckPausedForRemoval', { 
+                                jobName: queueItems[0].archive_name || queueItems[0].library_file_name || `Archive #${queueItems[0].archive_id}` 
+                              })
+                            : t('printers.partRemoval.pausedForRemoval', { jobName: getCurrentJobName() })
+                          }
                         </p>
                         {/* Previous job that needs to be collected */}
                         <p className="text-xs text-bambu-gray mt-1">

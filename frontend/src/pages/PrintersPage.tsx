@@ -1873,9 +1873,7 @@ function PrinterCard({
     // 2. Printer has part_removal_enabled
     // 3. There's a job name to show
     // 4. We're in expanded view mode (modal is only shown in this mode)
-    const partRemovalJustRequired = 
-      printer.part_removal_required && 
-      !prevPartRemovalRequiredRef.current;
+    const partRemovalJustRequired = printer.part_removal_required && !prevPartRemovalRequiredRef.current;
 
     if (
       partRemovalJustRequired &&

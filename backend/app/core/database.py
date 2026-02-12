@@ -797,6 +797,36 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already applied
 
+    # Migration: Add part removal confirmation columns to printers
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN part_removal_enabled BOOLEAN DEFAULT 0"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN part_removal_required BOOLEAN DEFAULT 0"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN last_job_name VARCHAR(500)"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN last_job_user VARCHAR(100)"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN last_job_start DATETIME"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN last_job_end DATETIME"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN last_job_queue_item_id INTEGER"))
+    except OperationalError:
+        pass  # Already applied
+
     # Migration: Remove UNIQUE constraint from smart_plugs.printer_id
     # This allows HA scripts to coexist with regular plugs (scripts are for multi-device control)
     # SQLite requires table recreation to drop constraints

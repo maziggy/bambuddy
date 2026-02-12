@@ -585,8 +585,8 @@ describe('PrintersPage', () => {
       xlButton.click();
 
       await waitFor(() => {
-        // Should show "On Deck: next_job.3mf - Paused: Part Removal Required"
-        expect(screen.getByText(/On Deck: next_job\.3mf - Paused: Part Removal Required/)).toBeInTheDocument();
+        // Should show "Processing: next_job.3mf - Paused for Previous Part Removal Confirmation"
+        expect(screen.getByText(/Processing: next_job\.3mf - Paused for Previous Part Removal Confirmation/)).toBeInTheDocument();
       });
     });
 
@@ -631,7 +631,7 @@ describe('PrintersPage', () => {
 
       await waitFor(() => {
         // Should show regular message without "On Deck"
-        expect(screen.getByText(/current_print\.3mf Paused - Part Removal Required/)).toBeInTheDocument();
+        expect(screen.getByText(/Processing: current_print\.3mf - Paused for Previous Part Removal Confirmation/)).toBeInTheDocument();
         expect(screen.queryByText(/On Deck:/)).not.toBeInTheDocument();
       });
     });

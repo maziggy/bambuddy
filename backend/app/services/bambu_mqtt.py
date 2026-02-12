@@ -2089,11 +2089,11 @@ class BambuMQTTClient:
                         slot_id = tray_id % 4
                         ams_mapping2.append({"ams_id": ams_id, "slot_id": slot_id})
 
-            # H2D series and X1E require integer values (0/1) for calibration/leveling fields
+            # H2D series requires integer values (0/1) for calibration/leveling fields
             # but use_ams MUST remain boolean — H2D Pro firmware interprets integer
             # values as nozzle index (1 = deputy nozzle), causing wrong extruder routing
             # Other printers (X1C, P1S, A1, etc.) require actual booleans for all fields
-            is_h2d = self.model and self.model.upper().strip() in ("H2D", "H2D PRO", "H2DPRO", "H2C", "X1E")
+            is_h2d = self.model and self.model.upper().strip() in ("H2D", "H2D PRO", "H2DPRO", "H2C", "H2S")
 
             command = {
                 "print": {
@@ -2106,7 +2106,7 @@ class BambuMQTTClient:
                     "bed_type": "auto",
                     "timelapse": (1 if timelapse else 0) if is_h2d else timelapse,
                     "bed_leveling": (1 if bed_levelling else 0) if is_h2d else bed_levelling,
-                    "auto_bed_leveling": 1 if bed_levelling else 0,
+                    "auto_bed_leveling": (1 if bed_levelling else 0) if is_h2d else bed_levelling,
                     "flow_cali": (1 if flow_cali else 0) if is_h2d else flow_cali,
                     "vibration_cali": (1 if vibration_cali else 0) if is_h2d else vibration_cali,
                     "layer_inspect": (1 if layer_inspect else 0) if is_h2d else layer_inspect,
@@ -2125,7 +2125,7 @@ class BambuMQTTClient:
 
             if is_h2d:
                 logger.info(
-                    "[%s] H2D series or X1E detected: using integer format for calibration fields (use_ams stays boolean)",
+                    "[%s] H2D series detected: using integer format for calibration fields (use_ams stays boolean)",
                     self.serial_number,
                 )
 

@@ -984,6 +984,7 @@ export function FileManagerPage() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [linkFolder, setLinkFolder] = useState<LibraryFolderTree | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'file' | 'folder' | 'bulk'; id: number; count?: number } | null>(null);
+  const [deleteFromFilesystem, setDeleteFromFilesystem] = useState(false);
   const [printFile, setPrintFile] = useState<LibraryFileListItem | null>(null);
   const [printMultiFile, setPrintMultiFile] = useState<LibraryFileListItem | null>(null);
   const [renameItem, setRenameItem] = useState<{ type: 'file' | 'folder'; id: number; name: string } | null>(null);
@@ -1099,7 +1100,8 @@ export function FileManagerPage() {
   });
 
   const deleteFolderMutation = useMutation({
-    mutationFn: (id: number) => api.deleteLibraryFolder(id),
+    mutationFn: ({ id, deleteFromFs }: { id: number; deleteFromFs: boolean }) =>
+      api.deleteLibraryFolder(id, deleteFromFs),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['library-folders'] });
       queryClient.invalidateQueries({ queryKey: ['library-files'] });
@@ -1108,42 +1110,50 @@ export function FileManagerPage() {
         setSelectedFolderId(null);
       }
       setDeleteConfirm(null);
+      setDeleteFromFilesystem(false);
       showToast('Folder deleted', 'success');
     },
     onError: (error: Error) => {
       setDeleteConfirm(null);
+      setDeleteFromFilesystem(false);
       showToast(error.message, 'error');
     },
   });
 
   const deleteFileMutation = useMutation({
-    mutationFn: (id: number) => api.deleteLibraryFile(id),
+    mutationFn: ({ id, deleteFromFs }: { id: number; deleteFromFs: boolean }) =>
+      api.deleteLibraryFile(id, deleteFromFs),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['library-files'] });
       queryClient.invalidateQueries({ queryKey: ['library-folders'] });
       queryClient.invalidateQueries({ queryKey: ['library-stats'] });
       setSelectedFiles((prev) => prev.filter((id) => id !== deleteConfirm?.id));
       setDeleteConfirm(null);
+      setDeleteFromFilesystem(false);
       showToast('File deleted', 'success');
     },
     onError: (error: Error) => {
       setDeleteConfirm(null);
+      setDeleteFromFilesystem(false);
       showToast(error.message, 'error');
     },
   });
 
   const bulkDeleteMutation = useMutation({
-    mutationFn: (fileIds: number[]) => api.bulkDeleteLibrary(fileIds, []),
-    onSuccess: (_, fileIds) => {
+    mutationFn: ({ fileIds, deleteFromFs }: { fileIds: number[]; deleteFromFs: boolean }) =>
+      api.bulkDeleteLibrary(fileIds, [], deleteFromFs),
+    onSuccess: (_, { fileIds }) => {
       queryClient.invalidateQueries({ queryKey: ['library-files'] });
       queryClient.invalidateQueries({ queryKey: ['library-folders'] });
       queryClient.invalidateQueries({ queryKey: ['library-stats'] });
       showToast(`Deleted ${fileIds.length} files`, 'success');
       setSelectedFiles([]);
       setDeleteConfirm(null);
+      setDeleteFromFilesystem(false);
     },
     onError: (error: Error) => {
       setDeleteConfirm(null);
+      setDeleteFromFilesystem(false);
       showToast(error.message, 'error');
     },
   });
@@ -1289,11 +1299,11 @@ export function FileManagerPage() {
   const handleDeleteConfirm = () => {
     if (!deleteConfirm) return;
     if (deleteConfirm.type === 'file') {
-      deleteFileMutation.mutate(deleteConfirm.id);
+      deleteFileMutation.mutate({ id: deleteConfirm.id, deleteFromFs: deleteFromFilesystem });
     } else if (deleteConfirm.type === 'folder') {
-      deleteFolderMutation.mutate(deleteConfirm.id);
+      deleteFolderMutation.mutate({ id: deleteConfirm.id, deleteFromFs: deleteFromFilesystem });
     } else if (deleteConfirm.type === 'bulk') {
-      bulkDeleteMutation.mutate(selectedFiles);
+      bulkDeleteMutation.mutate({ fileIds: selectedFiles, deleteFromFs: deleteFromFilesystem });
     }
   };
 
@@ -1890,9 +1900,15 @@ export function FileManagerPage() {
           }
           message={
             deleteConfirm.type === 'folder'
-              ? 'Are you sure you want to delete this folder? All files inside will also be deleted.'
+              ? selectedFolderData?.is_external
+                ? 'This will remove the external folder from Bambuddy. Files on the external storage will not be affected unless you check the option below.'
+                : 'Are you sure you want to delete this folder? All files inside will also be deleted.'
               : deleteConfirm.type === 'bulk'
-              ? `Are you sure you want to delete ${deleteConfirm.count} selected files? This action cannot be undone.`
+              ? selectedFolderData?.is_external
+                ? `This will remove ${deleteConfirm.count} files from Bambuddy's library. Files on the external storage will not be affected unless you check the option below.`
+                : `Are you sure you want to delete ${deleteConfirm.count} selected files? This action cannot be undone.`
+              : selectedFolderData?.is_external
+              ? 'This will remove the file from Bambuddy\'s library. The file on the external storage will not be affected unless you check the option below.'
               : 'Are you sure you want to delete this file?'
           }
           confirmText="Delete"
@@ -1900,8 +1916,22 @@ export function FileManagerPage() {
           isLoading={isDeleting}
           loadingText="Deleting..."
           onConfirm={handleDeleteConfirm}
-          onCancel={() => setDeleteConfirm(null)}
-        />
+          onCancel={() => { setDeleteConfirm(null); setDeleteFromFilesystem(false); }}
+        >
+          {selectedFolderData?.is_external && !selectedFolderData?.external_readonly && (
+            <label className="flex items-center gap-2 mt-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={deleteFromFilesystem}
+                onChange={(e) => setDeleteFromFilesystem(e.target.checked)}
+                className="w-4 h-4 rounded border-bambu-gray bg-bambu-dark text-red-500 focus:ring-red-500"
+              />
+              <span className="text-sm text-yellow-400">
+                Also delete from external storage (cannot be undone)
+              </span>
+            </label>
+          )}
+        </ConfirmModal>
       )}
 
       {printFile && (

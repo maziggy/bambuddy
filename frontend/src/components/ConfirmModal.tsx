@@ -13,6 +13,7 @@ interface ConfirmModalProps {
   loadingText?: string;
   onConfirm: () => void;
   onCancel: () => void;
+  children?: React.ReactNode;
 }
 
 export function ConfirmModal({
@@ -25,6 +26,7 @@ export function ConfirmModal({
   loadingText,
   onConfirm,
   onCancel,
+  children,
 }: ConfirmModalProps) {
   // Close on Escape key (but not while loading)
   useEffect(() => {
@@ -66,6 +68,7 @@ export function ConfirmModal({
             <div className="flex-1">
               <h3 className="text-lg font-semibold text-white mb-2">{title}</h3>
               <p className="text-bambu-gray text-sm">{message}</p>
+              {children}
             </div>
           </div>
           <div className="flex gap-3 mt-6">

@@ -547,13 +547,28 @@ async def update_folder(folder_id: int, data: FolderUpdate, db: AsyncSession = D
 
 
 @router.delete("/folders/{folder_id}")
-async def delete_folder(folder_id: int, db: AsyncSession = Depends(get_db)):
-    """Delete a folder and all its contents (cascade)."""
+async def delete_folder(
+    folder_id: int,
+    delete_from_filesystem: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a folder and all its contents (cascade).
+
+    For external folders, only removes from database unless delete_from_filesystem=True.
+    For local folders, always deletes from filesystem.
+    """
     result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
     folder = result.scalar_one_or_none()
 
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found")
+
+    # Check if trying to delete files from readonly external folder
+    if folder.is_external and folder.external_readonly and delete_from_filesystem:
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot delete files from read-only external folder"
+        )
 
     # Get all files in this folder and subfolders to delete from disk
     async def get_all_file_ids(fid: int) -> list[int]:
@@ -562,20 +577,22 @@ async def delete_folder(folder_id: int, db: AsyncSession = Depends(get_db)):
 
         # Get files in this folder
         files_result = await db.execute(
-            select(LibraryFile.id, LibraryFile.file_path, LibraryFile.thumbnail_path).where(
+            select(LibraryFile.id, LibraryFile.file_path, LibraryFile.thumbnail_path, LibraryFile.is_external).where(
                 LibraryFile.folder_id == fid
             )
         )
-        for file_id, file_path, thumb_path in files_result.all():
+        for file_id, file_path, thumb_path, is_external in files_result.all():
             file_ids.append(file_id)
-            # Delete actual files
-            try:
-                if file_path and os.path.exists(file_path):
-                    os.remove(file_path)
-                if thumb_path and os.path.exists(thumb_path):
-                    os.remove(thumb_path)
-            except Exception as e:
-                logger.warning(f"Failed to delete file: {e}")
+            # Delete from filesystem only for local files or if explicitly requested for external
+            should_delete_from_fs = (not is_external) or (is_external and delete_from_filesystem)
+            if should_delete_from_fs:
+                try:
+                    if file_path and os.path.exists(file_path):
+                        os.remove(file_path)
+                    if thumb_path and os.path.exists(thumb_path):
+                        os.remove(thumb_path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete file: {e}")
 
         # Get child folders and recurse
         children_result = await db.execute(select(LibraryFolder.id).where(LibraryFolder.parent_id == fid))
@@ -588,6 +605,7 @@ async def delete_folder(folder_id: int, db: AsyncSession = Depends(get_db)):
 
     # Delete folder (cascade will handle files and subfolders)
     await db.delete(folder)
+    await db.commit()
 
     return {"status": "success", "message": "Folder deleted"}
 
@@ -904,8 +922,16 @@ async def upload_file(
         # Verify folder exists if specified
         if folder_id is not None:
             folder_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
-            if not folder_result.scalar_one_or_none():
+            folder = folder_result.scalar_one_or_none()
+            if not folder:
                 raise HTTPException(status_code=404, detail="Folder not found")
+
+            # Check if folder is read-only external
+            if folder.is_external and folder.external_readonly:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Cannot upload to read-only external folder"
+                )
 
         # Generate unique filename for storage
         unique_filename = f"{uuid.uuid4().hex}{ext}"
@@ -1034,8 +1060,16 @@ async def extract_zip_file(
     # Verify target folder exists if specified
     if folder_id is not None:
         folder_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
-        if not folder_result.scalar_one_or_none():
+        folder = folder_result.scalar_one_or_none()
+        if not folder:
             raise HTTPException(status_code=404, detail="Target folder not found")
+
+        # Check if folder is read-only external
+        if folder.is_external and folder.external_readonly:
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot extract ZIP to read-only external folder"
+            )
 
     # Save ZIP to temp file
     try:
@@ -1941,15 +1975,52 @@ async def update_file(file_id: int, data: FileUpdate, db: AsyncSession = Depends
 
 
 @router.delete("/files/{file_id}")
-async def delete_file(file_id: int, db: AsyncSession = Depends(get_db)):
-    """Delete a file."""
+async def delete_file(
+    file_id: int,
+    delete_from_filesystem: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a file.
+
+    For external files, only removes from database unless delete_from_filesystem=True.
+    For local files, always deletes from filesystem.
+    """
     result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
     file = result.scalar_one_or_none()
 
     if not file:
         raise HTTPException(status_code=404, detail="File not found")
 
-    # Delete actual files
+    # Check if file is from external folder
+    if file.is_external and file.folder_id:
+        folder_result = await db.execute(
+            select(LibraryFolder).where(LibraryFolder.id == file.folder_id)
+        )
+        folder = folder_result.scalar_one_or_none()
+
+        if folder and folder.is_external:
+            # External file - only delete from filesystem if explicitly requested
+            if delete_from_filesystem:
+                if folder.external_readonly:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Cannot delete files from read-only external folder"
+                    )
+                # Delete from filesystem
+                try:
+                    if file.file_path and os.path.exists(file.file_path):
+                        os.remove(file.file_path)
+                    if file.thumbnail_path and os.path.exists(file.thumbnail_path):
+                        os.remove(file.thumbnail_path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete file from disk: {e}")
+
+            # Always remove from database
+            await db.delete(file)
+            await db.commit()
+            return {"status": "success", "message": "File removed from library"}
+
+    # Local file - always delete from filesystem and database
     try:
         if file.file_path and os.path.exists(file.file_path):
             os.remove(file.file_path)
@@ -1959,6 +2030,7 @@ async def delete_file(file_id: int, db: AsyncSession = Depends(get_db)):
         logger.warning(f"Failed to delete file from disk: {e}")
 
     await db.delete(file)
+    await db.commit()
 
     return {"status": "success", "message": "File deleted"}
 
@@ -2050,12 +2122,27 @@ async def get_gcode(file_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.post("/files/move")
 async def move_files(data: FileMoveRequest, db: AsyncSession = Depends(get_db)):
-    """Move multiple files to a folder."""
-    # Verify folder exists if specified
+    """Move multiple files to a folder.
+
+    Validates that:
+    - Destination folder (if specified) is not readonly external
+    - Source files are not from readonly external folders
+    """
+    dest_folder = None
+
+    # Verify destination folder exists if specified
     if data.folder_id is not None:
         folder_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == data.folder_id))
-        if not folder_result.scalar_one_or_none():
+        dest_folder = folder_result.scalar_one_or_none()
+        if not dest_folder:
             raise HTTPException(status_code=404, detail="Folder not found")
+
+        # Check if destination is readonly external
+        if dest_folder.is_external and dest_folder.external_readonly:
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot move files to read-only external folder"
+            )
 
     # Update files
     moved = 0
@@ -2063,15 +2150,32 @@ async def move_files(data: FileMoveRequest, db: AsyncSession = Depends(get_db)):
         result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
         file = result.scalar_one_or_none()
         if file:
+            # Check if source folder is readonly external
+            if file.folder_id:
+                source_result = await db.execute(
+                    select(LibraryFolder).where(LibraryFolder.id == file.folder_id)
+                )
+                source_folder = source_result.scalar_one_or_none()
+                if source_folder and source_folder.is_external and source_folder.external_readonly:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Cannot move files from read-only external folder"
+                    )
+
             file.folder_id = data.folder_id
             moved += 1
 
+    await db.commit()
     return {"status": "success", "moved": moved}
 
 
 @router.post("/bulk-delete", response_model=BulkDeleteResponse)
 async def bulk_delete(data: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
-    """Delete multiple files and/or folders."""
+    """Delete multiple files and/or folders.
+
+    For external files, only removes from database unless delete_from_filesystem=True.
+    For local files, always deletes from filesystem.
+    """
     deleted_files = 0
     deleted_folders = 0
 
@@ -2080,6 +2184,34 @@ async def bulk_delete(data: BulkDeleteRequest, db: AsyncSession = Depends(get_db
         result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
         file = result.scalar_one_or_none()
         if file:
+            # Check if file is from external folder
+            if file.is_external and file.folder_id:
+                folder_result = await db.execute(
+                    select(LibraryFolder).where(LibraryFolder.id == file.folder_id)
+                )
+                folder = folder_result.scalar_one_or_none()
+
+                if folder and folder.is_external:
+                    # External file - only delete from filesystem if explicitly requested
+                    if data.delete_from_filesystem:
+                        if folder.external_readonly:
+                            raise HTTPException(
+                                status_code=403,
+                                detail="Cannot delete files from read-only external folder"
+                            )
+                        try:
+                            if file.file_path and os.path.exists(file.file_path):
+                                os.remove(file.file_path)
+                            if file.thumbnail_path and os.path.exists(file.thumbnail_path):
+                                os.remove(file.thumbnail_path)
+                        except Exception as e:
+                            logger.warning(f"Failed to delete file from disk: {e}")
+
+                    await db.delete(file)
+                    deleted_files += 1
+                    continue
+
+            # Local file - always delete from filesystem and database
             try:
                 if file.file_path and os.path.exists(file.file_path):
                     os.remove(file.file_path)
@@ -2095,6 +2227,13 @@ async def bulk_delete(data: BulkDeleteRequest, db: AsyncSession = Depends(get_db
         result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
         folder = result.scalar_one_or_none()
         if folder:
+            # Check if trying to delete files from readonly external folder
+            if folder.is_external and folder.external_readonly and data.delete_from_filesystem:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Cannot delete files from read-only external folder"
+                )
+
             # Count files that will be deleted
             file_count_result = await db.execute(
                 select(func.count(LibraryFile.id)).where(LibraryFile.folder_id == folder_id)
@@ -2103,6 +2242,7 @@ async def bulk_delete(data: BulkDeleteRequest, db: AsyncSession = Depends(get_db
             await db.delete(folder)
             deleted_folders += 1
 
+    await db.commit()
     return BulkDeleteResponse(deleted_files=deleted_files, deleted_folders=deleted_folders)
 
 

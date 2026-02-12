@@ -220,6 +220,7 @@ class BulkDeleteRequest(BaseModel):
 
     file_ids: list[int] = []
     folder_ids: list[int] = []
+    delete_from_filesystem: bool = False  # For external files only
 
 
 class BulkDeleteResponse(BaseModel):

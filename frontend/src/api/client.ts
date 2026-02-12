@@ -2695,8 +2695,11 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
-  deleteLibraryFolder: (id: number) =>
-    request<{ status: string; message: string }>(`/library/folders/${id}`, { method: 'DELETE' }),
+  deleteLibraryFolder: (id: number, deleteFromFilesystem = false) =>
+    request<{ status: string; message: string }>(
+      `/library/folders/${id}?delete_from_filesystem=${deleteFromFilesystem}`,
+      { method: 'DELETE' }
+    ),
   getLibraryFoldersByProject: (projectId: number) =>
     request<LibraryFolder[]>(`/library/folders/by-project/${projectId}`),
   getLibraryFoldersByArchive: (archiveId: number) =>
@@ -2750,8 +2753,11 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
-  deleteLibraryFile: (id: number) =>
-    request<{ status: string; message: string }>(`/library/files/${id}`, { method: 'DELETE' }),
+  deleteLibraryFile: (id: number, deleteFromFilesystem = false) =>
+    request<{ status: string; message: string }>(
+      `/library/files/${id}?delete_from_filesystem=${deleteFromFilesystem}`,
+      { method: 'DELETE' }
+    ),
   getLibraryFileDownloadUrl: (id: number) => `${API_BASE}/library/files/${id}/download`,
   getLibraryFileThumbnailUrl: (id: number) => `${API_BASE}/library/files/${id}/thumbnail`,
   getLibraryFileGcodeUrl: (id: number) => `${API_BASE}/library/files/${id}/gcode`,
@@ -2760,10 +2766,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ file_ids: fileIds, folder_id: folderId }),
     }),
-  bulkDeleteLibrary: (fileIds: number[], folderIds: number[]) =>
+  bulkDeleteLibrary: (fileIds: number[], folderIds: number[], deleteFromFilesystem = false) =>
     request<{ deleted_files: number; deleted_folders: number }>('/library/bulk-delete', {
       method: 'POST',
-      body: JSON.stringify({ file_ids: fileIds, folder_ids: folderIds }),
+      body: JSON.stringify({ file_ids: fileIds, folder_ids: folderIds, delete_from_filesystem: deleteFromFilesystem }),
     }),
   getLibraryStats: () => request<LibraryStats>('/library/stats'),
   addLibraryFilesToQueue: (fileIds: number[]) =>

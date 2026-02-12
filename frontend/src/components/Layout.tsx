@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Printer, Archive, Calendar, BarChart3, Cloud, Settings, Sun, Moon, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, type LucideIcon } from 'lucide-react';
+import { Printer, Archive, Calendar, BarChart3, Cloud, Settings, Sun, Moon, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Package, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
@@ -29,6 +29,7 @@ export const defaultNavItems: NavItem[] = [
   { id: 'profiles', to: '/profiles', icon: Cloud, labelKey: 'nav.profiles' },
   { id: 'maintenance', to: '/maintenance', icon: Wrench, labelKey: 'nav.maintenance' },
   { id: 'projects', to: '/projects', icon: FolderKanban, labelKey: 'nav.projects' },
+  { id: 'inventory', to: '/inventory', icon: Package, labelKey: 'nav.inventory' },
   { id: 'files', to: '/files', icon: FolderOpen, labelKey: 'nav.files' },
   { id: 'settings', to: '/settings', icon: Settings, labelKey: 'nav.settings' },
 ];
@@ -118,6 +119,13 @@ export function Layout() {
     refetchInterval: 60 * 60 * 1000, // Check every hour
   });
 
+  // Fetch Spoolman settings to determine if inventory should be hidden
+  const { data: spoolmanSettings } = useQuery({
+    queryKey: ['spoolman-settings'],
+    queryFn: api.getSpoolmanSettings,
+    staleTime: 5 * 60 * 1000,
+  });
+
   // Fetch external links for sidebar
   const { data: externalLinks } = useQuery({
     queryKey: ['external-links'],
@@ -189,13 +197,13 @@ export function Layout() {
 
     // Determine if settings should be hidden (user role and auth enabled)
     const hideSettings = authEnabled && user?.role === 'user';
+    // Hide inventory when Spoolman mode is active
+    const hideInventory = spoolmanSettings?.spoolman_enabled === 'true';
 
     // Add items in stored order
     for (const id of sidebarOrder) {
-      // Skip settings if user is not admin
-      if (hideSettings && id === 'settings') {
-        continue;
-      }
+      if (hideSettings && id === 'settings') continue;
+      if (hideInventory && id === 'inventory') continue;
       if (navItemsMap.has(id) || extLinksMap.has(id)) {
         result.push(id);
         seen.add(id);
@@ -204,10 +212,8 @@ export function Layout() {
 
     // Add any new internal nav items not in stored order
     for (const item of defaultNavItems) {
-      // Skip settings if user is not admin
-      if (hideSettings && item.id === 'settings') {
-        continue;
-      }
+      if (hideSettings && item.id === 'settings') continue;
+      if (hideInventory && item.id === 'inventory') continue;
       if (!seen.has(item.id)) {
         result.push(item.id);
         seen.add(item.id);

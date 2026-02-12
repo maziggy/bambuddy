@@ -92,7 +92,7 @@ docker compose pull && docker compose up -d
 
 | Series | Models | Status |
 |---|---|---|
-| H2 | H2D | Tested |
+| H2 | H2C, H2D, H2D Pro, H2S | Tested |
 | X1 | X1 Carbon, X1E | Tested |
 | P1 | P1P, P1S | Compatible |
 | P2 | P2S | Compatible |

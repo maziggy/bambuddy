@@ -812,6 +812,29 @@ export interface SlicerSetting {
   version: string | null;
   user_id: string | null;
   updated_time: string | null;
+  is_custom: boolean;
+}
+
+export interface SpoolCatalogEntry {
+  id: number;
+  name: string;
+  weight: number;
+  is_default: boolean;
+}
+
+export interface ColorCatalogEntry {
+  id: number;
+  manufacturer: string;
+  color_name: string;
+  hex_color: string;
+  material: string | null;
+  is_default: boolean;
+}
+
+export interface ColorLookupResult {
+  found: boolean;
+  hex_color: string | null;
+  material: string | null;
 }
 
 export interface SlicerSettingsResponse {
@@ -851,6 +874,12 @@ export interface SlicerSettingUpdate {
 export interface SlicerSettingDeleteResponse {
   success: boolean;
   message: string;
+}
+
+// Built-in filament fallback (static table from backend)
+export interface BuiltinFilament {
+  filament_id: string;
+  name: string;
 }
 
 // Local preset types (OrcaSlicer imports)
@@ -1686,6 +1715,84 @@ export interface LinkedSpoolsMap {
   linked: Record<string, LinkedSpoolInfo>; // tag (uppercase) -> spool info
 }
 
+// Inventory types
+export interface InventorySpool {
+  id: number;
+  material: string;
+  subtype: string | null;
+  color_name: string | null;
+  rgba: string | null;
+  brand: string | null;
+  label_weight: number;
+  core_weight: number;
+  weight_used: number;
+  slicer_filament: string | null;
+  slicer_filament_name: string | null;
+  nozzle_temp_min: number | null;
+  nozzle_temp_max: number | null;
+  note: string | null;
+  added_full: boolean | null;
+  last_used: string | null;
+  encode_time: string | null;
+  tag_uid: string | null;
+  tray_uuid: string | null;
+  data_origin: string | null;
+  tag_type: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+  k_profiles?: SpoolKProfile[];
+}
+
+export interface SpoolUsageRecord {
+  id: number;
+  spool_id: number;
+  printer_id: number | null;
+  print_name: string | null;
+  weight_used: number;
+  percent_used: number;
+  status: string;
+  created_at: string;
+}
+
+export interface SpoolKProfile {
+  id: number;
+  spool_id: number;
+  printer_id: number;
+  extruder: number;
+  nozzle_diameter: string;
+  nozzle_type: string | null;
+  k_value: number;
+  name: string | null;
+  cali_idx: number | null;
+  setting_id: string | null;
+  created_at: string;
+}
+
+export interface SpoolKProfileInput {
+  printer_id: number;
+  extruder?: number;
+  nozzle_diameter?: string;
+  nozzle_type?: string | null;
+  k_value: number;
+  name?: string | null;
+  cali_idx?: number | null;
+  setting_id?: string | null;
+}
+
+export interface SpoolAssignment {
+  id: number;
+  spool_id: number;
+  printer_id: number;
+  ams_id: number;
+  tray_id: number;
+  fingerprint_color: string | null;
+  fingerprint_type: string | null;
+  spool?: InventorySpool | null;
+  configured: boolean;
+  created_at: string;
+}
+
 // Update types
 export interface VersionInfo {
   version: string;
@@ -2019,7 +2126,7 @@ export const api = {
     request<{ message: string; auth_enabled: boolean }>('/auth/disable', {
       method: 'POST',
     }),
-  
+
   // Advanced Authentication
   testSMTP: (data: TestSMTPRequest) =>
     request<TestSMTPResponse>('/auth/smtp/test', {
@@ -2903,6 +3010,8 @@ export const api = {
     request<{ success: boolean }>('/cloud/logout', { method: 'POST' }),
   getCloudSettings: (version = '02.04.00.70') =>
     request<SlicerSettingsResponse>(`/cloud/settings?version=${version}`),
+  getBuiltinFilaments: () =>
+    request<BuiltinFilament[]>('/cloud/builtin-filaments'),
   getCloudSettingDetail: (settingId: string) =>
     request<SlicerSettingDetail>(`/cloud/settings/${settingId}`),
   createCloudSetting: (data: SlicerSettingCreate) =>
@@ -3241,6 +3350,78 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
+
+  // Inventory
+  getSpools: (includeArchived = false) =>
+    request<InventorySpool[]>(`/inventory/spools?include_archived=${includeArchived}`),
+  getSpool: (id: number) => request<InventorySpool>(`/inventory/spools/${id}`),
+  createSpool: (data: Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>) =>
+    request<InventorySpool>('/inventory/spools', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateSpool: (id: number, data: Partial<Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>>) =>
+    request<InventorySpool>(`/inventory/spools/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteSpool: (id: number) =>
+    request<{ status: string }>(`/inventory/spools/${id}`, { method: 'DELETE' }),
+  archiveSpool: (id: number) =>
+    request<InventorySpool>(`/inventory/spools/${id}/archive`, { method: 'POST' }),
+  restoreSpool: (id: number) =>
+    request<InventorySpool>(`/inventory/spools/${id}/restore`, { method: 'POST' }),
+  getSpoolKProfiles: (spoolId: number) =>
+    request<SpoolKProfile[]>(`/inventory/spools/${spoolId}/k-profiles`),
+  saveSpoolKProfiles: (spoolId: number, profiles: SpoolKProfileInput[]) =>
+    request<SpoolKProfile[]>(`/inventory/spools/${spoolId}/k-profiles`, {
+      method: 'PUT',
+      body: JSON.stringify(profiles),
+    }),
+  getAssignments: (printerId?: number) =>
+    request<SpoolAssignment[]>(`/inventory/assignments${printerId ? `?printer_id=${printerId}` : ''}`),
+  assignSpool: (data: { spool_id: number; printer_id: number; ams_id: number; tray_id: number }) =>
+    request<SpoolAssignment>('/inventory/assignments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  unassignSpool: (printerId: number, amsId: number, trayId: number) =>
+    request<{ status: string }>(`/inventory/assignments/${printerId}/${amsId}/${trayId}`, { method: 'DELETE' }),
+  getSpoolCatalog: () =>
+    request<SpoolCatalogEntry[]>('/inventory/catalog'),
+  addCatalogEntry: (data: { name: string; weight: number }) =>
+    request<SpoolCatalogEntry>('/inventory/catalog', { method: 'POST', body: JSON.stringify(data) }),
+  updateCatalogEntry: (id: number, data: { name: string; weight: number }) =>
+    request<SpoolCatalogEntry>(`/inventory/catalog/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteCatalogEntry: (id: number) =>
+    request<{ status: string }>(`/inventory/catalog/${id}`, { method: 'DELETE' }),
+  resetSpoolCatalog: () =>
+    request<{ status: string }>('/inventory/catalog/reset', { method: 'POST' }),
+  getColorCatalog: () =>
+    request<ColorCatalogEntry[]>('/inventory/colors'),
+  addColorEntry: (data: { manufacturer: string; color_name: string; hex_color: string; material: string | null }) =>
+    request<ColorCatalogEntry>('/inventory/colors', { method: 'POST', body: JSON.stringify(data) }),
+  updateColorEntry: (id: number, data: { manufacturer: string; color_name: string; hex_color: string; material: string | null }) =>
+    request<ColorCatalogEntry>(`/inventory/colors/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteColorEntry: (id: number) =>
+    request<{ status: string }>(`/inventory/colors/${id}`, { method: 'DELETE' }),
+  resetColorCatalog: () =>
+    request<{ status: string }>('/inventory/colors/reset', { method: 'POST' }),
+  lookupColor: (manufacturer: string, colorName: string, material?: string) =>
+    request<ColorLookupResult>(`/inventory/colors/lookup?manufacturer=${encodeURIComponent(manufacturer)}&color_name=${encodeURIComponent(colorName)}${material ? `&material=${encodeURIComponent(material)}` : ''}`),
+  linkTagToSpool: (spoolId: number, data: { tag_uid?: string; tray_uuid?: string; tag_type?: string; data_origin?: string }) =>
+    request<InventorySpool>(`/inventory/spools/${spoolId}/link-tag`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  getSpoolUsageHistory: (spoolId: number, limit = 50) =>
+    request<SpoolUsageRecord[]>(`/inventory/spools/${spoolId}/usage?limit=${limit}`),
+  getAllUsageHistory: (limit = 100, printerId?: number) =>
+    request<SpoolUsageRecord[]>(`/inventory/usage?limit=${limit}${printerId ? `&printer_id=${printerId}` : ''}`),
+  clearSpoolUsageHistory: (spoolId: number) =>
+    request<{ status: string }>(`/inventory/spools/${spoolId}/usage`, { method: 'DELETE' }),
+  getFilamentPresets: () =>
+    request<SlicerSetting[]>('/cloud/filaments'),
 
   // Updates
   getVersion: () => request<VersionInfo>('/updates/version'),

@@ -18,6 +18,8 @@ import { NotificationLogViewer } from '../components/NotificationLogViewer';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { CreateUserAdvancedAuthModal } from '../components/CreateUserAdvancedAuthModal';
 import { SpoolmanSettings } from '../components/SpoolmanSettings';
+import { SpoolCatalogSettings } from '../components/SpoolCatalogSettings';
+import { ColorCatalogSettings } from '../components/ColorCatalogSettings';
 import { ExternalLinksSettings } from '../components/ExternalLinksSettings';
 import { VirtualPrinterSettings } from '../components/VirtualPrinterSettings';
 import { GitHubBackupSettings } from '../components/GitHubBackupSettings';
@@ -3145,9 +3147,12 @@ export function SettingsPage() {
 
       {/* Filament Tab */}
       {activeTab === 'filament' && localSettings && (
+        <>
         <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
-          {/* Left Column - AMS Display Thresholds */}
-          <div className="flex-1 lg:max-w-xl">
+          {/* Left Column (1/3) - Mode Selector + AMS Thresholds */}
+          <div className="lg:w-1/3 space-y-6">
+            <SpoolmanSettings />
+
             <Card>
               <CardHeader>
                 <h2 className="text-lg font-semibold text-white">{t('settings.amsDisplayThresholds')}</h2>
@@ -3306,11 +3311,13 @@ export function SettingsPage() {
             </Card>
           </div>
 
-          {/* Right Column - Spoolman Integration */}
-          <div className="flex-1 lg:max-w-xl">
-            <SpoolmanSettings />
+          {/* Right Column (2/3) - Spool Catalog + Color Catalog */}
+          <div className="lg:w-2/3 space-y-6">
+            <SpoolCatalogSettings />
+            <ColorCatalogSettings />
           </div>
         </div>
+        </>
       )}
 
       {/* Delete API Key Confirmation */}

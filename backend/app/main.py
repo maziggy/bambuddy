@@ -184,6 +184,7 @@ from backend.app.api.routes import (
     firmware,
     github_backup,
     groups,
+    inventory,
     kprofiles,
     library,
     local_presets,
@@ -497,6 +498,11 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
     )
 
 
+def _is_bambu_uuid(tray_uuid: str) -> bool:
+    """Check if a tray UUID looks like a valid Bambu Lab RFID UUID (non-empty, non-zero)."""
+    return bool(tray_uuid) and tray_uuid not in ("", "0" * len(tray_uuid))
+
+
 async def on_ams_change(printer_id: int, ams_data: list):
     """Handle AMS data changes - sync to Spoolman if enabled and auto mode."""
     logger = logging.getLogger(__name__)
@@ -521,6 +527,138 @@ async def on_ams_change(printer_id: int, ams_data: list):
             )
     except Exception as e:
         logger.warning("Failed to broadcast AMS change for printer %s: %s", printer_id, e)
+
+    # Auto-unlink spool assignments with stale fingerprints
+    try:
+        async with async_session() as db:
+            from sqlalchemy.orm import selectinload
+
+            from backend.app.api.routes.inventory import _find_tray_in_ams_data
+            from backend.app.models.spool_assignment import SpoolAssignment as SA
+
+            result = await db.execute(select(SA).where(SA.printer_id == printer_id).options(selectinload(SA.spool)))
+            stale = []
+            for assignment in result.scalars().all():
+                current_tray = _find_tray_in_ams_data(ams_data, assignment.ams_id, assignment.tray_id)
+                if not current_tray:
+                    stale.append(assignment)  # Slot empty
+                else:
+                    cur_color = current_tray.get("tray_color", "")
+                    cur_type = current_tray.get("tray_type", "")
+                    fp_color = assignment.fingerprint_color or ""
+                    fp_type = assignment.fingerprint_type or ""
+                    if cur_color != fp_color or cur_type != fp_type:
+                        stale.append(assignment)  # Spool changed
+                    elif _is_bambu_uuid(current_tray.get("tray_uuid", "")):
+                        # Only unlink if the assigned spool doesn't match this tag
+                        tray_uuid = current_tray.get("tray_uuid", "")
+                        tag_uid = current_tray.get("tag_uid", "")
+                        spool = assignment.spool
+                        if spool and (
+                            (spool.tray_uuid and spool.tray_uuid == tray_uuid)
+                            or (spool.tag_uid and spool.tag_uid == tag_uid)
+                        ):
+                            continue  # Same spool — keep assignment
+                        stale.append(assignment)  # Different Bambu spool inserted
+            for a in stale:
+                await db.delete(a)
+            if stale:
+                await db.commit()
+                logger.info("Auto-unlinked %d stale spool assignments for printer %d", len(stale), printer_id)
+    except Exception as e:
+        logger.warning("Spool assignment cleanup failed: %s", e)
+
+    # Auto-manage inventory spools from AMS tray data (skip if Spoolman manages AMS)
+    try:
+        async with async_session() as db:
+            from backend.app.api.routes.settings import get_setting
+            from backend.app.models.spool_assignment import SpoolAssignment as SA
+            from backend.app.services.spool_tag_matcher import (
+                auto_assign_spool,
+                create_spool_from_tray,
+                get_spool_by_tag,
+                is_bambu_tag,
+                is_valid_tag,
+            )
+
+            _spoolman_on = await get_setting(db, "spoolman_enabled")
+            if not _spoolman_on or _spoolman_on.lower() != "true":
+                for ams_unit in ams_data:
+                    if not isinstance(ams_unit, dict):
+                        continue
+                    ams_id = int(ams_unit.get("id", 0))
+                    for tray in ams_unit.get("tray", []):
+                        if not isinstance(tray, dict):
+                            continue
+                        tray_id = int(tray.get("id", 0))
+                        tag_uid = tray.get("tag_uid", "")
+                        tray_uuid = tray.get("tray_uuid", "")
+                        tray_info_idx = tray.get("tray_info_idx", "")
+                        if not tray.get("tray_type"):
+                            continue  # Empty slot
+                        # Skip if assignment already exists for this slot
+                        existing = await db.execute(
+                            select(SA).where(SA.printer_id == printer_id, SA.ams_id == ams_id, SA.tray_id == tray_id)
+                        )
+                        if existing.scalar_one_or_none():
+                            continue
+
+                        if is_bambu_tag(tag_uid, tray_uuid, tray_info_idx):
+                            # BL spool with RFID tag: auto-match or auto-create
+                            spool = await get_spool_by_tag(db, tag_uid, tray_uuid)
+                            if not spool:
+                                spool = await create_spool_from_tray(db, tray)
+                            await auto_assign_spool(
+                                printer_id,
+                                ams_id,
+                                tray_id,
+                                spool,
+                                printer_manager,
+                                db,
+                            )
+                            await db.commit()
+                            await ws_manager.broadcast(
+                                {
+                                    "type": "spool_auto_assigned",
+                                    "printer_id": printer_id,
+                                    "ams_id": ams_id,
+                                    "tray_id": tray_id,
+                                    "spool_id": spool.id,
+                                }
+                            )
+                            logger.info(
+                                "RFID auto-assigned spool %d to printer %d AMS%d-T%d",
+                                spool.id,
+                                printer_id,
+                                ams_id,
+                                tray_id,
+                            )
+                        elif is_valid_tag(tag_uid, tray_uuid):
+                            # Non-BL spool with some tag — let user choose
+                            await ws_manager.broadcast(
+                                {
+                                    "type": "unknown_tag",
+                                    "printer_id": printer_id,
+                                    "ams_id": ams_id,
+                                    "tray_id": tray_id,
+                                    "tag_uid": tag_uid,
+                                    "tray_uuid": tray_uuid,
+                                }
+                            )
+                        else:
+                            # No tag at all — let user choose from inventory
+                            await ws_manager.broadcast(
+                                {
+                                    "type": "unknown_tag",
+                                    "printer_id": printer_id,
+                                    "ams_id": ams_id,
+                                    "tray_id": tray_id,
+                                    "tag_uid": "",
+                                    "tray_uuid": "",
+                                }
+                            )
+    except Exception as e:
+        logger.warning("RFID spool auto-assign failed: %s", e)
 
     try:
         async with async_session() as db:
@@ -752,6 +890,19 @@ async def on_print_start(printer_id: int, data: dict):
             )
     except Exception:
         pass  # Don't fail print start callback if MQTT fails
+
+    # Capture AMS tray remain% for filament consumption tracking (skip if Spoolman handles usage)
+    try:
+        async with async_session() as db:
+            from backend.app.api.routes.settings import get_setting
+
+            _spoolman_on = await get_setting(db, "spoolman_enabled")
+        if not _spoolman_on or _spoolman_on.lower() != "true":
+            from backend.app.services.usage_tracker import on_print_start as usage_on_print_start
+
+            await usage_on_print_start(printer_id, data, printer_manager)
+    except Exception as e:
+        logger.warning("Usage tracker on_print_start failed: %s", e)
 
     # Track if notification was sent (to avoid sending twice)
     notification_sent = False
@@ -1867,6 +2018,29 @@ async def on_print_complete(printer_id: int, data: dict):
 
     log_timing("Archive status update")
 
+    # Track filament consumption from AMS remain% deltas (skip if Spoolman handles usage)
+    try:
+        async with async_session() as db:
+            from backend.app.api.routes.settings import get_setting
+
+            _spoolman_on = await get_setting(db, "spoolman_enabled")
+        if not _spoolman_on or _spoolman_on.lower() != "true":
+            from backend.app.services.usage_tracker import on_print_complete as usage_on_print_complete
+
+            async with async_session() as db:
+                usage_results = await usage_on_print_complete(printer_id, data, printer_manager, db)
+                if usage_results:
+                    await ws_manager.broadcast(
+                        {
+                            "type": "spool_usage_logged",
+                            "printer_id": printer_id,
+                            "usage": usage_results,
+                        }
+                    )
+                    log_timing("Usage tracker")
+    except Exception as e:
+        logger.warning("Usage tracker on_print_complete failed: %s", e)
+
     # Report filament usage to Spoolman if print completed successfully
     if data.get("status") == "completed":
         try:
@@ -2936,6 +3110,7 @@ app.include_router(groups.router, prefix=app_settings.api_prefix)
 app.include_router(printers.router, prefix=app_settings.api_prefix)
 app.include_router(archives.router, prefix=app_settings.api_prefix)
 app.include_router(filaments.router, prefix=app_settings.api_prefix)
+app.include_router(inventory.router, prefix=app_settings.api_prefix)
 app.include_router(settings_routes.router, prefix=app_settings.api_prefix)
 app.include_router(cloud.router, prefix=app_settings.api_prefix)
 app.include_router(local_presets.router, prefix=app_settings.api_prefix)

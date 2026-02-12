@@ -1,6 +1,7 @@
 from backend.app.models.ams_history import AMSSensorHistory
 from backend.app.models.api_key import APIKey
 from backend.app.models.archive import PrintArchive
+from backend.app.models.color_catalog import ColorCatalogEntry
 from backend.app.models.filament import Filament
 from backend.app.models.github_backup import GitHubBackupConfig, GitHubBackupLog
 from backend.app.models.group import Group, user_groups
@@ -16,6 +17,11 @@ from backend.app.models.printer import Printer
 from backend.app.models.project import Project
 from backend.app.models.settings import Settings
 from backend.app.models.smart_plug import SmartPlug
+from backend.app.models.spool import Spool
+from backend.app.models.spool_assignment import SpoolAssignment
+from backend.app.models.spool_catalog import SpoolCatalogEntry
+from backend.app.models.spool_k_profile import SpoolKProfile
+from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.user import User
 
 __all__ = [
@@ -43,4 +49,10 @@ __all__ = [
     "GitHubBackupLog",
     "LocalPreset",
     "OrcaBaseProfile",
+    "Spool",
+    "SpoolKProfile",
+    "SpoolAssignment",
+    "SpoolCatalogEntry",
+    "SpoolUsageHistory",
+    "ColorCatalogEntry",
 ]

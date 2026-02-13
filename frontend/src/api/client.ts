@@ -3462,6 +3462,8 @@ export const api = {
     }),
   deleteMaintenanceType: (id: number) =>
     request<{ status: string }>(`/maintenance/types/${id}`, { method: 'DELETE' }),
+  restoreDefaultMaintenanceTypes: () =>
+    request<{ restored: number }>(`/maintenance/types/restore-defaults`, { method: 'POST' }),
   getMaintenanceOverview: () => request<PrinterMaintenanceOverview[]>('/maintenance/overview'),
   getPrinterMaintenance: (printerId: number) =>
     request<PrinterMaintenanceOverview>(`/maintenance/printers/${printerId}`),

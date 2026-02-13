@@ -958,6 +958,7 @@ export default {
     maintenanceTypes: 'Wartungstypen',
     maintenanceTypesDescription: 'Systemtypen und Ihre benutzerdefinierten Wartungsaufgaben',
     addCustomType: 'Benutzerdefinierten Typ hinzufügen',
+    restoreDefaults: 'Standardaufgaben wiederherstellen',
     intervalType: 'Intervalltyp',
     intervalValue: 'Intervall ({{type}})',
     icon: 'Symbol',
@@ -1001,11 +1002,14 @@ export default {
     maintenanceComplete: 'Wartung als abgeschlossen markiert',
     typeUpdated: 'Wartungstyp aktualisiert',
     typeDeleted: 'Wartungstyp gelöscht',
+    defaultsRestored: '{{count}} Standardaufgabe(n) wiederhergestellt',
     printHoursUpdated: 'Druckstunden aktualisiert',
     printerAssigned: 'Drucker zugewiesen',
     printerRemoved: 'Drucker entfernt',
     // Confirmation
     deleteTypeConfirm: '"{{name}}" löschen?',
+    deleteSystemTypeTitle: 'Standard-Wartungsaufgabe löschen?',
+    deleteSystemTypeMessage: 'Möchten Sie die Standard-Wartungsaufgabe "{{name}}" wirklich löschen?',
     // Permissions
     noPermissionUpdate: 'Sie haben keine Berechtigung, Wartungselemente zu aktualisieren',
     noPermissionPerform: 'Sie haben keine Berechtigung, Wartungen durchzuführen',

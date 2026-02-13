@@ -41,6 +41,7 @@ import type { MaintenanceStatus, PrinterMaintenanceOverview, MaintenanceType, Pe
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { Toggle } from '../components/Toggle';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -552,6 +553,8 @@ function SettingsSection({
   onAddType,
   onUpdateType,
   onDeleteType,
+  onRestoreDefaults,
+  isRestoringDefaults,
   onAssignType,
   onRemoveItem,
   hasPermission,
@@ -563,6 +566,8 @@ function SettingsSection({
   onAddType: (data: { name: string; description?: string; default_interval_hours: number; interval_type: 'hours' | 'days'; icon?: string; wiki_url?: string | null }, printerIds: number[]) => void;
   onUpdateType: (id: number, data: { name?: string; default_interval_hours?: number; interval_type?: 'hours' | 'days'; icon?: string; wiki_url?: string | null }) => void;
   onDeleteType: (id: number) => void;
+  onRestoreDefaults: () => void;
+  isRestoringDefaults: boolean;
   onAssignType: (printerId: number, typeId: number) => void;
   onRemoveItem: (itemId: number) => void;
   hasPermission: (permission: Permission) => boolean;
@@ -579,6 +584,7 @@ function SettingsSection({
   const [newTypeWikiUrl, setNewTypeWikiUrl] = useState('');
   const [selectedPrinters, setSelectedPrinters] = useState<Set<number>>(new Set());
   const [expandedType, setExpandedType] = useState<number | null>(null);
+  const [pendingSystemDelete, setPendingSystemDelete] = useState<MaintenanceType | null>(null);
 
   // Get unique printers from overview
   const printers = useMemo(() => {
@@ -697,14 +703,24 @@ function SettingsSection({
             <h2 className="text-lg font-semibold text-white">{t('maintenance.maintenanceTypes')}</h2>
             <p className="text-sm text-bambu-gray mt-1">{t('maintenance.maintenanceTypesDescription')}</p>
           </div>
-          <Button
-            onClick={() => setShowAddType(!showAddType)}
-            disabled={!hasPermission('maintenance:create')}
-            title={!hasPermission('maintenance:create') ? t('maintenance.noPermissionEditTypes') : undefined}
-          >
-            <Plus className="w-4 h-4" />
-            {t('maintenance.addCustomType')}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              onClick={onRestoreDefaults}
+              disabled={!hasPermission('maintenance:delete') || isRestoringDefaults}
+              title={!hasPermission('maintenance:delete') ? t('maintenance.noPermissionDeleteTypes') : undefined}
+            >
+              {t('maintenance.restoreDefaults')}
+            </Button>
+            <Button
+              onClick={() => setShowAddType(!showAddType)}
+              disabled={!hasPermission('maintenance:create')}
+              title={!hasPermission('maintenance:create') ? t('maintenance.noPermissionEditTypes') : undefined}
+            >
+              <Plus className="w-4 h-4" />
+              {t('maintenance.addCustomType')}
+            </Button>
+          </div>
         </div>
 
         {/* Add custom type form */}
@@ -846,6 +862,17 @@ function SettingsSection({
                       {formatIntervalLabel(type.default_interval_hours, intervalType, t)}
                     </div>
                   </div>
+                  <button
+                    onClick={() => {
+                      if (!hasPermission('maintenance:delete')) return;
+                      setPendingSystemDelete(type);
+                    }}
+                    disabled={!hasPermission('maintenance:delete')}
+                    title={!hasPermission('maintenance:delete') ? t('maintenance.noPermissionDeleteTypes') : undefined}
+                    className={`p-2 rounded-lg hover:bg-bambu-dark text-bambu-gray hover:text-red-400 transition-colors ${!hasPermission('maintenance:delete') ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             );
@@ -1124,6 +1151,23 @@ function SettingsSection({
           </CardContent>
         </Card>
       )}
+
+      {pendingSystemDelete && (
+        <ConfirmModal
+          title={t('maintenance.deleteSystemTypeTitle')}
+          message={t('maintenance.deleteSystemTypeMessage', { name: pendingSystemDelete.name })}
+          confirmText={t('common.delete')}
+          cancelText={t('common.cancel')}
+          variant="danger"
+          cancelVariant="primary"
+          cardClassName="bg-red-950/70 border border-red-800/70"
+          onConfirm={() => {
+            onDeleteType(pendingSystemDelete.id);
+            setPendingSystemDelete(null);
+          }}
+          onCancel={() => setPendingSystemDelete(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1193,6 +1237,18 @@ export function MaintenancePage() {
       queryClient.invalidateQueries({ queryKey: ['maintenanceTypes'] });
       queryClient.invalidateQueries({ queryKey: ['maintenanceOverview'] });
       showToast(t('maintenance.typeDeleted'));
+    },
+    onError: (error: Error) => {
+      showToast(error.message, 'error');
+    },
+  });
+
+  const restoreDefaultsMutation = useMutation({
+    mutationFn: api.restoreDefaultMaintenanceTypes,
+    onSuccess: (data: { restored: number }) => {
+      queryClient.invalidateQueries({ queryKey: ['maintenanceTypes'] });
+      queryClient.invalidateQueries({ queryKey: ['maintenanceOverview'] });
+      showToast(t('maintenance.defaultsRestored', { count: data.restored }));
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
@@ -1352,6 +1408,8 @@ export function MaintenancePage() {
           }}
           onUpdateType={(id, data) => updateTypeMutation.mutate({ id, data })}
           onDeleteType={(id) => deleteTypeMutation.mutate(id)}
+          onRestoreDefaults={() => restoreDefaultsMutation.mutate()}
+          isRestoringDefaults={restoreDefaultsMutation.isPending}
           onAssignType={(printerId, typeId) => assignTypeMutation.mutate({ printerId, typeId })}
           onRemoveItem={(itemId) => removeItemMutation.mutate(itemId)}
           hasPermission={hasPermission}

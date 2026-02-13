@@ -945,6 +945,7 @@ export default {
     maintenanceTypes: 'Tipi di manutenzione',
     maintenanceTypesDescription: 'Tipi di sistema e tue attivita personalizzate',
     addCustomType: 'Aggiungi tipo personalizzato',
+    restoreDefaults: 'Ripristina attivita predefinite',
     intervalType: 'Tipo intervallo',
     intervalValue: 'Intervallo ({{type}})',
     icon: 'Icona',
@@ -988,11 +989,14 @@ export default {
     maintenanceComplete: 'Manutenzione segnata come completata',
     typeUpdated: 'Tipo manutenzione aggiornato',
     typeDeleted: 'Tipo manutenzione eliminato',
+    defaultsRestored: 'Ripristinate {{count}} attivita predefinite',
     printHoursUpdated: 'Ore di stampa aggiornate',
     printerAssigned: 'Stampante assegnata',
     printerRemoved: 'Stampante rimossa',
     // Confirmation
     deleteTypeConfirm: 'Eliminare "{{name}}"?',
+    deleteSystemTypeTitle: 'Eliminare attività di manutenzione predefinita?',
+    deleteSystemTypeMessage: 'Sei sicuro di voler eliminare l\'attività di manutenzione predefinita "{{name}}"?',
     // Permissions
     noPermissionUpdate: 'Non hai il permesso di aggiornare elementi manutenzione',
     noPermissionPerform: 'Non hai il permesso di eseguire manutenzione',

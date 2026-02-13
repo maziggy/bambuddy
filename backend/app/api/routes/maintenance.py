@@ -177,7 +177,11 @@ async def get_maintenance_types(
 ):
     """Get all maintenance types."""
     await ensure_default_types(db)
-    result = await db.execute(select(MaintenanceType).order_by(MaintenanceType.is_system.desc(), MaintenanceType.name))
+    result = await db.execute(
+        select(MaintenanceType)
+        .where(MaintenanceType.is_deleted.is_(False))
+        .order_by(MaintenanceType.is_system.desc(), MaintenanceType.name)
+    )
     return result.scalars().all()
 
 
@@ -230,18 +234,38 @@ async def delete_maintenance_type(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
 ):
-    """Delete a custom maintenance type."""
+    """Delete a maintenance type."""
     result = await db.execute(select(MaintenanceType).where(MaintenanceType.id == type_id))
     maint_type = result.scalar_one_or_none()
     if not maint_type:
         raise HTTPException(status_code=404, detail="Maintenance type not found")
 
     if maint_type.is_system:
-        raise HTTPException(status_code=400, detail="Cannot delete system maintenance type")
+        maint_type.is_deleted = True
+        await db.commit()
+        return {"status": "deleted"}
 
     await db.delete(maint_type)
     await db.commit()
     return {"status": "deleted"}
+
+
+@router.post("/types/restore-defaults")
+async def restore_default_maintenance_types(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
+):
+    """Restore deleted default maintenance types."""
+    await ensure_default_types(db)
+    result = await db.execute(
+        select(MaintenanceType).where(MaintenanceType.is_system.is_(True)).where(MaintenanceType.is_deleted.is_(True))
+    )
+    deleted_types = result.scalars().all()
+    for maint_type in deleted_types:
+        maint_type.is_deleted = False
+
+    await db.commit()
+    return {"restored": len(deleted_types)}
 
 
 # ============== Printer Maintenance ==============
@@ -264,7 +288,7 @@ async def _get_printer_maintenance_internal(
     total_hours = await get_printer_total_hours(db, printer_id)
 
     # Get all maintenance types
-    result = await db.execute(select(MaintenanceType))
+    result = await db.execute(select(MaintenanceType).where(MaintenanceType.is_deleted.is_(False)))
     all_types = result.scalars().all()
 
     # Get printer's maintenance items

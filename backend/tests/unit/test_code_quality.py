@@ -137,7 +137,7 @@ def find_import_shadowing(file_path: Path) -> list[tuple[str, int, str]]:
     Returns list of (name, line_number, function_name) tuples.
     """
     try:
-        with open(file_path) as f:
+        with open(file_path, encoding="utf-8") as f:
             source = f.read()
         tree = ast.parse(source)
         visitor = DangerousImportVisitor()

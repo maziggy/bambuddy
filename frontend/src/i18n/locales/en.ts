@@ -958,6 +958,7 @@ export default {
     maintenanceTypes: 'Maintenance Types',
     maintenanceTypesDescription: 'System types and your custom maintenance tasks',
     addCustomType: 'Add Custom Type',
+    restoreDefaults: 'Restore Default Tasks',
     intervalType: 'Interval Type',
     intervalValue: 'Interval ({{type}})',
     icon: 'Icon',
@@ -1001,11 +1002,14 @@ export default {
     maintenanceComplete: 'Maintenance marked as complete',
     typeUpdated: 'Maintenance type updated',
     typeDeleted: 'Maintenance type deleted',
+    defaultsRestored: 'Restored {{count}} default task(s)',
     printHoursUpdated: 'Print hours updated',
     printerAssigned: 'Printer assigned',
     printerRemoved: 'Printer removed',
     // Confirmation
     deleteTypeConfirm: 'Delete "{{name}}"?',
+    deleteSystemTypeTitle: 'Delete default maintenance task?',
+    deleteSystemTypeMessage: 'Are you sure you want to delete the default maintenance task "{{name}}"?',
     // Permissions
     noPermissionUpdate: 'You do not have permission to update maintenance items',
     noPermissionPerform: 'You do not have permission to perform maintenance',

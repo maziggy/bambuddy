@@ -188,6 +188,13 @@ async def run_migrations(conn):
         # Column already exists
         pass
 
+    # Migration: Add is_deleted column to maintenance_types for soft-deletes
+    try:
+        await conn.execute(text("ALTER TABLE maintenance_types ADD COLUMN is_deleted BOOLEAN DEFAULT 0"))
+    except OperationalError:
+        # Column already exists
+        pass
+
     # Migration: Add custom_interval_type column to printer_maintenance
     try:
         await conn.execute(text("ALTER TABLE printer_maintenance ADD COLUMN custom_interval_type VARCHAR(20)"))

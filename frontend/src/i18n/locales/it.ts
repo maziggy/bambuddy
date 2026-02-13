@@ -1207,6 +1207,17 @@ export default {
       turnOn: 'Accendi',
       turnOff: 'Spegni',
     },
+    // Filament Tracking Mode
+    filamentTracking: 'Tracciamento filamento',
+    filamentTrackingDesc: 'Scegli come tracciare le tue bobine di filamento. Puoi utilizzare l\'inventario integrato o collegare un server Spoolman esterno.',
+    disableFilamentWarnings: 'Disabilita avvisi filamento',
+    disableFilamentWarningsDesc: 'Non mostrare avvisi per filamento insufficiente durante la stampa o l\'accodamento',
+    trackingModeBuiltIn: 'Inventario integrato',
+    trackingModeBuiltInDesc: 'Corrispondenza RFID automatica e tracciamento utilizzo inclusi',
+    trackingModeSpoolmanDesc: 'Server di gestione filamenti esterno',
+    builtInFeatureRfid: 'Rileva automaticamente le bobine RFID Bambu Lab nell\'AMS',
+    builtInFeatureUsage: 'Traccia il consumo di filamento per stampa',
+    builtInFeatureCatalog: 'Gestisci bobine, colori e profili K-factor',
     // Spoolman
     spoolmanEnabled: 'Abilita integrazione Spoolman',
     spoolmanUrl: 'URL Spoolman',
@@ -2531,6 +2542,10 @@ export default {
     originalFilament: 'Originale',
     overrideWith: 'Sostituisci con',
     resetToOriginal: 'Ripristina originale',
+    insufficientFilamentTitle: 'Filamento insufficiente',
+    insufficientFilamentMessage: 'Alcune bobine assegnate hanno meno filamento rimanente di quanto necessario per questa stampa:',
+    insufficientFilamentLine: '{{printer}} - {{slot}}: necessita di {{required}}g, rimanenti {{remaining}}g',
+    printAnyway: 'Stampa comunque',
   },
 
   // Backup

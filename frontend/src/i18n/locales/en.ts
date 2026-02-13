@@ -1285,6 +1285,8 @@ export default {
     // Filament Tracking Mode
     filamentTracking: 'Filament Tracking',
     filamentTrackingDesc: 'Choose how to track your filament spools. You can use the built-in inventory or connect an external Spoolman server.',
+    disableFilamentWarnings: 'Disable filament warnings',
+    disableFilamentWarningsDesc: 'Don\'t show warnings about insufficient filament when printing or queueing',
     trackingModeBuiltIn: 'Built-in Inventory',
     trackingModeBuiltInDesc: 'RFID auto-matching and usage tracking included',
     trackingModeSpoolmanDesc: 'External filament management server',
@@ -2825,6 +2827,10 @@ export default {
     originalFilament: 'Original',
     overrideWith: 'Override with',
     resetToOriginal: 'Reset to original',
+    insufficientFilamentTitle: 'Not enough filament',
+    insufficientFilamentMessage: 'Some assigned spools have less filament remaining than this print needs:',
+    insufficientFilamentLine: '{{printer}} - {{slot}}: needs {{required}}g, remaining {{remaining}}g',
+    printAnyway: 'Print anyway',
   },
 
   // Backup

@@ -1318,6 +1318,8 @@ export default {
     // Filament Tracking Mode
     filamentTracking: 'フィラメント追跡',
     filamentTrackingDesc: 'フィラメントスプールの追跡方法を選択してください。内蔵インベントリまたは外部Spoolmanサーバーを使用できます。',
+    disableFilamentWarnings: 'フィラメント警告を無効化',
+    disableFilamentWarningsDesc: '印刷またはキュー追加時にフィラメント不足の警告を表示しない',
     trackingModeBuiltIn: '内蔵インベントリ',
     trackingModeBuiltInDesc: 'RFID自動検出と使用量追跡を含む',
     trackingModeSpoolmanDesc: '外部フィラメント管理サーバー',
@@ -3026,7 +3028,10 @@ export default {
     originalFilament: 'オリジナル',
     overrideWith: '変更先',
     resetToOriginal: 'オリジナルに戻す',
-    forceColorMatch: 'カラーマッチを強制',
+    insufficientFilamentTitle: 'Not enough filament',
+    insufficientFilamentMessage: 'Some assigned spools have less filament remaining than this print needs:',
+    insufficientFilamentLine: '{{printer}} - {{slot}}: needs {{required}}g, remaining {{remaining}}g',
+    printAnyway: 'Print anyway',
   },
 
   // Backup

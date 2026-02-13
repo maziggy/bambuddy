@@ -362,7 +362,7 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
     ]
 
     try:
-        print(f"[EXT-CAM] Running ffmpeg command: {' '.join(cmd[:6])}...")
+        logger.debug(f"Running ffmpeg command: {' '.join(cmd[:6])}...")
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -370,13 +370,12 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
         )
 
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
-        print(
-            f"[EXT-CAM] ffmpeg returned: code={process.returncode}, stdout={len(stdout)} bytes, stderr={len(stderr)} bytes"
+        logger.debug(
+            f"ffmpeg returned: code={process.returncode}, stdout={len(stdout)} bytes, stderr={len(stderr)} bytes"
         )
 
         if process.returncode != 0:
             logger.error("ffmpeg RTSP capture failed: %s", stderr.decode()[:200])
-            print(f"[EXT-CAM] ffmpeg error: {stderr.decode()[:300]}")
             return None
 
         if not stdout or len(stdout) < 100:
@@ -440,11 +439,9 @@ async def test_connection(url: str, camera_type: str) -> dict:
     Returns:
         Dict with {success: bool, error?: str, resolution?: str}
     """
-    print(f"[EXT-CAM] Testing camera connection: type={camera_type}, url={url[:50]}...")
     logger.info("Testing camera connection: type=%s, url=%s...", camera_type, url[:50])
     try:
         frame = await capture_frame(url, camera_type, timeout=10)
-        print(f"[EXT-CAM] Capture result: {len(frame) if frame else 0} bytes")
         logger.info("Capture result: %s bytes", len(frame) if frame else 0)
 
         if frame:
@@ -490,17 +487,41 @@ async def generate_mjpeg_stream(url: str, camera_type: str, fps: int = 10) -> As
     last_frame_time = 0.0
 
     if camera_type == "mjpeg":
-        # Proxy MJPEG stream directly
-        async for frame in _stream_mjpeg(url):
-            current_time = asyncio.get_event_loop().time()
-            if current_time - last_frame_time >= frame_interval:
-                last_frame_time = current_time
-                yield _format_mjpeg_frame(frame)
+        # Proxy MJPEG stream directly, with reconnect on timeout
+        max_retries = 3
+        for attempt in range(max_retries + 1):
+            frame_yielded = False
+            async for frame in _stream_mjpeg(url):
+                frame_yielded = True
+                current_time = asyncio.get_event_loop().time()
+                if current_time - last_frame_time >= frame_interval:
+                    last_frame_time = current_time
+                    yield _format_mjpeg_frame(frame)
+            if not frame_yielded or attempt == max_retries:
+                break
+            logger.warning(
+                "External MJPEG stream ended, reconnecting (attempt %d/%d)...",
+                attempt + 1,
+                max_retries,
+            )
+            await asyncio.sleep(2)
 
     elif camera_type == "rtsp":
-        # Use ffmpeg to convert RTSP to MJPEG
-        async for frame in _stream_rtsp(url, fps):
-            yield _format_mjpeg_frame(frame)
+        # Use ffmpeg to convert RTSP to MJPEG, with reconnect on timeout
+        max_retries = 3
+        for attempt in range(max_retries + 1):
+            frame_yielded = False
+            async for frame in _stream_rtsp(url, fps):
+                frame_yielded = True
+                yield _format_mjpeg_frame(frame)
+            if not frame_yielded or attempt == max_retries:
+                break
+            logger.warning(
+                "External RTSP stream ended, reconnecting (attempt %d/%d)...",
+                attempt + 1,
+                max_retries,
+            )
+            await asyncio.sleep(2)
 
     elif camera_type == "usb":
         # Use ffmpeg to stream from USB camera

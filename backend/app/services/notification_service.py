@@ -267,19 +267,20 @@ class NotificationService:
 
         url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
 
-        # Check if message contains characters that break Markdown parsing
-        # URLs and error codes with underscores cause issues
-        has_url = "http://" in message or "https://" in message
-        # Check for underscores outside of the bold title (odd number of _ breaks markdown)
-        body_part = message.split("\n", 1)[1] if "\n" in message else ""
-        has_problematic_underscore = "_" in body_part
+        # Escape underscores in the message body so Telegram Markdown
+        # parsing doesn't break on job names like "A1_plate_8" or error
+        # codes like "0300_0001".  The title is already wrapped in *bold*
+        # markers, so only escape after the first newline.
+        if "\n" in message:
+            title_part, body_part = message.split("\n", 1)
+            body_part = body_part.replace("_", "\\_")
+            message = f"{title_part}\n{body_part}"
 
         data = {
             "chat_id": chat_id,
             "text": message,
+            "parse_mode": "Markdown",
         }
-        if not has_url and not has_problematic_underscore:
-            data["parse_mode"] = "Markdown"
 
         client = await self._get_client()
         response = await client.post(url, json=data)

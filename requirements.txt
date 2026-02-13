@@ -17,7 +17,7 @@ aioftp>=0.22.0
 
 # Virtual Printer (emulates Bambu printer for slicer uploads)
 pyftpdlib>=2.0.0
-cryptography>=41.0.0
+cryptography>=46.0.5
 
 # 3MF Processing (standard zipfile is sufficient for Bambu 3MF files)
 defusedxml>=0.7.0  # Safe XML parsing (prevents XXE attacks)
@@ -56,3 +56,5 @@ pytest>=8.0.0
 pytest-asyncio>=0.23.0
 httpx>=0.26.0
 ruff>=0.2.0
+
+pillow>=12.1.1

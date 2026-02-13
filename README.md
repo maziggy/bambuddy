@@ -103,6 +103,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Per-printer AMS mapping (individual slot configuration for print farms)
 - Scheduled prints (date/time)
 - Queue Only mode (stage without auto-start)
+- Clear plate confirmation between queued prints
 - Smart plug integration (Tasmota, Home Assistant, MQTT)
 - MQTT smart plugs: Subscribe to Zigbee2MQTT, Shelly, or any MQTT topic for energy monitoring
 - Energy consumption tracking (per-print kWh and cost)
@@ -144,6 +145,11 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - HMS error alerts (AMS, nozzle, etc.)
 - Build plate detection alerts
 - Queue events (waiting, skipped, failed)
+
+### 🧵 Spool Inventory
+- Built-in spool inventory with AMS slot assignment, usage tracking, and remaining weight management
+- Automatic filament consumption tracking: AMS RFID for Bambu Lab spools, 3MF estimates for third-party spools
+- Spool catalog, color catalog, PA profile matching, and low-stock alerts
 
 ### 🔧 Integrations
 - [Spoolman](https://github.com/Donkie/Spoolman) filament sync with per-filament usage tracking and fill level display

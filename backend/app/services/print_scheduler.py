@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import zipfile
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import defusedxml.ElementTree as ET
@@ -694,9 +694,11 @@ class PrintScheduler:
         if not state:
             return False
 
-        # Printer is idle if state is IDLE, FINISH, FAILED, or unknown
-        # FAILED means previous print failed, printer is ready for new print
-        return state.state in ("IDLE", "FINISH", "FAILED", "unknown")
+        # IDLE = ready for next print
+        # FINISH/FAILED = ready only if user confirmed plate is cleared
+        return state.state == "IDLE" or (
+            state.state in ("FINISH", "FAILED") and printer_manager.is_plate_cleared(printer_id)
+        )
 
     async def _get_smart_plug(self, db: AsyncSession, printer_id: int) -> SmartPlug | None:
         """Get the smart plug associated with a printer."""
@@ -860,27 +862,6 @@ class PrintScheduler:
                 await self._power_off_if_needed(db, item)
                 return
 
-            # Safety: Check if this archive was printed recently (within 4 hours)
-            # This prevents phantom reprints if a queue item got stuck in "pending"
-            # after its print already started due to a crash/restart
-            if archive.status == "completed" and archive.completed_at:
-                completed_at = (
-                    archive.completed_at.replace(tzinfo=None) if archive.completed_at.tzinfo else archive.completed_at
-                )
-                time_since_completed = datetime.utcnow() - completed_at
-                if time_since_completed < timedelta(hours=4):
-                    logger.warning(
-                        f"Queue item {item.id}: Archive {item.archive_id} was already printed "
-                        f"{time_since_completed.total_seconds() / 3600:.1f} hours ago, skipping to prevent duplicate"
-                    )
-                    item.status = "skipped"
-                    item.error_message = (
-                        f"Archive was already printed {time_since_completed.total_seconds() / 3600:.1f} hours ago"
-                    )
-                    item.completed_at = datetime.utcnow()
-                    await db.commit()
-                    return
-
             file_path = settings.base_dir / archive.file_path
             filename = archive.filename
 
@@ -1034,6 +1015,9 @@ class PrintScheduler:
         item.status = "printing"
         item.started_at = datetime.utcnow()
         await db.commit()
+
+        # Consume the plate-cleared flag now that we're starting a print
+        printer_manager.consume_plate_cleared(item.printer_id)
         logger.info("Queue item %s: Status set to 'printing', sending print command...", item.id)
 
         # Start the print with AMS mapping, plate_id and print options

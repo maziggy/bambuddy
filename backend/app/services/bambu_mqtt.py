@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import ssl
+import threading
 import time
 from collections import deque
 from collections.abc import Callable
@@ -279,6 +280,7 @@ class BambuMQTTClient:
         self._message_log: deque[MQTTLogEntry] = deque(maxlen=100)
         self._logging_enabled: bool = False
         self._last_message_time: float = 0.0  # Track when we last received a message
+        self._disconnection_event: threading.Event | None = None
         self._previous_ams_hash: str | None = None  # Track AMS changes
 
         # K-profile command tracking
@@ -357,6 +359,8 @@ class BambuMQTTClient:
         self.state.connected = False
         if self.on_state_change:
             self.on_state_change(self.state)
+        if self._disconnection_event:
+            self._disconnection_event.set()
 
     def _on_message(self, client, userdata, msg):
         try:
@@ -941,8 +945,9 @@ class BambuMQTTClient:
                                 # Fields that should always be updated (even with empty/zero values):
                                 # - remain, k, id, cali_idx: status indicators where 0 is valid
                                 # - tray_type, tray_sub_brands, tag_uid, tray_uuid, tray_info_idx,
-                                #   tray_color, tray_id_name: slot content indicators that must be
-                                #   cleared when a spool is removed (fixes #147 - old AMS empty slot)
+                                #   tray_color, tray_id_name: slot content indicators that must
+                                #   be cleared when a spool is removed (fixes #147 - old AMS
+                                #   empty slot)
                                 always_update_fields = (
                                     "remain",
                                     "k",
@@ -1062,7 +1067,9 @@ class BambuMQTTClient:
             self._previous_ams_hash = ams_hash
             if self.on_ams_change:
                 logger.info("[%s] AMS data changed, triggering sync callback", self.serial_number)
-                self.on_ams_change(ams_list)
+                # Pass merged AMS data (not raw ams_list) — partial MQTT updates
+                # may lack fields like 'remain' that the merged state preserves
+                self.on_ams_change(merged_ams)
 
     def _update_state(self, data: dict):
         """Update printer state from message data."""
@@ -2371,11 +2378,13 @@ class BambuMQTTClient:
 
         return True
 
-    def disconnect(self):
+    def disconnect(self, timeout: float = 0):
         """Disconnect from the printer."""
         if self._client:
-            self._client.loop_stop()
+            self._disconnection_event = threading.Event()
             self._client.disconnect()
+            self._disconnection_event.wait(timeout=timeout)
+            self._client.loop_stop()
             self._client = None
             self.state.connected = False
 

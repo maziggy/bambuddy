@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Save, Loader2, Upload, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { ExternalLink, ExternalLinkCreate, ExternalLinkUpdate } from '../api/client';
 import { Button } from './Button';
@@ -11,6 +12,7 @@ interface AddExternalLinkModalProps {
 }
 
 export function AddExternalLinkModal({ link, onClose }: AddExternalLinkModalProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const isEditing = !!link;
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -18,6 +20,7 @@ export function AddExternalLinkModal({ link, onClose }: AddExternalLinkModalProp
   const [name, setName] = useState(link?.name || '');
   const [url, setUrl] = useState(link?.url || '');
   const [icon, setIcon] = useState(link?.icon || 'link');
+  const [openInNewTab, setOpenInNewTab] = useState(link?.open_in_new_tab || false);
   const [useCustomIcon, setUseCustomIcon] = useState(!!link?.custom_icon);
   const [customIconPreview, setCustomIconPreview] = useState<string | null>(
     link?.custom_icon ? api.getExternalLinkIconUrl(link.id) : null
@@ -137,6 +140,7 @@ export function AddExternalLinkModal({ link, onClose }: AddExternalLinkModalProp
       name: name.trim(),
       url: url.trim(),
       icon: useCustomIcon ? icon : icon, // Keep preset icon as fallback
+      open_in_new_tab: openInNewTab,
     };
 
     if (isEditing) {
@@ -211,6 +215,24 @@ export function AddExternalLinkModal({ link, onClose }: AddExternalLinkModalProp
               placeholder="https://example.com"
               className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
             />
+          </div>
+
+          {/* Open in New Tab */}
+          <div className="flex items-center justify-between">
+            <label className="text-sm text-bambu-gray">{t('externalLinks.openInNewTab')}</label>
+            <button
+              type="button"
+              onClick={() => setOpenInNewTab(!openInNewTab)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                openInNewTab ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  openInNewTab ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
           </div>
 
           {/* Icon Section */}

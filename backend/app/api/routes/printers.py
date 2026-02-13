@@ -1821,6 +1821,37 @@ async def stop_print(
     return {"success": True, "message": "Print stop command sent"}
 
 
+@router.post("/{printer_id}/clear-plate")
+async def clear_plate(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Acknowledge that the build plate has been cleared after a finished/failed print.
+
+    Sets a plate-cleared flag so the scheduler can start the next queued print.
+    No MQTT command is sent to the printer — the scheduler's start_print command
+    will override the FINISH/FAILED state when it sends the next job.
+    """
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    if not printer_manager.is_connected(printer_id):
+        raise HTTPException(400, "Printer not connected")
+
+    state = printer_manager.get_status(printer_id)
+    if not state or state.state not in ("FINISH", "FAILED"):
+        raise HTTPException(
+            400, f"Printer is not in FINISH or FAILED state (current: {state.state if state else 'unknown'})"
+        )
+
+    printer_manager.set_plate_cleared(printer_id)
+
+    return {"success": True, "message": "Plate cleared, next print will start shortly"}
+
+
 @router.post("/{printer_id}/print/pause")
 async def pause_print(
     printer_id: int,

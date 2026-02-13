@@ -100,6 +100,8 @@ class PrinterManager:
         self._loop: asyncio.AbstractEventLoop | None = None
         # Track who started the current print (Issue #206)
         self._current_print_user: dict[int, dict] = {}  # {printer_id: {"user_id": int, "username": str}}
+        # Track plate-cleared acknowledgments for queue flow
+        self._plate_cleared: set[int] = set()  # printer_ids where user confirmed plate is cleared
 
     def get_printer(self, printer_id: int) -> PrinterInfo | None:
         """Get printer info by ID."""
@@ -116,6 +118,18 @@ class PrinterManager:
     def clear_current_print_user(self, printer_id: int):
         """Clear the current print user when print completes (Issue #206)."""
         self._current_print_user.pop(printer_id, None)
+
+    def set_plate_cleared(self, printer_id: int):
+        """Mark that user has cleared the build plate for this printer."""
+        self._plate_cleared.add(printer_id)
+
+    def is_plate_cleared(self, printer_id: int) -> bool:
+        """Check if user has confirmed the plate is cleared."""
+        return printer_id in self._plate_cleared
+
+    def consume_plate_cleared(self, printer_id: int):
+        """Clear the plate-cleared flag (called when scheduler starts next print)."""
+        self._plate_cleared.discard(printer_id)
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop):
         """Set the event loop for async callbacks."""
@@ -209,18 +223,18 @@ class PrinterManager:
         await asyncio.sleep(1)
         return client.state.connected
 
-    def disconnect_printer(self, printer_id: int):
+    def disconnect_printer(self, printer_id: int, timeout: float = 0):
         """Disconnect from a printer."""
         if printer_id in self._clients:
-            self._clients[printer_id].disconnect()
+            self._clients[printer_id].disconnect(timeout=timeout)
             del self._clients[printer_id]
         self._models.pop(printer_id, None)  # Clean up model cache
         self._printer_info.pop(printer_id, None)  # Clean up printer info cache
 
-    def disconnect_all(self):
+    def disconnect_all(self, timeout: float = 0):
         """Disconnect from all printers."""
         for printer_id in list(self._clients.keys()):
-            self.disconnect_printer(printer_id)
+            self.disconnect_printer(printer_id, timeout=timeout)
 
     def get_status(self, printer_id: int) -> PrinterState | None:
         """Get the current status of a printer (checks for stale connections)."""
@@ -519,7 +533,7 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
 
                 trays.append(
                     {
-                        "id": tray.get("id", 0),
+                        "id": int(tray.get("id", 0)),
                         "tray_color": tray.get("tray_color"),
                         "tray_type": tray.get("tray_type"),
                         "tray_sub_brands": tray.get("tray_sub_brands"),
@@ -556,7 +570,7 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
 
             ams_units.append(
                 {
-                    "id": ams_data.get("id", 0),
+                    "id": int(ams_data.get("id", 0)),
                     "humidity": humidity_value,
                     "temp": ams_data.get("temp"),
                     "is_ams_ht": is_ams_ht,

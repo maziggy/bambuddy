@@ -26,6 +26,7 @@ import { api } from '../api/client';
 import { PrintCalendar } from '../components/PrintCalendar';
 import { FilamentTrends } from '../components/FilamentTrends';
 import { Dashboard, type DashboardWidget } from '../components/Dashboard';
+import { getCurrencySymbol } from '../utils/currency';
 
 // Widget Components
 function QuickStatsWidget({
@@ -603,7 +604,7 @@ export function StatsPage() {
     }
   };
 
-  const currency = settings?.currency || '$';
+  const currency = getCurrencySymbol(settings?.currency || 'USD');
   const printerMap = new Map(printers?.map((p) => [String(p.id), p.name]) || []);
   const printDates = archives?.map((a) => a.created_at) || [];
 

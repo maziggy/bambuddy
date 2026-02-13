@@ -184,6 +184,7 @@ from backend.app.api.routes import (
     firmware,
     github_backup,
     groups,
+    inventory,
     kprofiles,
     library,
     local_presets,
@@ -216,6 +217,7 @@ from backend.app.services.bambu_mqtt import PrinterState
 from backend.app.services.github_backup import github_backup_service
 from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.mqtt_relay import mqtt_relay
+from backend.app.services.mqtt_smart_plug import mqtt_smart_plug_service
 from backend.app.services.notification_service import notification_service
 from backend.app.services.print_scheduler import scheduler as print_scheduler
 from backend.app.services.printer_manager import (
@@ -252,6 +254,10 @@ _last_progress_milestone: dict[int, int] = {}
 # Track HMS errors that have been notified: {printer_id: set of error codes}
 # This prevents sending duplicate notifications for the same error
 _notified_hms_errors: dict[int, set[str]] = {}
+
+# Track timelapse file baselines at print start: {printer_id: set of MP4 filenames}
+# Used for snapshot-diff detection at print completion
+_timelapse_baselines: dict[int, set[str]] = {}
 
 
 async def _get_plug_energy(plug, db) -> dict | None:
@@ -494,6 +500,11 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
     )
 
 
+def _is_bambu_uuid(tray_uuid: str) -> bool:
+    """Check if a tray UUID looks like a valid Bambu Lab RFID UUID (non-empty, non-zero)."""
+    return bool(tray_uuid) and tray_uuid not in ("", "0" * len(tray_uuid))
+
+
 async def on_ams_change(printer_id: int, ams_data: list):
     """Handle AMS data changes - sync to Spoolman if enabled and auto mode."""
     logger = logging.getLogger(__name__)
@@ -518,6 +529,196 @@ async def on_ams_change(printer_id: int, ams_data: list):
             )
     except Exception as e:
         logger.warning("Failed to broadcast AMS change for printer %s: %s", printer_id, e)
+
+    # Auto-unlink spool assignments with stale fingerprints
+    try:
+        async with async_session() as db:
+            from sqlalchemy.orm import selectinload
+
+            from backend.app.api.routes.inventory import _find_tray_in_ams_data
+            from backend.app.models.spool_assignment import SpoolAssignment as SA
+
+            result = await db.execute(select(SA).where(SA.printer_id == printer_id).options(selectinload(SA.spool)))
+            stale = []
+            for assignment in result.scalars().all():
+                current_tray = _find_tray_in_ams_data(ams_data, assignment.ams_id, assignment.tray_id)
+                if not current_tray:
+                    logger.info(
+                        "Auto-unlink: spool %d AMS%d-T%d — tray not found in AMS data (slot empty?)",
+                        assignment.spool_id,
+                        assignment.ams_id,
+                        assignment.tray_id,
+                    )
+                    stale.append(assignment)  # Slot empty
+                elif _is_bambu_uuid(current_tray.get("tray_uuid", "")):
+                    # A Bambu Lab spool was inserted — always unlink manual assignments
+                    logger.info(
+                        "Auto-unlink: spool %d AMS%d-T%d — Bambu Lab spool detected (uuid=%s)",
+                        assignment.spool_id,
+                        assignment.ams_id,
+                        assignment.tray_id,
+                        current_tray.get("tray_uuid", ""),
+                    )
+                    stale.append(assignment)
+                else:
+                    cur_color = current_tray.get("tray_color", "")
+                    cur_type = current_tray.get("tray_type", "")
+                    fp_color = assignment.fingerprint_color or ""
+                    fp_type = assignment.fingerprint_type or ""
+                    if cur_color.upper() != fp_color.upper() or cur_type.upper() != fp_type.upper():
+                        # Fingerprint mismatch — but check if tray now matches the
+                        # assigned spool (e.g. auto-configure changed the tray).
+                        spool = assignment.spool
+                        if spool:
+                            spool_color = (spool.rgba or "FFFFFFFF").upper()
+                            spool_type = (spool.material or "").upper()
+                            if cur_color.upper() == spool_color and cur_type.upper() == spool_type:
+                                # Tray was reconfigured to match the spool — update fingerprint
+                                logger.info(
+                                    "Auto-unlink: spool %d AMS%d-T%d — fingerprint mismatch but tray matches spool, updating fp",
+                                    assignment.spool_id,
+                                    assignment.ams_id,
+                                    assignment.tray_id,
+                                )
+                                assignment.fingerprint_color = cur_color
+                                assignment.fingerprint_type = cur_type
+                                continue
+                        logger.info(
+                            "Auto-unlink: spool %d AMS%d-T%d — fingerprint mismatch (cur=%s/%s fp=%s/%s spool=%s/%s)",
+                            assignment.spool_id,
+                            assignment.ams_id,
+                            assignment.tray_id,
+                            cur_color,
+                            cur_type,
+                            fp_color,
+                            fp_type,
+                            spool.rgba if spool else "?",
+                            spool.material if spool else "?",
+                        )
+                        stale.append(assignment)  # Spool changed
+            for a in stale:
+                await db.delete(a)
+            if stale:
+                logger.info("Auto-unlinked %d stale spool assignments for printer %d", len(stale), printer_id)
+            # Commit any changes (stale deletions and/or fingerprint updates)
+            await db.commit()
+    except Exception as e:
+        logger.warning("Spool assignment cleanup failed: %s", e)
+
+    # Auto-manage inventory spools from AMS tray data (skip if Spoolman manages AMS)
+    try:
+        async with async_session() as db:
+            from backend.app.api.routes.settings import get_setting
+            from backend.app.models.spool_assignment import SpoolAssignment as SA
+            from backend.app.services.spool_tag_matcher import (
+                auto_assign_spool,
+                create_spool_from_tray,
+                get_spool_by_tag,
+                is_bambu_tag,
+                is_valid_tag,
+            )
+
+            _spoolman_on = await get_setting(db, "spoolman_enabled")
+            if not _spoolman_on or _spoolman_on.lower() != "true":
+                for ams_unit in ams_data:
+                    if not isinstance(ams_unit, dict):
+                        continue
+                    ams_id = int(ams_unit.get("id", 0))
+                    for tray in ams_unit.get("tray", []):
+                        if not isinstance(tray, dict):
+                            continue
+                        tray_id = int(tray.get("id", 0))
+                        tag_uid = tray.get("tag_uid", "")
+                        tray_uuid = tray.get("tray_uuid", "")
+                        tray_info_idx = tray.get("tray_info_idx", "")
+                        if not tray.get("tray_type"):
+                            continue  # Empty slot
+                        # Check if assignment already exists for this slot
+                        existing = await db.execute(
+                            select(SA)
+                            .options(selectinload(SA.spool))
+                            .where(SA.printer_id == printer_id, SA.ams_id == ams_id, SA.tray_id == tray_id)
+                        )
+                        existing_assignment = existing.scalar_one_or_none()
+                        if existing_assignment:
+                            # Sync spool weight_used from AMS remain if valid
+                            remain_raw = tray.get("remain")
+                            if remain_raw is not None and existing_assignment.spool:
+                                try:
+                                    remain_val = int(remain_raw)
+                                except (TypeError, ValueError):
+                                    remain_val = -1
+                                if 0 <= remain_val <= 100:
+                                    lw = existing_assignment.spool.label_weight or 1000
+                                    new_used = round(lw * (100 - remain_val) / 100.0, 1)
+                                    if abs((existing_assignment.spool.weight_used or 0) - new_used) > 1:
+                                        logger.info(
+                                            "Weight sync: spool %d weight_used %s -> %s (remain=%d)",
+                                            existing_assignment.spool_id,
+                                            existing_assignment.spool.weight_used,
+                                            new_used,
+                                            remain_val,
+                                        )
+                                        existing_assignment.spool.weight_used = new_used
+                                        await db.commit()
+                            continue
+
+                        if is_bambu_tag(tag_uid, tray_uuid, tray_info_idx):
+                            # BL spool with RFID tag: auto-match or auto-create
+                            spool = await get_spool_by_tag(db, tag_uid, tray_uuid)
+                            if not spool:
+                                spool = await create_spool_from_tray(db, tray)
+                            await auto_assign_spool(
+                                printer_id,
+                                ams_id,
+                                tray_id,
+                                spool,
+                                printer_manager,
+                                db,
+                            )
+                            await db.commit()
+                            await ws_manager.broadcast(
+                                {
+                                    "type": "spool_auto_assigned",
+                                    "printer_id": printer_id,
+                                    "ams_id": ams_id,
+                                    "tray_id": tray_id,
+                                    "spool_id": spool.id,
+                                }
+                            )
+                            logger.info(
+                                "RFID auto-assigned spool %d to printer %d AMS%d-T%d",
+                                spool.id,
+                                printer_id,
+                                ams_id,
+                                tray_id,
+                            )
+                        elif is_valid_tag(tag_uid, tray_uuid):
+                            # Non-BL spool with some tag — let user choose
+                            await ws_manager.broadcast(
+                                {
+                                    "type": "unknown_tag",
+                                    "printer_id": printer_id,
+                                    "ams_id": ams_id,
+                                    "tray_id": tray_id,
+                                    "tag_uid": tag_uid,
+                                    "tray_uuid": tray_uuid,
+                                }
+                            )
+                        else:
+                            # No tag at all — let user choose from inventory
+                            await ws_manager.broadcast(
+                                {
+                                    "type": "unknown_tag",
+                                    "printer_id": printer_id,
+                                    "ams_id": ams_id,
+                                    "tray_id": tray_id,
+                                    "tag_uid": "",
+                                    "tray_uuid": "",
+                                }
+                            )
+    except Exception as e:
+        logger.warning("RFID spool auto-assign failed: %s", e)
 
     try:
         async with async_session() as db:
@@ -572,6 +773,26 @@ async def on_ams_change(printer_id: int, ams_data: list):
                 )
                 return
 
+            # Load inventory weights as fallback (when AMS MQTT data lacks remain values)
+            from sqlalchemy.orm import selectinload
+
+            from backend.app.models.spool_assignment import SpoolAssignment
+
+            inventory_weights: dict[tuple[int, int], float] = {}
+            try:
+                assign_result = await db.execute(
+                    select(SpoolAssignment)
+                    .options(selectinload(SpoolAssignment.spool))
+                    .where(SpoolAssignment.printer_id == printer_id)
+                )
+                for assignment in assign_result.scalars().all():
+                    spool = assignment.spool
+                    if spool and spool.label_weight > 0:
+                        remaining = max(0.0, spool.label_weight - (spool.weight_used or 0))
+                        inventory_weights[(assignment.ams_id, assignment.tray_id)] = remaining
+            except Exception as e:
+                logger.debug("Could not load inventory weights for printer %s: %s", printer_id, e)
+
             # Sync each AMS tray
             synced = 0
             for ams_unit in ams_data:
@@ -584,11 +805,13 @@ async def on_ams_change(printer_id: int, ams_data: list):
                         continue  # Empty tray
 
                     try:
+                        inv_remaining = inventory_weights.get((ams_id, tray.tray_id))
                         result = await client.sync_ams_tray(
                             tray,
                             printer_name,
                             disable_weight_sync=disable_weight_sync,
                             cached_spools=cached_spools,
+                            inventory_remaining=inv_remaining,
                         )
                         if result:
                             synced += 1
@@ -749,6 +972,19 @@ async def on_print_start(printer_id: int, data: dict):
             )
     except Exception:
         pass  # Don't fail print start callback if MQTT fails
+
+    # Capture AMS tray remain% for filament consumption tracking (skip if Spoolman handles usage)
+    try:
+        async with async_session() as db:
+            from backend.app.api.routes.settings import get_setting
+
+            _spoolman_on = await get_setting(db, "spoolman_enabled")
+        if not _spoolman_on or _spoolman_on.lower() != "true":
+            from backend.app.services.usage_tracker import on_print_start as usage_on_print_start
+
+            await usage_on_print_start(printer_id, data, printer_manager)
+    except Exception as e:
+        logger.warning("Usage tracker on_print_start failed: %s", e)
 
     # Track if notification was sent (to avoid sending twice)
     notification_sent = False
@@ -1405,6 +1641,18 @@ async def on_print_start(printer_id: int, data: dict):
                     await _store_spoolman_print_data(printer_id, archive.id, archive.file_path, db, printer_manager)
                 except Exception as e:
                     logger.warning("[SPOOLMAN] Failed to store tracking data: %s", e)
+
+                # Capture timelapse file baseline for snapshot-diff on completion
+                try:
+                    baseline_files, _ = await _list_timelapse_mp4s(printer)
+                    _timelapse_baselines[printer_id] = {f.get("name", "") for f in baseline_files}
+                    logger.info(
+                        "[TIMELAPSE] Baseline at print start: %s MP4 files for printer %s",
+                        len(_timelapse_baselines[printer_id]),
+                        printer_id,
+                    )
+                except Exception as e:
+                    logger.warning("[TIMELAPSE] Failed to capture baseline at print start: %s", e)
         finally:
             if temp_path and temp_path.exists():
                 temp_path.unlink()
@@ -1436,13 +1684,17 @@ async def _list_timelapse_mp4s(printer) -> tuple[list[dict], str | None]:
     return [], None
 
 
-async def _scan_for_timelapse_with_retries(archive_id: int):
+async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[str] | None = None):
     """
     Scan for timelapse with retries using a snapshot-diff approach.
 
     Instead of picking the "most recent by mtime" (unreliable when the printer
     clock is wrong in LAN-only mode), we snapshot existing MP4 filenames BEFORE
     waiting, then look for any NEW filename that appears after each delay.
+
+    If baseline_names is provided (captured at print start), it is used directly.
+    Otherwise falls back to taking a baseline at completion time (best-effort
+    for prints started before app restart).
 
     Falls back to name-matching (print name contained in MP4 filename) if no
     new file appears after all retries.
@@ -1469,18 +1721,28 @@ async def _scan_for_timelapse_with_retries(archive_id: int):
                 logger.warning("[TIMELAPSE] Archive %s has no printer, aborting", archive_id)
                 return
 
-            result = await db.execute(select(Printer).where(Printer.id == archive.printer_id))
-            printer = result.scalar_one_or_none()
-            if not printer:
-                logger.warning("[TIMELAPSE] Printer not found for archive %s, aborting", archive_id)
-                return
+            if baseline_names is not None:
+                # Use pre-captured baseline from print start (no race condition)
+                logger.info(
+                    "[TIMELAPSE] Using print-start baseline: %s existing MP4 files for archive %s",
+                    len(baseline_names),
+                    archive_id,
+                )
+            else:
+                # Fallback: take baseline now (e.g. app restarted mid-print)
+                result = await db.execute(select(Printer).where(Printer.id == archive.printer_id))
+                printer = result.scalar_one_or_none()
+                if not printer:
+                    logger.warning("[TIMELAPSE] Printer not found for archive %s, aborting", archive_id)
+                    return
 
-            # Snapshot current MP4 filenames as baseline
-            baseline_files, _ = await _list_timelapse_mp4s(printer)
-            baseline_names: set[str] = {f.get("name", "") for f in baseline_files}
-            logger.info(
-                "[TIMELAPSE] Baseline snapshot: %s existing MP4 files for archive %s", len(baseline_names), archive_id
-            )
+                baseline_files, _ = await _list_timelapse_mp4s(printer)
+                baseline_names = {f.get("name", "") for f in baseline_files}
+                logger.info(
+                    "[TIMELAPSE] Baseline snapshot (fallback): %s existing MP4 files for archive %s",
+                    len(baseline_names),
+                    archive_id,
+                )
 
             # Derive base_name for name-matching fallback
             base_name = Path(archive.filename).stem if archive.filename else ""
@@ -1838,6 +2100,31 @@ async def on_print_complete(printer_id: int, data: dict):
 
     log_timing("Archive status update")
 
+    # Track filament consumption from AMS remain% deltas (skip if Spoolman handles usage)
+    try:
+        async with async_session() as db:
+            from backend.app.api.routes.settings import get_setting
+
+            _spoolman_on = await get_setting(db, "spoolman_enabled")
+        if not _spoolman_on or _spoolman_on.lower() != "true":
+            from backend.app.services.usage_tracker import on_print_complete as usage_on_print_complete
+
+            async with async_session() as db:
+                usage_results = await usage_on_print_complete(
+                    printer_id, data, printer_manager, db, archive_id=archive_id
+                )
+                if usage_results:
+                    await ws_manager.broadcast(
+                        {
+                            "type": "spool_usage_logged",
+                            "printer_id": printer_id,
+                            "usage": usage_results,
+                        }
+                    )
+                    log_timing("Usage tracker")
+    except Exception as e:
+        logger.warning("Usage tracker on_print_complete failed: %s", e)
+
     # Report filament usage to Spoolman if print completed successfully
     if data.get("status") == "completed":
         try:
@@ -2180,7 +2467,8 @@ async def on_print_complete(printer_id: int, data: dict):
         logger.info("[TIMELAPSE] Timelapse was active during print, scheduling auto-scan for archive %s", archive_id)
         # Schedule timelapse scan as background task with retries
         # The printer needs time to encode the video after print completion
-        asyncio.create_task(_scan_for_timelapse_with_retries(archive_id))
+        baseline = _timelapse_baselines.pop(printer_id, None)
+        asyncio.create_task(_scan_for_timelapse_with_retries(archive_id, baseline))
         log_timing("Timelapse scan scheduled")
 
     # Update queue item if this was a scheduled print
@@ -2747,6 +3035,10 @@ async def lifespan(app: FastAPI):
     if virtual_printer_manager.is_enabled:
         await virtual_printer_manager.configure(enabled=False)
 
+    await mqtt_smart_plug_service.disconnect(timeout=2)
+
+    await mqtt_relay.disconnect(timeout=2)
+
 
 app = FastAPI(
     title=app_settings.app_name,
@@ -2906,6 +3198,7 @@ app.include_router(groups.router, prefix=app_settings.api_prefix)
 app.include_router(printers.router, prefix=app_settings.api_prefix)
 app.include_router(archives.router, prefix=app_settings.api_prefix)
 app.include_router(filaments.router, prefix=app_settings.api_prefix)
+app.include_router(inventory.router, prefix=app_settings.api_prefix)
 app.include_router(settings_routes.router, prefix=app_settings.api_prefix)
 app.include_router(cloud.router, prefix=app_settings.api_prefix)
 app.include_router(local_presets.router, prefix=app_settings.api_prefix)

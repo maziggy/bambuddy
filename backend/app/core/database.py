@@ -59,6 +59,7 @@ async def init_db():
         ams_history,
         api_key,
         archive,
+        color_catalog,
         external_link,
         filament,
         github_backup,
@@ -78,6 +79,11 @@ async def init_db():
         settings,
         slot_preset,
         smart_plug,
+        spool,
+        spool_assignment,
+        spool_catalog,
+        spool_k_profile,
+        spool_usage_history,
         user,
     )
 
@@ -92,6 +98,10 @@ async def init_db():
 
     # Seed default groups and migrate existing users
     await seed_default_groups()
+
+    # Seed default catalog entries
+    await seed_spool_catalog()
+    await seed_color_catalog()
 
 
 async def run_migrations(conn):
@@ -1118,6 +1128,63 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already applied
 
+    # Migration: Add inventory spool tracking columns
+    try:
+        await conn.execute(text("ALTER TABLE spool ADD COLUMN added_full BOOLEAN"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE spool ADD COLUMN last_used DATETIME"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE spool ADD COLUMN encode_time DATETIME"))
+    except OperationalError:
+        pass  # Already applied
+
+    # Migration: Add RFID tag matching columns to spool
+    try:
+        await conn.execute(text("ALTER TABLE spool ADD COLUMN tag_uid VARCHAR(16)"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE spool ADD COLUMN tray_uuid VARCHAR(32)"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE spool ADD COLUMN data_origin VARCHAR(20)"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE spool ADD COLUMN tag_type VARCHAR(20)"))
+    except OperationalError:
+        pass  # Already applied
+
+    # Migration: Create spool_usage_history table for filament consumption tracking
+    try:
+        await conn.execute(
+            text("""
+            CREATE TABLE IF NOT EXISTS spool_usage_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                spool_id INTEGER NOT NULL REFERENCES spool(id) ON DELETE CASCADE,
+                printer_id INTEGER REFERENCES printers(id) ON DELETE SET NULL,
+                print_name VARCHAR(500),
+                weight_used REAL NOT NULL DEFAULT 0,
+                percent_used INTEGER NOT NULL DEFAULT 0,
+                status VARCHAR(20) NOT NULL DEFAULT 'completed',
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        )
+    except OperationalError:
+        pass  # Already applied
+
+    # Migration: Add open_in_new_tab column to external_links
+    try:
+        await conn.execute(text("ALTER TABLE external_links ADD COLUMN open_in_new_tab BOOLEAN DEFAULT 0"))
+    except OperationalError:
+        pass  # Already applied
+
 
 async def seed_notification_templates():
     """Seed default notification templates if they don't exist."""
@@ -1286,3 +1353,57 @@ async def seed_default_groups():
                     logger.info("Migrated user '%s' to Operators group", user.username)
 
             await session.commit()
+
+
+async def seed_spool_catalog():
+    """Seed the spool catalog with default entries if empty."""
+    import logging
+
+    from sqlalchemy import func, select
+
+    from backend.app.core.catalog_defaults import DEFAULT_SPOOL_CATALOG
+    from backend.app.models.spool_catalog import SpoolCatalogEntry
+
+    logger = logging.getLogger(__name__)
+
+    async with async_session() as session:
+        result = await session.execute(select(func.count()).select_from(SpoolCatalogEntry))
+        count = result.scalar() or 0
+        if count > 0:
+            return  # Already seeded
+
+        for name, weight in DEFAULT_SPOOL_CATALOG:
+            session.add(SpoolCatalogEntry(name=name, weight=weight, is_default=True))
+        await session.commit()
+        logger.info("Seeded %d default spool catalog entries", len(DEFAULT_SPOOL_CATALOG))
+
+
+async def seed_color_catalog():
+    """Seed the color catalog with default entries if empty."""
+    import logging
+
+    from sqlalchemy import func, select
+
+    from backend.app.core.catalog_defaults import DEFAULT_COLOR_CATALOG
+    from backend.app.models.color_catalog import ColorCatalogEntry
+
+    logger = logging.getLogger(__name__)
+
+    async with async_session() as session:
+        result = await session.execute(select(func.count()).select_from(ColorCatalogEntry))
+        count = result.scalar() or 0
+        if count > 0:
+            return  # Already seeded
+
+        for manufacturer, color_name, hex_color, material in DEFAULT_COLOR_CATALOG:
+            session.add(
+                ColorCatalogEntry(
+                    manufacturer=manufacturer,
+                    color_name=color_name,
+                    hex_color=hex_color,
+                    material=material,
+                    is_default=True,
+                )
+            )
+        await session.commit()
+        logger.info("Seeded %d default color catalog entries", len(DEFAULT_COLOR_CATALOG))

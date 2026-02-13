@@ -46,7 +46,7 @@ const mockArchives = [
 ];
 
 const mockSettings = {
-  currency: '$',
+  currency: 'USD',
   check_updates: false,
   check_printer_firmware: false,
 };

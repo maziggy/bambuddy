@@ -226,6 +226,30 @@ export function useWebSocket() {
           }
         }));
         break;
+
+      case 'spool_auto_assigned':
+        // RFID tag matched - refresh inventory and assignment data
+        debouncedInvalidate('inventory-spools');
+        debouncedInvalidate('spool-assignments');
+        break;
+
+      case 'spool_usage_logged':
+        // Filament consumption recorded - refresh spool data
+        debouncedInvalidate('inventory-spools');
+        break;
+
+      case 'unknown_tag':
+        // Unknown RFID tag detected - dispatch event for UI
+        window.dispatchEvent(new CustomEvent('unknown-tag', {
+          detail: {
+            printer_id: (message as unknown as { printer_id?: number }).printer_id,
+            ams_id: (message as unknown as { ams_id?: number }).ams_id,
+            tray_id: (message as unknown as { tray_id?: number }).tray_id,
+            tag_uid: (message as unknown as { tag_uid?: string }).tag_uid,
+            tray_uuid: (message as unknown as { tray_uuid?: string }).tray_uuid,
+          }
+        }));
+        break;
     }
   }, [queryClient, debouncedInvalidate, throttledPrinterStatusUpdate]);
 

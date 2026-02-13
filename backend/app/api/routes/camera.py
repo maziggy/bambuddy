@@ -547,6 +547,25 @@ async def camera_snapshot(
 
     printer = await get_printer_or_404(printer_id, db)
 
+    # Check for external camera first
+    if printer.external_camera_enabled and printer.external_camera_url:
+        from backend.app.services.external_camera import capture_frame
+
+        frame_data = await capture_frame(printer.external_camera_url, printer.external_camera_type, timeout=15)
+        if not frame_data:
+            raise HTTPException(
+                status_code=503,
+                detail="Failed to capture frame from external camera.",
+            )
+        return Response(
+            content=frame_data,
+            media_type="image/jpeg",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Content-Disposition": f'inline; filename="snapshot_{printer_id}.jpg"',
+            },
+        )
+
     # Create temporary file for the snapshot
     with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
         temp_path = Path(f.name)

@@ -49,6 +49,7 @@ class SlicerSetting(BaseModel):
     version: str | None = None
     user_id: str | None = None
     updated_time: str | None = None
+    is_custom: bool = False
 
 
 class SlicerSettingsResponse(BaseModel):

@@ -9,6 +9,7 @@ class ExternalLinkBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=50, description="Display name for the link")
     url: str = Field(..., min_length=1, max_length=500, description="External URL")
     icon: str = Field(default="link", max_length=50, description="Lucide icon name")
+    open_in_new_tab: bool = False
 
     @field_validator("url")
     @classmethod
@@ -31,6 +32,7 @@ class ExternalLinkUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=50)
     url: str | None = Field(default=None, min_length=1, max_length=500)
     icon: str | None = Field(default=None, max_length=50)
+    open_in_new_tab: bool | None = None
 
     @field_validator("url")
     @classmethod
@@ -45,6 +47,7 @@ class ExternalLinkResponse(ExternalLinkBase):
     """Response schema for external links."""
 
     id: int
+    open_in_new_tab: bool
     custom_icon: str | None = None
     sort_order: int
     created_at: datetime

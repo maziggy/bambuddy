@@ -226,11 +226,12 @@ export function ConfigureAmsSlotModal({
   const [showSuccess, setShowSuccess] = useState(false);
   const [showExtendedColors, setShowExtendedColors] = useState(false);
 
-  // Fetch cloud settings
-  const { data: cloudSettings, isLoading: settingsLoading } = useQuery({
+  // Fetch cloud settings (gracefully handle 401 when logged out)
+  const { data: cloudSettings, isLoading: settingsLoading, isError: cloudError } = useQuery({
     queryKey: ['cloudSettings'],
     queryFn: () => api.getCloudSettings(),
     enabled: isOpen,
+    retry: false,
   });
 
   // Fetch local presets
@@ -238,6 +239,14 @@ export function ConfigureAmsSlotModal({
     queryKey: ['localPresets'],
     queryFn: () => api.getLocalPresets(),
     enabled: isOpen,
+  });
+
+  // Fetch built-in filament names (static fallback)
+  const { data: builtinFilaments, isLoading: builtinLoading } = useQuery({
+    queryKey: ['builtinFilaments'],
+    queryFn: () => api.getBuiltinFilaments(),
+    enabled: isOpen,
+    staleTime: Infinity,
   });
 
   // Fetch K profiles
@@ -252,23 +261,29 @@ export function ConfigureAmsSlotModal({
     mutationFn: async () => {
       if (!selectedPresetId) throw new Error('No filament preset selected');
 
-      // Check if this is a local preset
+      // Determine preset source
       const isLocal = selectedPresetId.startsWith('local_');
+      const isBuiltin = selectedPresetId.startsWith('builtin_');
       const localId = isLocal ? parseInt(selectedPresetId.replace('local_', ''), 10) : null;
+      const builtinFilamentId = isBuiltin ? selectedPresetId.replace('builtin_', '') : null;
       const localPreset = isLocal
         ? localPresets?.filament.find(p => p.id === localId)
         : null;
+      const builtinPreset = isBuiltin
+        ? builtinFilaments?.find(b => b.filament_id === builtinFilamentId)
+        : null;
 
-      // Get the selected cloud preset details (null for local presets)
-      const selectedPreset = !isLocal
+      // Get the selected cloud preset details (null for local/builtin presets)
+      const selectedPreset = (!isLocal && !isBuiltin)
         ? cloudSettings?.filament.find(p => p.setting_id === selectedPresetId)
         : null;
 
-      if (!isLocal && !selectedPreset) throw new Error('Selected preset not found');
+      if (!isLocal && !isBuiltin && !selectedPreset) throw new Error('Selected preset not found');
       if (isLocal && !localPreset) throw new Error('Selected local preset not found');
+      if (isBuiltin && !builtinPreset) throw new Error('Selected builtin preset not found');
 
       // Parse the preset name for filament info
-      const presetName = isLocal ? localPreset!.name : selectedPreset!.name;
+      const presetName = isLocal ? localPreset!.name : isBuiltin ? builtinPreset!.name : selectedPreset!.name;
       const parsed = parsePresetName(presetName);
 
       // Get cali_idx from selected K profile's slot_id (-1 = use default 0.020)
@@ -286,6 +301,10 @@ export function ConfigureAmsSlotModal({
       if (isLocal) {
         // Local presets have no Bambu Cloud mapping
         trayInfoIdx = '';
+        settingId = '';
+      } else if (isBuiltin) {
+        // Built-in presets use the filament_id directly as tray_info_idx
+        trayInfoIdx = builtinFilamentId!;
         settingId = '';
       } else {
         // Get tray_info_idx: for user presets, fetch detail to get filament_id or derive from base_id
@@ -312,7 +331,7 @@ export function ConfigureAmsSlotModal({
       let tempMin = isLocal && localPreset?.nozzle_temp_min ? localPreset.nozzle_temp_min : 190;
       let tempMax = isLocal && localPreset?.nozzle_temp_max ? localPreset.nozzle_temp_max : 230;
 
-      if (!isLocal || (!localPreset?.nozzle_temp_min && !localPreset?.nozzle_temp_max)) {
+      if (!isLocal || isBuiltin || (!localPreset?.nozzle_temp_min && !localPreset?.nozzle_temp_max)) {
         // Fall back to material-based defaults
         const material = (isLocal ? (localPreset?.filament_type || parsed.material) : parsed.material).toUpperCase();
         if (material.includes('PLA')) {
@@ -368,8 +387,8 @@ export function ConfigureAmsSlotModal({
       // Save the preset mapping so we can display the correct name in the UI
       // This is needed because user presets use filament_id (e.g., P285e239) as tray_info_idx,
       // which can't be resolved to a name via the filamentInfo API
-      const mappingPresetId = isLocal ? `local_${localId}` : selectedPresetId;
-      const mappingSource = isLocal ? 'local' : 'cloud';
+      const mappingPresetId = isLocal ? `local_${localId}` : isBuiltin ? `builtin_${builtinFilamentId}` : selectedPresetId;
+      const mappingSource = isLocal ? 'local' : isBuiltin ? 'builtin' : 'cloud';
       try {
         await api.saveSlotPreset(printerId, slotInfo.amsId, slotInfo.trayId, mappingPresetId, traySubBrands, mappingSource);
       } catch (e) {
@@ -405,15 +424,28 @@ export function ConfigureAmsSlotModal({
     },
   });
 
-  // Unified preset item for the list (cloud + local)
-  type PresetItem = { id: string; name: string; source: 'cloud' | 'local'; isUser: boolean };
+  // Unified preset item for the list (cloud + local + builtin fallback)
+  type PresetItem = { id: string; name: string; source: 'cloud' | 'local' | 'builtin'; isUser: boolean };
 
-  // Filter filament presets based on search (merged cloud + local)
+  // Filter filament presets based on search (merged cloud + local + builtin)
   const filteredPresets = useMemo(() => {
     const query = searchQuery.toLowerCase();
     const items: PresetItem[] = [];
 
-    // Add local presets first
+    // Collect IDs already covered by cloud and local to avoid duplicates in fallback
+    const coveredIds = new Set<string>();
+
+    // 1. Cloud presets
+    if (cloudSettings?.filament) {
+      for (const cp of cloudSettings.filament) {
+        coveredIds.add(cp.setting_id);
+        if (!query || cp.name.toLowerCase().includes(query)) {
+          items.push({ id: cp.setting_id, name: cp.name, source: 'cloud', isUser: isUserPreset(cp.setting_id) });
+        }
+      }
+    }
+
+    // 2. Local presets
     if (localPresets?.filament) {
       for (const lp of localPresets.filament) {
         if (!query || lp.name.toLowerCase().includes(query)) {
@@ -422,35 +454,46 @@ export function ConfigureAmsSlotModal({
       }
     }
 
-    // Add cloud presets
-    if (cloudSettings?.filament) {
-      for (const cp of cloudSettings.filament) {
-        if (!query || cp.name.toLowerCase().includes(query)) {
-          items.push({ id: cp.setting_id, name: cp.name, source: 'cloud', isUser: isUserPreset(cp.setting_id) });
+    // 3. Built-in filament names (fallback — only add entries not already covered)
+    if (builtinFilaments) {
+      for (const bf of builtinFilaments) {
+        if (coveredIds.has(bf.filament_id)) continue;
+        // Convert filament_id to setting_id format for cloud compatibility
+        // e.g. "GFA00" → cloud setting_id would be "GFSA00" (insert S after GF)
+        const settingId = bf.filament_id.startsWith('GF')
+          ? 'GFS' + bf.filament_id.slice(2)
+          : bf.filament_id;
+        if (coveredIds.has(settingId)) continue;
+        if (!query || bf.name.toLowerCase().includes(query)) {
+          items.push({ id: `builtin_${bf.filament_id}`, name: bf.name, source: 'builtin', isUser: false });
         }
       }
     }
 
-    // Sort: local first, then user cloud presets, then built-in, alphabetically within groups
+    // Sort: cloud user presets first, then cloud built-in, then local, then builtin fallback
     return items.sort((a, b) => {
-      if (a.source === 'local' && b.source !== 'local') return -1;
-      if (a.source !== 'local' && b.source === 'local') return 1;
+      const sourceOrder = { cloud: 0, local: 1, builtin: 2 };
+      if (a.source !== b.source) return sourceOrder[a.source] - sourceOrder[b.source];
       if (a.isUser && !b.isUser) return -1;
       if (!a.isUser && b.isUser) return 1;
       return a.name.localeCompare(b.name);
     });
-  }, [cloudSettings?.filament, localPresets?.filament, searchQuery]);
+  }, [cloudSettings?.filament, localPresets?.filament, builtinFilaments, searchQuery]);
 
   // Get full preset name for K profile filtering (brand + material, without printer suffix)
   const selectedPresetInfo = useMemo(() => {
     if (!selectedPresetId) return null;
 
-    // Resolve the name from either local or cloud presets
+    // Resolve the name from cloud, local, or builtin presets
     let presetName: string | null = null;
     if (selectedPresetId.startsWith('local_')) {
       const localId = parseInt(selectedPresetId.replace('local_', ''), 10);
       const lp = localPresets?.filament.find(p => p.id === localId);
       presetName = lp?.name || null;
+    } else if (selectedPresetId.startsWith('builtin_')) {
+      const filamentId = selectedPresetId.replace('builtin_', '');
+      const bf = builtinFilaments?.find(b => b.filament_id === filamentId);
+      presetName = bf?.name || null;
     } else if (cloudSettings?.filament) {
       const cp = cloudSettings.filament.find(p => p.setting_id === selectedPresetId);
       presetName = cp?.name || null;
@@ -470,7 +513,7 @@ export function ConfigureAmsSlotModal({
       material: parsed.material,
       brand: parsed.brand,
     };
-  }, [selectedPresetId, cloudSettings?.filament, localPresets?.filament]);
+  }, [selectedPresetId, cloudSettings?.filament, localPresets?.filament, builtinFilaments]);
 
   // For backwards compatibility with the label
   const selectedMaterial = selectedPresetInfo?.fullName || '';
@@ -596,7 +639,7 @@ export function ConfigureAmsSlotModal({
 
   if (!isOpen) return null;
 
-  const isLoading = settingsLoading || localLoading || kprofilesLoading;
+  const isLoading = (settingsLoading && !cloudError) || localLoading || builtinLoading || kprofilesLoading;
   const canSave = selectedPresetId && !configureMutation.isPending;
 
   // Get display color (custom or slot default)
@@ -701,6 +744,11 @@ export function ConfigureAmsSlotModal({
                               {preset.source === 'local' && (
                                 <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
                                   {t('profiles.localProfiles.badge')}
+                                </span>
+                              )}
+                              {preset.source === 'builtin' && (
+                                <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
+                                  {t('configureAmsSlot.builtin')}
                                 </span>
                               )}
                               {preset.isUser && (

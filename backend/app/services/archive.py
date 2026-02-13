@@ -151,6 +151,27 @@ class ThreeMFParser:
                         self.metadata["_slice_filament_type"] = ", ".join(types)
                     if colors:
                         self.metadata["_slice_filament_color"] = ",".join(colors)
+
+                    # Collect per-slot filament usage for tracking & notifications
+                    filament_slots = []
+                    for f in filaments:
+                        slot_id = f.get("id")
+                        used_g_str = f.get("used_g", "0")
+                        try:
+                            used_g = float(used_g_str)
+                        except (ValueError, TypeError):
+                            used_g = 0
+                        if used_g > 0 and slot_id:
+                            filament_slots.append(
+                                {
+                                    "slot_id": int(slot_id),
+                                    "used_g": round(used_g, 2),
+                                    "type": f.get("type", ""),
+                                    "color": f.get("color", ""),
+                                }
+                            )
+                    if filament_slots:
+                        self.metadata["filament_slots"] = filament_slots
         except Exception:
             pass  # Skip unparseable slice_info metadata
 

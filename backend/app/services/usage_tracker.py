@@ -3,10 +3,11 @@
 Captures AMS tray remain% at print start, then computes consumption
 deltas at print complete to update spool weight_used and last_used.
 
-For non-BL spools (no RFID, AMS reports remain=-1), falls back to
-per-filament usage estimates from the archived 3MF file.
+Primary tracking uses 3MF slicer estimates (precise per-filament data).
+AMS remain% delta is the fallback for trays not covered by 3MF data.
 """
 
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -87,9 +88,9 @@ async def on_print_complete(
 ) -> list[dict]:
     """Compute consumption deltas and update spool weight_used/last_used.
 
-    Uses two tracking strategies:
-    1. AMS remain% delta — for BL spools with valid RFID remain data
-    2. 3MF per-filament estimates — for non-BL spools without remain data
+    Uses two tracking strategies in priority order:
+    1. 3MF per-filament estimates (primary) — precise slicer data for all spools
+    2. AMS remain% delta (fallback) — only for trays not already handled by 3MF
 
     Returns a list of dicts describing what was logged (for WebSocket broadcast).
     """
@@ -98,7 +99,17 @@ async def on_print_complete(
     results = []
     handled_trays: set[tuple[int, int]] = set()
 
-    # --- Path 1: AMS remain% delta (for spools with valid RFID remain data) ---
+    # --- Path 1 (PRIMARY): 3MF per-filament estimates ---
+    if archive_id:
+        print_name = (
+            (session.print_name if session else None) or data.get("subtask_name", "") or data.get("filename", "unknown")
+        )
+        threemf_results = await _track_from_3mf(
+            printer_id, archive_id, status, print_name, handled_trays, printer_manager, db
+        )
+        results.extend(threemf_results)
+
+    # --- Path 2 (FALLBACK): AMS remain% delta (only for trays not handled by 3MF) ---
     if session and session.tray_remain_start:
         state = printer_manager.get_status(printer_id)
         if state and state.raw_data:
@@ -112,6 +123,9 @@ async def on_print_complete(
                 for tray in ams_unit.get("tray", []):
                     tray_id = int(tray.get("id", 0))
                     key = (ams_id, tray_id)
+
+                    if key in handled_trays:
+                        continue  # Already tracked via 3MF
 
                     if key not in session.tray_remain_start:
                         continue
@@ -174,7 +188,7 @@ async def on_print_complete(
                     )
 
                     logger.info(
-                        "[UsageTracker] Spool %d consumed %.1fg (%d%%) on printer %d AMS%d-T%d (%s)",
+                        "[UsageTracker] Spool %d consumed %.1fg (%d%%) on printer %d AMS%d-T%d (AMS fallback, %s)",
                         spool.id,
                         weight_grams,
                         delta_pct,
@@ -183,16 +197,6 @@ async def on_print_complete(
                         tray_id,
                         status,
                     )
-
-    # --- Path 2: 3MF per-filament estimates (for non-BL spools without remain data) ---
-    if archive_id:
-        print_name = (
-            (session.print_name if session else None) or data.get("subtask_name", "") or data.get("filename", "unknown")
-        )
-        threemf_results = await _track_from_3mf(
-            printer_id, archive_id, status, print_name, handled_trays, printer_manager, db
-        )
-        results.extend(threemf_results)
 
     if results:
         await db.commit()
@@ -209,14 +213,20 @@ async def _track_from_3mf(
     printer_manager,
     db: AsyncSession,
 ) -> list[dict]:
-    """Track usage from 3MF per-filament data for non-BL spools.
+    """Track usage from 3MF per-filament slicer data (primary path).
 
-    Falls back to slicer-estimated filament weight when AMS remain% is
-    unavailable (non-RFID spools). For partial prints (failed/aborted),
-    scales the estimate by print progress.
+    Uses slicer-estimated filament weight for all spools (BL and non-BL).
+    For partial prints (failed/aborted), tries per-layer gcode data first,
+    then falls back to linear scaling by progress.
+
+    Slot-to-tray mapping priority:
+    1. Queue item ams_mapping (for queue-initiated prints)
+    2. tray_now from printer state (for single-filament non-queue prints)
+    3. Default mapping: slot_id - 1 = global_tray_id (last resort)
     """
     from backend.app.core.config import settings as app_settings
     from backend.app.models.archive import PrintArchive
+    from backend.app.models.print_queue import PrintQueueItem
     from backend.app.utils.threemf_tools import extract_filament_usage_from_3mf
 
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
@@ -232,6 +242,29 @@ async def _track_from_3mf(
     if not filament_usage:
         return []
 
+    # --- Resolve slot-to-tray mapping ---
+    # 1. Try queue item ams_mapping (queue-initiated prints store the exact mapping)
+    slot_to_tray = None
+    queue_result = await db.execute(
+        select(PrintQueueItem)
+        .where(PrintQueueItem.archive_id == archive_id)
+        .where(PrintQueueItem.status.in_(["printing", "completed", "failed"]))
+    )
+    queue_item = queue_result.scalar_one_or_none()
+    if queue_item and queue_item.ams_mapping:
+        try:
+            slot_to_tray = json.loads(queue_item.ams_mapping)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # 2. For single-filament non-queue prints, use tray_now from printer state
+    nonzero_slots = [u for u in filament_usage if u.get("used_g", 0) > 0]
+    tray_now_override: int | None = None
+    if not slot_to_tray and len(nonzero_slots) == 1:
+        state = printer_manager.get_status(printer_id)
+        if state and state.tray_now < 255:
+            tray_now_override = state.tray_now
+
     # Scale factor for partial prints (failed/aborted)
     if status == "completed":
         scale = 1.0
@@ -239,6 +272,34 @@ async def _track_from_3mf(
         state = printer_manager.get_status(printer_id)
         progress = state.progress if state else 0
         scale = max(0.0, min(progress / 100.0, 1.0))
+
+    # Per-layer gcode accuracy for partial prints
+    layer_grams: dict[int, float] | None = None
+    if status != "completed":
+        state = printer_manager.get_status(printer_id)
+        current_layer = state.layer_num if state else 0
+        if current_layer > 0:
+            try:
+                from backend.app.utils.threemf_tools import (
+                    extract_filament_properties_from_3mf,
+                    extract_layer_filament_usage_from_3mf,
+                    get_cumulative_usage_at_layer,
+                    mm_to_grams,
+                )
+
+                layer_usage = extract_layer_filament_usage_from_3mf(file_path)
+                if layer_usage:
+                    cumulative_mm = get_cumulative_usage_at_layer(layer_usage, current_layer)
+                    filament_props = extract_filament_properties_from_3mf(file_path)
+                    layer_grams = {}
+                    for filament_id, mm_used in cumulative_mm.items():
+                        slot_id = filament_id + 1  # 0-based to 1-based
+                        props = filament_props.get(slot_id, {})
+                        density = props.get("density", 1.24)
+                        diameter = props.get("diameter", 1.75)
+                        layer_grams[slot_id] = mm_to_grams(mm_used, diameter, density)
+            except Exception:
+                pass  # Fall back to linear scaling
 
     results = []
 
@@ -248,8 +309,18 @@ async def _track_from_3mf(
         if used_g <= 0:
             continue
 
-        # Map 3MF slot_id (1-based) to (ams_id, tray_id)
-        global_tray_id = slot_id - 1
+        # Map 3MF slot_id to physical (ams_id, tray_id) using resolved mapping
+        if tray_now_override is not None:
+            # Single-filament non-queue print: use actual tray from printer state
+            global_tray_id = tray_now_override
+        else:
+            # Queue mapping or default: slot_id - 1, overridden by ams_mapping
+            global_tray_id = slot_id - 1
+            if slot_to_tray and slot_id <= len(slot_to_tray):
+                mapped = slot_to_tray[slot_id - 1]
+                if isinstance(mapped, int) and mapped >= 0:
+                    global_tray_id = mapped
+
         if global_tray_id >= 128:
             ams_id = global_tray_id
             tray_id = 0
@@ -259,7 +330,7 @@ async def _track_from_3mf(
 
         key = (ams_id, tray_id)
         if key in handled_trays:
-            continue  # Already tracked via AMS remain% delta
+            continue
 
         # Find spool assignment for this tray
         assign_result = await db.execute(
@@ -279,11 +350,12 @@ async def _track_from_3mf(
         if not spool:
             continue
 
-        # Only use 3MF tracking for non-BL spools (BL spools use AMS remain%)
-        if spool.tag_uid or spool.tray_uuid:
-            continue
+        # Use per-layer grams if available, otherwise linear scale
+        if layer_grams and slot_id in layer_grams:
+            weight_grams = layer_grams[slot_id]
+        else:
+            weight_grams = used_g * scale
 
-        weight_grams = used_g * scale
         if weight_grams <= 0:
             continue
 
@@ -304,6 +376,7 @@ async def _track_from_3mf(
         )
         db.add(history)
 
+        handled_trays.add(key)
         results.append(
             {
                 "spool_id": spool.id,
@@ -314,11 +387,19 @@ async def _track_from_3mf(
             }
         )
 
+        # Determine mapping source for debug logging
+        if tray_now_override is not None:
+            map_src = ", tray_now"
+        elif slot_to_tray:
+            map_src = ", queue_map"
+        else:
+            map_src = ""
         logger.info(
-            "[UsageTracker] Spool %d consumed %.1fg (3MF estimate%s) on printer %d AMS%d-T%d (%s)",
+            "[UsageTracker] Spool %d consumed %.1fg (3MF%s%s) on printer %d AMS%d-T%d (%s)",
             spool.id,
             weight_grams,
-            f" scaled to {scale:.0%}" if scale < 1 else "",
+            " per-layer" if (layer_grams and slot_id in layer_grams) else (f" scaled {scale:.0%}" if scale < 1 else ""),
+            map_src,
             printer_id,
             ams_id,
             tray_id,

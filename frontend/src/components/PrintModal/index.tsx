@@ -5,6 +5,20 @@ import { useTranslation } from 'react-i18next';
 import type { PrintQueueItemCreate, PrintQueueItemUpdate, SpoolAssignment } from '../../api/client';
 import { api } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
+import { X, Printer, Loader2, Calendar, Pencil, AlertCircle, AlertTriangle } from 'lucide-react';
+import { api } from '../../api/client';
+import type { PrintQueueItemCreate, PrintQueueItemUpdate, SpoolAssignment } from '../../api/client';
+import { Card, CardContent } from '../Card';
+import { Button } from '../Button';
+import { ConfirmModal } from '../ConfirmModal';
+import { useToast } from '../../contexts/ToastContext';
+import { buildLoadedFilaments, useFilamentMapping } from '../../hooks/useFilamentMapping';
+import { useMultiPrinterFilamentMapping, type PerPrinterConfig } from '../../hooks/useMultiPrinterFilamentMapping';
+import { isPlaceholderDate } from '../../utils/amsHelpers';
+import { getCurrencySymbol } from '../../utils/currency';
+import { getGlobalTrayId, isPlaceholderDate } from '../../utils/amsHelpers';
+import { toDateTimeLocalValue } from '../../utils/date';
+import { Button } from '../Button';
 import { Card, CardContent } from '../Card';
 import { Button } from '../Button';
 import { ConfirmModal } from '../ConfirmModal';
@@ -230,6 +244,7 @@ export function PrintModal({
     queryFn: () => api.getAssignments(),
     staleTime: 30 * 1000,
     enabled: (mode === 'reprint' || mode === 'add-to-queue') && assignmentMode === 'printer',
+    enabled: isLibraryFile && mode === 'reprint',
   });
 
   // Fetch archive details to get sliced_for_model

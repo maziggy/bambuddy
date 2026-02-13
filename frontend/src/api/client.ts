@@ -810,6 +810,8 @@ export interface AppSettings {
   // Date/time format settings
   date_format: 'system' | 'us' | 'eu' | 'iso';
   time_format: 'system' | '12h' | '24h';
+  // Filament tracking
+  disable_filament_warnings: boolean;  // Disable insufficient filament warnings when printing/queueing
   // Default printer
   default_printer_id: number | null;
   // Dark mode theme settings
@@ -3576,9 +3578,9 @@ export const api = {
       method: 'POST',
     }),
   getSpoolmanSettings: () =>
-    request<{ spoolman_enabled: string; spoolman_url: string; spoolman_sync_mode: string; spoolman_disable_weight_sync: string; spoolman_report_partial_usage: string; }>('/settings/spoolman'),
-  updateSpoolmanSettings: (data: { spoolman_enabled?: string; spoolman_url?: string; spoolman_sync_mode?: string; spoolman_disable_weight_sync?: string; spoolman_report_partial_usage?: string; }) =>
-    request<{ spoolman_enabled: string; spoolman_url: string; spoolman_sync_mode: string; spoolman_disable_weight_sync: string; spoolman_report_partial_usage: string; }>('/settings/spoolman', {
+    request<{ spoolman_enabled: string; spoolman_url: string; spoolman_sync_mode: string; spoolman_disable_weight_sync: string; spoolman_report_partial_usage: string; disable_filament_warnings: string; }>('/settings/spoolman'),
+  updateSpoolmanSettings: (data: { spoolman_enabled?: string; spoolman_url?: string; spoolman_sync_mode?: string; spoolman_disable_weight_sync?: string; spoolman_report_partial_usage?: string; disable_filament_warnings?: string; }) =>
+    request<{ spoolman_enabled: string; spoolman_url: string; spoolman_sync_mode: string; spoolman_disable_weight_sync: string; spoolman_report_partial_usage: string; disable_filament_warnings: string; }>('/settings/spoolman', {
       method: 'PUT',
       body: JSON.stringify(data),
     }),

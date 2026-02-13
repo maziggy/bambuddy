@@ -31,6 +31,10 @@ class AppSettings(BaseModel):
         default=True,
         description="Report Partial Usage for Failed Prints. When a print fails or is cancelled, report the estimated filament used up to that point based on layer progress.",
     )
+    disable_filament_warnings: bool = Field(
+        default=False,
+        description="Disable insufficient filament warnings when printing or queueing prints",
+    )
 
     # Updates
     check_updates: bool = Field(default=True, description="Automatically check for updates on startup")
@@ -190,6 +194,7 @@ class AppSettingsUpdate(BaseModel):
     spoolman_sync_mode: str | None = None
     spoolman_disable_weight_sync: bool | None = None
     spoolman_report_partial_usage: bool | None = None
+    disable_filament_warnings: bool | None = None
     check_updates: bool | None = None
     check_printer_firmware: bool | None = None
     include_beta_updates: bool | None = None

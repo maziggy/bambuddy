@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Loader2, Monitor, AlertCircle, Box } from 'lucide-react';
 import { api } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
+import { ConfirmModal } from './ConfirmModal';
 
 // Custom Skip Objects icon - arrow jumping over boxes
 export const SkipObjectsIcon = ({ className }: { className?: string }) => (
@@ -28,6 +30,7 @@ export function SkipObjectsModal({ printerId, isOpen, onClose }: SkipObjectsModa
   const { t } = useTranslation();
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
+  const [pendingSkip, setPendingSkip] = useState<{ id: number; name: string } | null>(null);
 
   const { data: status } = useQuery({
     queryKey: ['printerStatus', printerId],
@@ -47,6 +50,7 @@ export function SkipObjectsModal({ printerId, isOpen, onClose }: SkipObjectsModa
     mutationFn: (objectIds: number[]) => api.skipObjects(printerId, objectIds),
     onSuccess: (data) => {
       showToast(data.message || t('printers.skipObjects.objectsSkipped'));
+      setPendingSkip(null);
       refetchObjects();
     },
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSkipObjects'), 'error'),
@@ -55,6 +59,7 @@ export function SkipObjectsModal({ printerId, isOpen, onClose }: SkipObjectsModa
   if (!isOpen) return null;
 
   return (
+    <>
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
       onClick={onClose}
@@ -243,7 +248,7 @@ export function SkipObjectsModal({ printerId, isOpen, onClose }: SkipObjectsModa
                     {/* Skip button */}
                     {!obj.skipped ? (
                       <button
-                        onClick={() => skipObjectsMutation.mutate([obj.id])}
+                        onClick={() => setPendingSkip({ id: obj.id, name: obj.name })}
                         disabled={skipObjectsMutation.isPending || (status?.layer_num ?? 0) <= 1 || !hasPermission('printers:control')}
                         className={`px-4 py-2 text-xs font-medium rounded-lg transition-colors ${
                           (status?.layer_num ?? 0) <= 1 || !hasPermission('printers:control')
@@ -267,5 +272,17 @@ export function SkipObjectsModal({ printerId, isOpen, onClose }: SkipObjectsModa
         )}
       </div>
     </div>
+    {pendingSkip && (
+      <ConfirmModal
+        variant="warning"
+        title={t('printers.skipObjects.confirmTitle')}
+        message={t('printers.skipObjects.confirmMessage', { name: pendingSkip.name })}
+        confirmText={t('printers.skipObjects.skip')}
+        isLoading={skipObjectsMutation.isPending}
+        onConfirm={() => skipObjectsMutation.mutate([pendingSkip.id])}
+        onCancel={() => setPendingSkip(null)}
+      />
+    )}
+  </>
   );
 }

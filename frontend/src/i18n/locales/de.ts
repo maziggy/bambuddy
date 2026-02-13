@@ -331,6 +331,8 @@ export default {
       activeCount: '{{count}} aktiv',
       waitForLayer: 'Warten Sie auf Schicht 2+ zum Überspringen von Objekten (aktuell Schicht {{layer}})',
       skip: 'Überspringen',
+      confirmTitle: 'Objekt überspringen?',
+      confirmMessage: 'Möchten Sie "{{name}}" wirklich überspringen? Dies kann nicht rückgängig gemacht werden.',
     },
     // Confirm modals
     confirm: {

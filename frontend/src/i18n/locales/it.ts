@@ -322,6 +322,8 @@ export default {
       activeCount: '{{count}} attivi',
       waitForLayer: 'Attendi il layer 2+ per saltare oggetti (attualmente layer {{layer}})',
       skip: 'Salta',
+      confirmTitle: 'Saltare oggetto?',
+      confirmMessage: 'Sei sicuro di voler saltare "{{name}}"? Questa azione non può essere annullata.',
     },
     // Confirm modals
     confirm: {

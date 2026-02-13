@@ -331,6 +331,8 @@ export default {
       activeCount: '{{count}} active',
       waitForLayer: 'Wait for layer 2+ to skip objects (currently layer {{layer}})',
       skip: 'Skip',
+      confirmTitle: 'Skip Object?',
+      confirmMessage: 'Are you sure you want to skip "{{name}}"? This cannot be undone.',
     },
     // Confirm modals
     confirm: {

@@ -293,6 +293,8 @@ export default {
       skipping: 'スキップ中...',
       noObjectsSelected: 'オブジェクトが選択されていません',
       selectObjectsToSkip: '現在の印刷からスキップするオブジェクトを選択してください',
+      confirmTitle: 'オブジェクトをスキップしますか？',
+      confirmMessage: '「{{name}}」をスキップしますか？この操作は元に戻せません。',
     },
     confirm: {
       deleteTitle: 'プリンターを削除',

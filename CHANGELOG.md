@@ -22,6 +22,7 @@ All notable changes to Bambuddy will be documented in this file.
 - **Print Queue: Clear Plate Confirmation** — When a print finishes or fails and more items are queued, the printer card now shows a "Clear Plate & Start Next" button. The scheduler no longer auto-starts the next print while the printer is in FINISH or FAILED state — the user must confirm the build plate has been cleared first. This prevents prints from starting on a dirty plate. The button respects the `printers:control` permission and is available in all supported languages (en/de/ja).
 
 ### Improved
+- **Skip Objects: Confirmation Dialog** ([#346](https://github.com/maziggy/bambuddy/issues/346)) — Added a warning confirmation modal before skipping an object during a print. Shows the object name and warns the action is irreversible. Prevents accidentally skipping the wrong object. Translated in all 4 locales (en, de, ja, it).
 - **Additional Currency Options** ([#329](https://github.com/maziggy/bambuddy/issues/329), [#333](https://github.com/maziggy/bambuddy/issues/333)) — Added 17 additional currencies to the cost tracking dropdown: HKD, INR, KRW, SEK, NOK, DKK, PLN, BRL, TWD, SGD, NZD, MXN, CZK, THB, ZAR, RUB.
 - **Move Email Settings Under Authentication Tab** — Renamed the settings "Users" tab to "Authentication" and moved the standalone "Global Email" tab into it as an "Email Authentication" sub-tab. Groups email/SMTP configuration with user management where it logically belongs. Legacy `?tab=email` URLs are handled automatically.
 

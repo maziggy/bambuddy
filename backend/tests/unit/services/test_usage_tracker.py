@@ -1,7 +1,7 @@
 """Unit tests for the filament usage tracker.
 
-Tests both AMS remain% delta tracking (Path 1) and 3MF per-filament
-fallback tracking (Path 2) for non-BL spools.
+Tests 3MF-primary tracking (Path 1) and AMS remain% delta fallback
+(Path 2) for spools not covered by 3MF data.
 """
 
 from datetime import datetime, timezone
@@ -40,11 +40,13 @@ def _make_assignment(*, spool_id=1, printer_id=1, ams_id=0, tray_id=0):
     return assignment
 
 
-def _make_printer_state(ams_data, progress=0):
+def _make_printer_state(ams_data, progress=0, layer_num=0, tray_now=255):
     """Create a mock printer state with AMS data."""
     state = MagicMock()
     state.raw_data = {"ams": ams_data}
     state.progress = progress
+    state.layer_num = layer_num
+    state.tray_now = tray_now
     return state
 
 
@@ -189,16 +191,17 @@ class TestTrackFrom3MF:
         archive.file_path = "archives/test.3mf"
 
         db = AsyncMock()
-        # First execute → archive, second → assignment, third → spool
+        # archive, queue_item(None), assignment, spool
         db.execute = AsyncMock(
             side_effect=[
                 MagicMock(scalar_one_or_none=MagicMock(return_value=archive)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=assignment)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
             ]
         )
 
-        pm = _make_printer_manager()
+        pm = _make_printer_manager(_make_printer_state([], tray_now=0))
         filament_usage = [{"slot_id": 1, "used_g": 25.5, "type": "PLA", "color": "#FF0000"}]
 
         with (
@@ -234,16 +237,18 @@ class TestTrackFrom3MF:
         archive.file_path = "archives/test.3mf"
 
         db = AsyncMock()
+        # archive, queue_item(None), assignment, spool
         db.execute = AsyncMock(
             side_effect=[
                 MagicMock(scalar_one_or_none=MagicMock(return_value=archive)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=assignment)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
             ]
         )
 
         # Print failed at 50% progress → 50g consumed from 100g estimate
-        pm = _make_printer_manager(_make_printer_state([], progress=50))
+        pm = _make_printer_manager(_make_printer_state([], progress=50, tray_now=0))
         filament_usage = [{"slot_id": 1, "used_g": 100.0, "type": "PLA", "color": ""}]
 
         with (
@@ -269,23 +274,25 @@ class TestTrackFrom3MF:
         assert spool.weight_used == 50.0
 
     @pytest.mark.asyncio
-    async def test_skips_bl_spools(self):
-        """BL spools (with tag_uid) are NOT tracked via 3MF — they use AMS remain%."""
+    async def test_tracks_bl_spools_via_3mf(self):
+        """BL spools (with tag_uid) ARE now tracked via 3MF (unified tracking)."""
         spool = _make_spool(tag_uid="ABCD1234", tray_uuid="A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4")
         assignment = _make_assignment()
         archive = MagicMock()
         archive.file_path = "archives/test.3mf"
 
         db = AsyncMock()
+        # archive, queue_item(None), assignment, spool
         db.execute = AsyncMock(
             side_effect=[
                 MagicMock(scalar_one_or_none=MagicMock(return_value=archive)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=assignment)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
             ]
         )
 
-        pm = _make_printer_manager()
+        pm = _make_printer_manager(_make_printer_state([], tray_now=0))
         filament_usage = [{"slot_id": 1, "used_g": 50.0, "type": "PLA", "color": ""}]
 
         with (
@@ -306,7 +313,9 @@ class TestTrackFrom3MF:
                 db=db,
             )
 
-        assert results == []
+        assert len(results) == 1
+        assert results[0]["spool_id"] == 1
+        assert results[0]["weight_used"] == 50.0
 
     @pytest.mark.asyncio
     async def test_skips_already_handled_trays(self):
@@ -315,13 +324,15 @@ class TestTrackFrom3MF:
         archive.file_path = "archives/test.3mf"
 
         db = AsyncMock()
+        # archive, queue_item(None)
         db.execute = AsyncMock(
             side_effect=[
                 MagicMock(scalar_one_or_none=MagicMock(return_value=archive)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
             ]
         )
 
-        pm = _make_printer_manager()
+        pm = _make_printer_manager(_make_printer_state([], tray_now=0))
         filament_usage = [{"slot_id": 1, "used_g": 50.0, "type": "PLA", "color": ""}]
 
         with (
@@ -346,23 +357,25 @@ class TestTrackFrom3MF:
 
     @pytest.mark.asyncio
     async def test_slot_to_tray_mapping(self):
-        """3MF slot_id maps correctly to (ams_id, tray_id)."""
-        # slot 5 → global_tray_id 4 → ams_id=1, tray_id=0
+        """3MF slot_id maps correctly to (ams_id, tray_id) via tray_now."""
+        # tray_now=4 → ams_id=1, tray_id=0 (single filament uses tray_now)
         spool = _make_spool(id=9)
         assignment = _make_assignment(spool_id=9, ams_id=1, tray_id=0)
         archive = MagicMock()
         archive.file_path = "archives/test.3mf"
 
         db = AsyncMock()
+        # archive, queue_item(None), assignment, spool
         db.execute = AsyncMock(
             side_effect=[
                 MagicMock(scalar_one_or_none=MagicMock(return_value=archive)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=assignment)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
             ]
         )
 
-        pm = _make_printer_manager()
+        pm = _make_printer_manager(_make_printer_state([], tray_now=4))
         filament_usage = [{"slot_id": 5, "used_g": 30.0, "type": "PETG", "color": ""}]
 
         with (

@@ -2348,6 +2348,21 @@ async def on_print_complete(printer_id: int, data: dict):
                             "actual_filament_grams": archive.filament_used_grams,
                             "failure_reason": archive.failure_reason,
                         }
+
+                        # Scale filament usage for partial prints
+                        if print_status != "completed" and archive.filament_used_grams:
+                            progress = data.get("progress") or 0
+                            scale = max(0.0, min(progress / 100.0, 1.0))
+                            archive_data["actual_filament_grams"] = round(archive.filament_used_grams * scale, 1)
+                            archive_data["progress"] = progress
+
+                        # Pass per-slot data from archive.extra_data
+                        if archive.extra_data and archive.extra_data.get("filament_slots"):
+                            slots = archive.extra_data["filament_slots"]
+                            if print_status != "completed":
+                                scale = max(0.0, min((data.get("progress") or 0) / 100.0, 1.0))
+                                slots = [{**s, "used_g": round(s["used_g"] * scale, 1)} for s in slots]
+                            archive_data["filament_slots"] = slots
                         # Add finish photo URL and image bytes if available
                         if finish_photo_filename:
                             from backend.app.api.routes.settings import get_setting

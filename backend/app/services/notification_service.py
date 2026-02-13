@@ -728,6 +728,19 @@ class NotificationService:
             if archive_data.get("finish_photo_url"):
                 variables["finish_photo_url"] = archive_data["finish_photo_url"]
 
+            # Build per-slot breakdown string
+            if archive_data.get("filament_slots"):
+                parts = []
+                for slot in archive_data["filament_slots"]:
+                    ftype = slot.get("type", "Unknown") or "Unknown"
+                    used = slot.get("used_g", 0)
+                    parts.append(f"{ftype}: {used:.1f}g")
+                variables["filament_details"] = " | ".join(parts)
+
+            # Add progress for partial prints
+            if archive_data.get("progress") is not None:
+                variables["progress"] = str(archive_data["progress"])
+
         # Extract image data for providers that support attachments (e.g. Pushover)
         image_data = None
         if archive_data:

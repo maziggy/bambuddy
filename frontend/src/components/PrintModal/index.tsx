@@ -210,7 +210,7 @@ export function PrintModal({
     queryKey: ['spool-assignments'],
     queryFn: () => api.getAssignments(),
     staleTime: 30 * 1000,
-    enabled: isLibraryFile && mode === 'reprint',
+    enabled: (mode === 'reprint' || mode === 'add-to-queue') && assignmentMode === 'printer',
   });
 
   // Fetch archive details to get sliced_for_model

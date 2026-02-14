@@ -121,8 +121,6 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
   const handleConfirmMismatch = () => {
     if (!pendingAssignId) return;
     assignMutation.mutate(pendingAssignId);
-    setShowMismatchConfirm(false);
-    setPendingAssignId(null);
   };
 
   return (
@@ -262,28 +260,26 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
           </div>
         )}
 
-        {/* Material mismatch confirmation modal */}
-        {showMismatchConfirm && trayInfo && selectedSpoolId && (
-          <ConfirmModal
-            title={t('inventory.assignMismatchTitle')}
-            message={t('inventory.assignMismatchMessage', {
-              spoolMaterial: spools?.find((spool: InventorySpool) => spool.id === selectedSpoolId)?.material ?? '',
-              trayMaterial: trayInfo.type,
-              location: trayInfo.location,
-            })}
-            confirmText={t('inventory.assignMismatchConfirm')}
-            variant="warning"
-            isLoading={assignMutation.isPending}
-            onConfirm={handleConfirmMismatch}
-            onCancel={() => {
-              if (!assignMutation.isPending) {
-                setShowMismatchConfirm(false);
-                setPendingAssignId(null);
-              }
-            }}
-          />
-        )}
-      </div>
+      {showMismatchConfirm && trayInfo && selectedSpoolId && (
+        <ConfirmModal
+          title={t('inventory.assignMismatchTitle')}
+          message={t('inventory.assignMismatchMessage', {
+            spoolMaterial: spools?.find((spool: InventorySpool) => spool.id === selectedSpoolId)?.material ?? '',
+            trayMaterial: trayInfo.type,
+            location: trayInfo.location,
+          })}
+          confirmText={t('inventory.assignMismatchConfirm')}
+          variant="warning"
+          isLoading={assignMutation.isPending}
+          onConfirm={handleConfirmMismatch}
+          onCancel={() => {
+            if (!assignMutation.isPending) {
+              setShowMismatchConfirm(false);
+              setPendingAssignId(null);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

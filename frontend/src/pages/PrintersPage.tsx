@@ -917,7 +917,7 @@ interface HeaterThermometerProps {
   isHeating: boolean;
 }
 
-function HeaterThermometer({ className, color, isHeating }: HeaterThermometerProps) {
+function NozzleThermometer({ className, color, isHeating }: HeaterThermometerProps) {
   // Extract the actual color from Tailwind class for SVG fill
   const colorMap: Record<string, string> = {
     'text-orange-400': '#fb923c',
@@ -934,22 +934,120 @@ function HeaterThermometer({ className, color, isHeating }: HeaterThermometerPro
   if (isHeating) {
     // Filled thermometer with glow - heater is ON
     return (
-      <svg className={className} style={glowStyle} viewBox="0 0 12 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect x="4.5" y="3" width="3" height="9.5" fill={fillColor} rx="0.5"/>
-        <circle cx="6" cy="15" r="2" fill={fillColor}/>
-        <path d="M6 0.5C4.6 0.5 3.5 1.6 3.5 3V12.1C2.6 12.8 2 13.9 2 15C2 17.2 3.8 19 6 19C8.2 19 10 17.2 10 15C10 13.9 9.4 12.8 8.5 12.1V3C8.5 1.6 7.4 0.5 6 0.5Z" stroke={fillColor} strokeWidth="1" fill="none"/>
+      <svg className={className} style={glowStyle} viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        {/* Heater block */}
+        <rect x="4" y="2" width="12" height="6" rx="0.5" stroke={fillColor} strokeWidth="1" fill="none"/>
+        {/* Nozzle */}
+        <path d="M7 8V11L9 14H11L13 11V8" stroke={fillColor} strokeWidth="1" fill="none" strokeLinejoin="round"/>
+        {/* Nozzle tip */}
+        <circle cx="10" cy="15.5" r="1" fill={fillColor}/>
+        {/* Heat waves from nozzle */}
+        <path d="M7 17Q8 18 7.5 19" stroke={fillColor} strokeWidth="0.8" strokeLinecap="round" fill="none"/>
+        <path d="M10 17Q11 18 10.5 19" stroke={fillColor} strokeWidth="0.8" strokeLinecap="round" fill="none"/>
+        <path d="M13 17Q14 18 13.5 19" stroke={fillColor} strokeWidth="0.8" strokeLinecap="round" fill="none"/>
       </svg>
     );
   }
 
   // Empty thermometer - heater is OFF
   return (
-    <svg className={className} viewBox="0 0 12 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M6 0.5C4.6 0.5 3.5 1.6 3.5 3V12.1C2.6 12.8 2 13.9 2 15C2 17.2 3.8 19 6 19C8.2 19 10 17.2 10 15C10 13.9 9.4 12.8 8.5 12.1V3C8.5 1.6 7.4 0.5 6 0.5Z" stroke={fillColor} strokeWidth="1" fill="none"/>
-      <circle cx="6" cy="15" r="2.5" stroke={fillColor} strokeWidth="1" fill="none"/>
+    <svg className={className} style={glowStyle} viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      {/* Heater block */}
+      <rect x="4" y="2" width="12" height="6" rx="0.5" stroke={fillColor} strokeWidth="1" fill="none"/>
+      {/* Nozzle */}
+      <path d="M7 8V11L9 14H11L13 11V8" stroke={fillColor} strokeWidth="1" fill="none" strokeLinejoin="round"/>
+      {/* Nozzle tip */}
+      <circle cx="10" cy="15.5" r="1" fill={fillColor}/>
     </svg>
   );
 }
+
+function BedThermometer({ className, color, isHeating }: HeaterThermometerProps) {
+  // Extract the actual color from Tailwind class for SVG fill
+  const colorMap: Record<string, string> = {
+    'text-orange-400': '#fb923c',
+    'text-blue-400': '#60a5fa',
+    'text-green-400': '#4ade80',
+  };
+  const fillColor = colorMap[color] || '#888';
+
+  // Glow style when heating
+  const glowStyle = isHeating ? {
+    filter: `drop-shadow(0 0 4px ${fillColor}) drop-shadow(0 0 8px ${fillColor})`,
+  } : {};
+
+  if (isHeating) {
+    // Filled thermometer with glow - heater is ON
+    return (
+      <svg className={className} style={glowStyle} viewBox="0 0 20 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+        {/* Heated bed platform */}
+        <rect x="1" y="10" width="18" height="3" rx="0.5" stroke={fillColor} strokeWidth="1" fill="none"/>
+        {/* Heat waves */}
+        <path d="M5 8C5 7 6 6 6 5C6 4 5 3 5 2" stroke={fillColor} strokeWidth="1" strokeLinecap="round" fill="none"/>
+        <path d="M10 8C10 7 11 6 11 5C11 4 10 3 10 2" stroke={fillColor} strokeWidth="1" strokeLinecap="round" fill="none"/>
+        <path d="M15 8C15 7 16 6 16 5C16 4 15 3 15 2" stroke={fillColor} strokeWidth="1" strokeLinecap="round" fill="none"/>
+        {/* Bed legs */}
+        <rect x="3" y="13" width="2" height="2" fill={fillColor} rx="0.3"/>
+        <rect x="15" y="13" width="2" height="2" fill={fillColor} rx="0.3"/>
+      </svg>
+    );
+  }
+
+  // Empty thermometer - heater is OFF
+  return (
+      <svg className={className} style={glowStyle} viewBox="0 0 20 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+        {/* Heated bed platform */}
+        <rect x="1" y="10" width="18" height="3" rx="0.5" stroke={fillColor} strokeWidth="1" fill="none"/>
+        {/* Bed legs */}
+        <rect x="3" y="13" width="2" height="2" fill={fillColor} rx="0.3"/>
+        <rect x="15" y="13" width="2" height="2" fill={fillColor} rx="0.3"/>
+      </svg>
+  );
+}
+
+function ChamberThermometer({ className, color, isHeating }: HeaterThermometerProps) {
+  // Extract the actual color from Tailwind class for SVG fill
+  const colorMap: Record<string, string> = {
+    'text-orange-400': '#fb923c',
+    'text-blue-400': '#60a5fa',
+    'text-green-400': '#4ade80',
+  };
+  const fillColor = colorMap[color] || '#888';
+
+  // Glow style when heating
+  const glowStyle = isHeating ? {
+    filter: `drop-shadow(0 0 4px ${fillColor}) drop-shadow(0 0 8px ${fillColor})`,
+  } : {};
+
+  if (isHeating) {
+    // Filled thermometer with glow - heater is ON
+    return (
+      <svg className={className} style={glowStyle} viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        {/* Chamber box */}
+        <rect x="1" y="3" width="18" height="14" rx="1" stroke={fillColor} strokeWidth="1" fill="none"/>
+        {/* Heat waves inside chamber */}
+        <path d="M6 14Q7 12.5 6.5 11Q6 9.5 6.5 8" stroke={fillColor} strokeWidth="1" strokeLinecap="round" fill="none"/>
+        <path d="M10 14Q11 12.5 10.5 11Q10 9.5 10.5 8" stroke={fillColor} strokeWidth="1" strokeLinecap="round" fill="none"/>
+        <path d="M14 14Q15 12.5 14.5 11Q14 9.5 14.5 8" stroke={fillColor} strokeWidth="1" strokeLinecap="round" fill="none"/>
+        {/* Top vent lines */}
+        <line x1="5" y1="5" x2="8" y2="5" stroke={fillColor} strokeWidth="0.8" strokeLinecap="round"/>
+        <line x1="12" y1="5" x2="15" y2="5" stroke={fillColor} strokeWidth="0.8" strokeLinecap="round"/>
+      </svg>
+    );
+  }
+
+  // Empty thermometer - heater is OFF
+  return (
+    <svg className={className} style={glowStyle} viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      {/* Chamber box */}
+      <rect x="1" y="3" width="18" height="14" rx="1" stroke={fillColor} strokeWidth="1" fill="none"/>
+      {/* Top vent lines */}
+      <line x1="5" y1="5" x2="8" y2="5" stroke={fillColor} strokeWidth="0.8" strokeLinecap="round"/>
+      <line x1="12" y1="5" x2="15" y2="5" stroke={fillColor} strokeWidth="0.8" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
 
 // Humidity indicator with water drop that fills based on level (Bambu Lab style)
 // Reference: https://github.com/theicedmango/bambu-humidity
@@ -2480,7 +2578,7 @@ function PrinterCard({
                 <div className="flex items-stretch gap-1.5 flex-wrap">
                   {/* Nozzle temp - combined for dual nozzle */}
                   <div className="text-center px-2 py-1.5 bg-bambu-dark rounded-lg flex-1 flex flex-col justify-center items-center">
-                    <HeaterThermometer className="w-3.5 h-3.5 mb-0.5" color="text-orange-400" isHeating={nozzleHeating} />
+                    <NozzleThermometer className="w-3.5 h-3.5 mb-0.5" color="text-orange-400" isHeating={nozzleHeating} />
                     {status.temperatures.nozzle_2 !== undefined ? (
                       <>
                         <p className="text-[9px] text-bambu-gray">L / R</p>
@@ -2507,7 +2605,7 @@ function PrinterCard({
                     )}
                   </div>
                   <div className="text-center px-2 py-1.5 bg-bambu-dark rounded-lg flex-1 flex flex-col justify-center items-center">
-                    <HeaterThermometer className="w-3.5 h-3.5 mb-0.5" color="text-blue-400" isHeating={bedHeating} />
+                    <BedThermometer className="w-3.5 h-3.5 mb-0.5" color="text-blue-400" isHeating={bedHeating} />
                     <p className="text-[9px] text-bambu-gray">{t('printers.temperatures.bed')}</p>
                     <p className="text-[11px] text-white">
                       {Math.round(status.temperatures.bed || 0)}°C
@@ -2515,7 +2613,7 @@ function PrinterCard({
                   </div>
                   {status.temperatures.chamber !== undefined && (
                     <div className="text-center px-2 py-1.5 bg-bambu-dark rounded-lg flex-1 flex flex-col justify-center items-center">
-                      <HeaterThermometer className="w-3.5 h-3.5 mb-0.5" color="text-green-400" isHeating={chamberHeating} />
+                      <ChamberThermometer className="w-3.5 h-3.5 mb-0.5" color="text-green-400" isHeating={chamberHeating} />
                       <p className="text-[9px] text-bambu-gray">{t('printers.temperatures.chamber')}</p>
                       <p className="text-[11px] text-white">
                         {Math.round(status.temperatures.chamber || 0)}°C

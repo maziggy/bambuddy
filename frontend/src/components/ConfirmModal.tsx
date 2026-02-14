@@ -51,7 +51,7 @@ export function ConfirmModal({
     },
     warning: {
       icon: 'text-yellow-400',
-      button: 'bg-yellow-500 hover:bg-yellow-600',
+      button: 'bg-yellow-500 hover:bg-yellow-600 text-black',
     },
     default: {
       icon: 'text-bambu-green',

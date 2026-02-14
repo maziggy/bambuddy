@@ -132,6 +132,7 @@ export interface AMSUnit {
   id: number;
   humidity: number | null;
   temp: number | null;
+  is_drying: boolean;
   is_ams_ht: boolean;  // True for AMS-HT (single spool), False for regular AMS (4 spools)
   tray: AMSTray[];
 }

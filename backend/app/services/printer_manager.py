@@ -567,12 +567,15 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
 
             # AMS-HT has 1 tray, regular AMS has 4 trays
             is_ams_ht = len(trays) == 1
+            #is_drying logic
+            is_drying = ams_data.get("dry_time", 0) > 0
 
             ams_units.append(
                 {
                     "id": int(ams_data.get("id", 0)),
                     "humidity": humidity_value,
                     "temp": ams_data.get("temp"),
+                    "is_drying": is_drying,
                     "is_ams_ht": is_ams_ht,
                     "tray": trays,
                 }

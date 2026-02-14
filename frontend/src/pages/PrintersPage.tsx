@@ -2687,7 +2687,7 @@ function PrinterCard({
                         const isRightNozzle = extruderId === 0;
 
                         return (
-                          <div key={ams.id} className="p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30">
+                          <div key={ams.id} className="p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30" style={ams.is_drying ? { filter: "drop-shadow(0 0 1px #fb923c) drop-shadow(0 0 2px #fb923c)" } : {}}>
                             {/* Header: Label + Stats (no icon) */}
                             <div className="flex items-center justify-between mb-2">
                               <div className="flex items-center gap-1.5">

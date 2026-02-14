@@ -136,6 +136,7 @@ class AMSUnit(BaseModel):
     id: int
     humidity: int | None = None
     temp: float | None = None
+    is_drying: bool = False
     is_ams_ht: bool = False  # True for AMS-HT (single spool), False for regular AMS (4 spools)
     tray: list[AMSTray] = []
 

@@ -308,6 +308,8 @@ async def get_printer_status(
                     pass  # Skip unparseable humidity index; humidity remains None
             # AMS-HT has 1 tray, regular AMS has 4 trays
             is_ams_ht = len(trays) == 1
+            #is_drying logic
+            is_drying = ams_data.get("dry_time", 0) > 0
 
             ams_units.append(
                 AMSUnit(
@@ -315,6 +317,7 @@ async def get_printer_status(
                     humidity=humidity_value,
                     temp=ams_data.get("temp"),
                     is_ams_ht=is_ams_ht,
+                    is_drying=is_drying,
                     tray=trays,
                 )
             )

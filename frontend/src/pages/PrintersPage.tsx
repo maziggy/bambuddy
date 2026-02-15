@@ -2283,7 +2283,7 @@ function PrinterCard({
                 </button>
               )}
               {/* Firmware Version Badge */}
-              {firmwareInfo?.current_version && firmwareInfo?.latest_version && (
+              {checkPrinterFirmware && firmwareInfo?.current_version && firmwareInfo?.latest_version ? (
                 <button
                   onClick={() => setShowFirmwareModal(true)}
                   className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs hover:opacity-80 transition-opacity ${
@@ -2300,7 +2300,11 @@ function PrinterCard({
                   {firmwareInfo.update_available ? <Download className="w-3 h-3" /> : <CheckCircle className="w-3 h-3" />}
                   {firmwareInfo.current_version}
                 </button>
-              )}
+              ) : status?.firmware_version ? (
+                <span className="flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-bambu-dark-tertiary/50 text-bambu-gray">
+                  {status.firmware_version}
+                </span>
+              ) : null}
             </div>
           )}
         </div>

@@ -285,6 +285,7 @@ export function SettingsPage() {
   const { data: updateCheck, refetch: refetchUpdateCheck, isRefetching: isCheckingUpdate } = useQuery({
     queryKey: ['updateCheck'],
     queryFn: api.checkForUpdates,
+    enabled: settings?.check_updates !== false,
     staleTime: 5 * 60 * 1000,
   });
 

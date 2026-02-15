@@ -46,6 +46,7 @@ import {
   ChevronRight,
   Settings,
   User,
+  Play,
   ClipboardList,
 } from 'lucide-react';
 import { api } from '../api/client';
@@ -690,7 +691,7 @@ function ArchiveCard({
         {/* Duplicate badge */}
         {archive.duplicate_count > 0 && (
           <div
-            className="absolute top-2 right-2 px-2 py-1 rounded text-xs bg-purple-500/80 text-white flex items-center gap-1"
+            className="absolute top-2 right-12 px-2 py-1 rounded text-xs bg-purple-500/80 text-white flex items-center gap-1"
             title={t('archives.card.duplicateTitle')}
           >
             <Copy className="w-3 h-3" />
@@ -729,10 +730,21 @@ function ArchiveCard({
             <Box className="w-4 h-4 text-cyan-400" />
           </button>
         )}
+        {/* 3D preview badge */}
+        <button
+          className="absolute bottom-2 right-2 p-1.5 rounded bg-black/60 hover:bg-black/80 transition-colors"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowViewer(true);
+          }}
+          title={t('archives.card.preview3d')}
+        >
+          <Box className="w-4 h-4 text-white" />
+        </button>
         {/* Timelapse badge */}
         {archive.timelapse_path && (
           <button
-            className="absolute bottom-2 right-2 p-1.5 rounded bg-black/60 hover:bg-black/80 transition-colors"
+            className="absolute bottom-2 right-12 p-1.5 rounded bg-black/60 hover:bg-black/80 transition-colors"
             onClick={(e) => {
               e.stopPropagation();
               setShowTimelapse(true);
@@ -745,7 +757,7 @@ function ArchiveCard({
         {/* Photos badge */}
         {archive.photos && archive.photos.length > 0 && (
           <button
-            className={`absolute bottom-2 ${archive.timelapse_path ? 'right-12' : 'right-2'} p-1.5 rounded bg-black/60 hover:bg-black/80 transition-colors`}
+            className={`absolute bottom-2 ${archive.timelapse_path ? 'right-[5.5rem]' : 'right-12'} p-1.5 rounded bg-black/60 hover:bg-black/80 transition-colors`}
             onClick={(e) => {
               e.stopPropagation();
               setShowPhotos(true);
@@ -776,9 +788,21 @@ function ArchiveCard({
 
       <CardContent className="p-4 flex-1 flex flex-col">
         {/* Title */}
-        <h3 className="font-medium text-white mb-1 truncate">
-          {archive.print_name || archive.filename}
-        </h3>
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <h3 className="min-w-0 font-medium text-white truncate">
+            {archive.print_name || archive.filename}
+          </h3>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="p-1 sm:p-1.5 shrink-0"
+            onClick={() => setShowEdit(true)}
+            disabled={!canModify('archives', 'update', archive.created_by_id)}
+            title={!canModify('archives', 'update', archive.created_by_id) ? t('archives.card.noPermissionEdit') : t('archives.card.edit')}
+          >
+            <Pencil className="w-3 h-3 sm:w-4 sm:h-4" />
+          </Button>
+        </div>
         <div className="flex items-center gap-2 mb-3 flex-wrap">
           <p className="text-xs text-bambu-gray">{printerName}</p>
           {/* File type badge */}
@@ -1000,15 +1024,6 @@ function ArchiveCard({
             variant="secondary"
             size="sm"
             className="min-w-0 p-1 sm:p-1.5"
-            onClick={() => setShowViewer(true)}
-            title={t('archives.card.preview3d')}
-          >
-            <Box className="w-3 h-3 sm:w-4 sm:h-4" />
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="min-w-0 p-1 sm:p-1.5"
             onClick={() => {
               api.downloadArchive(archive.id, `${archive.print_name || archive.filename}.3mf`).catch((err) => {
                 console.error('Archive download failed:', err);
@@ -1017,16 +1032,6 @@ function ArchiveCard({
             title={t('archives.card.download')}
           >
             <Download className="w-3 h-3 sm:w-4 sm:h-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="min-w-0 p-1 sm:p-1.5"
-            onClick={() => setShowEdit(true)}
-            disabled={!canModify('archives', 'update', archive.created_by_id)}
-            title={!canModify('archives', 'update', archive.created_by_id) ? t('archives.card.noPermissionEdit') : t('archives.card.edit')}
-          >
-            <Pencil className="w-3 h-3 sm:w-4 sm:h-4" />
           </Button>
           <Button
             variant="ghost"
@@ -1778,6 +1783,18 @@ function ArchiveListRow({
           {formatFileSize(archive.file_size)}
         </div>
         <div className="col-span-2 flex justify-end gap-1">
+          {isSlicedFile(archive.filename) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowReprint(true)}
+              disabled={!canModify('archives', 'reprint', archive.created_by_id)}
+              title={!canModify('archives', 'reprint', archive.created_by_id) ? t('archives.card.noPermissionReprint') : t('archives.card.reprint')}
+              className="text-bambu-green hover:text-bambu-green-light hover:bg-bambu-green/10"
+            >
+              <Play className="w-4 h-4" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"

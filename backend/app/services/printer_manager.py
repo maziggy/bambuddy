@@ -106,6 +106,7 @@ class PrinterManager:
         self._current_print_user: dict[int, dict] = {}  # {printer_id: {"user_id": int, "username": str}}
         # Track plate-cleared acknowledgments for queue flow
         self._plate_cleared: set[int] = set()  # printer_ids where user confirmed plate is cleared
+        self._automation: dict[int, bool] = {} # Cache printer is automated, auto clear
 
     def get_printer(self, printer_id: int) -> PrinterInfo | None:
         """Get printer info by ID."""
@@ -195,6 +196,8 @@ class PrinterManager:
                 self._schedule_async(self._on_print_start(printer_id, data))
 
         def on_print_complete(data: dict):
+            if self._automation[printer_id] and data["status"] == "completed":
+                self.set_plate_cleared(printer_id)
             if self._on_print_complete:
                 self._schedule_async(self._on_print_complete(printer_id, data))
 
@@ -222,6 +225,7 @@ class PrinterManager:
         self._clients[printer_id] = client
         self._models[printer_id] = printer.model  # Cache model for feature detection
         self._printer_info[printer_id] = PrinterInfo(printer.name, printer.serial_number)
+        self._automation[printer_id] = (printer.location == "automation")
 
         # Wait a moment for connection
         await asyncio.sleep(1)

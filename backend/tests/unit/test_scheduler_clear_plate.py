@@ -1,6 +1,7 @@
 """Tests for the clear plate queue flow in the print scheduler."""
 
-from unittest.mock import MagicMock, patch
+import logging
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -120,3 +121,66 @@ class TestSchedulerIdleCheckWithPlateCleared:
         mock_pm.is_connected.return_value = True
         mock_pm.get_status.return_value = None
         assert scheduler._is_printer_idle(1) is False
+
+
+class TestSchedulerQueueCheckLogging:
+    """Test queue check logging when pending items are found (#374)."""
+
+    @pytest.fixture
+    def scheduler(self):
+        return PrintScheduler()
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    async def test_check_queue_logs_pending_items(self, mock_pm, scheduler, caplog):
+        """Verify pending items are logged when found in check_queue."""
+        mock_item = MagicMock()
+        mock_item.id = 42
+        mock_item.printer_id = 1
+        mock_item.archive_id = 100
+        mock_item.library_file_id = None
+        mock_item.scheduled_time = None
+        mock_item.manual_start = False
+        mock_item.target_model = None
+
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_status.return_value = MagicMock(state="RUNNING")
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [mock_item]
+
+        with (
+            patch("backend.app.services.print_scheduler.async_session") as mock_session_ctx,
+            caplog.at_level(logging.INFO, logger="backend.app.services.print_scheduler"),
+        ):
+            mock_db = AsyncMock()
+            mock_db.execute = AsyncMock(return_value=mock_result)
+            mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+            mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            await scheduler.check_queue()
+
+        queue_logs = [r for r in caplog.records if "Queue check" in r.message]
+        assert len(queue_logs) == 1
+        assert "1 pending items" in queue_logs[0].message
+        assert "42" in queue_logs[0].message  # item ID
+
+    @pytest.mark.asyncio
+    async def test_check_queue_no_log_when_empty(self, scheduler, caplog):
+        """Verify no queue log when no pending items found."""
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+
+        with (
+            patch("backend.app.services.print_scheduler.async_session") as mock_session_ctx,
+            caplog.at_level(logging.INFO, logger="backend.app.services.print_scheduler"),
+        ):
+            mock_db = AsyncMock()
+            mock_db.execute = AsyncMock(return_value=mock_result)
+            mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+            mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            await scheduler.check_queue()
+
+        queue_logs = [r for r in caplog.records if "Queue check" in r.message]
+        assert len(queue_logs) == 0

@@ -89,6 +89,7 @@ async def init_db():
         notification_template,
         orca_base_cache,
         pending_upload,
+        print_log,
         print_queue,
         printer,
         project,

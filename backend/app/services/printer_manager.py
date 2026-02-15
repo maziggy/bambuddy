@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import traceback
 from collections.abc import Callable
 
 from sqlalchemy import select
@@ -6,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.printer import Printer
 from backend.app.services.bambu_mqtt import BambuMQTTClient, MQTTLogEntry, PrinterState, get_stage_name
+
+logger = logging.getLogger(__name__)
 
 # Models that have a real chamber temperature sensor
 # Based on Home Assistant Bambu Lab integration
@@ -304,6 +308,15 @@ class PrinterManager:
         use_ams: bool = True,
     ) -> bool:
         """Start a print on a connected printer."""
+        caller = traceback.extract_stack(limit=3)[0]
+        logger.info(
+            "PRINT COMMAND: printer=%s, file=%s, caller=%s:%s:%s",
+            printer_id,
+            filename,
+            caller.filename.split("/")[-1],
+            caller.lineno,
+            caller.name,
+        )
         if printer_id in self._clients:
             return self._clients[printer_id].start_print(
                 filename,

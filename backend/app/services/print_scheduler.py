@@ -69,6 +69,12 @@ class PrintScheduler:
             if not items:
                 return
 
+            logger.info(
+                "Queue check: found %d pending items: %s",
+                len(items),
+                [(i.id, i.printer_id, i.archive_id, i.library_file_id) for i in items],
+            )
+
             # Track busy printers to avoid assigning multiple items to same printer
             busy_printers: set[int] = set()
 

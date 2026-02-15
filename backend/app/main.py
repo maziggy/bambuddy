@@ -194,6 +194,7 @@ from backend.app.api.routes import (
     notification_templates,
     notifications,
     pending_uploads,
+    print_log,
     print_queue,
     printers,
     projects,
@@ -1274,7 +1275,17 @@ async def on_print_start(printer_id: int, data: dict):
             select(PrintArchive)
             .where(PrintArchive.printer_id == printer_id)
             .where(PrintArchive.status == "printing")
-            .where(PrintArchive.print_name.ilike(f"%{check_name}%"))
+            .where(
+                or_(
+                    PrintArchive.print_name == check_name,
+                    PrintArchive.filename.in_(
+                        [
+                            f"{check_name}.3mf",
+                            f"{check_name}.gcode.3mf",
+                        ]
+                    ),
+                )
+            )
             .order_by(PrintArchive.created_at.desc())
             .limit(1)
         )
@@ -1948,6 +1959,9 @@ async def on_print_complete(printer_id: int, data: dict):
     except Exception as e:
         logger.warning("[CALLBACK] WebSocket send_print_complete failed: %s", e)
 
+    # Capture user info before clearing (needed for print log entry)
+    _print_user_info = printer_manager.get_current_print_user(printer_id)
+
     # Clear current print user tracking (Issue #206)
     printer_manager.clear_current_print_user(printer_id)
 
@@ -2147,6 +2161,36 @@ async def on_print_complete(printer_id: int, data: dict):
         # Continue with other operations even if archive update fails
 
     log_timing("Archive status update")
+
+    # Write independent print log entry (separate table, never touches archives)
+    try:
+        async with async_session() as db:
+            from backend.app.models.archive import PrintArchive
+            from backend.app.services.print_log import write_log_entry
+
+            archive = await db.get(PrintArchive, archive_id)
+            if archive:
+                p_info = printer_manager.get_printer(printer_id)
+                await write_log_entry(
+                    db,
+                    status=data.get("status", "completed"),
+                    print_name=archive.print_name,
+                    printer_name=p_info.name if p_info else None,
+                    printer_id=printer_id,
+                    started_at=archive.started_at,
+                    completed_at=archive.completed_at,
+                    filament_type=archive.filament_type,
+                    filament_color=archive.filament_color,
+                    filament_used_grams=archive.filament_used_grams,
+                    thumbnail_path=archive.thumbnail_path,
+                    created_by_username=_print_user_info.get("username") if _print_user_info else None,
+                )
+                await db.commit()
+                logger.info("[PRINT_LOG] Log entry written for archive %s", archive_id)
+    except Exception as e:
+        logger.warning("[PRINT_LOG] Failed to write log entry for archive %s: %s", archive_id, e)
+
+    log_timing("Print log entry")
 
     # Track filament consumption from AMS remain% deltas (skip if Spoolman handles usage)
     usage_results: list[dict] = []
@@ -2633,7 +2677,14 @@ async def on_print_complete(printer_id: int, data: dict):
                 .where(PrintQueueItem.printer_id == printer_id)
                 .where(PrintQueueItem.status == "printing")
             )
-            queue_item = result.scalar_one_or_none()
+            printing_items = list(result.scalars().all())
+            if len(printing_items) > 1:
+                logger.warning(
+                    "BUG: Multiple queue items in 'printing' status for printer %s: %s",
+                    printer_id,
+                    [(i.id, i.archive_id, i.library_file_id) for i in printing_items],
+                )
+            queue_item = printing_items[0] if printing_items else None
             if queue_item:
                 status = data.get("status", "completed")
                 queue_item.status = status
@@ -3352,6 +3403,7 @@ app.include_router(settings_routes.router, prefix=app_settings.api_prefix)
 app.include_router(cloud.router, prefix=app_settings.api_prefix)
 app.include_router(local_presets.router, prefix=app_settings.api_prefix)
 app.include_router(smart_plugs.router, prefix=app_settings.api_prefix)
+app.include_router(print_log.router, prefix=app_settings.api_prefix)
 app.include_router(print_queue.router, prefix=app_settings.api_prefix)
 app.include_router(kprofiles.router, prefix=app_settings.api_prefix)
 app.include_router(notifications.router, prefix=app_settings.api_prefix)

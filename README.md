@@ -76,6 +76,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Plate thumbnail browsing for multi-plate archives (hover to navigate between plates)
 - Archive comparison (side-by-side diff)
 - Tag management (rename/delete across all archives)
+- **Print Log** — Chronological table view of all print activity with columns for date/time, print name, printer, user, status, duration, and filament. Filterable by search, printer, user, status, and date range. Pagination with configurable page size. Clear button removes log entries without affecting archives.
 
 ### 📊 Monitoring & Control
 - Real-time printer status via WebSocket

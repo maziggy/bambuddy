@@ -324,14 +324,6 @@ class FirmwareCheckService:
         cache_dir.mkdir(parents=True, exist_ok=True)
         return cache_dir
 
-    def _get_cached_firmware_path(self, model: str, version: str) -> Path:
-        """Get the path where a firmware file would be cached."""
-        # Normalize model name for filename
-        model_safe = model.upper().replace(" ", "-").replace("/", "-")
-        version_safe = version.replace(".", "_")
-        filename = f"{model_safe}_{version_safe}.bin"
-        return self._get_firmware_cache_dir() / filename
-
     async def get_firmware_file_info(self, model: str) -> dict | None:
         """
         Get information about the firmware file for a model.
@@ -374,15 +366,15 @@ class FirmwareCheckService:
             logger.warning("No firmware download URL available for model: %s", model)
             return None
 
-        # Check if already cached
-        cached_path = self._get_cached_firmware_path(model, latest.version)
-        if cached_path.exists():
-            logger.info("Using cached firmware: %s", cached_path)
-            return cached_path
-
         # Extract original filename from URL (must preserve for SD card update)
         url_parts = latest.download_url.split("/")
         original_filename = url_parts[-1] if url_parts else f"firmware_{model}.bin"
+
+        # Check if already cached (using original filename so SD card gets the right name)
+        cached_path = self._get_firmware_cache_dir() / original_filename
+        if cached_path.exists():
+            logger.info("Using cached firmware: %s", cached_path)
+            return cached_path
 
         # Download to temp file first
         temp_path = self._get_firmware_cache_dir() / f".downloading_{original_filename}"
@@ -407,22 +399,14 @@ class FirmwareCheckService:
                         if progress_callback:
                             progress_callback(downloaded, total_size, "Downloading firmware...")
 
-            # Also save a copy with the original filename for SD card
-            original_path = self._get_firmware_cache_dir() / original_filename
-            if original_path.exists():
-                original_path.unlink()
+            # Move temp to final path, preserving original filename
+            temp_path.rename(cached_path)
 
-            # Move temp to both cached path and original filename path
-            import shutil
-
-            shutil.copy2(temp_path, cached_path)
-            temp_path.rename(original_path)
-
-            logger.info("Firmware downloaded successfully: %s", original_path)
+            logger.info("Firmware downloaded successfully: %s", cached_path)
             if progress_callback:
                 progress_callback(downloaded, total_size, "Download complete")
 
-            return original_path
+            return cached_path
 
         except Exception as e:
             logger.error("Firmware download failed: %s", e)

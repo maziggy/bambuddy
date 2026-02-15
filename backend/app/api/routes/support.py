@@ -103,7 +103,8 @@ def _apply_log_level(debug: bool):
 
     # Also adjust third-party loggers
     if debug:
-        logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
+        logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+        logging.getLogger("aiosqlite").setLevel(logging.WARNING)
         logging.getLogger("httpcore").setLevel(logging.DEBUG)
         logging.getLogger("httpx").setLevel(logging.DEBUG)
         logging.getLogger("paho.mqtt").setLevel(logging.DEBUG)

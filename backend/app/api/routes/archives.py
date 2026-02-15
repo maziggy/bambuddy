@@ -134,13 +134,15 @@ async def list_archives(
         offset=offset,
     )
 
-    # Get set of hashes that have duplicates (efficient single query)
-    duplicate_hashes = await service.get_duplicate_hashes()
+    # Get sets of hashes and names that have duplicates (efficient single queries)
+    duplicate_hashes, duplicate_names = await service.get_duplicate_hashes_and_names()
 
-    # Mark archives that have duplicates
+    # Mark archives that have duplicates (by hash or by print name)
     result = []
     for a in archives:
-        has_duplicate = a.content_hash in duplicate_hashes if a.content_hash else False
+        has_hash_dup = a.content_hash in duplicate_hashes if a.content_hash else False
+        has_name_dup = a.print_name and a.print_name.lower() in duplicate_names
+        has_duplicate = has_hash_dup or has_name_dup
         result.append(archive_to_response(a, duplicate_count=1 if has_duplicate else 0))
     return result
 

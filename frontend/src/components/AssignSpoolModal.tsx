@@ -5,7 +5,6 @@ import { X, Loader2, Package, Check, Search } from 'lucide-react';
 import { api } from '../api/client';
 import type { InventorySpool, SpoolAssignment } from '../api/client';
 import { Button } from './Button';
-import { ConfirmModal } from './ConfirmModal';
 import { useToast } from '../contexts/ToastContext';
 
 interface AssignSpoolModalProps {
@@ -27,8 +26,6 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
   const { showToast } = useToast();
   const [selectedSpoolId, setSelectedSpoolId] = useState<number | null>(null);
   const [searchFilter, setSearchFilter] = useState('');
-  const [pendingAssignId, setPendingAssignId] = useState<number | null>(null);
-  const [showMismatchConfirm, setShowMismatchConfirm] = useState(false);
 
   const { data: spools, isLoading } = useQuery({
     queryKey: ['inventory-spools'],
@@ -56,8 +53,6 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
       });
       queryClient.invalidateQueries({ queryKey: ['spool-assignments'] });
       showToast(t('inventory.assignSuccess'), 'success');
-      setShowMismatchConfirm(false);
-      setPendingAssignId(null);
       onClose();
     },
     onError: (error: Error) => {
@@ -91,35 +86,10 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
     );
   });
 
-  const normalizeMaterial = (value: string | undefined | null) =>
-    (value ?? '').trim().toUpperCase();
-
-  const materialsMatch = (spoolMaterial: string, trayMaterial: string) => {
-    const normalizedSpool = normalizeMaterial(spoolMaterial);
-    const normalizedTray = normalizeMaterial(trayMaterial);
-    if (!normalizedSpool || !normalizedTray) return true;
-    if (normalizedTray.includes(normalizedSpool)) return true;
-    if (normalizedSpool.includes(normalizedTray)) return true;
-    return false;
-  };
-
   const handleAssign = () => {
-    if (!selectedSpoolId) return;
-    const selectedSpool = spools?.find((spool: InventorySpool) => spool.id === selectedSpoolId);
-    if (selectedSpool && trayInfo?.type) {
-      const mismatch = !materialsMatch(selectedSpool.material, trayInfo.type);
-      if (mismatch) {
-        setPendingAssignId(selectedSpoolId);
-        setShowMismatchConfirm(true);
-        return;
-      }
+    if (selectedSpoolId) {
+      assignMutation.mutate(selectedSpoolId);
     }
-    assignMutation.mutate(selectedSpoolId);
-  };
-
-  const handleConfirmMismatch = () => {
-    if (!pendingAssignId) return;
-    assignMutation.mutate(pendingAssignId);
   };
 
   return (
@@ -258,27 +228,6 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
           </div>
         )}
       </div>
-
-      {showMismatchConfirm && trayInfo && selectedSpoolId && (
-        <ConfirmModal
-          title={t('inventory.assignMismatchTitle')}
-          message={t('inventory.assignMismatchMessage', {
-            spoolMaterial: spools?.find((spool: InventorySpool) => spool.id === selectedSpoolId)?.material ?? '',
-            trayMaterial: trayInfo.type,
-            location: trayInfo.location,
-          })}
-          confirmText={t('inventory.assignMismatchConfirm')}
-          variant="warning"
-          isLoading={assignMutation.isPending}
-          onConfirm={handleConfirmMismatch}
-          onCancel={() => {
-            if (!assignMutation.isPending) {
-              setShowMismatchConfirm(false);
-              setPendingAssignId(null);
-            }
-          }}
-        />
-      )}
     </div>
   );
 }

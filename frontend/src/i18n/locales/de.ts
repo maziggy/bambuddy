@@ -1164,8 +1164,6 @@ export default {
     // Filament Tracking Mode
     filamentTracking: 'Filament-Verfolgung',
     filamentTrackingDesc: 'Wählen Sie, wie Sie Ihre Filamentspulen verfolgen möchten. Sie können das integrierte Inventar oder einen externen Spoolman-Server verwenden.',
-    disableFilamentWarnings: 'Filament-Warnungen deaktivieren',
-    disableFilamentWarningsDesc: 'Keine Warnungen über unzureichendes Filament beim Drucken oder Einreihen anzeigen',
     trackingModeBuiltIn: 'Integriertes Inventar',
     trackingModeBuiltInDesc: 'RFID-Erkennung und Verbrauchserfassung inklusive',
     trackingModeSpoolmanDesc: 'Externer Filament-Management-Server',
@@ -2488,9 +2486,6 @@ export default {
     unassignSpool: 'Zuweisung aufheben',
     assignSuccess: 'Spule zugewiesen und AMS-Slot konfiguriert',
     assignFailed: 'Spulenzuweisung fehlgeschlagen',
-    assignMismatchTitle: 'Material stimmt nicht überein',
-    assignMismatchMessage: 'Das Material der ausgewählten Spule ({{spoolMaterial}}) stimmt nicht mit dem AMS-Profil ({{trayMaterial}}) für {{location}} überein. Trotzdem zuweisen?',
-    assignMismatchConfirm: 'Trotzdem zuweisen',
     selectSpool: 'Wählen Sie eine Spule für diesen Slot',
     assigned: 'Zugewiesen',
     assigning: 'Wird zugewiesen...',
@@ -2655,10 +2650,6 @@ export default {
     rightNozzle: 'R',
     leftNozzleTooltip: 'Linke Düse',
     rightNozzleTooltip: 'Rechte Düse',
-    insufficientFilamentTitle: 'Nicht genug Filament',
-    insufficientFilamentMessage: 'Einige zugewiesene Spulen haben weniger Filament als dieser Druck benötigt:',
-    insufficientFilamentLine: '{{printer}} - {{slot}}: benötigt {{required}}g, verbleibend {{remaining}}g',
-    printAnyway: 'Trotzdem drucken',
   },
 
   // Backup

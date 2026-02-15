@@ -87,7 +87,6 @@ async def get_settings(
                 "spoolman_enabled",
                 "spoolman_disable_weight_sync",
                 "spoolman_report_partial_usage",
-                "disable_filament_warnings",
                 "check_updates",
                 "check_printer_firmware",
                 "virtual_printer_enabled",
@@ -238,7 +237,6 @@ async def get_spoolman_settings(
     spoolman_sync_mode = await get_setting(db, "spoolman_sync_mode") or "auto"
     spoolman_disable_weight_sync = await get_setting(db, "spoolman_disable_weight_sync") or "false"
     spoolman_report_partial_usage = await get_setting(db, "spoolman_report_partial_usage") or "true"
-    disable_filament_warnings = await get_setting(db, "disable_filament_warnings") or "false"
 
     return {
         "spoolman_enabled": spoolman_enabled,
@@ -246,7 +244,6 @@ async def get_spoolman_settings(
         "spoolman_sync_mode": spoolman_sync_mode,
         "spoolman_disable_weight_sync": spoolman_disable_weight_sync,
         "spoolman_report_partial_usage": spoolman_report_partial_usage,
-        "disable_filament_warnings": disable_filament_warnings,
     }
 
 
@@ -276,8 +273,6 @@ async def update_spoolman_settings(
         await set_setting(db, "spoolman_disable_weight_sync", settings["spoolman_disable_weight_sync"])
     if "spoolman_report_partial_usage" in settings:
         await set_setting(db, "spoolman_report_partial_usage", settings["spoolman_report_partial_usage"])
-    if "disable_filament_warnings" in settings:
-        await set_setting(db, "disable_filament_warnings", settings["disable_filament_warnings"])
 
     await db.commit()
     db.expire_all()

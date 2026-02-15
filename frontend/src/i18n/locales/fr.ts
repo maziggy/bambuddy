@@ -1160,8 +1160,6 @@ export default {
     // Filament Tracking Mode
     filamentTracking: 'Suivi de Filament',
     filamentTrackingDesc: 'Choisissez comment suivre vos bobines. Utilisez l\'inventaire intégré ou connectez un serveur Spoolman.',
-    disableFilamentWarnings: 'Désactiver les avertissements de filament',
-    disableFilamentWarningsDesc: 'Ne pas afficher les avertissements de filament insuffisant lors de l\'impression ou de la mise en file d\'attente',
     trackingModeBuiltIn: 'Inventaire Intégré',
     trackingModeBuiltInDesc: 'Correspondance RFID et suivi de consommation inclus',
     trackingModeSpoolmanDesc: 'Serveur de gestion externe',
@@ -2484,9 +2482,6 @@ export default {
     unassignSpool: 'Désassigner',
     assignSuccess: 'Bobine assignée et slot AMS configuré',
     assignFailed: 'Échec assignation',
-    assignMismatchTitle: 'Matériau non correspondant',
-    assignMismatchMessage: 'Le matériau de la bobine sélectionnée ({{spoolMaterial}}) ne correspond pas au profil AMS ({{trayMaterial}}) pour {{location}}. Assigner quand même ?',
-    assignMismatchConfirm: 'Assigner quand même',
     selectSpool: 'Choisir une bobine pour ce slot',
     assigned: 'Assigné',
     assigning: 'Assignation...',
@@ -2655,10 +2650,6 @@ export default {
     rightNozzle: 'D',
     leftNozzleTooltip: 'Buse gauche',
     rightNozzleTooltip: 'Buse droite',
-    insufficientFilamentTitle: 'Filament insuffisant',
-    insufficientFilamentMessage: 'Certaines bobines assignées ont moins de filament restant que nécessaire pour cette impression :',
-    insufficientFilamentLine: '{{printer}} - {{slot}} : nécessite {{required}}g, restant {{remaining}}g',
-    printAnyway: 'Imprimer quand même',
   },
 
   // Backup

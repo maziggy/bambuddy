@@ -1164,8 +1164,6 @@ export default {
     // Filament Tracking Mode
     filamentTracking: 'Filament Tracking',
     filamentTrackingDesc: 'Choose how to track your filament spools. You can use the built-in inventory or connect an external Spoolman server.',
-    disableFilamentWarnings: 'Disable filament warnings',
-    disableFilamentWarningsDesc: 'Don\'t show warnings about insufficient filament when printing or queueing',
     trackingModeBuiltIn: 'Built-in Inventory',
     trackingModeBuiltInDesc: 'RFID auto-matching and usage tracking included',
     trackingModeSpoolmanDesc: 'External filament management server',
@@ -2488,9 +2486,6 @@ export default {
     unassignSpool: 'Unassign',
     assignSuccess: 'Spool assigned and AMS slot configured',
     assignFailed: 'Failed to assign spool',
-    assignMismatchTitle: 'Material mismatch',
-    assignMismatchMessage: 'The selected spool material ({{spoolMaterial}}) does not match the AMS profile ({{trayMaterial}}) for {{location}}. Assign anyway?',
-    assignMismatchConfirm: 'Assign Anyway',
     selectSpool: 'Select a spool to assign to this slot',
     assigned: 'Assigned',
     assigning: 'Assigning...',
@@ -2659,10 +2654,6 @@ export default {
     rightNozzle: 'R',
     leftNozzleTooltip: 'Left nozzle',
     rightNozzleTooltip: 'Right nozzle',
-    insufficientFilamentTitle: 'Not enough filament',
-    insufficientFilamentMessage: 'Some assigned spools have less filament remaining than this print needs:',
-    insufficientFilamentLine: '{{printer}} - {{slot}}: needs {{required}}g, remaining {{remaining}}g',
-    printAnyway: 'Print anyway',
   },
 
   // Backup

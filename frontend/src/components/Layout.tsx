@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Printer, Archive, Calendar, BarChart3, Cloud, Settings, Sun, Moon, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Package, type LucideIcon } from 'lucide-react';
+import { Printer, Archive, Calendar, BarChart3, Cloud, Settings, Sun, Moon, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
@@ -8,7 +8,7 @@ import { SwitchbarPopover } from './SwitchbarPopover';
 import { useQuery } from '@tanstack/react-query';
 import { api, supportApi, pendingUploadsApi } from '../api/client';
 import { getIconByName } from './IconPicker';
-import { useIsMobile } from '../hooks/useIsMobile';
+import { useIsSidebarCompact } from '../hooks/useIsSidebarCompact';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { Card, CardHeader, CardContent } from './Card';
@@ -29,7 +29,7 @@ export const defaultNavItems: NavItem[] = [
   { id: 'profiles', to: '/profiles', icon: Cloud, labelKey: 'nav.profiles' },
   { id: 'maintenance', to: '/maintenance', icon: Wrench, labelKey: 'nav.maintenance' },
   { id: 'projects', to: '/projects', icon: FolderKanban, labelKey: 'nav.projects' },
-  { id: 'inventory', to: '/inventory', icon: Package, labelKey: 'nav.inventory' },
+  { id: 'inventory', to: '/inventory', icon: Disc3, labelKey: 'nav.inventory' },
   { id: 'files', to: '/files', icon: FolderOpen, labelKey: 'nav.files' },
   { id: 'settings', to: '/settings', icon: Settings, labelKey: 'nav.settings' },
 ];
@@ -72,7 +72,7 @@ export function Layout() {
   const location = useLocation();
   const { mode, toggleMode } = useTheme();
   const { t } = useTranslation();
-  const isMobile = useIsMobile();
+  const isSidebarCompact = useIsSidebarCompact();
   const { user, authEnabled, logout, hasPermission } = useAuth();
   const { showToast } = useToast();
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
@@ -311,12 +311,12 @@ export function Layout() {
     localStorage.setItem('sidebarExpanded', String(sidebarExpanded));
   }, [sidebarExpanded]);
 
-  // Close mobile drawer on navigation
+  // Close compact drawer on navigation
   useEffect(() => {
-    if (isMobile) {
+    if (isSidebarCompact) {
       setMobileDrawerOpen(false);
     }
-  }, [location.pathname, isMobile]);
+  }, [location.pathname, isSidebarCompact]);
 
   // Listen for plate detection warnings (objects on plate, print paused)
   // Only show to users with printers:control permission
@@ -390,8 +390,8 @@ export function Layout() {
 
   return (
     <div className="flex min-h-screen">
-      {/* Mobile Header */}
-      {isMobile && (
+      {/* Compact Header */}
+      {isSidebarCompact && (
         <header className="fixed top-0 left-0 right-0 z-40 h-14 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary flex items-center px-4">
           <button
             onClick={() => setMobileDrawerOpen(true)}
@@ -408,8 +408,8 @@ export function Layout() {
         </header>
       )}
 
-      {/* Mobile Drawer Backdrop */}
-      {isMobile && mobileDrawerOpen && (
+      {/* Compact Drawer Backdrop */}
+      {isSidebarCompact && mobileDrawerOpen && (
         <div
           className="fixed inset-0 bg-black/60 z-40 transition-opacity"
           onClick={() => setMobileDrawerOpen(false)}
@@ -419,17 +419,17 @@ export function Layout() {
       {/* Sidebar / Mobile Drawer */}
       <aside
         className={`bg-bambu-dark-secondary border-r border-bambu-dark-tertiary flex flex-col transition-all duration-300 ${
-          isMobile
+          isSidebarCompact
             ? `fixed inset-y-0 left-0 z-50 w-72 transform ${mobileDrawerOpen ? 'translate-x-0' : '-translate-x-full'}`
             : `fixed inset-y-0 left-0 z-30 ${sidebarExpanded ? 'w-64' : 'w-16'}`
         }`}
       >
         {/* Logo */}
-        <div className={`border-b border-bambu-dark-tertiary flex items-center justify-center ${isMobile || sidebarExpanded ? 'p-4' : 'p-2'}`}>
+        <div className={`border-b border-bambu-dark-tertiary flex items-center justify-center ${isSidebarCompact || sidebarExpanded ? 'p-4' : 'p-2'}`}>
           <img
             src={mode === 'dark' ? '/img/bambuddy_logo_dark_transparent.png' : '/img/bambuddy_logo_light.png'}
             alt="Bambuddy"
-            className={isMobile || sidebarExpanded ? 'h-16 w-auto' : 'h-8 w-8 object-cover object-left'}
+            className={isSidebarCompact || sidebarExpanded ? 'h-16 w-auto' : 'h-8 w-8 object-cover object-left'}
           />
         </div>
 
@@ -467,10 +467,10 @@ export function Layout() {
                         href={link.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className={`flex items-center ${isMobile || sidebarExpanded ? 'gap-3 px-4' : 'justify-center px-2'} py-3 rounded-lg transition-colors group text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white`}
-                        title={!isMobile && !sidebarExpanded ? link.name : undefined}
+                        className={`flex items-center ${isSidebarCompact || sidebarExpanded ? 'gap-3 px-4' : 'justify-center px-2'} py-3 rounded-lg transition-colors group text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white`}
+                        title={!isSidebarCompact && !sidebarExpanded ? link.name : undefined}
                       >
-                        {sidebarExpanded && !isMobile && (
+                        {sidebarExpanded && !isSidebarCompact && (
                           <GripVertical className="w-4 h-4 flex-shrink-0 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing -ml-1" />
                         )}
                         {link.custom_icon ? (
@@ -482,21 +482,21 @@ export function Layout() {
                         ) : (
                           LinkIcon && <LinkIcon className="w-5 h-5 flex-shrink-0" />
                         )}
-                        {(isMobile || sidebarExpanded) && <span>{link.name}</span>}
+                        {(isSidebarCompact || sidebarExpanded) && <span>{link.name}</span>}
                       </a>
                     ) : (
                       <NavLink
                         to={`/external/${link.id}`}
                         className={({ isActive }) =>
-                          `flex items-center ${isMobile || sidebarExpanded ? 'gap-3 px-4' : 'justify-center px-2'} py-3 rounded-lg transition-colors group ${
+                          `flex items-center ${isSidebarCompact || sidebarExpanded ? 'gap-3 px-4' : 'justify-center px-2'} py-3 rounded-lg transition-colors group ${
                             isActive
                               ? 'bg-bambu-green text-white'
                               : 'text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white'
                           }`
                         }
-                        title={!isMobile && !sidebarExpanded ? link.name : undefined}
+                        title={!isSidebarCompact && !sidebarExpanded ? link.name : undefined}
                       >
-                        {sidebarExpanded && !isMobile && (
+                        {sidebarExpanded && !isSidebarCompact && (
                           <GripVertical className="w-4 h-4 flex-shrink-0 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing -ml-1" />
                         )}
                         {link.custom_icon ? (
@@ -508,7 +508,7 @@ export function Layout() {
                         ) : (
                           LinkIcon && <LinkIcon className="w-5 h-5 flex-shrink-0" />
                         )}
-                        {(isMobile || sidebarExpanded) && <span>{link.name}</span>}
+                        {(isSidebarCompact || sidebarExpanded) && <span>{link.name}</span>}
                       </NavLink>
                     )}
                   </li>
@@ -544,15 +544,15 @@ export function Layout() {
                     <NavLink
                       to={to}
                       className={({ isActive }) =>
-                        `flex items-center ${isMobile || sidebarExpanded ? 'gap-3 px-4' : 'justify-center px-2'} py-3 rounded-lg transition-colors group ${
+                        `flex items-center ${isSidebarCompact || sidebarExpanded ? 'gap-3 px-4' : 'justify-center px-2'} py-3 rounded-lg transition-colors group ${
                           isActive
                             ? 'bg-bambu-green text-white'
                             : 'text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white'
                         }`
                       }
-                      title={!isMobile && !sidebarExpanded ? t(labelKey) : undefined}
+                      title={!isSidebarCompact && !sidebarExpanded ? t(labelKey) : undefined}
                     >
-                      {sidebarExpanded && !isMobile && (
+                      {sidebarExpanded && !isSidebarCompact && (
                         <GripVertical className="w-4 h-4 flex-shrink-0 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing -ml-1" />
                       )}
                       <div className="relative">
@@ -565,7 +565,7 @@ export function Layout() {
                           </span>
                         )}
                       </div>
-                      {(isMobile || sidebarExpanded) && <span>{t(labelKey)}</span>}
+                      {(isSidebarCompact || sidebarExpanded) && <span>{t(labelKey)}</span>}
                     </NavLink>
                   </li>
                 );
@@ -574,8 +574,8 @@ export function Layout() {
           </ul>
         </nav>
 
-        {/* Collapse toggle - hide on mobile */}
-        {!isMobile && (
+        {/* Collapse toggle - hide on compact sidebar */}
+        {!isSidebarCompact && (
           <button
             onClick={() => setSidebarExpanded(!sidebarExpanded)}
             className="p-2 mx-2 mb-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white flex items-center justify-center"
@@ -591,7 +591,7 @@ export function Layout() {
 
         {/* Footer */}
         <div className="p-2 border-t border-bambu-dark-tertiary">
-          {isMobile || sidebarExpanded ? (
+          {isSidebarCompact || sidebarExpanded ? (
             <div className="flex flex-col gap-2 px-2">
               {/* Top row: icons */}
               <div className="flex items-center justify-center gap-1">
@@ -783,7 +783,7 @@ export function Layout() {
 
       {/* Main content */}
       <main className={`flex-1 bg-bambu-dark overflow-auto transition-all duration-300 ${
-        isMobile ? 'mt-14' : sidebarExpanded ? 'ml-64' : 'ml-16'
+        isSidebarCompact ? 'mt-14' : sidebarExpanded ? 'ml-64' : 'ml-16'
       }`}>
         {/* Debug logging indicator */}
         {debugLoggingState?.enabled && (

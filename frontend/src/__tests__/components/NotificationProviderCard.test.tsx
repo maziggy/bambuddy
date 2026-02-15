@@ -64,6 +64,7 @@ const createMockProvider = (
   on_ams_ht_humidity_high: false,
   on_ams_ht_temperature_high: false,
   on_plate_not_empty: true,
+  on_bed_cooled: false,
   on_queue_job_added: false,
   on_queue_job_assigned: false,
   on_queue_job_started: false,
@@ -367,6 +368,37 @@ describe('NotificationProviderCard Queue notifications', () => {
       expect(provider.on_queue_job_skipped).toBe(true);
       expect(provider.on_queue_job_failed).toBe(false);
       expect(provider.on_queue_completed).toBe(true);
+    });
+  });
+});
+
+describe('NotificationProviderCard Bed Cooled notifications', () => {
+  describe('bed cooled toggle', () => {
+    it('includes on_bed_cooled in provider data when enabled', () => {
+      const provider = createMockProvider({ on_bed_cooled: true });
+      expect(provider.on_bed_cooled).toBe(true);
+    });
+
+    it('includes on_bed_cooled in provider data when disabled', () => {
+      const provider = createMockProvider({ on_bed_cooled: false });
+      expect(provider.on_bed_cooled).toBe(false);
+    });
+
+    it('defaults on_bed_cooled to false', () => {
+      const provider = createMockProvider();
+      expect(provider.on_bed_cooled).toBe(false);
+    });
+
+    it('bed cooled is independent from other print event toggles', () => {
+      const provider = createMockProvider({
+        on_print_complete: true,
+        on_bed_cooled: true,
+        on_plate_not_empty: false,
+      });
+
+      expect(provider.on_print_complete).toBe(true);
+      expect(provider.on_bed_cooled).toBe(true);
+      expect(provider.on_plate_not_empty).toBe(false);
     });
   });
 });

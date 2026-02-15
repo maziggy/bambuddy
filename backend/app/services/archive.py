@@ -727,10 +727,10 @@ class ArchiveService:
                 sha256.update(chunk)
         return sha256.hexdigest()
 
-    async def get_duplicate_hashes(self) -> set[str]:
-        """Get all content hashes that appear more than once.
+    async def get_duplicate_hashes_and_names(self) -> tuple[set[str], set[str]]:
+        """Get all content hashes and print names that appear more than once.
 
-        Returns a set of hashes that have duplicates.
+        Returns a tuple of (duplicate_hashes, duplicate_names).
         """
         from sqlalchemy import func
 
@@ -740,7 +740,17 @@ class ArchiveService:
             .group_by(PrintArchive.content_hash)
             .having(func.count(PrintArchive.id) > 1)
         )
-        return {row[0] for row in result.all()}
+        duplicate_hashes = {row[0] for row in result.all()}
+
+        result = await self.db.execute(
+            select(func.lower(PrintArchive.print_name))
+            .where(PrintArchive.print_name.isnot(None))
+            .group_by(func.lower(PrintArchive.print_name))
+            .having(func.count(PrintArchive.id) > 1)
+        )
+        duplicate_names = {row[0] for row in result.all()}
+
+        return duplicate_hashes, duplicate_names
 
     async def find_duplicates(
         self,

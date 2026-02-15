@@ -32,6 +32,7 @@ const mockSettings = {
   ha_token: '',
   check_updates: false,
   check_printer_firmware: false,
+  bed_cooled_threshold: 35,
 };
 
 describe('SettingsPage', () => {

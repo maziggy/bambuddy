@@ -69,6 +69,12 @@ class PrintScheduler:
             if not items:
                 return
 
+            logger.info(
+                "Queue check: found %d pending items: %s",
+                len(items),
+                [(i.id, i.printer_id, i.archive_id, i.library_file_id) for i in items],
+            )
+
             # Track busy printers to avoid assigning multiple items to same printer
             busy_printers: set[int] = set()
 
@@ -333,10 +339,9 @@ class PrintScheduler:
                     if tray_type:
                         loaded_types.add(tray_type.upper())
 
-        # Check external spool (virtual tray, stored in raw_data["vt_tray"])
-        vt_tray = status.raw_data.get("vt_tray")
-        if vt_tray:
-            vt_type = vt_tray.get("tray_type")
+        # Check external spool(s) (virtual tray, stored in raw_data["vt_tray"] as list)
+        for vt in status.raw_data.get("vt_tray") or []:
+            vt_type = vt.get("tray_type")
             if vt_type:
                 loaded_types.add(vt_type.upper())
 
@@ -538,23 +543,24 @@ class PrintScheduler:
                         }
                     )
 
-        # Check external spool (vt_tray)
-        vt_tray = status.raw_data.get("vt_tray")
-        if vt_tray and vt_tray.get("tray_type"):
-            color = self._normalize_color(vt_tray.get("tray_color", ""))
-            filaments.append(
-                {
-                    "type": vt_tray["tray_type"],
-                    "color": color,
-                    "tray_info_idx": vt_tray.get("tray_info_idx", ""),
-                    "ams_id": -1,
-                    "tray_id": 0,
-                    "is_ht": False,
-                    "is_external": True,
-                    "global_tray_id": 254,
-                    "extruder_id": 0 if ams_extruder_map else None,
-                }
-            )
+        # Check external spool(s) (vt_tray is a list)
+        for idx, vt in enumerate(status.raw_data.get("vt_tray") or []):
+            if vt.get("tray_type"):
+                color = self._normalize_color(vt.get("tray_color", ""))
+                tray_id = int(vt.get("id", 254))
+                filaments.append(
+                    {
+                        "type": vt["tray_type"],
+                        "color": color,
+                        "tray_info_idx": vt.get("tray_info_idx", ""),
+                        "ams_id": -1,
+                        "tray_id": idx,
+                        "is_ht": False,
+                        "is_external": True,
+                        "global_tray_id": tray_id,
+                        "extruder_id": (tray_id - 254) if ams_extruder_map else None,
+                    }
+                )
 
         return filaments
 

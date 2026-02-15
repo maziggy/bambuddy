@@ -56,6 +56,8 @@ def _provider_to_dict(provider: NotificationProvider) -> dict:
         "on_ams_ht_temperature_high": provider.on_ams_ht_temperature_high,
         # Build plate detection
         "on_plate_not_empty": provider.on_plate_not_empty,
+        # Bed cooled
+        "on_bed_cooled": provider.on_bed_cooled,
         # Print queue events
         "on_queue_job_added": provider.on_queue_job_added,
         "on_queue_job_assigned": provider.on_queue_job_assigned,

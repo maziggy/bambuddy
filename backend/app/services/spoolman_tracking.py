@@ -66,14 +66,15 @@ def build_ams_tray_lookup(raw_data: dict) -> dict[int, dict]:
                 "tray_type": tray.get("tray_type", ""),
             }
 
-    # External spool (global_tray_id = 254)
-    vt_tray = raw_data.get("vt_tray")
-    if vt_tray and vt_tray.get("tray_type"):
-        lookup[254] = {
-            "tray_uuid": vt_tray.get("tray_uuid", ""),
-            "tag_uid": vt_tray.get("tag_uid", ""),
-            "tray_type": vt_tray.get("tray_type", ""),
-        }
+    # External spool(s) (vt_tray is a list, global_tray_id from each entry's "id")
+    for vt in raw_data.get("vt_tray") or []:
+        if vt.get("tray_type"):
+            tray_id = int(vt.get("id", 254))
+            lookup[tray_id] = {
+                "tray_uuid": vt.get("tray_uuid", ""),
+                "tag_uid": vt.get("tag_uid", ""),
+                "tray_type": vt.get("tray_type", ""),
+            }
 
     return lookup
 

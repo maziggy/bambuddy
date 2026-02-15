@@ -286,9 +286,9 @@ function MaintenanceCard({
 
   return (
     <div className={`rounded-xl border p-4 transition-all ${getBgColor()}`}>
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-3 max-[550px]:flex-wrap">
         {/* Icon with status indicator */}
-        <div className={`relative p-2.5 rounded-lg ${
+        <div className={`relative p-2.5 rounded-lg shrink-0 ${
           item.is_due ? 'bg-red-500/20' :
           item.is_warning ? 'bg-amber-500/20' :
           item.enabled ? 'bg-bambu-dark' : 'bg-bambu-dark/50'
@@ -351,7 +351,7 @@ function MaintenanceCard({
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 max-[550px]:w-full max-[550px]:justify-end max-[550px]:mt-1">
           <span title={!hasPermission('maintenance:update') ? t('maintenance.noPermissionUpdate') : undefined}>
             <Toggle
               checked={item.enabled}

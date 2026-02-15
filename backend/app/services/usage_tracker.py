@@ -263,8 +263,13 @@ async def _track_from_3mf(
     tray_now_override: int | None = None
     if not slot_to_tray and len(nonzero_slots) == 1:
         state = printer_manager.get_status(printer_id)
-        if state and state.tray_now < 255:
+        if state and 0 <= state.tray_now <= 254:
             tray_now_override = state.tray_now
+        elif state and state.tray_now == 255:
+            # 255 = "no filament" on legacy printers, but valid 2nd external spool on H2-series
+            vt_tray = state.raw_data.get("vt_tray") or []
+            if any(int(vt.get("id", 0)) == 255 for vt in vt_tray if isinstance(vt, dict)):
+                tray_now_override = state.tray_now
 
     # Scale factor for partial prints (failed/aborted)
     if status == "completed":
@@ -322,7 +327,11 @@ async def _track_from_3mf(
                 if isinstance(mapped, int) and mapped >= 0:
                     global_tray_id = mapped
 
-        if global_tray_id >= 128:
+        if global_tray_id >= 254:
+            # External spool: ams_id=255 (sentinel), tray_id=slot index (0 or 1)
+            ams_id = 255
+            tray_id = global_tray_id - 254
+        elif global_tray_id >= 128:
             ams_id = global_tray_id
             tray_id = 0
         else:

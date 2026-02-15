@@ -889,6 +889,67 @@ async def get_builtin_filaments(
     return [{"filament_id": fid, "name": name} for fid, name in _BUILTIN_FILAMENT_NAMES.items()]
 
 
+# Cache for filament_id → name mapping (resolved from cloud preset details)
+_filament_id_name_cache: dict[str, str] = {}
+_filament_id_name_cache_time: float = 0
+
+
+@router.get("/filament-id-map")
+async def get_filament_id_map(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
+):
+    """
+    Get filament_id → name mapping for user cloud presets.
+
+    K-profiles store a filament_id (e.g., "P4d64437") which is different from
+    the cloud preset setting_id (e.g., "PFUS9ac902733670a9"). This endpoint
+    fetches details for all custom presets and returns the mapping.
+    Cached for 5 minutes.
+    """
+    import time
+
+    global _filament_id_name_cache, _filament_id_name_cache_time
+
+    if _filament_id_name_cache and time.time() - _filament_id_name_cache_time < FILAMENT_CACHE_TTL:
+        return _filament_id_name_cache
+
+    token, _ = await get_stored_token(db)
+    if not token:
+        return _filament_id_name_cache or {}
+
+    cloud = get_cloud_service()
+    cloud.set_token(token)
+    if not cloud.is_authenticated:
+        return _filament_id_name_cache or {}
+
+    try:
+        data = await cloud.get_slicer_settings()
+        custom_presets = data.get("filament", {}).get("private", [])
+
+        result: dict[str, str] = {}
+        for preset in custom_presets:
+            setting_id = preset.get("setting_id", "")
+            if not setting_id:
+                continue
+            try:
+                detail = await cloud.get_setting_detail(setting_id)
+                fid = detail.get("filament_id", "")
+                name = detail.get("name", "")
+                if fid and name:
+                    # Strip printer/nozzle suffix: "Devil Design PLA Basic @Bambu Lab H2D 0.4 nozzle" → "Devil Design PLA Basic"
+                    clean_name = name.split(" @")[0].strip() if " @" in name else name
+                    result[fid] = clean_name
+            except Exception:
+                pass
+
+        _filament_id_name_cache = result
+        _filament_id_name_cache_time = time.time()
+        return result
+    except Exception:
+        return _filament_id_name_cache or {}
+
+
 @router.get("/fields/{preset_type}")
 async def get_preset_fields(
     preset_type: Literal["filament", "print", "process", "printer"],

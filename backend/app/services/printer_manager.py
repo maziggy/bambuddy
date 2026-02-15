@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import traceback
 from collections.abc import Callable
 
 from sqlalchemy import select
@@ -6,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.printer import Printer
 from backend.app.services.bambu_mqtt import BambuMQTTClient, MQTTLogEntry, PrinterState, get_stage_name
+
+logger = logging.getLogger(__name__)
 
 # Models that have a real chamber temperature sensor
 # Based on Home Assistant Bambu Lab integration
@@ -304,6 +308,15 @@ class PrinterManager:
         use_ams: bool = True,
     ) -> bool:
         """Start a print on a connected printer."""
+        caller = traceback.extract_stack(limit=3)[0]
+        logger.info(
+            "PRINT COMMAND: printer=%s, file=%s, caller=%s:%s:%s",
+            printer_id,
+            filename,
+            caller.filename.split("/")[-1],
+            caller.lineno,
+            caller.name,
+        )
         if printer_id in self._clients:
             return self._clients[printer_id].start_print(
                 filename,
@@ -502,7 +515,7 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
     """
     # Parse AMS data from raw_data
     ams_units = []
-    vt_tray = None
+    vt_tray = []
     raw_data = state.raw_data or {}
 
     # Build K-profile lookup map: cali_idx -> k_value
@@ -578,37 +591,40 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
                 }
             )
 
-    # Parse virtual tray (external spool)
+    # Parse virtual tray (external spool) — now a list
     if "vt_tray" in raw_data:
-        vt_data = raw_data["vt_tray"]
-        vt_tag_uid = vt_data.get("tag_uid")
-        if vt_tag_uid in ("", "0000000000000000"):
-            vt_tag_uid = None
-        vt_tray_uuid = vt_data.get("tray_uuid")
-        if vt_tray_uuid in ("", "00000000000000000000000000000000"):
-            vt_tray_uuid = None
+        for vt_data in raw_data["vt_tray"]:
+            vt_tag_uid = vt_data.get("tag_uid")
+            if vt_tag_uid in ("", "0000000000000000"):
+                vt_tag_uid = None
+            vt_tray_uuid = vt_data.get("tray_uuid")
+            if vt_tray_uuid in ("", "00000000000000000000000000000000"):
+                vt_tray_uuid = None
 
-        # Get K value for vt_tray
-        vt_k_value = vt_data.get("k")
-        vt_cali_idx = vt_data.get("cali_idx")
-        if vt_k_value is None and vt_cali_idx is not None and vt_cali_idx in kprofile_map:
-            vt_k_value = kprofile_map[vt_cali_idx]
+            # Get K value for vt_tray
+            vt_k_value = vt_data.get("k")
+            vt_cali_idx = vt_data.get("cali_idx")
+            if vt_k_value is None and vt_cali_idx is not None and vt_cali_idx in kprofile_map:
+                vt_k_value = kprofile_map[vt_cali_idx]
 
-        vt_tray = {
-            "id": 254,
-            "tray_color": vt_data.get("tray_color"),
-            "tray_type": vt_data.get("tray_type"),
-            "tray_sub_brands": vt_data.get("tray_sub_brands"),
-            "tray_id_name": vt_data.get("tray_id_name"),
-            "tray_info_idx": vt_data.get("tray_info_idx"),
-            "remain": vt_data.get("remain", 0),
-            "k": vt_k_value,
-            "cali_idx": vt_cali_idx,
-            "tag_uid": vt_tag_uid,
-            "tray_uuid": vt_tray_uuid,
-            "nozzle_temp_min": vt_data.get("nozzle_temp_min"),
-            "nozzle_temp_max": vt_data.get("nozzle_temp_max"),
-        }
+            tray_id = int(vt_data.get("id", 254))
+            vt_tray.append(
+                {
+                    "id": tray_id,
+                    "tray_color": vt_data.get("tray_color"),
+                    "tray_type": vt_data.get("tray_type"),
+                    "tray_sub_brands": vt_data.get("tray_sub_brands"),
+                    "tray_id_name": vt_data.get("tray_id_name"),
+                    "tray_info_idx": vt_data.get("tray_info_idx"),
+                    "remain": vt_data.get("remain", 0),
+                    "k": vt_k_value,
+                    "cali_idx": vt_cali_idx,
+                    "tag_uid": vt_tag_uid,
+                    "tray_uuid": vt_tray_uuid,
+                    "nozzle_temp_min": vt_data.get("nozzle_temp_min"),
+                    "nozzle_temp_max": vt_data.get("nozzle_temp_max"),
+                }
+            )
 
     # Get ams_extruder_map from raw_data (populated by MQTT handler from AMS info field)
     ams_extruder_map = raw_data.get("ams_extruder_map", {})

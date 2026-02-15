@@ -46,6 +46,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
   const [onPrinterError, setOnPrinterError] = useState(provider?.on_printer_error ?? false);
   const [onFilamentLow, setOnFilamentLow] = useState(provider?.on_filament_low ?? false);
   const [onMaintenanceDue, setOnMaintenanceDue] = useState(provider?.on_maintenance_due ?? false);
+  const [onBedCooled, setOnBedCooled] = useState(provider?.on_bed_cooled ?? false);
 
   // Provider-specific config
   const [config, setConfig] = useState<Record<string, string>>(
@@ -145,6 +146,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
       on_printer_error: onPrinterError,
       on_filament_low: onFilamentLow,
       on_maintenance_due: onMaintenanceDue,
+      on_bed_cooled: onBedCooled,
     };
 
     if (isEditing) {
@@ -485,6 +487,13 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
                     <span className="text-xs text-bambu-gray ml-1">(25%, 50%, 75%)</span>
                   </div>
                   <Toggle checked={onPrintProgress} onChange={setOnPrintProgress} />
+                </div>
+                <div className="flex items-center justify-between col-span-2">
+                  <div>
+                    <span className="text-sm text-white">Bed Cooled</span>
+                    <span className="text-xs text-bambu-gray ml-1">(after print completes)</span>
+                  </div>
+                  <Toggle checked={onBedCooled} onChange={setOnBedCooled} />
                 </div>
               </div>
             </div>

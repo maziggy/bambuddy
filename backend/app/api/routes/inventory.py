@@ -645,18 +645,32 @@ async def assign_spool(
     fingerprint_type = None
     state = printer_manager.get_status(data.printer_id)
     if state and state.raw_data:
-        ams_data = state.raw_data.get("ams", {})
-        ams_list = (
-            ams_data.get("ams", []) if isinstance(ams_data, dict) else ams_data if isinstance(ams_data, list) else []
-        )
-        tray = _find_tray_in_ams_data(
-            ams_list,
-            data.ams_id,
-            data.tray_id,
-        )
-        if tray:
-            fingerprint_color = tray.get("tray_color", "")
-            fingerprint_type = tray.get("tray_type", "")
+        if data.ams_id == 255:
+            # External slot: look up tray from vt_tray by global ID
+            vt_tray = state.raw_data.get("vt_tray") or []
+            ext_id = data.tray_id + 254  # 0→254, 1→255
+            for vt in vt_tray:
+                if isinstance(vt, dict) and int(vt.get("id", 254)) == ext_id:
+                    fingerprint_color = vt.get("tray_color", "")
+                    fingerprint_type = vt.get("tray_type", "")
+                    break
+        else:
+            ams_data = state.raw_data.get("ams", {})
+            ams_list = (
+                ams_data.get("ams", [])
+                if isinstance(ams_data, dict)
+                else ams_data
+                if isinstance(ams_data, list)
+                else []
+            )
+            tray = _find_tray_in_ams_data(
+                ams_list,
+                data.ams_id,
+                data.tray_id,
+            )
+            if tray:
+                fingerprint_color = tray.get("tray_color", "")
+                fingerprint_type = tray.get("tray_type", "")
 
     # 3. Upsert assignment (replace if same printer+ams+tray)
     existing = await db.execute(
@@ -715,16 +729,27 @@ async def assign_spool(
                 setting_id=setting_id,
             )
 
-            # b. Look up K-profile for this spool + printer + nozzle
+            # b. Look up K-profile for this spool + printer + nozzle + extruder
             nozzle_diameter = "0.4"
             if state and state.nozzles:
                 nd = state.nozzles[0].nozzle_diameter
                 if nd:
                     nozzle_diameter = nd
 
+            # Determine slot's extruder from ams_extruder_map
+            slot_extruder = None
+            if state and state.ams_extruder_map:
+                if data.ams_id == 255:
+                    # External slots: ext-L (tray 0) → extruder 1, ext-R (tray 1) → extruder 0
+                    slot_extruder = 1 - data.tray_id  # 0→1, 1→0
+                else:
+                    slot_extruder = state.ams_extruder_map.get(str(data.ams_id))
+
             matching_kp = None
             for kp in spool.k_profiles:
                 if kp.printer_id == data.printer_id and kp.nozzle_diameter == nozzle_diameter:
+                    if slot_extruder is not None and kp.extruder_id is not None and kp.extruder_id != slot_extruder:
+                        continue
                     matching_kp = kp
                     break
 
@@ -735,7 +760,6 @@ async def assign_spool(
                     cali_idx=matching_kp.cali_idx,
                     filament_id=tray_info_idx,
                     nozzle_diameter=nozzle_diameter,
-                    setting_id=matching_kp.setting_id,
                 )
 
             configured = True

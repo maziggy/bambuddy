@@ -41,22 +41,26 @@ export function buildLoadedFilaments(printerStatus: PrinterStatus | undefined): 
     });
   });
 
-  // Add external spool if loaded
-  if (printerStatus?.vt_tray?.tray_type) {
-    const color = normalizeColor(printerStatus.vt_tray.tray_color);
-    filaments.push({
-      type: printerStatus.vt_tray.tray_type,
-      color,
-      colorName: getColorName(color),
-      amsId: -1,
-      trayId: 0,
-      isHt: false,
-      isExternal: true,
-      label: 'External',
-      globalTrayId: 254,
-      trayInfoIdx: printerStatus.vt_tray.tray_info_idx || '',
-      extruderId: hasDualNozzle ? 0 : undefined,
-    });
+  // Add external spool(s) if loaded
+  for (const extTray of printerStatus?.vt_tray ?? []) {
+    if (extTray.tray_type) {
+      const color = normalizeColor(extTray.tray_color);
+      const trayId = extTray.id ?? 254;
+      const hasDualExternal = (printerStatus?.vt_tray?.length ?? 0) > 1;
+      filaments.push({
+        type: extTray.tray_type,
+        color,
+        colorName: getColorName(color),
+        amsId: -1,
+        trayId: trayId - 254,
+        isHt: false,
+        isExternal: true,
+        label: hasDualExternal ? (trayId === 254 ? 'Ext-L' : 'Ext-R') : 'External',
+        globalTrayId: trayId,
+        trayInfoIdx: extTray.tray_info_idx || '',
+        extruderId: hasDualNozzle ? (trayId - 254) : undefined,
+      });
+    }
   }
 
   return filaments;

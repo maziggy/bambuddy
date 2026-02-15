@@ -11,6 +11,7 @@ import { api } from '../api/client';
 import type { InventorySpool, SpoolAssignment } from '../api/client';
 import { Button } from '../components/Button';
 import { SpoolFormModal } from '../components/SpoolFormModal';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { ColumnConfigModal, type ColumnConfig } from '../components/ColumnConfigModal';
 import { useToast } from '../contexts/ToastContext';
 import { resolveSpoolColorName } from '../utils/colors';
@@ -303,6 +304,7 @@ export default function InventoryPage() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [formModal, setFormModal] = useState<{ spool?: InventorySpool | null } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ type: 'delete' | 'archive'; spoolId: number } | null>(null);
 
   // Filter state
   const [archiveFilter, setArchiveFilter] = useState<ArchiveFilter>('active');
@@ -947,7 +949,7 @@ export default function InventoryPage() {
                               </button>
                             ) : (
                               <button
-                                onClick={() => archiveMutation.mutate(spool.id)}
+                                onClick={() => setConfirmAction({ type: 'archive', spoolId: spool.id })}
                                 className="p-1.5 text-bambu-gray hover:text-yellow-400 rounded transition-colors"
                                 title={t('inventory.archive')}
                               >
@@ -955,11 +957,7 @@ export default function InventoryPage() {
                               </button>
                             )}
                             <button
-                              onClick={() => {
-                                if (confirm(t('inventory.deleteConfirm'))) {
-                                  deleteMutation.mutate(spool.id);
-                                }
-                              }}
+                              onClick={() => setConfirmAction({ type: 'delete', spoolId: spool.id })}
                               className="p-1.5 text-bambu-gray hover:text-red-400 rounded transition-colors"
                               title={t('common.delete')}
                             >
@@ -1053,6 +1051,25 @@ export default function InventoryPage() {
           isOpen={true}
           onClose={() => setFormModal(null)}
           spool={formModal.spool}
+        />
+      )}
+
+      {/* Confirm Modal (delete / archive) */}
+      {confirmAction && (
+        <ConfirmModal
+          title={confirmAction.type === 'delete' ? t('common.delete') : t('inventory.archive')}
+          message={confirmAction.type === 'delete' ? t('inventory.deleteConfirm') : t('inventory.archiveConfirm')}
+          confirmText={confirmAction.type === 'delete' ? t('common.delete') : t('inventory.archive')}
+          variant={confirmAction.type === 'delete' ? 'danger' : 'warning'}
+          onConfirm={() => {
+            if (confirmAction.type === 'delete') {
+              deleteMutation.mutate(confirmAction.spoolId);
+            } else {
+              archiveMutation.mutate(confirmAction.spoolId);
+            }
+            setConfirmAction(null);
+          }}
+          onCancel={() => setConfirmAction(null)}
         />
       )}
 

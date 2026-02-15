@@ -165,6 +165,7 @@ if not app_settings.debug:
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("paho.mqtt").setLevel(logging.WARNING)
 
 logging.info("Bambuddy starting - debug=%s, log_level=%s", app_settings.debug, log_level_str)
 from fastapi.responses import FileResponse
@@ -193,6 +194,7 @@ from backend.app.api.routes import (
     notification_templates,
     notifications,
     pending_uploads,
+    print_log,
     print_queue,
     printers,
     projects,
@@ -258,6 +260,9 @@ _notified_hms_errors: dict[int, set[str]] = {}
 # Track timelapse file baselines at print start: {printer_id: set of MP4 filenames}
 # Used for snapshot-diff detection at print completion
 _timelapse_baselines: dict[int, set[str]] = {}
+
+# Track active bed cooldown monitoring tasks: {printer_id: asyncio.Task}
+_bed_cooldown_tasks: dict[int, asyncio.Task] = {}
 
 
 async def _get_plug_energy(plug, db) -> dict | None:
@@ -335,12 +340,14 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
     bed_target = round(temps.get("bed_target", 0))
     nozzle_target = round(temps.get("nozzle_target", 0))
 
+    # Include tray_now and vt_tray hash so external spool changes trigger broadcasts
+    vt_tray_key = hash(str(state.raw_data.get("vt_tray", []))) if state.raw_data else 0
     status_key = (
         f"{state.connected}:{state.state}:{state.progress}:{state.layer_num}:"
         f"{nozzle_temp}:{bed_temp}:{nozzle_2_temp}:{chamber_temp}:"
         f"{state.stg_cur}:{bed_target}:{nozzle_target}:"
         f"{state.cooling_fan_speed}:{state.big_fan1_speed}:{state.big_fan2_speed}:"
-        f"{state.chamber_light}:{state.active_extruder}"
+        f"{state.chamber_light}:{state.active_extruder}:{state.tray_now}:{vt_tray_key}"
     )
 
     # MQTT relay - publish status (before dedup check - always publish to MQTT)
@@ -673,7 +680,9 @@ async def on_ams_change(printer_id: int, ams_data: list):
                         )
                         existing_assignment = existing.scalar_one_or_none()
                         if existing_assignment:
-                            # Sync spool weight_used from AMS remain if valid
+                            # Sync spool weight_used from AMS remain — only INCREASE, never decrease.
+                            # The AMS remain% is low-resolution (integer %, i.e. 10g steps for 1kg spool)
+                            # and must not overwrite precise values from the usage tracker (3MF/G-code).
                             remain_raw = tray.get("remain")
                             if remain_raw is not None and existing_assignment.spool:
                                 try:
@@ -683,11 +692,12 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                 if 0 <= remain_val <= 100:
                                     lw = existing_assignment.spool.label_weight or 1000
                                     new_used = round(lw * (100 - remain_val) / 100.0, 1)
-                                    if abs((existing_assignment.spool.weight_used or 0) - new_used) > 1:
+                                    current_used = existing_assignment.spool.weight_used or 0
+                                    if new_used > current_used + 1:
                                         logger.info(
                                             "Weight sync: spool %d weight_used %s -> %s (remain=%d)",
                                             existing_assignment.spool_id,
-                                            existing_assignment.spool.weight_used,
+                                            current_used,
                                             new_used,
                                             remain_val,
                                         )
@@ -707,6 +717,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                 spool,
                                 printer_manager,
                                 db,
+                                tray_info_idx=tray_info_idx,
                             )
                             await db.commit()
                             await ws_manager.broadcast(
@@ -984,6 +995,12 @@ async def on_print_start(printer_id: int, data: dict):
 
     logger.info("[CALLBACK] on_print_start called for printer %s, data keys: %s", printer_id, list(data.keys()))
 
+    # Cancel any active bed cooldown task for this printer
+    existing_task = _bed_cooldown_tasks.pop(printer_id, None)
+    if existing_task and not existing_task.done():
+        existing_task.cancel()
+        logger.info("[BED-COOL] Cancelled bed cooldown monitor for printer %s (new print started)", printer_id)
+
     # Clear cached cover images so the new print's thumbnail is fetched fresh
     from backend.app.api.routes.printers import clear_cover_cache
 
@@ -1258,7 +1275,17 @@ async def on_print_start(printer_id: int, data: dict):
             select(PrintArchive)
             .where(PrintArchive.printer_id == printer_id)
             .where(PrintArchive.status == "printing")
-            .where(PrintArchive.print_name.ilike(f"%{check_name}%"))
+            .where(
+                or_(
+                    PrintArchive.print_name == check_name,
+                    PrintArchive.filename.in_(
+                        [
+                            f"{check_name}.3mf",
+                            f"{check_name}.gcode.3mf",
+                        ]
+                    ),
+                )
+            )
             .order_by(PrintArchive.created_at.desc())
             .limit(1)
         )
@@ -1932,6 +1959,9 @@ async def on_print_complete(printer_id: int, data: dict):
     except Exception as e:
         logger.warning("[CALLBACK] WebSocket send_print_complete failed: %s", e)
 
+    # Capture user info before clearing (needed for print log entry)
+    _print_user_info = printer_manager.get_current_print_user(printer_id)
+
     # Clear current print user tracking (Issue #206)
     printer_manager.clear_current_print_user(printer_id)
 
@@ -2131,6 +2161,36 @@ async def on_print_complete(printer_id: int, data: dict):
         # Continue with other operations even if archive update fails
 
     log_timing("Archive status update")
+
+    # Write independent print log entry (separate table, never touches archives)
+    try:
+        async with async_session() as db:
+            from backend.app.models.archive import PrintArchive
+            from backend.app.services.print_log import write_log_entry
+
+            archive = await db.get(PrintArchive, archive_id)
+            if archive:
+                p_info = printer_manager.get_printer(printer_id)
+                await write_log_entry(
+                    db,
+                    status=data.get("status", "completed"),
+                    print_name=archive.print_name,
+                    printer_name=p_info.name if p_info else None,
+                    printer_id=printer_id,
+                    started_at=archive.started_at,
+                    completed_at=archive.completed_at,
+                    filament_type=archive.filament_type,
+                    filament_color=archive.filament_color,
+                    filament_used_grams=archive.filament_used_grams,
+                    thumbnail_path=archive.thumbnail_path,
+                    created_by_username=_print_user_info.get("username") if _print_user_info else None,
+                )
+                await db.commit()
+                logger.info("[PRINT_LOG] Log entry written for archive %s", archive_id)
+    except Exception as e:
+        logger.warning("[PRINT_LOG] Failed to write log entry for archive %s: %s", archive_id, e)
+
+    log_timing("Print log entry")
 
     # Track filament consumption from AMS remain% deltas (skip if Spoolman handles usage)
     usage_results: list[dict] = []
@@ -2512,6 +2572,87 @@ async def on_print_complete(printer_id: int, data: dict):
                 pass  # Best-effort timelapse session cancellation on error
 
     asyncio.create_task(_background_layer_timelapse())
+
+    # Start bed cooldown monitor (polls bed temp until it drops below threshold)
+    async def _background_bed_cooldown():
+        """Monitor bed temperature after print and notify when cooled."""
+        try:
+            from backend.app.api.routes.settings import get_setting
+
+            # Check threshold setting
+            async with async_session() as db:
+                threshold_str = await get_setting(db, "bed_cooled_threshold")
+            threshold = float(threshold_str) if threshold_str else 35.0
+
+            # Check if any provider has on_bed_cooled enabled (early exit if none)
+            async with async_session() as db:
+                providers = await notification_service._get_providers_for_event(db, "on_bed_cooled", printer_id)
+                if not providers:
+                    logger.debug("[BED-COOL] No providers enabled for bed_cooled on printer %s", printer_id)
+                    return
+
+            logger.info("[BED-COOL] Monitoring bed temp for printer %s (threshold: %.0f°C)", printer_id, threshold)
+
+            max_polls = 120  # 120 * 15s = 30 min timeout
+            for _ in range(max_polls):
+                await asyncio.sleep(15)
+
+                # Check if printer is still connected
+                status = printer_manager.get_status(printer_id)
+                if status is None:
+                    logger.info("[BED-COOL] Printer %s disconnected, stopping monitor", printer_id)
+                    return
+
+                # Check if a new print started (state == RUNNING)
+                if hasattr(status, "state") and status.state == "RUNNING":
+                    logger.info("[BED-COOL] New print started on printer %s, stopping monitor", printer_id)
+                    return
+
+                # Get bed temperature
+                bed_temp = None
+                if hasattr(status, "temperatures") and status.temperatures:
+                    bed_temp = status.temperatures.get("bed")
+
+                if bed_temp is None:
+                    continue
+
+                if bed_temp <= threshold:
+                    logger.info(
+                        "[BED-COOL] Bed cooled to %.1f°C on printer %s (threshold: %.0f°C)",
+                        bed_temp,
+                        printer_id,
+                        threshold,
+                    )
+                    printer_info = printer_manager.get_printer(printer_id)
+                    p_name = printer_info.name if printer_info else "Unknown"
+                    async with async_session() as db:
+                        await notification_service.on_bed_cooled(
+                            printer_id=printer_id,
+                            printer_name=p_name,
+                            bed_temp=bed_temp,
+                            threshold=threshold,
+                            filename=filename or subtask_name or "",
+                            db=db,
+                        )
+                    return
+
+            logger.info("[BED-COOL] Timeout waiting for bed to cool on printer %s", printer_id)
+        except asyncio.CancelledError:
+            logger.info("[BED-COOL] Bed cooldown monitor cancelled for printer %s", printer_id)
+        except Exception as e:
+            logger.warning("[BED-COOL] Failed: %s", e)
+        finally:
+            _bed_cooldown_tasks.pop(printer_id, None)
+
+    # Only start bed cooldown for completed prints
+    if data.get("status") == "completed":
+        # Cancel any existing task for this printer
+        existing_task = _bed_cooldown_tasks.pop(printer_id, None)
+        if existing_task and not existing_task.done():
+            existing_task.cancel()
+        task = asyncio.create_task(_background_bed_cooldown())
+        _bed_cooldown_tasks[printer_id] = task
+
     log_timing("All background tasks scheduled")
 
     # Auto-scan for timelapse if recording was active during the print
@@ -2536,7 +2677,14 @@ async def on_print_complete(printer_id: int, data: dict):
                 .where(PrintQueueItem.printer_id == printer_id)
                 .where(PrintQueueItem.status == "printing")
             )
-            queue_item = result.scalar_one_or_none()
+            printing_items = list(result.scalars().all())
+            if len(printing_items) > 1:
+                logger.warning(
+                    "BUG: Multiple queue items in 'printing' status for printer %s: %s",
+                    printer_id,
+                    [(i.id, i.archive_id, i.library_file_id) for i in printing_items],
+                )
+            queue_item = printing_items[0] if printing_items else None
             if queue_item:
                 status = data.get("status", "completed")
                 queue_item.status = status
@@ -3255,6 +3403,7 @@ app.include_router(settings_routes.router, prefix=app_settings.api_prefix)
 app.include_router(cloud.router, prefix=app_settings.api_prefix)
 app.include_router(local_presets.router, prefix=app_settings.api_prefix)
 app.include_router(smart_plugs.router, prefix=app_settings.api_prefix)
+app.include_router(print_log.router, prefix=app_settings.api_prefix)
 app.include_router(print_queue.router, prefix=app_settings.api_prefix)
 app.include_router(kprofiles.router, prefix=app_settings.api_prefix)
 app.include_router(notifications.router, prefix=app_settings.api_prefix)

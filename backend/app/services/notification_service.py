@@ -1016,6 +1016,30 @@ class NotificationService:
             providers, title, message, db, "ams_ht_temperature_high", printer_id, printer_name, force_immediate=True
         )
 
+    async def on_bed_cooled(
+        self,
+        printer_id: int,
+        printer_name: str,
+        bed_temp: float,
+        threshold: float,
+        filename: str,
+        db: AsyncSession,
+    ):
+        """Handle bed cooled event - bed temperature dropped below threshold after print."""
+        providers = await self._get_providers_for_event(db, "on_bed_cooled", printer_id)
+        if not providers:
+            return
+
+        variables = {
+            "printer": printer_name,
+            "bed_temp": f"{bed_temp:.0f}",
+            "threshold": f"{threshold:.0f}",
+            "filename": self._clean_filename(filename) if filename else "Unknown",
+        }
+
+        title, message = await self._build_message_from_template(db, "bed_cooled", variables)
+        await self._send_to_providers(providers, title, message, db, "bed_cooled", printer_id, printer_name)
+
     def clear_template_cache(self):
         """Clear the template cache. Call this when templates are updated."""
         self._template_cache.clear()

@@ -173,6 +173,22 @@
   --border-color: #2a3d30;
 }
 
+/* Printer card control buttons: stack only when they clip */
+.printer-control-buttons-container {
+  container-type: inline-size;
+}
+
+@container (max-width: 220px) {
+  .printer-control-buttons {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .printer-control-buttons > button {
+    width: 100%;
+  }
+}
+
 /* ============================================
    LAYER 2: STYLE EFFECTS
    ============================================ */

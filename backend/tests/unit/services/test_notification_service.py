@@ -1191,3 +1191,133 @@ class TestPlateNotEmptyNotifications:
 
             assert captured_variables["printer"] == "X1 Carbon"
             assert captured_variables["difference_percent"] == "3.5"
+
+
+class TestBedCooledNotifications:
+    """Tests for bed cooled (after print) notifications."""
+
+    @pytest.fixture
+    def service(self):
+        return NotificationService()
+
+    @pytest.fixture
+    def mock_provider(self):
+        """Create a mock notification provider with bed cooled enabled."""
+        provider = MagicMock()
+        provider.id = 1
+        provider.name = "Test Provider"
+        provider.provider_type = "webhook"
+        provider.enabled = True
+        provider.config = json.dumps({"webhook_url": "http://test.local/webhook"})
+        provider.on_bed_cooled = True
+        provider.quiet_hours_enabled = False
+        provider.daily_digest_enabled = False
+        provider.printer_id = None
+        return provider
+
+    @pytest.fixture
+    def mock_db(self):
+        """Create a mock database session."""
+        db = AsyncMock()
+        db.commit = AsyncMock()
+        return db
+
+    @pytest.mark.asyncio
+    async def test_on_bed_cooled_sends_notification(self, service, mock_provider, mock_db):
+        """Verify bed cooled notification is sent when triggered."""
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
+        ):
+            mock_get.return_value = [mock_provider]
+            mock_build.return_value = ("Bed Cooled", "Test Printer: Bed cooled to 30°C")
+
+            await service.on_bed_cooled(
+                printer_id=1,
+                printer_name="Test Printer",
+                bed_temp=30.0,
+                threshold=35.0,
+                filename="benchy.3mf",
+                db=mock_db,
+            )
+
+            mock_get.assert_called_once()
+            mock_send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_on_bed_cooled_skipped_when_no_providers(self, service, mock_db):
+        """Verify notification is skipped when no providers have bed cooled enabled."""
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+        ):
+            mock_get.return_value = []
+
+            await service.on_bed_cooled(
+                printer_id=1,
+                printer_name="Test Printer",
+                bed_temp=30.0,
+                threshold=35.0,
+                filename="benchy.3mf",
+                db=mock_db,
+            )
+
+            mock_send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_on_bed_cooled_includes_correct_variables(self, service, mock_provider, mock_db):
+        """Verify bed temp, threshold, and filename are passed to template variables."""
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_bed_cooled(
+                printer_id=1,
+                printer_name="X1 Carbon",
+                bed_temp=28.7,
+                threshold=35.0,
+                filename="benchy.gcode.3mf",
+                db=mock_db,
+            )
+
+            assert captured_variables["printer"] == "X1 Carbon"
+            assert captured_variables["bed_temp"] == "29"
+            assert captured_variables["threshold"] == "35"
+            assert captured_variables["filename"] == "benchy"
+
+    @pytest.mark.asyncio
+    async def test_on_bed_cooled_handles_none_filename(self, service, mock_provider, mock_db):
+        """Verify None filename is handled gracefully."""
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_bed_cooled(
+                printer_id=1,
+                printer_name="Test Printer",
+                bed_temp=30.0,
+                threshold=35.0,
+                filename=None,
+                db=mock_db,
+            )
+
+            assert captured_variables["filename"] == "Unknown"

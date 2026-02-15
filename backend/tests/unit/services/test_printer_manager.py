@@ -3,6 +3,7 @@
 Tests printer connection management, status tracking, and print control.
 """
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -382,6 +383,30 @@ class TestPrinterManager:
         result = manager.start_print(999, "test.gcode")
         assert result is False
 
+    def test_start_print_logs_print_command_with_caller(self, manager, mock_client, caplog):
+        """Verify start_print logs PRINT COMMAND with caller info (#374)."""
+        mock_client.start_print.return_value = True
+        manager._clients[1] = mock_client
+
+        with caplog.at_level(logging.INFO, logger="backend.app.services.printer_manager"):
+            manager.start_print(1, "benchy.3mf")
+
+        print_cmd_logs = [r for r in caplog.records if "PRINT COMMAND" in r.message]
+        assert len(print_cmd_logs) == 1
+        log_msg = print_cmd_logs[0].message
+        assert "printer=1" in log_msg
+        assert "file=benchy.3mf" in log_msg
+        assert "caller=" in log_msg
+
+    def test_start_print_logs_even_when_printer_unknown(self, manager, caplog):
+        """Verify PRINT COMMAND is logged even for unknown printers (#374)."""
+        with caplog.at_level(logging.INFO, logger="backend.app.services.printer_manager"):
+            result = manager.start_print(999, "ghost.3mf")
+
+        assert result is False
+        print_cmd_logs = [r for r in caplog.records if "PRINT COMMAND" in r.message]
+        assert len(print_cmd_logs) == 1
+
     # ========================================================================
     # Tests for stop_print
     # ========================================================================
@@ -734,23 +759,26 @@ class TestPrinterStateToDict:
         assert result["ams"][0]["tray"][0]["tag_uid"] is None
 
     def test_vt_tray_parsing(self, mock_state):
-        """Verify virtual tray is parsed correctly."""
+        """Verify virtual tray is parsed correctly as a list."""
         mock_state.raw_data = {
-            "vt_tray": {
-                "tray_color": "00FF00",
-                "tray_type": "PETG",
-                "tray_sub_brands": "Generic",
-                "remain": 60,
-                "tag_uid": "VT123",
-            }
+            "vt_tray": [
+                {
+                    "tray_color": "00FF00",
+                    "tray_type": "PETG",
+                    "tray_sub_brands": "Generic",
+                    "remain": 60,
+                    "tag_uid": "VT123",
+                }
+            ]
         }
 
         result = printer_state_to_dict(mock_state)
 
-        assert result["vt_tray"] is not None
-        assert result["vt_tray"]["id"] == 254
-        assert result["vt_tray"]["tray_color"] == "00FF00"
-        assert result["vt_tray"]["tray_type"] == "PETG"
+        assert isinstance(result["vt_tray"], list)
+        assert len(result["vt_tray"]) == 1
+        assert result["vt_tray"][0]["id"] == 254
+        assert result["vt_tray"][0]["tray_color"] == "00FF00"
+        assert result["vt_tray"][0]["tray_type"] == "PETG"
 
     def test_hms_errors_conversion(self, mock_state):
         """Verify HMS errors are converted correctly."""

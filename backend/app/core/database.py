@@ -89,6 +89,7 @@ async def init_db():
         notification_template,
         orca_base_cache,
         pending_upload,
+        print_log,
         print_queue,
         printer,
         project,
@@ -1206,6 +1207,12 @@ async def run_migrations(conn):
     # Migration: Add open_in_new_tab column to external_links
     try:
         await conn.execute(text("ALTER TABLE external_links ADD COLUMN open_in_new_tab BOOLEAN DEFAULT 0"))
+    except OperationalError:
+        pass  # Already applied
+
+    # Migration: Add bed cooled notification column to notification_providers
+    try:
+        await conn.execute(text("ALTER TABLE notification_providers ADD COLUMN on_bed_cooled BOOLEAN DEFAULT 0"))
     except OperationalError:
         pass  # Already applied
 

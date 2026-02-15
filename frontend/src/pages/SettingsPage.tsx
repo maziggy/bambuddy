@@ -6,7 +6,7 @@ import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDateOnly } from '../utils/date';
 import { getCurrencySymbol, SUPPORTED_CURRENCIES } from '../utils/currency';
-import type { AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, Group, GroupCreate, GroupUpdate, Permission, PermissionCategory } from '../api/client';
+import type { AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, Group, GroupCreate, GroupUpdate, Permission, PermissionCategory, StorageUsageResponse } from '../api/client';
 import { Card, CardContent, CardHeader } from '../components/Card';
 import { Button } from '../components/Button';
 import { SmartPlugCard } from '../components/SmartPlugCard';
@@ -36,6 +36,38 @@ import { Palette } from 'lucide-react';
 const validTabs = ['general', 'network', 'plugs', 'notifications', 'filament', 'apikeys', 'virtual-printer', 'users', 'backup'] as const;
 type TabType = typeof validTabs[number];
 type UsersSubTab = 'users' | 'email';
+
+const STORAGE_CATEGORY_COLORS: Record<string, string> = {
+  database: 'bg-blue-600',
+  library_files: 'bg-green-500',
+  library_thumbnails: 'bg-teal-500',
+  library_other: 'bg-emerald-700',
+  archive_timelapses: 'bg-red-500',
+  archive_thumbnails: 'bg-amber-500',
+  archive_files: 'bg-sky-500',
+  virtual_printer_uploads: 'bg-purple-500',
+  virtual_printer_upload_cache: 'bg-fuchsia-500',
+  virtual_printer_certs: 'bg-violet-500',
+  virtual_printer_other: 'bg-purple-700',
+  downloads: 'bg-cyan-500',
+  plate_calibration: 'bg-lime-500',
+  logs: 'bg-orange-500',
+  other_data: 'bg-yellow-500',
+};
+
+const STORAGE_FALLBACK_COLORS = [
+  'bg-blue-500',
+  'bg-green-500',
+  'bg-yellow-500',
+  'bg-red-500',
+  'bg-orange-500',
+  'bg-teal-500',
+  'bg-cyan-500',
+  'bg-purple-500',
+];
+
+const getStorageColor = (key: string, index: number) =>
+  STORAGE_CATEGORY_COLORS[key] || STORAGE_FALLBACK_COLORS[index % STORAGE_FALLBACK_COLORS.length];
 
 export function SettingsPage() {
   const queryClient = useQueryClient();
@@ -100,6 +132,7 @@ export function SettingsPage() {
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [changePasswordData, setChangePasswordData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [changePasswordLoading, setChangePasswordLoading] = useState(false);
+  const [storageUsageRefreshing, setStorageUsageRefreshing] = useState(false);
 
   // User management state
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
@@ -162,6 +195,33 @@ export function SettingsPage() {
     queryKey: ['settings'],
     queryFn: api.getSettings,
   });
+
+  const {
+    data: storageUsage,
+    isLoading: storageUsageLoading,
+    isFetching: storageUsageFetching,
+  } = useQuery<StorageUsageResponse>({
+    queryKey: ['storage-usage'],
+    queryFn: () => api.getStorageUsage(),
+    enabled: activeTab === 'general',
+    staleTime: Infinity,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+
+  const handleStorageUsageRefresh = async () => {
+    setStorageUsageRefreshing(true);
+    try {
+      const data = await api.getStorageUsage({ refresh: true });
+      queryClient.setQueryData(['storage-usage'], data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to refresh storage usage';
+      showToast(message, 'error');
+    } finally {
+      setStorageUsageRefreshing(false);
+    }
+  };
 
   const { data: smartPlugs, isLoading: plugsLoading } = useQuery({
     queryKey: ['smart-plugs'],
@@ -285,6 +345,7 @@ export function SettingsPage() {
   const { data: updateCheck, refetch: refetchUpdateCheck, isRefetching: isCheckingUpdate } = useQuery({
     queryKey: ['updateCheck'],
     queryFn: api.checkForUpdates,
+    enabled: settings?.check_updates !== false,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -772,6 +833,7 @@ export function SettingsPage() {
       settings.check_updates !== localSettings.check_updates ||
       (settings.check_printer_firmware ?? true) !== (localSettings.check_printer_firmware ?? true) ||
       settings.notification_language !== localSettings.notification_language ||
+      (settings.bed_cooled_threshold ?? 35) !== (localSettings.bed_cooled_threshold ?? 35) ||
       settings.ams_humidity_good !== localSettings.ams_humidity_good ||
       settings.ams_humidity_fair !== localSettings.ams_humidity_fair ||
       settings.ams_temp_good !== localSettings.ams_temp_good ||
@@ -836,6 +898,7 @@ export function SettingsPage() {
         check_updates: localSettings.check_updates,
         check_printer_firmware: localSettings.check_printer_firmware,
         notification_language: localSettings.notification_language,
+        bed_cooled_threshold: localSettings.bed_cooled_threshold,
         ams_humidity_good: localSettings.ams_humidity_good,
         ams_humidity_fair: localSettings.ams_humidity_fair,
         ams_temp_good: localSettings.ams_temp_good,
@@ -1875,6 +1938,107 @@ export function SettingsPage() {
                   Reset
                 </Button>
               </div>
+              <div className="pt-4 border-t border-bambu-dark-tertiary">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white">{t('settings.storageUsage', 'Storage Usage')}</p>
+                    <p className="text-sm text-bambu-gray">
+                      {t('settings.storageUsageDescription', 'Breakdown of data usage by category')}
+                    </p>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleStorageUsageRefresh}
+                    disabled={storageUsageFetching || storageUsageRefreshing}
+                  >
+                    <RefreshCw
+                      className={`w-4 h-4 ${storageUsageFetching || storageUsageRefreshing ? 'animate-spin' : ''}`}
+                    />
+                    {t('common.refresh', 'Refresh')}
+                  </Button>
+                </div>
+                <div className="mt-3">
+                  {storageUsageLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-bambu-gray">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {t('common.loading', 'Loading')}
+                    </div>
+                  ) : storageUsage ? (
+                    <>
+                      <div className="w-full h-3 bg-bambu-dark rounded-full overflow-hidden flex">
+                        {storageUsage.categories
+                          .filter((category) => category.bytes > 0)
+                          .map((category, index) => (
+                            <div
+                              key={category.key}
+                              className={`${getStorageColor(category.key, index)} h-full`}
+                              style={{ width: `${category.percent_of_total}%` }}
+                              title={`${category.label}: ${category.formatted}`}
+                            />
+                          ))}
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-3">
+                        {storageUsage.categories
+                          .filter((category) => category.bytes > 0)
+                          .map((category, index) => (
+                            <div key={category.key} className="flex items-center gap-2 text-xs">
+                              <span
+                                className={`w-3 h-3 rounded-full ${getStorageColor(category.key, index)}`}
+                              />
+                              <span className="text-bambu-gray">{category.label}</span>
+                              <span className="text-white">{category.formatted}</span>
+                              <span className="text-bambu-gray">({category.percent_of_total.toFixed(1)}%)</span>
+                            </div>
+                          ))}
+                      </div>
+                      <div className="mt-2 text-xs text-bambu-gray">
+                        {t('settings.storageUsageTotal', 'Total')}: <span className="text-white">{storageUsage.total_formatted}</span>
+                        {storageUsage.scan_errors > 0 && (
+                          <span className="ml-2 text-amber-400">
+                            {t('settings.storageUsageErrors', 'Scan errors')}: {storageUsage.scan_errors}
+                          </span>
+                        )}
+                      </div>
+                      {storageUsage.other_breakdown?.length > 0 && (
+                        <div className="mt-4">
+                          <p className="text-xs text-bambu-gray mb-2">
+                            {t('settings.storageUsageOtherBreakdown', 'Other breakdown')}
+                          </p>
+                          <div className="space-y-2">
+                            {storageUsage.other_breakdown.map((item) => (
+                              <div key={`${item.bucket}-${item.kind}`} className="flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-white">{item.label}</span>
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full border ${
+                                      item.kind === 'system'
+                                        ? 'border-slate-500 text-slate-300'
+                                        : 'border-bambu-green text-bambu-green'
+                                    }`}
+                                  >
+                                    {item.kind === 'system'
+                                      ? t('settings.storageUsageSystem', 'System')
+                                      : t('settings.storageUsageData', 'Data')}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 text-bambu-gray">
+                                  <span className="text-white">{item.formatted}</span>
+                                  <span>({item.percent_of_total.toFixed(1)}%)</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-sm text-bambu-gray">
+                      {t('settings.storageUsageUnavailable', 'Storage usage data is unavailable')}
+                    </p>
+                  )}
+                </div>
+              </div>
               <div className="flex items-center justify-between pt-4 border-t border-bambu-dark-tertiary">
                 <div>
                   <p className="text-white">Backup & Restore</p>
@@ -2695,6 +2859,30 @@ export function SettingsPage() {
               </CardContent>
             </Card>
 
+            {/* Bed Cooled Threshold Setting */}
+            <Card className="mb-4">
+              <CardContent className="py-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white text-sm font-medium">{t('settings.bedCooledThreshold')}</p>
+                    <p className="text-xs text-bambu-gray">{t('settings.bedCooledThresholdDescription')}</p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={20}
+                      max={80}
+                      step={1}
+                      value={localSettings.bed_cooled_threshold ?? 35}
+                      onChange={(e) => updateSetting('bed_cooled_threshold', Number(e.target.value))}
+                      className="w-16 px-2 py-1.5 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm text-center focus:outline-none focus:ring-1 focus:ring-bambu-green"
+                    />
+                    <span className="text-sm text-bambu-gray">°C</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Test All Results */}
             {testAllResult && (
               <Card className="mb-4">
@@ -2789,7 +2977,7 @@ export function SettingsPage() {
               </div>
             ) : notificationTemplates && notificationTemplates.length > 0 ? (
               <div className="space-y-2">
-                {notificationTemplates.map((template) => (
+                {[...notificationTemplates].sort((a, b) => a.name.localeCompare(b.name)).map((template) => (
                   <Card
                     key={template.id}
                     className="cursor-pointer hover:border-bambu-green/50 transition-colors"

@@ -99,14 +99,14 @@ class TestBuildAmsTrayLookup:
     def test_external_spool(self):
         raw = {
             "ams": [],
-            "vt_tray": {"tray_uuid": "EXT", "tag_uid": "X", "tray_type": "TPU"},
+            "vt_tray": [{"tray_uuid": "EXT", "tag_uid": "X", "tray_type": "TPU"}],
         }
         lookup = build_ams_tray_lookup(raw)
         assert 254 in lookup
         assert lookup[254]["tray_type"] == "TPU"
 
     def test_empty_external_spool_skipped(self):
-        raw = {"ams": [], "vt_tray": {"tray_type": ""}}
+        raw = {"ams": [], "vt_tray": [{"tray_type": ""}]}
         lookup = build_ams_tray_lookup(raw)
         assert 254 not in lookup
 

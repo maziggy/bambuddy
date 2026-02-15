@@ -98,6 +98,12 @@ DEFAULT_TEMPLATES = [
         "body_template": "{printer} {ams_label}: Temperature {temperature}°C exceeds {threshold}°C threshold",
     },
     {
+        "event_type": "bed_cooled",
+        "name": "Bed Cooled",
+        "title_template": "Bed Cooled",
+        "body_template": "{printer}: Bed cooled to {bed_temp}°C (threshold: {threshold}°C)",
+    },
+    {
         "event_type": "test",
         "name": "Test Notification",
         "title_template": "Bambuddy Test",

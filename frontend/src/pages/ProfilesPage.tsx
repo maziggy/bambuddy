@@ -262,7 +262,7 @@ function LoginForm({ onSuccess, t }: { onSuccess: () => void; t: TFunction }) {
             </div>
           )}
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 max-[550px]:flex-wrap max-[550px]:items-center">
             {step === 'code' && (
               <Button type="button" variant="secondary" onClick={() => setStep('email')} className="flex-1">
                 {t('profiles.login.back')}
@@ -1723,7 +1723,7 @@ function CreatePresetModal({
         />
       )}
 
-      <Card className="w-full max-w-6xl max-h-[90vh] flex flex-col">
+      <Card className="w-full max-w-6xl max-h-[90vh] flex flex-col overflow-y-auto">
         <CardContent className="p-0 flex flex-col h-full">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
@@ -1764,7 +1764,7 @@ function CreatePresetModal({
 
           {/* Basic Info */}
           <div className="p-4 border-b border-bambu-dark-tertiary space-y-3">
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-3 gap-4 max-[640px]:grid-cols-1">
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">{t('common.type')}</label>
                 <select
@@ -1815,7 +1815,7 @@ function CreatePresetModal({
           </div>
 
           {/* Tabs */}
-          <div className="flex border-b border-bambu-dark-tertiary">
+          <div className="flex border-b border-bambu-dark-tertiary max-[640px]:flex-wrap max-[640px]:items-center">
             <button
               onClick={() => setActiveTab('common')}
               className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
@@ -1844,7 +1844,7 @@ function CreatePresetModal({
               JSON
               {jsonError && <AlertCircle className="w-3 h-3 text-red-400" />}
             </button>
-            <div className="flex-1" />
+            <div className="flex-1 max-[640px]:hidden" />
             <button
               onClick={() => {
                 const exportData = {
@@ -1904,7 +1904,7 @@ function CreatePresetModal({
           </div>
 
           {/* Tab Content */}
-          <div className="flex-1 overflow-y-auto p-4">
+          <div className="flex-1 p-4">
             {activeTab === 'common' && (
               <div className="space-y-6">
                 {/* Templates */}
@@ -2010,9 +2010,9 @@ function CreatePresetModal({
                   <h3 className="text-sm font-medium text-white mb-3">{t('profiles.presets.commonSettings')}</h3>
                   <div className="grid grid-cols-2 gap-x-6 gap-y-3">
                     {dynamicFields.slice(0, 10).map(field => (
-                      <div key={field.key} className="flex items-center justify-between gap-4">
+                      <div key={field.key} className="flex items-center justify-between gap-4 max-[640px]:flex-col max-[640px]:items-start">
                         <label className="text-sm text-bambu-gray flex-shrink-0">{field.label}</label>
-                        <div className="w-48">{renderFieldInput(field)}</div>
+                        <div className="w-48 max-[640px]:w-full">{renderFieldInput(field)}</div>
                       </div>
                     ))}
                   </div>
@@ -2460,7 +2460,7 @@ function CloudProfilesView({
             />
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 max-[550px]:flex-wrap max-[550px]:items-center">
             <Button
               variant={compareMode ? 'primary' : 'secondary'}
               onClick={() => {

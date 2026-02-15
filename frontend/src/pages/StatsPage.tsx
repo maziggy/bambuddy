@@ -760,6 +760,7 @@ export function StatsPage() {
         key={dashboardKey}
         widgets={widgets}
         storageKey="bambusy-dashboard-layout"
+        stackBelow={640}
         hideControls
       />
     </div>

@@ -35,6 +35,7 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
   const [formData, setFormData] = useState<SpoolFormData>(defaultFormData);
   const [errors, setErrors] = useState<Partial<Record<keyof SpoolFormData, string>>>({});
   const [activeTab, setActiveTab] = useState<TabId>('filament');
+  const [weightTouched, setWeightTouched] = useState(false);
 
   // Cloud presets
   const [cloudAuthenticated, setCloudAuthenticated] = useState(false);
@@ -195,6 +196,7 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
       }
       setErrors({});
       setActiveTab('filament');
+      setWeightTouched(false);
     }
   }, [isOpen, spool]);
 
@@ -208,6 +210,7 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
   // Update field helper
   const updateField = <K extends keyof SpoolFormData>(key: K, value: SpoolFormData[K]) => {
     setFormData(prev => ({ ...prev, [key]: value }));
+    if (key === 'weight_used') setWeightTouched(true);
     if (errors[key]) {
       setErrors(prev => ({ ...prev, [key]: undefined }));
     }
@@ -333,13 +336,18 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
       rgba: formData.rgba || null,
       label_weight: formData.label_weight,
       core_weight: formData.core_weight,
-      weight_used: formData.weight_used,
       slicer_filament: formData.slicer_filament || null,
       slicer_filament_name: presetName,
       nozzle_temp_min: null,
       nozzle_temp_max: null,
       note: formData.note || null,
     };
+
+    // Only send weight_used when creating or when explicitly changed by the user.
+    // This prevents stale cached values from overwriting usage-tracker data.
+    if (!isEditing || weightTouched) {
+      data.weight_used = formData.weight_used;
+    }
 
     if (isEditing) {
       updateMutation.mutate(data);

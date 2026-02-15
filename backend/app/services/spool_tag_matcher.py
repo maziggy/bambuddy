@@ -196,16 +196,19 @@ async def auto_assign_spool(
     spool: Spool,
     printer_manager,
     db: AsyncSession,
+    tray_info_idx: str = "",
 ) -> SpoolAssignment:
     """Create a SpoolAssignment and auto-configure the AMS slot via MQTT.
 
-    Reuses the same MQTT configuration logic as the manual assign endpoint.
+    For BL spools (RFID-detected), only K-profile commands are sent.
+    ams_set_filament_setting is NOT sent because the firmware already has
+    filament configuration from the RFID tag, and sending it would destroy
+    the RFID-detected state (eye → pen icon in BambuStudio).
     """
-    from backend.app.api.routes.inventory import MATERIAL_TEMPS
-
     # Get current tray state for fingerprint
     fingerprint_color = None
     fingerprint_type = None
+    tray = None
     state = printer_manager.get_status(printer_id)
     if state and state.raw_data:
         from backend.app.api.routes.inventory import _find_tray_in_ams_data
@@ -246,34 +249,14 @@ async def auto_assign_spool(
     db.add(assignment)
     await db.flush()
 
-    # Auto-configure AMS slot via MQTT
+    # Apply K-profile via MQTT (if available)
+    # NOTE: Do NOT send ams_set_filament_setting here. This function is only
+    # called for BL spools (RFID-detected). The firmware already has the filament
+    # configuration from the RFID tag. Sending ams_set_filament_setting would
+    # destroy the RFID-detected state (eye → pen icon in BambuStudio/OrcaSlicer).
     try:
         client = printer_manager.get_client(printer_id)
         if client:
-            tray_type = spool.material
-            tray_sub_brands = f"{spool.material} {spool.subtype}" if spool.subtype else spool.material
-            tray_color = spool.rgba or "FFFFFFFF"
-            tray_info_idx = spool.slicer_filament or ""
-            setting_id = ""
-
-            temp_min, temp_max = MATERIAL_TEMPS.get(spool.material.upper(), (200, 240))
-            if spool.nozzle_temp_min is not None:
-                temp_min = spool.nozzle_temp_min
-            if spool.nozzle_temp_max is not None:
-                temp_max = spool.nozzle_temp_max
-
-            client.ams_set_filament_setting(
-                ams_id=ams_id,
-                tray_id=tray_id,
-                tray_info_idx=tray_info_idx,
-                tray_type=tray_type,
-                tray_sub_brands=tray_sub_brands,
-                tray_color=tray_color,
-                nozzle_temp_min=temp_min,
-                nozzle_temp_max=temp_max,
-                setting_id=setting_id,
-            )
-
             # Apply K-profile if available
             nozzle_diameter = "0.4"
             if state and state.nozzles:
@@ -288,23 +271,40 @@ async def auto_assign_spool(
                     break
 
             if matching_kp and matching_kp.cali_idx is not None:
+                # The filament_id in extrusion_cali_sel must match the filament preset
+                # under which the K-profile was calibrated. Use spool.slicer_filament
+                # (the preset assigned in inventory), falling back to tray's RFID value.
+                cali_filament_id = spool.slicer_filament or tray_info_idx or ""
                 client.extrusion_cali_sel(
                     ams_id=ams_id,
                     tray_id=tray_id,
                     cali_idx=matching_kp.cali_idx,
-                    filament_id=tray_info_idx,
+                    filament_id=cali_filament_id,
                     nozzle_diameter=nozzle_diameter,
-                    setting_id=matching_kp.setting_id,
+                )
+
+                # NOTE: Do NOT send extrusion_cali_set here. extrusion_cali_sel already
+                # selected the correct profile by cali_idx. Sending extrusion_cali_set
+                # with the same cali_idx would MODIFY the existing profile's metadata
+                # (extruder_id, nozzle_id, name), corrupting it.
+
+                logger.info(
+                    "Applied K-profile cali_idx=%d for spool %d on printer %d AMS%d-T%d",
+                    matching_kp.cali_idx,
+                    spool.id,
+                    printer_id,
+                    ams_id,
+                    tray_id,
                 )
 
             logger.info(
-                "Auto-configured AMS slot ams=%d tray=%d for spool %d on printer %d (RFID match)",
-                ams_id,
-                tray_id,
+                "Auto-assigned spool %d to printer %d AMS%d-T%d (RFID match)",
                 spool.id,
                 printer_id,
+                ams_id,
+                tray_id,
             )
     except Exception as e:
-        logger.warning("MQTT auto-configure failed for spool %d (RFID match): %s", spool.id, e)
+        logger.warning("K-profile apply failed for spool %d (RFID match): %s", spool.id, e)
 
     return assignment

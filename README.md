@@ -88,7 +88,8 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Resizable printer cards (S/M/L/XL)
 - Skip objects during print
 - AMS slot RFID re-read
-- AMS slot configuration (custom presets, K profiles, color picker)
+- AMS slot configuration (model-filtered presets, K profiles, color picker, pre-population for configured slots)
+- Dual external spool support for H2D (Ext-L / Ext-R)
 - HMS error monitoring with history
 - Print success rates & trends
 - Filament usage tracking
@@ -145,6 +146,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Filament usage and progress in failed/cancelled print notifications
 - HMS error alerts (AMS, nozzle, etc.)
 - Build plate detection alerts
+- Bed cooled alerts (configurable threshold)
 - Queue events (waiting, skipped, failed)
 
 ### 🧵 Spool Inventory

@@ -13,7 +13,7 @@ import {
 import type { PrinterStatus } from '../../api/client';
 
 // Helper to create a minimal printer status with AMS data
-function createPrinterStatus(ams: PrinterStatus['ams'], vt_tray?: PrinterStatus['vt_tray']): PrinterStatus {
+function createPrinterStatus(ams: PrinterStatus['ams'], vt_tray: PrinterStatus['vt_tray'] = []): PrinterStatus {
   return {
     ams,
     vt_tray,
@@ -89,7 +89,7 @@ describe('buildLoadedFilaments', () => {
   it('extracts external spool with tray_info_idx', () => {
     const status = createPrinterStatus(
       [],
-      { tray_type: 'TPU', tray_color: '0000FF', tray_info_idx: 'EXT001' }
+      [{ tray_type: 'TPU', tray_color: '0000FF', tray_info_idx: 'EXT001' }]
     );
 
     const result = buildLoadedFilaments(status);
@@ -339,7 +339,7 @@ describe('computeAmsMapping', () => {
     };
     const status = createPrinterStatus(
       [],
-      { tray_type: 'TPU', tray_color: '0000FF', tray_info_idx: 'EXT001' }
+      [{ tray_type: 'TPU', tray_color: '0000FF', tray_info_idx: 'EXT001' }]
     );
 
     const result = computeAmsMapping(reqs, status);

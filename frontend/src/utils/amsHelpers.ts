@@ -88,7 +88,7 @@ export function getGlobalTrayId(
   trayId: number,
   isExternal: boolean
 ): number {
-  if (isExternal) return 254;
+  if (isExternal) return 254 + trayId;
   // AMS-HT units have IDs starting at 128 with a single tray — use ID directly
   if (amsId >= 128) return amsId;
   return amsId * 4 + trayId;

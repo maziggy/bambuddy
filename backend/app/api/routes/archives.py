@@ -2738,8 +2738,14 @@ async def reprint_archive(
         raise HTTPException(400, "Printer is not connected")
 
     # Get the sliced 3MF file path
+    if not archive.file_path:
+        raise HTTPException(
+            404,
+            "No 3MF file available for this archive. "
+            "The file could not be downloaded from the printer when the print was recorded.",
+        )
     file_path = settings.base_dir / archive.file_path
-    if not file_path.exists():
+    if not file_path.is_file():
         raise HTTPException(404, "Archive file not found")
 
     # Upload file to printer via FTP

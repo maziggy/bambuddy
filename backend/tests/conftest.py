@@ -408,6 +408,7 @@ def notification_provider_factory(db_session):
             "on_maintenance_due": False,
             "on_ams_humidity_high": False,
             "on_ams_temperature_high": False,
+            "on_bed_cooled": False,
             "quiet_hours_enabled": False,
             "daily_digest_enabled": False,
         }

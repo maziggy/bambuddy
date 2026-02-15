@@ -56,6 +56,7 @@ const mockPrinterStatus = {
   remaining_time: 0,
   filename: null,
   wifi_signal: -50,
+  vt_tray: [],
 };
 
 describe('PrintersPage', () => {

@@ -271,7 +271,7 @@ export function SpoolCatalogSettings() {
             {t('common.loading')}
           </div>
         ) : (
-          <div className="max-h-[400px] overflow-y-auto border border-bambu-dark-tertiary rounded-lg">
+          <div className="max-h-[600px] overflow-y-auto border border-bambu-dark-tertiary rounded-lg">
             <table className="w-full text-sm">
               <thead className="bg-bambu-dark sticky top-0">
                 <tr>

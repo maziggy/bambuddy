@@ -1209,6 +1209,12 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already applied
 
+    # Migration: Add bed cooled notification column to notification_providers
+    try:
+        await conn.execute(text("ALTER TABLE notification_providers ADD COLUMN on_bed_cooled BOOLEAN DEFAULT 0"))
+    except OperationalError:
+        pass  # Already applied
+
 
 async def seed_notification_templates():
     """Seed default notification templates if they don't exist."""

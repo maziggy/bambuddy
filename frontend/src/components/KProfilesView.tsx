@@ -150,6 +150,7 @@ interface KProfileModalProps {
   printerId: number;
   nozzleDiameter: string;
   existingProfiles?: KProfile[];  // Existing profiles for filament selection
+  builtinFilaments?: { filament_id: string; name: string }[];  // Filament ID → name lookup
   isDualNozzle?: boolean;  // Whether this is a dual-nozzle printer
   initialNote?: string;  // Initial note value for the profile
   initialNoteKey?: string | null;  // Key the note was stored under (for clearing)
@@ -164,6 +165,7 @@ function KProfileModal({
   printerId,
   nozzleDiameter,
   existingProfiles = [],
+  builtinFilaments = [],
   isDualNozzle = false,
   initialNote = '',
   initialNoteKey = null,
@@ -197,12 +199,21 @@ function KProfileModal({
   const [note, setNote] = useState(initialNote);
 
   // Extract unique filaments from existing K-profiles on the printer
-  // These have valid filament_ids that the printer recognizes
+  // Use builtin filament table for accurate name resolution (filament_id → name)
+  // Falls back to extracting from profile name for custom/unknown presets
   const knownFilaments = React.useMemo(() => {
+    // Build lookup map from builtin filament names (includes cloud presets from parent)
+    const builtinMap = new Map<string, string>();
+    for (const bf of builtinFilaments) {
+      builtinMap.set(bf.filament_id, bf.name);
+    }
+
     const filamentMap = new Map<string, { id: string; name: string }>();
     for (const p of existingProfiles) {
       if (p.filament_id && !filamentMap.has(p.filament_id)) {
-        const filamentName = extractFilamentName(p.name || '');
+        // Prefer builtin name (accurate), fall back to extracting from profile name
+        const builtinName = builtinMap.get(p.filament_id);
+        const filamentName = builtinName || extractFilamentName(p.name || '');
         filamentMap.set(p.filament_id, {
           id: p.filament_id,
           name: filamentName || p.filament_id,
@@ -212,7 +223,7 @@ function KProfileModal({
     return Array.from(filamentMap.values()).sort((a, b) =>
       a.name.localeCompare(b.name)
     );
-  }, [existingProfiles]);
+  }, [existingProfiles, builtinFilaments]);
 
   const saveMutation = useMutation({
     mutationFn: (data: KProfileCreate) => {
@@ -769,6 +780,20 @@ export function KProfilesView() {
     staleTime: 60000,  // Cache for 1 minute
   });
 
+  // Fetch builtin filament names for accurate filament_id → name resolution
+  const { data: builtinFilaments } = useQuery({
+    queryKey: ['builtinFilaments'],
+    queryFn: () => api.getBuiltinFilaments(),
+    staleTime: 300000,  // Cache for 5 minutes (static data)
+  });
+
+  // Fetch filament_id → name mapping for user cloud presets (P* IDs)
+  const { data: filamentIdMap } = useQuery({
+    queryKey: ['filamentIdMap'],
+    queryFn: () => api.getFilamentIdMap(),
+    staleTime: 300000,  // Cache for 5 minutes
+  });
+
   // Fetch K-profile notes (stored locally)
   const {
     data: notesData,
@@ -807,6 +832,39 @@ export function KProfilesView() {
   // Get connected printers for display
   const connectedPrinters = printers?.filter((p) => p.is_active) || [];
 
+  // Build filament lookup for name resolution (builtin + user cloud presets)
+  const builtinFilamentMap = React.useMemo(() => {
+    const map = new Map<string, string>();
+    if (builtinFilaments) {
+      for (const bf of builtinFilaments) {
+        map.set(bf.filament_id, bf.name);
+      }
+    }
+    // Also add user cloud presets (P* filament_ids resolved from cloud details)
+    if (filamentIdMap) {
+      for (const [fid, name] of Object.entries(filamentIdMap)) {
+        if (!map.has(fid)) {
+          map.set(fid, name);
+        }
+      }
+    }
+    return map;
+  }, [builtinFilaments, filamentIdMap]);
+
+  // Enriched builtin filaments array (builtin + cloud presets merged)
+  // Pass this to modals so they have the full filament name lookup
+  const enrichedBuiltinFilaments = React.useMemo(() => {
+    return Array.from(builtinFilamentMap.entries()).map(([fid, name]) => ({
+      filament_id: fid,
+      name,
+    }));
+  }, [builtinFilamentMap]);
+
+  // Resolve filament name: builtin table first, then extract from profile name
+  const resolveFilamentName = React.useCallback((profile: KProfile) => {
+    return builtinFilamentMap.get(profile.filament_id) || extractFilamentName(profile.name);
+  }, [builtinFilamentMap]);
+
   // Filter and sort profiles
   // Note: nozzle diameter filtering is done server-side via MQTT request
   const filteredProfiles = React.useMemo(() => {
@@ -841,13 +899,13 @@ export function KProfilesView() {
         case 'k_value':
           return parseFloat(a.k_value) - parseFloat(b.k_value);
         case 'filament':
-          return extractFilamentName(a.name).localeCompare(extractFilamentName(b.name));
+          return resolveFilamentName(a).localeCompare(resolveFilamentName(b));
         case 'name':
         default:
           return a.name.localeCompare(b.name);
       }
     });
-  }, [kprofiles?.profiles, searchQuery, extruderFilter, flowTypeFilter, sortOption]);
+  }, [kprofiles?.profiles, searchQuery, extruderFilter, flowTypeFilter, sortOption, resolveFilamentName]);
 
   // Check if selected printer is dual-nozzle (auto-detected from MQTT temperature data)
   const selectedPrinterData = printers?.find((p) => p.id === selectedPrinter);
@@ -1394,6 +1452,7 @@ export function KProfilesView() {
             printerId={selectedPrinter}
             nozzleDiameter={nozzleDiameter}
             existingProfiles={allProfiles?.profiles || kprofiles?.profiles}
+            builtinFilaments={enrichedBuiltinFilaments}
             isDualNozzle={isDualNozzle}
             initialNote={note}
             initialNoteKey={key}
@@ -1418,6 +1477,7 @@ export function KProfilesView() {
           printerId={selectedPrinter}
           nozzleDiameter={nozzleDiameter}
           existingProfiles={allProfiles?.profiles || kprofiles?.profiles}
+          builtinFilaments={enrichedBuiltinFilaments}
           isDualNozzle={isDualNozzle}
           onSaveNote={handleSaveNote}
           hasPermission={hasPermission}
@@ -1438,6 +1498,7 @@ export function KProfilesView() {
           printerId={selectedPrinter}
           nozzleDiameter={nozzleDiameter}
           existingProfiles={allProfiles?.profiles || kprofiles?.profiles}
+          builtinFilaments={enrichedBuiltinFilaments}
           isDualNozzle={isDualNozzle}
           onSaveNote={handleSaveNote}
           hasPermission={hasPermission}

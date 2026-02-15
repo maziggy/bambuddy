@@ -278,6 +278,9 @@ async def delete_kprofile(
     if not success:
         raise HTTPException(500, "Failed to send K-profile delete command")
 
+    # Wait for printer to process the delete before frontend refetches
+    await asyncio.sleep(0.5)
+
     return {"success": True, "message": "K-profile deleted successfully"}
 
 

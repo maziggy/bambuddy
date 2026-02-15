@@ -62,15 +62,17 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
 
   if (!isOpen) return null;
 
-  // Filter out Bambu Lab spools (identified by RFID tag_uid or tray_uuid)
-  // and spools already assigned to other slots
+  // Filter out spools already assigned to other slots
   const assignedSpoolIds = new Set(
     (assignments || [])
       .filter(a => !(a.printer_id === printerId && a.ams_id === amsId && a.tray_id === trayId))
       .map(a => a.spool_id)
   );
+  // External slots (amsId 254 or 255) have no RFID reader, so show all spools.
+  // AMS slots only show manual spools (no tag_uid or tray_uuid).
+  const isExternalSlot = amsId === 254 || amsId === 255;
   const manualSpools = spools?.filter((spool: InventorySpool) =>
-    !spool.tag_uid && !spool.tray_uuid && !assignedSpoolIds.has(spool.id)
+    !assignedSpoolIds.has(spool.id) && (isExternalSlot || (!spool.tag_uid && !spool.tray_uuid))
   );
 
   const filteredSpools = manualSpools?.filter((spool: InventorySpool) => {

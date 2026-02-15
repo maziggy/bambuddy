@@ -734,23 +734,26 @@ class TestPrinterStateToDict:
         assert result["ams"][0]["tray"][0]["tag_uid"] is None
 
     def test_vt_tray_parsing(self, mock_state):
-        """Verify virtual tray is parsed correctly."""
+        """Verify virtual tray is parsed correctly as a list."""
         mock_state.raw_data = {
-            "vt_tray": {
-                "tray_color": "00FF00",
-                "tray_type": "PETG",
-                "tray_sub_brands": "Generic",
-                "remain": 60,
-                "tag_uid": "VT123",
-            }
+            "vt_tray": [
+                {
+                    "tray_color": "00FF00",
+                    "tray_type": "PETG",
+                    "tray_sub_brands": "Generic",
+                    "remain": 60,
+                    "tag_uid": "VT123",
+                }
+            ]
         }
 
         result = printer_state_to_dict(mock_state)
 
-        assert result["vt_tray"] is not None
-        assert result["vt_tray"]["id"] == 254
-        assert result["vt_tray"]["tray_color"] == "00FF00"
-        assert result["vt_tray"]["tray_type"] == "PETG"
+        assert isinstance(result["vt_tray"], list)
+        assert len(result["vt_tray"]) == 1
+        assert result["vt_tray"][0]["id"] == 254
+        assert result["vt_tray"][0]["tray_color"] == "00FF00"
+        assert result["vt_tray"][0]["tray_type"] == "PETG"
 
     def test_hms_errors_conversion(self, mock_state):
         """Verify HMS errors are converted correctly."""

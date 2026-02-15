@@ -285,6 +285,7 @@ export function SettingsPage() {
   const { data: updateCheck, refetch: refetchUpdateCheck, isRefetching: isCheckingUpdate } = useQuery({
     queryKey: ['updateCheck'],
     queryFn: api.checkForUpdates,
+    enabled: settings?.check_updates !== false,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -772,6 +773,7 @@ export function SettingsPage() {
       settings.check_updates !== localSettings.check_updates ||
       (settings.check_printer_firmware ?? true) !== (localSettings.check_printer_firmware ?? true) ||
       settings.notification_language !== localSettings.notification_language ||
+      (settings.bed_cooled_threshold ?? 35) !== (localSettings.bed_cooled_threshold ?? 35) ||
       settings.ams_humidity_good !== localSettings.ams_humidity_good ||
       settings.ams_humidity_fair !== localSettings.ams_humidity_fair ||
       settings.ams_temp_good !== localSettings.ams_temp_good ||
@@ -836,6 +838,7 @@ export function SettingsPage() {
         check_updates: localSettings.check_updates,
         check_printer_firmware: localSettings.check_printer_firmware,
         notification_language: localSettings.notification_language,
+        bed_cooled_threshold: localSettings.bed_cooled_threshold,
         ams_humidity_good: localSettings.ams_humidity_good,
         ams_humidity_fair: localSettings.ams_humidity_fair,
         ams_temp_good: localSettings.ams_temp_good,
@@ -2695,6 +2698,30 @@ export function SettingsPage() {
               </CardContent>
             </Card>
 
+            {/* Bed Cooled Threshold Setting */}
+            <Card className="mb-4">
+              <CardContent className="py-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white text-sm font-medium">{t('settings.bedCooledThreshold')}</p>
+                    <p className="text-xs text-bambu-gray">{t('settings.bedCooledThresholdDescription')}</p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={20}
+                      max={80}
+                      step={1}
+                      value={localSettings.bed_cooled_threshold ?? 35}
+                      onChange={(e) => updateSetting('bed_cooled_threshold', Number(e.target.value))}
+                      className="w-16 px-2 py-1.5 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm text-center focus:outline-none focus:ring-1 focus:ring-bambu-green"
+                    />
+                    <span className="text-sm text-bambu-gray">°C</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Test All Results */}
             {testAllResult && (
               <Card className="mb-4">
@@ -2789,7 +2816,7 @@ export function SettingsPage() {
               </div>
             ) : notificationTemplates && notificationTemplates.length > 0 ? (
               <div className="space-y-2">
-                {notificationTemplates.map((template) => (
+                {[...notificationTemplates].sort((a, b) => a.name.localeCompare(b.name)).map((template) => (
                   <Card
                     key={template.id}
                     className="cursor-pointer hover:border-bambu-green/50 transition-colors"

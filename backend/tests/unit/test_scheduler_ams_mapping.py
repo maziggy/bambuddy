@@ -140,7 +140,7 @@ class TestBuildLoadedFilaments:
         """Should include external spool."""
 
         class MockStatus:
-            raw_data = {"vt_tray": {"tray_type": "TPU", "tray_color": "0000FF"}}
+            raw_data = {"vt_tray": [{"tray_type": "TPU", "tray_color": "0000FF"}]}
 
         result = scheduler._build_loaded_filaments(MockStatus())
         assert len(result) == 1
@@ -466,7 +466,7 @@ class TestBuildLoadedFilamentsTrayInfoIdx:
         """Should extract tray_info_idx from external spool."""
 
         class MockStatus:
-            raw_data = {"vt_tray": {"tray_type": "TPU", "tray_color": "0000FF", "tray_info_idx": "P4d64437"}}
+            raw_data = {"vt_tray": [{"tray_type": "TPU", "tray_color": "0000FF", "tray_info_idx": "P4d64437"}]}
 
         result = scheduler._build_loaded_filaments(MockStatus())
         assert len(result) == 1
@@ -624,7 +624,7 @@ class TestNozzleAwareMapping:
 
         class MockStatus:
             raw_data = {
-                "vt_tray": {"tray_type": "TPU", "tray_color": "0000FF"},
+                "vt_tray": [{"tray_type": "TPU", "tray_color": "0000FF"}],
                 "ams_extruder_map": {"0": 0},
             }
 
@@ -637,7 +637,7 @@ class TestNozzleAwareMapping:
         """External spool extruder_id should be None without ams_extruder_map."""
 
         class MockStatus:
-            raw_data = {"vt_tray": {"tray_type": "TPU", "tray_color": "0000FF"}}
+            raw_data = {"vt_tray": [{"tray_type": "TPU", "tray_color": "0000FF"}]}
 
         result = scheduler._build_loaded_filaments(MockStatus())
         assert len(result) == 1

@@ -9,12 +9,14 @@ import sys
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.config import APP_VERSION, GITHUB_REPO, settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.models.settings import Settings
 from backend.app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -175,6 +177,17 @@ async def check_for_updates(
 ):
     """Check GitHub for available updates."""
     global _update_status
+
+    # Respect the check_updates setting
+    result = await db.execute(select(Settings).where(Settings.key == "check_updates"))
+    setting = result.scalar_one_or_none()
+    if setting and setting.value.lower() == "false":
+        return {
+            "update_available": False,
+            "current_version": APP_VERSION,
+            "latest_version": None,
+            "message": "Update checks are disabled",
+        }
 
     _update_status = {
         "status": "checking",

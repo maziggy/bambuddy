@@ -20,6 +20,7 @@ class EventType(StrEnum):
     MAINTENANCE_DUE = "maintenance_due"
     AMS_HUMIDITY_HIGH = "ams_humidity_high"
     AMS_TEMPERATURE_HIGH = "ams_temperature_high"
+    BED_COOLED = "bed_cooled"
     TEST = "test"
 
 
@@ -66,6 +67,7 @@ EVENT_VARIABLES: dict[str, list[str]] = {
     "maintenance_due": ["printer", "items", "timestamp", "app_name"],
     "ams_humidity_high": ["printer", "ams_label", "humidity", "threshold", "timestamp", "app_name"],
     "ams_temperature_high": ["printer", "ams_label", "temperature", "threshold", "timestamp", "app_name"],
+    "bed_cooled": ["printer", "bed_temp", "threshold", "filename", "timestamp", "app_name"],
     "test": ["app_name", "timestamp"],
     # Queue notifications
     "queue_job_added": ["job_name", "target", "timestamp", "app_name"],
@@ -169,6 +171,14 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "ams_label": "AMS-A",
         "temperature": "42",
         "threshold": "35",
+        "timestamp": "2024-01-15 14:30",
+        "app_name": "Bambuddy",
+    },
+    "bed_cooled": {
+        "printer": "Bambu X1C",
+        "bed_temp": "34",
+        "threshold": "35",
+        "filename": "Benchy",
         "timestamp": "2024-01-15 14:30",
         "app_name": "Bambuddy",
     },

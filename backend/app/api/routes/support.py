@@ -106,10 +106,12 @@ def _apply_log_level(debug: bool):
         logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
         logging.getLogger("httpcore").setLevel(logging.DEBUG)
         logging.getLogger("httpx").setLevel(logging.DEBUG)
+        logging.getLogger("paho.mqtt").setLevel(logging.DEBUG)
     else:
         logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
         logging.getLogger("httpcore").setLevel(logging.WARNING)
         logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("paho.mqtt").setLevel(logging.WARNING)
 
     logger.info("Log level changed to %s", "DEBUG" if debug else "INFO")
 
@@ -473,7 +475,7 @@ async def _collect_support_info() -> dict:
                 for unit in ams_units:
                     trays = unit.get("tray", [])
                     ams_tray_count += len([t for t in trays if t.get("tray_type")])
-                has_vt_tray = state.raw_data.get("vt_tray") is not None
+                has_vt_tray = bool(state.raw_data.get("vt_tray"))
 
             info["printers"].append(
                 {

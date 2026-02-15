@@ -693,10 +693,10 @@ export function ConfigureAmsSlotModal({
         }
       }
 
-      // Pre-populate color from current slot
+      // Pre-populate color from current slot (black is valid — empty slots don't pass trayColor)
       if (slotInfo.trayColor) {
         const hex = slotInfo.trayColor.slice(0, 6);
-        if (hex && hex !== '000000') {
+        if (hex) {
           setColorHex(hex);
         }
       }

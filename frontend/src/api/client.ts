@@ -3825,6 +3825,14 @@ export const api = {
 
   // System Info
   getSystemInfo: () => request<SystemInfo>('/system/info'),
+  getStorageUsage: (options?: { refresh?: boolean }) => {
+    const params = new URLSearchParams();
+    if (options?.refresh) {
+      params.set('refresh', 'true');
+    }
+    const query = params.toString();
+    return request<StorageUsageResponse>(`/system/storage-usage${query ? `?${query}` : ''}`);
+  },
 
   // Library (File Manager)
   getLibraryFolders: () => request<LibraryFolderTree[]>('/library/folders'),
@@ -4164,6 +4172,39 @@ export interface SystemInfo {
     count: number;
     count_logical: number;
     percent: number;
+  };
+}
+
+export interface StorageUsageCategory {
+  key: string;
+  label: string;
+  bytes: number;
+  formatted: string;
+  percent_of_total: number;
+}
+
+export interface StorageUsageOtherItem {
+  bucket: string;
+  label: string;
+  kind: 'system' | 'data';
+  deletable: boolean;
+  bytes: number;
+  formatted: string;
+  percent_of_total: number;
+}
+
+export interface StorageUsageResponse {
+  roots: string[];
+  total_bytes: number;
+  total_formatted: string;
+  categories: StorageUsageCategory[];
+  other_breakdown: StorageUsageOtherItem[];
+  scan_errors: number;
+  generated_at: string;
+  cache: {
+    hit: boolean;
+    age_seconds: number;
+    max_age_seconds: number;
   };
 }
 

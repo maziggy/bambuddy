@@ -226,7 +226,7 @@ export function CalendarView({ archives, onArchiveClick, highlightedArchiveId }:
               })}
             </h3>
             {selectedArchives.length > 0 ? (
-              <div className="space-y-2 max-h-96 overflow-y-auto">
+              <div className="calendar-scroll space-y-2 max-h-96 overflow-y-auto">
                 {selectedArchives.map(archive => {
                   const isHighlighted = archive.id === selectedArchiveId || archive.id === highlightedArchiveId;
                   return (

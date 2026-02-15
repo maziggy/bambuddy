@@ -320,7 +320,7 @@ def extract_nozzle_mapping_from_3mf(zf: zipfile.ZipFile) -> dict[int, int] | Non
         return None
 
 
-def extract_filament_usage_from_3mf(file_path: Path) -> list[dict]:
+def extract_filament_usage_from_3mf(file_path: Path, plate_id: int | None = None) -> list[dict]:
     """Extract per-filament total usage from 3MF slice_info.config.
 
     This extracts the slicer-estimated total usage per filament slot,
@@ -328,6 +328,7 @@ def extract_filament_usage_from_3mf(file_path: Path) -> list[dict]:
 
     Args:
         file_path: Path to the 3MF file
+        plate_id: Optional plate index to filter for (for multi-plate files)
 
     Returns:
         List of filament usage dictionaries:
@@ -342,22 +343,55 @@ def extract_filament_usage_from_3mf(file_path: Path) -> list[dict]:
             content = zf.read("Metadata/slice_info.config").decode()
             root = ET.fromstring(content)
 
-            for f in root.findall(".//filament"):
-                filament_id = f.get("id")
-                used_g = f.get("used_g", "0")
-                try:
-                    used_amount = float(used_g)
-                    if filament_id:
-                        filament_usage.append(
-                            {
-                                "slot_id": int(filament_id),
-                                "used_g": used_amount,
-                                "type": f.get("type", ""),
-                                "color": f.get("color", ""),
-                            }
-                        )
-                except (ValueError, TypeError):
-                    pass  # Skip filament entries with unparseable usage values
+            if plate_id is not None:
+                # Find the plate element with matching index
+                for plate_elem in root.findall(".//plate"):
+                    plate_index = None
+                    for meta in plate_elem.findall("metadata"):
+                        if meta.get("key") == "index":
+                            try:
+                                plate_index = int(meta.get("value", "0"))
+                            except ValueError:
+                                pass
+                            break
+
+                    if plate_index == plate_id:
+                        for f in plate_elem.findall("filament"):
+                            filament_id = f.get("id")
+                            used_g = f.get("used_g", "0")
+                            try:
+                                used_amount = float(used_g)
+                                if filament_id:
+                                    filament_usage.append(
+                                        {
+                                            "slot_id": int(filament_id),
+                                            "used_g": used_amount,
+                                            "type": f.get("type", ""),
+                                            "color": f.get("color", ""),
+                                        }
+                                    )
+                            except (ValueError, TypeError):
+                                pass
+                        break
+            else:
+                # No plate_id specified - extract all filaments
+                for f in root.findall(".//filament"):
+                    filament_id = f.get("id")
+                    used_g = f.get("used_g", "0")
+                    try:
+                        used_amount = float(used_g)
+                        if filament_id:
+                            filament_usage.append(
+                                {
+                                    "slot_id": int(filament_id),
+                                    "used_g": used_amount,
+                                    "type": f.get("type", ""),
+                                    "color": f.get("color", ""),
+                                }
+                            )
+                    except (ValueError, TypeError):
+                        pass  # Skip filament entries with unparseable usage values
+
     except Exception:
         pass  # Return whatever usage data was collected before the error
 

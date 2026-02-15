@@ -749,6 +749,7 @@ export default {
       printing: 'In stampa',
       queued: 'In coda',
       totalTime: 'Tempo totale coda',
+      totalWeight: 'Peso totale della coda',
       history: 'Cronologia',
     },
     // Filters

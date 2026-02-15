@@ -830,6 +830,7 @@ export default {
       queued: 'キュー中',
       history: '履歴',
       totalTime: 'キュー合計時間',
+      totalWeight: 'キュー合計重量',
     },
     filter: {
       allPrinters: 'すべてのプリンター',

@@ -762,6 +762,7 @@ export default {
       printing: 'Impressions',
       queued: 'En attente',
       totalTime: 'Temps total estimé',
+      totalWeight: 'Poids total estimé',
       history: 'Historique',
     },
     // Filters

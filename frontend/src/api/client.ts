@@ -1236,6 +1236,7 @@ export interface PrintQueueItem {
   library_file_thumbnail?: string | null;
   printer_name?: string | null;
   print_time_seconds?: number | null;  // Estimated print time from archive or library file
+  filament_used_grams?: number | null;  // Estimated print weight from archive or library file
   // User tracking (Issue #206)
   created_by_id?: number | null;
   created_by_username?: string | null;

@@ -762,6 +762,7 @@ export default {
       printing: 'Printing',
       queued: 'Queued',
       totalTime: 'Total Queue Time',
+      totalWeight: 'Total Queue Weight',
       history: 'History',
     },
     // Filters

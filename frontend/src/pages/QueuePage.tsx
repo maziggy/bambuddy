@@ -47,6 +47,7 @@ import {
   Square,
   User,
   Pause,
+  Weight,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { parseUTCDate, formatDateTime, type TimeFormat } from '../utils/date';
@@ -64,6 +65,11 @@ function formatDuration(seconds: number | null | undefined): string {
   const minutes = Math.floor((seconds % 3600) / 60);
   if (hours > 0) return `${hours}h ${minutes}m`;
   return `${minutes}m`;
+}
+
+function formatWeight(g: number, useKg = false): string {
+  if (useKg && g >= 1000) return `${(g / 1000).toFixed(1)}kg`;
+  return `${Math.round(g)}g`;
 }
 
 function formatRelativeTime(dateString: string | null, timeFormat: TimeFormat = 'system', t?: (key: string, options?: Record<string, unknown>) => string): string {
@@ -448,6 +454,12 @@ function SortableQueueItem({
               <span className="flex items-center gap-1.5">
                 <Timer className="w-3.5 h-3.5" />
                 {formatDuration(item.print_time_seconds)}
+              </span>
+            )}
+            {item.filament_used_grams && (
+              <span className="flex items-center gap-1.5">
+                <Weight className="w-3.5 h-3.5" />
+                {formatWeight(item.filament_used_grams)}
               </span>
             )}
             {item.created_by_username && (
@@ -894,6 +906,11 @@ export function QueuePage() {
     return pendingItems.reduce((acc, item) => acc + (item.print_time_seconds || 0), 0);
   }, [pendingItems]);
 
+  // Calculate total material weight
+  const totalWeight = useMemo(() => {
+    return pendingItems.reduce((acc, item) => acc + (item.filament_used_grams || 0), 0);
+  }, [pendingItems]);
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -925,7 +942,7 @@ export function QueuePage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
         <Card className="bg-gradient-to-br from-blue-500/10 to-transparent border-blue-500/20">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
@@ -963,6 +980,20 @@ export function QueuePage() {
               <div>
                 <p className="text-2xl font-bold text-white">{formatDuration(totalQueueTime)}</p>
                 <p className="text-sm text-bambu-gray">{t('queue.summary.totalTime')}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-purple-500/10 to-transparent border-purple-500/20">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                <Weight className="w-5 h-5 text-purple-500" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-white">{formatWeight(totalWeight)}</p>
+                <p className="text-sm text-bambu-gray">{t('queue.summary.totalWeight')}</p>
               </div>
             </div>
           </CardContent>

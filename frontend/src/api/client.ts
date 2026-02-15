@@ -369,6 +369,28 @@ export interface Archive {
   created_by_username: string | null;
 }
 
+export interface PrintLogEntry {
+  id: number;
+  print_name: string | null;
+  printer_name: string | null;
+  printer_id: number | null;
+  status: string;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_seconds: number | null;
+  filament_type: string | null;
+  filament_color: string | null;
+  filament_used_grams: number | null;
+  thumbnail_path: string | null;
+  created_by_username: string | null;
+  created_at: string;
+}
+
+export interface PrintLogResponse {
+  items: PrintLogEntry[];
+  total: number;
+}
+
 export interface ArchiveStats {
   total_prints: number;
   successful_prints: number;
@@ -2953,6 +2975,32 @@ export const api = {
     }
     return response.json();
   },
+
+  // Print Log
+  getPrintLog: (params?: {
+    search?: string;
+    printerId?: number;
+    username?: string;
+    status?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.printerId) searchParams.set('printer_id', String(params.printerId));
+    if (params?.username) searchParams.set('created_by_username', params.username);
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.dateFrom) searchParams.set('date_from', params.dateFrom);
+    if (params?.dateTo) searchParams.set('date_to', params.dateTo);
+    if (params?.limit) searchParams.set('limit', String(params.limit));
+    if (params?.offset !== undefined) searchParams.set('offset', String(params.offset));
+    return request<PrintLogResponse>(`/print-log/?${searchParams}`);
+  },
+  getPrintLogThumbnail: (id: number) => `${API_BASE}/print-log/${id}/thumbnail`,
+  clearPrintLog: () =>
+    request<{ deleted: number }>('/print-log/', { method: 'DELETE' }),
 
   // Settings
   getSettings: () => request<AppSettings>('/settings/'),

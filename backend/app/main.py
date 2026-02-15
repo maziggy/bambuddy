@@ -194,6 +194,7 @@ from backend.app.api.routes import (
     notification_templates,
     notifications,
     pending_uploads,
+    print_log,
     print_queue,
     printers,
     projects,
@@ -1958,6 +1959,9 @@ async def on_print_complete(printer_id: int, data: dict):
     except Exception as e:
         logger.warning("[CALLBACK] WebSocket send_print_complete failed: %s", e)
 
+    # Capture user info before clearing (needed for print log entry)
+    _print_user_info = printer_manager.get_current_print_user(printer_id)
+
     # Clear current print user tracking (Issue #206)
     printer_manager.clear_current_print_user(printer_id)
 
@@ -2157,6 +2161,36 @@ async def on_print_complete(printer_id: int, data: dict):
         # Continue with other operations even if archive update fails
 
     log_timing("Archive status update")
+
+    # Write independent print log entry (separate table, never touches archives)
+    try:
+        async with async_session() as db:
+            from backend.app.models.archive import PrintArchive
+            from backend.app.services.print_log import write_log_entry
+
+            archive = await db.get(PrintArchive, archive_id)
+            if archive:
+                p_info = printer_manager.get_printer(printer_id)
+                await write_log_entry(
+                    db,
+                    status=data.get("status", "completed"),
+                    print_name=archive.print_name,
+                    printer_name=p_info.name if p_info else None,
+                    printer_id=printer_id,
+                    started_at=archive.started_at,
+                    completed_at=archive.completed_at,
+                    filament_type=archive.filament_type,
+                    filament_color=archive.filament_color,
+                    filament_used_grams=archive.filament_used_grams,
+                    thumbnail_path=archive.thumbnail_path,
+                    created_by_username=_print_user_info.get("username") if _print_user_info else None,
+                )
+                await db.commit()
+                logger.info("[PRINT_LOG] Log entry written for archive %s", archive_id)
+    except Exception as e:
+        logger.warning("[PRINT_LOG] Failed to write log entry for archive %s: %s", archive_id, e)
+
+    log_timing("Print log entry")
 
     # Track filament consumption from AMS remain% deltas (skip if Spoolman handles usage)
     usage_results: list[dict] = []
@@ -3369,6 +3403,7 @@ app.include_router(settings_routes.router, prefix=app_settings.api_prefix)
 app.include_router(cloud.router, prefix=app_settings.api_prefix)
 app.include_router(local_presets.router, prefix=app_settings.api_prefix)
 app.include_router(smart_plugs.router, prefix=app_settings.api_prefix)
+app.include_router(print_log.router, prefix=app_settings.api_prefix)
 app.include_router(print_queue.router, prefix=app_settings.api_prefix)
 app.include_router(kprofiles.router, prefix=app_settings.api_prefix)
 app.include_router(notifications.router, prefix=app_settings.api_prefix)

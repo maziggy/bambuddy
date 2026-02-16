@@ -235,6 +235,8 @@ class TestOnPrintComplete:
         printer_manager = MagicMock()
         printer_manager.get_status.return_value = SimpleNamespace(
             raw_data={"ams": [{"id": 0, "tray": [{"id": 0, "remain": 70}]}]},
+            tray_now=0,
+            last_loaded_tray=-1,
         )
 
         # db returns assignment then spool

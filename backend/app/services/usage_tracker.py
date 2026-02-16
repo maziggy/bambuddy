@@ -63,6 +63,33 @@ async def on_print_start(printer_id: int, data: dict, printer_manager) -> None:
     # Capture tray_now at print start (reliable, unlike at completion where it's 255)
     tray_now_at_start = state.tray_now if state else -1
 
+    # --- Diagnostic logging: dump mapping-related MQTT fields at print start ---
+    # This helps us understand what each printer model reports for slot-to-tray mapping.
+    mapping_field = state.raw_data.get("mapping")
+    logger.info(
+        "[UsageTracker] PRINT START printer %d: mapping=%s, tray_now=%d, last_loaded_tray=%s",
+        printer_id,
+        mapping_field,
+        tray_now_at_start,
+        getattr(state, "last_loaded_tray", "N/A"),
+    )
+    # Log all raw_data keys containing "map" or "ams" for discovery
+    map_keys = {k: state.raw_data[k] for k in state.raw_data if "map" in k.lower()}
+    if map_keys:
+        logger.info("[UsageTracker] PRINT START printer %d: mapping-related keys: %s", printer_id, map_keys)
+    # Log per-tray summary: tray_now, tray_tar, tray_type, tray_color for each slot
+    for ams_unit in ams_data:
+        ams_id = int(ams_unit.get("id", 0))
+        tray_summary = []
+        for tray in ams_unit.get("tray", []):
+            tray_summary.append(
+                f"T{tray.get('id', '?')}(type={tray.get('tray_type', '')}, "
+                f"color={tray.get('tray_color', '')}, "
+                f"now={ams_raw.get('tray_now', '?') if isinstance(ams_raw, dict) else '?'}, "
+                f"tar={ams_raw.get('tray_tar', '?') if isinstance(ams_raw, dict) else '?'})"
+            )
+        logger.info("[UsageTracker] PRINT START printer %d AMS %d: %s", printer_id, ams_id, ", ".join(tray_summary))
+
     # Always create session (even without valid remain data) so print_name
     # is available at completion for 3MF-based tracking
     session = PrintSession(
@@ -73,7 +100,6 @@ async def on_print_start(printer_id: int, data: dict, printer_manager) -> None:
         tray_now_at_start=tray_now_at_start,
     )
     _active_sessions[printer_id] = session
-    logger.info("[UsageTracker] Captured tray_now=%d at print start for printer %d", tray_now_at_start, printer_id)
 
     if tray_remain_start:
         logger.info(
@@ -114,6 +140,17 @@ async def on_print_complete(
         "yes" if session else "no",
         ams_mapping,
     )
+
+    # --- Diagnostic logging: dump mapping-related MQTT fields at print completion ---
+    state = printer_manager.get_status(printer_id)
+    if state and state.raw_data:
+        logger.info(
+            "[UsageTracker] PRINT COMPLETE printer %d: mapping=%s, tray_now=%s, last_loaded_tray=%s",
+            printer_id,
+            state.raw_data.get("mapping"),
+            state.tray_now,
+            getattr(state, "last_loaded_tray", "N/A"),
+        )
 
     # --- Path 1 (PRIMARY): 3MF per-filament estimates ---
     if archive_id:

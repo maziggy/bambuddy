@@ -6,6 +6,7 @@ import { api } from '../api/client';
 import type { SpoolmanSyncResult, Printer } from '../api/client';
 import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
+import { ConfirmModal } from './ConfirmModal';
 import { useToast } from '../contexts/ToastContext';
 
 export function SpoolmanSettings() {
@@ -20,6 +21,7 @@ export function SpoolmanSettings() {
   const [selectedPrinterId, setSelectedPrinterId] = useState<number | 'all'>('all');
   const [isInitialized, setIsInitialized] = useState(false);
   const [showAllSkipped, setShowAllSkipped] = useState(false);
+  const [showAmsSyncConfirm, setShowAmsSyncConfirm] = useState(false);
 
   // Fetch Spoolman settings
   const { data: settings, isLoading: settingsLoading } = useQuery({
@@ -136,6 +138,21 @@ export function SpoolmanSettings() {
     }
   };
 
+  // Inventory AMS weight sync mutation
+  const amsSyncMutation = useMutation({
+    mutationFn: api.syncWeightsFromAms,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['spools'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
+      showToast(t('settings.amsSyncSuccess', { synced: data.synced, skipped: data.skipped }), 'success');
+      setShowAmsSyncConfirm(false);
+    },
+    onError: () => {
+      showToast(t('settings.amsSyncError'), 'error');
+      setShowAmsSyncConfirm(false);
+    },
+  });
+
   // Combine mutation states
   const isSyncing = syncAllMutation.isPending || syncPrinterMutation.isPending;
   const syncResult = selectedPrinterId === 'all' ? syncAllMutation.data : syncPrinterMutation.data;
@@ -236,18 +253,34 @@ export function SpoolmanSettings() {
 
         {/* Built-in Inventory details */}
         {!localEnabled && (
-          <div className="p-3 bg-bambu-green/5 border border-bambu-green/20 rounded-lg">
-            <div className="flex gap-2">
-              <Info className="w-4 h-4 text-bambu-green flex-shrink-0 mt-0.5" />
-              <div className="text-xs text-bambu-gray">
-                <ul className="list-disc list-inside space-y-0.5">
-                  <li>{t('settings.builtInFeatureRfid')}</li>
-                  <li>{t('settings.builtInFeatureUsage')}</li>
-                  <li>{t('settings.builtInFeatureCatalog')}</li>
-                  <li>{t('settings.builtInFeatureThirdParty')}</li>
-                </ul>
+          <div className="space-y-3">
+            <div className="p-3 bg-bambu-green/5 border border-bambu-green/20 rounded-lg">
+              <div className="flex gap-2">
+                <Info className="w-4 h-4 text-bambu-green flex-shrink-0 mt-0.5" />
+                <div className="text-xs text-bambu-gray">
+                  <ul className="list-disc list-inside space-y-0.5">
+                    <li>{t('settings.builtInFeatureRfid')}</li>
+                    <li>{t('settings.builtInFeatureUsage')}</li>
+                    <li>{t('settings.builtInFeatureCatalog')}</li>
+                    <li>{t('settings.builtInFeatureThirdParty')}</li>
+                  </ul>
+                </div>
               </div>
             </div>
+
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowAmsSyncConfirm(true)}
+              disabled={amsSyncMutation.isPending}
+            >
+              {amsSyncMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4 mr-2" />
+              )}
+              {t('settings.amsSyncButton')}
+            </Button>
           </div>
         )}
 
@@ -528,6 +561,19 @@ export function SpoolmanSettings() {
           </div>
         )}
       </CardContent>
+
+      {showAmsSyncConfirm && (
+        <ConfirmModal
+          title={t('settings.amsSyncTitle')}
+          message={t('settings.amsSyncMessage')}
+          confirmText={t('settings.amsSyncButton')}
+          variant="warning"
+          isLoading={amsSyncMutation.isPending}
+          loadingText={t('settings.amsSyncing')}
+          onConfirm={() => amsSyncMutation.mutate()}
+          onCancel={() => setShowAmsSyncConfirm(false)}
+        />
+      )}
     </Card>
   );
 }

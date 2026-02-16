@@ -86,6 +86,7 @@ export default {
     unknown: 'Inconnu',
     unknownError: 'Erreur inconnue',
     today: 'Aujourd\'hui',
+    tomorrow: 'Demain',
     asap: 'Dès que possible',
     overdue: 'En retard',
     now: 'Maintenant',
@@ -762,6 +763,7 @@ export default {
       printing: 'Impressions',
       queued: 'En attente',
       totalTime: 'Temps total estimé',
+      totalWeight: 'Poids total estimé',
       history: 'Historique',
     },
     // Filters
@@ -1199,6 +1201,12 @@ export default {
     builtInFeatureUsage: 'Suit la consommation par impression',
     builtInFeatureCatalog: 'Gère bobines, couleurs et profils facteur K',
     builtInFeatureThirdParty: 'Les bobines tierces peuvent être assignées aux bobines d\'inventaire',
+    amsSyncButton: 'Synchroniser les poids depuis l\'AMS',
+    amsSyncTitle: 'Synchroniser les poids des bobines depuis l\'AMS',
+    amsSyncMessage: 'Tous les poids des bobines de l\'inventaire seront écrasés par les valeurs actuelles de l\'AMS des imprimantes connectées. Utilisez ceci pour récupérer des données de poids corrompues. Les imprimantes doivent être en ligne.',
+    amsSyncing: 'Synchronisation...',
+    amsSyncSuccess: '{{synced}} bobine(s) synchronisée(s), {{skipped}} ignorée(s)',
+    amsSyncError: 'Échec de la synchronisation des poids depuis l\'AMS',
     // Spoolman settings
     spoolmanUrl: 'URL Spoolman',
     spoolmanUrlHint: 'URL de votre serveur Spoolman (ex: http://localhost:7912)',
@@ -1864,7 +1872,6 @@ export default {
     cameraStream: 'Flux caméra',
     progress: 'Progression',
     eta: 'Fin estimée',
-    tomorrow: 'Demain',
     printerIdle: 'Imprimante inactive',
     printerOffline: 'Imprimante hors ligne',
     status: {

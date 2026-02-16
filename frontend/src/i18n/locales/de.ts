@@ -86,6 +86,7 @@ export default {
     unknown: 'Unbekannt',
     unknownError: 'Unbekannter Fehler',
     today: 'Heute',
+    tomorrow: 'Morgen',
     asap: 'Sofort',
     overdue: 'Überfällig',
     now: 'Jetzt',
@@ -762,6 +763,7 @@ export default {
       printing: 'Druckt',
       queued: 'In Warteschlange',
       totalTime: 'Gesamte Wartezeit',
+      totalWeight: 'Gesamtgewicht der Warteschlange',
       history: 'Verlauf',
     },
     // Filters
@@ -1203,6 +1205,12 @@ export default {
     builtInFeatureUsage: 'Erfasst den Filamentverbrauch pro Druck',
     builtInFeatureCatalog: 'Spulen, Farben und K-Faktor-Profile verwalten',
     builtInFeatureThirdParty: 'Drittanbieter-Spulen können Inventarspulen zugewiesen werden',
+    amsSyncButton: 'Gewichte vom AMS synchronisieren',
+    amsSyncTitle: 'Spulengewichte vom AMS synchronisieren',
+    amsSyncMessage: 'Alle Inventar-Spulengewichte werden mit den aktuellen AMS-Restwerten der verbundenen Drucker überschrieben. Verwenden Sie dies zur Wiederherstellung beschädigter Gewichtsdaten. Drucker müssen online sein.',
+    amsSyncing: 'Synchronisiere...',
+    amsSyncSuccess: '{{synced}} Spule(n) synchronisiert, {{skipped}} übersprungen',
+    amsSyncError: 'Synchronisierung der Gewichte vom AMS fehlgeschlagen',
     // Spoolman settings
     spoolmanUrl: 'Spoolman URL',
     spoolmanUrlHint: 'URL Ihres Spoolman-Servers (z.B. http://localhost:7912)',
@@ -1868,7 +1876,6 @@ export default {
     cameraStream: 'Kamera-Stream',
     progress: 'Fortschritt',
     eta: 'ETA',
-    tomorrow: 'Morgen',
     printerIdle: 'Drucker ist inaktiv',
     printerOffline: 'Drucker offline',
     status: {

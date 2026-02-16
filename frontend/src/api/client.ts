@@ -1236,6 +1236,7 @@ export interface PrintQueueItem {
   library_file_thumbnail?: string | null;
   printer_name?: string | null;
   print_time_seconds?: number | null;  // Estimated print time from archive or library file
+  filament_used_grams?: number | null;  // Estimated print weight from archive or library file
   // User tracking (Issue #206)
   created_by_id?: number | null;
   created_by_username?: string | null;
@@ -3497,6 +3498,8 @@ export const api = {
     request<SpoolUsageRecord[]>(`/inventory/usage?limit=${limit}${printerId ? `&printer_id=${printerId}` : ''}`),
   clearSpoolUsageHistory: (spoolId: number) =>
     request<{ status: string }>(`/inventory/spools/${spoolId}/usage`, { method: 'DELETE' }),
+  syncWeightsFromAms: () =>
+    request<{ synced: number; skipped: number }>('/inventory/sync-ams-weights', { method: 'POST' }),
   getFilamentPresets: () =>
     request<SlicerSetting[]>('/cloud/filaments'),
 

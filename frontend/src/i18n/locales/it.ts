@@ -83,6 +83,7 @@ export default {
     unknown: 'Sconosciuto',
     unknownError: 'Errore sconosciuto',
     today: 'Oggi',
+    tomorrow: 'Domani',
     asap: 'ASAP',
     overdue: 'Scaduto',
     now: 'Ora',
@@ -749,6 +750,7 @@ export default {
       printing: 'In stampa',
       queued: 'In coda',
       totalTime: 'Tempo totale coda',
+      totalWeight: 'Peso totale della coda',
       history: 'Cronologia',
     },
     // Filters
@@ -1687,7 +1689,6 @@ export default {
     cameraStream: 'Stream camera',
     progress: 'Avanzamento',
     eta: 'ETA',
-    tomorrow: 'Domani',
     printerIdle: 'Stampante inattiva',
     printerOffline: 'Stampante offline',
     status: {

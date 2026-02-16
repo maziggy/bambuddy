@@ -86,6 +86,7 @@ export default {
     unknown: 'Unknown',
     unknownError: 'Unknown error',
     today: 'Today',
+    tomorrow: 'Tomorrow',
     asap: 'ASAP',
     overdue: 'Overdue',
     now: 'Now',
@@ -762,6 +763,7 @@ export default {
       printing: 'Printing',
       queued: 'Queued',
       totalTime: 'Total Queue Time',
+      totalWeight: 'Total Queue Weight',
       history: 'History',
     },
     // Filters
@@ -1203,6 +1205,12 @@ export default {
     builtInFeatureUsage: 'Tracks filament consumption per print',
     builtInFeatureCatalog: 'Manage spools, colors, and K-factor profiles',
     builtInFeatureThirdParty: 'Third-party spools can be assigned to inventory spools',
+    amsSyncButton: 'Sync Weights from AMS',
+    amsSyncTitle: 'Sync Spool Weights from AMS',
+    amsSyncMessage: 'This will overwrite all inventory spool weights with the current AMS remain% values from connected printers. Use this to recover from corrupted weight data. Printers must be online.',
+    amsSyncing: 'Syncing...',
+    amsSyncSuccess: '{{synced}} spool(s) synced, {{skipped}} skipped',
+    amsSyncError: 'Failed to sync weights from AMS',
     // Spoolman settings
     spoolmanUrl: 'Spoolman URL',
     spoolmanUrlHint: 'URL of your Spoolman server (e.g., http://localhost:7912)',
@@ -1868,7 +1876,6 @@ export default {
     cameraStream: 'Camera stream',
     progress: 'Progress',
     eta: 'ETA',
-    tomorrow: 'Tomorrow',
     printerIdle: 'Printer is idle',
     printerOffline: 'Printer offline',
     status: {

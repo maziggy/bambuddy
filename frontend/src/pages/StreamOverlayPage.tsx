@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Layers, Clock, Timer, Printer } from 'lucide-react';
 import { api } from '../api/client';
 import type { PrinterStatus } from '../api/client';
+import { formatDuration, formatETA, type TimeFormat } from '../utils/date';
 
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
 
@@ -44,31 +45,6 @@ function parseConfig(params: URLSearchParams): OverlayConfig {
     showStatus: show.includes('status'),
     showPrinter: show.includes('printer'),
   };
-}
-
-function formatTime(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
-}
-
-function formatETA(remainingMinutes: number, t: TFunction): string {
-  const now = new Date();
-  const eta = new Date(now.getTime() + remainingMinutes * 60 * 1000);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const etaDay = new Date(eta);
-  etaDay.setHours(0, 0, 0, 0);
-
-  const timeStr = eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-  if (etaDay.getTime() === today.getTime()) {
-    return timeStr;
-  } else if (etaDay.getTime() === today.getTime() + 86400000) {
-    return `${t('streamOverlay.tomorrow')} ${timeStr}`;
-  } else {
-    return eta.toLocaleDateString([], { weekday: 'short' }) + ' ' + timeStr;
-  }
 }
 
 function getStatusText(status: PrinterStatus, t: TFunction): string {
@@ -145,6 +121,14 @@ export function StreamOverlayPage() {
     enabled: id > 0,
     refetchInterval: 2000,
   });
+
+  // Fetch settings info
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: api.getSettings,
+  });
+
+  const timeFormat: TimeFormat = settings?.time_format || 'system';
 
   // WebSocket for real-time updates
   useEffect(() => {
@@ -298,14 +282,14 @@ export function StreamOverlayPage() {
                   <div className={`flex items-center ${sizes.gap} text-white/70`}>
                     <Timer className={sizes.icon} />
                     <span className={`${sizes.text} text-white`}>
-                      {formatTime(status.remaining_time * 60)}
+                      {formatDuration(status.remaining_time * 60)}
                     </span>
                   </div>
 
                   <div className={`flex items-center ${sizes.gap} text-white/70`}>
                     <Clock className={sizes.icon} />
                     <span className={`${sizes.text} text-white`}>
-                      {t('streamOverlay.eta')} {formatETA(status.remaining_time, t)}
+                      {t('streamOverlay.eta')} {formatETA(status.remaining_time, timeFormat, t)}
                     </span>
                   </div>
                 </>

@@ -188,7 +188,9 @@ class NotificationService:
         else:
             return False, f"HTTP {response.status_code}: {response.text[:200]}"
 
-    async def _send_ntfy(self, config: dict, title: str, message: str) -> tuple[bool, str]:
+    async def _send_ntfy(
+        self, config: dict, title: str, message: str, image_data: bytes | None = None
+    ) -> tuple[bool, str]:
         """Send notification via ntfy."""
         server = config.get("server", "https://ntfy.sh").rstrip("/")
         topic = config.get("topic", "").strip()
@@ -204,7 +206,14 @@ class NotificationService:
             headers["Authorization"] = f"Bearer {auth_token}"
 
         client = await self._get_client()
-        response = await client.post(url, content=message, headers=headers)
+
+        if image_data:
+            # ntfy supports image attachments via multipart form-data
+            headers["Filename"] = "photo.jpg"
+            headers["Message"] = message
+            response = await client.put(url, content=image_data, headers=headers)
+        else:
+            response = await client.post(url, content=message, headers=headers)
 
         if response.status_code in (200, 204):
             return True, "Message sent successfully"
@@ -257,15 +266,13 @@ class NotificationService:
             except Exception:
                 return False, f"HTTP {response.status_code}: {response.text[:200]}"
 
-    async def _send_telegram(self, config: dict, message: str) -> tuple[bool, str]:
+    async def _send_telegram(self, config: dict, message: str, image_data: bytes | None = None) -> tuple[bool, str]:
         """Send notification via Telegram bot."""
         bot_token = config.get("bot_token", "").strip()
         chat_id = config.get("chat_id", "").strip()
 
         if not bot_token or not chat_id:
             return False, "Bot token and chat ID are required"
-
-        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
 
         # Escape underscores in the message body so Telegram Markdown
         # parsing doesn't break on job names like "A1_plate_8" or error
@@ -276,14 +283,24 @@ class NotificationService:
             body_part = body_part.replace("_", "\\_")
             message = f"{title_part}\n{body_part}"
 
-        data = {
-            "chat_id": chat_id,
-            "text": message,
-            "parse_mode": "Markdown",
-        }
-
         client = await self._get_client()
-        response = await client.post(url, json=data)
+
+        if image_data:
+            # Use sendPhoto to attach the thumbnail with the caption
+            url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+            response = await client.post(
+                url,
+                data={"chat_id": chat_id, "caption": message, "parse_mode": "Markdown"},
+                files={"photo": ("photo.jpg", image_data, "image/jpeg")},
+            )
+        else:
+            url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+            data = {
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "Markdown",
+            }
+            response = await client.post(url, json=data)
 
         if response.status_code == 200:
             result = response.json()
@@ -451,11 +468,11 @@ class NotificationService:
             if provider.provider_type == "callmebot":
                 return await self._send_callmebot(config, f"{title}\n{message}")
             elif provider.provider_type == "ntfy":
-                return await self._send_ntfy(config, title, message)
+                return await self._send_ntfy(config, title, message, image_data=image_data)
             elif provider.provider_type == "pushover":
                 return await self._send_pushover(config, title, message, image_data=image_data)
             elif provider.provider_type == "telegram":
-                return await self._send_telegram(config, f"*{title}*\n{message}")
+                return await self._send_telegram(config, f"*{title}*\n{message}", image_data=image_data)
             elif provider.provider_type == "email":
                 return await self._send_email(config, title, message)
             elif provider.provider_type == "discord":

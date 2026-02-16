@@ -461,6 +461,42 @@ services:
 
 </details>
 
+#### DevContainer (VS Code)
+
+Use the included `.devcontainer/` setup for a consistent development environment.
+
+**Prerequisites:**
+- Docker
+- VS Code with the Dev Containers extension
+
+```bash
+# from repository root
+code .
+```
+
+Then run **"Dev Containers: Reopen in Container"** from the command palette.
+
+Inside the container, start the app in two terminals:
+
+```bash
+# Terminal 1 (backend)
+DEBUG=true uvicorn backend.app.main:app --reload
+
+# Terminal 2 (frontend)
+cd frontend && npm run dev
+```
+
+Ports `8000` (backend) and `5173` (frontend) are forwarded automatically.
+
+**Troubleshooting:**
+If container creation fails early (for example with `devContainersSpecCLI ... Exit code 1`), run:
+
+```bash
+docker compose -f .devcontainer/docker-compose.yml build --no-cache app
+```
+
+Then use **"Dev Containers: Rebuild and Reopen in Container"** in VS Code.
+
 #### Windows (Portable Launcher)
 
 The easiest way to run Bambuddy on Windows - no installation required:

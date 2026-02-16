@@ -1,6 +1,6 @@
-import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { defineConfig } from 'vite'
 
 // Backend port for dev server proxy (default: 8000)
 const backendPort = process.env.BACKEND_PORT || '8000'
@@ -14,6 +14,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 3000,
   },
   server: {
+    host: '0.0.0.0',
     proxy: {
       '/api/v1/ws': {
         target: backendUrl,

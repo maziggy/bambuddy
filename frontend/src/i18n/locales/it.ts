@@ -83,6 +83,7 @@ export default {
     unknown: 'Sconosciuto',
     unknownError: 'Errore sconosciuto',
     today: 'Oggi',
+    tomorrow: 'Domani',
     asap: 'ASAP',
     overdue: 'Scaduto',
     now: 'Ora',
@@ -1431,6 +1432,9 @@ export default {
     noErrors: 'Nessun errore',
     viewOnWiki: 'Vedi su Bambu Lab Wiki',
     clearInstructions: 'Cancella gli errori sulla stampante per rimuoverli qui.',
+    clearErrors: 'Cancella errori',
+    clearSuccess: 'Errori HMS cancellati',
+    clearFailed: 'Impossibile cancellare gli errori HMS',
   },
 
   // MQTT Debug modal
@@ -1688,7 +1692,6 @@ export default {
     cameraStream: 'Stream camera',
     progress: 'Avanzamento',
     eta: 'ETA',
-    tomorrow: 'Domani',
     printerIdle: 'Stampante inattiva',
     printerOffline: 'Stampante offline',
     status: {

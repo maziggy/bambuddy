@@ -2861,6 +2861,18 @@ class BambuMQTTClient:
         logger.info("[%s] Sent resume print command", self.serial_number)
         return True
 
+    def clear_hms_errors(self) -> bool:
+        """Clear HMS/print errors on the printer and locally."""
+        if not self._client or not self.state.connected:
+            logger.warning("[%s] Cannot clear HMS errors: not connected", self.serial_number)
+            return False
+
+        command = {"print": {"command": "clean_print_error", "sequence_id": "0"}}
+        self._client.publish(self.topic_publish, json.dumps(command), qos=1)
+        self.state.hms_errors = []
+        logger.info("[%s] Sent clear HMS errors command", self.serial_number)
+        return True
+
     def skip_objects(self, object_ids: list[int]) -> bool:
         """Skip specific objects during a print.
 

@@ -2344,6 +2344,10 @@ export const api = {
       }
     ),
 
+  // HMS Errors
+  clearHMSErrors: (printerId: number) =>
+    request<{ success: boolean; message: string }>(`/printers/${printerId}/hms/clear`, { method: 'POST' }),
+
   // AMS Control
   refreshAmsSlot: (printerId: number, amsId: number, slotId: number) =>
     request<{ success: boolean; message: string }>(

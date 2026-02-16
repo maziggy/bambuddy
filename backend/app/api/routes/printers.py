@@ -1958,6 +1958,29 @@ async def set_chamber_light(
     return {"success": True, "message": f"Chamber light {'on' if on else 'off'}"}
 
 
+@router.post("/{printer_id}/hms/clear")
+async def clear_hms_errors(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Clear HMS/print errors on the printer."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    success = client.clear_hms_errors()
+    if not success:
+        raise HTTPException(500, "Failed to clear HMS errors")
+
+    return {"success": True, "message": "HMS errors cleared"}
+
+
 @router.get("/{printer_id}/print/objects")
 async def get_printable_objects(
     printer_id: int,

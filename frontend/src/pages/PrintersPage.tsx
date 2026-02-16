@@ -3263,17 +3263,30 @@ function PrinterCard({
                           </div>
                         );
                       })}
-                      {/* External spool(s) - grouped in one card like regular AMS */}
-                      {status.vt_tray.length > 0 && (
-                        <div className={`p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30 ${status.vt_tray.length === 1 ? 'max-w-[50%]' : ''}`}>
-                          <div className="flex items-center gap-1 mb-2">
-                            <span className="text-[10px] text-white font-medium">{t('printers.external')}</span>
+                      {/* External spool(s) - AMS style for dual nozzle only */}
+                      {isDualNozzle && status.vt_tray.length > 0 && (
+                        <div className="p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30">
+                          {/* Header: Label + Nozzle badges (desktop only) */}
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <span className="text-[10px] text-white font-medium">EXT</span>
+                            {status.vt_tray.some(t => (t.id ?? 254) === 254) && (
+                              <div className="max-[550px]:hidden flex items-center">
+                                <NozzleBadge side="L" />
+                              </div>
+                            )}
+                            {status.vt_tray.some(t => (t.id ?? 254) === 255) && (
+                              <div className="max-[550px]:hidden flex items-center">
+                                <NozzleBadge side="R" />
+                              </div>
+                            )}
                           </div>
-                          <div className={`grid ${status.vt_tray.length > 1 ? 'grid-cols-2' : 'grid-cols-1'} gap-1.5`}>
+                          {/* Slots grid: 2 columns for dual extruders, 1 on mobile */}
+                          <div className="grid grid-cols-2 max-[550px]:grid-cols-1 gap-1.5">
                             {[...status.vt_tray].sort((a, b) => (a.id ?? 254) - (b.id ?? 254)).map((extTray) => {
                               const extTrayId = extTray.id ?? 254;
                               const isExtActive = effectiveTrayNow === extTrayId;
                               const slotTrayId = extTrayId - 254; // 0 or 1
+                              const nozzleSide = extTrayId === 254 ? 'L' : 'R';
                               const extLabel = isDualNozzle
                                 ? (extTrayId === 254 ? t('printers.extL') : t('printers.extR'))
                                 : '';
@@ -3334,12 +3347,12 @@ function PrinterCard({
                                       <div className="h-full w-full rounded-full bg-white/50 dark:bg-gray-500/40" />
                                     ) : null}
                                   </div>
-                                  {extLabel && <div className="text-[7px] text-white/40 mt-0.5 truncate">{extLabel}</div>}
                                 </div>
                               );
 
                               return (
-                                <div key={extTrayId} className="relative group">
+                                <div key={extTrayId} className="relative group max-[550px]:flex max-[550px]:items-start max-[550px]:gap-1.5">
+                                  <div className="flex-1 relative">
                                   {!isEmpty ? (
                                     <FilamentHoverCard
                                       data={extFilamentData}
@@ -3407,6 +3420,161 @@ function PrinterCard({
                                           trayId: slotTrayId,
                                           trayCount: 1,
                                           extruderId: isDualNozzle ? (extTrayId === 254 ? 1 : 0) : undefined,
+                                        }),
+                                      }}
+                                    >
+                                      {extSlotContent}
+                                    </EmptySlotHoverCard>
+                                  )}
+                                  </div>
+                                  {/* Nozzle badge on right side for mobile */}
+                                  <div className="hidden max-[550px]:block shrink-0 -mt-1.5">
+                                    <NozzleBadge side={nozzleSide} />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      {/* External spool(s) - Simple version for single nozzle */}
+                      {!isDualNozzle && status.vt_tray.length > 0 && (
+                        <div className="p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30">
+                          <div className="flex items-center gap-1 mb-2">
+                            <span className="text-[10px] text-white font-medium">{t('printers.external')}</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            {[...status.vt_tray].sort((a, b) => (a.id ?? 254) - (b.id ?? 254)).map((extTray) => {
+                              const extTrayId = extTray.id ?? 254;
+                              const isExtActive = effectiveTrayNow === extTrayId;
+                              const slotTrayId = extTrayId - 254;
+                              const extCloudInfo = extTray.tray_info_idx ? filamentInfo?.[extTray.tray_info_idx] : null;
+                              const extSlotPreset = slotPresets?.[255 * 4 + slotTrayId];
+
+                              const extTrayTag = extTray.tray_uuid?.toUpperCase();
+                              const extLinkedSpool = extTrayTag ? linkedSpools?.[extTrayTag] : undefined;
+                              const extSpoolmanFill = getSpoolmanFillLevel(extLinkedSpool);
+                              const extInventoryAssignment = onGetAssignment?.(printer.id, 255, slotTrayId);
+                              const extInventoryFill = (() => {
+                                const sp = extInventoryAssignment?.spool;
+                                if (sp && sp.label_weight > 0 && sp.weight_used > 0) {
+                                  return Math.round(Math.max(0, sp.label_weight - sp.weight_used) / sp.label_weight * 100);
+                                }
+                                return null;
+                              })();
+                              const extEffectiveFill = extSpoolmanFill ?? extInventoryFill ?? null;
+
+                              const extFilamentData = {
+                                vendor: (isBambuLabSpool(extTray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
+                                profile: extCloudInfo?.name || extSlotPreset?.preset_name || extTray.tray_sub_brands || extTray.tray_type || 'Unknown',
+                                colorName: getBambuColorName(extTray.tray_id_name) || hexToBasicColorName(extTray.tray_color),
+                                colorHex: extTray.tray_color || null,
+                                kFactor: formatKValue(extTray.k),
+                                fillLevel: extEffectiveFill,
+                                trayUuid: extTray.tray_uuid || null,
+                                tagUid: extTray.tag_uid || null,
+                                fillSource: extSpoolmanFill !== null ? 'spoolman' as const
+                                  : extInventoryFill !== null ? 'inventory' as const
+                                  : undefined,
+                              };
+
+                              const isEmpty = !extTray.tray_type;
+                              const extSlotContent = (
+                                <div className={`bg-bambu-dark-tertiary rounded p-1 text-center ${isEmpty ? 'opacity-50' : ''} ${isExtActive ? 'ring-2 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}>
+                                  <div
+                                    className="w-3.5 h-3.5 rounded-full mx-auto mb-0.5 border-2"
+                                    style={{
+                                      backgroundColor: extTray.tray_color ? `#${extTray.tray_color}` : (extTray.tray_type ? '#333' : 'transparent'),
+                                      borderColor: isEmpty ? '#666' : 'rgba(255,255,255,0.1)',
+                                      borderStyle: isEmpty ? 'dashed' : 'solid',
+                                    }}
+                                  />
+                                  <div className={`text-[9px] font-bold truncate ${isEmpty ? 'text-white/40' : 'text-white'}`}>
+                                    {extTray.tray_type || '—'}
+                                  </div>
+                                  <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
+                                    {extEffectiveFill !== null && extEffectiveFill >= 0 && !isEmpty ? (
+                                      <div
+                                        className="h-full rounded-full transition-all"
+                                        style={{
+                                          width: `${extEffectiveFill}%`,
+                                          backgroundColor: getFillBarColor(extEffectiveFill),
+                                        }}
+                                      />
+                                    ) : !isEmpty ? (
+                                      <div className="h-full w-full rounded-full bg-white/50 dark:bg-gray-500/40" />
+                                    ) : null}
+                                  </div>
+                                </div>
+                              );
+
+                              return (
+                                <div key={extTrayId} className="relative group">
+                                  {!isEmpty ? (
+                                    <FilamentHoverCard
+                                      data={extFilamentData}
+                                      spoolman={{
+                                        enabled: spoolmanEnabled,
+                                        hasUnlinkedSpools,
+                                        linkedSpoolId: extFilamentData.trayUuid ? linkedSpools?.[extFilamentData.trayUuid.toUpperCase()]?.id : undefined,
+                                        spoolmanUrl,
+                                        onLinkSpool: spoolmanEnabled && extFilamentData.trayUuid ? (uuid) => {
+                                          setLinkSpoolModal({
+                                            tagUid: extFilamentData.tagUid || '',
+                                            trayUuid: uuid,
+                                            printerId: printer.id,
+                                            amsId: 255,
+                                            trayId: slotTrayId,
+                                          });
+                                        } : undefined,
+                                      }}
+                                      inventory={spoolmanEnabled ? undefined : (() => {
+                                        const assignment = onGetAssignment?.(printer.id, 255, slotTrayId);
+                                        return {
+                                          assignedSpool: assignment?.spool ? {
+                                            id: assignment.spool.id,
+                                            material: assignment.spool.material,
+                                            brand: assignment.spool.brand,
+                                            color_name: assignment.spool.color_name,
+                                          } : null,
+                                          onAssignSpool: () => setAssignSpoolModal({
+                                            printerId: printer.id,
+                                            amsId: 255,
+                                            trayId: slotTrayId,
+                                            trayInfo: {
+                                              type: extFilamentData.profile,
+                                              color: extFilamentData.colorHex || '',
+                                              location: t('printers.external'),
+                                            },
+                                          }),
+                                          onUnassignSpool: assignment ? () => onUnassignSpool?.(printer.id, 255, slotTrayId) : undefined,
+                                        };
+                                      })()}
+                                      configureSlot={{
+                                        enabled: hasPermission('printers:control'),
+                                        onConfigure: () => setConfigureSlotModal({
+                                          amsId: 255,
+                                          trayId: slotTrayId,
+                                          trayCount: 1,
+                                          trayType: extTray.tray_type || undefined,
+                                          trayColor: extTray.tray_color || undefined,
+                                          traySubBrands: extTray.tray_sub_brands || undefined,
+                                          trayInfoIdx: extTray.tray_info_idx || undefined,
+                                          caliIdx: extTray.cali_idx,
+                                          savedPresetId: extSlotPreset?.preset_id,
+                                        }),
+                                      }}
+                                    >
+                                      {extSlotContent}
+                                    </FilamentHoverCard>
+                                  ) : (
+                                    <EmptySlotHoverCard
+                                      configureSlot={{
+                                        enabled: hasPermission('printers:control'),
+                                        onConfigure: () => setConfigureSlotModal({
+                                          amsId: 255,
+                                          trayId: slotTrayId,
+                                          trayCount: 1,
                                         }),
                                       }}
                                     >

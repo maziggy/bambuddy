@@ -83,6 +83,7 @@ export default {
     unknown: 'Sconosciuto',
     unknownError: 'Errore sconosciuto',
     today: 'Oggi',
+    tomorrow: 'Domani',
     asap: 'ASAP',
     overdue: 'Scaduto',
     now: 'Ora',
@@ -1688,7 +1689,6 @@ export default {
     cameraStream: 'Stream camera',
     progress: 'Avanzamento',
     eta: 'ETA',
-    tomorrow: 'Domani',
     printerIdle: 'Stampante inattiva',
     printerOffline: 'Stampante offline',
     status: {

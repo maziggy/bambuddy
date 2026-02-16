@@ -86,6 +86,7 @@ export default {
     unknown: 'Unknown',
     unknownError: 'Unknown error',
     today: 'Today',
+    tomorrow: 'Tomorrow',
     asap: 'ASAP',
     overdue: 'Overdue',
     now: 'Now',
@@ -1875,7 +1876,6 @@ export default {
     cameraStream: 'Camera stream',
     progress: 'Progress',
     eta: 'ETA',
-    tomorrow: 'Tomorrow',
     printerIdle: 'Printer is idle',
     printerOffline: 'Printer offline',
     status: {

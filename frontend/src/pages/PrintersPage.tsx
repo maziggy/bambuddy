@@ -46,7 +46,7 @@ import {
 
 import { useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi } from '../api/client';
-import { formatDateOnly } from '../utils/date';
+import { formatDateOnly, formatETA, formatDuration } from '../utils/date';
 import type { Printer, PrinterCreate, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
@@ -1087,42 +1087,6 @@ function getSpoolmanFillLevel(
   ));
 }
 
-function formatTime(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
-}
-
-function formatETA(remainingMinutes: number, timeFormat: 'system' | '12h' | '24h' = 'system'): string {
-  const now = new Date();
-  const eta = new Date(now.getTime() + remainingMinutes * 60 * 1000);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const etaDay = new Date(eta);
-  etaDay.setHours(0, 0, 0, 0);
-
-  // Build time format options based on setting
-  const timeOptions: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
-  if (timeFormat === '12h') {
-    timeOptions.hour12 = true;
-  } else if (timeFormat === '24h') {
-    timeOptions.hour12 = false;
-  }
-  // 'system' leaves hour12 undefined, letting the browser decide
-
-  const timeStr = eta.toLocaleTimeString([], timeOptions);
-
-  // Check if it's tomorrow or later
-  const dayDiff = Math.floor((etaDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  if (dayDiff === 0) {
-    return timeStr;
-  } else if (dayDiff === 1) {
-    return `Tomorrow ${timeStr}`;
-  } else {
-    return eta.toLocaleDateString([], { weekday: 'short' }) + ' ' + timeStr;
-  }
-}
-
 function getPrinterImage(model: string | null | undefined): string {
   if (!model) return '/img/printers/default.png';
 
@@ -1348,7 +1312,7 @@ function StatusSummaryBar({ printers }: { printers: Printer[] | undefined }) {
                 />
               </div>
               <span className="text-white font-medium">{Math.round(nextFinish.progress)}%</span>
-              <span className="text-bambu-gray">({formatTime(nextFinish.remainingMin * 60)})</span>
+              <span className="text-bambu-gray">({formatDuration(nextFinish.remainingMin * 60)})</span>
             </div>
           </div>
         </>
@@ -2455,10 +2419,10 @@ function PrinterCard({
                               <>
                                 <span className="flex items-center gap-1">
                                   <Clock className="w-3 h-3" />
-                                  {formatTime(status.remaining_time * 60)}
+                                  {formatDuration(status.remaining_time * 60)}
                                 </span>
                                 <span className="text-bambu-green font-medium" title={t('printers.estimatedCompletion')}>
-                                  ETA {formatETA(status.remaining_time, timeFormat)}
+                                  ETA {formatETA(status.remaining_time, timeFormat, t)}
                                 </span>
                               </>
                             )}

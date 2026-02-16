@@ -251,9 +251,9 @@ export function PrintModal({
     setPerPrinterConfigs
   );
 
-  // Auto-select first plate for single-plate files
+  // Auto-select first plate when plates load (single or multi-plate)
   useEffect(() => {
-    if (platesData?.plates?.length === 1 && !selectedPlate) {
+    if (platesData?.plates && platesData.plates.length >= 1 && !selectedPlate) {
       setSelectedPlate(platesData.plates[0].index);
     }
   }, [platesData, selectedPlate]);
@@ -528,11 +528,11 @@ export function PrintModal({
     // Model-based assignment only works in queue modes (not immediate reprint)
     if (assignmentMode === 'model' && mode === 'reprint') return false;
 
-    // For multi-plate archive files, need a selected plate (library files skip this)
-    if (!isLibraryFile && isMultiPlate && !selectedPlate) return false;
+    // For multi-plate files, need a selected plate
+    if (isMultiPlate && !selectedPlate) return false;
 
     return true;
-  }, [selectedPrinters.length, assignmentMode, targetModel, mode, isMultiPlate, selectedPlate, isPending, isLibraryFile]);
+  }, [selectedPrinters.length, assignmentMode, targetModel, mode, isMultiPlate, selectedPlate, isPending]);
 
   // Modal title and action button text based on mode
   const getModalConfig = () => {

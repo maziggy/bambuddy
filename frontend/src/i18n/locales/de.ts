@@ -836,6 +836,33 @@ export default {
     },
   },
 
+  backgroundDispatch: {
+    unknownFile: 'Unbekannte Datei',
+    unknownPrinter: 'Unbekannter Drucker',
+    startingPrints: 'Starte Drucke',
+    progressSummary: '{{complete}}/{{total}} abgeschlossen • Geplant: {{dispatched}} • In Bearbeitung: {{processing}}',
+    expandDetails: 'Dispatch-Details ausklappen',
+    collapseDetails: 'Dispatch-Details einklappen',
+    dismissToast: 'Dispatch-Hinweis schließen',
+    cancelDispatchJob: 'Dispatch-Job abbrechen',
+    cancel: 'Abbrechen',
+    cancelling: 'Wird abgebrochen…',
+    status: {
+      dispatched: 'Geplant',
+      processing: 'In Bearbeitung',
+      completed: 'Abgeschlossen',
+      failed: 'Fehlgeschlagen',
+      cancelled: 'Abgebrochen',
+    },
+    toast: {
+      cancellingUpload: 'Upload wird abgebrochen...',
+      cancelled: 'Dispatch abgebrochen',
+      cancelFailed: 'Dispatch konnte nicht abgebrochen werden',
+      completeWithFailures: 'Background Dispatch abgeschlossen: {{completed}} erfolgreich, {{failed}} fehlgeschlagen',
+      completeSuccess: 'Background Dispatch abgeschlossen: {{completed}} erfolgreich',
+    },
+  },
+
   // Statistics page
   stats: {
     title: 'Dashboard',

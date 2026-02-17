@@ -1,27 +1,27 @@
-import { useState, useEffect, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { AlertCircle, AlertTriangle, Calendar, Loader2, Pencil, Printer, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Printer, Loader2, Calendar, Pencil, AlertCircle, AlertTriangle } from 'lucide-react';
-import { api } from '../../api/client';
 import type { PrintQueueItemCreate, PrintQueueItemUpdate } from '../../api/client';
-import { Card, CardContent } from '../Card';
-import { Button } from '../Button';
+import { api } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { useFilamentMapping } from '../../hooks/useFilamentMapping';
 import { useMultiPrinterFilamentMapping, type PerPrinterConfig } from '../../hooks/useMultiPrinterFilamentMapping';
 import { isPlaceholderDate } from '../../utils/amsHelpers';
 import { toDateTimeLocalValue } from '../../utils/date';
-import { PrinterSelector } from './PrinterSelector';
-import { PlateSelector } from './PlateSelector';
+import { Button } from '../Button';
+import { Card, CardContent } from '../Card';
 import { FilamentMapping } from './FilamentMapping';
+import { PlateSelector } from './PlateSelector';
+import { PrinterSelector } from './PrinterSelector';
 import { PrintOptionsPanel } from './PrintOptions';
 import { ScheduleOptionsPanel } from './ScheduleOptions';
 import type {
+  AssignmentMode,
   PrintModalProps,
   PrintOptions,
   ScheduleOptions,
   ScheduleType,
-  AssignmentMode,
 } from './types';
 import { DEFAULT_PRINT_OPTIONS, DEFAULT_SCHEDULE_OPTIONS } from './types';
 
@@ -230,6 +230,12 @@ export function PrintModal({
 
   // Combine filament requirements from either source
   const effectiveFilamentReqs = isLibraryFile ? libraryFilamentReqs : archiveFilamentReqs;
+  const selectedPlateName = useMemo(() => {
+    if (selectedPlate === null || !platesData?.plates?.length) {
+      return undefined;
+    }
+    return platesData.plates.find((plate) => plate.index === selectedPlate)?.name || undefined;
+  }, [platesData, selectedPlate]);
 
   // Only fetch printer status when single printer selected (for filament mapping)
   const { data: printerStatus } = useQuery({
@@ -450,12 +456,15 @@ export function PrintModal({
             const printerMapping = getMappingForPrinter(printerId);
             if (isLibraryFile) {
               await api.printLibraryFile(libraryFileId!, printerId, {
+                plate_id: selectedPlate ?? undefined,
+                plate_name: selectedPlateName,
                 ams_mapping: printerMapping,
                 ...printOptions,
               });
             } else {
               await api.reprintArchive(archiveId!, printerId, {
                 plate_id: selectedPlate ?? undefined,
+                plate_name: selectedPlateName,
                 ams_mapping: printerMapping,
                 ...printOptions,
               });
@@ -498,11 +507,12 @@ export function PrintModal({
       if (assignmentMode === 'model') {
         showToast(mode === 'edit-queue-item' ? 'Queue item updated' : `Queued for any ${targetModel}`);
       } else {
-        const action = mode === 'reprint' ? 'sent to' : (mode === 'edit-queue-item' ? 'updated/queued for' : 'queued for');
-        if (results.success === 1) {
-          showToast(mode === 'edit-queue-item' ? 'Queue item updated' : `Print ${action} printer`);
+        if (mode === 'edit-queue-item') {
+          showToast('Queue item updated');
+        } else if (results.success === 1) {
+          showToast('Print queued for printer');
         } else {
-          showToast(`Print ${action} ${results.success} printers`);
+          showToast(`Print queued for ${results.success} printers`);
         }
       }
       queryClient.invalidateQueries({ queryKey: ['queue'] });
@@ -743,4 +753,5 @@ export function PrintModal({
 }
 
 // Re-export types for convenience
-export type { PrintModalProps, PrintModalMode } from './types';
+export type { PrintModalMode, PrintModalProps } from './types';
+

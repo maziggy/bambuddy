@@ -1,5 +1,5 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface WebSocketMessage {
   type: string;
@@ -225,6 +225,14 @@ export function useWebSocket() {
             message: (message as unknown as { message?: string }).message,
           }
         }));
+        break;
+
+      case 'background_dispatch':
+        window.dispatchEvent(
+          new CustomEvent('background-dispatch', {
+            detail: (message as unknown as { data?: Record<string, unknown> }).data || {},
+          })
+        );
         break;
     }
   }, [queryClient, debouncedInvalidate, throttledPrinterStatusUpdate]);

@@ -1554,6 +1554,15 @@ export interface NotificationTestResponse {
   message: string;
 }
 
+export interface BackgroundDispatchResponse {
+  status: 'dispatched' | string;
+  printer_id: number;
+  archive_id?: number | null;
+  filename: string;
+  dispatch_job_id: number;
+  dispatch_position: number;
+}
+
 // Provider-specific config types for reference
 export interface CallMeBotConfig {
   phone: string;
@@ -2019,7 +2028,7 @@ export const api = {
     request<{ message: string; auth_enabled: boolean }>('/auth/disable', {
       method: 'POST',
     }),
-  
+
   // Advanced Authentication
   testSMTP: (data: TestSMTPRequest) =>
     request<TestSMTPResponse>('/auth/smtp/test', {
@@ -2762,6 +2771,7 @@ export const api = {
     printerId: number,
     options?: {
       plate_id?: number;
+      plate_name?: string;
       ams_mapping?: number[];
       timelapse?: boolean;
       bed_levelling?: boolean;
@@ -2771,7 +2781,7 @@ export const api = {
       use_ams?: boolean;
     }
   ) =>
-    request<{ status: string; printer_id: number; archive_id: number; filename: string }>(
+    request<BackgroundDispatchResponse>(
       `/archives/${archiveId}/reprint?printer_id=${printerId}`,
       {
         method: 'POST',
@@ -3714,6 +3724,7 @@ export const api = {
     printerId: number,
     options?: {
       plate_id?: number;
+      plate_name?: string;
       ams_mapping?: number[];
       bed_levelling?: boolean;
       flow_cali?: boolean;
@@ -3723,13 +3734,23 @@ export const api = {
       use_ams?: boolean;
     }
   ) =>
-    request<{ status: string; printer_id: number; archive_id: number; filename: string }>(
+    request<BackgroundDispatchResponse>(
       `/library/files/${fileId}/print?printer_id=${printerId}`,
       {
         method: 'POST',
         body: options ? JSON.stringify(options) : undefined,
       }
     ),
+  cancelBackgroundDispatchJob: (jobId: number) =>
+    request<{
+      status: 'cancelled' | 'cancelling';
+      job_id: number;
+      source_name: string;
+      printer_id: number;
+      printer_name: string;
+    }>(`/background-dispatch/${jobId}`, {
+      method: 'DELETE',
+    }),
   getLibraryFilePlates: (fileId: number) =>
     request<LibraryFilePlatesResponse>(`/library/files/${fileId}/plates`),
   getLibraryFileFilamentRequirements: (fileId: number, plateId?: number) =>

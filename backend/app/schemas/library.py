@@ -181,6 +181,7 @@ class FilePrintRequest(BaseModel):
 
     # Print options (same as archive reprint)
     plate_id: int | None = None
+    plate_name: str | None = None
     ams_mapping: list[int] | None = None
     bed_levelling: bool = True
     flow_cali: bool = False

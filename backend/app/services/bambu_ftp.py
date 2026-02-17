@@ -76,13 +76,16 @@ class BambuFTPClient:
     """FTP client for retrieving files from Bambu Lab printers."""
 
     FTP_PORT = 990
-    DEFAULT_TIMEOUT = 30  # Default timeout in seconds (increased for A1 printers)
+    # Default timeout in seconds (increased for A1 printers)
+    DEFAULT_TIMEOUT = 30
     # Models that may need SSL mode fallback (try prot_p first, fall back to prot_c)
     # These models have varying FTP SSL behavior depending on firmware version
     A1_MODELS = ("A1", "A1 Mini")
-    # Chunk size for manual upload transfer (1MB)
-    # Larger chunks reduce overhead and work better with A1 printers
-    CHUNK_SIZE = 1024 * 1024
+    # Chunk size for manual upload transfer (256KB)
+    # Smaller chunks increase cancellation responsiveness during uploads.
+    CHUNK_SIZE = 256 * 1024
+    # Per-chunk data socket timeout during upload.
+    UPLOAD_CHUNK_TIMEOUT = 15
 
     # Cache for working FTP modes per printer IP
     # Maps IP -> "prot_p" or "prot_c"
@@ -359,6 +362,8 @@ class BambuFTPClient:
             logger.info("FTP uploading %s (%s bytes) to %s", local_path, file_size, remote_path)
 
             uploaded = 0
+            callback_exception: Exception | None = None
+            transfer_response_ok = True
 
             # Use manual transfer instead of storbinary() for A1 compatibility
             # A1 printers have issues with storbinary's voidresp() hanging after transfer
@@ -368,7 +373,7 @@ class BambuFTPClient:
 
                 # Set explicit socket options for reliable transfer
                 conn.setblocking(True)
-                conn.settimeout(120)  # 2 minute timeout per chunk
+                conn.settimeout(self.UPLOAD_CHUNK_TIMEOUT)
 
                 try:
                     while True:
@@ -382,14 +387,51 @@ class BambuFTPClient:
                         logger.debug("FTP upload progress: %s/%s bytes", uploaded, file_size)
 
                         if progress_callback:
-                            progress_callback(uploaded, file_size)
+                            try:
+                                progress_callback(uploaded, file_size)
+                            except Exception as e:
+                                callback_exception = e
+                                logger.info(
+                                    "FTP upload callback requested stop for %s at %s/%s bytes: %s",
+                                    remote_path,
+                                    uploaded,
+                                    file_size,
+                                    e,
+                                )
+                                break
 
                 except OSError as e:
                     logger.error("FTP connection lost during upload: %s", e)
-                    conn.close()
                     raise
+                finally:
+                    try:
+                        conn.close()
+                    except OSError:
+                        pass
 
-                conn.close()
+            try:
+                self._ftp.voidresp()
+            except (OSError, ftplib.Error) as e:
+                transfer_response_ok = False
+                logger.debug("FTP upload final response for %s was not clean: %s", remote_path, e)
+
+            if callback_exception is not None:
+                cleanup_ok = False
+                try:
+                    cleanup_ok = self.delete_file(remote_path)
+                except Exception as cleanup_error:
+                    logger.warning("FTP cancel cleanup failed for %s: %s", remote_path, cleanup_error)
+
+                if cleanup_ok:
+                    logger.info("FTP cancel cleanup succeeded for %s", remote_path)
+                    raise callback_exception
+
+                raise RuntimeError(
+                    f"Upload cancelled but failed to remove partial file {remote_path} from printer"
+                ) from callback_exception
+
+            if not transfer_response_ok:
+                return False
 
             logger.info("FTP upload complete: %s", remote_path)
             return True
@@ -421,7 +463,7 @@ class BambuFTPClient:
             # Use manual transfer instead of storbinary() for A1 compatibility
             conn = self._ftp.transfercmd(f"STOR {remote_path}")
             conn.setblocking(True)
-            conn.settimeout(120)
+            conn.settimeout(self.UPLOAD_CHUNK_TIMEOUT)
 
             try:
                 # Send data in chunks
@@ -432,10 +474,12 @@ class BambuFTPClient:
                     offset += len(chunk)
             except OSError as e:
                 logger.error("FTP connection lost during upload_bytes: %s", e)
-                conn.close()
                 raise
-
-            conn.close()
+            finally:
+                try:
+                    conn.close()
+                except OSError:
+                    pass
             return True
         except (OSError, ftplib.Error):
             return False
@@ -827,6 +871,7 @@ async def with_ftp_retry(
     max_retries: int = 3,
     retry_delay: float = 2.0,
     operation_name: str = "FTP operation",
+    non_retry_exceptions: tuple[type[BaseException], ...] = (),
     **kwargs,
 ) -> T | None:
     """Execute FTP operation with retry logic.
@@ -837,6 +882,7 @@ async def with_ftp_retry(
         max_retries: Number of retry attempts (default: 3)
         retry_delay: Seconds to wait between retries (default: 2.0)
         operation_name: Name for logging purposes
+        non_retry_exceptions: Exception types that should immediately abort retries
         **kwargs: Keyword arguments for the operation
 
     Returns:
@@ -856,6 +902,8 @@ async def with_ftp_retry(
             if attempt > 0:
                 logger.info("%s attempt %s/%s returned failure", operation_name, attempt + 1, max_retries + 1)
         except Exception as e:
+            if non_retry_exceptions and isinstance(e, non_retry_exceptions):
+                raise
             last_error = e
             logger.warning("%s attempt %s/%s failed: %s", operation_name, attempt + 1, max_retries + 1, e)
 

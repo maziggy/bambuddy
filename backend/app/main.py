@@ -2203,7 +2203,11 @@ async def on_print_complete(printer_id: int, data: dict):
 
     # Track filament consumption from AMS remain% deltas (skip if Spoolman handles usage)
     usage_results: list[dict] = []
-    stored_ams_mapping = _print_ams_mappings.pop(archive_id, None) if archive_id else None
+    # Prefer ams_mapping captured from MQTT request topic (works for all print sources)
+    stored_ams_mapping = data.get("ams_mapping")
+    # Fallback to _print_ams_mappings for queue/reprint (set before print starts)
+    if not stored_ams_mapping and archive_id:
+        stored_ams_mapping = _print_ams_mappings.pop(archive_id, None)
     try:
         async with async_session() as db:
             from backend.app.api.routes.settings import get_setting

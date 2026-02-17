@@ -300,6 +300,10 @@ class BambuMQTTClient:
         # We use our tracked value to resolve the correct global ID
         self._last_load_tray_id: int | None = None
 
+        # Captured ams_mapping from print commands on the request topic
+        # Intercepts slicer/Bambuddy print commands to get the slot-to-tray mapping
+        self._captured_ams_mapping: list[int] | None = None
+
     @property
     def topic_subscribe(self) -> str:
         return f"device/{self.serial_number}/report"
@@ -333,6 +337,7 @@ class BambuMQTTClient:
         if rc == 0:
             self.state.connected = True
             client.subscribe(self.topic_subscribe)
+            client.subscribe(self.topic_publish)  # Intercept print commands for ams_mapping
             # Request full status update (includes nozzle info in push_status response)
             self._request_push_all()
             # Request firmware version info
@@ -371,6 +376,11 @@ class BambuMQTTClient:
             self._last_message_time = time.time()
             self.state.connected = True
 
+            # Intercept request-topic messages (print commands from slicer/Bambuddy)
+            if msg.topic == self.topic_publish:
+                self._handle_request_message(payload)
+                return
+
             # TEMP: Dump full payload once to find extruder state field
             if not hasattr(self, "_payload_dumped"):
                 self._payload_dumped = True
@@ -388,6 +398,20 @@ class BambuMQTTClient:
             self._process_message(payload)
         except json.JSONDecodeError:
             pass  # Ignore non-JSON MQTT messages (e.g. binary or malformed payloads)
+
+    def _handle_request_message(self, data: dict) -> None:
+        """Intercept print commands on the request topic to capture ams_mapping."""
+        print_data = data.get("print", {})
+        if not isinstance(print_data, dict):
+            return
+        command = print_data.get("command", "")
+        if command == "project_file" and "ams_mapping" in print_data:
+            self._captured_ams_mapping = print_data["ams_mapping"]
+            logger.info(
+                "[%s] Captured ams_mapping from print command: %s",
+                self.serial_number,
+                self._captured_ams_mapping,
+            )
 
     def _process_message(self, payload: dict):
         """Process incoming MQTT message from printer."""
@@ -1923,6 +1947,7 @@ class BambuMQTTClient:
                     if self.state.remaining_time > 0
                     else None,  # Convert minutes to seconds
                     "raw_data": data,
+                    "ams_mapping": self._captured_ams_mapping,
                 }
             )
 
@@ -1981,8 +2006,10 @@ class BambuMQTTClient:
                     "raw_data": data,
                     "timelapse_was_active": timelapse_was_active,
                     "hms_errors": hms_errors_data,
+                    "ams_mapping": self._captured_ams_mapping,
                 }
             )
+            self._captured_ams_mapping = None
 
         self._previous_gcode_state = self.state.state
         if current_file:

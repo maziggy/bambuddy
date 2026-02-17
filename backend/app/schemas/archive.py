@@ -11,13 +11,15 @@ class ArchiveBase(BaseModel):
     cost: float | None = None
     failure_reason: str | None = None
     quantity: int | None = None  # Number of items printed
-    external_url: str | None = None  # User-defined link (Printables, Thingiverse, etc.)
+    # User-defined link (Printables, Thingiverse, etc.)
+    external_url: str | None = None
 
 
 class ArchiveUpdate(ArchiveBase):
     printer_id: int | None = None
     project_id: int | None = None
-    status: str | None = None  # Allow changing status (e.g., clearing failed flag)
+    # Allow changing status (e.g., clearing failed flag)
+    status: str | None = None
 
 
 class ArchiveDuplicate(BaseModel):
@@ -53,7 +55,8 @@ class ArchiveResponse(BaseModel):
     print_name: str | None
     print_time_seconds: int | None  # Estimated time from slicer
     actual_time_seconds: int | None = None  # Computed from started_at/completed_at
-    time_accuracy: float | None = None  # Percentage: 100 = perfect, >100 = faster than estimated
+    # Percentage: 100 = perfect, >100 = faster than estimated
+    time_accuracy: float | None = None
     filament_used_grams: float | None
     filament_type: str | None
     filament_color: str | None
@@ -73,7 +76,8 @@ class ArchiveResponse(BaseModel):
 
     makerworld_url: str | None
     designer: str | None
-    external_url: str | None = None  # User-defined link (Printables, Thingiverse, etc.)
+    # User-defined link (Printables, Thingiverse, etc.)
+    external_url: str | None = None
 
     is_favorite: bool
     tags: str | None
@@ -116,7 +120,8 @@ class ArchiveStats(BaseModel):
     prints_by_filament_type: dict
     prints_by_printer: dict
     # Time accuracy stats
-    average_time_accuracy: float | None = None  # Average across all prints with data
+    # Average across all prints with data
+    average_time_accuracy: float | None = None
     time_accuracy_by_printer: dict | None = None  # Per-printer accuracy
     # Energy stats
     total_energy_kwh: float = 0.0
@@ -181,6 +186,7 @@ class ReprintRequest(BaseModel):
     # Plate selection for multi-plate 3MF files
     # If not specified, auto-detects from file (legacy behavior for single-plate files)
     plate_id: int | None = None
+    plate_name: str | None = None
 
     # AMS slot mapping: list of tray IDs for each filament slot in the 3MF
     # Global tray ID = (ams_id * 4) + slot_id, external = 254

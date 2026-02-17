@@ -249,6 +249,7 @@ export function useWebSocket() {
             tray_uuid: (message as unknown as { tray_uuid?: string }).tray_uuid,
           }
         }));
+        break;
 
       case 'background_dispatch':
         window.dispatchEvent(

@@ -2021,11 +2021,11 @@ function PrinterCard({
   // Size-based styling helpers
   const getImageSize = () => {
     switch (cardSize) {
-      case 1: return 'w-10 h-10';
-      case 2: return 'w-14 h-14';
-      case 3: return 'w-16 h-16';
-      case 4: return 'w-20 h-20';
-      default: return 'w-14 h-14';
+      case 1: return 'w-12 h-12';
+      case 2: return 'w-16 h-16';
+      case 3: return 'w-20 h-20';
+      case 4: return 'w-24 h-24';
+      default: return 'w-16 h-16';
     }
   };
   const getTitleSize = () => {
@@ -2039,17 +2039,17 @@ function PrinterCard({
   };
   const getSpacing = () => {
     switch (cardSize) {
-      case 1: return 'mb-2';
-      case 2: return 'mb-4';
-      case 3: return 'mb-5';
-      case 4: return 'mb-6';
-      default: return 'mb-4';
+      case 1: return 'mb-1';
+      case 2: return 'mb-2';
+      case 3: return 'mb-4';
+      case 4: return 'mb-5';
+      default: return 'mb-2';
     }
   };
 
   return (
     <Card className="relative">
-      <CardContent className={cardSize >= 3 ? 'p-5' : ''}>
+      <CardContent className={`flex flex-col h-full p-4 gap-2 lg:p-6 ${cardSize >= 3 ? 'p-5' : ''}`}>
         {/* Header */}
         <div className={getSpacing()}>
           {/* Top row: Image, Name, Menu */}
@@ -2059,7 +2059,7 @@ function PrinterCard({
               <img
                 src={getPrinterImage(printer.model)}
                 alt={printer.model || t('common.printer')}
-                className={`object-contain rounded-lg bg-bambu-dark flex-shrink-0 ${getImageSize()}`}
+                className={`p-1 object-contain rounded-lg bg-bambu-dark flex-shrink-0 ${getImageSize()}`}
               />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
@@ -2364,7 +2364,7 @@ function PrinterCard({
               /* Expanded: Full status section */
               <>
                 {/* Current Print or Idle Placeholder */}
-                <div className="mb-4 p-3 bg-bambu-dark rounded-lg relative">
+                <div className="p-3 bg-bambu-dark rounded-lg relative">
                   {/* Skip Objects button - top right corner, always visible */}
                   <button
                     onClick={() => setShowSkipObjectsModal(true)}
@@ -2582,7 +2582,7 @@ function PrinterCard({
               const chamberFan = status.big_fan2_speed;
 
               return (
-                <div className="mt-3">
+                <div className="mt-1">
                   {/* Section Header */}
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-[10px] uppercase tracking-wider text-bambu-gray font-medium">
@@ -2681,7 +2681,7 @@ function PrinterCard({
               const isDualNozzle = printer.nozzle_count === 2 || status?.temperatures?.nozzle_2 !== undefined;
 
               return (
-                <div className="mt-3">
+                <div className="mt-1">
                   {/* Section Header */}
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-[10px] uppercase tracking-wider text-bambu-gray font-medium">
@@ -2694,7 +2694,7 @@ function PrinterCard({
                   <div className="space-y-3">
                     {/* Row 1-2: Regular AMS (4-tray) in 2-column grid */}
                     {regularAms.length > 0 && (
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                         {regularAms.map((ams) => {
                         const mappedExtruderId = amsExtruderMap[String(ams.id)];
                         const normalizedId = ams.id >= 128 ? ams.id - 128 : ams.id;
@@ -2715,7 +2715,7 @@ function PrinterCard({
                                 )}
                               </div>
                               {(ams.humidity != null || ams.temp != null) && (
-                                <div className="flex items-center gap-1.5 max-[550px]:flex-col max-[550px]:items-start">
+                                <div className="flex items-center gap-1.5">
                                   {ams.humidity != null && (
                                     <HumidityIndicator
                                       humidity={ams.humidity}
@@ -2801,7 +2801,7 @@ function PrinterCard({
                                 // Slot visual content (goes inside hover card)
                                 const slotVisual = (
                                   <div
-                                    className={`bg-bambu-dark-tertiary rounded p-1 text-center ${isEmpty ? 'opacity-50' : ''} ${isActive ? 'ring-2 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}
+                                    className={`bg-bambu-dark-tertiary rounded p-1 text-center ${isEmpty ? 'opacity-50' : ''} ${isActive ? 'ring-1 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}
                                   >
                                     <div
                                       className="w-3.5 h-3.5 rounded-full mx-auto mb-0.5 border-2"
@@ -2966,7 +2966,7 @@ function PrinterCard({
 
                     {/* Row 3: HT AMS + External spools (same style as regular AMS, 4 across) */}
                     {(htAms.length > 0 || status.vt_tray.length > 0) && (
-                      <div className="grid grid-cols-4 gap-3">
+                      <div className="grid grid-cols-3 gap-3 lg:grid-cols-4">
                       {/* HT AMS units - name/badge top, slot left, stats right */}
                       {htAms.map((ams) => {
                         const mappedExtruderId = amsExtruderMap[String(ams.id)];
@@ -3229,7 +3229,7 @@ function PrinterCard({
                       })}
                       {/* External spool(s) - grouped in one card like regular AMS */}
                       {status.vt_tray.length > 0 && (
-                        <div className={`p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30 ${status.vt_tray.length === 1 ? 'max-w-[50%]' : ''}`}>
+                        <div className={`p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30 ${status.vt_tray.length === 1 ? 'max-w-full lg:max-w-[75%]' : ''}`}>
                           <div className="flex items-center gap-1 mb-2">
                             <span className="text-[10px] text-white font-medium">{t('printers.external')}</span>
                           </div>
@@ -3507,12 +3507,12 @@ function PrinterCard({
 
         {/* Connection Info & Actions - hidden in compact mode */}
         {viewMode === 'expanded' && (
-          <div className="mt-4 pt-4 border-t border-bambu-dark-tertiary flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="text-xs text-bambu-gray">
+          <div className="mt-auto pt-4 border-t border-bambu-dark-tertiary flex flex-col gap-2 lg:flex-row lg:justify-between">
+            <div className="flex justify-between text-xs text-bambu-gray lg:flex-col">
               <p>{printer.ip_address}</p>
               <p className="truncate">{printer.serial_number}</p>
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex justify-end items-center gap-2 flex-wrap lg:justify-start">
               {/* Chamber Light Toggle */}
               <Button
                 variant="secondary"
@@ -4916,6 +4916,18 @@ export function PrintersPage() {
     const saved = localStorage.getItem('printerCardSize');
     return saved ? parseInt(saved, 10) : 2; // Default to medium
   });
+  // On small screens, clamp cardSize to max 2 (M) since L/XL are hidden
+  useEffect(() => {
+    const mql = window.matchMedia('(min-width: 1024px)');
+    const handler = () => {
+      if (!mql.matches && cardSize > 2) {
+        setCardSize(2);
+      }
+    };
+    handler();
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, [cardSize]);
   // Derive viewMode from cardSize: S=compact, M/L/XL=expanded
   const viewMode: ViewMode = cardSize === 1 ? 'compact' : 'expanded';
   const queryClient = useQueryClient();
@@ -5206,10 +5218,12 @@ export function PrintersPage() {
                     setCardSize(size);
                     localStorage.setItem('printerCardSize', String(size));
                   }}
-                  className={`px-2 py-1.5 text-xs font-medium transition-colors ${
+                  className={`px-2 py-1.5 text-xs font-medium transition-colors ${label === 'L'|| label === 'XL' ? 'hidden lg:block':''} ${
                     index === 0 ? 'rounded-l-lg' : ''
                   } ${
                     index === cardSizeLabels.length - 1 ? 'rounded-r-lg' : ''
+                  } ${
+                    label === 'M' ? 'rounded-r-lg lg:rounded-r-none' : ''
                   } ${
                     isSelected
                       ? 'bg-bambu-green text-white'
@@ -5315,7 +5329,7 @@ export function PrintersPage() {
                 {location}
                 <span className="text-sm font-normal text-bambu-gray">({locationPrinters.length})</span>
               </h2>
-              <div className={`grid gap-4 ${cardSize >= 3 ? 'gap-6' : ''} ${getGridClasses()}`}>
+              <div className={`grid gap-4 ${getGridClasses()}`}>
                 {locationPrinters.map((printer) => (
                   <PrinterCard
                     key={printer.id}
@@ -5348,7 +5362,7 @@ export function PrintersPage() {
         </div>
       ) : (
         /* Regular grid view */
-        <div className={`grid gap-4 ${cardSize >= 3 ? 'gap-6' : ''} ${getGridClasses()}`}>
+        <div className={`grid gap-4 ${getGridClasses()}`}>
           {sortedPrinters.map((printer) => (
             <PrinterCard
               key={printer.id}

@@ -241,7 +241,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
       if (hasActiveWork) {
         setToasts((prev) => {
-          const existing = prev.find((t) => t.id === dispatchToastId);
+          const existing = prev.find((toastItem) => toastItem.id === dispatchToastId);
           const existingJobs = existing?.dispatchData?.jobs || [];
 
           const dispatchedJobs: DispatchToastJob[] = (detail.dispatched_jobs || []).map((job) => ({
@@ -320,18 +320,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             }),
           };
 
-          const exists = prev.find((t) => t.id === dispatchToastId);
+          const exists = prev.find((toastItem) => toastItem.id === dispatchToastId);
           if (exists) {
-            return prev.map((t) =>
-              t.id === dispatchToastId
+            return prev.map((toastItem) =>
+              toastItem.id === dispatchToastId
                 ? {
-                    ...t,
+                    ...toastItem,
                     message: t('backgroundDispatch.startingPrints'),
                     type: 'loading',
                     persistent: true,
                     dispatchData,
                   }
-                : t
+                : toastItem
             );
           }
           return [

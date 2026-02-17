@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { Search, Loader2, ChevronDown, Cloud, CloudOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { FilamentSectionProps, FilamentOption } from './types';
-import { MATERIALS, KNOWN_VARIANTS } from './constants';
+import { KNOWN_VARIANTS } from './constants';
 import { parsePresetName } from './utils';
 
 export function FilamentSection({
@@ -15,6 +15,7 @@ export function FilamentSection({
   selectedPresetOption,
   filamentOptions,
   availableBrands,
+  availableMaterials,
 }: FilamentSectionProps) {
   const { t } = useTranslation();
   const [presetDropdownOpen, setPresetDropdownOpen] = useState(false);
@@ -75,10 +76,10 @@ export function FilamentSection({
   }, [subtypeSearch]);
 
   const filteredMaterials = useMemo(() => {
-    if (!materialSearch) return MATERIALS;
+    if (!materialSearch) return availableMaterials;
     const search = materialSearch.toLowerCase();
-    return MATERIALS.filter(m => m.toLowerCase().includes(search));
-  }, [materialSearch]);
+    return availableMaterials.filter(m => m.toLowerCase().includes(search));
+  }, [materialSearch, availableMaterials]);
 
   useEffect(() => {
     if (!isLabelFocused) {

@@ -9,6 +9,7 @@ import { useToast } from '../contexts/ToastContext';
 import type { SpoolFormData, PrinterWithCalibrations, ColorPreset } from './spool-form/types';
 import { defaultFormData, validateForm } from './spool-form/types';
 import { buildFilamentOptions, extractBrandsFromPresets, findPresetOption, loadRecentColors, saveRecentColor } from './spool-form/utils';
+import { MATERIALS } from './spool-form/constants';
 import { FilamentSection } from './spool-form/FilamentSection';
 import { ColorSection } from './spool-form/ColorSection';
 import { AdditionalSection } from './spool-form/AdditionalSection';
@@ -156,6 +157,14 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
     const brandSet = new Set<string>([...presetBrands, ...catalogBrands]);
     return Array.from(brandSet).sort((a, b) => a.localeCompare(b));
   }, [cloudPresets, localPresets, colorCatalog]);
+
+  const availableMaterials = useMemo(() => {
+    const catalogMaterials = colorCatalog
+      .map(entry => entry.material?.trim())
+      .filter((material): material is string => !!material);
+    const materialSet = new Set<string>([...MATERIALS, ...catalogMaterials]);
+    return Array.from(materialSet).sort((a, b) => a.localeCompare(b));
+  }, [colorCatalog]);
 
   // Find selected preset option
   const selectedPresetOption = useMemo(
@@ -435,6 +444,7 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
                   selectedPresetOption={selectedPresetOption}
                   filamentOptions={filamentOptions}
                   availableBrands={availableBrands}
+                  availableMaterials={availableMaterials}
                 />
                 {errors.slicer_filament && (
                   <p className="mt-1 text-xs text-red-400">{errors.slicer_filament}</p>

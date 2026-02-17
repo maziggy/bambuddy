@@ -349,7 +349,7 @@ async def sync_from_filamentcolors(
                 while True:
                     response = await client.get(
                         f"{FILAMENT_COLORS_API}/swatch/",
-                        params={"page": page, "page_size": 200},
+                        params={"page": page},
                     )
                     response.raise_for_status()
                     data = response.json()
@@ -412,7 +412,7 @@ async def sync_from_filamentcolors(
                     }
                     yield f"data: {json.dumps(progress)}\n\n"
 
-                    if total_available and total_fetched >= total_available:
+                    if not data.get("next") or total_fetched >= total_available:
                         break
                     page += 1
 

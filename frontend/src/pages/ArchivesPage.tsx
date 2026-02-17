@@ -150,11 +150,13 @@ function ArchiveCard({
   const [showSchedule, setShowSchedule] = useState(false);
   const [showDeleteSource3mfConfirm, setShowDeleteSource3mfConfirm] = useState(false);
   const [showDeleteF3dConfirm, setShowDeleteF3dConfirm] = useState(false);
+  const [showDeleteTimelapseConfirm, setShowDeleteTimelapseConfirm] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [currentPlateIndex, setCurrentPlateIndex] = useState<number | null>(null);
   const [showPlateNav, setShowPlateNav] = useState(false);
   const source3mfInputRef = useRef<HTMLInputElement>(null);
   const f3dInputRef = useRef<HTMLInputElement>(null);
+  const timelapseInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch plates data for multi-plate browsing (lazy - only when hovering)
   const { data: platesData } = useQuery({
@@ -167,6 +169,28 @@ function ArchiveCard({
   const plates = platesData?.plates ?? [];
   const isMultiPlate = platesData?.is_multi_plate ?? false;
   const displayPlateIndex = currentPlateIndex ?? 0;
+
+  const timelapseDeleteMutation = useMutation({
+    mutationFn: () => api.deleteArchiveTimelapse(archive.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['archives'] });
+      showToast(t('archives.toast.timelapseRemoved'));
+    },
+    onError: (error: Error) => {
+      showToast(error.message || t('archives.toast.failedRemoveTimelapse'), 'error');
+    },
+  });
+
+  const timelapseUploadMutation = useMutation({
+    mutationFn: (file: File) => api.uploadArchiveTimelapse(archive.id, file),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['archives'] });
+      showToast(t('archives.toast.timelapseUploaded', { filename: data.filename }));
+    },
+    onError: (error: Error) => {
+      showToast(error.message || t('archives.toast.failedUploadTimelapse'), 'error');
+    },
+  });
 
   const source3mfUploadMutation = useMutation({
     mutationFn: (file: File) => api.uploadSource3mf(archive.id, file),
@@ -358,6 +382,21 @@ function ArchiveCard({
       disabled: !archive.printer_id || !!archive.timelapse_path || timelapseScanMutation.isPending || !canModify('archives', 'update', archive.created_by_id),
       title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
     },
+    {
+      label: t('archives.menu.uploadTimelapse'),
+      icon: <Upload className="w-4 h-4" />,
+      onClick: () => timelapseInputRef.current?.click(),
+      disabled: !!archive.timelapse_path || !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
+    },
+    ...(archive.timelapse_path ? [{
+      label: t('archives.menu.removeTimelapse'),
+      icon: <Trash2 className="w-4 h-4" />,
+      onClick: () => setShowDeleteTimelapseConfirm(true),
+      danger: true,
+      disabled: !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
+    }] : []),
     { label: '', divider: true, onClick: () => {} },
     {
       label: archive.source_3mf_path ? t('archives.menu.downloadSource3mf') : t('archives.menu.uploadSource3mf'),
@@ -1112,6 +1151,21 @@ function ArchiveCard({
         />
       )}
 
+      {/* Delete Timelapse Confirmation */}
+      {showDeleteTimelapseConfirm && (
+        <ConfirmModal
+          title={t('archives.modal.removeTimelapse')}
+          message={t('archives.modal.removeTimelapseConfirm', { name: archive.print_name || archive.filename })}
+          confirmText={t('archives.modal.removeButton')}
+          variant="danger"
+          onConfirm={() => {
+            timelapseDeleteMutation.mutate();
+            setShowDeleteTimelapseConfirm(false);
+          }}
+          onCancel={() => setShowDeleteTimelapseConfirm(false)}
+        />
+      )}
+
       {/* Context Menu */}
       {contextMenu && (
         <ContextMenu
@@ -1143,9 +1197,9 @@ function ArchiveCard({
           <div className="bg-card-dark rounded-lg max-w-lg w-full max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-gray-700">
               <div>
-                <h3 className="text-lg font-semibold text-white">Select Timelapse</h3>
+                <h3 className="text-lg font-semibold text-white">{t('archives.modal.selectTimelapse')}</h3>
                 <p className="text-sm text-gray-400 mt-1">
-                  No auto-match found. Select the timelapse for this print:
+                  {t('archives.modal.selectTimelapseDesc')}
                 </p>
               </div>
               <button
@@ -1267,6 +1321,20 @@ function ArchiveCard({
           e.target.value = '';
         }}
       />
+      {/* Hidden file input for timelapse upload */}
+      <input
+        ref={timelapseInputRef}
+        type="file"
+        accept=".mp4,.avi,.mkv"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            timelapseUploadMutation.mutate(file);
+          }
+          e.target.value = '';
+        }}
+      />
     </Card>
   );
 }
@@ -1308,9 +1376,33 @@ function ArchiveListRow({
   const [showProjectPage, setShowProjectPage] = useState(false);
   const [showDeleteSource3mfConfirm, setShowDeleteSource3mfConfirm] = useState(false);
   const [showDeleteF3dConfirm, setShowDeleteF3dConfirm] = useState(false);
+  const [showDeleteTimelapseConfirm, setShowDeleteTimelapseConfirm] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const source3mfInputRef = useRef<HTMLInputElement>(null);
   const f3dInputRef = useRef<HTMLInputElement>(null);
+  const timelapseInputRef = useRef<HTMLInputElement>(null);
+
+  const timelapseDeleteMutation = useMutation({
+    mutationFn: () => api.deleteArchiveTimelapse(archive.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['archives'] });
+      showToast(t('archives.toast.timelapseRemoved'));
+    },
+    onError: (error: Error) => {
+      showToast(error.message || t('archives.toast.failedRemoveTimelapse'), 'error');
+    },
+  });
+
+  const timelapseUploadMutation = useMutation({
+    mutationFn: (file: File) => api.uploadArchiveTimelapse(archive.id, file),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['archives'] });
+      showToast(t('archives.toast.timelapseUploaded', { filename: data.filename }));
+    },
+    onError: (error: Error) => {
+      showToast(error.message || t('archives.toast.failedUploadTimelapse'), 'error');
+    },
+  });
 
   const source3mfUploadMutation = useMutation({
     mutationFn: (file: File) => api.uploadSource3mf(archive.id, file),
@@ -1499,6 +1591,21 @@ function ArchiveListRow({
       disabled: !archive.printer_id || !!archive.timelapse_path || timelapseScanMutation.isPending || !canModify('archives', 'update', archive.created_by_id),
       title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
     },
+    {
+      label: t('archives.menu.uploadTimelapse'),
+      icon: <Upload className="w-4 h-4" />,
+      onClick: () => timelapseInputRef.current?.click(),
+      disabled: !!archive.timelapse_path || !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
+    },
+    ...(archive.timelapse_path ? [{
+      label: t('archives.menu.removeTimelapse'),
+      icon: <Trash2 className="w-4 h-4" />,
+      onClick: () => setShowDeleteTimelapseConfirm(true),
+      danger: true,
+      disabled: !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
+    }] : []),
     { label: '', divider: true, onClick: () => {} },
     {
       label: archive.source_3mf_path ? t('archives.menu.downloadSource3mf') : t('archives.menu.uploadSource3mf'),
@@ -1927,6 +2034,21 @@ function ArchiveListRow({
         />
       )}
 
+      {/* Delete Timelapse Confirmation */}
+      {showDeleteTimelapseConfirm && (
+        <ConfirmModal
+          title={t('archives.modal.removeTimelapse')}
+          message={t('archives.modal.removeTimelapseConfirm', { name: archive.print_name || archive.filename })}
+          confirmText={t('archives.modal.removeButton')}
+          variant="danger"
+          onConfirm={() => {
+            timelapseDeleteMutation.mutate();
+            setShowDeleteTimelapseConfirm(false);
+          }}
+          onCancel={() => setShowDeleteTimelapseConfirm(false)}
+        />
+      )}
+
       {/* Context Menu */}
       {contextMenu && (
         <ContextMenu
@@ -1958,9 +2080,9 @@ function ArchiveListRow({
           <div className="bg-card-dark rounded-lg max-w-lg w-full max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-gray-700">
               <div>
-                <h3 className="text-lg font-semibold text-white">Select Timelapse</h3>
+                <h3 className="text-lg font-semibold text-white">{t('archives.modal.selectTimelapse')}</h3>
                 <p className="text-sm text-gray-400 mt-1">
-                  No auto-match found. Select the timelapse for this print:
+                  {t('archives.modal.selectTimelapseDesc')}
                 </p>
               </div>
               <button
@@ -2066,6 +2188,20 @@ function ArchiveListRow({
           const file = e.target.files?.[0];
           if (file) {
             f3dUploadMutation.mutate(file);
+          }
+          e.target.value = '';
+        }}
+      />
+      {/* Hidden file input for timelapse upload */}
+      <input
+        ref={timelapseInputRef}
+        type="file"
+        accept=".mp4,.avi,.mkv"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            timelapseUploadMutation.mutate(file);
           }
           e.target.value = '';
         }}

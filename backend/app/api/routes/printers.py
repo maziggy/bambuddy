@@ -466,6 +466,7 @@ async def get_printer_status(
         big_fan2_speed=state.big_fan2_speed,
         heatbreak_fan_speed=state.heatbreak_fan_speed,
         firmware_version=state.firmware_version,
+        plate_cleared=printer_manager.is_plate_cleared(printer_id),
     )
 
 

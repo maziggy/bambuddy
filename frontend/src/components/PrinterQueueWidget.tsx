@@ -10,6 +10,7 @@ import { parseUTCDate } from '../utils/date';
 interface PrinterQueueWidgetProps {
   printerId: number;
   printerState?: string | null;
+  plateCleared?: boolean;
 }
 
 function formatRelativeTime(dateString: string | null): string {
@@ -26,7 +27,7 @@ function formatRelativeTime(dateString: string | null): string {
   return date.toLocaleDateString();
 }
 
-export function PrinterQueueWidget({ printerId, printerState }: PrinterQueueWidgetProps) {
+export function PrinterQueueWidget({ printerId, printerState, plateCleared }: PrinterQueueWidgetProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -56,7 +57,7 @@ export function PrinterQueueWidget({ printerId, printerState }: PrinterQueueWidg
     return null;
   }
 
-  const needsClearPlate = printerState === 'FINISH' || printerState === 'FAILED';
+  const needsClearPlate = (printerState === 'FINISH' || printerState === 'FAILED') && !plateCleared;
 
   if (needsClearPlate) {
     return (

@@ -2471,7 +2471,7 @@ function PrinterCard({
                 </div>
 
                 {/* Queue Widget - always visible when there are pending items */}
-                <PrinterQueueWidget printerId={printer.id} printerState={status.state} />
+                <PrinterQueueWidget printerId={printer.id} printerState={status.state} plateCleared={status.plate_cleared} />
               </>
             )}
 

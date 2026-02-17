@@ -1115,7 +1115,11 @@ class ArchiveService:
         timelapse_data: bytes,
         filename: str = "timelapse.mp4",
     ) -> bool:
-        """Attach a timelapse video to an archive."""
+        """Attach a timelapse video to an archive.
+
+        Non-MP4 videos (e.g. AVI from P1S) are saved as-is and a background
+        task converts them to MP4 for browser compatibility.
+        """
         import asyncio
 
         archive = await self.get_archive(archive_id)
@@ -1135,4 +1139,111 @@ class ArchiveService:
         archive.timelapse_path = str(timelapse_file.relative_to(settings.base_dir))
         await self.db.commit()
 
+        # For non-MP4 videos (e.g. AVI from P1S), kick off background conversion
+        if not filename.lower().endswith(".mp4"):
+            asyncio.create_task(
+                _convert_timelapse_to_mp4(archive_id, timelapse_file),
+                name=f"timelapse-convert-{archive_id}",
+            )
+
         return True
+
+
+async def _convert_timelapse_to_mp4(archive_id: int, source_path: Path) -> None:
+    """Background task: convert non-MP4 timelapse (e.g. AVI from P1S) to MP4.
+
+    Runs with low CPU priority (-threads 1, nice) so it doesn't starve
+    other processes on resource-constrained devices like Raspberry Pi.
+    """
+    import asyncio
+
+    from backend.app.core.database import async_session
+    from backend.app.services.camera import get_ffmpeg_path
+
+    logger = logging.getLogger(__name__)
+
+    ffmpeg = get_ffmpeg_path()
+    if not ffmpeg:
+        logger.info(
+            "FFmpeg not available, skipping timelapse conversion for archive %s (file saved as %s)",
+            archive_id,
+            source_path.suffix,
+        )
+        return
+
+    mp4_path = source_path.with_suffix(".mp4")
+
+    try:
+        cmd = [
+            ffmpeg,
+            "-y",
+            "-i",
+            str(source_path),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-crf",
+            "23",
+            "-threads",
+            "1",
+            "-movflags",
+            "+faststart",
+            str(mp4_path),
+        ]
+
+        # Try with nice for lower CPU priority (standard on Linux/macOS)
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "nice",
+                "-n",
+                "19",
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except FileNotFoundError:
+            # nice not available (e.g. Windows), run without
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+        _, stderr = await process.communicate()
+
+        if process.returncode != 0:
+            logger.warning(
+                "Timelapse conversion failed for archive %s: %s",
+                archive_id,
+                stderr.decode()[-500:],
+            )
+            if mp4_path.exists():
+                mp4_path.unlink()
+            return
+
+        # Update DB path to the new MP4 file
+        async with async_session() as db:
+            from backend.app.models.archive import PrintArchive
+
+            result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
+            archive = result.scalar_one_or_none()
+            if archive:
+                archive.timelapse_path = str(mp4_path.relative_to(settings.base_dir))
+                await db.commit()
+
+        # Remove original non-MP4 file
+        if source_path.exists():
+            source_path.unlink()
+
+        logger.info(
+            "Converted timelapse to MP4 for archive %s (%s → %s)",
+            archive_id,
+            source_path.name,
+            mp4_path.name,
+        )
+
+    except Exception as e:
+        logger.warning("Timelapse conversion error for archive %s: %s", archive_id, e)
+        if mp4_path.exists():
+            mp4_path.unlink()

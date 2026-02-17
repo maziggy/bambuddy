@@ -261,7 +261,7 @@ _last_progress_milestone: dict[int, int] = {}
 # This prevents sending duplicate notifications for the same error
 _notified_hms_errors: dict[int, set[str]] = {}
 
-# Track timelapse file baselines at print start: {printer_id: set of MP4 filenames}
+# Track timelapse file baselines at print start: {printer_id: set of video filenames}
 # Used for snapshot-diff detection at print completion
 _timelapse_baselines: dict[int, set[str]] = {}
 
@@ -1712,10 +1712,10 @@ async def on_print_start(printer_id: int, data: dict):
 
                 # Capture timelapse file baseline for snapshot-diff on completion
                 try:
-                    baseline_files, _ = await _list_timelapse_mp4s(printer)
+                    baseline_files, _ = await _list_timelapse_videos(printer)
                     _timelapse_baselines[printer_id] = {f.get("name", "") for f in baseline_files}
                     logger.info(
-                        "[TIMELAPSE] Baseline at print start: %s MP4 files for printer %s",
+                        "[TIMELAPSE] Baseline at print start: %s video files for printer %s",
                         len(_timelapse_baselines[printer_id]),
                         printer_id,
                     )
@@ -1726,10 +1726,14 @@ async def on_print_start(printer_id: int, data: dict):
                 temp_path.unlink()
 
 
-async def _list_timelapse_mp4s(printer) -> tuple[list[dict], str | None]:
-    """List MP4 files from printer's timelapse directory.
+_TIMELAPSE_VIDEO_EXTENSIONS = (".mp4", ".avi")
 
-    Returns (mp4_files, found_path) where mp4_files is a list of file dicts
+
+async def _list_timelapse_videos(printer) -> tuple[list[dict], str | None]:
+    """List video files from printer's timelapse directory.
+
+    Finds MP4 (X1/A1 series) and AVI (P1 series) timelapse files.
+    Returns (video_files, found_path) where video_files is a list of file dicts
     and found_path is the directory where they were found, or ([], None).
     """
     from backend.app.services.bambu_ftp import list_files_async
@@ -1742,9 +1746,13 @@ async def _list_timelapse_mp4s(printer) -> tuple[list[dict], str | None]:
                 printer.ip_address, printer.access_code, timelapse_path, printer_model=printer.model
             )
             if found_files:
-                mp4_files = [f for f in found_files if not f.get("is_directory") and f.get("name", "").endswith(".mp4")]
-                if mp4_files:
-                    return mp4_files, timelapse_path
+                video_files = [
+                    f
+                    for f in found_files
+                    if not f.get("is_directory") and f.get("name", "").lower().endswith(_TIMELAPSE_VIDEO_EXTENSIONS)
+                ]
+                if video_files:
+                    return video_files, timelapse_path
         except Exception as e:
             logger.debug("[TIMELAPSE] Path %s failed: %s", timelapse_path, e)
             continue
@@ -1792,7 +1800,7 @@ async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[
             if baseline_names is not None:
                 # Use pre-captured baseline from print start (no race condition)
                 logger.info(
-                    "[TIMELAPSE] Using print-start baseline: %s existing MP4 files for archive %s",
+                    "[TIMELAPSE] Using print-start baseline: %s existing video files for archive %s",
                     len(baseline_names),
                     archive_id,
                 )
@@ -1804,10 +1812,10 @@ async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[
                     logger.warning("[TIMELAPSE] Printer not found for archive %s, aborting", archive_id)
                     return
 
-                baseline_files, _ = await _list_timelapse_mp4s(printer)
+                baseline_files, _ = await _list_timelapse_videos(printer)
                 baseline_names = {f.get("name", "") for f in baseline_files}
                 logger.info(
-                    "[TIMELAPSE] Baseline snapshot (fallback): %s existing MP4 files for archive %s",
+                    "[TIMELAPSE] Baseline snapshot (fallback): %s existing video files for archive %s",
                     len(baseline_names),
                     archive_id,
                 )
@@ -1855,18 +1863,18 @@ async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[
                     logger.warning("[TIMELAPSE] Printer not found for archive %s, stopping retries", archive_id)
                     return
 
-                mp4_files, found_path = await _list_timelapse_mp4s(printer)
+                video_files, found_path = await _list_timelapse_videos(printer)
 
-                if not mp4_files:
-                    logger.info("[TIMELAPSE] Attempt %s: No MP4 files found, will retry", attempt)
+                if not video_files:
+                    logger.info("[TIMELAPSE] Attempt %s: No video files found, will retry", attempt)
                     continue
 
-                logger.info("[TIMELAPSE] Attempt %s: Found %s MP4 files in %s", attempt, len(mp4_files), found_path)
-                for f in mp4_files[:5]:
+                logger.info("[TIMELAPSE] Attempt %s: Found %s video files in %s", attempt, len(video_files), found_path)
+                for f in video_files[:5]:
                     logger.info("[TIMELAPSE]   - %s", f.get("name"))
 
                 # Find files that are NEW (not in baseline snapshot)
-                new_files = [f for f in mp4_files if f.get("name", "") not in baseline_names]
+                new_files = [f for f in video_files if f.get("name", "") not in baseline_names]
 
                 if new_files:
                     # Pick the first new file (there should typically be exactly one)
@@ -1917,8 +1925,8 @@ async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[
                 if not printer:
                     return
 
-                mp4_files, found_path = await _list_timelapse_mp4s(printer)
-                for f in mp4_files:
+                video_files, found_path = await _list_timelapse_videos(printer)
+                for f in video_files:
                     fname = f.get("name", "")
                     if base_name.lower() in fname.lower():
                         remote_path = f.get("path") or f"/timelapse/{fname}"
@@ -2087,6 +2095,142 @@ async def on_print_complete(printer_id: int, data: dict):
                 archive = result.scalar_one_or_none()
                 if archive:
                     archive_id = archive.id
+
+    # Cleanup: delete uploaded file from printer SD card to prevent phantom prints (Issue #374)
+    # The print scheduler uploads files to the SD card root (/). Some printers (e.g. P1S)
+    # auto-start files found in root on power cycle, causing ghost prints.
+    # Must run before the archive_id early-return so it executes even when archiving is disabled.
+    try:
+        printer_info = printer_manager.get_printer(printer_id)
+        if printer_info and subtask_name:
+            from backend.app.services.bambu_ftp import delete_file_async
+
+            # Try both .3mf and .gcode extensions — the printer may have either
+            for ext in (".3mf", ".gcode"):
+                remote_path = f"/{subtask_name}{ext}"
+                # Retry up to 3 times — the printer may still lock the filesystem briefly after a print ends
+                for attempt in range(1, 4):
+                    try:
+                        delete_result = await delete_file_async(
+                            printer_info.ip_address,
+                            printer_info.access_code,
+                            remote_path,
+                            printer_model=printer_info.model,
+                        )
+                        if delete_result:
+                            logger.info("Deleted %s from printer %s SD card", remote_path, printer_info.name)
+                        break  # Success or file doesn't exist — no need to retry
+                    except Exception as e:
+                        if attempt < 3:
+                            logger.debug(
+                                "SD card cleanup attempt %d/3 failed for %s: %s, retrying in 2s",
+                                attempt,
+                                remote_path,
+                                e,
+                            )
+                            await asyncio.sleep(2)
+                        else:
+                            logger.debug(
+                                "SD card cleanup failed after 3 attempts for %s: %s (non-critical)",
+                                remote_path,
+                                e,
+                            )
+    except Exception as e:
+        logger.debug("SD card file cleanup failed for printer %s: %s (non-critical)", printer_id, e)
+
+    log_timing("SD card cleanup")
+
+    # Update queue item status early — must run before the archive_id early-return
+    # so queue items don't get stuck in "printing" when archive lookup fails.
+    try:
+        async with async_session() as db:
+            from backend.app.models.print_queue import PrintQueueItem
+
+            result = await db.execute(
+                select(PrintQueueItem)
+                .where(PrintQueueItem.printer_id == printer_id)
+                .where(PrintQueueItem.status == "printing")
+            )
+            printing_items = list(result.scalars().all())
+            if len(printing_items) > 1:
+                logger.warning(
+                    "BUG: Multiple queue items in 'printing' status for printer %s: %s",
+                    printer_id,
+                    [(i.id, i.archive_id, i.library_file_id) for i in printing_items],
+                )
+            queue_item = printing_items[0] if printing_items else None
+            if queue_item:
+                queue_status = data.get("status", "completed")
+                queue_item.status = queue_status
+                queue_item.completed_at = datetime.now()
+                await db.commit()
+                logger.info("Updated queue item %s status to %s", queue_item.id, queue_status)
+
+                # MQTT relay - publish queue job completed
+                try:
+                    printer_info = printer_manager.get_printer(printer_id)
+                    await mqtt_relay.on_queue_job_completed(
+                        job_id=queue_item.id,
+                        filename=filename or subtask_name,
+                        printer_id=printer_id,
+                        printer_name=printer_info.name if printer_info else "Unknown",
+                        status=queue_status,
+                    )
+                except Exception:
+                    pass  # Don't fail if MQTT fails
+
+                # Check if queue is now empty and send notification
+                try:
+                    from sqlalchemy import func as sa_func
+
+                    count_result = await db.execute(
+                        select(sa_func.count(PrintQueueItem.id)).where(PrintQueueItem.status == "pending")
+                    )
+                    pending_count = count_result.scalar() or 0
+
+                    if pending_count == 0:
+                        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                        completed_result = await db.execute(
+                            select(sa_func.count(PrintQueueItem.id)).where(
+                                PrintQueueItem.status.in_(["completed", "failed", "skipped"]),
+                                PrintQueueItem.completed_at >= today_start,
+                            )
+                        )
+                        completed_count = completed_result.scalar() or 1
+
+                        await notification_service.on_queue_completed(
+                            completed_count=completed_count,
+                            db=db,
+                        )
+                except Exception:
+                    pass  # Don't fail if notification fails
+
+                # Handle auto_off_after - power off printer if requested (after cooldown)
+                if queue_item.auto_off_after:
+                    result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
+                    plug = result.scalar_one_or_none()
+                    if plug and plug.enabled:
+                        logger.info("Auto-off requested for printer %s, waiting for cooldown...", printer_id)
+
+                        async def cooldown_and_poweroff(pid: int, plug_id: int):
+                            # Wait for nozzle to cool down
+                            await printer_manager.wait_for_cooldown(pid, target_temp=50.0, timeout=600)
+                            # Re-fetch plug in new session
+                            async with async_session() as new_db:
+                                result = await new_db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
+                                p = result.scalar_one_or_none()
+                                if p and p.enabled:
+                                    success = await tasmota_service.turn_off(p)
+                                    if success:
+                                        logger.info("Powered off printer %s via smart plug '%s'", pid, p.name)
+                                    else:
+                                        logger.warning("Failed to power off printer %s via smart plug", pid)
+
+                        asyncio.create_task(cooldown_and_poweroff(printer_id, plug.id))
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Queue item update failed: {e}")
+
+    log_timing("Queue item update")
 
     if not archive_id:
         logger.warning("Could not find archive for print complete: filename=%s, subtask=%s", filename, subtask_name)
@@ -2683,126 +2827,6 @@ async def on_print_complete(printer_id: int, data: dict):
         asyncio.create_task(_scan_for_timelapse_with_retries(archive_id, baseline))
         log_timing("Timelapse scan scheduled")
 
-    # Update queue item if this was a scheduled print
-    try:
-        async with async_session() as db:
-            from backend.app.models.print_queue import PrintQueueItem
-            # Note: SmartPlug is already imported at module level (line 56)
-            # Do NOT import it here as it would shadow the module-level import
-            # and cause "cannot access local variable" errors earlier in this function
-
-            result = await db.execute(
-                select(PrintQueueItem)
-                .where(PrintQueueItem.printer_id == printer_id)
-                .where(PrintQueueItem.status == "printing")
-            )
-            printing_items = list(result.scalars().all())
-            if len(printing_items) > 1:
-                logger.warning(
-                    "BUG: Multiple queue items in 'printing' status for printer %s: %s",
-                    printer_id,
-                    [(i.id, i.archive_id, i.library_file_id) for i in printing_items],
-                )
-            queue_item = printing_items[0] if printing_items else None
-            if queue_item:
-                status = data.get("status", "completed")
-                queue_item.status = status
-                queue_item.completed_at = datetime.now()
-                await db.commit()
-                logger.info("Updated queue item %s status to %s", queue_item.id, status)
-
-                # MQTT relay - publish queue job completed
-                try:
-                    printer_info = printer_manager.get_printer(printer_id)
-                    await mqtt_relay.on_queue_job_completed(
-                        job_id=queue_item.id,
-                        filename=filename or subtask_name,
-                        printer_id=printer_id,
-                        printer_name=printer_info.name if printer_info else "Unknown",
-                        status=status,
-                    )
-                except Exception:
-                    pass  # Don't fail if MQTT fails
-
-                # Check if queue is now empty and send notification
-                try:
-                    from sqlalchemy import func
-
-                    # Count remaining pending items
-                    count_result = await db.execute(
-                        select(func.count(PrintQueueItem.id)).where(PrintQueueItem.status == "pending")
-                    )
-                    pending_count = count_result.scalar() or 0
-
-                    if pending_count == 0:
-                        # Count how many completed today (rough approximation)
-                        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-                        completed_result = await db.execute(
-                            select(func.count(PrintQueueItem.id)).where(
-                                PrintQueueItem.status.in_(["completed", "failed", "skipped"]),
-                                PrintQueueItem.completed_at >= today_start,
-                            )
-                        )
-                        completed_count = completed_result.scalar() or 1
-
-                        await notification_service.on_queue_completed(
-                            completed_count=completed_count,
-                            db=db,
-                        )
-                except Exception:
-                    pass  # Don't fail if notification fails
-
-                # Handle auto_off_after - power off printer if requested (after cooldown)
-                if queue_item.auto_off_after:
-                    result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
-                    plug = result.scalar_one_or_none()
-                    if plug and plug.enabled:
-                        logger.info("Auto-off requested for printer %s, waiting for cooldown...", printer_id)
-
-                        async def cooldown_and_poweroff(pid: int, plug_id: int):
-                            # Wait for nozzle to cool down
-                            await printer_manager.wait_for_cooldown(pid, target_temp=50.0, timeout=600)
-                            # Re-fetch plug in new session
-                            async with async_session() as new_db:
-                                result = await new_db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
-                                p = result.scalar_one_or_none()
-                                if p and p.enabled:
-                                    success = await tasmota_service.turn_off(p)
-                                    if success:
-                                        logger.info("Powered off printer %s via smart plug '%s'", pid, p.name)
-                                    else:
-                                        logger.warning("Failed to power off printer %s via smart plug", pid)
-
-                        asyncio.create_task(cooldown_and_poweroff(printer_id, plug.id))
-    except Exception as e:
-        logging.getLogger(__name__).warning(f"Queue item update failed: {e}")
-
-    log_timing("Queue item update")
-
-    # Cleanup: delete uploaded file from printer SD card to prevent phantom prints (Issue #374)
-    # The print scheduler uploads .3mf files to the SD card root (/). Some printers (e.g. P1S)
-    # auto-start files found in root on power cycle, causing ghost prints.
-    try:
-        printer_info = printer_manager.get_printer(printer_id)
-        if printer_info and subtask_name:
-            from backend.app.services.bambu_ftp import delete_file_async
-
-            remote_path = f"/{subtask_name}.3mf"
-            logger.info("Cleaning up uploaded file from printer SD card: %s", remote_path)
-            delete_result = await delete_file_async(
-                printer_info.ip_address,
-                printer_info.access_code,
-                remote_path,
-                printer_model=printer_info.model,
-            )
-            if delete_result:
-                logger.info("Deleted %s from printer %s SD card", remote_path, printer_info.name)
-            else:
-                logger.debug("File delete returned False for %s (may not exist)", remote_path)
-    except Exception as e:
-        logger.debug("SD card file cleanup failed for printer %s: %s (non-critical)", printer_id, e)
-
-    log_timing("SD card cleanup")
     logger.info("[CALLBACK] on_print_complete finished for printer %s, archive %s", printer_id, archive_id)
 
 

@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from backend.app.core.config import settings as app_settings
+from backend.app.services.virtual_printer.bind_server import BindServer
 from backend.app.services.virtual_printer.certificate import CertificateService
 from backend.app.services.virtual_printer.ftp_server import VirtualPrinterFTPServer
 from backend.app.services.virtual_printer.mqtt_server import SimpleMQTTServer
@@ -100,6 +101,7 @@ class VirtualPrinterManager:
         self._ssdp_proxy: SSDPProxy | None = None
         self._ftp: VirtualPrinterFTPServer | None = None
         self._mqtt: SimpleMQTTServer | None = None
+        self._bind: BindServer | None = None  # For server mode (bind/detect on port 3000)
         self._proxy: SlicerProxyManager | None = None  # For proxy mode
 
         # Background tasks
@@ -364,11 +366,13 @@ class VirtualPrinterManager:
         )
 
         logger.info(
-            "Virtual printer proxy target: FTP %s:%d, MQTT %s:%d",
+            "Virtual printer proxy target: FTP %s:%d, MQTT %s:%d, Bind %s:%d",
             self._target_printer_ip,
             SlicerProxyManager.PRINTER_FTP_PORT,
             self._target_printer_ip,
             SlicerProxyManager.PRINTER_MQTT_PORT,
+            self._target_printer_ip,
+            SlicerProxyManager.PRINTER_BIND_PORT,
         )
 
     def _start_fallback_ssdp(self, proxy_serial: str, run_with_logging) -> None:
@@ -429,6 +433,13 @@ class VirtualPrinterManager:
             on_print_command=self._on_print_command,
         )
 
+        # Bind server responds to slicer detect/bind requests on port 3000
+        self._bind = BindServer(
+            serial=self.printer_serial,
+            model=self._model,
+            name=self.PRINTER_NAME,
+        )
+
         # Start services as background tasks
         # Wrap each in error handler so one failure doesn't stop others
         async def run_with_logging(coro, name):
@@ -441,6 +452,7 @@ class VirtualPrinterManager:
             asyncio.create_task(run_with_logging(self._ssdp.start(), "SSDP"), name="virtual_printer_ssdp"),
             asyncio.create_task(run_with_logging(self._ftp.start(), "FTP"), name="virtual_printer_ftp"),
             asyncio.create_task(run_with_logging(self._mqtt.start(), "MQTT"), name="virtual_printer_mqtt"),
+            asyncio.create_task(run_with_logging(self._bind.start(), "Bind"), name="virtual_printer_bind"),
         ]
 
         logger.info("Virtual printer '%s' started (serial: %s)", self.PRINTER_NAME, self.printer_serial)
@@ -465,6 +477,10 @@ class VirtualPrinterManager:
         if self._ssdp:
             await self._ssdp.stop()
             self._ssdp = None
+
+        if self._bind:
+            await self._bind.stop()
+            self._bind = None
 
         if self._ssdp_proxy:
             await self._ssdp_proxy.stop()

@@ -250,6 +250,8 @@ export interface PrinterStatus {
   big_fan2_speed: number | null;     // Chamber/exhaust fan
   heatbreak_fan_speed: number | null; // Hotend heatbreak fan
   firmware_version: string | null;   // Firmware version from MQTT
+  // Queue: user has acknowledged plate is cleared for next queued print
+  plate_cleared: boolean;
 }
 
 export interface PrinterCreate {
@@ -2654,6 +2656,10 @@ export const api = {
       `/archives/${id}/timelapse/select?filename=${encodeURIComponent(filename)}`,
       { method: 'POST' }
     ),
+  deleteArchiveTimelapse: (id: number) =>
+    request<{ status: string }>(`/archives/${id}/timelapse`, {
+      method: 'DELETE',
+    }),
   uploadArchiveTimelapse: async (archiveId: number, file: File): Promise<{ status: string; filename: string }> => {
     const formData = new FormData();
     formData.append('file', file);

@@ -304,6 +304,14 @@ class BambuMQTTClient:
         # Intercepts slicer/Bambuddy print commands to get the slot-to-tray mapping
         self._captured_ams_mapping: list[int] | None = None
 
+        # Request topic subscription tracking
+        # Some printer MQTT brokers (e.g. P1S) reject subscriptions to the request
+        # topic by killing the TCP connection. We detect this and gracefully degrade.
+        self._request_topic_supported: bool = True
+        self._request_topic_sub_mid: int | None = None
+        self._request_topic_sub_time: float = 0.0
+        self._request_topic_confirmed: bool = False
+
     @property
     def topic_subscribe(self) -> str:
         return f"device/{self.serial_number}/report"
@@ -337,7 +345,19 @@ class BambuMQTTClient:
         if rc == 0:
             self.state.connected = True
             client.subscribe(self.topic_subscribe)
-            client.subscribe(self.topic_publish)  # Intercept print commands for ams_mapping
+            # Subscribe to request topic for ams_mapping capture (if supported by broker)
+            if self._request_topic_supported:
+                result, mid = client.subscribe(self.topic_publish)
+                if result == mqtt.MQTT_ERR_SUCCESS:
+                    self._request_topic_sub_mid = mid
+                    self._request_topic_sub_time = time.time()
+                    self._request_topic_confirmed = False
+                else:
+                    logger.warning(
+                        "[%s] Failed to send request topic subscription",
+                        self.serial_number,
+                    )
+                    self._request_topic_supported = False
             # Request full status update (includes nozzle info in push_status response)
             self._request_push_all()
             # Request firmware version info
@@ -352,6 +372,29 @@ class BambuMQTTClient:
         else:
             self.state.connected = False
 
+    def _on_subscribe(self, client, userdata, mid, reason_code_list, properties=None):
+        """Handle SUBACK responses to detect request topic subscription rejection."""
+        if mid == self._request_topic_sub_mid:
+            for rc in reason_code_list:
+                if rc.is_failure:
+                    logger.warning(
+                        "[%s] Request topic subscription rejected (code=%d: %s). "
+                        "ams_mapping capture from slicer-initiated prints unavailable.",
+                        self.serial_number,
+                        rc.value,
+                        rc.getName(),
+                    )
+                    self._request_topic_supported = False
+                else:
+                    logger.info(
+                        "[%s] Request topic subscription accepted. "
+                        "ams_mapping capture enabled for slicer-initiated prints.",
+                        self.serial_number,
+                    )
+                    self._request_topic_confirmed = True
+            self._request_topic_sub_mid = None
+            self._request_topic_sub_time = 0.0
+
     def _on_disconnect(self, client, userdata, disconnect_flags=None, rc=None, properties=None):
         # Ignore spurious disconnect callbacks if we've received a message recently
         # Paho-mqtt sometimes fires disconnect callbacks while the connection is still active
@@ -363,6 +406,23 @@ class BambuMQTTClient:
             return
 
         logger.warning("[%s] MQTT disconnected: rc=%s, flags=%s", self.serial_number, rc, disconnect_flags)
+
+        # Detect if request topic subscription caused the disconnect.
+        # If we just subscribed and got disconnected before any SUBACK confirmation,
+        # the broker likely killed the connection due to the unauthorized subscription.
+        if (
+            self._request_topic_sub_time > 0
+            and not self._request_topic_confirmed
+            and time.time() - self._request_topic_sub_time < 10.0
+        ):
+            logger.warning(
+                "[%s] Disconnected shortly after request topic subscription. Disabling request topic for this printer.",
+                self.serial_number,
+            )
+            self._request_topic_supported = False
+        self._request_topic_sub_mid = None
+        self._request_topic_sub_time = 0.0
+
         self.state.connected = False
         if self.on_state_change:
             self.on_state_change(self.state)
@@ -2105,6 +2165,7 @@ class BambuMQTTClient:
         self._client.username_pw_set("bblp", self.access_code)
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect
+        self._client.on_subscribe = self._on_subscribe
         self._client.on_message = self._on_message
 
         # TLS setup - Bambu uses self-signed certs

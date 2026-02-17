@@ -2775,7 +2775,6 @@ async def reprint_archive(
             "No 3MF file available for this archive. "
             "The file could not be downloaded from the printer when the print was recorded.",
         )
-
     # Validate archive file exists
     file_path = settings.base_dir / archive.file_path
     if not file_path.is_file():

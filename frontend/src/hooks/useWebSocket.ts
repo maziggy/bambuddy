@@ -250,7 +250,6 @@ export function useWebSocket() {
           }
         }));
         break;
-
       case 'background_dispatch':
         window.dispatchEvent(
           new CustomEvent('background-dispatch', {

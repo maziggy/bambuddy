@@ -8,15 +8,18 @@ function SpoolWeightPicker({
   catalog,
   value,
   onChange,
+  catalogId,
+  onCatalogIdChange,
 }: {
   catalog: { id: number; name: string; weight: number }[];
   value: number;
   onChange: (weight: number) => void;
+  catalogId: number | null;
+  onCatalogIdChange: (id: number | null) => void;
 }) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const [selectedId, setSelectedId] = useState<number | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -30,6 +33,36 @@ function SpoolWeightPicker({
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
+  // When value changes, auto-select if there's only one matching entry or keep selection if it still matches
+  useEffect(() => {
+    // If no catalog loaded yet, skip matching logic
+    if (catalog.length === 0) {
+      return;
+    }
+
+    const matches = catalog.filter(e => e.weight === value);
+
+    // If currently selected entry still matches the weight, keep it selected
+    if (catalogId) {
+      const selected = catalog.find(e => e.id === catalogId);
+      if (selected && selected.weight === value) {
+        return; // Keep current selection
+      }
+    }
+
+    // If exactly one match, auto-select it
+    if (matches.length === 1) {
+      onCatalogIdChange(matches[0].id);
+    } else if (matches.length === 0) {
+      // No matches, clear selection only if we don't have a catalogId
+      // (to avoid clearing valid IDs when catalog hasn't loaded yet)
+      if (!catalogId) {
+        onCatalogIdChange(null);
+      }
+    }
+    // If multiple matches, don't auto-select - let user choose
+  }, [value, catalog, catalogId, onCatalogIdChange]);
+
   const filtered = useMemo(() => {
     if (!search) return catalog;
     const s = search.toLowerCase();
@@ -39,17 +72,29 @@ function SpoolWeightPicker({
     );
   }, [catalog, search]);
 
-  // Display value: show catalog name if selected, or the weight
+  // Find all entries matching the current weight
+  const matchingEntries = useMemo(() => {
+    return catalog.filter(e => e.weight === value);
+  }, [catalog, value]);
+
+  // Display value: show catalog name if selected by ID, otherwise show first match
   const displayValue = useMemo(() => {
     if (isOpen) return search;
-    if (selectedId) {
-      const entry = catalog.find(e => e.id === selectedId);
+
+    // If a catalog ID is explicitly selected, use that
+    if (catalogId) {
+      const entry = catalog.find(e => e.id === catalogId);
       if (entry) return entry.name;
     }
-    const match = catalog.find(e => e.weight === value);
-    if (match) return match.name;
+
+    // Otherwise, show the first matching entry as a suggestion
+    if (matchingEntries.length > 0) {
+      return matchingEntries[0].name;
+    }
+
+    // Leave empty if there are no matches
     return '';
-  }, [isOpen, search, selectedId, catalog, value]);
+  }, [isOpen, search, catalogId, catalog, matchingEntries]);
 
   return (
     <div>
@@ -86,12 +131,12 @@ function SpoolWeightPicker({
                     key={entry.id}
                     type="button"
                     className={`w-full px-3 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex justify-between items-center ${
-                      (selectedId ? entry.id === selectedId : entry.weight === value)
+                      (catalogId ? entry.id === catalogId : entry.weight === value)
                         ? 'bg-bambu-green/10 text-bambu-green'
                         : 'text-white'
                     }`}
                     onClick={() => {
-                      setSelectedId(entry.id);
+                      onCatalogIdChange(entry.id);
                       onChange(entry.weight);
                       setIsOpen(false);
                       setSearch('');
@@ -150,6 +195,8 @@ export function AdditionalSection({
         catalog={spoolCatalog}
         value={formData.core_weight}
         onChange={(weight) => updateField('core_weight', weight)}
+        catalogId={formData.core_weight_catalog_id}
+        onCatalogIdChange={(id) => updateField('core_weight_catalog_id', id)}
       />
 
       {/* Current Weight (remaining filament) */}

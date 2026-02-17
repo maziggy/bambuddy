@@ -30,6 +30,9 @@
         "python.defaultInterpreterPath": "/usr/local/bin/python",
         "python.analysis.typeCheckingMode": "basic",
         "editor.formatOnSave": true,
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        },
         "editor.codeActionsOnSave": {
           "source.organizeImports": "explicit",
           "source.fixAll.ruff": "explicit"

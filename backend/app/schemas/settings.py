@@ -11,7 +11,7 @@ class AppSettings(BaseModel):
     )
     default_filament_cost: float = Field(default=25.0, description="Default filament cost per kg")
     currency: str = Field(default="USD", description="Currency for cost tracking")
-    energy_cost_per_kwh: float = Field(default=0.15, description="Electricity cost per kWh for energy tracking")
+    energy_cost_per_kwh: float = Field(default=0.150, description="Electricity cost per kWh for energy tracking")
     energy_tracking_mode: str = Field(
         default="total",
         description="Energy display mode on stats: 'print' shows sum of per-print energy, 'total' shows lifetime plug consumption",

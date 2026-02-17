@@ -536,7 +536,7 @@ async def get_archive_stats(
 
     energy_tracking_mode = await get_setting(db, "energy_tracking_mode") or "total"
     energy_cost_per_kwh_str = await get_setting(db, "energy_cost_per_kwh")
-    energy_cost_per_kwh = float(energy_cost_per_kwh_str) if energy_cost_per_kwh_str else 0.15
+    energy_cost_per_kwh = float(energy_cost_per_kwh_str) if energy_cost_per_kwh_str else 0.150
 
     if energy_tracking_mode == "total":
         # Total mode: sum up 'total' counter from all smart plugs (lifetime consumption)

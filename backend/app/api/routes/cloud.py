@@ -246,11 +246,12 @@ async def get_slicer_settings(
 
         for api_key, our_type in type_mapping.items():
             type_data = data.get(api_key, {})
-            # Combine public and private presets, private (user's own) first
-            all_settings = type_data.get("private", []) + type_data.get("public", [])
+            private_settings = type_data.get("private", [])
+            public_settings = type_data.get("public", [])
 
             parsed = []
-            for s in all_settings:
+            # Private (custom) presets first
+            for s in private_settings:
                 parsed.append(
                     SlicerSetting(
                         setting_id=s.get("setting_id", s.get("id", "")),
@@ -259,6 +260,20 @@ async def get_slicer_settings(
                         version=s.get("version"),
                         user_id=s.get("user_id"),
                         updated_time=s.get("updated_time"),
+                        is_custom=True,
+                    )
+                )
+            # Public (default) presets
+            for s in public_settings:
+                parsed.append(
+                    SlicerSetting(
+                        setting_id=s.get("setting_id", s.get("id", "")),
+                        name=s.get("name", "Unknown"),
+                        type=our_type,
+                        version=s.get("version"),
+                        user_id=s.get("user_id"),
+                        updated_time=s.get("updated_time"),
+                        is_custom=False,
                     )
                 )
             setattr(result, our_type, parsed)
@@ -300,6 +315,22 @@ async def get_setting_detail(
         raise HTTPException(status_code=401, detail="Authentication expired")
     except BambuCloudError as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/filaments", response_model=list[SlicerSetting])
+async def get_filament_presets(
+    version: str = "02.04.00.70",
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
+):
+    """
+    Get just filament presets (convenience endpoint).
+
+    Returns all filament presets with custom presets first.
+    Uses the same cache as get_slicer_settings.
+    """
+    settings = await get_slicer_settings(version=version, db=db)
+    return settings.filament
 
 
 # Cache for filament preset info (setting_id -> {name, k})
@@ -842,6 +873,81 @@ def _load_fields(preset_type: str) -> dict:
 
     _fields_cache[preset_type] = data
     return data
+
+
+@router.get("/builtin-filaments")
+async def get_builtin_filaments(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
+):
+    """
+    Get built-in filament names as a fallback source.
+
+    Returns the static _BUILTIN_FILAMENT_NAMES table as a list of
+    {filament_id, name} objects.  Used by the frontend when cloud
+    and local profiles are unavailable.
+    """
+    return [{"filament_id": fid, "name": name} for fid, name in _BUILTIN_FILAMENT_NAMES.items()]
+
+
+# Cache for filament_id → name mapping (resolved from cloud preset details)
+_filament_id_name_cache: dict[str, str] = {}
+_filament_id_name_cache_time: float = 0
+
+
+@router.get("/filament-id-map")
+async def get_filament_id_map(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
+):
+    """
+    Get filament_id → name mapping for user cloud presets.
+
+    K-profiles store a filament_id (e.g., "P4d64437") which is different from
+    the cloud preset setting_id (e.g., "PFUS9ac902733670a9"). This endpoint
+    fetches details for all custom presets and returns the mapping.
+    Cached for 5 minutes.
+    """
+    import time
+
+    global _filament_id_name_cache, _filament_id_name_cache_time
+
+    if _filament_id_name_cache and time.time() - _filament_id_name_cache_time < FILAMENT_CACHE_TTL:
+        return _filament_id_name_cache
+
+    token, _ = await get_stored_token(db)
+    if not token:
+        return _filament_id_name_cache or {}
+
+    cloud = get_cloud_service()
+    cloud.set_token(token)
+    if not cloud.is_authenticated:
+        return _filament_id_name_cache or {}
+
+    try:
+        data = await cloud.get_slicer_settings()
+        custom_presets = data.get("filament", {}).get("private", [])
+
+        result: dict[str, str] = {}
+        for preset in custom_presets:
+            setting_id = preset.get("setting_id", "")
+            if not setting_id:
+                continue
+            try:
+                detail = await cloud.get_setting_detail(setting_id)
+                fid = detail.get("filament_id", "")
+                name = detail.get("name", "")
+                if fid and name:
+                    # Strip printer/nozzle suffix: "Devil Design PLA Basic @Bambu Lab H2D 0.4 nozzle" → "Devil Design PLA Basic"
+                    clean_name = name.split(" @")[0].strip() if " @" in name else name
+                    result[fid] = clean_name
+            except Exception:
+                pass
+
+        _filament_id_name_cache = result
+        _filament_id_name_cache_time = time.time()
+        return result
+    except Exception:
+        return _filament_id_name_cache or {}
 
 
 @router.get("/fields/{preset_type}")

@@ -163,6 +163,9 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
             {provider.on_ams_ht_temperature_high && (
               <span className="px-2 py-0.5 bg-amber-600/20 text-amber-300 text-xs rounded">AMS-HT Temp</span>
             )}
+            {provider.on_bed_cooled && (
+              <span className="px-2 py-0.5 bg-teal-500/20 text-teal-400 text-xs rounded">Bed Cooled</span>
+            )}
             {provider.quiet_hours_enabled && (
               <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-400 text-xs rounded flex items-center gap-1">
                 <Moon className="w-3 h-3" />
@@ -273,6 +276,17 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                   <Toggle
                     checked={provider.on_print_complete}
                     onChange={(checked) => updateMutation.mutate({ on_print_complete: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white">Bed Cooled</p>
+                    <p className="text-xs text-bambu-gray">Bed cooled below threshold after print</p>
+                  </div>
+                  <Toggle
+                    checked={provider.on_bed_cooled ?? false}
+                    onChange={(checked) => updateMutation.mutate({ on_bed_cooled: checked })}
                   />
                 </div>
 

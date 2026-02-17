@@ -36,6 +36,7 @@ class MQTTRelayService:
         self._last_printer_status: dict[int, float] = {}  # printer_id -> last publish timestamp
         self._smart_plug_service = None  # Lazy import to avoid circular dependency
         self._settings: dict = {}  # Store settings for smart plug service
+        self._disconnection_event: threading.Event | None = None
 
     async def configure(self, settings: dict) -> bool:
         """Configure MQTT connection from settings.
@@ -187,15 +188,19 @@ class MQTTRelayService:
             logger.warning("MQTT relay disconnected: %s", rc)
         else:
             logger.info("MQTT relay disconnected cleanly")
+        if self._disconnection_event:
+            self._disconnection_event.set()
 
-    async def disconnect(self):
+    async def disconnect(self, timeout: float = 0):
         """Disconnect from MQTT broker."""
         if self.client:
             try:
                 # Publish offline status before disconnecting
                 self._publish_status("offline")
-                self.client.loop_stop()
+                self._disconnection_event = threading.Event()
                 self.client.disconnect()
+                await asyncio.to_thread(self._disconnection_event.wait, timeout=timeout)
+                self.client.loop_stop()
             except Exception as e:
                 logger.debug("MQTT disconnect error (ignored): %s", e)
             finally:

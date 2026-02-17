@@ -1,15 +1,16 @@
 /**
  * Tests for the SpoolmanSettings component.
  *
- * Tests the Spoolman integration UI including:
- * - Enable/disable toggle
- * - URL configuration
- * - Connection status
- * - Sync functionality
+ * Tests the filament tracking mode selector and Spoolman integration UI:
+ * - Mode selector (Built-in Inventory vs Spoolman)
+ * - Built-in Inventory info panel
+ * - Spoolman URL, sync mode, connection status
+ * - Weight sync and partial usage toggles
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { SpoolmanSettings } from '../../components/SpoolmanSettings';
 
@@ -26,6 +27,7 @@ vi.mock('../../api/client', () => ({
     syncAllPrintersAms: vi.fn(),
     syncPrinterAms: vi.fn(),
     getPrinters: vi.fn(),
+    getAuthStatus: vi.fn().mockResolvedValue({ auth_enabled: false }),
   },
 }));
 
@@ -36,7 +38,7 @@ describe('SpoolmanSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    // Default API mocks
+    // Default API mocks — Spoolman disabled (Built-in Inventory mode)
     vi.mocked(api.getSpoolmanSettings).mockResolvedValue({
       spoolman_enabled: 'false',
       spoolman_url: '',
@@ -70,90 +72,61 @@ describe('SpoolmanSettings', () => {
 
   describe('rendering', () => {
     it('renders loading state initially', () => {
-      // Delay the API response to catch loading state
       vi.mocked(api.getSpoolmanSettings).mockImplementation(() => new Promise(() => {}));
       render(<SpoolmanSettings />);
 
-      // Should show loading spinner
       expect(document.querySelector('.animate-spin')).toBeInTheDocument();
     });
 
-    it('renders component title', async () => {
+    it('renders filament tracking title', async () => {
       render(<SpoolmanSettings />);
 
       await waitFor(() => {
-        expect(screen.getByText('Spoolman Integration')).toBeInTheDocument();
+        expect(screen.getByText('Filament Tracking')).toBeInTheDocument();
       });
     });
 
-    it('renders enable toggle', async () => {
+    it('renders mode selector cards', async () => {
       render(<SpoolmanSettings />);
 
       await waitFor(() => {
-        expect(screen.getByText('Enable Spoolman')).toBeInTheDocument();
-      });
-    });
-
-    it('renders URL input', async () => {
-      render(<SpoolmanSettings />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Spoolman URL')).toBeInTheDocument();
-        expect(screen.getByPlaceholderText('http://192.168.1.100:7912')).toBeInTheDocument();
-      });
-    });
-
-    it('renders sync mode selector', async () => {
-      render(<SpoolmanSettings />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Sync Mode')).toBeInTheDocument();
-      });
-    });
-
-    it('renders info banner about sync', async () => {
-      render(<SpoolmanSettings />);
-
-      await waitFor(() => {
-        expect(screen.getByText('How Sync Works')).toBeInTheDocument();
-        expect(screen.getByText(/Only official Bambu Lab spools/)).toBeInTheDocument();
+        expect(screen.getByText('Built-in Inventory')).toBeInTheDocument();
+        expect(screen.getByText('Spoolman')).toBeInTheDocument();
       });
     });
   });
 
-  describe('disabled state', () => {
-    it('URL input is disabled when Spoolman is disabled', async () => {
+  describe('built-in inventory mode (default)', () => {
+    it('shows built-in inventory as selected by default', async () => {
       render(<SpoolmanSettings />);
 
       await waitFor(() => {
-        const urlInput = screen.getByPlaceholderText('http://192.168.1.100:7912');
-        expect(urlInput).toBeDisabled();
+        // Built-in Inventory card should have the active border
+        const builtInBtn = screen.getByText('Built-in Inventory').closest('button');
+        expect(builtInBtn).toHaveClass('border-bambu-green');
       });
     });
 
-    it('sync mode selector is disabled when Spoolman is disabled', async () => {
+    it('shows built-in info panel when selected', async () => {
       render(<SpoolmanSettings />);
 
       await waitFor(() => {
-        // Find the select by its display value
-        const selectElement = screen.getByDisplayValue('Automatic');
-        expect(selectElement).toBeDisabled();
+        expect(screen.getByText(/Automatically detects Bambu Lab RFID spools/)).toBeInTheDocument();
       });
     });
 
-    it('does not show connection status when disabled', async () => {
+    it('does not show Spoolman URL input', async () => {
       render(<SpoolmanSettings />);
 
       await waitFor(() => {
-        expect(screen.getByText('Spoolman Integration')).toBeInTheDocument();
+        expect(screen.getByText('Filament Tracking')).toBeInTheDocument();
       });
 
-      // Status section should not be visible when disabled
-      expect(screen.queryByText('Status:')).not.toBeInTheDocument();
+      expect(screen.queryByPlaceholderText('http://192.168.1.100:7912')).not.toBeInTheDocument();
     });
   });
 
-  describe('enabled state', () => {
+  describe('spoolman mode', () => {
     beforeEach(() => {
       vi.mocked(api.getSpoolmanSettings).mockResolvedValue({
         spoolman_enabled: 'true',
@@ -171,16 +144,40 @@ describe('SpoolmanSettings', () => {
       });
     });
 
-    it('URL input is enabled when Spoolman is enabled', async () => {
+    it('shows Spoolman card as selected', async () => {
       render(<SpoolmanSettings />);
 
       await waitFor(() => {
-        const urlInput = screen.getByPlaceholderText('http://192.168.1.100:7912');
-        expect(urlInput).not.toBeDisabled();
+        const spoolmanBtn = screen.getByText('Spoolman').closest('button');
+        expect(spoolmanBtn).toHaveClass('border-bambu-green');
       });
     });
 
-    it('shows connection status section when enabled', async () => {
+    it('shows URL input when Spoolman is selected', async () => {
+      render(<SpoolmanSettings />);
+
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('http://192.168.1.100:7912')).toBeInTheDocument();
+      });
+    });
+
+    it('shows sync mode selector', async () => {
+      render(<SpoolmanSettings />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Sync Mode')).toBeInTheDocument();
+      });
+    });
+
+    it('shows how sync works info', async () => {
+      render(<SpoolmanSettings />);
+
+      await waitFor(() => {
+        expect(screen.getByText('How Sync Works')).toBeInTheDocument();
+      });
+    });
+
+    it('shows connection status section', async () => {
       render(<SpoolmanSettings />);
 
       await waitFor(() => {
@@ -199,20 +196,6 @@ describe('SpoolmanSettings', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Disconnected')).toBeInTheDocument();
-      });
-    });
-
-    it('shows Connect button when disconnected', async () => {
-      vi.mocked(api.getSpoolmanStatus).mockResolvedValue({
-        enabled: true,
-        connected: false,
-        url: 'http://localhost:7912',
-      });
-
-      render(<SpoolmanSettings />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Connect')).toBeInTheDocument();
       });
     });
 
@@ -242,27 +225,12 @@ describe('SpoolmanSettings', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Sync AMS Data')).toBeInTheDocument();
-        expect(screen.getByText('Sync')).toBeInTheDocument();
-      });
-    });
-
-    it('shows All Printers option in sync dropdown', async () => {
-      vi.mocked(api.getSpoolmanStatus).mockResolvedValue({
-        enabled: true,
-        connected: true,
-        url: 'http://localhost:7912',
-      });
-
-      render(<SpoolmanSettings />);
-
-      await waitFor(() => {
-        expect(screen.getByRole('option', { name: 'All Printers' })).toBeInTheDocument();
       });
     });
   });
 
   describe('weight sync toggle', () => {
-    it('shows weight sync toggle when sync mode is auto and enabled', async () => {
+    it('shows weight sync toggle when Spoolman enabled and sync mode is auto', async () => {
       vi.mocked(api.getSpoolmanSettings).mockResolvedValue({
         spoolman_enabled: 'true',
         spoolman_url: 'http://localhost:7912',
@@ -290,19 +258,10 @@ describe('SpoolmanSettings', () => {
       render(<SpoolmanSettings />);
 
       await waitFor(() => {
-        expect(screen.getByText('Spoolman Integration')).toBeInTheDocument();
+        expect(screen.getByText('Filament Tracking')).toBeInTheDocument();
       });
 
       expect(screen.queryByText('Disable AMS Estimated Weight Sync')).not.toBeInTheDocument();
-    });
-
-    it('shows weight sync toggle in disabled state when sync mode is auto', async () => {
-      render(<SpoolmanSettings />);
-
-      await waitFor(() => {
-        // Toggle label is visible since sync mode defaults to auto
-        expect(screen.getByText('Disable AMS Estimated Weight Sync')).toBeInTheDocument();
-      });
     });
   });
 
@@ -335,49 +294,28 @@ describe('SpoolmanSettings', () => {
       render(<SpoolmanSettings />);
 
       await waitFor(() => {
-        expect(screen.getByText('Spoolman Integration')).toBeInTheDocument();
+        expect(screen.getByText('Filament Tracking')).toBeInTheDocument();
       });
 
       expect(screen.queryByText('Report Partial Usage for Failed Prints')).not.toBeInTheDocument();
     });
   });
 
-  describe('sync mode options', () => {
-    it('shows Automatic option', async () => {
+  describe('mode switching', () => {
+    it('can switch to Spoolman mode', async () => {
+      const user = userEvent.setup();
       render(<SpoolmanSettings />);
 
       await waitFor(() => {
-        expect(screen.getByRole('option', { name: 'Automatic' })).toBeInTheDocument();
+        expect(screen.getByText('Built-in Inventory')).toBeInTheDocument();
       });
-    });
 
-    it('shows Manual Only option', async () => {
-      render(<SpoolmanSettings />);
+      // Click Spoolman card
+      await user.click(screen.getByText('Spoolman').closest('button')!);
 
+      // Spoolman settings should now be visible
       await waitFor(() => {
-        expect(screen.getByRole('option', { name: 'Manual Only' })).toBeInTheDocument();
-      });
-    });
-  });
-
-  describe('info text', () => {
-    it('shows URL help text', async () => {
-      render(<SpoolmanSettings />);
-
-      await waitFor(() => {
-        expect(
-          screen.getByText('URL of your Spoolman server (e.g., http://localhost:7912)')
-        ).toBeInTheDocument();
-      });
-    });
-
-    it('shows sync mode description for auto mode', async () => {
-      render(<SpoolmanSettings />);
-
-      await waitFor(() => {
-        expect(
-          screen.getByText('AMS data syncs automatically when changes are detected')
-        ).toBeInTheDocument();
+        expect(screen.getByPlaceholderText('http://192.168.1.100:7912')).toBeInTheDocument();
       });
     });
   });

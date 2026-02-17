@@ -97,6 +97,7 @@ class PrintQueueItemResponse(BaseModel):
     library_file_thumbnail: str | None = None  # Thumbnail of library file
     printer_name: str | None = None
     print_time_seconds: int | None = None  # Estimated print time from archive or library file
+    filament_used_grams: float | None = None  # Estimated print weight from archive or library file
 
     # User tracking (Issue #206)
     created_by_id: int | None = None

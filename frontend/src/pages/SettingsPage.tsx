@@ -5,7 +5,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDateOnly } from '../utils/date';
-import type { AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, Group, GroupCreate, GroupUpdate, Permission, PermissionCategory } from '../api/client';
+import { getCurrencySymbol, SUPPORTED_CURRENCIES } from '../utils/currency';
+import type { AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, Group, GroupCreate, GroupUpdate, Permission, PermissionCategory, StorageUsageResponse } from '../api/client';
 import { Card, CardContent, CardHeader } from '../components/Card';
 import { Button } from '../components/Button';
 import { SmartPlugCard } from '../components/SmartPlugCard';
@@ -17,6 +18,8 @@ import { NotificationLogViewer } from '../components/NotificationLogViewer';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { CreateUserAdvancedAuthModal } from '../components/CreateUserAdvancedAuthModal';
 import { SpoolmanSettings } from '../components/SpoolmanSettings';
+import { SpoolCatalogSettings } from '../components/SpoolCatalogSettings';
+import { ColorCatalogSettings } from '../components/ColorCatalogSettings';
 import { ExternalLinksSettings } from '../components/ExternalLinksSettings';
 import { VirtualPrinterSettings } from '../components/VirtualPrinterSettings';
 import { GitHubBackupSettings } from '../components/GitHubBackupSettings';
@@ -30,8 +33,41 @@ import { useTheme, type ThemeStyle, type DarkBackground, type LightBackground, t
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Palette } from 'lucide-react';
 
-const validTabs = ['general', 'network', 'plugs', 'email', 'notifications', 'filament', 'apikeys', 'virtual-printer', 'users', 'backup'] as const;
+const validTabs = ['general', 'network', 'plugs', 'notifications', 'filament', 'apikeys', 'virtual-printer', 'users', 'backup'] as const;
 type TabType = typeof validTabs[number];
+type UsersSubTab = 'users' | 'email';
+
+const STORAGE_CATEGORY_COLORS: Record<string, string> = {
+  database: 'bg-blue-600',
+  library_files: 'bg-green-500',
+  library_thumbnails: 'bg-teal-500',
+  library_other: 'bg-emerald-700',
+  archive_timelapses: 'bg-red-500',
+  archive_thumbnails: 'bg-amber-500',
+  archive_files: 'bg-sky-500',
+  virtual_printer_uploads: 'bg-purple-500',
+  virtual_printer_upload_cache: 'bg-fuchsia-500',
+  virtual_printer_certs: 'bg-violet-500',
+  virtual_printer_other: 'bg-purple-700',
+  downloads: 'bg-cyan-500',
+  plate_calibration: 'bg-lime-500',
+  logs: 'bg-orange-500',
+  other_data: 'bg-yellow-500',
+};
+
+const STORAGE_FALLBACK_COLORS = [
+  'bg-blue-500',
+  'bg-green-500',
+  'bg-yellow-500',
+  'bg-red-500',
+  'bg-orange-500',
+  'bg-teal-500',
+  'bg-cyan-500',
+  'bg-purple-500',
+];
+
+const getStorageColor = (key: string, index: number) =>
+  STORAGE_CATEGORY_COLORS[key] || STORAGE_FALLBACK_COLORS[index % STORAGE_FALLBACK_COLORS.length];
 
 export function SettingsPage() {
   const queryClient = useQueryClient();
@@ -56,14 +92,19 @@ export function SettingsPage() {
   const [showLogViewer, setShowLogViewer] = useState(false);
   const [defaultView, setDefaultViewState] = useState<string>(getDefaultView());
 
-  // Initialize tab from URL params
+  // Initialize tab from URL params (handle legacy ?tab=email → users tab + email sub-tab)
   const tabParam = searchParams.get('tab');
-  const initialTab = tabParam && validTabs.includes(tabParam as TabType) ? tabParam as TabType : 'general';
+  const isLegacyEmailTab = tabParam === 'email';
+  const initialTab = isLegacyEmailTab ? 'users' : (tabParam && validTabs.includes(tabParam as TabType) ? tabParam as TabType : 'general');
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
+  const [usersSubTab, setUsersSubTab] = useState<UsersSubTab>(isLegacyEmailTab ? 'email' : 'users');
 
   // Update URL when tab changes
   const handleTabChange = (tab: TabType) => {
     setActiveTab(tab);
+    if (tab === 'users') {
+      setUsersSubTab('users');
+    }
     if (tab === 'general') {
       searchParams.delete('tab');
     } else {
@@ -91,6 +132,7 @@ export function SettingsPage() {
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [changePasswordData, setChangePasswordData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [changePasswordLoading, setChangePasswordLoading] = useState(false);
+  const [storageUsageRefreshing, setStorageUsageRefreshing] = useState(false);
 
   // User management state
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
@@ -153,6 +195,33 @@ export function SettingsPage() {
     queryKey: ['settings'],
     queryFn: api.getSettings,
   });
+
+  const {
+    data: storageUsage,
+    isLoading: storageUsageLoading,
+    isFetching: storageUsageFetching,
+  } = useQuery<StorageUsageResponse>({
+    queryKey: ['storage-usage'],
+    queryFn: () => api.getStorageUsage(),
+    enabled: activeTab === 'general',
+    staleTime: Infinity,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+
+  const handleStorageUsageRefresh = async () => {
+    setStorageUsageRefreshing(true);
+    try {
+      const data = await api.getStorageUsage({ refresh: true });
+      queryClient.setQueryData(['storage-usage'], data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to refresh storage usage';
+      showToast(message, 'error');
+    } finally {
+      setStorageUsageRefreshing(false);
+    }
+  };
 
   const { data: smartPlugs, isLoading: plugsLoading } = useQuery({
     queryKey: ['smart-plugs'],
@@ -276,6 +345,7 @@ export function SettingsPage() {
   const { data: updateCheck, refetch: refetchUpdateCheck, isRefetching: isCheckingUpdate } = useQuery({
     queryKey: ['updateCheck'],
     queryFn: api.checkForUpdates,
+    enabled: settings?.check_updates !== false,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -763,6 +833,7 @@ export function SettingsPage() {
       settings.check_updates !== localSettings.check_updates ||
       (settings.check_printer_firmware ?? true) !== (localSettings.check_printer_firmware ?? true) ||
       settings.notification_language !== localSettings.notification_language ||
+      (settings.bed_cooled_threshold ?? 35) !== (localSettings.bed_cooled_threshold ?? 35) ||
       settings.ams_humidity_good !== localSettings.ams_humidity_good ||
       settings.ams_humidity_fair !== localSettings.ams_humidity_fair ||
       settings.ams_temp_good !== localSettings.ams_temp_good ||
@@ -827,6 +898,7 @@ export function SettingsPage() {
         check_updates: localSettings.check_updates,
         check_printer_firmware: localSettings.check_printer_firmware,
         notification_language: localSettings.notification_language,
+        bed_cooled_threshold: localSettings.bed_cooled_threshold,
         ams_humidity_good: localSettings.ams_humidity_good,
         ams_humidity_fair: localSettings.ams_humidity_fair,
         ams_temp_good: localSettings.ams_temp_good,
@@ -984,20 +1056,6 @@ export function SettingsPage() {
             <span className="text-xs bg-bambu-dark-tertiary px-1.5 py-0.5 rounded-full">
               {smartPlugs.length}
             </span>
-          )}
-        </button>
-        <button
-          onClick={() => handleTabChange('email')}
-          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
-            activeTab === 'email'
-              ? 'text-bambu-green border-bambu-green'
-              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
-          }`}
-        >
-          <Mail className="w-4 h-4" />
-          {t('settings.tabs.globalEmail') || 'Global Email'}
-          {advancedAuthStatus?.advanced_auth_enabled && (
-            <span className="w-2 h-2 rounded-full bg-green-400" />
           )}
         </button>
         <button
@@ -1558,51 +1616,58 @@ export function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <label className="block text-sm text-bambu-gray mb-1">
-                  Default filament cost (per kg)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={localSettings.default_filament_cost}
-                  onChange={(e) =>
-                    updateSetting('default_filament_cost', parseFloat(e.target.value) || 0)
-                  }
-                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                />
-              </div>
-              <div>
                 <label className="block text-sm text-bambu-gray mb-1">Currency</label>
                 <select
                   value={localSettings.currency}
                   onChange={(e) => updateSetting('currency', e.target.value)}
                   className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 >
-                  <option value="USD">USD ($)</option>
-                  <option value="EUR">EUR (€)</option>
-                  <option value="GBP">GBP (£)</option>
-                  <option value="CHF">CHF (Fr.)</option>
-                  <option value="JPY">JPY (¥)</option>
-                  <option value="CNY">CNY (¥)</option>
-                  <option value="CAD">CAD ($)</option>
-                  <option value="AUD">AUD ($)</option>
+                  {SUPPORTED_CURRENCIES.map((c) => (
+                    <option key={c.code} value={c.code}>{c.label}</option>
+                  ))}
                 </select>
+              </div>
+              <div>
+                <label className="block text-sm text-bambu-gray mb-1">
+                  Default filament cost (per kg)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-bambu-gray text-sm pointer-events-none">
+                    {getCurrencySymbol(localSettings.currency)}
+                  </span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={localSettings.default_filament_cost}
+                    onChange={(e) =>
+                      updateSetting('default_filament_cost', parseFloat(e.target.value) || 0)
+                    }
+                    style={{ paddingLeft: `${Math.max(2, getCurrencySymbol(localSettings.currency).length * 0.6 + 1)}rem` }}
+                    className="w-full pr-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
                   Electricity cost per kWh
                 </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={localSettings.energy_cost_per_kwh}
-                  onChange={(e) =>
-                    updateSetting('energy_cost_per_kwh', parseFloat(e.target.value) || 0)
-                  }
-                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                />
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-bambu-gray text-sm pointer-events-none">
+                    {getCurrencySymbol(localSettings.currency)}
+                  </span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={localSettings.energy_cost_per_kwh}
+                    onChange={(e) =>
+                      updateSetting('energy_cost_per_kwh', parseFloat(e.target.value) || 0)
+                    }
+                    style={{ paddingLeft: `${Math.max(2, getCurrencySymbol(localSettings.currency).length * 0.6 + 1)}rem` }}
+                    className="w-full pr-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
@@ -1872,6 +1937,107 @@ export function SettingsPage() {
                   <Trash2 className="w-4 h-4" />
                   Reset
                 </Button>
+              </div>
+              <div className="pt-4 border-t border-bambu-dark-tertiary">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white">{t('settings.storageUsage', 'Storage Usage')}</p>
+                    <p className="text-sm text-bambu-gray">
+                      {t('settings.storageUsageDescription', 'Breakdown of data usage by category')}
+                    </p>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleStorageUsageRefresh}
+                    disabled={storageUsageFetching || storageUsageRefreshing}
+                  >
+                    <RefreshCw
+                      className={`w-4 h-4 ${storageUsageFetching || storageUsageRefreshing ? 'animate-spin' : ''}`}
+                    />
+                    {t('common.refresh', 'Refresh')}
+                  </Button>
+                </div>
+                <div className="mt-3">
+                  {storageUsageLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-bambu-gray">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {t('common.loading', 'Loading')}
+                    </div>
+                  ) : storageUsage ? (
+                    <>
+                      <div className="w-full h-3 bg-bambu-dark rounded-full overflow-hidden flex">
+                        {storageUsage.categories
+                          .filter((category) => category.bytes > 0)
+                          .map((category, index) => (
+                            <div
+                              key={category.key}
+                              className={`${getStorageColor(category.key, index)} h-full`}
+                              style={{ width: `${category.percent_of_total}%` }}
+                              title={`${category.label}: ${category.formatted}`}
+                            />
+                          ))}
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-3">
+                        {storageUsage.categories
+                          .filter((category) => category.bytes > 0)
+                          .map((category, index) => (
+                            <div key={category.key} className="flex items-center gap-2 text-xs">
+                              <span
+                                className={`w-3 h-3 rounded-full ${getStorageColor(category.key, index)}`}
+                              />
+                              <span className="text-bambu-gray">{category.label}</span>
+                              <span className="text-white">{category.formatted}</span>
+                              <span className="text-bambu-gray">({category.percent_of_total.toFixed(1)}%)</span>
+                            </div>
+                          ))}
+                      </div>
+                      <div className="mt-2 text-xs text-bambu-gray">
+                        {t('settings.storageUsageTotal', 'Total')}: <span className="text-white">{storageUsage.total_formatted}</span>
+                        {storageUsage.scan_errors > 0 && (
+                          <span className="ml-2 text-amber-400">
+                            {t('settings.storageUsageErrors', 'Scan errors')}: {storageUsage.scan_errors}
+                          </span>
+                        )}
+                      </div>
+                      {storageUsage.other_breakdown?.length > 0 && (
+                        <div className="mt-4">
+                          <p className="text-xs text-bambu-gray mb-2">
+                            {t('settings.storageUsageOtherBreakdown', 'Other breakdown')}
+                          </p>
+                          <div className="space-y-2">
+                            {storageUsage.other_breakdown.map((item) => (
+                              <div key={`${item.bucket}-${item.kind}`} className="flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-white">{item.label}</span>
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full border ${
+                                      item.kind === 'system'
+                                        ? 'border-slate-500 text-slate-300'
+                                        : 'border-bambu-green text-bambu-green'
+                                    }`}
+                                  >
+                                    {item.kind === 'system'
+                                      ? t('settings.storageUsageSystem', 'System')
+                                      : t('settings.storageUsageData', 'Data')}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 text-bambu-gray">
+                                  <span className="text-white">{item.formatted}</span>
+                                  <span>({item.percent_of_total.toFixed(1)}%)</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-sm text-bambu-gray">
+                      {t('settings.storageUsageUnavailable', 'Storage usage data is unavailable')}
+                    </p>
+                  )}
+                </div>
               </div>
               <div className="flex items-center justify-between pt-4 border-t border-bambu-dark-tertiary">
                 <div>
@@ -2532,7 +2698,7 @@ export function SettingsPage() {
                       </div>
                       {(localSettings?.energy_cost_per_kwh ?? 0) > 0 && (
                         <div className="text-xs text-bambu-gray mt-1">
-                          ~{(plugEnergySummary.totalToday * (localSettings?.energy_cost_per_kwh ?? 0)).toFixed(2)} {localSettings?.currency}
+                          ~{(plugEnergySummary.totalToday * (localSettings?.energy_cost_per_kwh ?? 0)).toFixed(2)} {getCurrencySymbol(localSettings?.currency || 'USD')}
                         </div>
                       )}
                     </div>
@@ -2549,7 +2715,7 @@ export function SettingsPage() {
                       </div>
                       {(localSettings?.energy_cost_per_kwh ?? 0) > 0 && (
                         <div className="text-xs text-bambu-gray mt-1">
-                          ~{(plugEnergySummary.totalYesterday * (localSettings?.energy_cost_per_kwh ?? 0)).toFixed(2)} {localSettings?.currency}
+                          ~{(plugEnergySummary.totalYesterday * (localSettings?.energy_cost_per_kwh ?? 0)).toFixed(2)} {getCurrencySymbol(localSettings?.currency || 'USD')}
                         </div>
                       )}
                     </div>
@@ -2566,7 +2732,7 @@ export function SettingsPage() {
                       </div>
                       {(localSettings?.energy_cost_per_kwh ?? 0) > 0 && (
                         <div className="text-xs text-bambu-gray mt-1">
-                          ~{(plugEnergySummary.totalLifetime * (localSettings?.energy_cost_per_kwh ?? 0)).toFixed(2)} {localSettings?.currency}
+                          ~{(plugEnergySummary.totalLifetime * (localSettings?.energy_cost_per_kwh ?? 0)).toFixed(2)} {getCurrencySymbol(localSettings?.currency || 'USD')}
                         </div>
                       )}
                     </div>
@@ -2693,6 +2859,30 @@ export function SettingsPage() {
               </CardContent>
             </Card>
 
+            {/* Bed Cooled Threshold Setting */}
+            <Card className="mb-4">
+              <CardContent className="py-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white text-sm font-medium">{t('settings.bedCooledThreshold')}</p>
+                    <p className="text-xs text-bambu-gray">{t('settings.bedCooledThresholdDescription')}</p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={20}
+                      max={80}
+                      step={1}
+                      value={localSettings.bed_cooled_threshold ?? 35}
+                      onChange={(e) => updateSetting('bed_cooled_threshold', Number(e.target.value))}
+                      className="w-16 px-2 py-1.5 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm text-center focus:outline-none focus:ring-1 focus:ring-bambu-green"
+                    />
+                    <span className="text-sm text-bambu-gray">°C</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Test All Results */}
             {testAllResult && (
               <Card className="mb-4">
@@ -2787,7 +2977,7 @@ export function SettingsPage() {
               </div>
             ) : notificationTemplates && notificationTemplates.length > 0 ? (
               <div className="space-y-2">
-                {notificationTemplates.map((template) => (
+                {[...notificationTemplates].sort((a, b) => a.name.localeCompare(b.name)).map((template) => (
                   <Card
                     key={template.id}
                     className="cursor-pointer hover:border-bambu-green/50 transition-colors"
@@ -3145,9 +3335,12 @@ export function SettingsPage() {
 
       {/* Filament Tab */}
       {activeTab === 'filament' && localSettings && (
+        <>
         <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
-          {/* Left Column - AMS Display Thresholds */}
-          <div className="flex-1 lg:max-w-xl">
+          {/* Left Column (1/3) - Mode Selector + AMS Thresholds */}
+          <div className="lg:w-1/3 space-y-6">
+            <SpoolmanSettings />
+
             <Card>
               <CardHeader>
                 <h2 className="text-lg font-semibold text-white">{t('settings.amsDisplayThresholds')}</h2>
@@ -3306,11 +3499,13 @@ export function SettingsPage() {
             </Card>
           </div>
 
-          {/* Right Column - Spoolman Integration */}
-          <div className="flex-1 lg:max-w-xl">
-            <SpoolmanSettings />
+          {/* Right Column (2/3) - Spool Catalog + Color Catalog */}
+          <div className="lg:w-2/3 space-y-6">
+            <SpoolCatalogSettings />
+            <ColorCatalogSettings />
           </div>
         </div>
+        </>
       )}
 
       {/* Delete API Key Confirmation */}
@@ -3474,6 +3669,38 @@ export function SettingsPage() {
       {/* Users Tab */}
       {activeTab === 'users' && (
         <div className="space-y-6">
+          {/* Sub-tab Navigation */}
+          <div className="flex gap-1 border-b border-bambu-dark-tertiary">
+            <button
+              onClick={() => setUsersSubTab('users')}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
+                usersSubTab === 'users'
+                  ? 'text-bambu-green border-bambu-green'
+                  : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              {t('settings.tabs.users')}
+            </button>
+            <button
+              onClick={() => setUsersSubTab('email')}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
+                usersSubTab === 'email'
+                  ? 'text-bambu-green border-bambu-green'
+                  : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
+              }`}
+            >
+              <Mail className="w-4 h-4" />
+              {t('settings.tabs.emailAuth') || 'Email Authentication'}
+              {advancedAuthStatus?.advanced_auth_enabled && (
+                <span className="w-2 h-2 rounded-full bg-green-400" />
+              )}
+            </button>
+          </div>
+
+          {/* Users Sub-tab */}
+          {usersSubTab === 'users' && (
+          <>
           {/* Auth Toggle Header */}
           <Card>
             <CardContent className="py-4">
@@ -3775,6 +4002,15 @@ export function SettingsPage() {
                 </div>
               </CardContent>
             </Card>
+          )}
+          </>
+          )}
+
+          {/* Email Auth Sub-tab */}
+          {usersSubTab === 'email' && (
+            <div className="max-w-2xl">
+              <EmailSettings />
+            </div>
           )}
         </div>
       )}
@@ -4395,13 +4631,6 @@ export function SettingsPage() {
           }}
           onCancel={() => setDeleteGroupId(null)}
         />
-      )}
-
-      {/* Email Tab */}
-      {activeTab === 'email' && (
-        <div className="max-w-2xl">
-          <EmailSettings />
-        </div>
       )}
 
       {/* Backup Tab */}

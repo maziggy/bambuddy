@@ -32,6 +32,7 @@ const mockSettings = {
   ha_token: '',
   check_updates: false,
   check_printer_firmware: false,
+  bed_cooled_threshold: 35,
 };
 
 describe('SettingsPage', () => {
@@ -86,7 +87,7 @@ describe('SettingsPage', () => {
         expect(screen.getAllByText('General').length).toBeGreaterThan(0);
         expect(screen.getByText('Smart Plugs')).toBeInTheDocument();
         expect(screen.getByText('Notifications')).toBeInTheDocument();
-        expect(screen.getByText('Filament')).toBeInTheDocument();
+        expect(screen.getAllByText('Filament').length).toBeGreaterThan(0);
         expect(screen.getByText('Network')).toBeInTheDocument();
         expect(screen.getByText('API Keys')).toBeInTheDocument();
       });
@@ -207,10 +208,10 @@ describe('SettingsPage', () => {
       render(<SettingsPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Filament')).toBeInTheDocument();
+        expect(screen.getAllByText('Filament').length).toBeGreaterThan(0);
       });
 
-      await user.click(screen.getByText('Filament'));
+      await user.click(screen.getAllByText('Filament')[0]);
 
       await waitFor(() => {
         expect(screen.getByText('AMS Display Thresholds')).toBeInTheDocument();

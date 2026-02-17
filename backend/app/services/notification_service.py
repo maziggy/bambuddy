@@ -188,7 +188,9 @@ class NotificationService:
         else:
             return False, f"HTTP {response.status_code}: {response.text[:200]}"
 
-    async def _send_ntfy(self, config: dict, title: str, message: str) -> tuple[bool, str]:
+    async def _send_ntfy(
+        self, config: dict, title: str, message: str, image_data: bytes | None = None
+    ) -> tuple[bool, str]:
         """Send notification via ntfy."""
         server = config.get("server", "https://ntfy.sh").rstrip("/")
         topic = config.get("topic", "").strip()
@@ -204,7 +206,14 @@ class NotificationService:
             headers["Authorization"] = f"Bearer {auth_token}"
 
         client = await self._get_client()
-        response = await client.post(url, content=message, headers=headers)
+
+        if image_data:
+            # ntfy supports image attachments via multipart form-data
+            headers["Filename"] = "photo.jpg"
+            headers["Message"] = message
+            response = await client.put(url, content=image_data, headers=headers)
+        else:
+            response = await client.post(url, content=message, headers=headers)
 
         if response.status_code in (200, 204):
             return True, "Message sent successfully"
@@ -257,7 +266,7 @@ class NotificationService:
             except Exception:
                 return False, f"HTTP {response.status_code}: {response.text[:200]}"
 
-    async def _send_telegram(self, config: dict, message: str) -> tuple[bool, str]:
+    async def _send_telegram(self, config: dict, message: str, image_data: bytes | None = None) -> tuple[bool, str]:
         """Send notification via Telegram bot."""
         bot_token = config.get("bot_token", "").strip()
         chat_id = config.get("chat_id", "").strip()
@@ -265,24 +274,33 @@ class NotificationService:
         if not bot_token or not chat_id:
             return False, "Bot token and chat ID are required"
 
-        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-
-        # Check if message contains characters that break Markdown parsing
-        # URLs and error codes with underscores cause issues
-        has_url = "http://" in message or "https://" in message
-        # Check for underscores outside of the bold title (odd number of _ breaks markdown)
-        body_part = message.split("\n", 1)[1] if "\n" in message else ""
-        has_problematic_underscore = "_" in body_part
-
-        data = {
-            "chat_id": chat_id,
-            "text": message,
-        }
-        if not has_url and not has_problematic_underscore:
-            data["parse_mode"] = "Markdown"
+        # Escape underscores in the message body so Telegram Markdown
+        # parsing doesn't break on job names like "A1_plate_8" or error
+        # codes like "0300_0001".  The title is already wrapped in *bold*
+        # markers, so only escape after the first newline.
+        if "\n" in message:
+            title_part, body_part = message.split("\n", 1)
+            body_part = body_part.replace("_", "\\_")
+            message = f"{title_part}\n{body_part}"
 
         client = await self._get_client()
-        response = await client.post(url, json=data)
+
+        if image_data:
+            # Use sendPhoto to attach the thumbnail with the caption
+            url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+            response = await client.post(
+                url,
+                data={"chat_id": chat_id, "caption": message, "parse_mode": "Markdown"},
+                files={"photo": ("photo.jpg", image_data, "image/jpeg")},
+            )
+        else:
+            url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+            data = {
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "Markdown",
+            }
+            response = await client.post(url, json=data)
 
         if response.status_code == 200:
             result = response.json()
@@ -344,7 +362,9 @@ class NotificationService:
         except Exception as e:
             return False, f"Email error: {str(e)}"
 
-    async def _send_discord(self, config: dict, title: str, message: str) -> tuple[bool, str]:
+    async def _send_discord(
+        self, config: dict, title: str, message: str, image_data: bytes | None = None
+    ) -> tuple[bool, str]:
         """Send notification via Discord webhook."""
         webhook_url = config.get("webhook_url", "").strip()
 
@@ -355,18 +375,25 @@ class NotificationService:
             return False, "Invalid Discord webhook URL"
 
         # Discord embed format for nicer messages
-        data = {
-            "embeds": [
-                {
-                    "title": title,
-                    "description": message,
-                    "color": 0x00AE42,  # Bambu green
-                }
-            ]
+        embed = {
+            "title": title,
+            "description": message,
+            "color": 0x00AE42,  # Bambu green
         }
 
         client = await self._get_client()
-        response = await client.post(webhook_url, json=data)
+
+        if image_data:
+            # Attach image via multipart form-data and reference in embed
+            embed["image"] = {"url": "attachment://photo.jpg"}
+            payload = {"embeds": [embed]}
+            response = await client.post(
+                webhook_url,
+                data={"payload_json": json.dumps(payload)},
+                files={"files[0]": ("photo.jpg", image_data, "image/jpeg")},
+            )
+        else:
+            response = await client.post(webhook_url, json={"embeds": [embed]})
 
         if response.status_code in (200, 204):
             return True, "Message sent successfully"
@@ -441,15 +468,15 @@ class NotificationService:
             if provider.provider_type == "callmebot":
                 return await self._send_callmebot(config, f"{title}\n{message}")
             elif provider.provider_type == "ntfy":
-                return await self._send_ntfy(config, title, message)
+                return await self._send_ntfy(config, title, message, image_data=image_data)
             elif provider.provider_type == "pushover":
                 return await self._send_pushover(config, title, message, image_data=image_data)
             elif provider.provider_type == "telegram":
-                return await self._send_telegram(config, f"*{title}*\n{message}")
+                return await self._send_telegram(config, f"*{title}*\n{message}", image_data=image_data)
             elif provider.provider_type == "email":
                 return await self._send_email(config, title, message)
             elif provider.provider_type == "discord":
-                return await self._send_discord(config, title, message)
+                return await self._send_discord(config, title, message, image_data=image_data)
             elif provider.provider_type == "webhook":
                 return await self._send_webhook(config, title, message)
             else:
@@ -718,6 +745,32 @@ class NotificationService:
             if archive_data.get("finish_photo_url"):
                 variables["finish_photo_url"] = archive_data["finish_photo_url"]
 
+            # Build per-slot breakdown string with AMS info when available
+            if archive_data.get("usage_results"):
+                parts = []
+                for u in archive_data["usage_results"]:
+                    ams_id = u.get("ams_id", 0)
+                    tray_id = u.get("tray_id", 0)
+                    material = u.get("material", "Unknown") or "Unknown"
+                    used = u.get("weight_used", 0)
+                    if ams_id >= 128:
+                        slot_label = "Ext"
+                    else:
+                        slot_label = f"AMS-{chr(65 + ams_id)} T{tray_id + 1}"
+                    parts.append(f"{slot_label} {material}: {used:.1f}g")
+                variables["filament_details"] = " | ".join(parts)
+            elif archive_data.get("filament_slots"):
+                parts = []
+                for slot in archive_data["filament_slots"]:
+                    ftype = slot.get("type", "Unknown") or "Unknown"
+                    used = slot.get("used_g", 0)
+                    parts.append(f"{ftype}: {used:.1f}g")
+                variables["filament_details"] = " | ".join(parts)
+
+            # Add progress for partial prints
+            if archive_data.get("progress") is not None:
+                variables["progress"] = str(archive_data["progress"])
+
         # Extract image data for providers that support attachments (e.g. Pushover)
         image_data = None
         if archive_data:
@@ -979,6 +1032,30 @@ class NotificationService:
         await self._send_to_providers(
             providers, title, message, db, "ams_ht_temperature_high", printer_id, printer_name, force_immediate=True
         )
+
+    async def on_bed_cooled(
+        self,
+        printer_id: int,
+        printer_name: str,
+        bed_temp: float,
+        threshold: float,
+        filename: str,
+        db: AsyncSession,
+    ):
+        """Handle bed cooled event - bed temperature dropped below threshold after print."""
+        providers = await self._get_providers_for_event(db, "on_bed_cooled", printer_id)
+        if not providers:
+            return
+
+        variables = {
+            "printer": printer_name,
+            "bed_temp": f"{bed_temp:.0f}",
+            "threshold": f"{threshold:.0f}",
+            "filename": self._clean_filename(filename) if filename else "Unknown",
+        }
+
+        title, message = await self._build_message_from_template(db, "bed_cooled", variables)
+        await self._send_to_providers(providers, title, message, db, "bed_cooled", printer_id, printer_name)
 
     def clear_template_cache(self):
         """Clear the template cache. Call this when templates are updated."""

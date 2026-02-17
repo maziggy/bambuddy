@@ -887,3 +887,65 @@ class TestChamberLightAPI:
 
             assert response.status_code == 500
             assert "failed" in response.json()["detail"].lower()
+
+
+class TestClearHMSErrorsAPI:
+    """Integration tests for clear HMS errors endpoint."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_clear_hms_errors_not_found(self, async_client: AsyncClient):
+        """Verify 404 for non-existent printer."""
+        response = await async_client.post("/api/v1/printers/99999/hms/clear")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_clear_hms_errors_not_connected(self, async_client: AsyncClient, printer_factory):
+        """Verify error when printer is not connected."""
+        printer = await printer_factory(name="Disconnected Printer")
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = None
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/hms/clear")
+
+            assert response.status_code == 400
+            assert "not connected" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_clear_hms_errors_success(self, async_client: AsyncClient, printer_factory):
+        """Verify successful clear HMS errors request."""
+        printer = await printer_factory(name="Test Printer")
+
+        mock_client = MagicMock()
+        mock_client.clear_hms_errors.return_value = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/hms/clear")
+
+            assert response.status_code == 200
+            result = response.json()
+            assert result["success"] is True
+            assert "cleared" in result["message"].lower()
+            mock_client.clear_hms_errors.assert_called_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_clear_hms_errors_failure(self, async_client: AsyncClient, printer_factory):
+        """Verify error handling when clear HMS errors fails."""
+        printer = await printer_factory(name="Test Printer")
+
+        mock_client = MagicMock()
+        mock_client.clear_hms_errors.return_value = False
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/hms/clear")
+
+            assert response.status_code == 500
+            assert "failed" in response.json()["detail"].lower()

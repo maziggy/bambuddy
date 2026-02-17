@@ -14,6 +14,7 @@ import { FileManagerPage } from './pages/FileManagerPage';
 import { CameraPage } from './pages/CameraPage';
 import { StreamOverlayPage } from './pages/StreamOverlayPage';
 import { ExternalLinkPage } from './pages/ExternalLinkPage';
+import InventoryPage from './pages/InventoryPage';
 import { SystemInfoPage } from './pages/SystemInfoPage';
 import { LoginPage } from './pages/LoginPage';
 import { SetupPage } from './pages/SetupPage';
@@ -122,6 +123,7 @@ function App() {
                   <Route path="maintenance" element={<MaintenancePage />} />
                   <Route path="projects" element={<ProjectsPage />} />
                   <Route path="projects/:id" element={<ProjectDetailPage />} />
+                  <Route path="inventory" element={<InventoryPage />} />
                   <Route path="files" element={<FileManagerPage />} />
                   <Route path="settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
                   <Route path="users" element={<Navigate to="/settings?tab=users" replace />} />

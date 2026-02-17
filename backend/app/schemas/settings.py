@@ -39,6 +39,11 @@ class AppSettings(BaseModel):
     # Language
     notification_language: str = Field(default="en", description="Language for push notifications (en, de)")
 
+    # Bed cooled notification threshold
+    bed_cooled_threshold: float = Field(
+        default=35.0, description="Bed temperature threshold for cooled notification (°C)"
+    )
+
     # AMS threshold settings for humidity and temperature coloring
     ams_humidity_good: int = Field(default=40, description="Humidity threshold for good (green): <= this value")
     ams_humidity_fair: int = Field(
@@ -161,6 +166,7 @@ class AppSettingsUpdate(BaseModel):
     check_updates: bool | None = None
     check_printer_firmware: bool | None = None
     notification_language: str | None = None
+    bed_cooled_threshold: float | None = None
     ams_humidity_good: int | None = None
     ams_humidity_fair: int | None = None
     ams_temp_good: float | None = None

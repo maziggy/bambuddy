@@ -192,6 +192,49 @@ class TestCameraAPI:
         assert response.status_code == 503
         assert "Failed to capture" in response.json()["detail"]
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_snapshot_external_camera_success(self, async_client: AsyncClient, printer_factory):
+        """Verify snapshot uses external camera when configured."""
+        printer = await printer_factory(
+            external_camera_enabled=True,
+            external_camera_url="http://192.168.1.50/mjpeg",
+            external_camera_type="mjpeg",
+        )
+
+        fake_jpeg = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+
+        with patch(
+            "backend.app.services.external_camera.capture_frame",
+            new_callable=AsyncMock,
+            return_value=fake_jpeg,
+        ):
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/snapshot")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/jpeg"
+        assert response.content == fake_jpeg
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_snapshot_external_camera_failure(self, async_client: AsyncClient, printer_factory):
+        """Verify 503 when external camera capture fails."""
+        printer = await printer_factory(
+            external_camera_enabled=True,
+            external_camera_url="http://192.168.1.50/mjpeg",
+            external_camera_type="mjpeg",
+        )
+
+        with patch(
+            "backend.app.services.external_camera.capture_frame",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/snapshot")
+
+        assert response.status_code == 503
+        assert "external camera" in response.json()["detail"].lower()
+
     # ========================================================================
     # Camera Stream Endpoint
     # ========================================================================

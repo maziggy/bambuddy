@@ -18,6 +18,18 @@ export function getAuthToken(): string | null {
   return authToken;
 }
 
+function parseContentDispositionFilename(header: string | null): string | null {
+  if (!header) return null;
+  // RFC 5987: filename*=utf-8''percent-encoded-name
+  const rfc5987Match = header.match(/filename\*=(?:UTF-8|utf-8)''(.+?)(?:;|$)/);
+  if (rfc5987Match) {
+    try { return decodeURIComponent(rfc5987Match[1]); } catch { /* fall through */ }
+  }
+  // Standard: filename="name" or filename=name
+  const standardMatch = header.match(/filename="?([^";\n]+)"?/);
+  return standardMatch?.[1] || null;
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -192,7 +204,7 @@ export interface PrinterStatus {
   hms_errors: HMSError[];
   ams: AMSUnit[];
   ams_exists: boolean;
-  vt_tray: AMSTray | null;  // Virtual tray / external spool
+  vt_tray: AMSTray[];  // Virtual tray / external spool(s)
   sdcard: boolean;  // SD card inserted
   store_to_sdcard: boolean;  // Store sent files on SD card
   timelapse: boolean;  // Timelapse recording active
@@ -237,6 +249,7 @@ export interface PrinterStatus {
   big_fan1_speed: number | null;     // Auxiliary fan
   big_fan2_speed: number | null;     // Chamber/exhaust fan
   heatbreak_fan_speed: number | null; // Hotend heatbreak fan
+  firmware_version: string | null;   // Firmware version from MQTT
 }
 
 export interface PrinterCreate {
@@ -354,6 +367,28 @@ export interface Archive {
   // User tracking (Issue #206)
   created_by_id: number | null;
   created_by_username: string | null;
+}
+
+export interface PrintLogEntry {
+  id: number;
+  print_name: string | null;
+  printer_name: string | null;
+  printer_id: number | null;
+  status: string;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_seconds: number | null;
+  filament_type: string | null;
+  filament_color: string | null;
+  filament_used_grams: number | null;
+  thumbnail_path: string | null;
+  created_by_username: string | null;
+  created_at: string;
+}
+
+export interface PrintLogResponse {
+  items: PrintLogEntry[];
+  total: number;
 }
 
 export interface ArchiveStats {
@@ -778,6 +813,8 @@ export interface AppSettings {
   // Prometheus metrics
   prometheus_enabled: boolean;
   prometheus_token: string;
+  // Bed cooled threshold
+  bed_cooled_threshold: number;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
@@ -812,6 +849,29 @@ export interface SlicerSetting {
   version: string | null;
   user_id: string | null;
   updated_time: string | null;
+  is_custom: boolean;
+}
+
+export interface SpoolCatalogEntry {
+  id: number;
+  name: string;
+  weight: number;
+  is_default: boolean;
+}
+
+export interface ColorCatalogEntry {
+  id: number;
+  manufacturer: string;
+  color_name: string;
+  hex_color: string;
+  material: string | null;
+  is_default: boolean;
+}
+
+export interface ColorLookupResult {
+  found: boolean;
+  hex_color: string | null;
+  material: string | null;
 }
 
 export interface SlicerSettingsResponse {
@@ -851,6 +911,12 @@ export interface SlicerSettingUpdate {
 export interface SlicerSettingDeleteResponse {
   success: boolean;
   message: string;
+}
+
+// Built-in filament fallback (static table from backend)
+export interface BuiltinFilament {
+  filament_id: string;
+  name: string;
 }
 
 // Local preset types (OrcaSlicer imports)
@@ -1170,6 +1236,7 @@ export interface PrintQueueItem {
   library_file_thumbnail?: string | null;
   printer_name?: string | null;
   print_time_seconds?: number | null;  // Estimated print time from archive or library file
+  filament_used_grams?: number | null;  // Estimated print weight from archive or library file
   // User tracking (Issue #206)
   created_by_id?: number | null;
   created_by_username?: string | null;
@@ -1360,6 +1427,8 @@ export interface NotificationProvider {
   on_ams_ht_temperature_high: boolean;
   // Build plate detection
   on_plate_not_empty: boolean;
+  // Bed cooled
+  on_bed_cooled: boolean;
   // Print queue events
   on_queue_job_added: boolean;
   on_queue_job_assigned: boolean;
@@ -1410,6 +1479,8 @@ export interface NotificationProviderCreate {
   on_ams_ht_temperature_high?: boolean;
   // Build plate detection
   on_plate_not_empty?: boolean;
+  // Bed cooled
+  on_bed_cooled?: boolean;
   // Print queue events
   on_queue_job_added?: boolean;
   on_queue_job_assigned?: boolean;
@@ -1453,6 +1524,8 @@ export interface NotificationProviderUpdate {
   on_ams_ht_temperature_high?: boolean;
   // Build plate detection
   on_plate_not_empty?: boolean;
+  // Bed cooled
+  on_bed_cooled?: boolean;
   // Print queue events
   on_queue_job_added?: boolean;
   on_queue_job_assigned?: boolean;
@@ -1686,6 +1759,85 @@ export interface LinkedSpoolsMap {
   linked: Record<string, LinkedSpoolInfo>; // tag (uppercase) -> spool info
 }
 
+// Inventory types
+export interface InventorySpool {
+  id: number;
+  material: string;
+  subtype: string | null;
+  color_name: string | null;
+  rgba: string | null;
+  brand: string | null;
+  label_weight: number;
+  core_weight: number;
+  weight_used: number;
+  slicer_filament: string | null;
+  slicer_filament_name: string | null;
+  nozzle_temp_min: number | null;
+  nozzle_temp_max: number | null;
+  note: string | null;
+  added_full: boolean | null;
+  last_used: string | null;
+  encode_time: string | null;
+  tag_uid: string | null;
+  tray_uuid: string | null;
+  data_origin: string | null;
+  tag_type: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+  k_profiles?: SpoolKProfile[];
+}
+
+export interface SpoolUsageRecord {
+  id: number;
+  spool_id: number;
+  printer_id: number | null;
+  print_name: string | null;
+  weight_used: number;
+  percent_used: number;
+  status: string;
+  created_at: string;
+}
+
+export interface SpoolKProfile {
+  id: number;
+  spool_id: number;
+  printer_id: number;
+  extruder: number;
+  nozzle_diameter: string;
+  nozzle_type: string | null;
+  k_value: number;
+  name: string | null;
+  cali_idx: number | null;
+  setting_id: string | null;
+  created_at: string;
+}
+
+export interface SpoolKProfileInput {
+  printer_id: number;
+  extruder?: number;
+  nozzle_diameter?: string;
+  nozzle_type?: string | null;
+  k_value: number;
+  name?: string | null;
+  cali_idx?: number | null;
+  setting_id?: string | null;
+}
+
+export interface SpoolAssignment {
+  id: number;
+  spool_id: number;
+  printer_id: number;
+  printer_name: string | null;
+  ams_id: number;
+  tray_id: number;
+  fingerprint_color: string | null;
+  fingerprint_type: string | null;
+  spool?: InventorySpool | null;
+  configured: boolean;
+  created_at: string;
+}
+
 // Update types
 export interface VersionInfo {
   version: string;
@@ -1792,6 +1944,7 @@ export interface ExternalLink {
   name: string;
   url: string;
   icon: string;
+  open_in_new_tab: boolean;
   custom_icon: string | null;
   sort_order: number;
   created_at: string;
@@ -1802,12 +1955,14 @@ export interface ExternalLinkCreate {
   name: string;
   url: string;
   icon: string;
+  open_in_new_tab?: boolean;
 }
 
 export interface ExternalLinkUpdate {
   name?: string;
   url?: string;
   icon?: string;
+  open_in_new_tab?: boolean;
 }
 
 // Permission type - all available permissions
@@ -2019,7 +2174,7 @@ export const api = {
     request<{ message: string; auth_enabled: boolean }>('/auth/disable', {
       method: 'POST',
     }),
-  
+
   // Advanced Authentication
   testSMTP: (data: TestSMTPRequest) =>
     request<TestSMTPResponse>('/auth/smtp/test', {
@@ -2155,6 +2310,10 @@ export const api = {
     request<{ success: boolean; message: string }>(`/printers/${printerId}/print/resume`, {
       method: 'POST',
     }),
+  clearPlate: (printerId: number) =>
+    request<{ success: boolean; message: string }>(`/printers/${printerId}/clear-plate`, {
+      method: 'POST',
+    }),
 
   // Get current print user (for reprint tracking - Issue #206)
   getCurrentPrintUser: (printerId: number) =>
@@ -2184,6 +2343,10 @@ export const api = {
         body: JSON.stringify(objectIds),
       }
     ),
+
+  // HMS Errors
+  clearHMSErrors: (printerId: number) =>
+    request<{ success: boolean; message: string }>(`/printers/${printerId}/hms/clear`, { method: 'POST' }),
 
   // AMS Control
   refreshAmsSlot: (printerId: number, amsId: number, slotId: number) =>
@@ -2263,8 +2426,7 @@ export const api = {
       throw new Error(error.detail || `HTTP ${response.status}`);
     }
     const disposition = response.headers.get('Content-Disposition');
-    const filenameMatch = disposition?.match(/filename="?([^";\n]+)"?/);
-    const filename = filenameMatch?.[1] || path.split('/').pop() || 'download';
+    const filename = parseContentDispositionFilename(disposition) || path.split('/').pop() || 'download';
     const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -2464,8 +2626,7 @@ export const api = {
       throw new Error(error.detail || `HTTP ${response.status}`);
     }
     const disposition = response.headers.get('Content-Disposition');
-    const filenameMatch = disposition?.match(/filename="?([^";\n]+)"?/);
-    const downloadFilename = filenameMatch?.[1] || filename || `archive_${id}.3mf`;
+    const downloadFilename = parseContentDispositionFilename(disposition) || filename || `archive_${id}.3mf`;
     const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -2605,8 +2766,7 @@ export const api = {
       throw new Error(error.detail || `HTTP ${response.status}`);
     }
     const disposition = response.headers.get('Content-Disposition');
-    const filenameMatch = disposition?.match(/filename="?([^";\n]+)"?/);
-    const filename = filenameMatch?.[1] || `source_${archiveId}.3mf`;
+    const filename = parseContentDispositionFilename(disposition) || `source_${archiveId}.3mf`;
     const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -2655,8 +2815,7 @@ export const api = {
       throw new Error(error.detail || `HTTP ${response.status}`);
     }
     const disposition = response.headers.get('Content-Disposition');
-    const filenameMatch = disposition?.match(/filename="?([^";\n]+)"?/);
-    const filename = filenameMatch?.[1] || `archive_${archiveId}.f3d`;
+    const filename = parseContentDispositionFilename(disposition) || `archive_${archiveId}.f3d`;
     const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -2822,6 +2981,32 @@ export const api = {
     return response.json();
   },
 
+  // Print Log
+  getPrintLog: (params?: {
+    search?: string;
+    printerId?: number;
+    username?: string;
+    status?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.printerId) searchParams.set('printer_id', String(params.printerId));
+    if (params?.username) searchParams.set('created_by_username', params.username);
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.dateFrom) searchParams.set('date_from', params.dateFrom);
+    if (params?.dateTo) searchParams.set('date_to', params.dateTo);
+    if (params?.limit) searchParams.set('limit', String(params.limit));
+    if (params?.offset !== undefined) searchParams.set('offset', String(params.offset));
+    return request<PrintLogResponse>(`/print-log/?${searchParams}`);
+  },
+  getPrintLogThumbnail: (id: number) => `${API_BASE}/print-log/${id}/thumbnail`,
+  clearPrintLog: () =>
+    request<{ deleted: number }>('/print-log/', { method: 'DELETE' }),
+
   // Settings
   getSettings: () => request<AppSettings>('/settings/'),
   updateSettings: (data: AppSettingsUpdate) =>
@@ -2903,6 +3088,10 @@ export const api = {
     request<{ success: boolean }>('/cloud/logout', { method: 'POST' }),
   getCloudSettings: (version = '02.04.00.70') =>
     request<SlicerSettingsResponse>(`/cloud/settings?version=${version}`),
+  getBuiltinFilaments: () =>
+    request<BuiltinFilament[]>('/cloud/builtin-filaments'),
+  getFilamentIdMap: () =>
+    request<Record<string, string>>('/cloud/filament-id-map'),
   getCloudSettingDetail: (settingId: string) =>
     request<SlicerSettingDetail>(`/cloud/settings/${settingId}`),
   createCloudSetting: (data: SlicerSettingCreate) =>
@@ -3242,6 +3431,82 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  // Inventory
+  getSpools: (includeArchived = false) =>
+    request<InventorySpool[]>(`/inventory/spools?include_archived=${includeArchived}`),
+  getSpool: (id: number) => request<InventorySpool>(`/inventory/spools/${id}`),
+  createSpool: (data: Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>) =>
+    request<InventorySpool>('/inventory/spools', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateSpool: (id: number, data: Partial<Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>>) =>
+    request<InventorySpool>(`/inventory/spools/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteSpool: (id: number) =>
+    request<{ status: string }>(`/inventory/spools/${id}`, { method: 'DELETE' }),
+  archiveSpool: (id: number) =>
+    request<InventorySpool>(`/inventory/spools/${id}/archive`, { method: 'POST' }),
+  restoreSpool: (id: number) =>
+    request<InventorySpool>(`/inventory/spools/${id}/restore`, { method: 'POST' }),
+  getSpoolKProfiles: (spoolId: number) =>
+    request<SpoolKProfile[]>(`/inventory/spools/${spoolId}/k-profiles`),
+  saveSpoolKProfiles: (spoolId: number, profiles: SpoolKProfileInput[]) =>
+    request<SpoolKProfile[]>(`/inventory/spools/${spoolId}/k-profiles`, {
+      method: 'PUT',
+      body: JSON.stringify(profiles),
+    }),
+  getAssignments: (printerId?: number) =>
+    request<SpoolAssignment[]>(`/inventory/assignments${printerId ? `?printer_id=${printerId}` : ''}`),
+  assignSpool: (data: { spool_id: number; printer_id: number; ams_id: number; tray_id: number }) =>
+    request<SpoolAssignment>('/inventory/assignments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  unassignSpool: (printerId: number, amsId: number, trayId: number) =>
+    request<{ status: string }>(`/inventory/assignments/${printerId}/${amsId}/${trayId}`, { method: 'DELETE' }),
+  getSpoolCatalog: () =>
+    request<SpoolCatalogEntry[]>('/inventory/catalog'),
+  addCatalogEntry: (data: { name: string; weight: number }) =>
+    request<SpoolCatalogEntry>('/inventory/catalog', { method: 'POST', body: JSON.stringify(data) }),
+  updateCatalogEntry: (id: number, data: { name: string; weight: number }) =>
+    request<SpoolCatalogEntry>(`/inventory/catalog/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteCatalogEntry: (id: number) =>
+    request<{ status: string }>(`/inventory/catalog/${id}`, { method: 'DELETE' }),
+  resetSpoolCatalog: () =>
+    request<{ status: string }>('/inventory/catalog/reset', { method: 'POST' }),
+  getColorCatalog: () =>
+    request<ColorCatalogEntry[]>('/inventory/colors'),
+  addColorEntry: (data: { manufacturer: string; color_name: string; hex_color: string; material: string | null }) =>
+    request<ColorCatalogEntry>('/inventory/colors', { method: 'POST', body: JSON.stringify(data) }),
+  updateColorEntry: (id: number, data: { manufacturer: string; color_name: string; hex_color: string; material: string | null }) =>
+    request<ColorCatalogEntry>(`/inventory/colors/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteColorEntry: (id: number) =>
+    request<{ status: string }>(`/inventory/colors/${id}`, { method: 'DELETE' }),
+  resetColorCatalog: () =>
+    request<{ status: string }>('/inventory/colors/reset', { method: 'POST' }),
+  lookupColor: (manufacturer: string, colorName: string, material?: string) =>
+    request<ColorLookupResult>(`/inventory/colors/lookup?manufacturer=${encodeURIComponent(manufacturer)}&color_name=${encodeURIComponent(colorName)}${material ? `&material=${encodeURIComponent(material)}` : ''}`),
+  searchColors: (manufacturer?: string, material?: string) =>
+    request<ColorCatalogEntry[]>(`/inventory/colors/search?${manufacturer ? `manufacturer=${encodeURIComponent(manufacturer)}` : ''}${manufacturer && material ? '&' : ''}${material ? `material=${encodeURIComponent(material)}` : ''}`),
+  linkTagToSpool: (spoolId: number, data: { tag_uid?: string; tray_uuid?: string; tag_type?: string; data_origin?: string }) =>
+    request<InventorySpool>(`/inventory/spools/${spoolId}/link-tag`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  getSpoolUsageHistory: (spoolId: number, limit = 50) =>
+    request<SpoolUsageRecord[]>(`/inventory/spools/${spoolId}/usage?limit=${limit}`),
+  getAllUsageHistory: (limit = 100, printerId?: number) =>
+    request<SpoolUsageRecord[]>(`/inventory/usage?limit=${limit}${printerId ? `&printer_id=${printerId}` : ''}`),
+  clearSpoolUsageHistory: (spoolId: number) =>
+    request<{ status: string }>(`/inventory/spools/${spoolId}/usage`, { method: 'DELETE' }),
+  syncWeightsFromAms: () =>
+    request<{ synced: number; skipped: number }>('/inventory/sync-ams-weights', { method: 'POST' }),
+  getFilamentPresets: () =>
+    request<SlicerSetting[]>('/cloud/filaments'),
+
   // Updates
   getVersion: () => request<VersionInfo>('/updates/version'),
   checkForUpdates: () => request<UpdateCheckResult>('/updates/check'),
@@ -3265,6 +3530,8 @@ export const api = {
     }),
   deleteMaintenanceType: (id: number) =>
     request<{ status: string }>(`/maintenance/types/${id}`, { method: 'DELETE' }),
+  restoreDefaultMaintenanceTypes: () =>
+    request<{ restored: number }>(`/maintenance/types/restore-defaults`, { method: 'POST' }),
   getMaintenanceOverview: () => request<PrinterMaintenanceOverview[]>('/maintenance/overview'),
   getPrinterMaintenance: (printerId: number) =>
     request<PrinterMaintenanceOverview>(`/maintenance/printers/${printerId}`),
@@ -3539,8 +3806,7 @@ export const api = {
       throw new Error(error.detail || `HTTP ${response.status}`);
     }
     const contentDisposition = response.headers.get('Content-Disposition');
-    const filenameMatch = contentDisposition?.match(/filename="(.+)"/);
-    const filename = filenameMatch?.[1] || `project_${projectId}.zip`;
+    const filename = parseContentDispositionFilename(contentDisposition) || `project_${projectId}.zip`;
     const blob = await response.blob();
     return { blob, filename };
   },
@@ -3566,6 +3832,14 @@ export const api = {
 
   // System Info
   getSystemInfo: () => request<SystemInfo>('/system/info'),
+  getStorageUsage: (options?: { refresh?: boolean }) => {
+    const params = new URLSearchParams();
+    if (options?.refresh) {
+      params.set('refresh', 'true');
+    }
+    const query = params.toString();
+    return request<StorageUsageResponse>(`/system/storage-usage${query ? `?${query}` : ''}`);
+  },
 
   // Library (File Manager)
   getLibraryFolders: () => request<LibraryFolderTree[]>('/library/folders'),
@@ -3668,8 +3942,7 @@ export const api = {
       throw new Error(error.detail || `HTTP ${response.status}`);
     }
     const disposition = response.headers.get('Content-Disposition');
-    const filenameMatch = disposition?.match(/filename="?([^";\n]+)"?/);
-    const downloadFilename = filenameMatch?.[1] || filename || `file_${id}`;
+    const downloadFilename = parseContentDispositionFilename(disposition) || filename || `file_${id}`;
     const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -3906,6 +4179,39 @@ export interface SystemInfo {
     count: number;
     count_logical: number;
     percent: number;
+  };
+}
+
+export interface StorageUsageCategory {
+  key: string;
+  label: string;
+  bytes: number;
+  formatted: string;
+  percent_of_total: number;
+}
+
+export interface StorageUsageOtherItem {
+  bucket: string;
+  label: string;
+  kind: 'system' | 'data';
+  deletable: boolean;
+  bytes: number;
+  formatted: string;
+  percent_of_total: number;
+}
+
+export interface StorageUsageResponse {
+  roots: string[];
+  total_bytes: number;
+  total_formatted: string;
+  categories: StorageUsageCategory[];
+  other_breakdown: StorageUsageOtherItem[];
+  scan_errors: number;
+  generated_at: string;
+  cache: {
+    hit: boolean;
+    age_seconds: number;
+    max_age_seconds: number;
   };
 }
 
@@ -4348,8 +4654,7 @@ export const supportApi = {
     }
     // Get filename from Content-Disposition header or use default
     const disposition = response.headers.get('Content-Disposition');
-    const filenameMatch = disposition?.match(/filename=(.+)/);
-    const filename = filenameMatch ? filenameMatch[1] : 'bambuddy-support.zip';
+    const filename = parseContentDispositionFilename(disposition) || 'bambuddy-support.zip';
 
     // Download the blob
     const blob = await response.blob();

@@ -158,6 +158,7 @@ export interface FilamentReqsData {
     color: string;
     used_grams: number;
     used_meters: number;
+    nozzle_id?: number;
   }>;
 }
 

@@ -9,6 +9,8 @@ interface ConfirmModalProps {
   message: string;
   confirmText?: string;
   cancelText?: string;
+  cancelVariant?: 'primary' | 'secondary' | 'danger' | 'ghost';
+  cardClassName?: string;
   variant?: 'danger' | 'warning' | 'default';
   isLoading?: boolean;
   loadingText?: string;
@@ -21,6 +23,8 @@ export function ConfirmModal({
   message,
   confirmText,
   cancelText,
+  cancelVariant,
+  cardClassName,
   variant = 'default',
   isLoading = false,
   loadingText,
@@ -62,7 +66,10 @@ export function ConfirmModal({
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
       onClick={isLoading ? undefined : onCancel}
     >
-      <Card className="w-full max-w-md" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+      <Card
+        className={`w-full max-w-md ${cardClassName ?? ''}`}
+        onClick={(e: React.MouseEvent) => e.stopPropagation()}
+      >
         <CardContent className="p-6">
           <div className="flex items-start gap-4">
             <div className={`p-2 rounded-full bg-bambu-dark ${styles.icon}`}>
@@ -74,7 +81,12 @@ export function ConfirmModal({
             </div>
           </div>
           <div className="flex gap-3 mt-6">
-            <Button variant="secondary" onClick={onCancel} className="flex-1" disabled={isLoading}>
+            <Button
+              variant={cancelVariant ?? 'secondary'}
+              onClick={onCancel}
+              className="flex-1"
+              disabled={isLoading}
+            >
               {resolvedCancelText}
             </Button>
             <Button

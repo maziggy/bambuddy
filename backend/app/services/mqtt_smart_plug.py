@@ -3,6 +3,7 @@
 This service enables integration with Shelly, Zigbee2MQTT, and other MQTT-based energy monitoring devices.
 """
 
+import asyncio
 import json
 import logging
 import threading
@@ -52,6 +53,7 @@ class MQTTSmartPlugService:
         self.plug_configs: dict[int, dict[str, MQTTDataSourceConfig]] = {}
         # plug_id -> latest data
         self.plug_data: dict[int, SmartPlugMQTTData] = {}
+        self._disconnection_event: threading.Event | None = None
         self._configured = False
         self._broker = ""
         self._port = 1883
@@ -209,6 +211,8 @@ class MQTTSmartPlugService:
             logger.warning("MQTT smart plug service disconnected: %s", rc)
         else:
             logger.info("MQTT smart plug service disconnected cleanly")
+        if self._disconnection_event:
+            self._disconnection_event.set()
 
     def _on_message(self, client: mqtt.Client, userdata: Any, msg: mqtt.MQTTMessage):
         """Handle incoming MQTT message, extract data using JSON path."""
@@ -471,12 +475,14 @@ class MQTTSmartPlugService:
         timeout = timedelta(minutes=self.REACHABLE_TIMEOUT_MINUTES)
         return datetime.utcnow() - data.last_seen < timeout
 
-    async def disconnect(self):
+    async def disconnect(self, timeout: float = 0):
         """Disconnect from MQTT broker."""
         if self.client:
             try:
-                self.client.loop_stop()
+                self._disconnection_event = threading.Event()
                 self.client.disconnect()
+                await asyncio.to_thread(self._disconnection_event.wait, timeout=timeout)
+                self.client.loop_stop()
             except Exception as e:
                 logger.debug("MQTT smart plug disconnect error (ignored): %s", e)
             finally:

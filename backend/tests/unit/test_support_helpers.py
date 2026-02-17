@@ -12,6 +12,53 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
+class TestApplyLogLevel:
+    """Tests for _apply_log_level() debug noise suppression."""
+
+    def test_debug_mode_suppresses_sqlalchemy_to_warning(self):
+        """Verify sqlalchemy.engine is set to WARNING (not INFO) in debug mode."""
+        import logging
+
+        from backend.app.api.routes.support import _apply_log_level
+
+        _apply_log_level(True)
+
+        assert logging.getLogger("sqlalchemy.engine").level == logging.WARNING
+
+    def test_debug_mode_suppresses_aiosqlite(self):
+        """Verify aiosqlite is set to WARNING in debug mode to prevent cursor noise."""
+        import logging
+
+        from backend.app.api.routes.support import _apply_log_level
+
+        _apply_log_level(True)
+
+        assert logging.getLogger("aiosqlite").level == logging.WARNING
+
+    def test_debug_mode_enables_httpcore_debug(self):
+        """Verify httpcore stays at DEBUG in debug mode."""
+        import logging
+
+        from backend.app.api.routes.support import _apply_log_level
+
+        _apply_log_level(True)
+
+        assert logging.getLogger("httpcore").level == logging.DEBUG
+
+    def test_non_debug_mode_suppresses_all_noisy_loggers(self):
+        """Verify all noisy loggers are set to WARNING in non-debug mode."""
+        import logging
+
+        from backend.app.api.routes.support import _apply_log_level
+
+        _apply_log_level(False)
+
+        assert logging.getLogger("sqlalchemy.engine").level == logging.WARNING
+        assert logging.getLogger("httpcore").level == logging.WARNING
+        assert logging.getLogger("httpx").level == logging.WARNING
+        assert logging.getLogger("paho.mqtt").level == logging.WARNING
+
+
 class TestAnonymizeMqttBroker:
     """Tests for _anonymize_mqtt_broker()."""
 

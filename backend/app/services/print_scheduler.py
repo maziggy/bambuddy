@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import zipfile
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import defusedxml.ElementTree as ET
@@ -23,6 +23,7 @@ from backend.app.services.notification_service import notification_service
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.smart_plug_manager import smart_plug_manager
 from backend.app.utils.printer_models import normalize_printer_model
+from backend.app.utils.threemf_tools import extract_nozzle_mapping_from_3mf
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,12 @@ class PrintScheduler:
 
             if not items:
                 return
+
+            logger.info(
+                "Queue check: found %d pending items: %s",
+                len(items),
+                [(i.id, i.printer_id, i.archive_id, i.library_file_id) for i in items],
+            )
 
             # Track busy printers to avoid assigning multiple items to same printer
             busy_printers: set[int] = set()
@@ -332,10 +339,9 @@ class PrintScheduler:
                     if tray_type:
                         loaded_types.add(tray_type.upper())
 
-        # Check external spool (virtual tray, stored in raw_data["vt_tray"])
-        vt_tray = status.raw_data.get("vt_tray")
-        if vt_tray:
-            vt_type = vt_tray.get("tray_type")
+        # Check external spool(s) (virtual tray, stored in raw_data["vt_tray"] as list)
+        for vt in status.raw_data.get("vt_tray") or []:
+            vt_type = vt.get("tray_type")
             if vt_type:
                 loaded_types.add(vt_type.upper())
 
@@ -477,6 +483,12 @@ class PrintScheduler:
                             pass  # Skip filament entry with unparseable usage data
 
                 filaments.sort(key=lambda x: x["slot_id"])
+
+                # Enrich with nozzle mapping for dual-nozzle printers
+                nozzle_mapping = extract_nozzle_mapping_from_3mf(zf)
+                if nozzle_mapping:
+                    for filament in filaments:
+                        filament["nozzle_id"] = nozzle_mapping.get(filament["slot_id"])
         except Exception as e:
             logger.warning("Failed to parse filament requirements: %s", e)
             return None
@@ -493,6 +505,9 @@ class PrintScheduler:
             List of loaded filament dicts with type, color, ams_id, tray_id, global_tray_id
         """
         filaments = []
+
+        # Get ams_extruder_map for dual-nozzle printers (H2D, H2D Pro)
+        ams_extruder_map = status.raw_data.get("ams_extruder_map", {})
 
         # Parse AMS units from raw_data
         ams_data = status.raw_data.get("ams", [])
@@ -524,25 +539,28 @@ class PrintScheduler:
                             "is_ht": is_ht,
                             "is_external": False,
                             "global_tray_id": global_tray_id,
+                            "extruder_id": ams_extruder_map.get(str(ams_id)),
                         }
                     )
 
-        # Check external spool (vt_tray)
-        vt_tray = status.raw_data.get("vt_tray")
-        if vt_tray and vt_tray.get("tray_type"):
-            color = self._normalize_color(vt_tray.get("tray_color", ""))
-            filaments.append(
-                {
-                    "type": vt_tray["tray_type"],
-                    "color": color,
-                    "tray_info_idx": vt_tray.get("tray_info_idx", ""),
-                    "ams_id": -1,
-                    "tray_id": 0,
-                    "is_ht": False,
-                    "is_external": True,
-                    "global_tray_id": 254,
-                }
-            )
+        # Check external spool(s) (vt_tray is a list)
+        for idx, vt in enumerate(status.raw_data.get("vt_tray") or []):
+            if vt.get("tray_type"):
+                color = self._normalize_color(vt.get("tray_color", ""))
+                tray_id = int(vt.get("id", 254))
+                filaments.append(
+                    {
+                        "type": vt["tray_type"],
+                        "color": color,
+                        "tray_info_idx": vt.get("tray_info_idx", ""),
+                        "ams_id": -1,
+                        "tray_id": idx,
+                        "is_ht": False,
+                        "is_external": True,
+                        "global_tray_id": tray_id,
+                        "extruder_id": (tray_id - 254) if ams_extruder_map else None,
+                    }
+                )
 
         return filaments
 
@@ -615,6 +633,13 @@ class PrintScheduler:
 
             # Get available trays (not already used)
             available = [f for f in loaded if f["global_tray_id"] not in used_tray_ids]
+
+            # Nozzle-aware filtering: restrict to trays on the correct nozzle
+            req_nozzle_id = req.get("nozzle_id")
+            if req_nozzle_id is not None:
+                nozzle_filtered = [f for f in available if f.get("extruder_id") == req_nozzle_id]
+                if nozzle_filtered:
+                    available = nozzle_filtered
 
             # Check if tray_info_idx is unique among available trays
             if req_tray_info_idx:
@@ -694,9 +719,11 @@ class PrintScheduler:
         if not state:
             return False
 
-        # Printer is idle if state is IDLE, FINISH, FAILED, or unknown
-        # FAILED means previous print failed, printer is ready for new print
-        return state.state in ("IDLE", "FINISH", "FAILED", "unknown")
+        # IDLE = ready for next print
+        # FINISH/FAILED = ready only if user confirmed plate is cleared
+        return state.state == "IDLE" or (
+            state.state in ("FINISH", "FAILED") and printer_manager.is_plate_cleared(printer_id)
+        )
 
     async def _get_smart_plug(self, db: AsyncSession, printer_id: int) -> SmartPlug | None:
         """Get the smart plug associated with a printer."""
@@ -860,27 +887,6 @@ class PrintScheduler:
                 await self._power_off_if_needed(db, item)
                 return
 
-            # Safety: Check if this archive was printed recently (within 4 hours)
-            # This prevents phantom reprints if a queue item got stuck in "pending"
-            # after its print already started due to a crash/restart
-            if archive.status == "completed" and archive.completed_at:
-                completed_at = (
-                    archive.completed_at.replace(tzinfo=None) if archive.completed_at.tzinfo else archive.completed_at
-                )
-                time_since_completed = datetime.utcnow() - completed_at
-                if time_since_completed < timedelta(hours=4):
-                    logger.warning(
-                        f"Queue item {item.id}: Archive {item.archive_id} was already printed "
-                        f"{time_since_completed.total_seconds() / 3600:.1f} hours ago, skipping to prevent duplicate"
-                    )
-                    item.status = "skipped"
-                    item.error_message = (
-                        f"Archive was already printed {time_since_completed.total_seconds() / 3600:.1f} hours ago"
-                    )
-                    item.completed_at = datetime.utcnow()
-                    await db.commit()
-                    return
-
             file_path = settings.base_dir / archive.file_path
             filename = archive.filename
 
@@ -897,11 +903,30 @@ class PrintScheduler:
                 await self._power_off_if_needed(db, item)
                 return
             # Library files store absolute paths
-            from pathlib import Path
-
             lib_path = Path(library_file.file_path)
             file_path = lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
             filename = library_file.filename
+
+            # Create archive from library file so usage tracking has access to the 3MF
+            try:
+                from backend.app.services.archive import ArchiveService
+
+                archive_service = ArchiveService(db)
+                archive = await archive_service.archive_print(
+                    printer_id=item.printer_id,
+                    source_file=file_path,
+                )
+                if archive:
+                    item.archive_id = archive.id
+                    await db.flush()
+                    logger.info(
+                        "Queue item %s: Created archive %s from library file %s",
+                        item.id,
+                        archive.id,
+                        item.library_file_id,
+                    )
+            except Exception as e:
+                logger.warning("Queue item %s: Failed to create archive from library file: %s", item.id, e)
 
         else:
             # Neither archive nor library file specified
@@ -1010,13 +1035,6 @@ class PrintScheduler:
             await self._power_off_if_needed(db, item)
             return
 
-        # Register as expected print so we don't create a duplicate archive
-        # Only applicable for archive-based prints
-        if archive:
-            from backend.app.main import register_expected_print
-
-            register_expected_print(item.printer_id, remote_filename, archive.id)
-
         # Parse AMS mapping if stored
         ams_mapping = None
         if item.ams_mapping:
@@ -1024,6 +1042,13 @@ class PrintScheduler:
                 ams_mapping = json.loads(item.ams_mapping)
             except json.JSONDecodeError:
                 logger.warning("Queue item %s: Invalid AMS mapping JSON, ignoring", item.id)
+
+        # Register as expected print so we don't create a duplicate archive
+        # Only applicable for archive-based prints
+        if archive:
+            from backend.app.main import register_expected_print
+
+            register_expected_print(item.printer_id, remote_filename, archive.id, ams_mapping=ams_mapping)
 
         # IMPORTANT: Set status to "printing" BEFORE sending the print command.
         # This prevents phantom reprints if the backend crashes/restarts after the
@@ -1034,6 +1059,9 @@ class PrintScheduler:
         item.status = "printing"
         item.started_at = datetime.utcnow()
         await db.commit()
+
+        # Consume the plate-cleared flag now that we're starting a print
+        printer_manager.consume_plate_cleared(item.printer_id)
         logger.info("Queue item %s: Status set to 'printing', sending print command...", item.id)
 
         # Start the print with AMS mapping, plate_id and print options

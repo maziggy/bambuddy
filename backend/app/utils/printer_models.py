@@ -48,6 +48,69 @@ PRINTER_MODEL_ID_MAP = {
 }
 
 
+# Rod/rail type classification for maintenance tasks.
+# Carbon rods: X1, P1, P2S series (CoreXY with carbon fiber rods)
+# Linear rails: A1, H2 series (linear rail motion system)
+# Values must be uppercase with spaces stripped for normalized comparison.
+CARBON_ROD_MODELS = frozenset(
+    [
+        # Display names (uppercase, no spaces)
+        "X1",
+        "X1C",
+        "X1E",
+        "P1P",
+        "P1S",
+        "P2S",
+        # Internal codes
+        "C11",  # X1C
+        "C12",  # X1
+        "C13",  # X1E
+        "N7",  # P2S
+    ]
+)
+
+LINEAR_RAIL_MODELS = frozenset(
+    [
+        # Display names (uppercase, no spaces)
+        "A1",
+        "A1MINI",
+        "H2D",
+        "H2DPRO",
+        "H2C",
+        "H2S",
+        # Internal codes
+        "N1",  # A1
+        "N2S",  # A1 Mini
+        "A04",  # A1 Mini (alternate)
+        "A11",  # A1
+        "A12",  # A1 Mini
+        "O1D",  # H2D
+        "O1E",  # H2D Pro
+        "O2D",  # H2D Pro (alternate)
+        "O1C",  # H2C
+        "O1S",  # H2S
+    ]
+)
+
+
+def get_rod_type(model: str | None) -> str | None:
+    """Return the rod/rail type for a printer model.
+
+    Returns:
+        "carbon" for X1/P1/P2S series (carbon fiber rods),
+        "linear_rail" for A1/H2 series (linear rails),
+        None for unknown models.
+    """
+    if not model:
+        return None
+    normalized = model.strip().upper().replace(" ", "").replace("-", "")
+    if normalized in CARBON_ROD_MODELS:
+        return "carbon"
+    if normalized in LINEAR_RAIL_MODELS:
+        return "linear_rail"
+    return None
+
+
 def normalize_printer_model_id(model_id: str | None) -> str | None:
     """Convert printer_model_id (internal code) to normalized short name.
 

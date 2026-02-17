@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import traceback
 from collections.abc import Callable
 
 from sqlalchemy import select
@@ -6,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.printer import Printer
 from backend.app.services.bambu_mqtt import BambuMQTTClient, MQTTLogEntry, PrinterState, get_stage_name
+
+logger = logging.getLogger(__name__)
 
 # Models that have a real chamber temperature sensor
 # Based on Home Assistant Bambu Lab integration
@@ -100,6 +104,8 @@ class PrinterManager:
         self._loop: asyncio.AbstractEventLoop | None = None
         # Track who started the current print (Issue #206)
         self._current_print_user: dict[int, dict] = {}  # {printer_id: {"user_id": int, "username": str}}
+        # Track plate-cleared acknowledgments for queue flow
+        self._plate_cleared: set[int] = set()  # printer_ids where user confirmed plate is cleared
 
     def get_printer(self, printer_id: int) -> PrinterInfo | None:
         """Get printer info by ID."""
@@ -116,6 +122,18 @@ class PrinterManager:
     def clear_current_print_user(self, printer_id: int):
         """Clear the current print user when print completes (Issue #206)."""
         self._current_print_user.pop(printer_id, None)
+
+    def set_plate_cleared(self, printer_id: int):
+        """Mark that user has cleared the build plate for this printer."""
+        self._plate_cleared.add(printer_id)
+
+    def is_plate_cleared(self, printer_id: int) -> bool:
+        """Check if user has confirmed the plate is cleared."""
+        return printer_id in self._plate_cleared
+
+    def consume_plate_cleared(self, printer_id: int):
+        """Clear the plate-cleared flag (called when scheduler starts next print)."""
+        self._plate_cleared.discard(printer_id)
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop):
         """Set the event loop for async callbacks."""
@@ -209,18 +227,18 @@ class PrinterManager:
         await asyncio.sleep(1)
         return client.state.connected
 
-    def disconnect_printer(self, printer_id: int):
+    def disconnect_printer(self, printer_id: int, timeout: float = 0):
         """Disconnect from a printer."""
         if printer_id in self._clients:
-            self._clients[printer_id].disconnect()
+            self._clients[printer_id].disconnect(timeout=timeout)
             del self._clients[printer_id]
         self._models.pop(printer_id, None)  # Clean up model cache
         self._printer_info.pop(printer_id, None)  # Clean up printer info cache
 
-    def disconnect_all(self):
+    def disconnect_all(self, timeout: float = 0):
         """Disconnect from all printers."""
         for printer_id in list(self._clients.keys()):
-            self.disconnect_printer(printer_id)
+            self.disconnect_printer(printer_id, timeout=timeout)
 
     def get_status(self, printer_id: int) -> PrinterState | None:
         """Get the current status of a printer (checks for stale connections)."""
@@ -290,6 +308,15 @@ class PrinterManager:
         use_ams: bool = True,
     ) -> bool:
         """Start a print on a connected printer."""
+        caller = traceback.extract_stack(limit=3)[0]
+        logger.info(
+            "PRINT COMMAND: printer=%s, file=%s, caller=%s:%s:%s",
+            printer_id,
+            filename,
+            caller.filename.split("/")[-1],
+            caller.lineno,
+            caller.name,
+        )
         if printer_id in self._clients:
             return self._clients[printer_id].start_print(
                 filename,
@@ -488,7 +515,7 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
     """
     # Parse AMS data from raw_data
     ams_units = []
-    vt_tray = None
+    vt_tray = []
     raw_data = state.raw_data or {}
 
     # Build K-profile lookup map: cali_idx -> k_value
@@ -519,7 +546,7 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
 
                 trays.append(
                     {
-                        "id": tray.get("id", 0),
+                        "id": int(tray.get("id", 0)),
                         "tray_color": tray.get("tray_color"),
                         "tray_type": tray.get("tray_type"),
                         "tray_sub_brands": tray.get("tray_sub_brands"),
@@ -556,7 +583,7 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
 
             ams_units.append(
                 {
-                    "id": ams_data.get("id", 0),
+                    "id": int(ams_data.get("id", 0)),
                     "humidity": humidity_value,
                     "temp": ams_data.get("temp"),
                     "is_ams_ht": is_ams_ht,
@@ -564,37 +591,40 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
                 }
             )
 
-    # Parse virtual tray (external spool)
+    # Parse virtual tray (external spool) — now a list
     if "vt_tray" in raw_data:
-        vt_data = raw_data["vt_tray"]
-        vt_tag_uid = vt_data.get("tag_uid")
-        if vt_tag_uid in ("", "0000000000000000"):
-            vt_tag_uid = None
-        vt_tray_uuid = vt_data.get("tray_uuid")
-        if vt_tray_uuid in ("", "00000000000000000000000000000000"):
-            vt_tray_uuid = None
+        for vt_data in raw_data["vt_tray"]:
+            vt_tag_uid = vt_data.get("tag_uid")
+            if vt_tag_uid in ("", "0000000000000000"):
+                vt_tag_uid = None
+            vt_tray_uuid = vt_data.get("tray_uuid")
+            if vt_tray_uuid in ("", "00000000000000000000000000000000"):
+                vt_tray_uuid = None
 
-        # Get K value for vt_tray
-        vt_k_value = vt_data.get("k")
-        vt_cali_idx = vt_data.get("cali_idx")
-        if vt_k_value is None and vt_cali_idx is not None and vt_cali_idx in kprofile_map:
-            vt_k_value = kprofile_map[vt_cali_idx]
+            # Get K value for vt_tray
+            vt_k_value = vt_data.get("k")
+            vt_cali_idx = vt_data.get("cali_idx")
+            if vt_k_value is None and vt_cali_idx is not None and vt_cali_idx in kprofile_map:
+                vt_k_value = kprofile_map[vt_cali_idx]
 
-        vt_tray = {
-            "id": 254,
-            "tray_color": vt_data.get("tray_color"),
-            "tray_type": vt_data.get("tray_type"),
-            "tray_sub_brands": vt_data.get("tray_sub_brands"),
-            "tray_id_name": vt_data.get("tray_id_name"),
-            "tray_info_idx": vt_data.get("tray_info_idx"),
-            "remain": vt_data.get("remain", 0),
-            "k": vt_k_value,
-            "cali_idx": vt_cali_idx,
-            "tag_uid": vt_tag_uid,
-            "tray_uuid": vt_tray_uuid,
-            "nozzle_temp_min": vt_data.get("nozzle_temp_min"),
-            "nozzle_temp_max": vt_data.get("nozzle_temp_max"),
-        }
+            tray_id = int(vt_data.get("id", 254))
+            vt_tray.append(
+                {
+                    "id": tray_id,
+                    "tray_color": vt_data.get("tray_color"),
+                    "tray_type": vt_data.get("tray_type"),
+                    "tray_sub_brands": vt_data.get("tray_sub_brands"),
+                    "tray_id_name": vt_data.get("tray_id_name"),
+                    "tray_info_idx": vt_data.get("tray_info_idx"),
+                    "remain": vt_data.get("remain", 0),
+                    "k": vt_k_value,
+                    "cali_idx": vt_cali_idx,
+                    "tag_uid": vt_tag_uid,
+                    "tray_uuid": vt_tray_uuid,
+                    "nozzle_temp_min": vt_data.get("nozzle_temp_min"),
+                    "nozzle_temp_max": vt_data.get("nozzle_temp_max"),
+                }
+            )
 
     # Get ams_extruder_map from raw_data (populated by MQTT handler from AMS info field)
     ams_extruder_map = raw_data.get("ams_extruder_map", {})

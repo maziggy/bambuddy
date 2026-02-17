@@ -31,6 +31,7 @@ from backend.app.schemas.print_queue import (
 )
 from backend.app.services.notification_service import notification_service
 from backend.app.utils.printer_models import normalize_printer_model, normalize_printer_model_id
+from backend.app.utils.threemf_tools import extract_filament_usage_from_3mf
 
 logger = logging.getLogger(__name__)
 
@@ -205,12 +206,16 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         response.archive_name = item.archive.print_name or item.archive.filename
         response.archive_thumbnail = item.archive.thumbnail_path
         response.print_time_seconds = item.archive.print_time_seconds
+        response.filament_used_grams = item.archive.filament_used_grams
         if item.plate_id:
             archive_path = settings.base_dir / item.archive.file_path
             if archive_path.exists():
                 plate_time = _extract_print_time_from_3mf(archive_path, item.plate_id)
+                plate_weight = sum(f["used_g"] for f in extract_filament_usage_from_3mf(archive_path, item.plate_id))
                 if plate_time is not None:
                     response.print_time_seconds = plate_time
+                if plate_weight > 0:
+                    response.filament_used_grams = plate_weight
     if item.library_file:
         response.library_file_name = (
             item.library_file.file_metadata.get("print_name") if item.library_file.file_metadata else None
@@ -221,13 +226,19 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         # Get print time from library file metadata if no archive
         if not item.archive and item.library_file.file_metadata:
             response.print_time_seconds = item.library_file.file_metadata.get("print_time_seconds")
+            response.filament_used_grams = item.library_file.file_metadata.get("filament_used_grams")
         if item.plate_id:
             lib_path = Path(item.library_file.file_path)
             library_file_path = lib_path if lib_path.is_absolute() else settings.base_dir / item.library_file.file_path
             if library_file_path.exists():
                 plate_time = _extract_print_time_from_3mf(library_file_path, item.plate_id)
+                plate_weight = sum(
+                    f["used_g"] for f in extract_filament_usage_from_3mf(library_file_path, item.plate_id)
+                )
                 if plate_time is not None:
                     response.print_time_seconds = plate_time
+                if plate_weight > 0:
+                    response.filament_used_grams = plate_weight
     if item.printer:
         response.printer_name = item.printer.name
     return response

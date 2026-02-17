@@ -56,6 +56,7 @@ from backend.app.schemas.library import (
 )
 from backend.app.services.archive import ArchiveService, ThreeMFParser
 from backend.app.services.stl_thumbnail import generate_stl_thumbnail
+from backend.app.utils.threemf_tools import extract_nozzle_mapping_from_3mf
 
 logger = logging.getLogger(__name__)
 
@@ -1711,6 +1712,12 @@ async def get_library_file_filament_requirements(
             # Sort by slot ID
             filaments.sort(key=lambda x: x["slot_id"])
 
+            # Enrich with nozzle mapping for dual-nozzle printers
+            nozzle_mapping = extract_nozzle_mapping_from_3mf(zf)
+            if nozzle_mapping:
+                for filament in filaments:
+                    filament["nozzle_id"] = nozzle_mapping.get(filament["slot_id"])
+
     except Exception as e:
         logger.warning("Failed to parse filament requirements from library file %s: %s", file_id, e)
 
@@ -1861,7 +1868,7 @@ async def print_library_file(
         )
 
     # Register this as an expected print so we don't create a duplicate archive
-    register_expected_print(printer_id, remote_filename, archive.id)
+    register_expected_print(printer_id, remote_filename, archive.id, ams_mapping=body.ams_mapping)
 
     # Determine plate ID
     if body.plate_id is not None:

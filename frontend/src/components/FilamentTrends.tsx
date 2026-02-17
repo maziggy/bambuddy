@@ -157,7 +157,7 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
   return (
     <div className="space-y-6">
       {/* Time Range Selector */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between max-[550px]:flex-col max-[550px]:items-start max-[550px]:gap-2">
         <h3 className="text-lg font-semibold text-white">Filament Usage Trends</h3>
         <div className="flex gap-1 bg-bambu-dark rounded-lg p-1">
           {(['7d', '30d', '90d', '365d', 'all'] as TimeRange[]).map((range) => (
@@ -177,24 +177,30 @@ export function FilamentTrends({ archives, currency = '$' }: FilamentTrendsProps
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-4 max-[640px]:grid-cols-1">
         <div className="bg-bambu-dark rounded-lg p-4">
-          <p className="text-sm text-bambu-gray">Period Filament</p>
-          <p className="text-2xl font-bold text-white">{(totalFilament / 1000).toFixed(2)}kg</p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-bambu-gray leading-none">Period Filament</p>
+            <p className="text-2xl font-bold text-white leading-none">{(totalFilament / 1000).toFixed(2)}kg</p>
+          </div>
           <p className="text-xs text-bambu-gray">{totalFilament.toFixed(0)}g total</p>
         </div>
         <div className="bg-bambu-dark rounded-lg p-4">
-          <p className="text-sm text-bambu-gray">Period Cost</p>
-          <p className="text-2xl font-bold text-white">{currency}{totalCost.toFixed(2)}</p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-bambu-gray leading-none">Period Cost</p>
+            <p className="text-2xl font-bold text-white leading-none">{currency}{totalCost.toFixed(2)}</p>
+          </div>
           <p className="text-xs text-bambu-gray">{totalPrints} prints</p>
         </div>
         <div className="bg-bambu-dark rounded-lg p-4">
-          <p className="text-sm text-bambu-gray">Avg per Print</p>
-          <p className="text-2xl font-bold text-white">
-            {totalPrints > 0
-              ? (totalFilament / totalPrints).toFixed(0)
-              : 0}g
-          </p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-bambu-gray leading-none">Avg per Print</p>
+            <p className="text-2xl font-bold text-white leading-none">
+              {totalPrints > 0
+                ? (totalFilament / totalPrints).toFixed(0)
+                : 0}g
+            </p>
+          </div>
           <p className="text-xs text-bambu-gray">
             {currency}{totalPrints > 0 ? (totalCost / totalPrints).toFixed(2) : '0.00'} avg
           </p>

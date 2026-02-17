@@ -32,6 +32,7 @@ interface DashboardProps {
   widgets: DashboardWidget[];
   storageKey: string;
   columns?: number;
+  stackBelow?: number;
   hideControls?: boolean;
   onResetLayout?: () => void;
   renderControls?: (controls: {
@@ -54,6 +55,7 @@ function SortableWidget({
   component,
   isHidden,
   size,
+  columnSpan,
   onToggleVisibility,
   onToggleSize,
 }: {
@@ -62,6 +64,7 @@ function SortableWidget({
   component: ReactNode | ((size: 1 | 2 | 4) => ReactNode);
   isHidden: boolean;
   size: 1 | 2 | 4;
+  columnSpan: number;
   onToggleVisibility: () => void;
   onToggleSize: () => void;
 }) {
@@ -87,7 +90,7 @@ function SortableWidget({
       ref={setNodeRef}
       style={{
         ...style,
-        gridColumn: `span ${size}`,
+        gridColumn: `span ${columnSpan}`,
       }}
       className={`bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary overflow-hidden ${
         isDragging ? 'ring-2 ring-bambu-green shadow-lg' : ''
@@ -135,7 +138,7 @@ function SortableWidget({
   );
 }
 
-export function Dashboard({ widgets, storageKey, columns = 4, hideControls = false, onResetLayout, renderControls }: DashboardProps) {
+export function Dashboard({ widgets, storageKey, columns = 4, stackBelow, hideControls = false, onResetLayout, renderControls }: DashboardProps) {
   // Build default sizes from widget definitions
   const getDefaultSizes = () => {
     const sizes: Record<string, 1 | 2 | 4> = {};
@@ -169,6 +172,31 @@ export function Dashboard({ widgets, storageKey, columns = 4, hideControls = fal
   });
 
   const [showHiddenPanel, setShowHiddenPanel] = useState(false);
+  const [isStacked, setIsStacked] = useState(false);
+
+  useEffect(() => {
+    if (!stackBelow) return undefined;
+    const mediaQuery = window.matchMedia(`(max-width: ${stackBelow}px)`);
+    const handleChange = (event: MediaQueryListEvent | MediaQueryList) => {
+      setIsStacked(event.matches);
+    };
+    handleChange(mediaQuery);
+    const onChange = (event: MediaQueryListEvent) => handleChange(event);
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener('change', onChange);
+    } else {
+      mediaQuery.addListener(onChange);
+    }
+    return () => {
+      if (mediaQuery.removeEventListener) {
+        mediaQuery.removeEventListener('change', onChange);
+      } else {
+        mediaQuery.removeListener(onChange);
+      }
+    };
+  }, [stackBelow]);
+
+  const effectiveColumns = stackBelow && isStacked ? 1 : columns;
 
   // Listen for toggle-hidden-panel event from parent
   useEffect(() => {
@@ -324,21 +352,26 @@ export function Dashboard({ widgets, storageKey, columns = 4, hideControls = fal
           <div
             className="grid gap-6"
             style={{
-              gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+              gridTemplateColumns: `repeat(${effectiveColumns}, minmax(0, 1fr))`,
             }}
           >
-            {visibleWidgets.map((widget) => (
-              <SortableWidget
-                key={widget.id}
-                id={widget.id}
-                title={widget.title}
-                component={widget.component}
-                isHidden={layout.hidden.includes(widget.id)}
-                size={layout.sizes[widget.id] || 2}
-                onToggleVisibility={() => toggleVisibility(widget.id)}
-                onToggleSize={() => toggleSize(widget.id)}
-              />
-            ))}
+            {visibleWidgets.map((widget) => {
+              const size = layout.sizes[widget.id] || 2;
+              const columnSpan = Math.min(size, effectiveColumns);
+              return (
+                <SortableWidget
+                  key={widget.id}
+                  id={widget.id}
+                  title={widget.title}
+                  component={widget.component}
+                  isHidden={layout.hidden.includes(widget.id)}
+                  size={size}
+                  columnSpan={columnSpan}
+                  onToggleVisibility={() => toggleVisibility(widget.id)}
+                  onToggleSize={() => toggleSize(widget.id)}
+                />
+              );
+            })}
           </div>
         </SortableContext>
       </DndContext>

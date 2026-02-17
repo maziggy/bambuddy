@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Droplets, Link2, Copy, Check, Settings2, ExternalLink } from 'lucide-react';
+import { Droplets, Link2, Copy, Check, Settings2, ExternalLink, Package, Unlink } from 'lucide-react';
 
 interface FilamentData {
   vendor: 'Bambu Lab' | 'Generic';
@@ -10,7 +10,7 @@ interface FilamentData {
   kFactor: string;
   fillLevel: number | null; // null = unknown
   trayUuid?: string | null; // Bambu Lab spool UUID for Spoolman linking
-  fillSource?: 'ams' | 'spoolman'; // Source of fill level data
+  fillSource?: 'ams' | 'spoolman' | 'inventory'; // Source of fill level data
 }
 
 interface SpoolmanConfig {
@@ -19,6 +19,12 @@ interface SpoolmanConfig {
   hasUnlinkedSpools?: boolean; // Whether there are spools available to link
   linkedSpoolId?: number | null; // Spoolman spool ID if this tray is already linked
   spoolmanUrl?: string | null; // Base URL for Spoolman (for "Open in Spoolman" link)
+}
+
+interface InventoryConfig {
+  onAssignSpool?: () => void;
+  onUnassignSpool?: () => void;
+  assignedSpool?: { id: number; material: string; brand: string | null; color_name: string | null } | null;
 }
 
 interface ConfigureSlotConfig {
@@ -32,6 +38,7 @@ interface FilamentHoverCardProps {
   disabled?: boolean;
   className?: string;
   spoolman?: SpoolmanConfig;
+  inventory?: InventoryConfig;
   configureSlot?: ConfigureSlotConfig;
 }
 
@@ -39,7 +46,7 @@ interface FilamentHoverCardProps {
  * A hover card that displays filament details when hovering over AMS slots.
  * Replaces the basic browser tooltip with a styled popover.
  */
-export function FilamentHoverCard({ data, children, disabled, className = '', spoolman, configureSlot }: FilamentHoverCardProps) {
+export function FilamentHoverCard({ data, children, disabled, className = '', spoolman, inventory, configureSlot }: FilamentHoverCardProps) {
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState<'top' | 'bottom'>('top');
@@ -235,6 +242,9 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                     {data.fillSource === 'spoolman' && data.fillLevel !== null && (
                       <span className="text-[9px] text-bambu-gray font-normal">{t('spoolman.fillSourceLabel')}</span>
                     )}
+                    {data.fillSource === 'inventory' && data.fillLevel !== null && (
+                      <span className="text-[9px] text-bambu-gray font-normal">{t('inventory.fillSourceLabel')}</span>
+                    )}
                   </span>
                 </div>
                 {/* Fill bar */}
@@ -316,6 +326,50 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                       {t('spoolman.linkToSpoolman')}
                     </button>
                   )}
+                </div>
+              )}
+
+              {/* Inventory section - only for non-Bambu spools */}
+              {inventory && data.vendor !== 'Bambu Lab' && (
+                <div className="pt-2 mt-2 border-t border-bambu-dark-tertiary space-y-2">
+                  {inventory.assignedSpool ? (
+                    <>
+                      <div className="flex items-center gap-1.5">
+                        <Package className="w-3 h-3 text-bambu-green" />
+                        <span className="text-[10px] uppercase tracking-wider text-bambu-gray font-medium">
+                          {t('inventory.assigned')}
+                        </span>
+                      </div>
+                      <p className="text-xs text-white truncate">
+                        {inventory.assignedSpool.brand ? `${inventory.assignedSpool.brand} ` : ''}
+                        {inventory.assignedSpool.material}
+                        {inventory.assignedSpool.color_name ? ` - ${inventory.assignedSpool.color_name}` : ''}
+                      </p>
+                      {inventory.onUnassignSpool && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            inventory.onUnassignSpool?.();
+                          }}
+                          className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-red-500/20 hover:bg-red-500/30 text-red-400"
+                        >
+                          <Unlink className="w-3.5 h-3.5" />
+                          {t('inventory.unassignSpool')}
+                        </button>
+                      )}
+                    </>
+                  ) : inventory.onAssignSpool ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        inventory.onAssignSpool?.();
+                      }}
+                      className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-blue/20 hover:bg-bambu-blue/30 text-bambu-blue"
+                    >
+                      <Package className="w-3.5 h-3.5" />
+                      {t('inventory.assignSpool')}
+                    </button>
+                  ) : null}
                 </div>
               )}
 

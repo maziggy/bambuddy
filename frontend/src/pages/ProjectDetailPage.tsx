@@ -43,6 +43,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 
 // Project edit modal (reused from ProjectsPage)
 import { ProjectModal } from './ProjectsPage';
+import { getCurrencySymbol } from '../utils/currency';
 
 function formatDuration(hours: number): string {
   if (hours < 1) {
@@ -251,7 +252,7 @@ export function ProjectDetailPage() {
     enabled: projectId > 0,
   });
 
-  const currency = settings?.currency || '$';
+  const currency = getCurrencySymbol(settings?.currency || 'USD');
   const timeFormat: TimeFormat = settings?.time_format || 'system';
 
   const updateMutation = useMutation({

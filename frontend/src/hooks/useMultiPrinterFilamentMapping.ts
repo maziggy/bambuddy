@@ -124,26 +124,32 @@ function computeMatchDetails(
       }
     }
 
-    // Auto-match
-    const exactMatch = loadedFilaments.find(
+    // Auto-match with nozzle-aware filtering
+    let candidates = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId));
+    if (req.nozzle_id != null) {
+      const nozzleFiltered = candidates.filter((f) => f.extruderId === req.nozzle_id);
+      if (nozzleFiltered.length > 0) {
+        candidates = nozzleFiltered;
+      }
+    }
+
+    const exactMatch = candidates.find(
       (f) =>
-        !usedTrayIds.has(f.globalTrayId) &&
         f.type?.toUpperCase() === req.type?.toUpperCase() &&
         normalizeColorForCompare(f.color) === normalizeColorForCompare(req.color)
     );
     const similarMatch = exactMatch
       ? undefined
-      : loadedFilaments.find(
+      : candidates.find(
           (f) =>
-            !usedTrayIds.has(f.globalTrayId) &&
             f.type?.toUpperCase() === req.type?.toUpperCase() &&
             colorsAreSimilar(f.color, req.color)
         );
     const typeOnlyMatch =
       exactMatch || similarMatch
         ? undefined
-        : loadedFilaments.find(
-            (f) => !usedTrayIds.has(f.globalTrayId) && f.type?.toUpperCase() === req.type?.toUpperCase()
+        : candidates.find(
+            (f) => f.type?.toUpperCase() === req.type?.toUpperCase()
           );
     const loaded = exactMatch ?? similarMatch ?? typeOnlyMatch;
 
@@ -196,26 +202,32 @@ function computeMappingWithOverrides(
       continue;
     }
 
-    // Auto-match
-    const exactMatch = loadedFilaments.find(
+    // Auto-match with nozzle-aware filtering
+    let candidates = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId));
+    if (req.nozzle_id != null) {
+      const nozzleFiltered = candidates.filter((f) => f.extruderId === req.nozzle_id);
+      if (nozzleFiltered.length > 0) {
+        candidates = nozzleFiltered;
+      }
+    }
+
+    const exactMatch = candidates.find(
       (f) =>
-        !usedTrayIds.has(f.globalTrayId) &&
         f.type?.toUpperCase() === req.type?.toUpperCase() &&
         normalizeColorForCompare(f.color) === normalizeColorForCompare(req.color)
     );
     const similarMatch = exactMatch
       ? undefined
-      : loadedFilaments.find(
+      : candidates.find(
           (f) =>
-            !usedTrayIds.has(f.globalTrayId) &&
             f.type?.toUpperCase() === req.type?.toUpperCase() &&
             colorsAreSimilar(f.color, req.color)
         );
     const typeOnlyMatch =
       exactMatch || similarMatch
         ? undefined
-        : loadedFilaments.find(
-            (f) => !usedTrayIds.has(f.globalTrayId) && f.type?.toUpperCase() === req.type?.toUpperCase()
+        : candidates.find(
+            (f) => f.type?.toUpperCase() === req.type?.toUpperCase()
           );
     const loaded = exactMatch ?? similarMatch ?? typeOnlyMatch;
 

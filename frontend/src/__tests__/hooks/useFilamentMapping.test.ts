@@ -13,7 +13,7 @@ import {
 import type { PrinterStatus } from '../../api/client';
 
 // Helper to create a minimal printer status with AMS data
-function createPrinterStatus(ams: PrinterStatus['ams'], vt_tray?: PrinterStatus['vt_tray']): PrinterStatus {
+function createPrinterStatus(ams: PrinterStatus['ams'], vt_tray: PrinterStatus['vt_tray'] = []): PrinterStatus {
   return {
     ams,
     vt_tray,
@@ -89,7 +89,7 @@ describe('buildLoadedFilaments', () => {
   it('extracts external spool with tray_info_idx', () => {
     const status = createPrinterStatus(
       [],
-      { tray_type: 'TPU', tray_color: '0000FF', tray_info_idx: 'EXT001' }
+      [{ tray_type: 'TPU', tray_color: '0000FF', tray_info_idx: 'EXT001' }]
     );
 
     const result = buildLoadedFilaments(status);
@@ -339,11 +339,190 @@ describe('computeAmsMapping', () => {
     };
     const status = createPrinterStatus(
       [],
-      { tray_type: 'TPU', tray_color: '0000FF', tray_info_idx: 'EXT001' }
+      [{ tray_type: 'TPU', tray_color: '0000FF', tray_info_idx: 'EXT001' }]
     );
 
     const result = computeAmsMapping(reqs, status);
 
     expect(result).toEqual([254]);  // External spool global ID
+  });
+});
+
+describe('buildLoadedFilaments - nozzle awareness', () => {
+  it('sets extruderId from ams_extruder_map', () => {
+    const status = createPrinterStatus([
+      {
+        id: 0,
+        tray: [{ id: 0, tray_type: 'PLA', tray_color: 'FF0000' }],
+      },
+      {
+        id: 1,
+        tray: [{ id: 0, tray_type: 'PETG', tray_color: '00FF00' }],
+      },
+    ]);
+    (status as any).ams_extruder_map = { '0': 1, '1': 0 };
+
+    const result = buildLoadedFilaments(status);
+
+    expect(result[0].extruderId).toBe(1);  // AMS 0 → left nozzle
+    expect(result[1].extruderId).toBe(0);  // AMS 1 → right nozzle
+  });
+
+  it('leaves extruderId undefined when no ams_extruder_map', () => {
+    const status = createPrinterStatus([
+      {
+        id: 0,
+        tray: [{ id: 0, tray_type: 'PLA', tray_color: 'FF0000' }],
+      },
+    ]);
+
+    const result = buildLoadedFilaments(status);
+
+    expect(result[0].extruderId).toBeUndefined();
+  });
+});
+
+describe('computeAmsMapping - nozzle filtering', () => {
+  it('filters candidates by nozzle_id when set', () => {
+    // Filament requires left nozzle (extruder 1), only AMS 0 is on left
+    const reqs = {
+      filaments: [
+        { slot_id: 1, type: 'PLA', color: '#FF0000', used_grams: 10, nozzle_id: 1 },
+      ],
+    };
+    const status = createPrinterStatus([
+      {
+        id: 0,  // Left nozzle
+        tray: [{ id: 0, tray_type: 'PLA', tray_color: 'FF0000' }],
+      },
+      {
+        id: 1,  // Right nozzle
+        tray: [{ id: 0, tray_type: 'PLA', tray_color: 'FF0000' }],
+      },
+    ]);
+    (status as any).ams_extruder_map = { '0': 1, '1': 0 };
+
+    const result = computeAmsMapping(reqs, status);
+
+    expect(result).toEqual([0]);  // AMS 0, tray 0 (on left nozzle)
+  });
+
+  it('filters to right nozzle when nozzle_id=0', () => {
+    const reqs = {
+      filaments: [
+        { slot_id: 1, type: 'PLA', color: '#FF0000', used_grams: 10, nozzle_id: 0 },
+      ],
+    };
+    const status = createPrinterStatus([
+      {
+        id: 0,  // Left nozzle
+        tray: [{ id: 0, tray_type: 'PLA', tray_color: 'FF0000' }],
+      },
+      {
+        id: 1,  // Right nozzle
+        tray: [{ id: 0, tray_type: 'PLA', tray_color: 'FF0000' }],
+      },
+    ]);
+    (status as any).ams_extruder_map = { '0': 1, '1': 0 };
+
+    const result = computeAmsMapping(reqs, status);
+
+    expect(result).toEqual([4]);  // AMS 1, tray 0 (global ID = 1*4+0 = 4, on right nozzle)
+  });
+
+  it('falls back to all trays when target nozzle has no trays at all', () => {
+    // Requires nozzle_id=1 (left), but no AMS units are on left nozzle
+    const reqs = {
+      filaments: [
+        { slot_id: 1, type: 'PLA', color: '#FF0000', used_grams: 10, nozzle_id: 1 },
+      ],
+    };
+    const status = createPrinterStatus([
+      {
+        id: 0,  // Right nozzle only
+        tray: [{ id: 0, tray_type: 'PLA', tray_color: 'FF0000' }],
+      },
+    ]);
+    (status as any).ams_extruder_map = { '0': 0 };  // AMS 0 → right nozzle, none on left
+
+    const result = computeAmsMapping(reqs, status);
+
+    expect(result).toEqual([0]);  // Falls back to unfiltered (right nozzle PLA)
+  });
+
+  it('stays restricted when target nozzle has trays but wrong type', () => {
+    // Left nozzle has PETG, right has PLA — but requires PLA on left
+    const reqs = {
+      filaments: [
+        { slot_id: 1, type: 'PLA', color: '#FF0000', used_grams: 10, nozzle_id: 1 },
+      ],
+    };
+    const status = createPrinterStatus([
+      {
+        id: 0,  // Left nozzle - only PETG
+        tray: [{ id: 0, tray_type: 'PETG', tray_color: '00FF00' }],
+      },
+      {
+        id: 1,  // Right nozzle - has PLA
+        tray: [{ id: 0, tray_type: 'PLA', tray_color: 'FF0000' }],
+      },
+    ]);
+    (status as any).ams_extruder_map = { '0': 1, '1': 0 };
+
+    const result = computeAmsMapping(reqs, status);
+
+    expect(result).toEqual([-1]);  // No PLA on left nozzle, stays restricted
+  });
+
+  it('skips nozzle filtering when nozzle_id is undefined', () => {
+    const reqs = {
+      filaments: [
+        { slot_id: 1, type: 'PLA', color: '#FF0000', used_grams: 10 },  // No nozzle_id
+      ],
+    };
+    const status = createPrinterStatus([
+      {
+        id: 0,
+        tray: [{ id: 0, tray_type: 'PETG', tray_color: '00FF00' }],
+      },
+      {
+        id: 1,
+        tray: [{ id: 0, tray_type: 'PLA', tray_color: 'FF0000' }],
+      },
+    ]);
+    (status as any).ams_extruder_map = { '0': 1, '1': 0 };
+
+    const result = computeAmsMapping(reqs, status);
+
+    expect(result).toEqual([4]);  // Picks best match regardless of nozzle
+  });
+
+  it('handles dual-nozzle multi-slot mapping', () => {
+    // Two filaments: one for left, one for right
+    const reqs = {
+      filaments: [
+        { slot_id: 1, type: 'PLA', color: '#FF0000', used_grams: 10, nozzle_id: 1 },  // Left
+        { slot_id: 2, type: 'PETG', color: '#00FF00', used_grams: 10, nozzle_id: 0 }, // Right
+      ],
+    };
+    const status = createPrinterStatus([
+      {
+        id: 0,  // Left nozzle
+        tray: [
+          { id: 0, tray_type: 'PLA', tray_color: 'FF0000' },
+        ],
+      },
+      {
+        id: 1,  // Right nozzle
+        tray: [
+          { id: 0, tray_type: 'PETG', tray_color: '00FF00' },
+        ],
+      },
+    ]);
+    (status as any).ams_extruder_map = { '0': 1, '1': 0 };
+
+    const result = computeAmsMapping(reqs, status);
+
+    expect(result).toEqual([0, 4]);  // Left gets AMS0-T0, Right gets AMS1-T0
   });
 });

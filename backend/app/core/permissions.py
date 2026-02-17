@@ -62,6 +62,12 @@ class Permission(StrEnum):
     FILAMENTS_UPDATE = "filaments:update"
     FILAMENTS_DELETE = "filaments:delete"
 
+    # Inventory (Spool Inventory, Spool Catalog, Color Catalog)
+    INVENTORY_READ = "inventory:read"
+    INVENTORY_CREATE = "inventory:create"
+    INVENTORY_UPDATE = "inventory:update"
+    INVENTORY_DELETE = "inventory:delete"
+
     # Smart Plugs
     SMART_PLUGS_READ = "smart_plugs:read"
     SMART_PLUGS_CREATE = "smart_plugs:create"
@@ -201,6 +207,12 @@ PERMISSION_CATEGORIES = {
         Permission.FILAMENTS_UPDATE,
         Permission.FILAMENTS_DELETE,
     ],
+    "Inventory": [
+        Permission.INVENTORY_READ,
+        Permission.INVENTORY_CREATE,
+        Permission.INVENTORY_UPDATE,
+        Permission.INVENTORY_DELETE,
+    ],
     "Smart Plugs": [
         Permission.SMART_PLUGS_READ,
         Permission.SMART_PLUGS_CREATE,
@@ -335,6 +347,11 @@ DEFAULT_GROUPS = {
             Permission.FILAMENTS_CREATE.value,
             Permission.FILAMENTS_UPDATE.value,
             Permission.FILAMENTS_DELETE.value,
+            # Inventory - full access
+            Permission.INVENTORY_READ.value,
+            Permission.INVENTORY_CREATE.value,
+            Permission.INVENTORY_UPDATE.value,
+            Permission.INVENTORY_DELETE.value,
             # Smart Plugs - full access
             Permission.SMART_PLUGS_READ.value,
             Permission.SMART_PLUGS_CREATE.value,
@@ -390,6 +407,7 @@ DEFAULT_GROUPS = {
             Permission.LIBRARY_READ.value,
             Permission.PROJECTS_READ.value,
             Permission.FILAMENTS_READ.value,
+            Permission.INVENTORY_READ.value,
             Permission.SMART_PLUGS_READ.value,
             Permission.CAMERA_VIEW.value,
             Permission.MAINTENANCE_READ.value,

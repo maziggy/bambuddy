@@ -123,11 +123,10 @@ class TestDisconnectServerGone:
     """Test disconnect behavior when the server has stopped."""
 
     def test_disconnect_after_server_gone(self, ftp_certs, tmp_path):
-        """Disconnect after server has stopped raises EOFError.
+        """Disconnect after server has stopped does not raise.
 
-        Note: The current disconnect() catches (OSError, ftplib.Error) but
-        EOFError is neither. This documents actual behavior — a future fix
-        could add EOFError to the except clause.
+        disconnect() catches OSError, ftplib.Error, and EOFError so that
+        best-effort cleanup never propagates exceptions to the caller.
         """
         from backend.tests.unit.services.mock_ftp_server import (
             MockBambuFTPServer,
@@ -145,8 +144,9 @@ class TestDisconnectServerGone:
         client.connect()
 
         server.stop()
-        with pytest.raises(EOFError):
-            client.disconnect()
+        # Should not raise — disconnect() catches all connection errors
+        client.disconnect()
+        assert client._ftp is None
 
 
 # ---------------------------------------------------------------------------

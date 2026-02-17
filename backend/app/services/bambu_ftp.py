@@ -181,7 +181,7 @@ class BambuFTPClient:
         if self._ftp:
             try:
                 self._ftp.quit()
-            except (OSError, ftplib.Error):
+            except (OSError, ftplib.Error, EOFError):
                 pass  # Best-effort FTP cleanup; connection may already be closed
             self._ftp = None
 

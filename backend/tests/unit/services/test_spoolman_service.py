@@ -2,6 +2,7 @@
 
 These tests specifically target the sync_ams_tray method's disable_weight_sync
 functionality that controls whether remaining_weight is updated.
+Also includes tests for is_bambu_lab_spool RFID detection.
 """
 
 from unittest.mock import AsyncMock, Mock, patch
@@ -9,6 +10,71 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from backend.app.services.spoolman import AMSTray, SpoolmanClient
+
+
+class TestIsBambuLabSpool:
+    """Tests for is_bambu_lab_spool — detects BL spools via RFID hardware identifiers only."""
+
+    @pytest.fixture
+    def client(self):
+        return SpoolmanClient("http://localhost:7912")
+
+    def test_valid_tray_uuid_returns_true(self, client):
+        """A non-zero 32-char hex tray_uuid identifies a BL spool."""
+        assert client.is_bambu_lab_spool("A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4") is True
+
+    def test_valid_tag_uid_returns_true(self, client):
+        """A non-zero 16-char hex tag_uid identifies a BL spool (fallback)."""
+        assert client.is_bambu_lab_spool("", tag_uid="A1B2C3D4E5F6A1B2") is True
+
+    def test_zero_tray_uuid_returns_false(self, client):
+        """All-zero tray_uuid means no RFID tag read."""
+        assert client.is_bambu_lab_spool("00000000000000000000000000000000") is False
+
+    def test_zero_tag_uid_returns_false(self, client):
+        """All-zero tag_uid means no RFID tag read."""
+        assert client.is_bambu_lab_spool("", tag_uid="0000000000000000") is False
+
+    def test_empty_identifiers_returns_false(self, client):
+        """No identifiers means no BL spool."""
+        assert client.is_bambu_lab_spool("") is False
+        assert client.is_bambu_lab_spool("", tag_uid="") is False
+
+    def test_tray_info_idx_ignored(self, client):
+        """tray_info_idx is NOT a reliable BL indicator — third-party spools
+        using Bambu generic presets also have GF-prefixed tray_info_idx values."""
+        # Third-party spool with Bambu preset but no RFID identifiers
+        assert client.is_bambu_lab_spool("", tray_info_idx="GFA00") is False
+        assert client.is_bambu_lab_spool("", tray_info_idx="GFB00") is False
+        assert client.is_bambu_lab_spool("", tray_info_idx="GFSA02_04") is False
+
+    def test_tray_info_idx_with_valid_uuid_returns_true(self, client):
+        """BL spool with both RFID UUID and preset ID — detected by UUID."""
+        assert (
+            client.is_bambu_lab_spool(
+                "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4",
+                tray_info_idx="GFA00",
+            )
+            is True
+        )
+
+    def test_tray_uuid_preferred_over_tag_uid(self, client):
+        """tray_uuid is checked before tag_uid (both valid)."""
+        assert (
+            client.is_bambu_lab_spool(
+                "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4",
+                tag_uid="A1B2C3D4E5F6A1B2",
+            )
+            is True
+        )
+
+    def test_short_tray_uuid_returns_false(self, client):
+        """UUID must be exactly 32 hex chars."""
+        assert client.is_bambu_lab_spool("A1B2C3D4") is False
+
+    def test_non_hex_tray_uuid_returns_false(self, client):
+        """UUID must be valid hex."""
+        assert client.is_bambu_lab_spool("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ") is False
 
 
 class TestSpoolmanClient:

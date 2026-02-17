@@ -15,6 +15,8 @@ import type { PrinterStatus } from '../api/client';
  */
 export function buildLoadedFilaments(printerStatus: PrinterStatus | undefined): LoadedFilament[] {
   const filaments: LoadedFilament[] = [];
+  const amsExtruderMap = printerStatus?.ams_extruder_map;
+  const hasDualNozzle = amsExtruderMap && Object.keys(amsExtruderMap).length > 0;
 
   // Add filaments from all AMS units (regular and HT)
   printerStatus?.ams?.forEach((amsUnit) => {
@@ -33,26 +35,32 @@ export function buildLoadedFilaments(printerStatus: PrinterStatus | undefined): 
           label: formatSlotLabel(amsUnit.id, tray.id, isHt, false),
           globalTrayId: getGlobalTrayId(amsUnit.id, tray.id, false),
           trayInfoIdx: tray.tray_info_idx || '',
+          extruderId: amsExtruderMap?.[String(amsUnit.id)],
         });
       }
     });
   });
 
-  // Add external spool if loaded
-  if (printerStatus?.vt_tray?.tray_type) {
-    const color = normalizeColor(printerStatus.vt_tray.tray_color);
-    filaments.push({
-      type: printerStatus.vt_tray.tray_type,
-      color,
-      colorName: getColorName(color),
-      amsId: -1,
-      trayId: 0,
-      isHt: false,
-      isExternal: true,
-      label: 'External',
-      globalTrayId: 254,
-      trayInfoIdx: printerStatus.vt_tray.tray_info_idx || '',
-    });
+  // Add external spool(s) if loaded
+  for (const extTray of printerStatus?.vt_tray ?? []) {
+    if (extTray.tray_type) {
+      const color = normalizeColor(extTray.tray_color);
+      const trayId = extTray.id ?? 254;
+      const hasDualExternal = (printerStatus?.vt_tray?.length ?? 0) > 1;
+      filaments.push({
+        type: extTray.tray_type,
+        color,
+        colorName: getColorName(color),
+        amsId: -1,
+        trayId: trayId - 254,
+        isHt: false,
+        isExternal: true,
+        label: hasDualExternal ? (trayId === 254 ? 'Ext-L' : 'Ext-R') : 'External',
+        globalTrayId: trayId,
+        trayInfoIdx: extTray.tray_info_idx || '',
+        extruderId: hasDualNozzle ? (trayId - 254) : undefined,
+      });
+    }
   }
 
   return filaments;
@@ -90,7 +98,15 @@ export function computeAmsMapping(
     const reqTrayInfoIdx = req.tray_info_idx || '';
 
     // Get available trays (not already used)
-    const available = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId));
+    let available = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId));
+
+    // Nozzle-aware filtering: restrict to trays on the correct nozzle
+    if (req.nozzle_id != null) {
+      const nozzleFiltered = available.filter((f) => f.extruderId === req.nozzle_id);
+      if (nozzleFiltered.length > 0) {
+        available = nozzleFiltered;
+      }
+    }
 
     let idxMatch: LoadedFilament | undefined;
     let exactMatch: LoadedFilament | undefined;
@@ -191,6 +207,8 @@ export interface LoadedFilament {
   globalTrayId: number;
   /** Unique spool identifier (e.g., "GFA00", "P4d64437") */
   trayInfoIdx?: string;
+  /** Extruder ID for dual-nozzle printers (0=right, 1=left) */
+  extruderId?: number;
 }
 
 /**
@@ -203,6 +221,8 @@ export interface FilamentRequirement {
   used_grams: number;
   /** Unique spool identifier from slicing (e.g., "GFA00", "P4d64437") */
   tray_info_idx?: string;
+  /** Target nozzle for dual-nozzle printers (0=right, 1=left) */
+  nozzle_id?: number;
 }
 
 /**
@@ -247,48 +267,7 @@ export function useLoadedFilaments(
   printerStatus: PrinterStatus | undefined
 ): LoadedFilament[] {
   return useMemo(() => {
-    const filaments: LoadedFilament[] = [];
-
-    // Add filaments from all AMS units (regular and HT)
-    printerStatus?.ams?.forEach((amsUnit) => {
-      const isHt = amsUnit.tray.length === 1; // AMS-HT has single tray
-      amsUnit.tray.forEach((tray) => {
-        if (tray.tray_type) {
-          const color = normalizeColor(tray.tray_color);
-          filaments.push({
-            type: tray.tray_type,
-            color,
-            colorName: getColorName(color),
-            amsId: amsUnit.id,
-            trayId: tray.id,
-            isHt,
-            isExternal: false,
-            label: formatSlotLabel(amsUnit.id, tray.id, isHt, false),
-            globalTrayId: getGlobalTrayId(amsUnit.id, tray.id, false),
-            trayInfoIdx: tray.tray_info_idx || '',
-          });
-        }
-      });
-    });
-
-    // Add external spool if loaded
-    if (printerStatus?.vt_tray?.tray_type) {
-      const color = normalizeColor(printerStatus.vt_tray.tray_color);
-      filaments.push({
-        type: printerStatus.vt_tray.tray_type,
-        color,
-        colorName: getColorName(color),
-        amsId: -1,
-        trayId: 0,
-        isHt: false,
-        isExternal: true,
-        label: 'External',
-        globalTrayId: 254,
-        trayInfoIdx: printerStatus.vt_tray.tray_info_idx || '',
-      });
-    }
-
-    return filaments;
+    return buildLoadedFilaments(printerStatus);
   }, [printerStatus]);
 }
 
@@ -355,7 +334,15 @@ export function useFilamentMapping(
       const reqTrayInfoIdx = req.tray_info_idx || '';
 
       // Get available trays (not already used)
-      const available = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId));
+      let available = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId));
+
+      // Nozzle-aware filtering: restrict to trays on the correct nozzle
+      if (req.nozzle_id != null) {
+        const nozzleFiltered = available.filter((f) => f.extruderId === req.nozzle_id);
+        if (nozzleFiltered.length > 0) {
+          available = nozzleFiltered;
+        }
+      }
 
       let idxMatch: LoadedFilament | undefined;
       let exactMatch: LoadedFilament | undefined;

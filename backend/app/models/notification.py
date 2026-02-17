@@ -83,6 +83,9 @@ class NotificationProvider(Base):
     # Event triggers - Build plate detection
     on_plate_not_empty = Column(Boolean, default=True)  # Objects detected on plate before print
 
+    # Event triggers - Bed cooled after print
+    on_bed_cooled = Column(Boolean, default=False)  # Bed cooled below threshold after print
+
     # Event triggers - Print queue
     on_queue_job_added = Column(Boolean, default=False)  # Job added to queue
     on_queue_job_assigned = Column(Boolean, default=False)  # Model-based job assigned to printer

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
@@ -255,7 +255,16 @@ async def update_spoolman_settings(
 ):
     """Update Spoolman integration settings."""
     if "spoolman_enabled" in settings:
-        await set_setting(db, "spoolman_enabled", settings["spoolman_enabled"])
+        old_val = await get_setting(db, "spoolman_enabled") or "false"
+        new_val = settings["spoolman_enabled"]
+        await set_setting(db, "spoolman_enabled", new_val)
+
+        # Switching to Spoolman: clear built-in inventory slot assignments
+        if old_val.lower() != "true" and new_val.lower() == "true":
+            from backend.app.models.spool_assignment import SpoolAssignment
+
+            result = await db.execute(delete(SpoolAssignment))
+            logger.info("Cleared %d spool assignments on switch to Spoolman mode", result.rowcount)
     if "spoolman_url" in settings:
         await set_setting(db, "spoolman_url", settings["spoolman_url"])
     if "spoolman_sync_mode" in settings:

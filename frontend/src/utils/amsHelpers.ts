@@ -88,21 +88,10 @@ export function getGlobalTrayId(
   trayId: number,
   isExternal: boolean
 ): number {
-  if (isExternal) return 254;
+  if (isExternal) return 254 + trayId;
   // AMS-HT units have IDs starting at 128 with a single tray — use ID directly
   if (amsId >= 128) return amsId;
   return amsId * 4 + trayId;
-}
-
-/**
- * Format seconds to human readable time string.
- */
-export function formatTime(seconds: number | null | undefined): string {
-  if (!seconds) return '';
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
 }
 
 /**

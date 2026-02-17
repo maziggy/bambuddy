@@ -28,6 +28,8 @@ npm-debug.log*
 # Database
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 
 # Archive files (user data)
 archive/

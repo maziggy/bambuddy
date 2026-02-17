@@ -1,8 +1,9 @@
 """
 Firmware Check Service
 
-Checks for firmware updates by fetching from Bambu Lab's official firmware download page.
-Also provides firmware download functionality for offline updates.
+Checks for firmware updates by fetching from Bambu Lab's official wiki and firmware
+download page. The wiki is used as the primary version source (always up-to-date),
+while the download page provides firmware file URLs for offline updates.
 """
 
 import logging
@@ -18,9 +19,12 @@ from backend.app.core.config import _data_dir
 
 logger = logging.getLogger(__name__)
 
-# Bambu Lab firmware download page
+# Bambu Lab firmware download page (for download URLs)
 BAMBU_FIRMWARE_BASE = "https://bambulab.com"
 FIRMWARE_PAGE = "/en/support/firmware-download/all"
+
+# Bambu Lab wiki (primary source for latest version detection)
+BAMBU_WIKI_BASE = "https://wiki.bambulab.com"
 
 # Cache TTL in seconds (1 hour)
 CACHE_TTL = 3600
@@ -59,6 +63,20 @@ API_KEY_TO_DEV_MODEL = {
     "p2s": "N7",
     "x1e": "C13",
     "h2d-pro": "O1E",
+}
+
+# Wiki firmware release history pages (primary version source)
+API_KEY_TO_WIKI_PATH = {
+    "x1": "/en/x1/manual/X1-X1C-firmware-release-history",
+    "x1e": "/en/x1/manual/X1E-firmware-release-history",
+    "p1": "/en/p1/manual/p1p-firmware-release-history",
+    "a1": "/en/a1/manual/a1-firmware-release-history",
+    "a1-mini": "/en/a1-mini/manual/a1-mini-firmware-release-history",
+    "h2d": "/en/h2d/manual/h2d-firmware-release-history",
+    "h2c": "/en/h2c/manual/h2c-firmware-release-history",
+    "h2s": "/en/h2s/manual/h2s-firmware-release-history",
+    "p2s": "/en/p2s/manual/p2s-firmware-release-history",
+    "h2d-pro": "/en/h2d-pro/manual/firmware-release-history",
 }
 
 
@@ -109,11 +127,34 @@ class FirmwareCheckService:
 
         return self._build_id  # Return cached value if available
 
-    async def _fetch_firmware_versions(self, api_key: str) -> FirmwareVersion | None:
-        """Fetch firmware versions for a specific printer from Bambu Lab API."""
+    async def _fetch_version_from_wiki(self, api_key: str) -> str | None:
+        """Fetch the latest firmware version from Bambu Lab's wiki release history page."""
+        wiki_path = API_KEY_TO_WIKI_PATH.get(api_key)
+        if not wiki_path:
+            return None
+
+        try:
+            url = f"{BAMBU_WIKI_BASE}{wiki_path}"
+            response = await self._client.get(url, follow_redirects=True)
+
+            if response.status_code == 200:
+                # Extract version strings (format: XX.XX.XX.XX), first match is the latest
+                versions = re.findall(r"(\d{2}\.\d{2}\.\d{2}\.\d{2})", response.text)
+                if versions:
+                    logger.debug("Wiki firmware for %s: %s", api_key, versions[0])
+                    return versions[0]
+            else:
+                logger.debug("Wiki firmware page for %s returned %s", api_key, response.status_code)
+
+        except Exception as e:
+            logger.debug("Error fetching wiki firmware for %s: %s", api_key, e)
+
+        return None
+
+    async def _fetch_from_download_page(self, api_key: str) -> FirmwareVersion | None:
+        """Fetch firmware info from Bambu Lab's download page (has download URLs)."""
         build_id = await self._get_build_id()
         if not build_id:
-            logger.warning("No build ID available, cannot fetch firmware versions")
             return None
 
         try:
@@ -135,14 +176,37 @@ class FirmwareCheckService:
                         release_notes=latest.get("release_notes_en"),
                         release_time=latest.get("release_time"),
                     )
-            else:
-                # api_key is a printer model identifier (e.g. "x1", "p1"), not a secret
-                logger.warning("Failed to fetch firmware for %s: %s", api_key, response.status_code)
 
         except Exception as e:
-            # api_key is a printer model identifier (e.g. "x1", "p1"), not a secret
-            logger.error("Error fetching firmware for %s: %s", api_key, e)
+            logger.debug("Error fetching download page firmware for %s: %s", api_key, e)
 
+        return None
+
+    async def _fetch_firmware_versions(self, api_key: str) -> FirmwareVersion | None:
+        """Fetch firmware version info, using wiki as primary source and download page as fallback."""
+        # Try wiki first (always has the latest version)
+        wiki_version = await self._fetch_version_from_wiki(api_key)
+
+        # Try download page (has download URLs, may lag behind wiki)
+        download_info = await self._fetch_from_download_page(api_key)
+
+        if wiki_version:
+            # Wiki has the latest version — use it, attach download URL if available
+            download_url = ""
+            release_notes = None
+            if download_info and download_info.version == wiki_version:
+                download_url = download_info.download_url
+                release_notes = download_info.release_notes
+            return FirmwareVersion(
+                version=wiki_version,
+                download_url=download_url,
+                release_notes=release_notes,
+            )
+
+        if download_info:
+            return download_info
+
+        logger.warning("Could not fetch firmware info for %s from wiki or download page", api_key)
         return None
 
     async def get_latest_version(self, model: str) -> FirmwareVersion | None:
@@ -260,14 +324,6 @@ class FirmwareCheckService:
         cache_dir.mkdir(parents=True, exist_ok=True)
         return cache_dir
 
-    def _get_cached_firmware_path(self, model: str, version: str) -> Path:
-        """Get the path where a firmware file would be cached."""
-        # Normalize model name for filename
-        model_safe = model.upper().replace(" ", "-").replace("/", "-")
-        version_safe = version.replace(".", "_")
-        filename = f"{model_safe}_{version_safe}.bin"
-        return self._get_firmware_cache_dir() / filename
-
     async def get_firmware_file_info(self, model: str) -> dict | None:
         """
         Get information about the firmware file for a model.
@@ -310,15 +366,15 @@ class FirmwareCheckService:
             logger.warning("No firmware download URL available for model: %s", model)
             return None
 
-        # Check if already cached
-        cached_path = self._get_cached_firmware_path(model, latest.version)
-        if cached_path.exists():
-            logger.info("Using cached firmware: %s", cached_path)
-            return cached_path
-
         # Extract original filename from URL (must preserve for SD card update)
         url_parts = latest.download_url.split("/")
         original_filename = url_parts[-1] if url_parts else f"firmware_{model}.bin"
+
+        # Check if already cached (using original filename so SD card gets the right name)
+        cached_path = self._get_firmware_cache_dir() / original_filename
+        if cached_path.exists():
+            logger.info("Using cached firmware: %s", cached_path)
+            return cached_path
 
         # Download to temp file first
         temp_path = self._get_firmware_cache_dir() / f".downloading_{original_filename}"
@@ -343,22 +399,14 @@ class FirmwareCheckService:
                         if progress_callback:
                             progress_callback(downloaded, total_size, "Downloading firmware...")
 
-            # Also save a copy with the original filename for SD card
-            original_path = self._get_firmware_cache_dir() / original_filename
-            if original_path.exists():
-                original_path.unlink()
+            # Move temp to final path, preserving original filename
+            temp_path.rename(cached_path)
 
-            # Move temp to both cached path and original filename path
-            import shutil
-
-            shutil.copy2(temp_path, cached_path)
-            temp_path.rename(original_path)
-
-            logger.info("Firmware downloaded successfully: %s", original_path)
+            logger.info("Firmware downloaded successfully: %s", cached_path)
             if progress_callback:
                 progress_callback(downloaded, total_size, "Download complete")
 
-            return original_path
+            return cached_path
 
         except Exception as e:
             logger.error("Firmware download failed: %s", e)

@@ -1,8 +1,13 @@
 """Tests for the AMS mapping computation in the print scheduler."""
 
+import io
+import json
+import zipfile
+
 import pytest
 
 from backend.app.services.print_scheduler import PrintScheduler
+from backend.app.utils.threemf_tools import extract_nozzle_mapping_from_3mf
 
 
 class TestSchedulerAmsMappingHelpers:
@@ -135,7 +140,7 @@ class TestBuildLoadedFilaments:
         """Should include external spool."""
 
         class MockStatus:
-            raw_data = {"vt_tray": {"tray_type": "TPU", "tray_color": "0000FF"}}
+            raw_data = {"vt_tray": [{"tray_type": "TPU", "tray_color": "0000FF"}]}
 
         result = scheduler._build_loaded_filaments(MockStatus())
         assert len(result) == 1
@@ -461,9 +466,192 @@ class TestBuildLoadedFilamentsTrayInfoIdx:
         """Should extract tray_info_idx from external spool."""
 
         class MockStatus:
-            raw_data = {"vt_tray": {"tray_type": "TPU", "tray_color": "0000FF", "tray_info_idx": "P4d64437"}}
+            raw_data = {"vt_tray": [{"tray_type": "TPU", "tray_color": "0000FF", "tray_info_idx": "P4d64437"}]}
 
         result = scheduler._build_loaded_filaments(MockStatus())
         assert len(result) == 1
         assert result[0]["tray_info_idx"] == "P4d64437"
         assert result[0]["is_external"] is True
+
+
+def _make_3mf_zip(project_settings: dict | None = None) -> zipfile.ZipFile:
+    """Create an in-memory ZipFile mimicking a 3MF with project_settings.config."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        if project_settings is not None:
+            zf.writestr("Metadata/project_settings.config", json.dumps(project_settings))
+    buf.seek(0)
+    return zipfile.ZipFile(buf, "r")
+
+
+class TestExtractNozzleMappingFrom3mf:
+    """Test the extract_nozzle_mapping_from_3mf utility."""
+
+    def test_dual_nozzle_mapping(self):
+        """Should return slot->extruder mapping for dual-nozzle files."""
+        zf = _make_3mf_zip(
+            {
+                "filament_nozzle_map": ["0", "1", "0"],
+                "physical_extruder_map": ["0", "1"],
+            }
+        )
+        result = extract_nozzle_mapping_from_3mf(zf)
+        assert result == {1: 0, 2: 1, 3: 0}
+        zf.close()
+
+    def test_single_nozzle_returns_none(self):
+        """All slots on same extruder should return None (single-nozzle)."""
+        zf = _make_3mf_zip(
+            {
+                "filament_nozzle_map": ["0", "0", "0"],
+                "physical_extruder_map": ["0"],
+            }
+        )
+        result = extract_nozzle_mapping_from_3mf(zf)
+        assert result is None
+        zf.close()
+
+    def test_missing_project_settings_returns_none(self):
+        """Missing project_settings.config should return None."""
+        zf = _make_3mf_zip(None)
+        result = extract_nozzle_mapping_from_3mf(zf)
+        assert result is None
+        zf.close()
+
+    def test_missing_fields_returns_none(self):
+        """Missing filament_nozzle_map or physical_extruder_map should return None."""
+        zf = _make_3mf_zip({"some_other_key": "value"})
+        result = extract_nozzle_mapping_from_3mf(zf)
+        assert result is None
+        zf.close()
+
+    def test_physical_extruder_map_remapping(self):
+        """Should apply physical_extruder_map to remap slicer extruder to MQTT extruder."""
+        # Slicer ext 0 -> MQTT ext 1, slicer ext 1 -> MQTT ext 0
+        zf = _make_3mf_zip(
+            {
+                "filament_nozzle_map": ["0", "1"],
+                "physical_extruder_map": ["1", "0"],
+            }
+        )
+        result = extract_nozzle_mapping_from_3mf(zf)
+        assert result == {1: 1, 2: 0}
+        zf.close()
+
+
+class TestNozzleAwareMapping:
+    """Test nozzle-aware filament matching in the print scheduler."""
+
+    @pytest.fixture
+    def scheduler(self):
+        return PrintScheduler()
+
+    def test_dual_nozzle_matching(self, scheduler):
+        """Filaments assigned to different nozzles should match to correct AMS units."""
+        required = [
+            {"slot_id": 1, "type": "PLA", "color": "#FF0000", "nozzle_id": 0},  # Right nozzle
+            {"slot_id": 2, "type": "PLA", "color": "#00FF00", "nozzle_id": 1},  # Left nozzle
+        ]
+        loaded = [
+            {"type": "PLA", "color": "#00FF00", "global_tray_id": 0, "extruder_id": 0},  # AMS0 on right
+            {"type": "PLA", "color": "#FF0000", "global_tray_id": 4, "extruder_id": 1},  # AMS1 on left
+        ]
+        # Without nozzle filtering, slot 1 (red, right) would match tray 4 (red, left) by color.
+        # With nozzle filtering, slot 1 (right nozzle) can only use tray 0 (right extruder),
+        # and slot 2 (left nozzle) can only use tray 4 (left extruder).
+        result = scheduler._match_filaments_to_slots(required, loaded)
+        assert result == [0, 4]
+
+    def test_nozzle_fallback_when_no_match(self, scheduler):
+        """Should fall back to unfiltered list when nozzle-filtered list is empty."""
+        required = [
+            {"slot_id": 1, "type": "PLA", "color": "#FF0000", "nozzle_id": 0},  # Right nozzle
+        ]
+        loaded = [
+            # Only a tray on the left nozzle, none on right
+            {"type": "PLA", "color": "#FF0000", "global_tray_id": 4, "extruder_id": 1},
+        ]
+        # No trays on extruder 0, so fallback to unfiltered -> should still match
+        result = scheduler._match_filaments_to_slots(required, loaded)
+        assert result == [4]
+
+    def test_no_nozzle_id_skips_filtering(self, scheduler):
+        """When nozzle_id is None, no nozzle filtering should be applied."""
+        required = [
+            {"slot_id": 1, "type": "PLA", "color": "#FF0000"},  # No nozzle_id
+        ]
+        loaded = [
+            {"type": "PLA", "color": "#FF0000", "global_tray_id": 0, "extruder_id": 0},
+            {"type": "PLA", "color": "#FF0000", "global_tray_id": 4, "extruder_id": 1},
+        ]
+        # Should match first available (tray 0) regardless of extruder
+        result = scheduler._match_filaments_to_slots(required, loaded)
+        assert result == [0]
+
+    def test_extruder_id_in_loaded_filaments(self, scheduler):
+        """_build_loaded_filaments should include extruder_id from ams_extruder_map."""
+
+        class MockStatus:
+            raw_data = {
+                "ams": [
+                    {"id": 0, "tray": [{"id": 0, "tray_type": "PLA", "tray_color": "FF0000"}]},
+                    {"id": 1, "tray": [{"id": 0, "tray_type": "PLA", "tray_color": "00FF00"}]},
+                ],
+                "ams_extruder_map": {"0": 0, "1": 1},
+            }
+
+        result = scheduler._build_loaded_filaments(MockStatus())
+        assert len(result) == 2
+        assert result[0]["extruder_id"] == 0
+        assert result[1]["extruder_id"] == 1
+
+    def test_extruder_id_none_without_map(self, scheduler):
+        """extruder_id should be None when ams_extruder_map is absent."""
+
+        class MockStatus:
+            raw_data = {
+                "ams": [
+                    {"id": 0, "tray": [{"id": 0, "tray_type": "PLA", "tray_color": "FF0000"}]},
+                ]
+            }
+
+        result = scheduler._build_loaded_filaments(MockStatus())
+        assert len(result) == 1
+        assert result[0]["extruder_id"] is None
+
+    def test_external_spool_extruder_id(self, scheduler):
+        """External spool should have extruder_id=0 when ams_extruder_map exists."""
+
+        class MockStatus:
+            raw_data = {
+                "vt_tray": [{"tray_type": "TPU", "tray_color": "0000FF"}],
+                "ams_extruder_map": {"0": 0},
+            }
+
+        result = scheduler._build_loaded_filaments(MockStatus())
+        assert len(result) == 1
+        assert result[0]["extruder_id"] == 0
+        assert result[0]["is_external"] is True
+
+    def test_external_spool_no_extruder_map(self, scheduler):
+        """External spool extruder_id should be None without ams_extruder_map."""
+
+        class MockStatus:
+            raw_data = {"vt_tray": [{"tray_type": "TPU", "tray_color": "0000FF"}]}
+
+        result = scheduler._build_loaded_filaments(MockStatus())
+        assert len(result) == 1
+        assert result[0]["extruder_id"] is None
+
+    def test_dual_nozzle_with_tray_info_idx(self, scheduler):
+        """Nozzle filtering should work together with tray_info_idx matching."""
+        required = [
+            {"slot_id": 1, "type": "PLA", "color": "#000000", "tray_info_idx": "GFA00", "nozzle_id": 0},
+            {"slot_id": 2, "type": "PLA", "color": "#000000", "tray_info_idx": "GFA01", "nozzle_id": 1},
+        ]
+        loaded = [
+            {"type": "PLA", "color": "#000000", "global_tray_id": 0, "tray_info_idx": "GFA00", "extruder_id": 0},
+            {"type": "PLA", "color": "#000000", "global_tray_id": 4, "tray_info_idx": "GFA01", "extruder_id": 1},
+        ]
+        result = scheduler._match_filaments_to_slots(required, loaded)
+        assert result == [0, 4]

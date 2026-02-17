@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Circle, Check, AlertTriangle, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../../api/client';
@@ -17,6 +18,7 @@ export function FilamentMapping({
   onManualMappingChange,
   defaultExpanded = false,
 }: FilamentMappingProps & { defaultExpanded?: boolean }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
@@ -32,6 +34,7 @@ export function FilamentMapping({
     useFilamentMapping(filamentReqs, printerStatus, manualMappings);
 
   const hasFilamentReqs = filamentReqs?.filaments && filamentReqs.filaments.length > 0;
+  const isDualNozzle = filamentReqs?.filaments?.some((f) => f.nozzle_id != null) ?? false;
 
   // Don't render if no filament requirements
   if (!hasFilamentReqs) {
@@ -126,8 +129,16 @@ export function FilamentMapping({
               <span title={`Required: ${item.type} - ${getColorName(item.color)}`}>
                 <Circle className="w-3 h-3" fill={item.color} stroke={item.color} />
               </span>
-              {/* Required type + grams */}
-              <span className="text-white truncate">
+              {/* Required type + grams + nozzle badge */}
+              <span className="text-white truncate flex items-center gap-1">
+                {isDualNozzle && item.nozzle_id != null && (
+                  <span
+                    className="inline-flex items-center justify-center w-3.5 h-3.5 rounded text-[9px] font-bold leading-none bg-bambu-gray/20 text-bambu-gray shrink-0"
+                    title={item.nozzle_id === 1 ? t('printModal.leftNozzleTooltip') : t('printModal.rightNozzleTooltip')}
+                  >
+                    {item.nozzle_id === 1 ? t('printModal.leftNozzle') : t('printModal.rightNozzle')}
+                  </span>
+                )}
                 {item.type} <span className="text-bambu-gray">({item.used_grams}g)</span>
               </span>
               {/* Arrow */}

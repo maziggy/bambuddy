@@ -18,6 +18,11 @@ vi.mock('../../api/client', () => ({
     saveSlotPreset: vi.fn(),
     getSettings: vi.fn().mockResolvedValue({}),
     updateSettings: vi.fn().mockResolvedValue({}),
+    getLocalPresets: vi.fn(),
+    getBuiltinFilaments: vi.fn(),
+    searchColors: vi.fn(),
+    getColorCatalog: vi.fn(),
+    resetAmsSlot: vi.fn(),
   },
 }));
 
@@ -69,10 +74,17 @@ const defaultProps = {
 describe('ConfigureAmsSlotModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Mock scrollIntoView which is not available in jsdom
+    Element.prototype.scrollIntoView = vi.fn();
     (api.getCloudSettings as ReturnType<typeof vi.fn>).mockResolvedValue(mockCloudSettings);
     (api.getKProfiles as ReturnType<typeof vi.fn>).mockResolvedValue(mockKProfiles);
     (api.configureAmsSlot as ReturnType<typeof vi.fn>).mockResolvedValue({ success: true });
     (api.saveSlotPreset as ReturnType<typeof vi.fn>).mockResolvedValue({ success: true });
+    (api.getLocalPresets as ReturnType<typeof vi.fn>).mockResolvedValue({ filament: [] });
+    (api.getBuiltinFilaments as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (api.searchColors as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (api.getColorCatalog as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (api.resetAmsSlot as ReturnType<typeof vi.fn>).mockResolvedValue({ success: true, message: 'ok' });
   });
 
   it('renders nothing visible when closed', () => {
@@ -203,5 +215,70 @@ describe('ConfigureAmsSlotModal', () => {
     // Find the Configure Slot button
     const configureButton = screen.getByRole('button', { name: /Configure Slot/i });
     expect(configureButton).toBeInTheDocument();
+  });
+
+  it('filters presets by printer model', async () => {
+    // Render with printerModel="H2D"
+    render(<ConfigureAmsSlotModal {...defaultProps} printerModel="H2D" />);
+    // Wait for presets to load - the H2D preset should be visible
+    await waitFor(() => {
+      expect(screen.getByText(/Overture Matte PLA/)).toBeInTheDocument();
+    });
+    // The X1C preset should NOT be visible (filtered out by model)
+    expect(screen.queryByText(/Bambu PLA Basic @BBL X1C/)).not.toBeInTheDocument();
+  });
+
+  it('shows current preset even when it does not match model filter', async () => {
+    // Render with printerModel="H2D" but savedPresetId pointing to the X1C preset
+    const slotInfo = {
+      ...defaultProps.slotInfo,
+      savedPresetId: 'GFSL05_09',  // X1C preset
+    };
+    render(<ConfigureAmsSlotModal {...defaultProps} slotInfo={slotInfo} printerModel="H2D" />);
+    await waitFor(() => {
+      // Both should be visible - H2D matches model, X1C is saved preset
+      // Use the full preset name to match the list item (not the "Filtering for" label)
+      expect(screen.getByText('Bambu PLA Basic @BBL X1C')).toBeInTheDocument();
+      expect(screen.getByText(/Overture Matte PLA/)).toBeInTheDocument();
+    });
+  });
+
+  it('pre-selects saved preset when opening configured slot', async () => {
+    const slotInfo = {
+      ...defaultProps.slotInfo,
+      savedPresetId: 'GFSL05_09',
+    };
+    render(<ConfigureAmsSlotModal {...defaultProps} slotInfo={slotInfo} />);
+    await waitFor(() => {
+      // The saved preset should have the selected style (green border)
+      // Use the full preset name to avoid matching the "Filtering for" label
+      const presetButton = screen.getByText('Bambu PLA Basic @BBL X1C').closest('button');
+      expect(presetButton).toHaveClass('bg-bambu-green/20');
+    });
+  });
+
+  it('pre-populates color from trayColor', async () => {
+    const slotInfo = {
+      ...defaultProps.slotInfo,
+      trayColor: 'FF0000FF',  // Red with alpha
+    };
+    render(<ConfigureAmsSlotModal {...defaultProps} slotInfo={slotInfo} />);
+    await waitFor(() => {
+      expect(screen.getByTitle('White')).toBeInTheDocument();
+    });
+    // The hex display should show the pre-populated color
+    expect(screen.getByText('Hex: #FF0000', { exact: false })).toBeInTheDocument();
+  });
+
+  it('uses translated text for modal elements', async () => {
+    render(<ConfigureAmsSlotModal {...defaultProps} />);
+    await waitFor(() => {
+      expect(screen.getByText('Configure AMS Slot')).toBeInTheDocument();
+      expect(screen.getByText('Filament Profile')).toBeInTheDocument();
+    });
+    // Check footer buttons
+    expect(screen.getByRole('button', { name: /Configure Slot/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Cancel/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Reset Slot/i })).toBeInTheDocument();
   });
 });

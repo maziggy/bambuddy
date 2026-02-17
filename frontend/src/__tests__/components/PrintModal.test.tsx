@@ -67,7 +67,7 @@ describe('PrintModal', () => {
         return HttpResponse.json({ filaments: [] });
       }),
       http.get('/api/v1/printers/:id/status', () => {
-        return HttpResponse.json({ connected: true, state: 'IDLE', ams: [], vt_tray: null });
+        return HttpResponse.json({ connected: true, state: 'IDLE', ams: [], vt_tray: [] });
       }),
       http.post('/api/v1/archives/:id/reprint', () => {
         return HttpResponse.json({ success: true });

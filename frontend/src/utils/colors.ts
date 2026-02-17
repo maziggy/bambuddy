@@ -104,3 +104,24 @@ export function getColorName(hexColor: string): string {
   }
   return hexToColorName(hexColor);
 }
+
+/**
+ * Resolve a spool's display color name.
+ * Tries: stored color_name (if it's a readable name) → hex color database → HSL fallback.
+ * Detects Bambu internal codes (e.g. "A06-D0") and resolves them to names ("Titan Gray").
+ */
+export function resolveSpoolColorName(colorName: string | null, rgba: string | null): string | null {
+  // If color_name looks like a readable name (no pattern like "X00-Y0"), use it directly
+  if (colorName && !/^[A-Z]\d+-[A-Z]\d+$/.test(colorName)) {
+    return colorName;
+  }
+  // Try hex color lookup from rgba
+  if (rgba && rgba.length >= 6) {
+    const hex = rgba.substring(0, 6).toLowerCase();
+    if (BAMBU_HEX_COLORS[hex]) {
+      return BAMBU_HEX_COLORS[hex];
+    }
+  }
+  // Return null (displayed as "-") — better than showing a code
+  return null;
+}

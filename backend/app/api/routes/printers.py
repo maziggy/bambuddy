@@ -237,7 +237,7 @@ async def get_printer_status(
 
     # Parse AMS data from raw_data
     ams_units = []
-    vt_tray = None
+    vt_tray = []
     ams_exists = False
     raw_data = state.raw_data or {}
 
@@ -319,38 +319,41 @@ async def get_printer_status(
                 )
             )
 
-    # Virtual tray (external spool holder) - comes from vt_tray in raw_data
+    # Virtual tray (external spool holder) - comes from vt_tray in raw_data (list)
     if "vt_tray" in raw_data:
-        vt_data = raw_data["vt_tray"]
-        # Filter out empty/invalid tag values for vt_tray
-        vt_tag_uid = vt_data.get("tag_uid", "")
-        if vt_tag_uid in ("", "0000000000000000"):
-            vt_tag_uid = None
-        vt_tray_uuid = vt_data.get("tray_uuid", "")
-        if vt_tray_uuid in ("", "00000000000000000000000000000000"):
-            vt_tray_uuid = None
+        for vt_data in raw_data["vt_tray"]:
+            # Filter out empty/invalid tag values for vt_tray
+            vt_tag_uid = vt_data.get("tag_uid", "")
+            if vt_tag_uid in ("", "0000000000000000"):
+                vt_tag_uid = None
+            vt_tray_uuid = vt_data.get("tray_uuid", "")
+            if vt_tray_uuid in ("", "00000000000000000000000000000000"):
+                vt_tray_uuid = None
 
-        # Get K value: first try tray's k field, then lookup from K-profiles
-        vt_k_value = vt_data.get("k")
-        vt_cali_idx = vt_data.get("cali_idx")
-        if vt_k_value is None and vt_cali_idx is not None and vt_cali_idx in kprofile_map:
-            vt_k_value = kprofile_map[vt_cali_idx]
+            # Get K value: first try tray's k field, then lookup from K-profiles
+            vt_k_value = vt_data.get("k")
+            vt_cali_idx = vt_data.get("cali_idx")
+            if vt_k_value is None and vt_cali_idx is not None and vt_cali_idx in kprofile_map:
+                vt_k_value = kprofile_map[vt_cali_idx]
 
-        vt_tray = AMSTray(
-            id=254,  # Virtual tray ID
-            tray_color=vt_data.get("tray_color"),
-            tray_type=vt_data.get("tray_type"),
-            tray_sub_brands=vt_data.get("tray_sub_brands"),
-            tray_id_name=vt_data.get("tray_id_name"),
-            tray_info_idx=vt_data.get("tray_info_idx"),
-            remain=vt_data.get("remain", 0),
-            k=vt_k_value,
-            cali_idx=vt_cali_idx,
-            tag_uid=vt_tag_uid,
-            tray_uuid=vt_tray_uuid,
-            nozzle_temp_min=vt_data.get("nozzle_temp_min"),
-            nozzle_temp_max=vt_data.get("nozzle_temp_max"),
-        )
+            tray_id = int(vt_data.get("id", 254))
+            vt_tray.append(
+                AMSTray(
+                    id=tray_id,
+                    tray_color=vt_data.get("tray_color"),
+                    tray_type=vt_data.get("tray_type"),
+                    tray_sub_brands=vt_data.get("tray_sub_brands"),
+                    tray_id_name=vt_data.get("tray_id_name"),
+                    tray_info_idx=vt_data.get("tray_info_idx"),
+                    remain=vt_data.get("remain", 0),
+                    k=vt_k_value,
+                    cali_idx=vt_cali_idx,
+                    tag_uid=vt_tag_uid,
+                    tray_uuid=vt_tray_uuid,
+                    nozzle_temp_min=vt_data.get("nozzle_temp_min"),
+                    nozzle_temp_max=vt_data.get("nozzle_temp_max"),
+                )
+            )
 
     # Convert nozzle info to response format
     nozzles = [
@@ -1637,40 +1640,72 @@ async def configure_ams_slot(
     if not client:
         raise HTTPException(status_code=400, detail="Printer not connected")
 
-    # Send the filament setting command (type, color, temp)
-    success = client.ams_set_filament_setting(
-        ams_id=ams_id,
-        tray_id=tray_id,
-        tray_info_idx=tray_info_idx,
-        tray_type=tray_type,
-        tray_sub_brands=tray_sub_brands,
-        tray_color=tray_color,
-        nozzle_temp_min=nozzle_temp_min,
-        nozzle_temp_max=nozzle_temp_max,
-        setting_id=setting_id,
-    )
+    # Detect RFID spool before sending commands
+    is_rfid_spool = False
+    state = printer_manager.get_status(printer_id)
+    if state and state.raw_data:
+        from backend.app.api.routes.inventory import _find_tray_in_ams_data
+        from backend.app.services.spool_tag_matcher import is_valid_tag
 
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to send filament configuration command")
+        ams_data = state.raw_data.get("ams", {})
+        ams_list = (
+            ams_data.get("ams", []) if isinstance(ams_data, dict) else ams_data if isinstance(ams_data, list) else []
+        )
+        current_tray = _find_tray_in_ams_data(ams_list, ams_id, tray_id)
+        if current_tray:
+            is_rfid_spool = is_valid_tag(
+                current_tray.get("tag_uid", ""),
+                current_tray.get("tray_uuid", ""),
+            )
 
-    # Send the calibration/K-profile commands
-    # Use the K profile's filament_id if provided, otherwise use tray_info_idx
+    # Send filament setting + K-profile commands
     filament_id_for_kprofile = kprofile_filament_id if kprofile_filament_id else tray_info_idx
 
+    if is_rfid_spool:
+        # RFID spool: skip ams_set_filament_setting to preserve RFID state (eye icon).
+        # The firmware already has filament config from the RFID tag.
+        logger.info("[configure_ams_slot] RFID spool detected — skipping ams_set_filament_setting")
+    else:
+        # Non-RFID spool: send filament setting (type, color, temp)
+        # When a K-profile is selected, use the K-profile's filament_id as
+        # tray_info_idx so BambuStudio queries the right PA history table.
+        # But always use the PRESET's setting_id (not the K-profile's) —
+        # BambuStudio uses setting_id to identify the filament preset and
+        # overriding it with the K-profile's setting_id confuses the slicer.
+        effective_tray_info_idx = filament_id_for_kprofile if cali_idx >= 0 else tray_info_idx
+        success = client.ams_set_filament_setting(
+            ams_id=ams_id,
+            tray_id=tray_id,
+            tray_info_idx=effective_tray_info_idx,
+            tray_type=tray_type,
+            tray_sub_brands=tray_sub_brands,
+            tray_color=tray_color,
+            nozzle_temp_min=nozzle_temp_min,
+            nozzle_temp_max=nozzle_temp_max,
+            setting_id=setting_id,
+        )
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to send filament configuration command")
+
     # Method 1: Select existing calibration profile by cali_idx
-    # IMPORTANT: Only pass setting_id if the K profile itself has one (from kprofile_setting_id)
-    # Do NOT use the preset's setting_id as fallback - it breaks the K profile linking in the slicer
+    # Do NOT include setting_id — BambuStudio never sends it in extrusion_cali_sel,
+    # and including it causes the firmware to mislink the profile on X1C/P1S.
     client.extrusion_cali_sel(
         ams_id=ams_id,
         tray_id=tray_id,
         cali_idx=cali_idx,
         filament_id=filament_id_for_kprofile,
         nozzle_diameter=nozzle_diameter,
-        setting_id=kprofile_setting_id if kprofile_setting_id else None,
     )
 
-    # Method 2: Also directly set the K value if provided (for better compatibility)
-    if k_value > 0:
+    # Method 2: Only send extrusion_cali_set when NO existing profile was selected
+    # (cali_idx == -1). When cali_idx >= 0, extrusion_cali_sel already selected the
+    # correct profile. Sending extrusion_cali_set with the same cali_idx would MODIFY
+    # the existing profile's metadata (extruder_id, nozzle_id, name, setting_id),
+    # corrupting it — e.g., overwriting a High Flow extruder 1 profile with
+    # hardcoded extruder_id=0 and nozzle_id=HS00.
+    if k_value > 0 and cali_idx < 0:
         # Calculate global tray ID for extrusion_cali_set
         if ams_id <= 3:
             global_tray_id = ams_id * 4 + tray_id
@@ -1682,11 +1717,12 @@ async def configure_ams_slot(
         client.extrusion_cali_set(
             tray_id=global_tray_id,
             k_value=k_value,
-            n_coef=0.0,
             nozzle_diameter=nozzle_diameter,
-            bed_temp=60,
             nozzle_temp=nozzle_temp_max,
-            max_volumetric_speed=20.0,
+            filament_id=filament_id_for_kprofile,
+            setting_id=kprofile_setting_id or "",
+            name=tray_sub_brands or "",
+            cali_idx=cali_idx,
         )
 
     # Request fresh status push from printer so frontend gets updated data via WebSocket
@@ -1821,6 +1857,37 @@ async def stop_print(
     return {"success": True, "message": "Print stop command sent"}
 
 
+@router.post("/{printer_id}/clear-plate")
+async def clear_plate(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Acknowledge that the build plate has been cleared after a finished/failed print.
+
+    Sets a plate-cleared flag so the scheduler can start the next queued print.
+    No MQTT command is sent to the printer — the scheduler's start_print command
+    will override the FINISH/FAILED state when it sends the next job.
+    """
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    if not printer_manager.is_connected(printer_id):
+        raise HTTPException(400, "Printer not connected")
+
+    state = printer_manager.get_status(printer_id)
+    if not state or state.state not in ("FINISH", "FAILED"):
+        raise HTTPException(
+            400, f"Printer is not in FINISH or FAILED state (current: {state.state if state else 'unknown'})"
+        )
+
+    printer_manager.set_plate_cleared(printer_id)
+
+    return {"success": True, "message": "Plate cleared, next print will start shortly"}
+
+
 @router.post("/{printer_id}/print/pause")
 async def pause_print(
     printer_id: int,
@@ -1889,6 +1956,29 @@ async def set_chamber_light(
         raise HTTPException(500, "Failed to control chamber light")
 
     return {"success": True, "message": f"Chamber light {'on' if on else 'off'}"}
+
+
+@router.post("/{printer_id}/hms/clear")
+async def clear_hms_errors(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Clear HMS/print errors on the printer."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    success = client.clear_hms_errors()
+    if not success:
+        raise HTTPException(500, "Failed to clear HMS errors")
+
+    return {"success": True, "message": "HMS errors cleared"}
 
 
 @router.get("/{printer_id}/print/objects")
@@ -2078,7 +2168,131 @@ async def refresh_ams_slot(
     if not success:
         raise HTTPException(400, message)
 
+    # Apply PA profile after delay (RFID re-read takes a few seconds)
+    asyncio.create_task(_apply_pa_after_refresh(printer_id, ams_id, slot_id))
+
     return {"success": True, "message": message}
+
+
+async def _apply_pa_after_refresh(printer_id: int, ams_id: int, slot_id: int):
+    """Apply PA profile after RFID re-read completes.
+
+    Waits for the printer to finish processing the RFID data, then selects
+    the K-profile via extrusion_cali_sel.  Does NOT re-send ams_set_filament_setting
+    because that would overwrite the RFID-provided filament data.
+    """
+    await asyncio.sleep(5)
+    try:
+        from backend.app.api.routes.inventory import _find_tray_in_ams_data
+        from backend.app.core.database import async_session
+        from backend.app.models.spool import Spool
+        from backend.app.models.spool_assignment import SpoolAssignment as SA
+        from backend.app.services.spool_tag_matcher import is_bambu_tag
+
+        client = printer_manager.get_client(printer_id)
+        if not client:
+            return
+
+        state = printer_manager.get_status(printer_id)
+        if not state or not state.raw_data:
+            return
+
+        # Find current tray data (should have RFID data by now)
+        ams_data = state.raw_data.get("ams", {})
+        ams_list = (
+            ams_data.get("ams", []) if isinstance(ams_data, dict) else ams_data if isinstance(ams_data, list) else []
+        )
+        tray = _find_tray_in_ams_data(ams_list, ams_id, slot_id)
+        if not tray or not tray.get("tray_type"):
+            logger.debug("PA re-apply: no tray data for AMS%d-T%d", ams_id, slot_id)
+            return
+
+        tag_uid = tray.get("tag_uid", "")
+        tray_uuid = tray.get("tray_uuid", "")
+        tray_info_idx = tray.get("tray_info_idx", "")
+        if not is_bambu_tag(tag_uid, tray_uuid, tray_info_idx):
+            return
+
+        async with async_session() as db:
+            from sqlalchemy import select as sa_select
+            from sqlalchemy.orm import selectinload
+
+            result = await db.execute(
+                sa_select(SA)
+                .options(selectinload(SA.spool).selectinload(Spool.k_profiles))
+                .where(SA.printer_id == printer_id, SA.ams_id == ams_id, SA.tray_id == slot_id)
+            )
+            assignment = result.scalar_one_or_none()
+            if not assignment or not assignment.spool or not assignment.spool.k_profiles:
+                return
+
+            spool = assignment.spool
+            nozzle_diameter = "0.4"
+            if state.nozzles:
+                nd = state.nozzles[0].nozzle_diameter
+                if nd:
+                    nozzle_diameter = nd
+
+            # Determine slot's extruder from ams_extruder_map
+            slot_extruder = None
+            if state.ams_extruder_map:
+                if ams_id == 255:
+                    # External slots: ext-L (tray 0) → extruder 1, ext-R (tray 1) → extruder 0
+                    slot_extruder = 1 - slot_id  # 0→1, 1→0
+                else:
+                    slot_extruder = state.ams_extruder_map.get(str(ams_id))
+
+            matching_kp = None
+            for kp in spool.k_profiles:
+                if kp.printer_id == printer_id and kp.nozzle_diameter == nozzle_diameter:
+                    if slot_extruder is not None and kp.extruder_id is not None and kp.extruder_id != slot_extruder:
+                        continue
+                    matching_kp = kp
+                    break
+
+            if not matching_kp or matching_kp.cali_idx is None:
+                return
+
+            # The filament_id in extrusion_cali_sel must match the filament preset
+            # under which the K-profile was calibrated. Use spool.slicer_filament
+            # (the preset assigned in inventory), falling back to tray's RFID value.
+            kp_filament_id = spool.slicer_filament or tray_info_idx
+
+            logger.info(
+                "PA re-apply AMS%d-T%d: cali_idx=%d, filament_id=%s",
+                ams_id,
+                slot_id,
+                matching_kp.cali_idx,
+                kp_filament_id,
+            )
+
+            # 1. Select K-profile
+            # NOTE: Do NOT send ams_set_filament_setting here — it tells the firmware
+            # "this is a manual config" which destroys the RFID-detected spool state
+            # (changes eye icon to pen icon in slicer).
+            client.extrusion_cali_sel(
+                ams_id=ams_id,
+                tray_id=slot_id,
+                cali_idx=matching_kp.cali_idx,
+                filament_id=kp_filament_id,
+                nozzle_diameter=nozzle_diameter,
+            )
+
+            # NOTE: Do NOT send extrusion_cali_set here. extrusion_cali_sel already
+            # selected the correct profile by cali_idx. Sending extrusion_cali_set with
+            # the same cali_idx would MODIFY the existing profile's metadata (extruder_id,
+            # nozzle_id, name), corrupting it.
+
+            logger.info(
+                "Applied PA profile cali_idx=%d k=%.3f to printer %d AMS%d-T%d",
+                matching_kp.cali_idx,
+                matching_kp.k_value or 0,
+                printer_id,
+                ams_id,
+                slot_id,
+            )
+    except Exception as e:
+        logger.warning("Failed to apply PA profile after RFID re-read: %s", e)
 
 
 @router.get("/{printer_id}/runtime-debug")

@@ -166,6 +166,7 @@ Translations live in `frontend/src/i18n/locales/`:
 |------|----------|
 | `en.ts` | English (primary) |
 | `de.ts` | German |
+| `fr.ts` | French |
 | `ja.ts` | Japanese |
 
 ### Adding New Strings

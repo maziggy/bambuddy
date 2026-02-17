@@ -264,7 +264,63 @@ def extract_filament_properties_from_3mf(file_path: Path) -> dict[int, dict]:
     return properties
 
 
-def extract_filament_usage_from_3mf(file_path: Path) -> list[dict]:
+def extract_nozzle_mapping_from_3mf(zf: zipfile.ZipFile) -> dict[int, int] | None:
+    """Extract per-slot nozzle/extruder mapping from a 3MF file's project settings.
+
+    On dual-nozzle printers (H2D, H2D Pro), each filament slot is assigned to a
+    specific nozzle. This reads the slicer's nozzle assignment from
+    Metadata/project_settings.config.
+
+    Translation chain:
+        filament_nozzle_map[slot_id - 1] -> slicer extruder index
+        physical_extruder_map[slicer_ext] -> MQTT extruder ID (0=right, 1=left)
+
+    Args:
+        zf: An open ZipFile of the 3MF archive
+
+    Returns:
+        Dictionary mapping {slot_id: extruder_id} for dual-nozzle files,
+        or None if single-nozzle, missing data, or parse error.
+    """
+    try:
+        if "Metadata/project_settings.config" not in zf.namelist():
+            return None
+
+        content = zf.read("Metadata/project_settings.config").decode()
+        data = json.loads(content)
+
+        filament_nozzle_map = data.get("filament_nozzle_map")
+        physical_extruder_map = data.get("physical_extruder_map")
+
+        if not filament_nozzle_map or not physical_extruder_map:
+            return None
+
+        # Build slot_id (1-based) -> extruder_id mapping
+        nozzle_mapping: dict[int, int] = {}
+        for i, slicer_ext_str in enumerate(filament_nozzle_map):
+            slot_id = i + 1
+            try:
+                slicer_ext = int(slicer_ext_str)
+                if slicer_ext < len(physical_extruder_map):
+                    extruder_id = int(physical_extruder_map[slicer_ext])
+                    nozzle_mapping[slot_id] = extruder_id
+            except (ValueError, TypeError, IndexError):
+                pass  # Skip slots with unparseable nozzle mapping
+
+        if not nozzle_mapping:
+            return None
+
+        # If all slots map to the same extruder, this is a single-nozzle printer
+        unique_extruders = set(nozzle_mapping.values())
+        if len(unique_extruders) <= 1:
+            return None
+
+        return nozzle_mapping
+    except Exception:
+        return None
+
+
+def extract_filament_usage_from_3mf(file_path: Path, plate_id: int | None = None) -> list[dict]:
     """Extract per-filament total usage from 3MF slice_info.config.
 
     This extracts the slicer-estimated total usage per filament slot,
@@ -272,6 +328,7 @@ def extract_filament_usage_from_3mf(file_path: Path) -> list[dict]:
 
     Args:
         file_path: Path to the 3MF file
+        plate_id: Optional plate index to filter for (for multi-plate files)
 
     Returns:
         List of filament usage dictionaries:
@@ -286,22 +343,55 @@ def extract_filament_usage_from_3mf(file_path: Path) -> list[dict]:
             content = zf.read("Metadata/slice_info.config").decode()
             root = ET.fromstring(content)
 
-            for f in root.findall(".//filament"):
-                filament_id = f.get("id")
-                used_g = f.get("used_g", "0")
-                try:
-                    used_amount = float(used_g)
-                    if filament_id:
-                        filament_usage.append(
-                            {
-                                "slot_id": int(filament_id),
-                                "used_g": used_amount,
-                                "type": f.get("type", ""),
-                                "color": f.get("color", ""),
-                            }
-                        )
-                except (ValueError, TypeError):
-                    pass  # Skip filament entries with unparseable usage values
+            if plate_id is not None:
+                # Find the plate element with matching index
+                for plate_elem in root.findall(".//plate"):
+                    plate_index = None
+                    for meta in plate_elem.findall("metadata"):
+                        if meta.get("key") == "index":
+                            try:
+                                plate_index = int(meta.get("value", "0"))
+                            except ValueError:
+                                pass
+                            break
+
+                    if plate_index == plate_id:
+                        for f in plate_elem.findall("filament"):
+                            filament_id = f.get("id")
+                            used_g = f.get("used_g", "0")
+                            try:
+                                used_amount = float(used_g)
+                                if filament_id:
+                                    filament_usage.append(
+                                        {
+                                            "slot_id": int(filament_id),
+                                            "used_g": used_amount,
+                                            "type": f.get("type", ""),
+                                            "color": f.get("color", ""),
+                                        }
+                                    )
+                            except (ValueError, TypeError):
+                                pass
+                        break
+            else:
+                # No plate_id specified - extract all filaments
+                for f in root.findall(".//filament"):
+                    filament_id = f.get("id")
+                    used_g = f.get("used_g", "0")
+                    try:
+                        used_amount = float(used_g)
+                        if filament_id:
+                            filament_usage.append(
+                                {
+                                    "slot_id": int(filament_id),
+                                    "used_g": used_amount,
+                                    "type": f.get("type", ""),
+                                    "color": f.get("color", ""),
+                                }
+                            )
+                    except (ValueError, TypeError):
+                        pass  # Skip filament entries with unparseable usage values
+
     except Exception:
         pass  # Return whatever usage data was collected before the error
 

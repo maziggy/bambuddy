@@ -41,6 +41,7 @@ import type { MaintenanceStatus, PrinterMaintenanceOverview, MaintenanceType, Pe
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { Toggle } from '../components/Toggle';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -140,14 +141,19 @@ function getMaintenanceWikiUrl(typeName: string, printerModel: string | null): s
   const isP2S = model.includes('P2S');
 
   switch (typeName) {
-    case 'Lubricate Linear Rails':
+    case 'Lubricate Carbon Rods':
+      // X1, P1, P2S series have carbon rods
       if (isX1) return 'https://wiki.bambulab.com/en/x1/maintenance/basic-maintenance';
       if (isP1) return 'https://wiki.bambulab.com/en/p1/maintenance/p1p-maintenance';
+      if (isP2S) return 'https://wiki.bambulab.com/en/p2s/maintenance/belt-tension';
+      return null;
+
+    case 'Lubricate Linear Rails':
+      // A1 and H2 series have linear rails
       if (isA1Mini) return 'https://wiki.bambulab.com/en/a1-mini/maintenance/lubricate-y-axis';
       if (isA1) return 'https://wiki.bambulab.com/en/a1/maintenance/lubricate-y-axis';
       if (isH2) return 'https://wiki.bambulab.com/en/h2/maintenance/x-axis-lubrication';
-      if (isP2S) return 'https://wiki.bambulab.com/en/p2s/maintenance/belt-tension'; // P2S maintenance page
-      return 'https://wiki.bambulab.com/en/general/lead-screws-lubrication';
+      return null;
 
     case 'Clean Nozzle/Hotend':
       if (isX1 || isP1) return 'https://wiki.bambulab.com/en/x1/troubleshooting/nozzle-clog';
@@ -168,11 +174,16 @@ function getMaintenanceWikiUrl(typeName: string, printerModel: string | null): s
       return 'https://wiki.bambulab.com/en/x1/maintenance/belt-tension';
 
     case 'Clean Carbon Rods':
-      // Only X1 and P1 series have carbon rods
-      if (isX1 || isP1) return 'https://wiki.bambulab.com/en/general/carbon-rods-clearance';
-      // A1, H2, P2S don't have carbon rods - return null
-      if (isA1Mini || isA1 || isH2 || isP2S) return null;
-      return 'https://wiki.bambulab.com/en/general/carbon-rods-clearance';
+      // X1, P1, P2S series have carbon rods
+      if (isX1 || isP1 || isP2S) return 'https://wiki.bambulab.com/en/general/carbon-rods-clearance';
+      return null;
+
+    case 'Clean Linear Rails':
+      // A1 and H2 series have linear rails
+      if (isA1Mini) return 'https://wiki.bambulab.com/en/a1-mini/maintenance/lubricate-y-axis';
+      if (isA1) return 'https://wiki.bambulab.com/en/a1/maintenance/lubricate-y-axis';
+      if (isH2) return 'https://wiki.bambulab.com/en/h2/maintenance/x-axis-lubrication';
+      return null;
 
     case 'Clean Build Plate':
       // Same for all printers
@@ -275,9 +286,9 @@ function MaintenanceCard({
 
   return (
     <div className={`rounded-xl border p-4 transition-all ${getBgColor()}`}>
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-3 max-[550px]:flex-wrap">
         {/* Icon with status indicator */}
-        <div className={`relative p-2.5 rounded-lg ${
+        <div className={`relative p-2.5 rounded-lg shrink-0 ${
           item.is_due ? 'bg-red-500/20' :
           item.is_warning ? 'bg-amber-500/20' :
           item.enabled ? 'bg-bambu-dark' : 'bg-bambu-dark/50'
@@ -340,7 +351,7 @@ function MaintenanceCard({
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 max-[550px]:w-full max-[550px]:justify-end max-[550px]:mt-1">
           <span title={!hasPermission('maintenance:update') ? t('maintenance.noPermissionUpdate') : undefined}>
             <Toggle
               checked={item.enabled}
@@ -381,7 +392,7 @@ function PrinterSection({
   hasPermission: (permission: Permission) => boolean;
   t: TFunction;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const [editingHours, setEditingHours] = useState(false);
   const [hoursInput, setHoursInput] = useState(overview.total_print_hours.toFixed(1));
 
@@ -542,6 +553,8 @@ function SettingsSection({
   onAddType,
   onUpdateType,
   onDeleteType,
+  onRestoreDefaults,
+  isRestoringDefaults,
   onAssignType,
   onRemoveItem,
   hasPermission,
@@ -553,6 +566,8 @@ function SettingsSection({
   onAddType: (data: { name: string; description?: string; default_interval_hours: number; interval_type: 'hours' | 'days'; icon?: string; wiki_url?: string | null }, printerIds: number[]) => void;
   onUpdateType: (id: number, data: { name?: string; default_interval_hours?: number; interval_type?: 'hours' | 'days'; icon?: string; wiki_url?: string | null }) => void;
   onDeleteType: (id: number) => void;
+  onRestoreDefaults: () => void;
+  isRestoringDefaults: boolean;
   onAssignType: (printerId: number, typeId: number) => void;
   onRemoveItem: (itemId: number) => void;
   hasPermission: (permission: Permission) => boolean;
@@ -569,6 +584,7 @@ function SettingsSection({
   const [newTypeWikiUrl, setNewTypeWikiUrl] = useState('');
   const [selectedPrinters, setSelectedPrinters] = useState<Set<number>>(new Set());
   const [expandedType, setExpandedType] = useState<number | null>(null);
+  const [pendingSystemDelete, setPendingSystemDelete] = useState<MaintenanceType | null>(null);
 
   // Get unique printers from overview
   const printers = useMemo(() => {
@@ -687,14 +703,24 @@ function SettingsSection({
             <h2 className="text-lg font-semibold text-white">{t('maintenance.maintenanceTypes')}</h2>
             <p className="text-sm text-bambu-gray mt-1">{t('maintenance.maintenanceTypesDescription')}</p>
           </div>
-          <Button
-            onClick={() => setShowAddType(!showAddType)}
-            disabled={!hasPermission('maintenance:create')}
-            title={!hasPermission('maintenance:create') ? t('maintenance.noPermissionEditTypes') : undefined}
-          >
-            <Plus className="w-4 h-4" />
-            {t('maintenance.addCustomType')}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              onClick={onRestoreDefaults}
+              disabled={!hasPermission('maintenance:delete') || isRestoringDefaults}
+              title={!hasPermission('maintenance:delete') ? t('maintenance.noPermissionDeleteTypes') : undefined}
+            >
+              {t('maintenance.restoreDefaults')}
+            </Button>
+            <Button
+              onClick={() => setShowAddType(!showAddType)}
+              disabled={!hasPermission('maintenance:create')}
+              title={!hasPermission('maintenance:create') ? t('maintenance.noPermissionEditTypes') : undefined}
+            >
+              <Plus className="w-4 h-4" />
+              {t('maintenance.addCustomType')}
+            </Button>
+          </div>
         </div>
 
         {/* Add custom type form */}
@@ -836,6 +862,17 @@ function SettingsSection({
                       {formatIntervalLabel(type.default_interval_hours, intervalType, t)}
                     </div>
                   </div>
+                  <button
+                    onClick={() => {
+                      if (!hasPermission('maintenance:delete')) return;
+                      setPendingSystemDelete(type);
+                    }}
+                    disabled={!hasPermission('maintenance:delete')}
+                    title={!hasPermission('maintenance:delete') ? t('maintenance.noPermissionDeleteTypes') : undefined}
+                    className={`p-2 rounded-lg hover:bg-bambu-dark text-bambu-gray hover:text-red-400 transition-colors ${!hasPermission('maintenance:delete') ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             );
@@ -1114,6 +1151,23 @@ function SettingsSection({
           </CardContent>
         </Card>
       )}
+
+      {pendingSystemDelete && (
+        <ConfirmModal
+          title={t('maintenance.deleteSystemTypeTitle')}
+          message={t('maintenance.deleteSystemTypeMessage', { name: pendingSystemDelete.name })}
+          confirmText={t('common.delete')}
+          cancelText={t('common.cancel')}
+          variant="danger"
+          cancelVariant="primary"
+          cardClassName="bg-red-950/70 border border-red-800/70"
+          onConfirm={() => {
+            onDeleteType(pendingSystemDelete.id);
+            setPendingSystemDelete(null);
+          }}
+          onCancel={() => setPendingSystemDelete(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1183,6 +1237,18 @@ export function MaintenancePage() {
       queryClient.invalidateQueries({ queryKey: ['maintenanceTypes'] });
       queryClient.invalidateQueries({ queryKey: ['maintenanceOverview'] });
       showToast(t('maintenance.typeDeleted'));
+    },
+    onError: (error: Error) => {
+      showToast(error.message, 'error');
+    },
+  });
+
+  const restoreDefaultsMutation = useMutation({
+    mutationFn: api.restoreDefaultMaintenanceTypes,
+    onSuccess: (data: { restored: number }) => {
+      queryClient.invalidateQueries({ queryKey: ['maintenanceTypes'] });
+      queryClient.invalidateQueries({ queryKey: ['maintenanceOverview'] });
+      showToast(t('maintenance.defaultsRestored', { count: data.restored }));
     },
     onError: (error: Error) => {
       showToast(error.message, 'error');
@@ -1342,6 +1408,8 @@ export function MaintenancePage() {
           }}
           onUpdateType={(id, data) => updateTypeMutation.mutate({ id, data })}
           onDeleteType={(id) => deleteTypeMutation.mutate(id)}
+          onRestoreDefaults={() => restoreDefaultsMutation.mutate()}
+          isRestoringDefaults={restoreDefaultsMutation.isPending}
           onAssignType={(printerId, typeId) => assignTypeMutation.mutate({ printerId, typeId })}
           onRemoveItem={(itemId) => removeItemMutation.mutate(itemId)}
           hasPermission={hasPermission}

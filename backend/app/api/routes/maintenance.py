@@ -26,6 +26,7 @@ from backend.app.schemas.maintenance import (
     PrinterMaintenanceUpdate,
 )
 from backend.app.services.notification_service import notification_service
+from backend.app.utils.printer_models import get_rod_type
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +34,33 @@ router = APIRouter(prefix="/maintenance", tags=["maintenance"])
 
 # Default maintenance types
 DEFAULT_MAINTENANCE_TYPES = [
+    # Carbon rod models only (X1/P1/P2S)
     {
-        "name": "Lubricate Linear Rails",
-        "description": "Apply lubricant to linear rails and rods for smooth motion",
+        "name": "Lubricate Carbon Rods",
+        "description": "Apply lubricant to carbon rods for smooth motion",
         "default_interval_hours": 50.0,
         "icon": "Droplet",
     },
+    {
+        "name": "Clean Carbon Rods",
+        "description": "Wipe carbon rods with a dry cloth",
+        "default_interval_hours": 100.0,
+        "icon": "Sparkles",
+    },
+    # Linear rail models only (A1/H2)
+    {
+        "name": "Lubricate Linear Rails",
+        "description": "Apply lubricant to linear rails for smooth motion",
+        "default_interval_hours": 50.0,
+        "icon": "Droplet",
+    },
+    {
+        "name": "Clean Linear Rails",
+        "description": "Wipe linear rails with a dry cloth to remove dust and debris",
+        "default_interval_hours": 100.0,
+        "icon": "Sparkles",
+    },
+    # Universal (all models)
     {
         "name": "Clean Nozzle/Hotend",
         "description": "Clean nozzle exterior and perform cold pull if needed",
@@ -50,12 +72,6 @@ DEFAULT_MAINTENANCE_TYPES = [
         "description": "Verify and adjust belt tension for X/Y axes",
         "default_interval_hours": 200.0,
         "icon": "Ruler",
-    },
-    {
-        "name": "Clean Carbon Rods",
-        "description": "Wipe carbon rods with a dry cloth",
-        "default_interval_hours": 100.0,
-        "icon": "Sparkles",
     },
     {
         "name": "Clean Build Plate",
@@ -70,6 +86,30 @@ DEFAULT_MAINTENANCE_TYPES = [
         "icon": "Cable",
     },
 ]
+
+# System types that only apply to printers with a specific rod/rail type.
+# "carbon" = X1/P1/P2S series (carbon rods), "linear_rail" = A1/H2 series.
+# Types not listed here apply to all printers.
+_ROD_TYPE_REQUIREMENTS: dict[str, str] = {
+    "Lubricate Carbon Rods": "carbon",
+    "Clean Carbon Rods": "carbon",
+    "Lubricate Linear Rails": "linear_rail",
+    "Clean Linear Rails": "linear_rail",
+}
+
+
+def _should_apply_to_printer(type_name: str, printer_model: str | None) -> bool:
+    """Check if a system maintenance type should apply to a given printer model."""
+    rod_requirement = _ROD_TYPE_REQUIREMENTS.get(type_name)
+    if rod_requirement is None:
+        return True  # Not model-specific, applies to all
+
+    rod_type = get_rod_type(printer_model)
+    if rod_type is None:
+        # Unknown model — default to carbon rods (legacy behavior)
+        return rod_requirement == "carbon"
+
+    return rod_type == rod_requirement
 
 
 async def get_printer_total_hours(db: AsyncSession, printer_id: int) -> float:
@@ -94,13 +134,27 @@ async def get_printer_total_hours(db: AsyncSession, printer_id: int) -> float:
 
 
 async def ensure_default_types(db: AsyncSession) -> None:
-    """Ensure default maintenance types exist."""
-    result = await db.execute(select(MaintenanceType).where(MaintenanceType.is_system.is_(True)))
+    """Ensure default maintenance types exist, remove stale/duplicate ones."""
+    result = await db.execute(
+        select(MaintenanceType).where(MaintenanceType.is_system.is_(True)).order_by(MaintenanceType.id)
+    )
     existing = result.scalars().all()
-    existing_names = {t.name for t in existing}
 
+    default_names = {t["name"] for t in DEFAULT_MAINTENANCE_TYPES}
+
+    # Remove stale system types no longer in defaults (e.g. renamed types)
+    # and deduplicate: if concurrent requests created the same type twice,
+    # keep only the first (lowest id) and delete the rest.
+    seen_names: set[str] = set()
+    for t in existing:
+        if t.name not in default_names or t.name in seen_names:
+            await db.delete(t)
+        else:
+            seen_names.add(t.name)
+
+    # Create any missing default types
     for type_def in DEFAULT_MAINTENANCE_TYPES:
-        if type_def["name"] not in existing_names:
+        if type_def["name"] not in seen_names:
             new_type = MaintenanceType(
                 name=type_def["name"],
                 description=type_def["description"],
@@ -123,7 +177,11 @@ async def get_maintenance_types(
 ):
     """Get all maintenance types."""
     await ensure_default_types(db)
-    result = await db.execute(select(MaintenanceType).order_by(MaintenanceType.is_system.desc(), MaintenanceType.name))
+    result = await db.execute(
+        select(MaintenanceType)
+        .where(MaintenanceType.is_deleted.is_(False))
+        .order_by(MaintenanceType.is_system.desc(), MaintenanceType.name)
+    )
     return result.scalars().all()
 
 
@@ -176,18 +234,38 @@ async def delete_maintenance_type(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
 ):
-    """Delete a custom maintenance type."""
+    """Delete a maintenance type."""
     result = await db.execute(select(MaintenanceType).where(MaintenanceType.id == type_id))
     maint_type = result.scalar_one_or_none()
     if not maint_type:
         raise HTTPException(status_code=404, detail="Maintenance type not found")
 
     if maint_type.is_system:
-        raise HTTPException(status_code=400, detail="Cannot delete system maintenance type")
+        maint_type.is_deleted = True
+        await db.commit()
+        return {"status": "deleted"}
 
     await db.delete(maint_type)
     await db.commit()
     return {"status": "deleted"}
+
+
+@router.post("/types/restore-defaults")
+async def restore_default_maintenance_types(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
+):
+    """Restore deleted default maintenance types."""
+    await ensure_default_types(db)
+    result = await db.execute(
+        select(MaintenanceType).where(MaintenanceType.is_system.is_(True)).where(MaintenanceType.is_deleted.is_(True))
+    )
+    deleted_types = result.scalars().all()
+    for maint_type in deleted_types:
+        maint_type.is_deleted = False
+
+    await db.commit()
+    return {"restored": len(deleted_types)}
 
 
 # ============== Printer Maintenance ==============
@@ -210,7 +288,7 @@ async def _get_printer_maintenance_internal(
     total_hours = await get_printer_total_hours(db, printer_id)
 
     # Get all maintenance types
-    result = await db.execute(select(MaintenanceType))
+    result = await db.execute(select(MaintenanceType).where(MaintenanceType.is_deleted.is_(False)))
     all_types = result.scalars().all()
 
     # Get printer's maintenance items
@@ -228,6 +306,11 @@ async def _get_printer_maintenance_internal(
     now = datetime.utcnow()
 
     for maint_type in all_types:
+        # Skip system types that don't apply to this printer model
+        # (e.g., "Clean Carbon Rods" for H2D which has steel rods)
+        if maint_type.is_system and not _should_apply_to_printer(maint_type.name, printer.model):
+            continue
+
         item = existing_items.get(maint_type.id)
         default_interval_type = getattr(maint_type, "interval_type", "hours") or "hours"
 

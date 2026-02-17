@@ -4,13 +4,25 @@ Tests G-code parsing, filament length-to-weight conversion,
 and cumulative layer usage lookup.
 """
 
+import io
 import math
+import zipfile
 
 from backend.app.utils.threemf_tools import (
+    extract_filament_usage_from_3mf,
     get_cumulative_usage_at_layer,
     mm_to_grams,
     parse_gcode_layer_filament_usage,
 )
+
+
+def create_mock_3mf(slice_info_content: str) -> io.BytesIO:
+    """Create a mock 3MF file (ZIP) with slice_info.config content."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr("Metadata/slice_info.config", slice_info_content)
+    buffer.seek(0)
+    return buffer
 
 
 class TestParseGcodeLayerFilamentUsage:
@@ -247,3 +259,152 @@ class TestGetCumulativeUsageAtLayer:
         """Target layer 0."""
         data = {0: {0: 10.0}, 1: {0: 20.0}}
         assert get_cumulative_usage_at_layer(data, 0) == {0: 10.0}
+
+
+class TestExtractFilamentUsageFrom3mf:
+    """Tests for extract_filament_usage_from_3mf function."""
+
+    def test_extract_single_filament(self, tmp_path):
+        """Test extracting a single filament."""
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <filament id="1" used_g="50.5" type="PLA" color="#FF0000"/>
+        </config>
+        """
+        mock_3mf = create_mock_3mf(xml_content)
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(mock_3mf.read())
+
+        result = extract_filament_usage_from_3mf(file_path)
+
+        assert len(result) == 1
+        assert result[0]["slot_id"] == 1
+        assert result[0]["used_g"] == 50.5
+        assert result[0]["type"] == "PLA"
+        assert result[0]["color"] == "#FF0000"
+
+    def test_extract_multiple_filaments(self, tmp_path):
+        """Test extracting multiple filaments."""
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <filament id="1" used_g="50.5" type="PLA" color="#FF0000"/>
+            <filament id="2" used_g="30.2" type="PETG" color="#00FF00"/>
+            <filament id="3" used_g="10.0" type="ABS" color="#0000FF"/>
+        </config>
+        """
+        mock_3mf = create_mock_3mf(xml_content)
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(mock_3mf.read())
+
+        result = extract_filament_usage_from_3mf(file_path)
+
+        assert len(result) == 3
+        assert result[0]["slot_id"] == 1
+        assert result[1]["slot_id"] == 2
+        assert result[2]["slot_id"] == 3
+
+    def test_extract_filament_with_plate_id(self, tmp_path):
+        """Test extracting filament for a specific plate."""
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <plate>
+                <metadata key="index" value="1"/>
+                <filament id="1" used_g="25.0" type="PLA" color="#FF0000"/>
+            </plate>
+            <plate>
+                <metadata key="index" value="2"/>
+                <filament id="1" used_g="75.0" type="PETG" color="#00FF00"/>
+            </plate>
+        </config>
+        """
+        mock_3mf = create_mock_3mf(xml_content)
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(mock_3mf.read())
+
+        result = extract_filament_usage_from_3mf(file_path, plate_id=2)
+
+        assert len(result) == 1
+        assert result[0]["used_g"] == 75.0
+        assert result[0]["type"] == "PETG"
+
+    def test_missing_slice_info_returns_empty(self, tmp_path):
+        """Test that missing slice_info.config returns empty list."""
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as zf:
+            zf.writestr("other_file.txt", "content")
+        buffer.seek(0)
+
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(buffer.read())
+
+        result = extract_filament_usage_from_3mf(file_path)
+
+        assert result == []
+
+    def test_invalid_file_returns_empty(self, tmp_path):
+        """Test that invalid file returns empty list."""
+        file_path = tmp_path / "invalid.3mf"
+        file_path.write_text("not a zip file")
+
+        result = extract_filament_usage_from_3mf(file_path)
+
+        assert result == []
+
+    def test_nonexistent_file_returns_empty(self, tmp_path):
+        """Test that nonexistent file returns empty list."""
+        file_path = tmp_path / "nonexistent.3mf"
+
+        result = extract_filament_usage_from_3mf(file_path)
+
+        assert result == []
+
+    def test_filament_without_id_is_skipped(self, tmp_path):
+        """Test that filament without id is skipped."""
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <filament used_g="50.5" type="PLA" color="#FF0000"/>
+            <filament id="2" used_g="30.0" type="PETG" color="#00FF00"/>
+        </config>
+        """
+        mock_3mf = create_mock_3mf(xml_content)
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(mock_3mf.read())
+
+        result = extract_filament_usage_from_3mf(file_path)
+
+        assert len(result) == 1
+        assert result[0]["slot_id"] == 2
+
+    def test_invalid_used_g_is_skipped(self, tmp_path):
+        """Test that filament with invalid used_g is skipped."""
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <filament id="1" used_g="invalid" type="PLA" color="#FF0000"/>
+            <filament id="2" used_g="30.0" type="PETG" color="#00FF00"/>
+        </config>
+        """
+        mock_3mf = create_mock_3mf(xml_content)
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(mock_3mf.read())
+
+        result = extract_filament_usage_from_3mf(file_path)
+
+        assert len(result) == 1
+        assert result[0]["slot_id"] == 2
+
+    def test_missing_optional_fields(self, tmp_path):
+        """Test that missing type and color default to empty string."""
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <filament id="1" used_g="50.5"/>
+        </config>
+        """
+        mock_3mf = create_mock_3mf(xml_content)
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(mock_3mf.read())
+
+        result = extract_filament_usage_from_3mf(file_path)
+
+        assert len(result) == 1
+        assert result[0]["type"] == ""
+        assert result[0]["color"] == ""

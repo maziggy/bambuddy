@@ -147,7 +147,7 @@ export function UsersPage() {
   const handleCreate = () => {
     // Use the status from the query hook
     const advancedAuthEnabled = advancedAuthStatus?.advanced_auth_enabled || false;
-    
+
     if (!formData.username) {
       const errorMsg = t('users.toast.fillRequired');
       showToast(errorMsg, 'error');
@@ -156,7 +156,7 @@ export function UsersPage() {
       }
       return;
     }
-    
+
     // Email is required when advanced auth is enabled
     if (advancedAuthEnabled && !formData.email) {
       const errorMsg = 'Email is required when advanced authentication is enabled';
@@ -164,7 +164,7 @@ export function UsersPage() {
       console.error('[Advanced Auth] Create user failed: Email is required when advanced authentication is enabled');
       return;
     }
-    
+
     // Password validation only when advanced auth is disabled
     if (!advancedAuthEnabled) {
       if (!formData.password) {
@@ -180,7 +180,7 @@ export function UsersPage() {
         return;
       }
     }
-    
+
     createMutation.mutate({
       username: formData.username,
       password: advancedAuthEnabled ? undefined : formData.password,

@@ -47,9 +47,10 @@ import {
   Square,
   User,
   Pause,
+  Weight,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { parseUTCDate, formatDateTime, type TimeFormat } from '../utils/date';
+import { parseUTCDate, formatDateTime, type TimeFormat, formatETA, formatDuration } from '../utils/date';
 import type { PrintQueueItem, PrintQueueBulkUpdate, Permission } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
@@ -58,12 +59,9 @@ import { PrintModal } from '../components/PrintModal';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 
-function formatDuration(seconds: number | null | undefined): string {
-  if (!seconds) return '--';
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
+function formatWeight(g: number, useKg = false): string {
+  if (useKg && g >= 1000) return `${(g / 1000).toFixed(1)}kg`;
+  return `${Math.round(g)}g`;
 }
 
 function formatRelativeTime(dateString: string | null, timeFormat: TimeFormat = 'system', t?: (key: string, options?: Record<string, unknown>) => string): string {
@@ -316,6 +314,34 @@ function SortableQueueItem({
   printerState?: string | null;
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
+  // Fetch printer status every 30 seconds while printing to monitor progress
+  const { data: status } = useQuery({
+    queryKey: ['printerStatus', item.printer_id],
+    queryFn: () => api.getPrinterStatus(item.printer_id!),
+    refetchInterval: 30000,
+    enabled: item.printer_id != null && printerState === 'printing',
+  });
+
+  // Determine if we're printing a library file
+  const isLibraryFile = !!item.library_file_id && !item.archive_id;
+  // Fetch archive plate details
+  const { data: archivePlatesData } = useQuery({
+    queryKey: ['archive-plates', item.archive_id],
+    queryFn: () => api.getArchivePlates(item.archive_id!),
+    enabled: !!item.archive_id && !isLibraryFile,
+  });
+
+  // Fetch library file plate details
+  const { data: libraryPlatesData } = useQuery({
+    queryKey: ['library-file-plates', item.library_file_id],
+    queryFn: () => api.getLibraryFilePlates(item.library_file_id!),
+    enabled: isLibraryFile && !!item.library_file_id,
+  });
+
+  // Combine plates data from either source
+  const platesData = isLibraryFile ? libraryPlatesData : archivePlatesData;
+  const plates = platesData?.plates ?? [];
+
   const canReorder = hasPermission('queue:reorder');
   const {
     attributes,
@@ -415,6 +441,7 @@ function SortableQueueItem({
           <div className="flex items-center gap-2 mb-1">
             <p className="text-white font-medium truncate">
               {item.archive_name || item.library_file_name || `File #${item.archive_id || item.library_file_id}`}
+              {(platesData?.is_multi_plate ?? false) && item.plate_id !== undefined && item.plate_id !== null && ` • ${plates.find(plate => plate.index === item.plate_id)?.name || t('queue.plateNumber', { index: item.plate_id })}`}
             </p>
             {item.archive_id ? (
               <Link
@@ -448,6 +475,12 @@ function SortableQueueItem({
               <span className="flex items-center gap-1.5">
                 <Timer className="w-3.5 h-3.5" />
                 {formatDuration(item.print_time_seconds)}
+              </span>
+            )}
+            {item.filament_used_grams && (
+              <span className="flex items-center gap-1.5">
+                <Weight className="w-3.5 h-3.5" />
+                {formatWeight(item.filament_used_grams)}
               </span>
             )}
             {item.created_by_username && (
@@ -486,12 +519,36 @@ function SortableQueueItem({
           </div>
 
           {/* Progress bar for printing items - TODO: integrate with WebSocket */}
-          {isPrinting && (
+          {isPrinting && status && (
             <div className="mt-3">
-              <div className="h-2 bg-bambu-dark rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-blue-500 to-blue-400 animate-pulse w-full opacity-50" />
+              <div className="flex items-center justify-between text-sm">
+                <div className="flex-1 bg-bambu-dark-tertiary rounded-full h-2 mr-3">
+                  <div
+                    className="bg-bambu-green h-2 rounded-full transition-all"
+                    style={{ width: `${status.progress || 0}%` }}
+                  />
+                </div>
+                <span className="text-white">{Math.round(status.progress || 0)}%</span>
               </div>
-              <p className="text-xs text-bambu-gray mt-1">{t('queue.printingInProgress')}</p>
+              <div className="flex items-center gap-3 mt-2 text-xs text-bambu-gray">
+                {status.remaining_time != null && status.remaining_time > 0 && (
+                  <>
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {formatDuration(status.remaining_time * 60)}
+                    </span>
+                    <span className="text-bambu-green font-medium" title={t('printers.estimatedCompletion')}>
+                      ETA {formatETA(status.remaining_time, timeFormat, t)}
+                    </span>
+                  </>
+                )}
+                {status.layer_num != null && status.total_layers != null && status.total_layers > 0 && (
+                  <span className="flex items-center gap-1">
+                    <Layers className="w-3 h-3" />
+                    {status.layer_num}/{status.total_layers}
+                  </span>
+                )}
+              </div>
             </div>
           )}
 
@@ -894,6 +951,11 @@ export function QueuePage() {
     return pendingItems.reduce((acc, item) => acc + (item.print_time_seconds || 0), 0);
   }, [pendingItems]);
 
+  // Calculate total material weight
+  const totalWeight = useMemo(() => {
+    return pendingItems.reduce((acc, item) => acc + (item.filament_used_grams || 0), 0);
+  }, [pendingItems]);
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -925,7 +987,7 @@ export function QueuePage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
         <Card className="bg-gradient-to-br from-blue-500/10 to-transparent border-blue-500/20">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
@@ -963,6 +1025,20 @@ export function QueuePage() {
               <div>
                 <p className="text-2xl font-bold text-white">{formatDuration(totalQueueTime)}</p>
                 <p className="text-sm text-bambu-gray">{t('queue.summary.totalTime')}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-purple-500/10 to-transparent border-purple-500/20">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                <Weight className="w-5 h-5 text-purple-500" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-white">{formatWeight(totalWeight)}</p>
+                <p className="text-sm text-bambu-gray">{t('queue.summary.totalWeight')}</p>
               </div>
             </div>
           </CardContent>

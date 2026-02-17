@@ -91,7 +91,7 @@ export function LoginPage() {
           <div className="space-y-4">
             <div>
               <label htmlFor="username" className="block text-sm font-medium text-white mb-2">
-                {advancedAuthStatus?.advanced_auth_enabled 
+                {advancedAuthStatus?.advanced_auth_enabled
                   ? t('login.usernameOrEmail') || 'Username or Email'
                   : t('login.username')}
               </label>
@@ -102,7 +102,7 @@ export function LoginPage() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="block w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
-                placeholder={advancedAuthStatus?.advanced_auth_enabled 
+                placeholder={advancedAuthStatus?.advanced_auth_enabled
                   ? t('login.usernameOrEmailPlaceholder') || 'Enter your username or email'
                   : t('login.usernamePlaceholder')}
                 autoComplete="username"
@@ -217,8 +217,8 @@ export function LoginPage() {
                       className="flex-1"
                       disabled={forgotPasswordMutation.isPending}
                     >
-                      {forgotPasswordMutation.isPending 
-                        ? (t('login.sending') || 'Sending...') 
+                      {forgotPasswordMutation.isPending
+                        ? (t('login.sending') || 'Sending...')
                         : (t('login.sendResetEmail') || 'Send Reset Email')}
                     </Button>
                   </div>

@@ -14,6 +14,9 @@ interface SlotInfo {
   trayColor?: string;
   traySubBrands?: string;
   trayInfoIdx?: string;
+  extruderId?: number;
+  caliIdx?: number | null;
+  savedPresetId?: string;
 }
 
 // Get proper AMS label (handles HT AMS with ID 128+)
@@ -72,6 +75,7 @@ interface ConfigureAmsSlotModalProps {
   printerId: number;
   slotInfo: SlotInfo;
   nozzleDiameter?: string;
+  printerModel?: string;
   onSuccess?: () => void;
 }
 
@@ -209,12 +213,23 @@ function colorNameToHex(name: string): string | null {
   return COLOR_NAME_MAP[normalized] || null;
 }
 
+// Extract printer model from preset name suffix "@BBL X1C 0.4 nozzle" → "X1C"
+function extractPresetModel(name: string): string | null {
+  const atIdx = name.indexOf('@');
+  if (atIdx < 0) return null;
+  const suffix = name.slice(atIdx + 1).trim();
+  const bblMatch = suffix.match(/^BBL\s+(.+?)(?:\s+[\d.]+\s*nozzle)?$/i);
+  if (bblMatch) return bblMatch[1].trim();
+  return null;
+}
+
 export function ConfigureAmsSlotModal({
   isOpen,
   onClose,
   printerId,
   slotInfo,
   nozzleDiameter = '0.4',
+  printerModel,
   onSuccess,
 }: ConfigureAmsSlotModalProps) {
   const { t } = useTranslation();
@@ -226,11 +241,12 @@ export function ConfigureAmsSlotModal({
   const [showSuccess, setShowSuccess] = useState(false);
   const [showExtendedColors, setShowExtendedColors] = useState(false);
 
-  // Fetch cloud settings
-  const { data: cloudSettings, isLoading: settingsLoading } = useQuery({
+  // Fetch cloud settings (gracefully handle 401 when logged out)
+  const { data: cloudSettings, isLoading: settingsLoading, isError: cloudError } = useQuery({
     queryKey: ['cloudSettings'],
     queryFn: () => api.getCloudSettings(),
     enabled: isOpen,
+    retry: false,
   });
 
   // Fetch local presets
@@ -240,6 +256,14 @@ export function ConfigureAmsSlotModal({
     enabled: isOpen,
   });
 
+  // Fetch built-in filament names (static fallback)
+  const { data: builtinFilaments, isLoading: builtinLoading } = useQuery({
+    queryKey: ['builtinFilaments'],
+    queryFn: () => api.getBuiltinFilaments(),
+    enabled: isOpen,
+    staleTime: Infinity,
+  });
+
   // Fetch K profiles
   const { data: kprofilesData, isLoading: kprofilesLoading } = useQuery({
     queryKey: ['kprofiles', printerId, nozzleDiameter],
@@ -247,28 +271,42 @@ export function ConfigureAmsSlotModal({
     enabled: isOpen && !!printerId,
   });
 
+  // Fetch color catalog
+  const { data: colorCatalog } = useQuery({
+    queryKey: ['colorCatalog'],
+    queryFn: () => api.getColorCatalog(),
+    enabled: isOpen,
+    staleTime: Infinity,
+  });
+
   // Configure slot mutation
   const configureMutation = useMutation({
     mutationFn: async () => {
       if (!selectedPresetId) throw new Error('No filament preset selected');
 
-      // Check if this is a local preset
+      // Determine preset source
       const isLocal = selectedPresetId.startsWith('local_');
+      const isBuiltin = selectedPresetId.startsWith('builtin_');
       const localId = isLocal ? parseInt(selectedPresetId.replace('local_', ''), 10) : null;
+      const builtinFilamentId = isBuiltin ? selectedPresetId.replace('builtin_', '') : null;
       const localPreset = isLocal
         ? localPresets?.filament.find(p => p.id === localId)
         : null;
+      const builtinPreset = isBuiltin
+        ? builtinFilaments?.find(b => b.filament_id === builtinFilamentId)
+        : null;
 
-      // Get the selected cloud preset details (null for local presets)
-      const selectedPreset = !isLocal
+      // Get the selected cloud preset details (null for local/builtin presets)
+      const selectedPreset = (!isLocal && !isBuiltin)
         ? cloudSettings?.filament.find(p => p.setting_id === selectedPresetId)
         : null;
 
-      if (!isLocal && !selectedPreset) throw new Error('Selected preset not found');
+      if (!isLocal && !isBuiltin && !selectedPreset) throw new Error('Selected preset not found');
       if (isLocal && !localPreset) throw new Error('Selected local preset not found');
+      if (isBuiltin && !builtinPreset) throw new Error('Selected builtin preset not found');
 
       // Parse the preset name for filament info
-      const presetName = isLocal ? localPreset!.name : selectedPreset!.name;
+      const presetName = isLocal ? localPreset!.name : isBuiltin ? builtinPreset!.name : selectedPreset!.name;
       const parsed = parsePresetName(presetName);
 
       // Get cali_idx from selected K profile's slot_id (-1 = use default 0.020)
@@ -286,6 +324,10 @@ export function ConfigureAmsSlotModal({
       if (isLocal) {
         // Local presets have no Bambu Cloud mapping
         trayInfoIdx = '';
+        settingId = '';
+      } else if (isBuiltin) {
+        // Built-in presets use the filament_id directly as tray_info_idx
+        trayInfoIdx = builtinFilamentId!;
         settingId = '';
       } else {
         // Get tray_info_idx: for user presets, fetch detail to get filament_id or derive from base_id
@@ -312,7 +354,7 @@ export function ConfigureAmsSlotModal({
       let tempMin = isLocal && localPreset?.nozzle_temp_min ? localPreset.nozzle_temp_min : 190;
       let tempMax = isLocal && localPreset?.nozzle_temp_max ? localPreset.nozzle_temp_max : 230;
 
-      if (!isLocal || (!localPreset?.nozzle_temp_min && !localPreset?.nozzle_temp_max)) {
+      if (!isLocal || isBuiltin || (!localPreset?.nozzle_temp_min && !localPreset?.nozzle_temp_max)) {
         // Fall back to material-based defaults
         const material = (isLocal ? (localPreset?.filament_type || parsed.material) : parsed.material).toUpperCase();
         if (material.includes('PLA')) {
@@ -368,8 +410,8 @@ export function ConfigureAmsSlotModal({
       // Save the preset mapping so we can display the correct name in the UI
       // This is needed because user presets use filament_id (e.g., P285e239) as tray_info_idx,
       // which can't be resolved to a name via the filamentInfo API
-      const mappingPresetId = isLocal ? `local_${localId}` : selectedPresetId;
-      const mappingSource = isLocal ? 'local' : 'cloud';
+      const mappingPresetId = isLocal ? `local_${localId}` : isBuiltin ? `builtin_${builtinFilamentId}` : selectedPresetId;
+      const mappingSource = isLocal ? 'local' : isBuiltin ? 'builtin' : 'cloud';
       try {
         await api.saveSlotPreset(printerId, slotInfo.amsId, slotInfo.trayId, mappingPresetId, traySubBrands, mappingSource);
       } catch (e) {
@@ -405,52 +447,98 @@ export function ConfigureAmsSlotModal({
     },
   });
 
-  // Unified preset item for the list (cloud + local)
-  type PresetItem = { id: string; name: string; source: 'cloud' | 'local'; isUser: boolean };
+  // Unified preset item for the list (cloud + local + builtin fallback)
+  type PresetItem = { id: string; name: string; source: 'cloud' | 'local' | 'builtin'; isUser: boolean };
 
-  // Filter filament presets based on search (merged cloud + local)
+  // Filter filament presets based on search (merged cloud + local + builtin)
   const filteredPresets = useMemo(() => {
     const query = searchQuery.toLowerCase();
     const items: PresetItem[] = [];
 
-    // Add local presets first
-    if (localPresets?.filament) {
-      for (const lp of localPresets.filament) {
-        if (!query || lp.name.toLowerCase().includes(query)) {
-          items.push({ id: `local_${lp.id}`, name: lp.name, source: 'local', isUser: false });
-        }
-      }
-    }
+    // Collect IDs already covered by cloud and local to avoid duplicates in fallback
+    const coveredIds = new Set<string>();
 
-    // Add cloud presets
+    // Currently-configured preset should always be shown (bypass model filter)
+    const savedId = slotInfo.savedPresetId;
+    const trayIdx = slotInfo.trayInfoIdx;
+
+    // 1. Cloud presets
     if (cloudSettings?.filament) {
       for (const cp of cloudSettings.filament) {
-        if (!query || cp.name.toLowerCase().includes(query)) {
-          items.push({ id: cp.setting_id, name: cp.name, source: 'cloud', isUser: isUserPreset(cp.setting_id) });
+        coveredIds.add(cp.setting_id);
+        // Keep preset if it matches the slot's saved mapping or current tray_info_idx
+        const isCurrentPreset = savedId === cp.setting_id
+          || (trayIdx && (cp.setting_id === trayIdx || convertToTrayInfoIdx(cp.setting_id) === trayIdx));
+        if (!isCurrentPreset && query && !cp.name.toLowerCase().includes(query)) continue;
+        // Filter by printer model if set (skip for current preset)
+        if (!isCurrentPreset && printerModel) {
+          const presetModel = extractPresetModel(cp.name);
+          if (presetModel && presetModel.toUpperCase() !== printerModel.toUpperCase()) continue;
+        }
+        items.push({ id: cp.setting_id, name: cp.name, source: 'cloud', isUser: isUserPreset(cp.setting_id) });
+      }
+    }
+
+    // 2. Local presets
+    if (localPresets?.filament) {
+      for (const lp of localPresets.filament) {
+        const localId = `local_${lp.id}`;
+        const isSaved = savedId === localId;
+        if (!isSaved && query && !lp.name.toLowerCase().includes(query)) continue;
+        // Filter by compatible_printers if set (skip for saved preset)
+        if (!isSaved && printerModel && lp.compatible_printers) {
+          const compatModels = lp.compatible_printers.split(';').map(p => {
+            // Extract model from "BBL X1C" → "X1C"
+            const trimmed = p.trim();
+            const bblMatch = trimmed.match(/^BBL\s+(.+)/i);
+            return bblMatch ? bblMatch[1].trim().toUpperCase() : trimmed.toUpperCase();
+          }).filter(Boolean);
+          if (compatModels.length > 0 && !compatModels.includes(printerModel.toUpperCase())) continue;
+        }
+        items.push({ id: localId, name: lp.name, source: 'local', isUser: false });
+      }
+    }
+
+    // 3. Built-in filament names (fallback — only add entries not already covered)
+    if (builtinFilaments) {
+      for (const bf of builtinFilaments) {
+        if (coveredIds.has(bf.filament_id)) continue;
+        // Convert filament_id to setting_id format for cloud compatibility
+        // e.g. "GFA00" → cloud setting_id would be "GFSA00" (insert S after GF)
+        const settingId = bf.filament_id.startsWith('GF')
+          ? 'GFS' + bf.filament_id.slice(2)
+          : bf.filament_id;
+        if (coveredIds.has(settingId)) continue;
+        if (!query || bf.name.toLowerCase().includes(query)) {
+          items.push({ id: `builtin_${bf.filament_id}`, name: bf.name, source: 'builtin', isUser: false });
         }
       }
     }
 
-    // Sort: local first, then user cloud presets, then built-in, alphabetically within groups
+    // Sort: cloud user presets first, then cloud built-in, then local, then builtin fallback
     return items.sort((a, b) => {
-      if (a.source === 'local' && b.source !== 'local') return -1;
-      if (a.source !== 'local' && b.source === 'local') return 1;
+      const sourceOrder = { cloud: 0, local: 1, builtin: 2 };
+      if (a.source !== b.source) return sourceOrder[a.source] - sourceOrder[b.source];
       if (a.isUser && !b.isUser) return -1;
       if (!a.isUser && b.isUser) return 1;
       return a.name.localeCompare(b.name);
     });
-  }, [cloudSettings?.filament, localPresets?.filament, searchQuery]);
+  }, [cloudSettings?.filament, localPresets?.filament, builtinFilaments, searchQuery, printerModel, slotInfo.savedPresetId, slotInfo.trayInfoIdx]);
 
   // Get full preset name for K profile filtering (brand + material, without printer suffix)
   const selectedPresetInfo = useMemo(() => {
     if (!selectedPresetId) return null;
 
-    // Resolve the name from either local or cloud presets
+    // Resolve the name from cloud, local, or builtin presets
     let presetName: string | null = null;
     if (selectedPresetId.startsWith('local_')) {
       const localId = parseInt(selectedPresetId.replace('local_', ''), 10);
       const lp = localPresets?.filament.find(p => p.id === localId);
       presetName = lp?.name || null;
+    } else if (selectedPresetId.startsWith('builtin_')) {
+      const filamentId = selectedPresetId.replace('builtin_', '');
+      const bf = builtinFilaments?.find(b => b.filament_id === filamentId);
+      presetName = bf?.name || null;
     } else if (cloudSettings?.filament) {
       const cp = cloudSettings.filament.find(p => p.setting_id === selectedPresetId);
       presetName = cp?.name || null;
@@ -470,10 +558,45 @@ export function ConfigureAmsSlotModal({
       material: parsed.material,
       brand: parsed.brand,
     };
-  }, [selectedPresetId, cloudSettings?.filament, localPresets?.filament]);
+  }, [selectedPresetId, cloudSettings?.filament, localPresets?.filament, builtinFilaments]);
 
   // For backwards compatibility with the label
   const selectedMaterial = selectedPresetInfo?.fullName || '';
+
+  // Filter color catalog entries matching the selected preset's brand + material
+  const catalogColors = useMemo(() => {
+    if (!colorCatalog || !selectedPresetInfo) return [];
+
+    const { fullName, brand } = selectedPresetInfo;
+
+    // Try to find colors matching the full preset name (e.g., "PLA Metal")
+    // The catalog uses the variant as part of the material field (e.g., material="PLA Metal")
+    // Extract the full material+variant from the preset name
+    const materialVariant = fullName.replace(/^(Bambu\s*(Lab)?|eSUN|Polymaker|Overture|Sunlu|Hatchbox)\s*/i, '').trim();
+
+    return colorCatalog.filter(entry => {
+      const entryMaterial = (entry.material || '').toUpperCase();
+      const entryManufacturer = entry.manufacturer.toUpperCase();
+
+      // Match material: try full material+variant first, then just material type
+      const materialMatch = entryMaterial === materialVariant.toUpperCase()
+        || entryMaterial.includes(materialVariant.toUpperCase())
+        || materialVariant.toUpperCase().includes(entryMaterial);
+
+      if (!materialMatch) return false;
+
+      // If brand is present, also match manufacturer
+      if (brand) {
+        const upperBrand = brand.toUpperCase();
+        // Fuzzy match: "Bambu" matches "Bambu Lab", etc.
+        if (!entryManufacturer.includes(upperBrand) && !upperBrand.includes(entryManufacturer)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [colorCatalog, selectedPresetInfo]);
 
   const matchingKProfiles = useMemo(() => {
     if (!kprofilesData?.profiles || !selectedPresetInfo) return [];
@@ -532,34 +655,52 @@ export function ConfigureAmsSlotModal({
     });
 
     // Deduplicate profiles with same name and k_value (multi-nozzle printers have duplicates)
-    // Prefer extruder_id=1 (High Flow) profiles as they're more commonly used on H2D
+    // Prefer the profile matching the slot's extruder (e.g. ext-R uses extruder 0, ext-L uses extruder 1)
     const seen = new Map<string, KProfile>();
     for (const profile of filtered) {
       const key = `${profile.name}|${profile.k_value}`;
       const existing = seen.get(key);
       if (!existing) {
         seen.set(key, profile);
-      } else if (profile.extruder_id === 1 && existing.extruder_id === 0) {
-        // Replace extruder_id=0 profile with extruder_id=1 (High Flow) profile
+      } else if (slotInfo.extruderId !== undefined && profile.extruder_id === slotInfo.extruderId && existing.extruder_id !== slotInfo.extruderId) {
+        // Replace with profile matching slot's extruder
         seen.set(key, profile);
       }
     }
     return Array.from(seen.values());
-  }, [kprofilesData?.profiles, selectedPresetInfo]);
+  }, [kprofilesData?.profiles, selectedPresetInfo, slotInfo.extruderId]);
 
   // Pre-select current profile when modal opens, reset when closes
   useEffect(() => {
-    if (isOpen && cloudSettings?.filament) {
-      // Try to pre-select current profile based on trayInfoIdx
-      if (slotInfo.trayInfoIdx) {
-        const currentPreset = cloudSettings.filament.find(
+    if (isOpen) {
+      // Pre-populate from saved preset mapping (most reliable)
+      if (slotInfo.savedPresetId) {
+        setSelectedPresetId(slotInfo.savedPresetId);
+      } else if (slotInfo.trayInfoIdx && cloudSettings?.filament) {
+        // Fallback: try to match by tray_info_idx in cloud presets
+        // First try exact match on setting_id
+        let currentPreset = cloudSettings.filament.find(
           p => p.setting_id === slotInfo.trayInfoIdx
         );
+        // Then try matching by converting setting_id → filament_id format
+        if (!currentPreset) {
+          currentPreset = cloudSettings.filament.find(
+            p => convertToTrayInfoIdx(p.setting_id) === slotInfo.trayInfoIdx
+          );
+        }
         if (currentPreset) {
           setSelectedPresetId(currentPreset.setting_id);
         }
       }
-    } else if (!isOpen) {
+
+      // Pre-populate color from current slot (black is valid — empty slots don't pass trayColor)
+      if (slotInfo.trayColor) {
+        const hex = slotInfo.trayColor.slice(0, 6);
+        if (hex) {
+          setColorHex(hex);
+        }
+      }
+    } else {
       // Reset when modal closes
       setSelectedPresetId('');
       setSelectedKProfile(null);
@@ -568,17 +709,25 @@ export function ConfigureAmsSlotModal({
       setSearchQuery('');
       setShowSuccess(false);
     }
-  }, [isOpen, cloudSettings?.filament, slotInfo.trayInfoIdx]);
+  }, [isOpen, slotInfo.savedPresetId, slotInfo.trayInfoIdx, slotInfo.trayColor, cloudSettings?.filament]);
 
   // Auto-select best matching K profile when preset changes
   useEffect(() => {
     if (matchingKProfiles.length > 0) {
-      // Auto-select first matching profile
+      // Prefer the currently-active K-profile (by cali_idx) if available
+      if (slotInfo.caliIdx != null && slotInfo.caliIdx > 0) {
+        const active = matchingKProfiles.find(p => p.slot_id === slotInfo.caliIdx);
+        if (active) {
+          setSelectedKProfile(active);
+          return;
+        }
+      }
+      // Fallback: first matching profile
       setSelectedKProfile(matchingKProfiles[0]);
     } else {
       setSelectedKProfile(null);
     }
-  }, [selectedPresetId, matchingKProfiles]);
+  }, [selectedPresetId, matchingKProfiles, slotInfo.caliIdx]);
 
   // Escape key handler
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -596,7 +745,7 @@ export function ConfigureAmsSlotModal({
 
   if (!isOpen) return null;
 
-  const isLoading = settingsLoading || localLoading || kprofilesLoading;
+  const isLoading = (settingsLoading && !cloudError) || localLoading || builtinLoading || kprofilesLoading;
   const canSave = selectedPresetId && !configureMutation.isPending;
 
   // Get display color (custom or slot default)
@@ -616,7 +765,7 @@ export function ConfigureAmsSlotModal({
         <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
           <div className="flex items-center gap-2">
             <Settings2 className="w-5 h-5 text-bambu-blue" />
-            <h2 className="text-lg font-semibold text-white">Configure AMS Slot</h2>
+            <h2 className="text-lg font-semibold text-white">{t('configureAmsSlot.title')}</h2>
           </div>
           <button
             onClick={onClose}
@@ -633,7 +782,7 @@ export function ConfigureAmsSlotModal({
             <div className="absolute inset-0 bg-bambu-dark-secondary/95 z-10 flex items-center justify-center rounded-xl">
               <div className="text-center space-y-3">
                 <CheckCircle2 className="w-16 h-16 text-bambu-green mx-auto" />
-                <p className="text-lg font-semibold text-white">Slot Configured!</p>
+                <p className="text-lg font-semibold text-white">{t('configureAmsSlot.slotConfigured')}</p>
                 <p className="text-sm text-bambu-gray">{t('configureAmsSlot.settingsSentToPrinter')}</p>
               </div>
             </div>
@@ -641,7 +790,7 @@ export function ConfigureAmsSlotModal({
 
           {/* Slot info */}
           <div className="p-3 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
-            <p className="text-xs text-bambu-gray mb-1">Configuring slot:</p>
+            <p className="text-xs text-bambu-gray mb-1">{t('configureAmsSlot.configuringSlot')}</p>
             <div className="flex items-center gap-2">
               {slotInfo.trayColor && (
                 <span
@@ -650,7 +799,7 @@ export function ConfigureAmsSlotModal({
                 />
               )}
               <span className="text-white font-medium">
-                {getAmsLabel(slotInfo.amsId, slotInfo.trayCount)} Slot {slotInfo.trayId + 1}
+                {t('configureAmsSlot.slotLabel', { ams: getAmsLabel(slotInfo.amsId, slotInfo.trayCount), slot: slotInfo.trayId + 1 })}
               </span>
               {slotInfo.traySubBrands && (
                 <span className="text-bambu-gray">({slotInfo.traySubBrands})</span>
@@ -667,7 +816,7 @@ export function ConfigureAmsSlotModal({
               {/* Filament Profile Select */}
               <div>
                 <label className="block text-sm text-bambu-gray mb-2">
-                  Filament Profile <span className="text-red-400">*</span>
+                  {t('configureAmsSlot.filamentProfile')} <span className="text-red-400">*</span>
                 </label>
                 <div className="relative">
                   <input
@@ -681,13 +830,16 @@ export function ConfigureAmsSlotModal({
                     {filteredPresets.length === 0 ? (
                       <p className="text-center py-4 text-bambu-gray">
                         {(cloudSettings?.filament?.length === 0 && !localPresets?.filament?.length)
-                          ? 'No presets available. Login to Bambu Cloud or import local profiles.'
-                          : 'No matching presets found.'}
+                          ? t('configureAmsSlot.noPresetsAvailable')
+                          : t('configureAmsSlot.noMatchingPresets')}
                       </p>
                     ) : (
                       filteredPresets.map((preset) => (
                         <button
                           key={preset.id}
+                          ref={selectedPresetId === preset.id ? (el) => {
+                            el?.scrollIntoView({ block: 'nearest' });
+                          } : undefined}
                           onClick={() => setSelectedPresetId(preset.id)}
                           className={`w-full p-2 rounded-lg border text-left transition-colors ${
                             selectedPresetId === preset.id
@@ -701,6 +853,11 @@ export function ConfigureAmsSlotModal({
                               {preset.source === 'local' && (
                                 <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
                                   {t('profiles.localProfiles.badge')}
+                                </span>
+                              )}
+                              {preset.source === 'builtin' && (
+                                <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
+                                  {t('configureAmsSlot.builtin')}
                                 </span>
                               )}
                               {preset.isUser && (
@@ -720,10 +877,10 @@ export function ConfigureAmsSlotModal({
               {/* K Profile Select */}
               <div>
                 <label className="block text-sm text-bambu-gray mb-2">
-                  K Profile (Pressure Advance)
+                  {t('configureAmsSlot.kProfileLabel')}
                   {selectedMaterial && (
                     <span className="ml-2 text-xs text-bambu-blue">
-                      Filtering for: {selectedMaterial}
+                      {t('configureAmsSlot.filteringFor', { material: selectedMaterial })}
                     </span>
                   )}
                 </label>
@@ -737,7 +894,7 @@ export function ConfigureAmsSlotModal({
                       }}
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none pr-10"
                     >
-                      <option value="">No K profile (use default 0.020)</option>
+                      <option value="">{t('configureAmsSlot.noKProfile')}</option>
                       {matchingKProfiles.map((profile) => (
                         <option key={`${profile.name}-${profile.extruder_id}`} value={profile.name}>
                           {profile.name} (K={profile.k_value})
@@ -748,16 +905,16 @@ export function ConfigureAmsSlotModal({
                   </div>
                 ) : selectedPresetId ? (
                   <p className="text-sm text-bambu-gray italic py-2">
-                    No matching K profiles found. Default K=0.020 will be used.
+                    {t('configureAmsSlot.noMatchingKProfiles')}
                   </p>
                 ) : (
                   <span className="inline-block text-xs px-2 py-1 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                    Select a filament profile first
+                    {t('configureAmsSlot.selectFilamentFirst')}
                   </span>
                 )}
                 {selectedKProfile && (
                   <p className="text-xs text-bambu-green mt-1">
-                    K={selectedKProfile.k_value} from printer calibration
+                    {t('configureAmsSlot.kFromCalibration', { value: selectedKProfile.k_value })}
                   </p>
                 )}
               </div>
@@ -765,8 +922,40 @@ export function ConfigureAmsSlotModal({
               {/* Optional: Custom color */}
               <div>
                 <label className="block text-sm text-bambu-gray mb-2">
-                  Custom Color (optional)
+                  {t('configureAmsSlot.customColorLabel')}
                 </label>
+                {/* Catalog colors matching selected preset */}
+                {catalogColors.length > 0 && (
+                  <div className="mb-3">
+                    <p className="text-xs text-bambu-gray mb-1.5">
+                      {t('configureAmsSlot.presetColors', { name: selectedPresetInfo?.fullName })}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {catalogColors.map((entry) => (
+                        <button
+                          key={entry.id}
+                          onClick={() => {
+                            const hex = entry.hex_color.replace('#', '').toUpperCase();
+                            setColorHex(hex);
+                            setColorInput(entry.color_name);
+                          }}
+                          className={`h-7 px-2 rounded-md border-2 transition-all flex items-center gap-1.5 ${
+                            colorHex === entry.hex_color.replace('#', '').toUpperCase()
+                              ? 'border-bambu-green scale-105'
+                              : 'border-white/20 hover:border-white/40'
+                          }`}
+                          title={entry.color_name}
+                        >
+                          <span
+                            className="w-4 h-4 rounded-full border border-white/30 flex-shrink-0"
+                            style={{ backgroundColor: entry.hex_color }}
+                          />
+                          <span className="text-xs text-white/80 whitespace-nowrap">{entry.color_name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {/* Quick color buttons */}
                 <div className="flex flex-wrap gap-1.5 mb-2">
                   {QUICK_COLORS_BASIC.map((color) => (
@@ -788,7 +977,7 @@ export function ConfigureAmsSlotModal({
                   <button
                     onClick={() => setShowExtendedColors(!showExtendedColors)}
                     className="w-7 h-7 rounded-md border-2 border-white/20 hover:border-white/40 flex items-center justify-center text-white/60 hover:text-white/80 transition-all text-xs"
-                    title={showExtendedColors ? 'Show less colors' : 'Show more colors'}
+                    title={showExtendedColors ? t('configureAmsSlot.showLessColors') : t('configureAmsSlot.showMoreColors')}
                   >
                     {showExtendedColors ? '−' : '+'}
                   </button>
@@ -854,13 +1043,13 @@ export function ConfigureAmsSlotModal({
                       className="px-2 py-1 text-xs text-bambu-gray hover:text-white bg-bambu-dark-tertiary rounded"
                       title={t('configureAmsSlot.clearCustomColor')}
                     >
-                      Clear
+                      {t('configureAmsSlot.clear')}
                     </button>
                   )}
                 </div>
                 {colorHex && (
                   <p className="text-xs text-bambu-gray mt-1.5">
-                    Hex: #{colorHex}
+                    {t('configureAmsSlot.hexLabel', { hex: colorHex })}
                   </p>
                 )}
               </div>
@@ -880,19 +1069,19 @@ export function ConfigureAmsSlotModal({
             {resetMutation.isPending ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Resetting...
+                {t('configureAmsSlot.resetting')}
               </>
             ) : (
               <>
                 <RotateCcw className="w-4 h-4" />
-                Reset Slot
+                {t('configureAmsSlot.resetSlot')}
               </>
             )}
           </Button>
           {/* Cancel and Configure buttons on the right */}
           <div className="flex gap-2">
             <Button variant="secondary" onClick={onClose}>
-              Cancel
+              {t('configureAmsSlot.cancel')}
             </Button>
             <Button
               onClick={() => configureMutation.mutate()}
@@ -901,12 +1090,12 @@ export function ConfigureAmsSlotModal({
               {configureMutation.isPending ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Configuring...
+                  {t('configureAmsSlot.configuring')}
                 </>
               ) : (
                 <>
                   <Settings2 className="w-4 h-4" />
-                  Configure Slot
+                  {t('configureAmsSlot.configureSlot')}
                 </>
               )}
             </Button>

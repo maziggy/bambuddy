@@ -21,6 +21,7 @@ from backend.app.models.filament import Filament
 from backend.app.models.user import User
 from backend.app.schemas.archive import ArchiveResponse, ArchiveStats, ArchiveUpdate, ReprintRequest
 from backend.app.services.archive import ArchiveService
+from backend.app.utils.threemf_tools import extract_nozzle_mapping_from_3mf
 
 logger = logging.getLogger(__name__)
 
@@ -133,13 +134,15 @@ async def list_archives(
         offset=offset,
     )
 
-    # Get set of hashes that have duplicates (efficient single query)
-    duplicate_hashes = await service.get_duplicate_hashes()
+    # Get sets of hashes and names that have duplicates (efficient single queries)
+    duplicate_hashes, duplicate_names = await service.get_duplicate_hashes_and_names()
 
-    # Mark archives that have duplicates
+    # Mark archives that have duplicates (by hash or by print name)
     result = []
     for a in archives:
-        has_duplicate = a.content_hash in duplicate_hashes if a.content_hash else False
+        has_hash_dup = a.content_hash in duplicate_hashes if a.content_hash else False
+        has_name_dup = a.print_name and a.print_name.lower() in duplicate_names
+        has_duplicate = has_hash_dup or has_name_dup
         result.append(archive_to_response(a, duplicate_count=1 if has_duplicate else 0))
     return result
 
@@ -2669,6 +2672,12 @@ async def get_filament_requirements(
             # Sort by slot ID
             filaments.sort(key=lambda x: x["slot_id"])
 
+            # Enrich with nozzle mapping for dual-nozzle printers
+            nozzle_mapping = extract_nozzle_mapping_from_3mf(zf)
+            if nozzle_mapping:
+                for filament in filaments:
+                    filament["nozzle_id"] = nozzle_mapping.get(filament["slot_id"])
+
     except Exception as e:
         logger.warning("Failed to parse filament requirements from archive %s: %s", archive_id, e)
 
@@ -2731,8 +2740,14 @@ async def reprint_archive(
         raise HTTPException(400, "Printer is not connected")
 
     # Get the sliced 3MF file path
+    if not archive.file_path:
+        raise HTTPException(
+            404,
+            "No 3MF file available for this archive. "
+            "The file could not be downloaded from the printer when the print was recorded.",
+        )
     file_path = settings.base_dir / archive.file_path
-    if not file_path.exists():
+    if not file_path.is_file():
         raise HTTPException(404, "Archive file not found")
 
     # Upload file to printer via FTP
@@ -2804,7 +2819,7 @@ async def reprint_archive(
         )
 
     # Register this as an expected print so we don't create a duplicate archive
-    register_expected_print(printer_id, remote_filename, archive_id)
+    register_expected_print(printer_id, remote_filename, archive_id, ams_mapping=body.ams_mapping)
 
     # Use plate_id from request if provided, otherwise auto-detect from 3MF file
     if body.plate_id is not None:

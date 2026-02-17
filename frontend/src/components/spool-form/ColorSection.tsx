@@ -142,7 +142,6 @@ export function ColorSection({
     }));
   }, [catalogColors, colorSearch, matchedCatalogColors]);
 
-  const hasCatalogMatch = catalogSearchResults.length > 0;
   const showCatalogSection = colorSearch ? true : matchedCatalogColors.length > 0;
 
   // Search within matched catalog colors

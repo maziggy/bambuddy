@@ -2,7 +2,10 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
-## [0.2.0b] - Not released
+## [0.2.1] - Not released
+
+
+## [0.2.0] - 2026-02-17
 
 ### New Features
 - **Bed Cooled Notification** ([#378](https://github.com/maziggy/bambuddy/issues/378)) — New notification event that fires when the print bed cools below a configurable threshold (default 35°C) after a print completes. Useful for knowing when it's safe to remove parts. A background task polls the bed temperature every 15 seconds after print completion and sends a notification when it drops below the threshold. Automatically cancels if a new print starts or the printer disconnects. The threshold is configurable in Settings → Notifications. Includes a customizable notification template with printer name, bed temperature, and threshold variables.

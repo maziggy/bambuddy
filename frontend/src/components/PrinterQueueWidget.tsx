@@ -102,7 +102,7 @@ export function PrinterQueueWidget({ printerId, printerState, plateCleared }: Pr
   return (
     <Link
       to="/queue"
-      className="block mb-3 p-3 bg-bambu-dark rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
+      className="p-3 bg-bambu-dark rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0 flex-1">

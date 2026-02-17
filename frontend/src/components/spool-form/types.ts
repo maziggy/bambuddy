@@ -77,6 +77,7 @@ export interface FilamentSectionProps extends SectionProps {
   selectedPresetOption?: FilamentOption;
   filamentOptions: FilamentOption[];
   availableBrands: string[];
+  availableMaterials: string[];
 }
 
 // Color section props

@@ -148,10 +148,14 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
   );
 
   // Extract brands from presets
-  const availableBrands = useMemo(
-    () => extractBrandsFromPresets(cloudPresets, localPresets),
-    [cloudPresets, localPresets],
-  );
+  const availableBrands = useMemo(() => {
+    const presetBrands = extractBrandsFromPresets(cloudPresets, localPresets);
+    const catalogBrands = colorCatalog
+      .map(entry => entry.manufacturer?.trim())
+      .filter((brand): brand is string => !!brand);
+    const brandSet = new Set<string>([...presetBrands, ...catalogBrands]);
+    return Array.from(brandSet).sort((a, b) => a.localeCompare(b));
+  }, [cloudPresets, localPresets, colorCatalog]);
 
   // Find selected preset option
   const selectedPresetOption = useMemo(

@@ -13,6 +13,7 @@ services:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
       DEBUG: "true"
       BACKEND_PORT: "8000"
+      DEVCONTAINER: "true"
 
 volumes:
   bambuddy-pip-cache:

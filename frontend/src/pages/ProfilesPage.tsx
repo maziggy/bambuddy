@@ -43,7 +43,7 @@ import {
   HardDrive,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { formatRelativeTime, parseUTCDate } from '../utils/date';
+import { formatRelativeTime } from '../utils/date';
 import type { SlicerSetting, SlicerSettingsResponse, SlicerSettingDetail, SlicerSettingCreate, Printer, FieldDefinition, Permission } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';

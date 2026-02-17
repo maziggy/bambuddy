@@ -50,7 +50,7 @@ import {
   Weight,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { parseUTCDate, formatDateTime, type TimeFormat, formatETA, formatDuration, formatRelativeTime } from '../utils/date';
+import { type TimeFormat, formatETA, formatDuration, formatRelativeTime } from '../utils/date';
 import type { PrintQueueItem, PrintQueueBulkUpdate, Permission } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';

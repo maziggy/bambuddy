@@ -13,7 +13,7 @@ interface PrinterQueueWidgetProps {
   plateCleared?: boolean;
 }
 
-export function PrinterQueueWidget({ printerId, printerState }: PrinterQueueWidgetProps) {
+export function PrinterQueueWidget({ printerId, printerState, plateCleared }: PrinterQueueWidgetProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();

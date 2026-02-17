@@ -81,11 +81,11 @@ class BambuFTPClient:
     # Models that may need SSL mode fallback (try prot_p first, fall back to prot_c)
     # These models have varying FTP SSL behavior depending on firmware version
     A1_MODELS = ("A1", "A1 Mini")
-    # Chunk size for manual upload transfer (256KB)
-    # Smaller chunks increase cancellation responsiveness during uploads.
-    CHUNK_SIZE = 256 * 1024
+    # Chunk size for manual upload transfer (1MB)
+    # Larger chunks reduce overhead and work better with A1 printers
+    CHUNK_SIZE = 1024 * 1024
     # Per-chunk data socket timeout during upload.
-    UPLOAD_CHUNK_TIMEOUT = 15
+    UPLOAD_CHUNK_TIMEOUT = 120
 
     # Cache for working FTP modes per printer IP
     # Maps IP -> "prot_p" or "prot_c"

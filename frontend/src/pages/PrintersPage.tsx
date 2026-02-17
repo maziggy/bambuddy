@@ -2049,7 +2049,7 @@ function PrinterCard({
 
   return (
     <Card className="relative">
-      <CardContent className={`flex flex-col h-full p-4 gap-2 lg:p-6 ${cardSize >= 3 ? 'p-5' : ''}`}>
+      <CardContent className={`flex flex-col h-full gap-2 lg:p-6 ${cardSize >= 3 ? 'p-5' : 'p-4'}`}>
         {/* Header */}
         <div className={getSpacing()}>
           {/* Top row: Image, Name, Menu */}
@@ -4920,14 +4920,20 @@ export function PrintersPage() {
   useEffect(() => {
     const mql = window.matchMedia('(min-width: 1024px)');
     const handler = () => {
-      if (!mql.matches && cardSize > 2) {
-        setCardSize(2);
+      if (!mql.matches) {
+        setCardSize(prev => {
+          if (prev > 2) {
+            localStorage.setItem('printerCardSize', '2');
+            return 2;
+          }
+          return prev;
+        });
       }
     };
     handler();
     mql.addEventListener('change', handler);
     return () => mql.removeEventListener('change', handler);
-  }, [cardSize]);
+  }, []);
   // Derive viewMode from cardSize: S=compact, M/L/XL=expanded
   const viewMode: ViewMode = cardSize === 1 ? 'compact' : 'expanded';
   const queryClient = useQueryClient();
@@ -5218,9 +5224,8 @@ export function PrintersPage() {
                     setCardSize(size);
                     localStorage.setItem('printerCardSize', String(size));
                   }}
-                  className={`px-2 py-1.5 text-xs font-medium transition-colors ${label === 'L'|| label === 'XL' ? 'hidden lg:block':''} ${
-                    index === 0 ? 'rounded-l-lg' : ''
-                  } ${
+                  className={`px-2 py-1.5 text-xs font-medium transition-colors ${label === 'L' || label === 'XL' ? 'hidden lg:block' : ''} ${index === 0 ? 'rounded-l-lg' : ''
+                    } ${
                     index === cardSizeLabels.length - 1 ? 'rounded-r-lg' : ''
                   } ${
                     label === 'M' ? 'rounded-r-lg lg:rounded-r-none' : ''

@@ -178,6 +178,8 @@ export function AdditionalSection({
   const { showToast } = useToast();
   const [measuredInput, setMeasuredInput] = useState('');
   const [isMeasuredFocused, setIsMeasuredFocused] = useState(false);
+  const [remainingInput, setRemainingInput] = useState('');
+  const [isRemainingFocused, setIsRemainingFocused] = useState(false);
 
   const remainingWeight = Math.max(0, formData.label_weight - formData.weight_used);
   const measuredDefault = formData.core_weight + remainingWeight;
@@ -187,6 +189,12 @@ export function AdditionalSection({
       setMeasuredInput(String(measuredDefault));
     }
   }, [isMeasuredFocused, measuredDefault]);
+
+  useEffect(() => {
+    if (!isRemainingFocused) {
+      setRemainingInput(String(remainingWeight));
+    }
+  }, [isRemainingFocused, remainingWeight]);
 
   return (
     <div className="space-y-4">
@@ -206,12 +214,24 @@ export function AdditionalSection({
           <div className="relative flex-1">
             <input
               type="number"
-              value={remainingWeight}
+              value={remainingInput}
               min={0}
               max={formData.label_weight}
+              onFocus={() => setIsRemainingFocused(true)}
               onChange={(e) => {
-                const remaining = parseInt(e.target.value) || 0;
-                updateField('weight_used', Math.max(0, formData.label_weight - remaining));
+                setRemainingInput(e.target.value);
+              }}
+              onBlur={() => {
+                setIsRemainingFocused(false);
+                const raw = remainingInput.trim();
+                const remaining = Number(raw);
+                if (!raw || !Number.isFinite(remaining) || remaining < 0 || remaining > formData.label_weight) {
+                  setRemainingInput(String(remainingWeight));
+                  return;
+                }
+                const rounded = Math.round(remaining);
+                updateField('weight_used', Math.max(0, formData.label_weight - rounded));
+                setRemainingInput(String(rounded));
               }}
               className="w-full px-3 py-2 pr-7 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
             />

@@ -14,7 +14,7 @@
 #   --tz TIMEZONE      Timezone (default: system timezone or UTC)
 #   --build            Build from source instead of using pre-built image
 #   --yes, -y          Non-interactive mode, accept defaults
-#   --redirect-990     Add iptables redirect from 990 -> 9990 (Linux only)"
+#   --redirect-990     Add iptables redirect from 990 -> 9990 (Linux only)
 #   --help, -h         Show this help message
 #
 
@@ -401,6 +401,10 @@ parse_args() {
 check_sudo() {
     if ! command -v sudo &>/dev/null; then
         log_error "sudo is required for iptables redirect but is not installed. Skipping iptables redirect."
+        return 1
+    fi
+     if ! command -v iptables &>/dev/null; then
+        log_error "iptables is required for iptables redirect but is not installed. Skipping iptables redirect."
         return 1
     fi
     return 0

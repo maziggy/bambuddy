@@ -177,7 +177,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
                         <p className="text-xs text-bambu-gray">
                           {spool.color_name || ''}
                           {spool.label_weight ? ` - ${spool.label_weight}g` : ''}
-                          {spool.weight_used > 0 ? ` (${Math.round(spool.weight_used)}g used)` : ''}
+                          {spool.label_weight ? ` (${Math.max(0, Math.round(spool.label_weight - spool.weight_used))}g ${t('ams.remainingUnit')})` : ''}
                         </p>
                       </div>
                       {selectedSpoolId === spool.id && (

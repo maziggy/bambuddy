@@ -2682,6 +2682,8 @@ export default {
     kFactor: 'K-Faktor',
     fill: 'Füllstand',
     configure: 'Konfigurieren',
+    used: 'verwendet',
+    remainingUnit: 'verbleibend',
   },
 
   // Print modal
@@ -3433,4 +3435,18 @@ export default {
 
   // Spoolman Settings
   spoolmanSettings: {},
+
+  // Time
+  time: {
+    unknown: '-',
+    waiting: 'Wartend',
+    justNow: 'Gerade eben',
+    now: 'Jetzt',
+    minsAgo: 'vor {{count}}m',
+    inMins: 'in {{count}}m',
+    hoursAgo: 'vor {{count}}h',
+    inHours: 'in {{count}}h',
+    daysAgo: 'vor {{count}}d',
+    inDays: 'in {{count}}d',
+  },
 };

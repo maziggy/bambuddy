@@ -8,6 +8,7 @@ import de from './locales/de';
 import fr from './locales/fr';
 import ja from './locales/ja';
 import it from './locales/it';
+import ptBR from './locales/pt-BR';
 
 const resources = {
   en: { translation: en },
@@ -15,6 +16,7 @@ const resources = {
   fr: { translation: fr },
   ja: { translation: ja },
   it: { translation: it },
+  'pt-BR': { translation: ptBR },
 };
 
 i18n
@@ -23,7 +25,7 @@ i18n
   .init({
     resources,
     fallbackLng: 'en',
-    supportedLngs: ['en', 'de', 'fr', 'ja', 'it'],
+    supportedLngs: ['en', 'de', 'fr', 'ja', 'it', 'pt-BR'],
 
     detection: {
       // Order of detection methods
@@ -52,4 +54,5 @@ export const availableLanguages = [
   { code: 'fr', name: 'French', nativeName: 'Français' },
   { code: 'ja', name: 'Japanese', nativeName: '日本語' },
   { code: 'it', name: 'Italian', nativeName: 'Italiano' },
+  { code: 'pt-BR', name: 'Portuguese (Brazil)', nativeName: 'Português (Brasil)' },
 ];

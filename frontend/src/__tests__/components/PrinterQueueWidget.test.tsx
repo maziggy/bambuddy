@@ -77,11 +77,11 @@ describe('PrinterQueueWidget', () => {
       });
     });
 
-    it('shows ASAP for unscheduled items', async () => {
+    it('shows Waiting for unscheduled items', async () => {
       render(<PrinterQueueWidget printerId={1} />);
 
       await waitFor(() => {
-        expect(screen.getByText('ASAP')).toBeInTheDocument();
+        expect(screen.getByText('Waiting')).toBeInTheDocument();
       });
     });
   });

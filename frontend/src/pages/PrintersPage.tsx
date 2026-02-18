@@ -1097,6 +1097,7 @@ function getPrinterImage(model: string | null | undefined): string {
   if (modelLower.includes('x1e')) return '/img/printers/x1e.png';
   if (modelLower.includes('x1c') || modelLower.includes('x1carbon')) return '/img/printers/x1c.png';
   if (modelLower.includes('x1')) return '/img/printers/x1c.png';
+  if (modelLower.includes('h2dpro') || modelLower.includes('h2d-pro')) return '/img/printers/h2dpro.png';
   if (modelLower.includes('h2d')) return '/img/printers/h2d.png';
   if (modelLower.includes('h2c')) return '/img/printers/h2c.png';
   if (modelLower.includes('h2s')) return '/img/printers/h2d.png';
@@ -2907,6 +2908,7 @@ function PrinterCard({
                                               material: assignment.spool.material,
                                               brand: assignment.spool.brand,
                                               color_name: assignment.spool.color_name,
+                                              remainingWeightGrams: Math.max(0, Math.round(assignment.spool.label_weight - assignment.spool.weight_used)),
                                             } : null,
                                             onAssignSpool: filamentData.vendor !== 'Bambu Lab' ? () => setAssignSpoolModal({
                                               printerId: printer.id,
@@ -3144,6 +3146,7 @@ function PrinterCard({
                                           material: assignment.spool.material,
                                           brand: assignment.spool.brand,
                                           color_name: assignment.spool.color_name,
+                                          remainingWeightGrams: Math.max(0, Math.round(assignment.spool.label_weight - assignment.spool.weight_used)),
                                         } : null,
                                         onAssignSpool: filamentData.vendor !== 'Bambu Lab' ? () => setAssignSpoolModal({
                                           printerId: printer.id,
@@ -3330,6 +3333,7 @@ function PrinterCard({
                                             material: assignment.spool.material,
                                             brand: assignment.spool.brand,
                                             color_name: assignment.spool.color_name,
+                                            remainingWeightGrams: Math.max(0, Math.round(assignment.spool.label_weight - assignment.spool.weight_used)),
                                           } : null,
                                           onAssignSpool: () => setAssignSpoolModal({
                                             printerId: printer.id,

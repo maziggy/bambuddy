@@ -75,7 +75,7 @@ jobs:
         run: docker build -t bambuddy:security-scan .
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@0.34.0
         with:
           image-ref: 'bambuddy:security-scan'
           format: 'sarif'
@@ -91,7 +91,7 @@ jobs:
           category: trivy
 
       - name: Run Trivy for Dockerfile/IaC
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@0.34.0
         with:
           scan-type: 'config'
           scan-ref: '.'

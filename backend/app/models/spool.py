@@ -19,6 +19,9 @@ class Spool(Base):
     brand: Mapped[str | None] = mapped_column(String(100))  # "Polymaker"
     label_weight: Mapped[int] = mapped_column(Integer, default=1000)  # Advertised net weight (g)
     core_weight: Mapped[int] = mapped_column(Integer, default=250)  # Empty spool weight (g)
+    core_weight_catalog_id: Mapped[int | None] = mapped_column(
+        Integer
+    )  # Reference to spool_catalog entry for core weight
     weight_used: Mapped[float] = mapped_column(Float, default=0)  # Consumed grams
     slicer_filament: Mapped[str | None] = mapped_column(String(50))  # Preset ID (e.g. "GFL99")
     slicer_filament_name: Mapped[str | None] = mapped_column(String(100))  # Preset name for slicer

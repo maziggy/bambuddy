@@ -1,12 +1,23 @@
 /**
  * Utility for opening files in slicer applications
  *
- * Bambu Studio URL protocol is OS-specific:
- * - Windows: bambustudio://<encoded-URL>
- * - macOS/Linux: bambustudioopen://<encoded-URL>
+ * Protocol handler URL formats (from BambuStudio/OrcaSlicer source code):
  *
- * OrcaSlicer uses the same protocol on all platforms:
- * - orcaslicer://open?file=<URL>
+ * Bambu Studio has TWO separate URL handlers:
+ *   1. post_init() [Windows/Linux CLI args]: bambustudio://open?file=<URL>
+ *      - Checks: starts_with("bambustudio://open")
+ *      - Calls url_decode(), then split_str(url, "file=")
+ *   2. MacOpenURL() [macOS Apple Events]: bambustudioopen://<encoded-URL>
+ *      - Checks: starts_with("bambustudioopen://")
+ *      - Strips prefix, then url_decode()
+ *
+ * OrcaSlicer Downloader accepts both formats via regex:
+ *   - (orcaslicer|bambustudio|...)://open?file=<URL>
+ *   - bambustudioopen://<URL>
+ *
+ * Key insight: Using ?file= query format, the browser's URL parser preserves
+ * http:// in the query string without any encoding. Only the macOS-specific
+ * bambustudioopen:// format needs encodeURIComponent (BS calls url_decode).
  */
 
 export type SlicerType = 'bambu_studio' | 'orcaslicer';
@@ -34,8 +45,6 @@ export function detectPlatform(): Platform {
 
 /**
  * Open a URL in the specified slicer application.
- * Uses a temporary link element to trigger the protocol handler,
- * which avoids browser "unknown protocol" blocks on window.location.href.
  * @param downloadUrl - The URL to the file to open
  * @param slicer - Which slicer to use (defaults to bambu_studio)
  */
@@ -43,15 +52,26 @@ export function openInSlicer(downloadUrl: string, slicer: SlicerType = 'bambu_st
   let url: string;
 
   if (slicer === 'orcaslicer') {
+    // OrcaSlicer: ?file= query format — http:// preserved in query string
     url = `orcaslicer://open?file=${downloadUrl}`;
   } else {
     const platform = detectPlatform();
-    const protocol = platform === 'windows' ? 'bambustudio' : 'bambustudioopen';
-    url = `${protocol}://${encodeURIComponent(downloadUrl)}`;
+    if (platform === 'macos') {
+      // macOS only: bambustudioopen scheme via MacOpenURL() callback.
+      // Must encode because bare http:// in authority gets mangled by browser.
+      // BS calls url_decode() after stripping "bambustudioopen://" prefix.
+      url = `bambustudioopen://${encodeURIComponent(downloadUrl)}`;
+    } else {
+      // Windows/Linux: bambustudio://open?file= via post_init() CLI args.
+      // The ?file= query format preserves http:// without encoding.
+      // IMPORTANT: On Linux, BS only handles "bambustudio://open" prefix —
+      // it does NOT process "bambustudioopen://" (that's macOS-only).
+      url = `bambustudio://open?file=${downloadUrl}`;
+    }
   }
 
   // Use a temporary <a> element to trigger the protocol handler.
-  // This works more reliably than window.location.href for custom protocols.
+  // This avoids navigating away from the page (unlike window.location.href).
   const link = document.createElement('a');
   link.href = url;
   link.style.display = 'none';

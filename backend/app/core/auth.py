@@ -98,6 +98,43 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 # HTTP Bearer token
 security = HTTPBearer(auto_error=False)
 
+# --- Slicer download tokens ---
+# Short-lived tokens for slicer protocol handlers that can't send auth headers.
+# Maps token → (resource_key, expiry). resource_key = "archive:{id}" or "library:{id}".
+_slicer_tokens: dict[str, tuple[str, datetime]] = {}
+SLICER_TOKEN_EXPIRE_MINUTES = 5
+
+
+def create_slicer_download_token(resource_type: str, resource_id: int) -> str:
+    """Create a short-lived download token for slicer protocol handlers."""
+    # Cleanup expired tokens
+    now = datetime.utcnow()
+    expired = [k for k, (_, exp) in _slicer_tokens.items() if exp < now]
+    for k in expired:
+        del _slicer_tokens[k]
+
+    token = secrets.token_urlsafe(24)
+    resource_key = f"{resource_type}:{resource_id}"
+    _slicer_tokens[token] = (resource_key, now + timedelta(minutes=SLICER_TOKEN_EXPIRE_MINUTES))
+    return token
+
+
+def verify_slicer_download_token(token: str, resource_type: str, resource_id: int) -> bool:
+    """Verify a slicer download token is valid for the given resource."""
+    entry = _slicer_tokens.get(token)
+    if not entry:
+        return False
+    resource_key, expiry = entry
+    if datetime.utcnow() > expiry:
+        del _slicer_tokens[token]
+        return False
+    expected_key = f"{resource_type}:{resource_id}"
+    if resource_key != expected_key:
+        return False
+    # Token is single-use
+    del _slicer_tokens[token]
+    return True
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against a hash.

@@ -1771,6 +1771,7 @@ export interface InventorySpool {
   brand: string | null;
   label_weight: number;
   core_weight: number;
+  core_weight_catalog_id: number | null;
   weight_used: number;
   slicer_filament: string | null;
   slicer_filament_name: string | null;
@@ -2785,6 +2786,10 @@ export const api = {
   },
   getSource3mfForSlicer: (archiveId: number, filename: string) =>
     `${API_BASE}/archives/${archiveId}/source/${encodeURIComponent(filename.endsWith('.3mf') ? filename : filename + '.3mf')}`,
+  createSourceSlicerToken: (archiveId: number) =>
+    request<{ token: string }>(`/archives/${archiveId}/source-slicer-token`, { method: 'POST' }),
+  getSourceSlicerDownloadUrl: (archiveId: number, token: string, filename: string) =>
+    `${API_BASE}/archives/${archiveId}/source-dl/${token}/${encodeURIComponent(filename.endsWith('.3mf') ? filename : filename + '.3mf')}`,
   uploadSource3mf: async (archiveId: number, file: File): Promise<{ status: string; filename: string }> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -2907,6 +2912,10 @@ export const api = {
     `${API_BASE}/archives/${archiveId}/project-image/${encodeURIComponent(imagePath)}`,
   getArchiveForSlicer: (id: number, filename: string) =>
     `${API_BASE}/archives/${id}/file/${encodeURIComponent(filename.endsWith('.3mf') ? filename : filename + '.3mf')}`,
+  createArchiveSlicerToken: (archiveId: number) =>
+    request<{ token: string }>(`/archives/${archiveId}/slicer-token`, { method: 'POST' }),
+  getArchiveSlicerDownloadUrl: (archiveId: number, token: string, filename: string) =>
+    `${API_BASE}/archives/${archiveId}/dl/${token}/${encodeURIComponent(filename.endsWith('.3mf') ? filename : filename + '.3mf')}`,
   getArchivePlates: (archiveId: number) =>
     request<ArchivePlatesResponse>(`/archives/${archiveId}/plates`),
   getArchiveFilamentRequirements: (archiveId: number, plateId?: number) =>
@@ -3312,10 +3321,10 @@ export const api = {
       { method: 'POST' }
     ),
 
-  // Filaments
-  listFilaments: () => request<Filament[]>('/filaments/'),
-  getFilament: (id: number) => request<Filament>(`/filaments/${id}`),
-  getFilamentsByType: (type: string) => request<Filament[]>(`/filaments/by-type/${type}`),
+  // Filament Catalog (material types with cost/temp data)
+  listFilaments: () => request<Filament[]>('/filament-catalog/'),
+  getFilament: (id: number) => request<Filament>(`/filament-catalog/${id}`),
+  getFilamentsByType: (type: string) => request<Filament[]>(`/filament-catalog/by-type/${type}`),
 
   // Notification Providers
   getNotificationProviders: () => request<NotificationProvider[]>('/notifications/'),
@@ -3937,6 +3946,10 @@ export const api = {
   deleteLibraryFile: (id: number) =>
     request<{ status: string; message: string }>(`/library/files/${id}`, { method: 'DELETE' }),
   getLibraryFileDownloadUrl: (id: number) => `${API_BASE}/library/files/${id}/download`,
+  createLibrarySlicerToken: (fileId: number) =>
+    request<{ token: string }>(`/library/files/${fileId}/slicer-token`, { method: 'POST' }),
+  getLibrarySlicerDownloadUrl: (fileId: number, token: string, filename: string) =>
+    `${API_BASE}/library/files/${fileId}/dl/${token}/${encodeURIComponent(filename)}`,
   downloadLibraryFile: async (id: number, filename?: string): Promise<void> => {
     const headers: Record<string, string> = {};
     if (authToken) {

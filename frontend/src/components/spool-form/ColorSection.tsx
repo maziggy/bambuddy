@@ -177,7 +177,7 @@ export function ColorSection({
                 key={`${color.hex}-${color.name}`}
                 type="button"
                 onClick={() => selectColor(color.hex, color.name)}
-                className={`w-6 h-6 rounded border-2 transition-all hover:scale-110 relative group ${
+                className={`w-6 h-6 rounded border-2 transition-all hover:scale-110 hover:z-20 relative group ${
                   isSelected(color.hex)
                     ? 'border-bambu-green ring-1 ring-bambu-green/30 scale-110'
                     : 'border-bambu-dark-tertiary'
@@ -185,7 +185,7 @@ export function ColorSection({
                 style={{ backgroundColor: `#${color.hex}` }}
                 title={color.name}
               >
-                <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-lg text-white">
+                <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-lg text-white">
                   {color.name}
                 </span>
               </button>
@@ -220,7 +220,7 @@ export function ColorSection({
                 key={color.hex}
                 type="button"
                 onClick={() => selectColor(color.hex, color.name)}
-                className={`w-6 h-6 rounded border-2 transition-all hover:scale-110 relative group ${
+                className={`w-6 h-6 rounded border-2 transition-all hover:scale-110 hover:z-20 relative group ${
                   isSelected(color.hex)
                     ? 'border-bambu-green ring-1 ring-bambu-green/30 scale-110'
                     : 'border-bambu-dark-tertiary'
@@ -228,7 +228,7 @@ export function ColorSection({
                 style={{ backgroundColor: `#${color.hex}` }}
                 title={color.name}
               >
-                <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-lg text-white">
+                <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-lg text-white">
                   {color.name}
                 </span>
               </button>

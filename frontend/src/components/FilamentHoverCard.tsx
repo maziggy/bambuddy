@@ -24,7 +24,7 @@ interface SpoolmanConfig {
 interface InventoryConfig {
   onAssignSpool?: () => void;
   onUnassignSpool?: () => void;
-  assignedSpool?: { id: number; material: string; brand: string | null; color_name: string | null } | null;
+  assignedSpool?: { id: number; material: string; brand: string | null; color_name: string | null; remainingWeightGrams?: number | null } | null;
 }
 
 interface ConfigureSlotConfig {
@@ -148,6 +148,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
   };
 
   const colorHex = data.colorHex ? `#${data.colorHex.replace('#', '')}` : null;
+  const assignedRemainingWeight = inventory?.assignedSpool?.remainingWeightGrams ?? null;
 
   return (
     <div
@@ -238,7 +239,10 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                     {t('ams.fill')}
                   </span>
                   <span className="text-xs text-white font-semibold flex items-center gap-1">
-                    {data.fillLevel !== null ? `${data.fillLevel}%` : '—'}
+                    <span>{data.fillLevel !== null ? `${data.fillLevel}%` : '—'}</span>
+                    {assignedRemainingWeight !== null && data.fillLevel !== null && (
+                      <span className="text-[9px] text-bambu-gray font-normal">• {assignedRemainingWeight}g</span>
+                    )}
                     {data.fillSource === 'spoolman' && data.fillLevel !== null && (
                       <span className="text-[9px] text-bambu-gray font-normal">{t('spoolman.fillSourceLabel')}</span>
                     )}

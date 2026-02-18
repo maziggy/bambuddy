@@ -2604,6 +2604,8 @@ export default {
     kFactor: 'K値',
     fill: '充填率',
     configure: '設定',
+    used: '使用済み',
+    remainingUnit: '残り',
   },
   printModal: {
     flowCalibration: 'フローキャリブレーション',
@@ -3269,4 +3271,18 @@ export default {
 
   // Spoolman Settings
   spoolmanSettings: {},
+
+  // Time
+  time: {
+    unknown: '-',
+    waiting: '待機中',
+    justNow: 'たった今',
+    now: '今すぐ',
+    minsAgo: '{{count}}分前',
+    inMins: 'あと{{count}}分',
+    hoursAgo: '{{count}}時間前',
+    inHours: 'あと{{count}}時間',
+    daysAgo: '{{count}}日前',
+    inDays: 'あと{{count}}日',
+  },
 };

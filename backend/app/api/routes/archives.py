@@ -1074,7 +1074,63 @@ async def download_archive_with_filename(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
-    """Download the 3MF file with filename in URL (for Bambu Studio protocol)."""
+    """Download the 3MF file with filename in URL."""
+    service = ArchiveService(db)
+    archive = await service.get_archive(archive_id)
+    if not archive:
+        raise HTTPException(404, "Archive not found")
+
+    file_path = settings.base_dir / archive.file_path
+    if not file_path.exists():
+        raise HTTPException(404, "File not found")
+
+    return FileResponse(
+        path=file_path,
+        filename=archive.filename,
+        media_type="application/vnd.ms-package.3dmanufacturing-3dmodel+xml",
+    )
+
+
+@router.post("/{archive_id}/slicer-token")
+async def create_archive_slicer_token(
+    archive_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+):
+    """Create a short-lived download token for opening files in slicer applications.
+
+    Slicer protocol handlers (bambustudioopen://, orcaslicer://) cannot send
+    auth headers, so they use this token in the URL path instead.
+    """
+    from backend.app.core.auth import create_slicer_download_token
+
+    service = ArchiveService(db)
+    archive = await service.get_archive(archive_id)
+    if not archive:
+        raise HTTPException(404, "Archive not found")
+
+    token = create_slicer_download_token("archive", archive_id)
+    return {"token": token}
+
+
+@router.get("/{archive_id}/dl/{token}/{filename}")
+async def download_archive_for_slicer(
+    archive_id: int,
+    token: str,
+    filename: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Download 3MF file using a slicer download token.
+
+    Token-authenticated (no auth headers needed). The token is short-lived
+    and single-use, created by POST /{archive_id}/slicer-token.
+    Filename is at the end of the URL so slicers can detect the file format.
+    """
+    from backend.app.core.auth import verify_slicer_download_token
+
+    if not verify_slicer_download_token(token, "archive", archive_id):
+        raise HTTPException(403, "Invalid or expired download token")
+
     service = ArchiveService(db)
     archive = await service.get_archive(archive_id)
     if not archive:
@@ -3093,7 +3149,63 @@ async def download_source_3mf_for_slicer(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
-    """Download source 3MF with filename in URL (for Bambu Studio compatibility)."""
+    """Download source 3MF with filename in URL."""
+    result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
+    archive = result.scalar_one_or_none()
+    if not archive:
+        raise HTTPException(404, "Archive not found")
+
+    if not archive.source_3mf_path:
+        raise HTTPException(404, "No source 3MF attached to this archive")
+
+    source_path = settings.base_dir / archive.source_3mf_path
+    if not source_path.exists():
+        raise HTTPException(404, "Source 3MF file not found on disk")
+
+    return FileResponse(
+        path=source_path,
+        filename=filename if filename.endswith(".3mf") else f"{filename}.3mf",
+        media_type="application/vnd.ms-package.3dmanufacturing-3dmodel+xml",
+    )
+
+
+@router.post("/{archive_id}/source-slicer-token")
+async def create_source_slicer_token(
+    archive_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+):
+    """Create a short-lived download token for opening source 3MF in slicer."""
+    from backend.app.core.auth import create_slicer_download_token
+
+    result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
+    archive = result.scalar_one_or_none()
+    if not archive:
+        raise HTTPException(404, "Archive not found")
+    if not archive.source_3mf_path:
+        raise HTTPException(404, "No source 3MF attached to this archive")
+
+    token = create_slicer_download_token("source", archive_id)
+    return {"token": token}
+
+
+@router.get("/{archive_id}/source-dl/{token}/{filename}")
+async def download_source_3mf_for_slicer_with_token(
+    archive_id: int,
+    token: str,
+    filename: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Download source 3MF using a slicer download token.
+
+    Token-authenticated (no auth headers needed). The token is short-lived
+    and single-use, created by POST /{archive_id}/source-slicer-token.
+    """
+    from backend.app.core.auth import verify_slicer_download_token
+
+    if not verify_slicer_download_token(token, "source", archive_id):
+        raise HTTPException(403, "Invalid or expired download token")
+
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
     archive = result.scalar_one_or_none()
     if not archive:

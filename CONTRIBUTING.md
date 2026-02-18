@@ -168,6 +168,7 @@ Translations live in `frontend/src/i18n/locales/`:
 | `de.ts` | German |
 | `fr.ts` | French |
 | `ja.ts` | Japanese |
+| `pt-BR.ts` | Brazilian Portuguese |
 
 ### Adding New Strings
 

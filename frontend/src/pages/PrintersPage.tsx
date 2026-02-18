@@ -570,11 +570,10 @@ function NozzleSlotHoverCard({ slot, index, activeStatus, filamentName, children
                 {/* Status badge */}
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] uppercase tracking-wider text-bambu-gray font-medium">{t('printers.nozzleStatus')}</span>
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                    activeStatus || isMounted
-                      ? 'bg-green-900/50 text-green-400'
-                      : 'bg-bambu-dark-tertiary text-bambu-gray'
-                  }`}>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${activeStatus || isMounted
+                    ? 'bg-green-900/50 text-green-400'
+                    : 'bg-bambu-dark-tertiary text-bambu-gray'
+                    }`}>
                     {activeStatus ? t('printers.nozzleActive') : isMounted ? t('printers.nozzleMounted') : t('printers.nozzleDocked')}
                   </span>
                 </div>
@@ -713,11 +712,10 @@ function DualNozzleHoverCard({ leftSlot, rightSlot, activeNozzle, filamentInfo, 
         )}
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-bambu-gray">{t('printers.nozzleStatus')}</span>
-          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-            isActive
-              ? 'bg-green-900/50 text-green-400'
-              : 'bg-bambu-dark-tertiary text-bambu-gray'
-          }`}>
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isActive
+            ? 'bg-green-900/50 text-green-400'
+            : 'bg-bambu-dark-tertiary text-bambu-gray'
+            }`}>
             {isActive ? t('printers.nozzleActive') : t('printers.nozzleIdle')}
           </span>
         </div>
@@ -829,15 +827,14 @@ function NozzleRackCard({ slots, filamentInfo }: { slots: import('../api/client'
           return (
             <NozzleSlotHoverCard key={slot.id >= 0 ? slot.id : `empty-${i}`} slot={slot} index={i} filamentName={slot.filament_id ? filamentInfo?.[slot.filament_id]?.name : undefined}>
               <div
-                className={`w-7 h-7 rounded flex items-center justify-center cursor-default transition-colors border-b-2 ${
-                  isEmpty
-                    ? 'bg-bambu-dark-tertiary/20 border-bambu-dark-tertiary/20'
-                    : 'bg-bambu-dark-tertiary/40 border-bambu-dark-tertiary/40'
-                }`}
+                className={`w-7 h-7 rounded flex items-center justify-center cursor-default transition-colors border-b-2 ${isEmpty
+                  ? 'bg-bambu-dark-tertiary/20 border-bambu-dark-tertiary/20'
+                  : 'bg-bambu-dark-tertiary/40 border-bambu-dark-tertiary/40'
+                  }`}
                 style={filamentBg ? { backgroundColor: filamentBg } : undefined}
               >
                 <span className={`text-[10px] font-semibold ${isEmpty ? 'text-bambu-gray/30' : lightBg ? 'text-black/80' : 'text-white'}`}
-                      style={filamentBg && !lightBg ? { textShadow: '0 1px 3px rgba(0,0,0,0.9)' } : undefined}
+                  style={filamentBg && !lightBg ? { textShadow: '0 1px 3px rgba(0,0,0,0.9)' } : undefined}
                 >
                   {isEmpty ? '—' : (slot.nozzle_diameter || '?')}
                 </span>
@@ -854,7 +851,7 @@ function NozzleRackCard({ slots, filamentInfo }: { slots: import('../api/client'
 function WaterDropEmpty({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 36 54" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M17.8131 0.00538C18.4463 -0.15091 20.3648 3.14642 20.8264 3.84781C25.4187 10.816 35.3089 26.9368 35.9383 34.8694C37.4182 53.5822 11.882 61.3357 2.53721 45.3789C-1.73471 38.0791 0.016 32.2049 3.178 25.0232C6.99221 16.3662 12.6411 7.90372 17.8131 0.00538ZM18.3738 7.24807L17.5881 7.48441C14.4452 12.9431 10.917 18.2341 8.19369 23.9368C4.6808 31.29 1.18317 38.5479 7.69403 45.5657C17.3058 55.9228 34.9847 46.8808 31.4604 32.8681C29.2558 24.0969 22.4207 15.2913 18.3776 7.24807H18.3738Z" fill="#C3C2C1"/>
+      <path d="M17.8131 0.00538C18.4463 -0.15091 20.3648 3.14642 20.8264 3.84781C25.4187 10.816 35.3089 26.9368 35.9383 34.8694C37.4182 53.5822 11.882 61.3357 2.53721 45.3789C-1.73471 38.0791 0.016 32.2049 3.178 25.0232C6.99221 16.3662 12.6411 7.90372 17.8131 0.00538ZM18.3738 7.24807L17.5881 7.48441C14.4452 12.9431 10.917 18.2341 8.19369 23.9368C4.6808 31.29 1.18317 38.5479 7.69403 45.5657C17.3058 55.9228 34.9847 46.8808 31.4604 32.8681C29.2558 24.0969 22.4207 15.2913 18.3776 7.24807H18.3738Z" fill="#C3C2C1" />
     </svg>
   );
 }
@@ -863,8 +860,8 @@ function WaterDropEmpty({ className }: { className?: string }) {
 function WaterDropHalf({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 35 53" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M17.3165 0.0038C17.932 -0.14959 19.7971 3.08645 20.2458 3.77481C24.7103 10.6135 34.3251 26.4346 34.937 34.2198C36.3757 52.5848 11.5505 60.1942 2.46584 44.534C-1.68714 37.3735 0.0148 31.6085 3.08879 24.5603C6.79681 16.0605 12.2884 7.75907 17.3165 0.0038ZM17.8615 7.11561L17.0977 7.34755C14.0423 12.7048 10.6124 17.8974 7.96483 23.4941C4.54975 30.7107 1.14949 37.8337 7.47908 44.721C16.8233 54.8856 34.01 46.0117 30.5838 32.2595C28.4405 23.6512 21.7957 15.0093 17.8652 7.11561H17.8615Z" fill="#C3C2C1"/>
-      <path d="M5.03547 30.112C9.64453 30.4936 11.632 35.7985 16.4154 35.791C19.6339 35.7873 20.2161 33.2283 22.3853 31.6197C31.6776 24.7286 33.5835 37.4894 27.9881 44.4254C18.1878 56.5653 -1.16063 44.6013 5.03917 30.1158L5.03547 30.112Z" fill="#1F8FEB"/>
+      <path d="M17.3165 0.0038C17.932 -0.14959 19.7971 3.08645 20.2458 3.77481C24.7103 10.6135 34.3251 26.4346 34.937 34.2198C36.3757 52.5848 11.5505 60.1942 2.46584 44.534C-1.68714 37.3735 0.0148 31.6085 3.08879 24.5603C6.79681 16.0605 12.2884 7.75907 17.3165 0.0038ZM17.8615 7.11561L17.0977 7.34755C14.0423 12.7048 10.6124 17.8974 7.96483 23.4941C4.54975 30.7107 1.14949 37.8337 7.47908 44.721C16.8233 54.8856 34.01 46.0117 30.5838 32.2595C28.4405 23.6512 21.7957 15.0093 17.8652 7.11561H17.8615Z" fill="#C3C2C1" />
+      <path d="M5.03547 30.112C9.64453 30.4936 11.632 35.7985 16.4154 35.791C19.6339 35.7873 20.2161 33.2283 22.3853 31.6197C31.6776 24.7286 33.5835 37.4894 27.9881 44.4254C18.1878 56.5653 -1.16063 44.6013 5.03917 30.1158L5.03547 30.112Z" fill="#1F8FEB" />
     </svg>
   );
 }
@@ -873,8 +870,8 @@ function WaterDropHalf({ className }: { className?: string }) {
 function WaterDropFull({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 36 54" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M17.9625 4.48059L4.77216 26.3154L2.08228 40.2175L10.0224 50.8414H23.1594L33.3246 42.1693V30.2455L17.9625 4.48059Z" fill="#1F8FEB"/>
-      <path d="M17.7948 0.00538C18.4273 -0.15091 20.3438 3.14642 20.8048 3.84781C25.3921 10.816 35.2715 26.9368 35.9001 34.8694C37.3784 53.5822 11.8702 61.3357 2.53562 45.3789C-1.73163 38.0829 0.0134 32.2087 3.1757 25.027C6.98574 16.3662 12.6284 7.90372 17.7948 0.00538ZM18.3549 7.24807L17.57 7.48441C14.4306 12.9431 10.9063 18.2341 8.1859 23.9368C4.67686 31.29 1.18305 38.5479 7.68679 45.5657C17.2881 55.9228 34.9476 46.8808 31.4271 32.8681C29.2249 24.0969 22.3974 15.2913 18.3587 7.24807H18.3549Z" fill="#C3C2C1"/>
+      <path d="M17.9625 4.48059L4.77216 26.3154L2.08228 40.2175L10.0224 50.8414H23.1594L33.3246 42.1693V30.2455L17.9625 4.48059Z" fill="#1F8FEB" />
+      <path d="M17.7948 0.00538C18.4273 -0.15091 20.3438 3.14642 20.8048 3.84781C25.3921 10.816 35.2715 26.9368 35.9001 34.8694C37.3784 53.5822 11.8702 61.3357 2.53562 45.3789C-1.73163 38.0829 0.0134 32.2087 3.1757 25.027C6.98574 16.3662 12.6284 7.90372 17.7948 0.00538ZM18.3549 7.24807L17.57 7.48441C14.4306 12.9431 10.9063 18.2341 8.1859 23.9368C4.67686 31.29 1.18305 38.5479 7.68679 45.5657C17.2881 55.9228 34.9476 46.8808 31.4271 32.8681C29.2249 24.0969 22.3974 15.2913 18.3587 7.24807H18.3549Z" fill="#C3C2C1" />
     </svg>
   );
 }
@@ -883,8 +880,8 @@ function WaterDropFull({ className }: { className?: string }) {
 function ThermometerEmpty({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 12 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M6 0.5C4.6 0.5 3.5 1.6 3.5 3V12.1C2.6 12.8 2 13.9 2 15C2 17.2 3.8 19 6 19C8.2 19 10 17.2 10 15C10 13.9 9.4 12.8 8.5 12.1V3C8.5 1.6 7.4 0.5 6 0.5Z" stroke="#C3C2C1" strokeWidth="1" fill="none"/>
-      <circle cx="6" cy="15" r="2.5" stroke="#C3C2C1" strokeWidth="1" fill="none"/>
+      <path d="M6 0.5C4.6 0.5 3.5 1.6 3.5 3V12.1C2.6 12.8 2 13.9 2 15C2 17.2 3.8 19 6 19C8.2 19 10 17.2 10 15C10 13.9 9.4 12.8 8.5 12.1V3C8.5 1.6 7.4 0.5 6 0.5Z" stroke="#C3C2C1" strokeWidth="1" fill="none" />
+      <circle cx="6" cy="15" r="2.5" stroke="#C3C2C1" strokeWidth="1" fill="none" />
     </svg>
   );
 }
@@ -893,9 +890,9 @@ function ThermometerEmpty({ className }: { className?: string }) {
 function ThermometerHalf({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 12 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="4.5" y="8" width="3" height="4.5" fill="#d4a017" rx="0.5"/>
-      <circle cx="6" cy="15" r="2" fill="#d4a017"/>
-      <path d="M6 0.5C4.6 0.5 3.5 1.6 3.5 3V12.1C2.6 12.8 2 13.9 2 15C2 17.2 3.8 19 6 19C8.2 19 10 17.2 10 15C10 13.9 9.4 12.8 8.5 12.1V3C8.5 1.6 7.4 0.5 6 0.5Z" stroke="#C3C2C1" strokeWidth="1" fill="none"/>
+      <rect x="4.5" y="8" width="3" height="4.5" fill="#d4a017" rx="0.5" />
+      <circle cx="6" cy="15" r="2" fill="#d4a017" />
+      <path d="M6 0.5C4.6 0.5 3.5 1.6 3.5 3V12.1C2.6 12.8 2 13.9 2 15C2 17.2 3.8 19 6 19C8.2 19 10 17.2 10 15C10 13.9 9.4 12.8 8.5 12.1V3C8.5 1.6 7.4 0.5 6 0.5Z" stroke="#C3C2C1" strokeWidth="1" fill="none" />
     </svg>
   );
 }
@@ -904,9 +901,9 @@ function ThermometerHalf({ className }: { className?: string }) {
 function ThermometerFull({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 12 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="4.5" y="3" width="3" height="9.5" fill="#c62828" rx="0.5"/>
-      <circle cx="6" cy="15" r="2" fill="#c62828"/>
-      <path d="M6 0.5C4.6 0.5 3.5 1.6 3.5 3V12.1C2.6 12.8 2 13.9 2 15C2 17.2 3.8 19 6 19C8.2 19 10 17.2 10 15C10 13.9 9.4 12.8 8.5 12.1V3C8.5 1.6 7.4 0.5 6 0.5Z" stroke="#C3C2C1" strokeWidth="1" fill="none"/>
+      <rect x="4.5" y="3" width="3" height="9.5" fill="#c62828" rx="0.5" />
+      <circle cx="6" cy="15" r="2" fill="#c62828" />
+      <path d="M6 0.5C4.6 0.5 3.5 1.6 3.5 3V12.1C2.6 12.8 2 13.9 2 15C2 17.2 3.8 19 6 19C8.2 19 10 17.2 10 15C10 13.9 9.4 12.8 8.5 12.1V3C8.5 1.6 7.4 0.5 6 0.5Z" stroke="#C3C2C1" strokeWidth="1" fill="none" />
     </svg>
   );
 }
@@ -936,9 +933,9 @@ function HeaterThermometer({ className, color, isHeating }: HeaterThermometerPro
     // Filled thermometer with glow - heater is ON
     return (
       <svg className={className} style={glowStyle} viewBox="0 0 12 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect x="4.5" y="3" width="3" height="9.5" fill={fillColor} rx="0.5"/>
-        <circle cx="6" cy="15" r="2" fill={fillColor}/>
-        <path d="M6 0.5C4.6 0.5 3.5 1.6 3.5 3V12.1C2.6 12.8 2 13.9 2 15C2 17.2 3.8 19 6 19C8.2 19 10 17.2 10 15C10 13.9 9.4 12.8 8.5 12.1V3C8.5 1.6 7.4 0.5 6 0.5Z" stroke={fillColor} strokeWidth="1" fill="none"/>
+        <rect x="4.5" y="3" width="3" height="9.5" fill={fillColor} rx="0.5" />
+        <circle cx="6" cy="15" r="2" fill={fillColor} />
+        <path d="M6 0.5C4.6 0.5 3.5 1.6 3.5 3V12.1C2.6 12.8 2 13.9 2 15C2 17.2 3.8 19 6 19C8.2 19 10 17.2 10 15C10 13.9 9.4 12.8 8.5 12.1V3C8.5 1.6 7.4 0.5 6 0.5Z" stroke={fillColor} strokeWidth="1" fill="none" />
       </svg>
     );
   }
@@ -946,8 +943,8 @@ function HeaterThermometer({ className, color, isHeating }: HeaterThermometerPro
   // Empty thermometer - heater is OFF
   return (
     <svg className={className} viewBox="0 0 12 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M6 0.5C4.6 0.5 3.5 1.6 3.5 3V12.1C2.6 12.8 2 13.9 2 15C2 17.2 3.8 19 6 19C8.2 19 10 17.2 10 15C10 13.9 9.4 12.8 8.5 12.1V3C8.5 1.6 7.4 0.5 6 0.5Z" stroke={fillColor} strokeWidth="1" fill="none"/>
-      <circle cx="6" cy="15" r="2.5" stroke={fillColor} strokeWidth="1" fill="none"/>
+      <path d="M6 0.5C4.6 0.5 3.5 1.6 3.5 3V12.1C2.6 12.8 2 13.9 2 15C2 17.2 3.8 19 6 19C8.2 19 10 17.2 10 15C10 13.9 9.4 12.8 8.5 12.1V3C8.5 1.6 7.4 0.5 6 0.5Z" stroke={fillColor} strokeWidth="1" fill="none" />
+      <circle cx="6" cy="15" r="2.5" stroke={fillColor} strokeWidth="1" fill="none" />
     </svg>
   );
 }
@@ -1082,7 +1079,7 @@ function getSpoolmanFillLevel(
   linkedSpool: LinkedSpoolInfo | undefined
 ): number | null {
   if (!linkedSpool?.remaining_weight || !linkedSpool?.filament_weight
-      || linkedSpool.filament_weight <= 0) return null;
+    || linkedSpool.filament_weight <= 0) return null;
   return Math.min(100, Math.round(
     (linkedSpool.remaining_weight / linkedSpool.filament_weight) * 100
   ));
@@ -2049,7 +2046,7 @@ function PrinterCard({
 
   return (
     <Card className="relative">
-      <CardContent className={`flex flex-col h-full gap-2 lg:p-6 ${cardSize >= 3 ? 'p-5' : 'p-4'}`}>
+      <CardContent className={`flex flex-col h-full gap-2 lg:p-6 ${cardSize >= 3 ? 'p-5' : 'p-3'}`}>
         {/* Header */}
         <div className={getSpacing()}>
           {/* Top row: Image, Name, Menu */}
@@ -2067,9 +2064,8 @@ function PrinterCard({
                   {/* Connection indicator dot for compact mode */}
                   {viewMode === 'compact' && (
                     <div
-                      className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                        status?.connected ? 'bg-status-ok' : 'bg-status-error'
-                      }`}
+                      className={`w-2 h-2 rounded-full flex-shrink-0 ${status?.connected ? 'bg-status-ok' : 'bg-status-error'
+                        }`}
                       title={status?.connected ? t('printers.connection.connected') : t('printers.connection.offline')}
                     />
                   )}
@@ -2103,11 +2099,10 @@ function PrinterCard({
               {showMenu && (
                 <div className="absolute right-0 mt-2 w-48 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg z-20">
                   <button
-                    className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 ${
-                      hasPermission('printers:update')
-                        ? 'hover:bg-bambu-dark-tertiary'
-                        : 'opacity-50 cursor-not-allowed'
-                    }`}
+                    className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 ${hasPermission('printers:update')
+                      ? 'hover:bg-bambu-dark-tertiary'
+                      : 'opacity-50 cursor-not-allowed'
+                      }`}
                     onClick={() => {
                       if (!hasPermission('printers:update')) return;
                       setShowEditModal(true);
@@ -2139,11 +2134,10 @@ function PrinterCard({
                     {t('printers.mqttDebug')}
                   </button>
                   <button
-                    className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 ${
-                      hasPermission('printers:delete')
-                        ? 'text-red-400 hover:bg-bambu-dark-tertiary'
-                        : 'text-red-400/50 cursor-not-allowed'
-                    }`}
+                    className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 ${hasPermission('printers:delete')
+                      ? 'text-red-400 hover:bg-bambu-dark-tertiary'
+                      : 'text-red-400/50 cursor-not-allowed'
+                      }`}
                     onClick={() => {
                       if (!hasPermission('printers:delete')) return;
                       setShowDeleteConfirm(true);
@@ -2164,11 +2158,10 @@ function PrinterCard({
             <div className="flex flex-wrap items-center gap-2 mt-2">
               {/* Connection status badge */}
               <span
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs ${
-                  status?.connected
-                    ? 'bg-status-ok/20 text-status-ok'
-                    : 'bg-status-error/20 text-status-error'
-                }`}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs ${status?.connected
+                  ? 'bg-status-ok/20 text-status-ok'
+                  : 'bg-status-error/20 text-status-error'
+                  }`}
               >
                 {status?.connected ? (
                   <Link className="w-3 h-3" />
@@ -2180,17 +2173,16 @@ function PrinterCard({
               {/* WiFi signal strength indicator */}
               {status?.connected && wifiSignal != null && (
                 <span
-                  className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
-                    wifiSignal >= -50
-                      ? 'bg-status-ok/20 text-status-ok'
-                      : wifiSignal >= -60
+                  className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs ${wifiSignal >= -50
+                    ? 'bg-status-ok/20 text-status-ok'
+                    : wifiSignal >= -60
                       ? 'bg-status-ok/20 text-status-ok'
                       : wifiSignal >= -70
-                      ? 'bg-status-warning/20 text-status-warning'
-                      : wifiSignal >= -80
-                      ? 'bg-orange-500/20 text-orange-600'
-                      : 'bg-status-error/20 text-status-error'
-                  }`}
+                        ? 'bg-status-warning/20 text-status-warning'
+                        : wifiSignal >= -80
+                          ? 'bg-orange-500/20 text-orange-600'
+                          : 'bg-status-error/20 text-status-error'
+                    }`}
                   title={`WiFi: ${wifiSignal} dBm - ${t(getWifiStrength(wifiSignal).labelKey)}`}
                 >
                   <Signal className="w-3 h-3" />
@@ -2203,13 +2195,12 @@ function PrinterCard({
                 return (
                   <button
                     onClick={() => setShowHMSModal(true)}
-                    className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs cursor-pointer hover:opacity-80 transition-opacity ${
-                      knownErrors.length > 0
-                        ? knownErrors.some(e => e.severity <= 2)
-                          ? 'bg-status-error/20 text-status-error'
-                          : 'bg-status-warning/20 text-status-warning'
-                        : 'bg-status-ok/20 text-status-ok'
-                    }`}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs cursor-pointer hover:opacity-80 transition-opacity ${knownErrors.length > 0
+                      ? knownErrors.some(e => e.severity <= 2)
+                        ? 'bg-status-error/20 text-status-error'
+                        : 'bg-status-warning/20 text-status-warning'
+                      : 'bg-status-ok/20 text-status-ok'
+                      }`}
                     title={t('printers.clickToViewHmsErrors')}
                   >
                     <AlertTriangle className="w-3 h-3" />
@@ -2221,13 +2212,12 @@ function PrinterCard({
               {maintenanceInfo && (
                 <button
                   onClick={() => navigate('/maintenance')}
-                  className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs cursor-pointer hover:opacity-80 transition-opacity ${
-                    maintenanceInfo.due_count > 0
-                      ? 'bg-status-error/20 text-status-error'
-                      : maintenanceInfo.warning_count > 0
+                  className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs cursor-pointer hover:opacity-80 transition-opacity ${maintenanceInfo.due_count > 0
+                    ? 'bg-status-error/20 text-status-error'
+                    : maintenanceInfo.warning_count > 0
                       ? 'bg-status-warning/20 text-status-warning'
                       : 'bg-status-ok/20 text-status-ok'
-                  }`}
+                    }`}
                   title={
                     maintenanceInfo.due_count > 0 || maintenanceInfo.warning_count > 0
                       ? `${maintenanceInfo.due_count > 0 ? `${maintenanceInfo.due_count} maintenance due` : ''}${maintenanceInfo.due_count > 0 && maintenanceInfo.warning_count > 0 ? ', ' : ''}${maintenanceInfo.warning_count > 0 ? `${maintenanceInfo.warning_count} due soon` : ''} - Click to view`
@@ -2255,11 +2245,10 @@ function PrinterCard({
               {checkPrinterFirmware && firmwareInfo?.current_version && firmwareInfo?.latest_version ? (
                 <button
                   onClick={() => setShowFirmwareModal(true)}
-                  className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs hover:opacity-80 transition-opacity ${
-                    firmwareInfo.update_available
-                      ? 'bg-orange-500/20 text-orange-400'
-                      : 'bg-status-ok/20 text-status-ok'
-                  }`}
+                  className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs hover:opacity-80 transition-opacity ${firmwareInfo.update_available
+                    ? 'bg-orange-500/20 text-orange-400'
+                    : 'bg-status-ok/20 text-status-ok'
+                    }`}
                   title={
                     firmwareInfo.update_available
                       ? t('printers.firmwareUpdateAvailable', { current: firmwareInfo.current_version, latest: firmwareInfo.latest_version })
@@ -2369,11 +2358,10 @@ function PrinterCard({
                   <button
                     onClick={() => setShowSkipObjectsModal(true)}
                     disabled={!(status.state === 'RUNNING' || status.state === 'PAUSE' || status.state === 'PAUSED') || (status.printable_objects_count ?? 0) < 2 || !hasPermission('printers:control')}
-                    className={`absolute top-2 right-2 p-1.5 rounded transition-colors z-10 ${
-                      (status.state === 'RUNNING' || status.state === 'PAUSE' || status.state === 'PAUSED') && (status.printable_objects_count ?? 0) >= 2 && hasPermission('printers:control')
-                        ? 'text-bambu-gray hover:text-white hover:bg-white/10'
-                        : 'text-bambu-gray/30 cursor-not-allowed'
-                    }`}
+                    className={`absolute top-2 right-2 p-1.5 rounded transition-colors z-10 ${(status.state === 'RUNNING' || status.state === 'PAUSE' || status.state === 'PAUSED') && (status.printable_objects_count ?? 0) >= 2 && hasPermission('printers:control')
+                      ? 'text-bambu-gray hover:text-white hover:bg-white/10'
+                      : 'text-bambu-gray/30 cursor-not-allowed'
+                      }`}
                     title={
                       !hasPermission('printers:control')
                         ? t('printers.permission.noControl')
@@ -2692,10 +2680,9 @@ function PrinterCard({
 
                   {/* AMS Content */}
                   <div className="space-y-3">
-                    {/* Row 1-2: Regular AMS (4-tray) in 2-column grid */}
-                    {regularAms.length > 0 && (
-                      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                        {regularAms.map((ams) => {
+                    <div className="flex flex-wrap gap-1">
+                      {/* AMS Regular */}
+                      {regularAms.map((ams) => {
                         const mappedExtruderId = amsExtruderMap[String(ams.id)];
                         const normalizedId = ams.id >= 128 ? ams.id - 128 : ams.id;
                         const extruderId = mappedExtruderId !== undefined ? mappedExtruderId : normalizedId;
@@ -2703,7 +2690,7 @@ function PrinterCard({
                         const isRightNozzle = extruderId === 0;
 
                         return (
-                          <div key={ams.id} className="p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30">
+                          <div key={ams.id} className="flex-[4] min-w-[200px] max-w-[380px] p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30">
                             {/* Header: Label + Stats (no icon) */}
                             <div className="flex items-center justify-between mb-2">
                               <div className="flex items-center gap-1.5">
@@ -2861,11 +2848,10 @@ function PrinterCard({
                                     {status?.state !== 'RUNNING' && amsSlotMenu?.amsId === ams.id && amsSlotMenu?.slotId === slotIdx && (
                                       <div className="absolute top-full left-0 mt-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1 min-w-[120px]">
                                         <button
-                                          className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${
-                                            hasPermission('printers:ams_rfid')
-                                              ? 'text-white hover:bg-bambu-dark-tertiary'
-                                              : 'text-bambu-gray/50 cursor-not-allowed'
-                                          }`}
+                                          className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${hasPermission('printers:ams_rfid')
+                                            ? 'text-white hover:bg-bambu-dark-tertiary'
+                                            : 'text-bambu-gray/50 cursor-not-allowed'
+                                            }`}
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             if (!hasPermission('printers:ams_rfid')) return;
@@ -2961,13 +2947,7 @@ function PrinterCard({
                           </div>
                         );
                       })}
-                    </div>
-                  )}
-
-                    {/* Row 3: HT AMS + External spools (same style as regular AMS, 4 across) */}
-                    {(htAms.length > 0 || status.vt_tray.length > 0) && (
-                      <div className="grid grid-cols-3 gap-3 lg:grid-cols-4">
-                      {/* HT AMS units - name/badge top, slot left, stats right */}
+                      {/* HT AMS */}
                       {htAms.map((ams) => {
                         const mappedExtruderId = amsExtruderMap[String(ams.id)];
                         const normalizedId = ams.id >= 128 ? ams.id - 128 : ams.id;
@@ -3057,179 +3037,180 @@ function PrinterCard({
                         );
 
                         return (
-                          <div key={ams.id} className="p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30">
+                          <div key={ams.id} className="flex-[2] min-w-[120px] max-w-[150px] p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30">
                             {/* Row 1: Label + Nozzle */}
-                            <div className="flex items-center gap-1 mb-2">
-                              <span className="text-[10px] text-white font-medium">
-                                {getAmsLabel(ams.id, ams.tray.length)}
-                              </span>
-                              {isDualNozzle && (isLeftNozzle || isRightNozzle) && (
-                                <NozzleBadge side={isLeftNozzle ? 'L' : 'R'} />
-                              )}
-                            </div>
-                            {/* Row 2: Slot (left) + Stats (right stacked) */}
-                            <div className="flex gap-1.5 max-[550px]:flex-col max-[550px]:items-start">
-                              {/* Slot wrapper with menu button, dropdown, and loading overlay */}
-                              <div className="relative group flex-1 max-[550px]:w-full">
-                                {/* Loading overlay during RFID re-read */}
-                                {isHtRefreshing && (
-                                  <div className="absolute inset-0 bg-bambu-dark-tertiary/80 rounded flex items-center justify-center z-20">
-                                    <RefreshCw className="w-4 h-4 text-bambu-green animate-spin" />
-                                  </div>
-                                )}
-                                {/* Menu button - appears on hover, hidden when printer busy */}
-                                {status?.state !== 'RUNNING' && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setAmsSlotMenu(
-                                        amsSlotMenu?.amsId === ams.id && amsSlotMenu?.slotId === htSlotId
-                                          ? null
-                                          : { amsId: ams.id, slotId: htSlotId }
-                                      );
-                                    }}
-                                    className="absolute -top-1 -right-1 w-4 h-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-bambu-dark-tertiary"
-                                    title={t('printers.slotOptions')}
-                                  >
-                                    <MoreVertical className="w-2.5 h-2.5 text-bambu-gray" />
-                                  </button>
-                                )}
-                                {/* Dropdown menu */}
-                                {status?.state !== 'RUNNING' && amsSlotMenu?.amsId === ams.id && amsSlotMenu?.slotId === htSlotId && (
-                                  <div className="absolute top-full left-0 mt-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1 min-w-[120px]">
-                                    <button
-                                      className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${
-                                        hasPermission('printers:ams_rfid')
-                                          ? 'text-white hover:bg-bambu-dark-tertiary'
-                                          : 'text-bambu-gray/50 cursor-not-allowed'
-                                      }`}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (!hasPermission('printers:ams_rfid')) return;
-                                        refreshAmsSlotMutation.mutate({ amsId: ams.id, slotId: htSlotId });
-                                        setAmsSlotMenu(null);
-                                      }}
-                                      disabled={isHtRefreshing || !hasPermission('printers:ams_rfid')}
-                                      title={!hasPermission('printers:ams_rfid') ? t('printers.permission.noAmsRfid') : undefined}
-                                    >
-                                      <RefreshCw className={`w-3 h-3 ${isHtRefreshing ? 'animate-spin' : ''}`} />
-                                      {t('printers.rfid.reread')}
-                                    </button>
-                                  </div>
-                                )}
-                                {/* Hover card wraps only the visual content */}
-                                {filamentData ? (
-                                  <FilamentHoverCard
-                                    data={filamentData}
-                                    spoolman={{
-                                      enabled: spoolmanEnabled,
-                                      hasUnlinkedSpools,
-                                      linkedSpoolId: filamentData.trayUuid ? linkedSpools?.[filamentData.trayUuid.toUpperCase()]?.id : undefined,
-                                      spoolmanUrl,
-                                      onLinkSpool: spoolmanEnabled && filamentData.trayUuid ? (uuid) => {
-                                        setLinkSpoolModal({
-                                          tagUid: filamentData.tagUid || '',
-                                          trayUuid: uuid,
-                                          printerId: printer.id,
-                                          amsId: ams.id,
-                                          trayId: htSlotId,
-                                        });
-                                      } : undefined,
-                                    }}
-                                    inventory={spoolmanEnabled ? undefined : (() => {
-                                      const assignment = onGetAssignment?.(printer.id, ams.id, htSlotId);
-                                      return {
-                                        assignedSpool: assignment?.spool ? {
-                                          id: assignment.spool.id,
-                                          material: assignment.spool.material,
-                                          brand: assignment.spool.brand,
-                                          color_name: assignment.spool.color_name,
-                                        } : null,
-                                        onAssignSpool: filamentData.vendor !== 'Bambu Lab' ? () => setAssignSpoolModal({
-                                          printerId: printer.id,
-                                          amsId: ams.id,
-                                          trayId: htSlotId,
-                                          trayInfo: {
-                                            type: filamentData.profile,
-                                            color: filamentData.colorHex || '',
-                                            location: getAmsLabel(ams.id, ams.tray.length),
-                                          },
-                                        }) : undefined,
-                                        onUnassignSpool: assignment && filamentData.vendor !== 'Bambu Lab' ? () => onUnassignSpool?.(printer.id, ams.id, htSlotId) : undefined,
-                                      };
-                                    })()}
-                                    configureSlot={{
-                                      enabled: hasPermission('printers:control'),
-                                      onConfigure: () => setConfigureSlotModal({
-                                        amsId: ams.id,
-                                        trayId: htSlotId,
-                                        trayCount: ams.tray.length,
-                                        trayType: tray?.tray_type || undefined,
-                                        trayColor: tray?.tray_color || undefined,
-                                        traySubBrands: tray?.tray_sub_brands || undefined,
-                                        trayInfoIdx: tray?.tray_info_idx || undefined,
-                                        extruderId: mappedExtruderId,
-                                        caliIdx: tray?.cali_idx,
-                                        savedPresetId: slotPreset?.preset_id,
-                                      }),
-                                    }}
-                                  >
-                                    {slotVisual}
-                                  </FilamentHoverCard>
-                                ) : (
-                                  <EmptySlotHoverCard
-                                    configureSlot={{
-                                      enabled: hasPermission('printers:control'),
-                                      onConfigure: () => setConfigureSlotModal({
-                                        amsId: ams.id,
-                                        trayId: htSlotId,
-                                        trayCount: ams.tray.length,
-                                        extruderId: mappedExtruderId,
-                                      }),
-                                    }}
-                                  >
-                                    {slotVisual}
-                                  </EmptySlotHoverCard>
+                            <div className="flex items-center justify-between mb-2 flex-wrap gap-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-white font-medium">
+                                  {getAmsLabel(ams.id, ams.tray.length)}
+                                </span>
+                                {isDualNozzle && (isLeftNozzle || isRightNozzle) && (
+                                  <NozzleBadge side={isLeftNozzle ? 'L' : 'R'} />
                                 )}
                               </div>
-                              {/* Stats stacked vertically: Temp on top, Humidity below */}
-                              {(ams.humidity != null || ams.temp != null) && (
-                                <div className="flex flex-col justify-center gap-1 shrink-0 max-[550px]:w-full">
-                                  {ams.temp != null && (
-                                    <TemperatureIndicator
-                                      temp={ams.temp}
-                                      goodThreshold={amsThresholds?.tempGood}
-                                      fairThreshold={amsThresholds?.tempFair}
-                                      onClick={() => setAmsHistoryModal({
-                                        amsId: ams.id,
-                                        amsLabel: getAmsLabel(ams.id, ams.tray.length),
-                                        mode: 'temperature',
-                                      })}
-                                      compact
-                                    />
+                              {/* Row 2: Slot (left) + Stats (right stacked) */}
+                              <div className="flex gap-1.5 w-full">
+                                {/* Slot wrapper with menu button, dropdown, and loading overlay */}
+                                <div className="relative group flex-1 min-w-0">
+                                  {/* Loading overlay during RFID re-read */}
+                                  {isHtRefreshing && (
+                                    <div className="absolute inset-0 bg-bambu-dark-tertiary/80 rounded flex items-center justify-center z-20">
+                                      <RefreshCw className="w-4 h-4 text-bambu-green animate-spin" />
+                                    </div>
                                   )}
-                                  {ams.humidity != null && (
-                                    <HumidityIndicator
-                                      humidity={ams.humidity}
-                                      goodThreshold={amsThresholds?.humidityGood}
-                                      fairThreshold={amsThresholds?.humidityFair}
-                                      onClick={() => setAmsHistoryModal({
-                                        amsId: ams.id,
-                                        amsLabel: getAmsLabel(ams.id, ams.tray.length),
-                                        mode: 'humidity',
-                                      })}
-                                      compact
-                                    />
+                                  {/* Menu button - appears on hover, hidden when printer busy */}
+                                  {status?.state !== 'RUNNING' && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setAmsSlotMenu(
+                                          amsSlotMenu?.amsId === ams.id && amsSlotMenu?.slotId === htSlotId
+                                            ? null
+                                            : { amsId: ams.id, slotId: htSlotId }
+                                        );
+                                      }}
+                                      className="absolute -top-1 -right-1 w-4 h-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-bambu-dark-tertiary"
+                                      title={t('printers.slotOptions')}
+                                    >
+                                      <MoreVertical className="w-2.5 h-2.5 text-bambu-gray" />
+                                    </button>
+                                  )}
+                                  {/* Dropdown menu */}
+                                  {status?.state !== 'RUNNING' && amsSlotMenu?.amsId === ams.id && amsSlotMenu?.slotId === htSlotId && (
+                                    <div className="absolute top-full left-0 mt-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1 min-w-[120px]">
+                                      <button
+                                        className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 ${hasPermission('printers:ams_rfid')
+                                          ? 'text-white hover:bg-bambu-dark-tertiary'
+                                          : 'text-bambu-gray/50 cursor-not-allowed'
+                                          }`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (!hasPermission('printers:ams_rfid')) return;
+                                          refreshAmsSlotMutation.mutate({ amsId: ams.id, slotId: htSlotId });
+                                          setAmsSlotMenu(null);
+                                        }}
+                                        disabled={isHtRefreshing || !hasPermission('printers:ams_rfid')}
+                                        title={!hasPermission('printers:ams_rfid') ? t('printers.permission.noAmsRfid') : undefined}
+                                      >
+                                        <RefreshCw className={`w-3 h-3 ${isHtRefreshing ? 'animate-spin' : ''}`} />
+                                        {t('printers.rfid.reread')}
+                                      </button>
+                                    </div>
+                                  )}
+                                  {/* Hover card wraps only the visual content */}
+                                  {filamentData ? (
+                                    <FilamentHoverCard
+                                      data={filamentData}
+                                      spoolman={{
+                                        enabled: spoolmanEnabled,
+                                        hasUnlinkedSpools,
+                                        linkedSpoolId: filamentData.trayUuid ? linkedSpools?.[filamentData.trayUuid.toUpperCase()]?.id : undefined,
+                                        spoolmanUrl,
+                                        onLinkSpool: spoolmanEnabled && filamentData.trayUuid ? (uuid) => {
+                                          setLinkSpoolModal({
+                                            tagUid: filamentData.tagUid || '',
+                                            trayUuid: uuid,
+                                            printerId: printer.id,
+                                            amsId: ams.id,
+                                            trayId: htSlotId,
+                                          });
+                                        } : undefined,
+                                      }}
+                                      inventory={spoolmanEnabled ? undefined : (() => {
+                                        const assignment = onGetAssignment?.(printer.id, ams.id, htSlotId);
+                                        return {
+                                          assignedSpool: assignment?.spool ? {
+                                            id: assignment.spool.id,
+                                            material: assignment.spool.material,
+                                            brand: assignment.spool.brand,
+                                            color_name: assignment.spool.color_name,
+                                          } : null,
+                                          onAssignSpool: filamentData.vendor !== 'Bambu Lab' ? () => setAssignSpoolModal({
+                                            printerId: printer.id,
+                                            amsId: ams.id,
+                                            trayId: htSlotId,
+                                            trayInfo: {
+                                              type: filamentData.profile,
+                                              color: filamentData.colorHex || '',
+                                              location: getAmsLabel(ams.id, ams.tray.length),
+                                            },
+                                          }) : undefined,
+                                          onUnassignSpool: assignment && filamentData.vendor !== 'Bambu Lab' ? () => onUnassignSpool?.(printer.id, ams.id, htSlotId) : undefined,
+                                        };
+                                      })()}
+                                      configureSlot={{
+                                        enabled: hasPermission('printers:control'),
+                                        onConfigure: () => setConfigureSlotModal({
+                                          amsId: ams.id,
+                                          trayId: htSlotId,
+                                          trayCount: ams.tray.length,
+                                          trayType: tray?.tray_type || undefined,
+                                          trayColor: tray?.tray_color || undefined,
+                                          traySubBrands: tray?.tray_sub_brands || undefined,
+                                          trayInfoIdx: tray?.tray_info_idx || undefined,
+                                          extruderId: mappedExtruderId,
+                                          caliIdx: tray?.cali_idx,
+                                          savedPresetId: slotPreset?.preset_id,
+                                        }),
+                                      }}
+                                    >
+                                      {slotVisual}
+                                    </FilamentHoverCard>
+                                  ) : (
+                                    <EmptySlotHoverCard
+                                      configureSlot={{
+                                        enabled: hasPermission('printers:control'),
+                                        onConfigure: () => setConfigureSlotModal({
+                                          amsId: ams.id,
+                                          trayId: htSlotId,
+                                          trayCount: ams.tray.length,
+                                          extruderId: mappedExtruderId,
+                                        }),
+                                      }}
+                                    >
+                                      {slotVisual}
+                                    </EmptySlotHoverCard>
                                   )}
                                 </div>
-                              )}
+                                {(ams.humidity != null || ams.temp != null) && (
+                                  <div className="flex flex-col gap-1.5 shrink-0">
+                                    {ams.humidity != null && (
+                                      <HumidityIndicator
+                                        humidity={ams.humidity}
+                                        goodThreshold={amsThresholds?.humidityGood}
+                                        fairThreshold={amsThresholds?.humidityFair}
+                                        onClick={() => setAmsHistoryModal({
+                                          amsId: ams.id,
+                                          amsLabel: getAmsLabel(ams.id, ams.tray.length),
+                                          mode: 'humidity',
+                                        })}
+                                        compact
+                                      />
+                                    )}
+                                    {ams.temp != null && (
+                                      <TemperatureIndicator
+                                        temp={ams.temp}
+                                        goodThreshold={amsThresholds?.tempGood}
+                                        fairThreshold={amsThresholds?.tempFair}
+                                        onClick={() => setAmsHistoryModal({
+                                          amsId: ams.id,
+                                          amsLabel: getAmsLabel(ams.id, ams.tray.length),
+                                          mode: 'temperature',
+                                        })}
+                                        compact
+                                      />
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+
                             </div>
                           </div>
                         );
                       })}
                       {/* External spool(s) - grouped in one card like regular AMS */}
                       {status.vt_tray.length > 0 && (
-                        <div className={`p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30 ${status.vt_tray.length === 1 ? 'max-w-full lg:max-w-[75%]' : ''}`}>
+                        <div className={`p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30 ${status.vt_tray.length === 1 ? 'flex-[1] min-w-[50px] max-w-[80px]' : 'flex-[2] min-w-[100px] max-w-[150px]'}`}>
                           <div className="flex items-center gap-1 mb-2">
                             <span className="text-[10px] text-white font-medium">{t('printers.external')}</span>
                           </div>
@@ -3268,7 +3249,7 @@ function PrinterCard({
                                 tagUid: extTray.tag_uid || null,
                                 fillSource: extSpoolmanFill !== null ? 'spoolman' as const
                                   : extInventoryFill !== null ? 'inventory' as const
-                                  : undefined,
+                                    : undefined,
                               };
 
                               const isEmpty = !extTray.tray_type;
@@ -3383,8 +3364,7 @@ function PrinterCard({
                           </div>
                         </div>
                       )}
-                      </div>
-                    )}
+                    </div>
                   </div>
                 </div>
               );
@@ -3402,13 +3382,12 @@ function PrinterCard({
                 <span className="text-sm text-white truncate">{smartPlug.name}</span>
                 {plugStatus && (
                   <span
-                    className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${
-                      plugStatus.state === 'ON'
-                        ? 'bg-bambu-green/20 text-bambu-green'
-                        : plugStatus.state === 'OFF'
+                    className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${plugStatus.state === 'ON'
+                      ? 'bg-bambu-green/20 text-bambu-green'
+                      : plugStatus.state === 'OFF'
                         ? 'bg-red-500/20 text-red-400'
                         : 'bg-bambu-gray/20 text-bambu-gray'
-                    }`}
+                      }`}
                   >
                     {plugStatus.state || '?'}
                     {plugStatus.state === 'ON' && plugStatus.energy?.power != null && (
@@ -3426,13 +3405,12 @@ function PrinterCard({
                 <button
                   onClick={() => setShowPowerOnConfirm(true)}
                   disabled={powerControlMutation.isPending || plugStatus?.state === 'ON' || !hasPermission('smart_plugs:control')}
-                  className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
-                    !hasPermission('smart_plugs:control')
-                      ? 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
-                      : plugStatus?.state === 'ON'
-                        ? 'bg-bambu-green text-white'
-                        : 'bg-bambu-dark text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary'
-                  }`}
+                  className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${!hasPermission('smart_plugs:control')
+                    ? 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
+                    : plugStatus?.state === 'ON'
+                      ? 'bg-bambu-green text-white'
+                      : 'bg-bambu-dark text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary'
+                    }`}
                   title={!hasPermission('smart_plugs:control') ? t('printers.permission.noSmartPlugControl') : undefined}
                 >
                   <Power className="w-3 h-3" />
@@ -3441,13 +3419,12 @@ function PrinterCard({
                 <button
                   onClick={() => setShowPowerOffConfirm(true)}
                   disabled={powerControlMutation.isPending || plugStatus?.state === 'OFF' || !hasPermission('smart_plugs:control')}
-                  className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
-                    !hasPermission('smart_plugs:control')
-                      ? 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
-                      : plugStatus?.state === 'OFF'
-                        ? 'bg-red-500/30 text-red-400'
-                        : 'bg-bambu-dark text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary'
-                  }`}
+                  className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${!hasPermission('smart_plugs:control')
+                    ? 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
+                    : plugStatus?.state === 'OFF'
+                      ? 'bg-red-500/30 text-red-400'
+                      : 'bg-bambu-dark text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary'
+                    }`}
                   title={!hasPermission('smart_plugs:control') ? t('printers.permission.noSmartPlugControl') : undefined}
                 >
                   <PowerOff className="w-3 h-3" />
@@ -3464,18 +3441,16 @@ function PrinterCard({
                   onClick={() => toggleAutoOffMutation.mutate(!smartPlug.auto_off)}
                   disabled={toggleAutoOffMutation.isPending || smartPlug.auto_off_executed || !hasPermission('smart_plugs:control')}
                   title={!hasPermission('smart_plugs:control') ? t('printers.permission.noSmartPlugControl') : (smartPlug.auto_off_executed ? t('printers.autoOffExecuted') : t('printers.autoOffAfterPrint'))}
-                  className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${
-                    !hasPermission('smart_plugs:control')
-                      ? 'bg-bambu-dark-tertiary/50 cursor-not-allowed'
-                      : smartPlug.auto_off_executed
-                        ? 'bg-bambu-green/50 cursor-not-allowed'
-                        : smartPlug.auto_off ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
-                  }`}
+                  className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${!hasPermission('smart_plugs:control')
+                    ? 'bg-bambu-dark-tertiary/50 cursor-not-allowed'
+                    : smartPlug.auto_off_executed
+                      ? 'bg-bambu-green/50 cursor-not-allowed'
+                      : smartPlug.auto_off ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
+                    }`}
                 >
                   <span
-                    className={`absolute top-[2px] left-[2px] w-4 h-4 bg-white rounded-full transition-transform ${
-                      smartPlug.auto_off || smartPlug.auto_off_executed ? 'translate-x-4' : 'translate-x-0'
-                    }`}
+                    className={`absolute top-[2px] left-[2px] w-4 h-4 bg-white rounded-full transition-transform ${smartPlug.auto_off || smartPlug.auto_off_executed ? 'translate-x-4' : 'translate-x-0'
+                      }`}
                   />
                 </button>
               </div>
@@ -4197,8 +4172,8 @@ function AddPrinterModal({
   // Cleanup discovery on unmount
   useEffect(() => {
     return () => {
-      discoveryApi.stopDiscovery().catch(() => {});
-      discoveryApi.stopSubnetScan().catch(() => {});
+      discoveryApi.stopDiscovery().catch(() => { });
+      discoveryApi.stopSubnetScan().catch(() => { });
     };
   }, []);
 
@@ -4593,10 +4568,9 @@ function FirmwareUpdateModal({
               </div>
               <div className="w-full bg-bambu-dark-tertiary rounded-full h-2">
                 <div
-                  className={`h-2 rounded-full transition-all ${
-                    uploadStatus.status === 'error' ? 'bg-status-error' :
+                  className={`h-2 rounded-full transition-all ${uploadStatus.status === 'error' ? 'bg-status-error' :
                     uploadStatus.status === 'complete' ? 'bg-status-ok' : 'bg-orange-500'
-                  } ${uploadStatus.status === 'uploading' ? 'animate-pulse' : ''}`}
+                    } ${uploadStatus.status === 'uploading' ? 'animate-pulse' : ''}`}
                   style={{ width: `${uploadStatus.progress}%` }}
                 />
               </div>
@@ -4871,11 +4845,10 @@ function PowerDropdownItem({
         <span className="text-sm text-gray-900 dark:text-white truncate">{printer.name}</span>
         {plugStatus && (
           <span
-            className={`text-xs px-1.5 py-0.5 rounded ${
-              plugStatus.state === 'ON'
-                ? 'bg-bambu-green/20 text-bambu-green'
-                : 'bg-red-500/20 text-red-400'
-            }`}
+            className={`text-xs px-1.5 py-0.5 rounded ${plugStatus.state === 'ON'
+              ? 'bg-bambu-green/20 text-bambu-green'
+              : 'bg-red-500/20 text-red-400'
+              }`}
           >
             {plugStatus.state || '?'}
           </span>
@@ -4884,11 +4857,10 @@ function PowerDropdownItem({
       <button
         onClick={() => onPowerOn(plug.id)}
         disabled={isPowering || plugStatus?.state === 'ON'}
-        className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
-          plugStatus?.state === 'ON'
-            ? 'bg-bambu-green/20 text-bambu-green cursor-default'
-            : 'bg-bambu-green/20 text-bambu-green hover:bg-bambu-green hover:text-white'
-        }`}
+        className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${plugStatus?.state === 'ON'
+          ? 'bg-bambu-green/20 text-bambu-green cursor-default'
+          : 'bg-bambu-green/20 text-bambu-green hover:bg-bambu-green hover:text-white'
+          }`}
       >
         <Power className="w-3 h-3" />
         {isPowering ? '...' : 'On'}
@@ -5225,15 +5197,12 @@ export function PrintersPage() {
                     localStorage.setItem('printerCardSize', String(size));
                   }}
                   className={`px-2 py-1.5 text-xs font-medium transition-colors ${label === 'L' || label === 'XL' ? 'hidden lg:block' : ''} ${index === 0 ? 'rounded-l-lg' : ''
-                    } ${
-                    index === cardSizeLabels.length - 1 ? 'rounded-r-lg' : ''
-                  } ${
-                    label === 'M' ? 'rounded-r-lg lg:rounded-r-none' : ''
-                  } ${
-                    isSelected
+                    } ${index === cardSizeLabels.length - 1 ? 'rounded-r-lg' : ''
+                    } ${label === 'M' ? 'rounded-r-lg lg:rounded-r-none' : ''
+                    } ${isSelected
                       ? 'bg-bambu-green text-white'
                       : 'text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white'
-                  }`}
+                    }`}
                   title={label === 'S' ? t('printers.cardSize.small') : label === 'M' ? t('printers.cardSize.medium') : label === 'L' ? t('printers.cardSize.large') : t('printers.cardSize.extraLarge')}
                 >
                   {label}

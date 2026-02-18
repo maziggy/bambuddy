@@ -28,6 +28,6 @@ export function CardHeader({ children, className = '' }: CardProps) {
   );
 }
 
-export function CardContent({ children, className = '' }: CardProps) {
-  return <div className={`p-6 ${className}`}>{children}</div>;
+export function CardContent({ children, className = 'p-6' }: CardProps) {
+  return <div className={className}>{children}</div>;
 }

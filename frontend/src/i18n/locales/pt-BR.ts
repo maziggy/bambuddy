@@ -43,7 +43,7 @@ export default {
     enabled: 'Ativado',
     disabled: 'Desativado',
     yes: 'Sim',
-    no: 'ão',
+    no: 'Não',
     on: 'Ligado',
     off: 'Desligado',
     all: 'Todos',
@@ -741,7 +741,7 @@ export default {
     viewArchive: 'Ver Arquivo',
     viewInFileManager: 'Ver no Gerenciador de Arquivos',
     itemCount: '{{count}} item',
-    itemCount_plural: '{{count}} items',
+    itemCount_plural: '{{count}} itens',
     dragToReorder: 'Arraste para reordenar (apenas ASAP)',
     reorderHint: 'A posição afeta apenas itens ASAP. Itens agendados são executados no horário definido.',
     addedBy: 'Adicionado por {{name}}',
@@ -822,7 +822,7 @@ export default {
     // Bulk edit
     bulkEdit: {
       title: 'Editar {{count}} Item',
-      title_plural: 'Editar {{count}} Items',
+      title_plural: 'Editar {{count}} Itens',
       description: 'Apenas as configurações alteradas serão aplicadas aos itens selecionados.',
       printer: 'Impressora',
       noChange: '— Sem alterações —',
@@ -997,7 +997,6 @@ export default {
     month: '1 mês',
     months: '{{count}} meses',
     year: '1 ano',
-    years: '{{count}} anos',
     // Settings
     maintenanceTypes: 'Tipos de Manutenção',
     maintenanceTypesDescription: 'Tipos de sistema e suas tarefas de manutenção personalizadas',
@@ -1127,9 +1126,9 @@ export default {
       },
       // Security options
       securityOptions: {
-        starttls: 'STARTTLS (Port 587)',
-        ssl: 'SSL/TLS (Port 465)',
-        none: 'None (Port 25)',
+        starttls: 'STARTTLS (Porta 587)',
+        ssl: 'SSL/TLS (Porta 465)',
+        none: 'Nenhuma (Porta 25)',
       },
       // Authentication options
       authOptions: {

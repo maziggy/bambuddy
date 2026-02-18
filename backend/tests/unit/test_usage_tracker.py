@@ -14,6 +14,7 @@ import pytest
 from backend.app.services.usage_tracker import (
     PrintSession,
     _active_sessions,
+    _decode_mqtt_mapping,
     _track_from_3mf,
     on_print_complete,
     on_print_start,
@@ -837,6 +838,189 @@ class TestTrackFrom3mf:
         assert len(results) == 1
         assert results[0]["ams_id"] == 1
         assert results[0]["tray_id"] == 1
+
+
+class TestDecodeMqttMapping:
+    """Tests for _decode_mqtt_mapping() — snow-encoded MQTT mapping to global tray IDs."""
+
+    def test_none_input(self):
+        assert _decode_mqtt_mapping(None) is None
+
+    def test_empty_list(self):
+        assert _decode_mqtt_mapping([]) is None
+
+    def test_all_unmapped(self):
+        """All 65535 values → None (no valid mappings)."""
+        assert _decode_mqtt_mapping([65535, 65535, 65535]) is None
+
+    def test_single_ams_slots(self):
+        """AMS 0 slots: snow values 0-3 → global tray IDs 0-3."""
+        assert _decode_mqtt_mapping([0, 1, 2, 3]) == [0, 1, 2, 3]
+
+    def test_multi_ams_slots(self):
+        """AMS 1 (hw_id=1): snow 256=AMS1-T0, 257=AMS1-T1 → global 4, 5."""
+        assert _decode_mqtt_mapping([256, 257]) == [4, 5]
+
+    def test_ams_ht_slot(self):
+        """AMS-HT (hw_id=128): snow 32768 → global 128."""
+        assert _decode_mqtt_mapping([32768]) == [128]
+
+    def test_external_spool(self):
+        """External spool: ams_hw_id=254, slot=0 → global 254."""
+        # snow = 254 * 256 + 0 = 65024
+        assert _decode_mqtt_mapping([65024]) == [254]
+
+    def test_mixed_with_unmapped(self):
+        """Mix of valid and unmapped (65535) values."""
+        result = _decode_mqtt_mapping([1, 65535, 0])
+        assert result == [1, -1, 0]
+
+    def test_h2c_real_mapping(self):
+        """Real H2C mapping from MQTT logs: [1, 0, 65535*4, 32768]."""
+        mapping = [1, 0, 65535, 65535, 65535, 65535, 32768]
+        result = _decode_mqtt_mapping(mapping)
+        assert result == [1, 0, -1, -1, -1, -1, 128]
+
+    def test_non_int_values_treated_as_unmapped(self):
+        """Non-integer values in the mapping are treated as unmapped."""
+        assert _decode_mqtt_mapping(["foo", 0]) == [-1, 0]
+
+
+class TestMqttMappingIntegration:
+    """Integration tests: MQTT mapping field used in _track_from_3mf."""
+
+    @pytest.mark.asyncio
+    async def test_h2c_multi_filament_uses_mqtt_mapping(self):
+        """H2C: 3 filaments resolved via MQTT mapping field (no ams_mapping, no queue)."""
+        # AMS0-T1 (White PLA), AMS0-T0 (Black PLA), AMS128-T0 (Red PLA)
+        spool_white = _make_spool(spool_id=1, label_weight=1000)
+        spool_black = _make_spool(spool_id=2, label_weight=1000)
+        spool_red = _make_spool(spool_id=3, label_weight=1000)
+        assign_white = _make_assignment(spool_id=1, ams_id=0, tray_id=1)
+        assign_black = _make_assignment(spool_id=2, ams_id=0, tray_id=0)
+        assign_red = _make_assignment(spool_id=3, ams_id=128, tray_id=0)
+        archive = _make_archive(archive_id=12)
+
+        # db: archive, then 3 pairs of (assignment, spool)
+        # No queue lookup because MQTT mapping is found first
+        db = _mock_db_sequential(
+            [
+                archive,
+                assign_white,
+                spool_white,
+                assign_black,
+                spool_black,
+                assign_red,
+                spool_red,
+            ]
+        )
+
+        # MQTT mapping: slot0→AMS0-T1(1), slot1→AMS0-T0(0), slots2-5→unmapped, slot6→AMS128-T0(32768)
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            raw_data={"mapping": [1, 0, 65535, 65535, 65535, 65535, 32768]},
+            progress=100,
+            layer_num=50,
+            tray_now=255,
+        )
+
+        # 3MF slots 1, 2, 7 (1-based) → indices 0, 1, 6 in mapping
+        filament_usage = [
+            {"slot_id": 1, "used_g": 21.16, "type": "PLA", "color": "#FFFFFF"},
+            {"slot_id": 2, "used_g": 24.22, "type": "PLA", "color": "#000000"},
+            {"slot_id": 7, "used_g": 18.47, "type": "PLA", "color": "#F72323"},
+        ]
+        handled_trays: set[tuple[int, int]] = set()
+
+        with (
+            patch("backend.app.core.config.settings") as mock_settings,
+            patch(
+                "backend.app.utils.threemf_tools.extract_filament_usage_from_3mf",
+                return_value=filament_usage,
+            ),
+        ):
+            mock_settings.base_dir = MagicMock()
+            mock_path = MagicMock()
+            mock_path.exists.return_value = True
+            mock_settings.base_dir.__truediv__ = MagicMock(return_value=mock_path)
+
+            results = await _track_from_3mf(
+                printer_id=1,
+                archive_id=12,
+                status="completed",
+                print_name="Cube + Cube + Cube",
+                handled_trays=handled_trays,
+                printer_manager=printer_manager,
+                db=db,
+            )
+
+        assert len(results) == 3
+
+        # slot_id=1 → mapping[0]=1 → AMS0-T1 (White PLA)
+        assert results[0]["spool_id"] == 1
+        assert results[0]["ams_id"] == 0
+        assert results[0]["tray_id"] == 1
+        assert results[0]["weight_used"] == 21.2
+
+        # slot_id=2 → mapping[1]=0 → AMS0-T0 (Black PLA)
+        assert results[1]["spool_id"] == 2
+        assert results[1]["ams_id"] == 0
+        assert results[1]["tray_id"] == 0
+        assert results[1]["weight_used"] == 24.2
+
+        # slot_id=7 → mapping[6]=32768 → AMS128-T0 (Red PLA)
+        assert results[2]["spool_id"] == 3
+        assert results[2]["ams_id"] == 128
+        assert results[2]["tray_id"] == 0
+        assert results[2]["weight_used"] == 18.5
+
+    @pytest.mark.asyncio
+    async def test_print_cmd_mapping_takes_priority_over_mqtt(self):
+        """ams_mapping from print command is used even when MQTT mapping exists."""
+        spool = _make_spool(spool_id=1, label_weight=1000)
+        assignment = _make_assignment(spool_id=1, ams_id=0, tray_id=2)
+        archive = _make_archive(archive_id=10)
+
+        # db: archive, assignment, spool (no queue lookup when ams_mapping provided)
+        db = _mock_db_sequential([archive, assignment, spool])
+
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            raw_data={"mapping": [0, 65535]},  # MQTT says slot 0 → AMS0-T0
+            progress=100,
+            layer_num=50,
+            tray_now=255,
+        )
+
+        filament_usage = [{"slot_id": 1, "used_g": 10.0, "type": "PLA", "color": ""}]
+        handled_trays: set[tuple[int, int]] = set()
+
+        with (
+            patch("backend.app.core.config.settings") as mock_settings,
+            patch(
+                "backend.app.utils.threemf_tools.extract_filament_usage_from_3mf",
+                return_value=filament_usage,
+            ),
+        ):
+            mock_settings.base_dir = MagicMock()
+            mock_path = MagicMock()
+            mock_path.exists.return_value = True
+            mock_settings.base_dir.__truediv__ = MagicMock(return_value=mock_path)
+
+            results = await _track_from_3mf(
+                printer_id=1,
+                archive_id=10,
+                status="completed",
+                print_name="Test",
+                handled_trays=handled_trays,
+                printer_manager=printer_manager,
+                db=db,
+                ams_mapping=[2],  # Print cmd says slot 0 → AMS0-T2 (overrides MQTT)
+            )
+
+        assert len(results) == 1
+        assert results[0]["ams_id"] == 0
+        assert results[0]["tray_id"] == 2  # From print_cmd mapping, not MQTT
 
 
 class TestNotificationVariables:

@@ -168,8 +168,10 @@ sudo ./update.sh
 The updater performs:
 - Root permission check (fails fast before any work)
 - Optional built-in backup API call (`/api/v1/settings/backup`) before update
+- Keeps only the newest 5 local backup ZIP files
 - Local-change warning + confirmation before `git reset --hard`
-- Service stop/start with rollback attempt if update fails
+- If remote has no new commits, updater exits early without stopping the service
+- Service stop/start with code rollback + service restart attempt if update fails
 
 Useful environment overrides:
 ```bash

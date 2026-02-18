@@ -69,7 +69,7 @@ describe('CardContent', () => {
 
   it('applies padding styling', () => {
     const { container } = render(<CardContent>Content</CardContent>);
-    expect(container.firstChild).toHaveClass('p-6');
+    expect(container.firstChild).toHaveClass('p-3');
   });
 
   it('applies custom className', () => {

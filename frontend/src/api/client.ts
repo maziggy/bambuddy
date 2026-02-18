@@ -1771,6 +1771,7 @@ export interface InventorySpool {
   brand: string | null;
   label_weight: number;
   core_weight: number;
+  core_weight_catalog_id: number | null;
   weight_used: number;
   slicer_filament: string | null;
   slicer_filament_name: string | null;

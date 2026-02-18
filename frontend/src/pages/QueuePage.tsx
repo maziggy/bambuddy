@@ -361,26 +361,40 @@ function SortableQueueItem({
   const isPending = item.status === 'pending';
   const isHistory = ['completed', 'failed', 'skipped', 'cancelled'].includes(item.status);
 
+  const isMobileSelectable = isPending && onToggleSelect;
+
   return (
     <div
       ref={setNodeRef}
       style={style}
       className={`
-        group relative bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary
-        transition-all duration-200 hover:border-bambu-dark-tertiary/80
+        group relative bg-bambu-dark-secondary rounded-xl border transition-all duration-200
         ${isDragging ? 'opacity-50 scale-[1.02] shadow-xl z-50' : ''}
         ${isPrinting ? 'border-blue-500/30 bg-gradient-to-r from-blue-500/5 to-transparent' : ''}
+        ${isSelected && isMobileSelectable ? 'sm:border-bambu-dark-tertiary border-bambu-green/40' : ''}
+        ${!isSelected && !isPrinting ? 'border-bambu-dark-tertiary hover:border-bambu-dark-tertiary/80' : ''}
+        ${isMobileSelectable ? 'sm:cursor-default' : ''}
       `}
+      onClick={isMobileSelectable ? () => {
+        if (window.innerWidth < 640) onToggleSelect();
+      } : undefined}
     >
-      <div className="flex items-center gap-4 p-4">
-        {/* Selection checkbox for pending items */}
+      {/* Mobile selected left accent bar */}
+      {isMobileSelectable && isSelected && (
+        <div className="sm:hidden absolute left-0 top-3 bottom-3 w-1 rounded-full bg-bambu-green" />
+      )}
+
+      <div className="flex items-start sm:items-center gap-2 sm:gap-4 p-3 sm:p-4">
+        {/* Mobile selection indicator — left accent bar only, no tick */}
+
+        {/* Selection checkbox for pending items - hidden on mobile, tap card instead */}
         {isPending && onToggleSelect && (
           <button
             onClick={(e) => {
               e.stopPropagation();
               onToggleSelect();
             }}
-            className={`flex items-center justify-center w-6 h-6 rounded border transition-colors ${
+            className={`hidden sm:flex items-center justify-center w-6 h-6 rounded border transition-colors shrink-0 ${
               isSelected
                 ? 'bg-bambu-green border-bambu-green text-white'
                 : 'border-white/30 bg-black/30 hover:border-bambu-green/50'
@@ -390,25 +404,25 @@ function SortableQueueItem({
           </button>
         )}
 
-        {/* Drag handle or position number */}
+        {/* Drag handle or position number - hidden on mobile */}
         {isPending ? (
           <div
             {...attributes}
             {...listeners}
-            className="flex items-center justify-center w-10 h-10 md:w-8 md:h-8 rounded-lg bg-bambu-dark cursor-grab active:cursor-grabbing hover:bg-bambu-dark-tertiary transition-colors touch-manipulation"
+            className="hidden sm:flex items-center justify-center w-8 h-8 rounded-lg bg-bambu-dark cursor-grab active:cursor-grabbing hover:bg-bambu-dark-tertiary transition-colors touch-manipulation shrink-0"
           >
-            <GripVertical className="w-6 h-6 md:w-4 md:h-4 text-bambu-gray" />
+            <GripVertical className="w-4 h-4 text-bambu-gray" />
           </div>
         ) : position !== undefined ? (
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-bambu-dark text-bambu-gray text-sm font-medium">
+          <div className="hidden sm:flex items-center justify-center w-8 h-8 rounded-lg bg-bambu-dark text-bambu-gray text-sm font-medium shrink-0">
             #{position}
           </div>
         ) : (
-          <div className="w-8" />
+          <div className="hidden sm:block w-8 shrink-0" />
         )}
 
         {/* Thumbnail - use plate-specific thumbnail if plate_id is set */}
-        <div className="w-14 h-14 flex-shrink-0 bg-bambu-dark rounded-lg overflow-hidden">
+        <div className="w-10 h-10 sm:w-14 sm:h-14 flex-shrink-0 bg-bambu-dark rounded-lg overflow-hidden">
           {item.archive_thumbnail ? (
             <img
               src={
@@ -431,7 +445,7 @@ function SortableQueueItem({
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-bambu-gray">
-              <Layers className="w-6 h-6" />
+              <Layers className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
           )}
         </div>
@@ -439,7 +453,7 @@ function SortableQueueItem({
         {/* Info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <p className="text-white font-medium truncate">
+            <p className="text-sm sm:text-base text-white font-medium truncate">
               {item.archive_name || item.library_file_name || `File #${item.archive_id || item.library_file_id}`}
               {(platesData?.is_multi_plate ?? false) && item.plate_id !== undefined && item.plate_id !== null && ` • ${plates.find(plate => plate.index === item.plate_id)?.name || t('queue.plateNumber', { index: item.plate_id })}`}
             </p>
@@ -462,57 +476,59 @@ function SortableQueueItem({
             ) : null}
           </div>
 
-          <div className="flex items-center gap-3 text-sm text-bambu-gray">
-            <span className={`flex items-center gap-1.5 ${item.printer_id === null && !item.target_model ? 'text-orange-400' : ''} ${item.target_model ? 'text-blue-400' : ''}`}>
-              <Printer className="w-3.5 h-3.5" />
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm text-bambu-gray">
+            <span className={`flex items-center gap-1 sm:gap-1.5 ${item.printer_id === null && !item.target_model ? 'text-orange-400' : ''} ${item.target_model ? 'text-blue-400' : ''}`}>
+              <Printer className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+              <span className="truncate max-w-[120px] sm:max-w-none">
               {item.target_model
                 ? `${t('queue.filter.any')} ${item.target_model}${item.target_location ? ` @ ${item.target_location}` : ''}${item.required_filament_types?.length ? ` (${item.required_filament_types.join(', ')})` : ''}`
                 : item.printer_id === null
                   ? t('queue.filter.unassigned')
                   : (item.printer_name || `${t('common.printer')} #${item.printer_id}`)}
+              </span>
             </span>
             {item.print_time_seconds && (
-              <span className="flex items-center gap-1.5">
-                <Timer className="w-3.5 h-3.5" />
+              <span className="flex items-center gap-1 sm:gap-1.5">
+                <Timer className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                 {formatDuration(item.print_time_seconds)}
               </span>
             )}
             {item.filament_used_grams && (
-              <span className="flex items-center gap-1.5">
-                <Weight className="w-3.5 h-3.5" />
+              <span className="flex items-center gap-1 sm:gap-1.5">
+                <Weight className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                 {formatWeight(item.filament_used_grams)}
               </span>
             )}
             {item.created_by_username && (
-              <span className="flex items-center gap-1.5" title={t('queue.addedBy', { name: item.created_by_username })}>
+              <span className="hidden sm:flex items-center gap-1.5" title={t('queue.addedBy', { name: item.created_by_username })}>
                 <User className="w-3.5 h-3.5" />
                 {item.created_by_username}
               </span>
             )}
             {isPending && !item.manual_start && (
-              <span className="flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5" />
+              <span className="flex items-center gap-1 sm:gap-1.5">
+                <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                 {formatRelativeTime(item.scheduled_time, timeFormat, t)}
               </span>
             )}
           </div>
 
           {/* Options badges */}
-          <div className="flex items-center gap-2 mt-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-1.5 sm:mt-2">
             {item.manual_start && (
-              <span className="text-xs px-2 py-0.5 bg-purple-500/10 text-purple-400 rounded-full border border-purple-500/20 flex items-center gap-1">
-                <Hand className="w-3 h-3" />
+              <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-purple-500/10 text-purple-400 rounded-full border border-purple-500/20 flex items-center gap-1">
+                <Hand className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                 {t('queue.badges.staged')}
               </span>
             )}
             {item.require_previous_success && (
-              <span className="text-xs px-2 py-0.5 bg-orange-500/10 text-orange-400 rounded-full border border-orange-500/20">
+              <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-orange-500/10 text-orange-400 rounded-full border border-orange-500/20">
                 {t('queue.badges.requiresPrevious')}
               </span>
             )}
             {item.auto_off_after && (
-              <span className="text-xs px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded-full border border-blue-500/20 flex items-center gap-1">
-                <Power className="w-3 h-3" />
+              <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded-full border border-blue-500/20 flex items-center gap-1">
+                <Power className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                 {t('queue.badges.autoPowerOff')}
               </span>
             )}
@@ -520,17 +536,17 @@ function SortableQueueItem({
 
           {/* Progress bar for printing items - TODO: integrate with WebSocket */}
           {isPrinting && status && (
-            <div className="mt-3">
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex-1 bg-bambu-dark-tertiary rounded-full h-2 mr-3">
+            <div className="mt-2 sm:mt-3">
+              <div className="flex items-center justify-between text-xs sm:text-sm">
+                <div className="flex-1 bg-bambu-dark-tertiary rounded-full h-1.5 sm:h-2 mr-3">
                   <div
-                    className="bg-bambu-green h-2 rounded-full transition-all"
+                    className="bg-bambu-green h-1.5 sm:h-2 rounded-full transition-all"
                     style={{ width: `${status.progress || 0}%` }}
                   />
                 </div>
                 <span className="text-white">{Math.round(status.progress || 0)}%</span>
               </div>
-              <div className="flex items-center gap-3 mt-2 text-xs text-bambu-gray">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-1.5 sm:mt-2 text-[10px] sm:text-xs text-bambu-gray">
                 {status.remaining_time != null && status.remaining_time > 0 && (
                   <>
                     <span className="flex items-center gap-1">
@@ -554,7 +570,7 @@ function SortableQueueItem({
 
           {/* Waiting reason for model-based assignments */}
           {item.waiting_reason && item.status === 'pending' && (
-            <p className="text-xs text-purple-400 mt-2 flex items-start gap-1">
+            <p className="text-[10px] sm:text-xs text-purple-400 mt-1.5 sm:mt-2 flex items-start gap-1">
               <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
               <span>{item.waiting_reason}</span>
             </p>
@@ -562,88 +578,92 @@ function SortableQueueItem({
 
           {/* Error message */}
           {item.error_message && (
-            <p className="text-xs text-red-400 mt-2 flex items-center gap-1">
+            <p className="text-[10px] sm:text-xs text-red-400 mt-1.5 sm:mt-2 flex items-center gap-1">
               <AlertCircle className="w-3 h-3" />
               {item.error_message}
             </p>
           )}
         </div>
 
-        {/* Status badge */}
-        <StatusBadge status={item.status} waitingReason={item.waiting_reason} printerState={printerState} t={t} />
+        {/* Status badge + Actions */}
+        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 sm:gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+          <StatusBadge status={item.status} waitingReason={item.waiting_reason} printerState={printerState} t={t} />
 
-        {/* Actions */}
-        <div className="flex items-center gap-1">
-          {isPrinting && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onStop}
-              disabled={!hasPermission('printers:control')}
-              title={!hasPermission('printers:control') ? t('queue.permissions.noStopPrint') : t('queue.actions.stopPrint')}
-              className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
-            >
-              <StopCircle className="w-4 h-4" />
-            </Button>
-          )}
-          {isPending && (
-            <>
-              {item.manual_start && (
+          <div className="flex items-center gap-0.5 sm:gap-1">
+            {isPrinting && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onStop}
+                disabled={!hasPermission('printers:control')}
+                title={!hasPermission('printers:control') ? t('queue.permissions.noStopPrint') : t('queue.actions.stopPrint')}
+                className="text-red-400 hover:text-red-300 hover:bg-red-500/10 p-1.5 sm:p-2"
+              >
+                <StopCircle className="w-4 h-4" />
+              </Button>
+            )}
+            {isPending && (
+              <>
+                {item.manual_start && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={onStart}
+                    disabled={!hasPermission('printers:control')}
+                    title={!hasPermission('printers:control') ? t('queue.permissions.noStartPrint') : t('queue.actions.startPrint')}
+                    className="text-bambu-green hover:text-bambu-green-light hover:bg-bambu-green/10 p-1.5 sm:p-2"
+                  >
+                    <Play className="w-4 h-4" />
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={onStart}
-                  disabled={!hasPermission('printers:control')}
-                  title={!hasPermission('printers:control') ? t('queue.permissions.noStartPrint') : t('queue.actions.startPrint')}
-                  className="text-bambu-green hover:text-bambu-green-light hover:bg-bambu-green/10"
+                  onClick={onEdit}
+                  disabled={!canModify('queue', 'update', item.created_by_id)}
+                  title={!canModify('queue', 'update', item.created_by_id) ? t('queue.permissions.noEdit') : t('common.edit')}
+                  className="p-1.5 sm:p-2"
                 >
-                  <Play className="w-4 h-4" />
+                  <Pencil className="w-4 h-4" />
                 </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onEdit}
-                disabled={!canModify('queue', 'update', item.created_by_id)}
-                title={!canModify('queue', 'update', item.created_by_id) ? t('queue.permissions.noEdit') : t('common.edit')}
-              >
-                <Pencil className="w-4 h-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onCancel}
-                disabled={!canModify('queue', 'delete', item.created_by_id)}
-                title={!canModify('queue', 'delete', item.created_by_id) ? t('queue.permissions.noCancel') : t('common.cancel')}
-                className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            </>
-          )}
-          {isHistory && (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onRequeue}
-                disabled={!hasPermission('queue:create')}
-                title={!hasPermission('queue:create') ? t('queue.permissions.noRequeue') : t('queue.actions.requeue')}
-                className="text-bambu-green hover:text-bambu-green/80 hover:bg-bambu-green/10"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onRemove}
-                disabled={!canModify('queue', 'delete', item.created_by_id)}
-                title={!canModify('queue', 'delete', item.created_by_id) ? t('queue.permissions.noRemove') : t('common.remove')}
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
-            </>
-          )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onCancel}
+                  disabled={!canModify('queue', 'delete', item.created_by_id)}
+                  title={!canModify('queue', 'delete', item.created_by_id) ? t('queue.permissions.noCancel') : t('common.cancel')}
+                  className="text-red-400 hover:text-red-300 hover:bg-red-500/10 p-1.5 sm:p-2"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </>
+            )}
+            {isHistory && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onRequeue}
+                  disabled={!hasPermission('queue:create')}
+                  title={!hasPermission('queue:create') ? t('queue.permissions.noRequeue') : t('queue.actions.requeue')}
+                  className="text-bambu-green hover:text-bambu-green/80 hover:bg-bambu-green/10 p-1.5 sm:p-2"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onRemove}
+                  disabled={!canModify('queue', 'delete', item.created_by_id)}
+                  title={!canModify('queue', 'delete', item.created_by_id) ? t('queue.permissions.noRemove') : t('common.remove')}
+                  className="p-1.5 sm:p-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -987,72 +1007,72 @@ export function QueuePage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3 lg:gap-4 mb-8">
         <Card className="bg-gradient-to-br from-blue-500/10 to-transparent border-blue-500/20">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
-                <Play className="w-5 h-5 text-blue-400" />
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-blue-500/20 flex items-center justify-center shrink-0">
+                <Play className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" />
               </div>
-              <div>
-                <p className="text-2xl font-bold text-white">{activeItems.length}</p>
-                <p className="text-sm text-bambu-gray">{t('queue.summary.printing')}</p>
+              <div className="min-w-0">
+                <p className="text-xl sm:text-2xl font-bold text-white truncate">{activeItems.length}</p>
+                <p className="text-xs sm:text-sm text-bambu-gray truncate">{t('queue.summary.printing')}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
         <Card className="bg-gradient-to-br from-yellow-500/10 to-transparent border-yellow-500/20">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-yellow-500/20 flex items-center justify-center">
-                <Clock className="w-5 h-5 text-yellow-400" />
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-yellow-500/20 flex items-center justify-center shrink-0">
+                <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-400" />
               </div>
-              <div>
-                <p className="text-2xl font-bold text-white">{pendingItems.length}</p>
-                <p className="text-sm text-bambu-gray">{t('queue.summary.queued')}</p>
+              <div className="min-w-0">
+                <p className="text-xl sm:text-2xl font-bold text-white truncate">{pendingItems.length}</p>
+                <p className="text-xs sm:text-sm text-bambu-gray truncate">{t('queue.summary.queued')}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
         <Card className="bg-gradient-to-br from-bambu-green/10 to-transparent border-bambu-green/20">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-bambu-green/20 flex items-center justify-center">
-                <Timer className="w-5 h-5 text-bambu-green" />
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-bambu-green/20 flex items-center justify-center shrink-0">
+                <Timer className="w-4 h-4 sm:w-5 sm:h-5 text-bambu-green" />
               </div>
-              <div>
-                <p className="text-2xl font-bold text-white">{formatDuration(totalQueueTime)}</p>
-                <p className="text-sm text-bambu-gray">{t('queue.summary.totalTime')}</p>
+              <div className="min-w-0">
+                <p className="text-xl sm:text-2xl font-bold text-white truncate">{formatDuration(totalQueueTime)}</p>
+                <p className="text-xs sm:text-sm text-bambu-gray truncate">{t('queue.summary.totalTime')}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
         <Card className="bg-gradient-to-br from-purple-500/10 to-transparent border-purple-500/20">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
-                <Weight className="w-5 h-5 text-purple-500" />
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-purple-500/20 flex items-center justify-center shrink-0">
+                <Weight className="w-4 h-4 sm:w-5 sm:h-5 text-purple-500" />
               </div>
-              <div>
-                <p className="text-2xl font-bold text-white">{formatWeight(totalWeight)}</p>
-                <p className="text-sm text-bambu-gray">{t('queue.summary.totalWeight')}</p>
+              <div className="min-w-0">
+                <p className="text-xl sm:text-2xl font-bold text-white truncate">{formatWeight(totalWeight)}</p>
+                <p className="text-xs sm:text-sm text-bambu-gray truncate">{t('queue.summary.totalWeight')}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-gray-500/10 to-transparent border-gray-500/20">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-gray-500/20 flex items-center justify-center">
-                <CheckCircle className="w-5 h-5 text-gray-400" />
+        <Card className="col-span-2 sm:col-span-1 bg-gradient-to-br from-gray-500/10 to-transparent border-gray-500/20">
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-gray-500/20 flex items-center justify-center shrink-0">
+                <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
               </div>
-              <div>
-                <p className="text-2xl font-bold text-white">{historyItems.length}</p>
-                <p className="text-sm text-bambu-gray">{t('queue.summary.history')}</p>
+              <div className="min-w-0">
+                <p className="text-xl sm:text-2xl font-bold text-white truncate">{historyItems.length}</p>
+                <p className="text-xs sm:text-sm text-bambu-gray truncate">{t('queue.summary.history')}</p>
               </div>
             </div>
           </CardContent>
@@ -1060,9 +1080,9 @@ export function QueuePage() {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-6">
         <select
-          className="px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+          className="px-2 sm:px-3 py-2 text-sm sm:text-base bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none min-w-0 flex-1 sm:flex-none"
           value={filterPrinter === -1 ? 'unassigned' : (filterPrinter || '')}
           onChange={(e) => {
             const val = e.target.value;
@@ -1079,7 +1099,7 @@ export function QueuePage() {
         </select>
 
         <select
-          className="px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+          className="px-2 sm:px-3 py-2 text-sm sm:text-base bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none min-w-0 flex-1 sm:flex-none"
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
         >
@@ -1094,7 +1114,7 @@ export function QueuePage() {
 
         {uniqueLocations.length > 0 && (
           <select
-            className="px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+            className="px-2 sm:px-3 py-2 text-sm sm:text-base bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none min-w-0 flex-1 sm:flex-none"
             value={filterLocation}
             onChange={(e) => setFilterLocation(e.target.value)}
           >
@@ -1105,10 +1125,11 @@ export function QueuePage() {
           </select>
         )}
 
-        <div className="flex-1" />
+        <div className="hidden sm:block flex-1" />
 
         {historyItems.length > 0 && (
           <Button
+            className="w-full sm:w-auto"
             variant="secondary"
             size="sm"
             onClick={() => setShowClearHistoryConfirm(true)}
@@ -1132,15 +1153,15 @@ export function QueuePage() {
           </p>
         </Card>
       ) : (
-        <div className="space-y-8">
+        <div className="space-y-6 sm:space-y-8">
           {/* Active Prints */}
           {activeItems.length > 0 && (
             <div>
-              <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <h2 className="text-base sm:text-lg font-semibold text-white mb-3 sm:mb-4 flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
                 {t('queue.sections.currentlyPrinting')}
               </h2>
-              <div className="space-y-3">
+              <div className="space-y-2 sm:space-y-3">
                 {activeItems.map((item) => (
                   <SortableQueueItem
                     key={item.id}
@@ -1165,20 +1186,20 @@ export function QueuePage() {
           {/* Pending Queue */}
           {pendingItems.length > 0 && (
             <div>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-yellow-400" />
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-4">
+                <h2 className="text-base sm:text-lg font-semibold text-white flex items-center gap-2">
+                  <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-400" />
                   {t('queue.sections.queued')}
-                  <span className="text-sm font-normal text-bambu-gray">
+                  <span className="text-xs sm:text-sm font-normal text-bambu-gray">
                     ({t('queue.itemCount', { count: pendingItems.length })})
                   </span>
-                  <span className="text-xs text-bambu-gray ml-2" title={t('queue.reorderHint')}>
+                  <span className="hidden sm:inline text-xs text-bambu-gray ml-2" title={t('queue.reorderHint')}>
                     {t('queue.dragToReorder')}
                   </span>
                 </h2>
                 <div className="flex items-center gap-2">
                   <select
-                    className="px-3 py-1.5 text-sm bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                    className="px-2 sm:px-3 py-1.5 text-xs sm:text-sm bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     value={pendingSortBy}
                     onChange={(e) => setPendingSortBy(e.target.value as 'position' | 'name' | 'printer' | 'time')}
                   >
@@ -1200,12 +1221,12 @@ export function QueuePage() {
               </div>
 
               {/* Bulk action toolbar */}
-              <div className="flex items-center gap-3 mb-4 p-3 bg-bambu-dark rounded-lg">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3 sm:mb-4 p-2 sm:p-3 bg-bambu-dark rounded-lg">
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={handleSelectAll}
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm"
                 >
                   {selectedItems.length === pendingItems.length && pendingItems.length > 0 ? (
                     <CheckSquare className="w-4 h-4 text-bambu-green" />
@@ -1216,31 +1237,31 @@ export function QueuePage() {
                 </Button>
                 {selectedItems.length > 0 && (
                   <>
-                    <span className="text-sm text-bambu-gray">
+                    <span className="text-xs sm:text-sm text-bambu-gray">
                       {t('queue.bulkEdit.selected', { count: selectedItems.length })}
                     </span>
-                    <div className="h-4 w-px bg-bambu-dark-tertiary" />
+                    <div className="hidden sm:block h-4 w-px bg-bambu-dark-tertiary" />
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => setShowBulkEditModal(true)}
-                      className="flex items-center gap-2 text-bambu-green hover:text-bambu-green-light"
+                      className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-bambu-green hover:text-bambu-green-light"
                       disabled={!hasAnyPermission('queue:update_own', 'queue:update_all')}
-                      title={!hasAnyPermission('queue:update_own', 'queue:update_all') ? t('queue.permissions.noEditItems') : undefined}
+                      title={!hasAnyPermission('queue:update_own', 'queue:update_all') ? t('queue.permissions.noEditItems') : t('queue.bulkEdit.editSelected')}
                     >
-                      <Pencil className="w-4 h-4" />
-                      {t('queue.bulkEdit.editSelected')}
+                      <Pencil className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      <span className="hidden sm:inline">{t('queue.bulkEdit.editSelected')}</span>
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => bulkCancelMutation.mutate(selectedItems)}
-                      className="flex items-center gap-2 text-red-400 hover:text-red-300"
+                      className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-red-400 hover:text-red-300"
                       disabled={bulkCancelMutation.isPending || !hasAnyPermission('queue:delete_own', 'queue:delete_all')}
-                      title={!hasAnyPermission('queue:delete_own', 'queue:delete_all') ? t('queue.permissions.noCancelItems') : undefined}
+                      title={!hasAnyPermission('queue:delete_own', 'queue:delete_all') ? t('queue.permissions.noCancelItems') : t('queue.bulkEdit.cancelSelected')}
                     >
-                      <X className="w-4 h-4" />
-                      {t('queue.bulkEdit.cancelSelected')}
+                      <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      <span className="hidden sm:inline">{t('queue.bulkEdit.cancelSelected')}</span>
                     </Button>
                   </>
                 )}
@@ -1255,7 +1276,7 @@ export function QueuePage() {
                   items={pendingItems.map(i => i.id)}
                   strategy={verticalListSortingStrategy}
                 >
-                  <div className="space-y-3">
+                  <div className="space-y-2 sm:space-y-3">
                     {pendingItems.map((item, index) => (
                       <SortableQueueItem
                         key={item.id}
@@ -1284,17 +1305,17 @@ export function QueuePage() {
           {/* History */}
           {historyItems.length > 0 && (
             <div>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 text-bambu-gray" />
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-4">
+                <h2 className="text-base sm:text-lg font-semibold text-white flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-bambu-gray" />
                   {t('queue.sections.history')}
-                  <span className="text-sm font-normal text-bambu-gray">
+                  <span className="text-xs sm:text-sm font-normal text-bambu-gray">
                     ({t('queue.itemCount', { count: historyItems.length })})
                   </span>
                 </h2>
                 <div className="flex items-center gap-2">
                   <select
-                    className="px-3 py-1.5 text-sm bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                    className="px-2 sm:px-3 py-1.5 text-xs sm:text-sm bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     value={historySortBy}
                     onChange={(e) => setHistorySortBy(e.target.value as 'date' | 'name' | 'printer')}
                   >
@@ -1313,7 +1334,7 @@ export function QueuePage() {
                   </Button>
                 </div>
               </div>
-              <div className="space-y-3">
+              <div className="space-y-2 sm:space-y-3">
                 {historyItems.slice(0, 20).map((item, index) => (
                   <SortableQueueItem
                     key={item.id}

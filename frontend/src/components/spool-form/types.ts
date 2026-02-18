@@ -9,6 +9,7 @@ export interface SpoolFormData {
   rgba: string;
   label_weight: number;
   core_weight: number;
+  core_weight_catalog_id: number | null;
   weight_used: number;
   slicer_filament: string;
   note: string;
@@ -22,6 +23,7 @@ export const defaultFormData: SpoolFormData = {
   rgba: '808080FF',
   label_weight: 1000,
   core_weight: 250,
+  core_weight_catalog_id: null,
   weight_used: 0,
   slicer_filament: '',
   note: '',

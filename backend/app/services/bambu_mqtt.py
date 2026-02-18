@@ -281,6 +281,7 @@ class BambuMQTTClient:
         self._timelapse_during_print: bool = False  # Track if timelapse was active during this print
         self._last_valid_progress: float = 0.0  # Last non-zero progress (firmware resets on cancel)
         self._last_valid_layer_num: int = 0  # Last non-zero layer (firmware resets on cancel)
+        self._is_dual_nozzle: bool = False  # Set when device.extruder.info has >= 2 entries
         self._message_log: deque[MQTTLogEntry] = deque(maxlen=100)
         self._logging_enabled: bool = False
         self._last_message_time: float = 0.0  # Track when we last received a message
@@ -531,6 +532,16 @@ class BambuMQTTClient:
                     f"[{self.serial_number}] Received gcode_state: {print_data.get('gcode_state')}, "
                     f"gcode_file: {print_data.get('gcode_file')}, subtask_name: {print_data.get('subtask_name')}"
                 )
+
+            # Detect dual-nozzle BEFORE processing AMS data (tray_now disambiguation needs it)
+            # device.extruder.info with >= 2 entries only exists on dual-nozzle printers (H2D, H2D Pro)
+            if not self._is_dual_nozzle and "device" in print_data:
+                dev = print_data.get("device")
+                if isinstance(dev, dict):
+                    ext_info = dev.get("extruder", {}).get("info", [])
+                    if isinstance(ext_info, list) and len(ext_info) >= 2:
+                        self._is_dual_nozzle = True
+                        logger.info("[%s] Detected dual-nozzle printer from device.extruder.info", self.serial_number)
 
             # Handle AMS data that comes inside print key
             if "ams" in print_data:
@@ -914,7 +925,9 @@ class BambuMQTTClient:
 
                 # H2D dual-nozzle printers report only slot number (0-3), not global tray ID
                 # Use active_extruder + ams_extruder_map to determine which AMS the slot belongs to
-                if parsed_tray_now >= 0 and parsed_tray_now <= 3:
+                # Single-nozzle printers (X1C, P2S, etc.) always report global IDs, even with multiple AMS
+                ams_map = self.state.ams_extruder_map
+                if self._is_dual_nozzle and 0 <= parsed_tray_now <= 3:
                     # First, check if we have a pending target that matches this slot
                     pending_target = self.state.pending_tray_target
                     if pending_target is not None:
@@ -964,7 +977,6 @@ class BambuMQTTClient:
                                 self.state.tray_now = snow_tray
                         else:
                             # Fallback: snow not available, use ams_extruder_map (less reliable)
-                            ams_map = self.state.ams_extruder_map
                             # Find ALL AMS units on the active extruder
                             ams_on_extruder = []
                             for ams_id_str, ext_id in ams_map.items():

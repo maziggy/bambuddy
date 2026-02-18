@@ -392,7 +392,7 @@ export function formatETA(
 ): string {
   const now = new Date();
   const eta = new Date(now.getTime() + remainingMinutes * 60 * 1000);
-  
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const etaDay = new Date(eta);
@@ -418,10 +418,10 @@ export function formatETA(
  */
 export function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null || seconds < 0) return '--';
-  
+
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  
+
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 

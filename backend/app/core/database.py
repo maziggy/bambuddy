@@ -1276,6 +1276,12 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already applied
 
+    # Migration: Add core_weight_catalog_id to track which catalog entry was used for empty spool weight
+    try:
+        await conn.execute(text("ALTER TABLE spool ADD COLUMN core_weight_catalog_id INTEGER"))
+    except OperationalError:
+        pass  # Already applied
+
     # Migration: Create spool_usage_history table for filament consumption tracking
     try:
         await conn.execute(

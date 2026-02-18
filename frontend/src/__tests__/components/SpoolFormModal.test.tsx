@@ -62,6 +62,7 @@ const existingSpool: InventorySpool = {
   rgba: 'FF0000FF',
   label_weight: 1000,
   core_weight: 250,
+  core_weight_catalog_id: null,
   weight_used: 300,
   slicer_filament: 'GFL99',
   slicer_filament_name: 'Generic PLA',
@@ -182,5 +183,139 @@ describe('SpoolFormModal weightTouched', () => {
     const [payload] = vi.mocked(api.createSpool).mock.calls[0];
     // weight_used MUST be included for new spools (default value 0)
     expect(payload).toHaveProperty('weight_used', 0);
+  });
+
+  it('preserves core_weight_catalog_id when editing other fields', async () => {
+    const spoolWithCatalogId: InventorySpool = {
+      ...existingSpool,
+      core_weight_catalog_id: 5,
+    };
+
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={spoolWithCatalogId}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Spool')).toBeInTheDocument();
+    });
+
+    // Change the note field (unrelated to catalog ID)
+    const noteInputs = screen.getAllByPlaceholderText(/note/i);
+    expect(noteInputs.length).toBeGreaterThan(0);
+    fireEvent.change(noteInputs[0], { target: { value: 'Updated note' } });
+
+    // Click Save
+    const saveButton = screen.getByRole('button', { name: /save/i });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(api.updateSpool).toHaveBeenCalledTimes(1);
+    });
+
+    const [spoolId, payload] = vi.mocked(api.updateSpool).mock.calls[0];
+    expect(spoolId).toBe(1);
+    // core_weight_catalog_id MUST be preserved when editing other fields
+    expect(payload).toHaveProperty('core_weight_catalog_id', 5);
+    // Other changes should also be present
+    expect(payload).toHaveProperty('note', 'Updated note');
+  });
+
+  it('includes core_weight_catalog_id when selecting from catalog', async () => {
+    const mockCatalog = [
+      { id: 1, name: 'Generic 250g', weight: 250 },
+      { id: 2, name: 'Bambu Lab 250g', weight: 250 },
+      { id: 3, name: 'Standard 300g', weight: 300 },
+    ];
+
+    vi.mocked(api.getSpoolCatalog).mockResolvedValue(mockCatalog);
+
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Add Spool' })).toBeInTheDocument();
+    });
+
+    // Wait for catalog to load
+    await waitFor(() => {
+      expect(api.getSpoolCatalog).toHaveBeenCalled();
+    });
+
+    // Click on the empty spool weight field to open dropdown
+    const weightInputs = screen.getAllByPlaceholderText(/search/i);
+    const weightPicker = weightInputs.find(input =>
+      input.getAttribute('placeholder')?.toLowerCase().includes('spool')
+    );
+    expect(weightPicker).toBeTruthy();
+    fireEvent.focus(weightPicker!);
+
+    // Click on "Bambu Lab 250g" option
+    const bambuOption = await screen.findByText('Bambu Lab 250g');
+    fireEvent.click(bambuOption);
+
+    // Click the add spool button
+    const addButtons = screen.getAllByRole('button', { name: /add spool/i });
+    const submitButton = addButtons.find(btn => btn.tagName === 'BUTTON' && btn.querySelector('svg.lucide-save'));
+    expect(submitButton).toBeTruthy();
+    fireEvent.click(submitButton!);
+
+    await waitFor(() => {
+      expect(api.createSpool).toHaveBeenCalledTimes(1);
+    });
+
+    const [payload] = vi.mocked(api.createSpool).mock.calls[0];
+    // Both weight AND catalog ID should be sent
+    expect(payload).toHaveProperty('core_weight', 250);
+    expect(payload).toHaveProperty('core_weight_catalog_id', 2); // ID of "Bambu Lab 250g"
+  });
+
+  it('displays correct catalog name when duplicates exist', async () => {
+    const spoolWithCatalogId: InventorySpool = {
+      ...existingSpool,
+      core_weight: 250,
+      core_weight_catalog_id: 2, // "Bambu Lab 250g", not the first match
+    };
+
+    const mockCatalog = [
+      { id: 1, name: 'Generic 250g', weight: 250 },
+      { id: 2, name: 'Bambu Lab 250g', weight: 250 },
+      { id: 3, name: 'Standard 300g', weight: 300 },
+    ];
+
+    vi.mocked(api.getSpoolCatalog).mockResolvedValue(mockCatalog);
+
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={spoolWithCatalogId}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Spool')).toBeInTheDocument();
+    });
+
+    // Wait for catalog to load
+    await waitFor(() => {
+      expect(api.getSpoolCatalog).toHaveBeenCalled();
+    });
+
+    // Should display "Bambu Lab 250g" (by ID), not "Generic 250g" (first match by weight)
+    await waitFor(() => {
+      const weightInputs = screen.getAllByDisplayValue(/250|Bambu/i);
+      const bambuFound = weightInputs.some(input =>
+        input.value === 'Bambu Lab 250g' || input.getAttribute('value') === 'Bambu Lab 250g'
+      );
+      expect(bambuFound).toBeTruthy();
+    });
   });
 });

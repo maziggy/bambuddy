@@ -1771,6 +1771,7 @@ export interface InventorySpool {
   brand: string | null;
   label_weight: number;
   core_weight: number;
+  core_weight_catalog_id: number | null;
   weight_used: number;
   slicer_filament: string | null;
   slicer_filament_name: string | null;
@@ -3312,10 +3313,10 @@ export const api = {
       { method: 'POST' }
     ),
 
-  // Filaments
-  listFilaments: () => request<Filament[]>('/filaments/'),
-  getFilament: (id: number) => request<Filament>(`/filaments/${id}`),
-  getFilamentsByType: (type: string) => request<Filament[]>(`/filaments/by-type/${type}`),
+  // Filament Catalog (material types with cost/temp data)
+  listFilaments: () => request<Filament[]>('/filament-catalog/'),
+  getFilament: (id: number) => request<Filament>(`/filament-catalog/${id}`),
+  getFilamentsByType: (type: string) => request<Filament[]>(`/filament-catalog/by-type/${type}`),
 
   // Notification Providers
   getNotificationProviders: () => request<NotificationProvider[]>('/notifications/'),

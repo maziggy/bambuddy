@@ -83,6 +83,7 @@ export default {
     unknown: 'Sconosciuto',
     unknownError: 'Errore sconosciuto',
     today: 'Oggi',
+    tomorrow: 'Domani',
     asap: 'ASAP',
     overdue: 'Scaduto',
     now: 'Ora',
@@ -727,6 +728,7 @@ export default {
     dragToReorder: 'Trascina per riordinare (solo ASAP)',
     reorderHint: 'La posizione influisce solo sugli elementi ASAP. Quelli programmati partono all\'orario.',
     addedBy: 'Aggiunto da {{name}}',
+    plateNumber: 'Piatto {{index}}',
     // Sections
     sections: {
       currentlyPrinting: 'In stampa',
@@ -749,6 +751,7 @@ export default {
       printing: 'In stampa',
       queued: 'In coda',
       totalTime: 'Tempo totale coda',
+      totalWeight: 'Peso totale della coda',
       history: 'Cronologia',
     },
     // Filters
@@ -1430,6 +1433,9 @@ export default {
     noErrors: 'Nessun errore',
     viewOnWiki: 'Vedi su Bambu Lab Wiki',
     clearInstructions: 'Cancella gli errori sulla stampante per rimuoverli qui.',
+    clearErrors: 'Cancella errori',
+    clearSuccess: 'Errori HMS cancellati',
+    clearFailed: 'Impossibile cancellare gli errori HMS',
   },
 
   // MQTT Debug modal
@@ -1687,7 +1693,6 @@ export default {
     cameraStream: 'Stream camera',
     progress: 'Avanzamento',
     eta: 'ETA',
-    tomorrow: 'Domani',
     printerIdle: 'Stampante inattiva',
     printerOffline: 'Stampante offline',
     status: {

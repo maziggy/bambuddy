@@ -86,6 +86,7 @@ export default {
     unknown: 'Inconnu',
     unknownError: 'Erreur inconnue',
     today: 'Aujourd\'hui',
+    tomorrow: 'Demain',
     asap: 'Dès que possible',
     overdue: 'En retard',
     now: 'Maintenant',
@@ -740,6 +741,7 @@ export default {
     clearPlate: 'Vider plateau & lancer suivant',
     clearPlateSuccess: 'Plateau vidé — prêt pour l\'impression suivante',
     plateReady: 'Plateau vidé — prêt pour l\'impression suivante',
+    plateNumber: 'Plateau {{index}}',
     // Sections
     sections: {
       currentlyPrinting: 'En cours',
@@ -762,6 +764,7 @@ export default {
       printing: 'Impressions',
       queued: 'En attente',
       totalTime: 'Temps total estimé',
+      totalWeight: 'Poids total estimé',
       history: 'Historique',
     },
     // Filters
@@ -1597,6 +1600,9 @@ export default {
     noErrors: 'Aucune erreur',
     viewOnWiki: 'Voir sur le Wiki Bambu Lab',
     clearInstructions: 'Effacez les erreurs sur l\'imprimante pour les retirer ici.',
+    clearErrors: 'Effacer les erreurs',
+    clearSuccess: 'Erreurs HMS effacées',
+    clearFailed: 'Échec de l\'effacement des erreurs HMS',
   },
 
   // MQTT Debug modal
@@ -1870,7 +1876,6 @@ export default {
     cameraStream: 'Flux caméra',
     progress: 'Progression',
     eta: 'Fin estimée',
-    tomorrow: 'Demain',
     printerIdle: 'Imprimante inactive',
     printerOffline: 'Imprimante hors ligne',
     status: {

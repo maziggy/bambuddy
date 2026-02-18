@@ -101,6 +101,28 @@ describe('PrinterQueueWidget - Clear Plate', () => {
         expect(link).toHaveAttribute('href', '/queue');
       });
     });
+
+    it('shows passive link when FINISH but plateCleared is true', async () => {
+      render(<PrinterQueueWidget printerId={1} printerState="FINISH" plateCleared={true} />);
+
+      await waitFor(() => {
+        const link = screen.getByRole('link');
+        expect(link).toHaveAttribute('href', '/queue');
+      });
+
+      expect(screen.queryByText('Clear Plate & Start Next')).not.toBeInTheDocument();
+    });
+
+    it('shows passive link when FAILED but plateCleared is true', async () => {
+      render(<PrinterQueueWidget printerId={1} printerState="FAILED" plateCleared={true} />);
+
+      await waitFor(() => {
+        const link = screen.getByRole('link');
+        expect(link).toHaveAttribute('href', '/queue');
+      });
+
+      expect(screen.queryByText('Clear Plate & Start Next')).not.toBeInTheDocument();
+    });
   });
 
   describe('clear plate button shows queue info', () => {

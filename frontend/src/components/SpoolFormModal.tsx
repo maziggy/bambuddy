@@ -411,7 +411,7 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
         </div>
 
         {/* Content */}
-        <div className="p-4 overflow-y-auto flex-1">
+        <div className="p-4 overflow-y-auto flex-1" style={{ scrollbarGutter: 'stable' }}>
           {activeTab === 'filament' ? (
             <div className="space-y-6">
               {/* Filament Info Section */}

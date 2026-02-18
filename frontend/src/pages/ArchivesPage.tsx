@@ -46,11 +46,12 @@ import {
   ChevronRight,
   Settings,
   User,
+  Play,
   ClipboardList,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { openInSlicer, type SlicerType } from '../utils/slicer';
-import { formatDateTime, formatDateOnly, parseUTCDate, type TimeFormat } from '../utils/date';
+import { formatDateTime, formatDateOnly, parseUTCDate, type TimeFormat, formatDuration } from '../utils/date';
 import { useIsMobile } from '../hooks/useIsMobile';
 import type { Archive, ProjectListItem } from '../api/client';
 import { Card, CardContent } from '../components/Card';
@@ -80,13 +81,6 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function formatDuration(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
 }
 
 /**
@@ -156,11 +150,13 @@ function ArchiveCard({
   const [showSchedule, setShowSchedule] = useState(false);
   const [showDeleteSource3mfConfirm, setShowDeleteSource3mfConfirm] = useState(false);
   const [showDeleteF3dConfirm, setShowDeleteF3dConfirm] = useState(false);
+  const [showDeleteTimelapseConfirm, setShowDeleteTimelapseConfirm] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [currentPlateIndex, setCurrentPlateIndex] = useState<number | null>(null);
   const [showPlateNav, setShowPlateNav] = useState(false);
   const source3mfInputRef = useRef<HTMLInputElement>(null);
   const f3dInputRef = useRef<HTMLInputElement>(null);
+  const timelapseInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch plates data for multi-plate browsing (lazy - only when hovering)
   const { data: platesData } = useQuery({
@@ -173,6 +169,28 @@ function ArchiveCard({
   const plates = platesData?.plates ?? [];
   const isMultiPlate = platesData?.is_multi_plate ?? false;
   const displayPlateIndex = currentPlateIndex ?? 0;
+
+  const timelapseDeleteMutation = useMutation({
+    mutationFn: () => api.deleteArchiveTimelapse(archive.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['archives'] });
+      showToast(t('archives.toast.timelapseRemoved'));
+    },
+    onError: (error: Error) => {
+      showToast(error.message || t('archives.toast.failedRemoveTimelapse'), 'error');
+    },
+  });
+
+  const timelapseUploadMutation = useMutation({
+    mutationFn: (file: File) => api.uploadArchiveTimelapse(archive.id, file),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['archives'] });
+      showToast(t('archives.toast.timelapseUploaded', { filename: data.filename }));
+    },
+    onError: (error: Error) => {
+      showToast(error.message || t('archives.toast.failedUploadTimelapse'), 'error');
+    },
+  });
 
   const source3mfUploadMutation = useMutation({
     mutationFn: (file: File) => api.uploadSource3mf(archive.id, file),
@@ -364,6 +382,21 @@ function ArchiveCard({
       disabled: !archive.printer_id || !!archive.timelapse_path || timelapseScanMutation.isPending || !canModify('archives', 'update', archive.created_by_id),
       title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
     },
+    {
+      label: t('archives.menu.uploadTimelapse'),
+      icon: <Upload className="w-4 h-4" />,
+      onClick: () => timelapseInputRef.current?.click(),
+      disabled: !!archive.timelapse_path || !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
+    },
+    ...(archive.timelapse_path ? [{
+      label: t('archives.menu.removeTimelapse'),
+      icon: <Trash2 className="w-4 h-4" />,
+      onClick: () => setShowDeleteTimelapseConfirm(true),
+      danger: true,
+      disabled: !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
+    }] : []),
     { label: '', divider: true, onClick: () => {} },
     {
       label: archive.source_3mf_path ? t('archives.menu.downloadSource3mf') : t('archives.menu.uploadSource3mf'),
@@ -690,7 +723,7 @@ function ArchiveCard({
         {/* Duplicate badge */}
         {archive.duplicate_count > 0 && (
           <div
-            className="absolute top-2 right-2 px-2 py-1 rounded text-xs bg-purple-500/80 text-white flex items-center gap-1"
+            className="absolute top-2 right-12 px-2 py-1 rounded text-xs bg-purple-500/80 text-white flex items-center gap-1"
             title={t('archives.card.duplicateTitle')}
           >
             <Copy className="w-3 h-3" />
@@ -729,10 +762,21 @@ function ArchiveCard({
             <Box className="w-4 h-4 text-cyan-400" />
           </button>
         )}
+        {/* 3D preview badge */}
+        <button
+          className="absolute bottom-2 right-2 p-1.5 rounded bg-black/60 hover:bg-black/80 transition-colors"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowViewer(true);
+          }}
+          title={t('archives.card.preview3d')}
+        >
+          <Layers className="w-4 h-4 text-white" />
+        </button>
         {/* Timelapse badge */}
         {archive.timelapse_path && (
           <button
-            className="absolute bottom-2 right-2 p-1.5 rounded bg-black/60 hover:bg-black/80 transition-colors"
+            className="absolute bottom-2 right-12 p-1.5 rounded bg-black/60 hover:bg-black/80 transition-colors"
             onClick={(e) => {
               e.stopPropagation();
               setShowTimelapse(true);
@@ -745,7 +789,7 @@ function ArchiveCard({
         {/* Photos badge */}
         {archive.photos && archive.photos.length > 0 && (
           <button
-            className={`absolute bottom-2 ${archive.timelapse_path ? 'right-12' : 'right-2'} p-1.5 rounded bg-black/60 hover:bg-black/80 transition-colors`}
+            className={`absolute bottom-2 ${archive.timelapse_path ? 'right-[5.5rem]' : 'right-12'} p-1.5 rounded bg-black/60 hover:bg-black/80 transition-colors`}
             onClick={(e) => {
               e.stopPropagation();
               setShowPhotos(true);
@@ -776,9 +820,21 @@ function ArchiveCard({
 
       <CardContent className="p-4 flex-1 flex flex-col">
         {/* Title */}
-        <h3 className="font-medium text-white mb-1 truncate">
-          {archive.print_name || archive.filename}
-        </h3>
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <h3 className="min-w-0 font-medium text-white truncate">
+            {archive.print_name || archive.filename}
+          </h3>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="p-1 sm:p-1.5 shrink-0"
+            onClick={() => setShowEdit(true)}
+            disabled={!canModify('archives', 'update', archive.created_by_id)}
+            title={!canModify('archives', 'update', archive.created_by_id) ? t('archives.card.noPermissionEdit') : t('archives.card.edit')}
+          >
+            <Pencil className="w-3 h-3 sm:w-4 sm:h-4" />
+          </Button>
+        </div>
         <div className="flex items-center gap-2 mb-3 flex-wrap">
           <p className="text-xs text-bambu-gray">{printerName}</p>
           {/* File type badge */}
@@ -1000,15 +1056,6 @@ function ArchiveCard({
             variant="secondary"
             size="sm"
             className="min-w-0 p-1 sm:p-1.5"
-            onClick={() => setShowViewer(true)}
-            title={t('archives.card.preview3d')}
-          >
-            <Box className="w-3 h-3 sm:w-4 sm:h-4" />
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="min-w-0 p-1 sm:p-1.5"
             onClick={() => {
               api.downloadArchive(archive.id, `${archive.print_name || archive.filename}.3mf`).catch((err) => {
                 console.error('Archive download failed:', err);
@@ -1017,16 +1064,6 @@ function ArchiveCard({
             title={t('archives.card.download')}
           >
             <Download className="w-3 h-3 sm:w-4 sm:h-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="min-w-0 p-1 sm:p-1.5"
-            onClick={() => setShowEdit(true)}
-            disabled={!canModify('archives', 'update', archive.created_by_id)}
-            title={!canModify('archives', 'update', archive.created_by_id) ? t('archives.card.noPermissionEdit') : t('archives.card.edit')}
-          >
-            <Pencil className="w-3 h-3 sm:w-4 sm:h-4" />
           </Button>
           <Button
             variant="ghost"
@@ -1114,6 +1151,21 @@ function ArchiveCard({
         />
       )}
 
+      {/* Delete Timelapse Confirmation */}
+      {showDeleteTimelapseConfirm && (
+        <ConfirmModal
+          title={t('archives.modal.removeTimelapse')}
+          message={t('archives.modal.removeTimelapseConfirm', { name: archive.print_name || archive.filename })}
+          confirmText={t('archives.modal.removeButton')}
+          variant="danger"
+          onConfirm={() => {
+            timelapseDeleteMutation.mutate();
+            setShowDeleteTimelapseConfirm(false);
+          }}
+          onCancel={() => setShowDeleteTimelapseConfirm(false)}
+        />
+      )}
+
       {/* Context Menu */}
       {contextMenu && (
         <ContextMenu
@@ -1145,9 +1197,9 @@ function ArchiveCard({
           <div className="bg-card-dark rounded-lg max-w-lg w-full max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-gray-700">
               <div>
-                <h3 className="text-lg font-semibold text-white">Select Timelapse</h3>
+                <h3 className="text-lg font-semibold text-white">{t('archives.modal.selectTimelapse')}</h3>
                 <p className="text-sm text-gray-400 mt-1">
-                  No auto-match found. Select the timelapse for this print:
+                  {t('archives.modal.selectTimelapseDesc')}
                 </p>
               </div>
               <button
@@ -1269,6 +1321,20 @@ function ArchiveCard({
           e.target.value = '';
         }}
       />
+      {/* Hidden file input for timelapse upload */}
+      <input
+        ref={timelapseInputRef}
+        type="file"
+        accept=".mp4,.avi,.mkv"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            timelapseUploadMutation.mutate(file);
+          }
+          e.target.value = '';
+        }}
+      />
     </Card>
   );
 }
@@ -1310,9 +1376,33 @@ function ArchiveListRow({
   const [showProjectPage, setShowProjectPage] = useState(false);
   const [showDeleteSource3mfConfirm, setShowDeleteSource3mfConfirm] = useState(false);
   const [showDeleteF3dConfirm, setShowDeleteF3dConfirm] = useState(false);
+  const [showDeleteTimelapseConfirm, setShowDeleteTimelapseConfirm] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const source3mfInputRef = useRef<HTMLInputElement>(null);
   const f3dInputRef = useRef<HTMLInputElement>(null);
+  const timelapseInputRef = useRef<HTMLInputElement>(null);
+
+  const timelapseDeleteMutation = useMutation({
+    mutationFn: () => api.deleteArchiveTimelapse(archive.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['archives'] });
+      showToast(t('archives.toast.timelapseRemoved'));
+    },
+    onError: (error: Error) => {
+      showToast(error.message || t('archives.toast.failedRemoveTimelapse'), 'error');
+    },
+  });
+
+  const timelapseUploadMutation = useMutation({
+    mutationFn: (file: File) => api.uploadArchiveTimelapse(archive.id, file),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['archives'] });
+      showToast(t('archives.toast.timelapseUploaded', { filename: data.filename }));
+    },
+    onError: (error: Error) => {
+      showToast(error.message || t('archives.toast.failedUploadTimelapse'), 'error');
+    },
+  });
 
   const source3mfUploadMutation = useMutation({
     mutationFn: (file: File) => api.uploadSource3mf(archive.id, file),
@@ -1501,6 +1591,21 @@ function ArchiveListRow({
       disabled: !archive.printer_id || !!archive.timelapse_path || timelapseScanMutation.isPending || !canModify('archives', 'update', archive.created_by_id),
       title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
     },
+    {
+      label: t('archives.menu.uploadTimelapse'),
+      icon: <Upload className="w-4 h-4" />,
+      onClick: () => timelapseInputRef.current?.click(),
+      disabled: !!archive.timelapse_path || !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
+    },
+    ...(archive.timelapse_path ? [{
+      label: t('archives.menu.removeTimelapse'),
+      icon: <Trash2 className="w-4 h-4" />,
+      onClick: () => setShowDeleteTimelapseConfirm(true),
+      danger: true,
+      disabled: !canModify('archives', 'update', archive.created_by_id),
+      title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
+    }] : []),
     { label: '', divider: true, onClick: () => {} },
     {
       label: archive.source_3mf_path ? t('archives.menu.downloadSource3mf') : t('archives.menu.uploadSource3mf'),
@@ -1778,6 +1883,18 @@ function ArchiveListRow({
           {formatFileSize(archive.file_size)}
         </div>
         <div className="col-span-2 flex justify-end gap-1">
+          {isSlicedFile(archive.filename) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowReprint(true)}
+              disabled={!canModify('archives', 'reprint', archive.created_by_id)}
+              title={!canModify('archives', 'reprint', archive.created_by_id) ? t('archives.card.noPermissionReprint') : t('archives.card.reprint')}
+              className="text-bambu-green hover:text-bambu-green-light hover:bg-bambu-green/10"
+            >
+              <Play className="w-4 h-4" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -1917,6 +2034,21 @@ function ArchiveListRow({
         />
       )}
 
+      {/* Delete Timelapse Confirmation */}
+      {showDeleteTimelapseConfirm && (
+        <ConfirmModal
+          title={t('archives.modal.removeTimelapse')}
+          message={t('archives.modal.removeTimelapseConfirm', { name: archive.print_name || archive.filename })}
+          confirmText={t('archives.modal.removeButton')}
+          variant="danger"
+          onConfirm={() => {
+            timelapseDeleteMutation.mutate();
+            setShowDeleteTimelapseConfirm(false);
+          }}
+          onCancel={() => setShowDeleteTimelapseConfirm(false)}
+        />
+      )}
+
       {/* Context Menu */}
       {contextMenu && (
         <ContextMenu
@@ -1948,9 +2080,9 @@ function ArchiveListRow({
           <div className="bg-card-dark rounded-lg max-w-lg w-full max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-gray-700">
               <div>
-                <h3 className="text-lg font-semibold text-white">Select Timelapse</h3>
+                <h3 className="text-lg font-semibold text-white">{t('archives.modal.selectTimelapse')}</h3>
                 <p className="text-sm text-gray-400 mt-1">
-                  No auto-match found. Select the timelapse for this print:
+                  {t('archives.modal.selectTimelapseDesc')}
                 </p>
               </div>
               <button
@@ -2056,6 +2188,20 @@ function ArchiveListRow({
           const file = e.target.files?.[0];
           if (file) {
             f3dUploadMutation.mutate(file);
+          }
+          e.target.value = '';
+        }}
+      />
+      {/* Hidden file input for timelapse upload */}
+      <input
+        ref={timelapseInputRef}
+        type="file"
+        accept=".mp4,.avi,.mkv"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            timelapseUploadMutation.mutate(file);
           }
           e.target.value = '';
         }}

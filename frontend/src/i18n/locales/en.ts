@@ -86,6 +86,7 @@ export default {
     unknown: 'Unknown',
     unknownError: 'Unknown error',
     today: 'Today',
+    tomorrow: 'Tomorrow',
     asap: 'ASAP',
     overdue: 'Overdue',
     now: 'Now',
@@ -517,6 +518,10 @@ export default {
       noMatchingTimelapse: 'No matching timelapse found',
       failedScanTimelapse: 'Failed to scan for timelapse',
       failedAttachTimelapse: 'Failed to attach timelapse',
+      timelapseRemoved: 'Timelapse removed',
+      failedRemoveTimelapse: 'Failed to remove timelapse',
+      timelapseUploaded: 'Timelapse uploaded: {{filename}}',
+      failedUploadTimelapse: 'Failed to upload timelapse',
       archiveDeleted: 'Archive deleted',
       failedDeleteArchive: 'Failed to delete archive',
       addedToFavorites: 'Added to favorites',
@@ -542,6 +547,8 @@ export default {
       preview3d: '3D Preview',
       viewTimelapse: 'View Timelapse',
       scanForTimelapse: 'Scan for Timelapse',
+      uploadTimelapse: 'Upload Timelapse',
+      removeTimelapse: 'Remove Timelapse',
       downloadSource3mf: 'Download Source 3MF',
       uploadSource3mf: 'Upload Source 3MF',
       replaceSource3mf: 'Replace Source 3MF',
@@ -638,6 +645,8 @@ export default {
       removeButton: 'Remove',
       removeF3d: 'Remove F3D',
       removeF3dConfirm: 'Are you sure you want to remove the Fusion 360 design file from "{{name}}"?',
+      removeTimelapse: 'Remove Timelapse',
+      removeTimelapseConfirm: 'Are you sure you want to remove the timelapse video from "{{name}}"?',
       timelapse: '{{name}} - Timelapse',
       selectTimelapse: 'Select Timelapse',
       selectTimelapseDesc: 'No auto-match found. Select the timelapse for this print:',
@@ -740,6 +749,7 @@ export default {
     clearPlate: 'Clear Plate & Start Next',
     clearPlateSuccess: 'Plate cleared — ready for next print',
     plateReady: 'Plate cleared — ready for next print',
+    plateNumber: 'Plate {{index}}',
     // Sections
     sections: {
       currentlyPrinting: 'Currently Printing',
@@ -762,6 +772,7 @@ export default {
       printing: 'Printing',
       queued: 'Queued',
       totalTime: 'Total Queue Time',
+      totalWeight: 'Total Queue Weight',
       history: 'History',
     },
     // Filters
@@ -1601,6 +1612,9 @@ export default {
     noErrors: 'No errors',
     viewOnWiki: 'View on Bambu Lab Wiki',
     clearInstructions: 'Clear errors on the printer to dismiss them here.',
+    clearErrors: 'Clear Errors',
+    clearSuccess: 'HMS errors cleared',
+    clearFailed: 'Failed to clear HMS errors',
   },
 
   // MQTT Debug modal
@@ -1874,7 +1888,6 @@ export default {
     cameraStream: 'Camera stream',
     progress: 'Progress',
     eta: 'ETA',
-    tomorrow: 'Tomorrow',
     printerIdle: 'Printer is idle',
     printerOffline: 'Printer offline',
     status: {

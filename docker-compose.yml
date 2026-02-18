@@ -23,6 +23,7 @@ services:
     # Note: Printer discovery won't work - add printers manually by IP.
     #ports:
     #  - "${PORT:-8000}:8000"
+    #  - "3000:3000"                  # Virtual printer bind/detect
     #  - "8883:8883"                  # Virtual printer MQTT
     #  - "9990:9990"                  # Virtual printer FTP control
     #  - "50000-50100:50000-50100"    # Virtual printer FTP passive data

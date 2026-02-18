@@ -2,13 +2,18 @@
 // Source: https://github.com/greghesp/ha-bambulab
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, AlertTriangle, AlertCircle, Info, ExternalLink } from 'lucide-react';
-import type { HMSError } from '../api/client';
+import { useMutation } from '@tanstack/react-query';
+import { X, AlertTriangle, AlertCircle, Info, ExternalLink, Loader2, Trash2 } from 'lucide-react';
+import type { HMSError, Permission } from '../api/client';
+import { api } from '../api/client';
+import { useToast } from '../contexts/ToastContext';
 
 interface HMSErrorModalProps {
   printerName: string;
   errors: HMSError[];
   onClose: () => void;
+  printerId: number;
+  hasPermission: (permission: Permission) => boolean;
 }
 
 // Comprehensive error code database (short format: XXXX_YYYY)
@@ -904,11 +909,20 @@ function getHMSHomeUrl(): string {
   return `https://wiki.bambulab.com/en/hms/home`;
 }
 
-export function HMSErrorModal({ printerName, errors, onClose }: HMSErrorModalProps) {
+export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPermission }: HMSErrorModalProps) {
   const { t } = useTranslation();
+  const { showToast } = useToast();
 
-  // Debug: log errors to see what data we're receiving
-  console.log('HMSErrorModal errors:', JSON.stringify(errors, null, 2));
+  const clearMutation = useMutation({
+    mutationFn: () => api.clearHMSErrors(printerId),
+    onSuccess: () => {
+      showToast(t('hmsErrors.clearSuccess'), 'success');
+      onClose();
+    },
+    onError: () => {
+      showToast(t('hmsErrors.clearFailed'), 'error');
+    },
+  });
 
   // Filter to only show errors we have descriptions for (skip unknown codes)
   const knownErrors = errors.filter((error) => {
@@ -994,10 +1008,24 @@ export function HMSErrorModal({ printerName, errors, onClose }: HMSErrorModalPro
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-bambu-dark-tertiary">
+        <div className="p-4 border-t border-bambu-dark-tertiary flex items-center justify-between gap-3">
           <p className="text-xs text-bambu-gray">
             {t('hmsErrors.clearInstructions')}
           </p>
+          {knownErrors.length > 0 && (
+            <button
+              onClick={() => clearMutation.mutate()}
+              disabled={!hasPermission('printers:control') || clearMutation.isPending}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+            >
+              {clearMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Trash2 className="w-4 h-4" />
+              )}
+              {t('hmsErrors.clearErrors')}
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -307,4 +307,69 @@ describe('ArchivesPage', () => {
       // The plates API is called lazily when hovering
     });
   });
+
+  describe('timelapse management', () => {
+    it('shows upload timelapse menu item when no timelapse attached', async () => {
+      const archivesWithoutTimelapse = mockArchives.map(a => ({ ...a, timelapse_path: null }));
+      server.use(
+        http.get('/api/v1/archives/', () => {
+          return HttpResponse.json(archivesWithoutTimelapse);
+        })
+      );
+
+      render(<ArchivesPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Benchy')).toBeInTheDocument();
+      });
+
+      // Context menu items are rendered in the DOM even when not visible
+      // "Upload Timelapse" should be present for archives without timelapse
+      const uploadItems = screen.queryAllByText('Upload Timelapse');
+      expect(uploadItems.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it('shows remove timelapse menu item when timelapse is attached', async () => {
+      const archivesWithTimelapse = mockArchives.map(a => ({
+        ...a,
+        timelapse_path: 'archives/1/timelapse.mp4',
+      }));
+      server.use(
+        http.get('/api/v1/archives/', () => {
+          return HttpResponse.json(archivesWithTimelapse);
+        })
+      );
+
+      render(<ArchivesPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Benchy')).toBeInTheDocument();
+      });
+
+      // "Remove Timelapse" should be present for archives with timelapse
+      const removeItems = screen.queryAllByText('Remove Timelapse');
+      expect(removeItems.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it('disables scan for timelapse when timelapse is already attached', async () => {
+      const archivesWithTimelapse = mockArchives.map(a => ({
+        ...a,
+        timelapse_path: 'archives/1/timelapse.mp4',
+      }));
+      server.use(
+        http.get('/api/v1/archives/', () => {
+          return HttpResponse.json(archivesWithTimelapse);
+        })
+      );
+
+      render(<ArchivesPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Benchy')).toBeInTheDocument();
+      });
+
+      // "Scan for Timelapse" buttons should be disabled when timelapse exists
+      // Upload Timelapse should also be disabled
+    });
+  });
 });

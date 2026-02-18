@@ -558,7 +558,7 @@ class PrintScheduler:
                         "is_ht": False,
                         "is_external": True,
                         "global_tray_id": tray_id,
-                        "extruder_id": (tray_id - 254) if ams_extruder_map else None,
+                        "extruder_id": (255 - tray_id) if ams_extruder_map else None,
                     }
                 )
 
@@ -634,12 +634,12 @@ class PrintScheduler:
             # Get available trays (not already used)
             available = [f for f in loaded if f["global_tray_id"] not in used_tray_ids]
 
-            # Nozzle-aware filtering: restrict to trays on the correct nozzle
+            # Nozzle-aware filtering: restrict to trays on the correct nozzle.
+            # Hard filter — cross-nozzle assignment causes print failures
+            # ("position of left hotend is abnormal"), so never fall back.
             req_nozzle_id = req.get("nozzle_id")
             if req_nozzle_id is not None:
-                nozzle_filtered = [f for f in available if f.get("extruder_id") == req_nozzle_id]
-                if nozzle_filtered:
-                    available = nozzle_filtered
+                available = [f for f in available if f.get("extruder_id") == req_nozzle_id]
 
             # Check if tray_info_idx is unique among available trays
             if req_tray_info_idx:
@@ -903,11 +903,30 @@ class PrintScheduler:
                 await self._power_off_if_needed(db, item)
                 return
             # Library files store absolute paths
-            from pathlib import Path
-
             lib_path = Path(library_file.file_path)
             file_path = lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
             filename = library_file.filename
+
+            # Create archive from library file so usage tracking has access to the 3MF
+            try:
+                from backend.app.services.archive import ArchiveService
+
+                archive_service = ArchiveService(db)
+                archive = await archive_service.archive_print(
+                    printer_id=item.printer_id,
+                    source_file=file_path,
+                )
+                if archive:
+                    item.archive_id = archive.id
+                    await db.flush()
+                    logger.info(
+                        "Queue item %s: Created archive %s from library file %s",
+                        item.id,
+                        archive.id,
+                        item.library_file_id,
+                    )
+            except Exception as e:
+                logger.warning("Queue item %s: Failed to create archive from library file: %s", item.id, e)
 
         else:
             # Neither archive nor library file specified
@@ -1016,13 +1035,6 @@ class PrintScheduler:
             await self._power_off_if_needed(db, item)
             return
 
-        # Register as expected print so we don't create a duplicate archive
-        # Only applicable for archive-based prints
-        if archive:
-            from backend.app.main import register_expected_print
-
-            register_expected_print(item.printer_id, remote_filename, archive.id)
-
         # Parse AMS mapping if stored
         ams_mapping = None
         if item.ams_mapping:
@@ -1030,6 +1042,13 @@ class PrintScheduler:
                 ams_mapping = json.loads(item.ams_mapping)
             except json.JSONDecodeError:
                 logger.warning("Queue item %s: Invalid AMS mapping JSON, ignoring", item.id)
+
+        # Register as expected print so we don't create a duplicate archive
+        # Only applicable for archive-based prints
+        if archive:
+            from backend.app.main import register_expected_print
+
+            register_expected_print(item.printer_id, remote_filename, archive.id, ams_mapping=ams_mapping)
 
         # IMPORTANT: Set status to "printing" BEFORE sending the print command.
         # This prevents phantom reprints if the backend crashes/restarts after the

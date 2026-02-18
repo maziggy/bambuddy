@@ -340,6 +340,202 @@ class TLSProxy:
         logger.debug("%s proxy %s: total %s bytes", self.name, direction, total_bytes)
 
 
+class TCPProxy:
+    """Raw TCP proxy that forwards data without TLS termination.
+
+    Used for protocols where the printer doesn't use TLS (e.g., port 3000
+    binding/authentication protocol).
+    """
+
+    def __init__(
+        self,
+        name: str,
+        listen_port: int,
+        target_host: str,
+        target_port: int,
+        on_connect: Callable[[str], None] | None = None,
+        on_disconnect: Callable[[str], None] | None = None,
+    ):
+        self.name = name
+        self.listen_port = listen_port
+        self.target_host = target_host
+        self.target_port = target_port
+        self.on_connect = on_connect
+        self.on_disconnect = on_disconnect
+
+        self._server: asyncio.Server | None = None
+        self._running = False
+        self._active_connections: dict[str, tuple[asyncio.Task, asyncio.Task]] = {}
+
+    async def start(self) -> None:
+        """Start the TCP proxy server."""
+        if self._running:
+            return
+
+        logger.info(
+            "Starting %s TCP proxy: 0.0.0.0:%s → %s:%s",
+            self.name,
+            self.listen_port,
+            self.target_host,
+            self.target_port,
+        )
+
+        try:
+            self._running = True
+
+            self._server = await asyncio.start_server(
+                self._handle_client,
+                "0.0.0.0",  # nosec B104
+                self.listen_port,
+            )
+
+            logger.info("%s TCP proxy listening on port %s", self.name, self.listen_port)
+
+            async with self._server:
+                await self._server.serve_forever()
+
+        except OSError as e:
+            if e.errno == 98:  # Address already in use
+                logger.error("%s proxy port %s is already in use", self.name, self.listen_port)
+            else:
+                logger.error("%s proxy error: %s", self.name, e)
+        except asyncio.CancelledError:
+            logger.debug("%s proxy task cancelled", self.name)
+        except Exception as e:
+            logger.error("%s proxy error: %s", self.name, e)
+        finally:
+            await self.stop()
+
+    async def stop(self) -> None:
+        """Stop the TCP proxy server."""
+        logger.info("Stopping %s proxy", self.name)
+        self._running = False
+
+        for client_id, (task1, task2) in list(self._active_connections.items()):
+            task1.cancel()
+            task2.cancel()
+            if self.on_disconnect:
+                try:
+                    self.on_disconnect(client_id)
+                except Exception:
+                    pass
+
+        self._active_connections.clear()
+
+        if self._server:
+            try:
+                self._server.close()
+                await self._server.wait_closed()
+            except OSError as e:
+                logger.debug("Error closing %s proxy server: %s", self.name, e)
+            self._server = None
+
+    async def _handle_client(
+        self,
+        client_reader: asyncio.StreamReader,
+        client_writer: asyncio.StreamWriter,
+    ) -> None:
+        """Handle a new client connection by proxying to target."""
+        peername = client_writer.get_extra_info("peername")
+        client_id = f"{peername[0]}:{peername[1]}" if peername else "unknown"
+
+        logger.info("%s proxy: client connected from %s", self.name, client_id)
+
+        if self.on_connect:
+            try:
+                self.on_connect(client_id)
+            except Exception:
+                pass
+
+        try:
+            printer_reader, printer_writer = await asyncio.wait_for(
+                asyncio.open_connection(self.target_host, self.target_port),
+                timeout=10.0,
+            )
+            logger.info("%s proxy: connected to printer %s:%s", self.name, self.target_host, self.target_port)
+        except TimeoutError:
+            logger.error("%s proxy: timeout connecting to %s:%s", self.name, self.target_host, self.target_port)
+            client_writer.close()
+            await client_writer.wait_closed()
+            return
+        except OSError as e:
+            logger.error("%s proxy: failed to connect to %s:%s: %s", self.name, self.target_host, self.target_port, e)
+            client_writer.close()
+            await client_writer.wait_closed()
+            return
+
+        client_to_printer = asyncio.create_task(
+            self._forward(client_reader, printer_writer, f"{client_id}→printer"),
+            name=f"{self.name}_c2p_{client_id}",
+        )
+        printer_to_client = asyncio.create_task(
+            self._forward(printer_reader, client_writer, f"printer→{client_id}"),
+            name=f"{self.name}_p2c_{client_id}",
+        )
+
+        self._active_connections[client_id] = (client_to_printer, printer_to_client)
+
+        try:
+            done, pending = await asyncio.wait(
+                [client_to_printer, printer_to_client],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+        except Exception as e:
+            logger.debug("%s proxy connection error: %s", self.name, e)
+        finally:
+            self._active_connections.pop(client_id, None)
+
+            for writer in [client_writer, printer_writer]:
+                try:
+                    writer.close()
+                    await writer.wait_closed()
+                except OSError:
+                    pass
+
+            logger.info("%s proxy: client %s disconnected", self.name, client_id)
+
+            if self.on_disconnect:
+                try:
+                    self.on_disconnect(client_id)
+                except Exception:
+                    pass
+
+    async def _forward(
+        self,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+        direction: str,
+    ) -> None:
+        """Forward data from reader to writer."""
+        total_bytes = 0
+        try:
+            while self._running:
+                data = await reader.read(65536)
+                if not data:
+                    break
+                writer.write(data)
+                await writer.drain()
+                total_bytes += len(data)
+                logger.debug("%s proxy %s: %s bytes", self.name, direction, len(data))
+        except asyncio.CancelledError:
+            pass
+        except ConnectionResetError:
+            logger.debug("%s proxy %s: connection reset", self.name, direction)
+        except BrokenPipeError:
+            logger.debug("%s proxy %s: broken pipe", self.name, direction)
+        except OSError as e:
+            logger.debug("%s proxy %s error: %s", self.name, direction, e)
+
+        logger.debug("%s proxy %s: total %s bytes", self.name, direction, total_bytes)
+
+
 class FTPTLSProxy(TLSProxy):
     """FTP-aware TLS proxy that handles passive data connections.
 
@@ -843,11 +1039,13 @@ class SlicerProxyManager:
     # Bambu printer ports
     PRINTER_FTP_PORT = 990
     PRINTER_MQTT_PORT = 8883
+    PRINTER_BIND_PORT = 3000
 
     # Local listen ports - must match what Bambu Studio expects
     # Note: Port 990 requires root or CAP_NET_BIND_SERVICE capability
     LOCAL_FTP_PORT = 990
     LOCAL_MQTT_PORT = 8883
+    LOCAL_BIND_PORT = 3000
 
     def __init__(
         self,
@@ -871,6 +1069,7 @@ class SlicerProxyManager:
 
         self._ftp_proxy: TLSProxy | None = None
         self._mqtt_proxy: TLSProxy | None = None
+        self._bind_proxy: TCPProxy | None = None
         self._tasks: list[asyncio.Task] = []
 
     async def start(self) -> None:
@@ -914,6 +1113,16 @@ class SlicerProxyManager:
             on_disconnect=lambda cid: self._log_activity("MQTT", f"disconnected: {cid}"),
         )
 
+        # Bind/auth proxy (port 3000) - raw TCP, no TLS
+        self._bind_proxy = TCPProxy(
+            name="Bind",
+            listen_port=self.LOCAL_BIND_PORT,
+            target_host=self.target_host,
+            target_port=self.PRINTER_BIND_PORT,
+            on_connect=lambda cid: self._log_activity("Bind", f"connected: {cid}"),
+            on_disconnect=lambda cid: self._log_activity("Bind", f"disconnected: {cid}"),
+        )
+
         # Start as background tasks
         async def run_with_logging(proxy: TLSProxy) -> None:
             try:
@@ -929,6 +1138,10 @@ class SlicerProxyManager:
             asyncio.create_task(
                 run_with_logging(self._mqtt_proxy),
                 name="slicer_proxy_mqtt",
+            ),
+            asyncio.create_task(
+                run_with_logging(self._bind_proxy),
+                name="slicer_proxy_bind",
             ),
         ]
 
@@ -953,6 +1166,10 @@ class SlicerProxyManager:
         if self._mqtt_proxy:
             await self._mqtt_proxy.stop()
             self._mqtt_proxy = None
+
+        if self._bind_proxy:
+            await self._bind_proxy.stop()
+            self._bind_proxy = None
 
         # Cancel tasks
         for task in self._tasks:
@@ -990,6 +1207,8 @@ class SlicerProxyManager:
             "target_host": self.target_host,
             "ftp_port": self.LOCAL_FTP_PORT,
             "mqtt_port": self.LOCAL_MQTT_PORT,
+            "bind_port": self.LOCAL_BIND_PORT,
             "ftp_connections": (len(self._ftp_proxy._active_connections) if self._ftp_proxy else 0),
             "mqtt_connections": (len(self._mqtt_proxy._active_connections) if self._mqtt_proxy else 0),
+            "bind_connections": (len(self._bind_proxy._active_connections) if self._bind_proxy else 0),
         }

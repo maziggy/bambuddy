@@ -1143,15 +1143,47 @@ async def get_timelapse(
     # Use file modification time as ETag to bust cache after processing
     mtime = int(timelapse_path.stat().st_mtime)
 
+    # Detect media type from file extension (AVI from P1S before background conversion)
+    suffix = timelapse_path.suffix.lower()
+    media_type = {".mp4": "video/mp4", ".avi": "video/x-msvideo", ".mkv": "video/x-matroska"}.get(suffix, "video/mp4")
+    ext = suffix if suffix in (".mp4", ".avi", ".mkv") else ".mp4"
+
     return FileResponse(
         path=timelapse_path,
-        media_type="video/mp4",
-        filename=f"{archive.print_name or 'timelapse'}.mp4",
+        media_type=media_type,
+        filename=f"{archive.print_name or 'timelapse'}{ext}",
         headers={
             "Cache-Control": "no-cache, must-revalidate",
             "ETag": f'"{mtime}"',
         },
     )
+
+
+@router.delete("/{archive_id}/timelapse")
+async def delete_timelapse(
+    archive_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_DELETE_OWN),
+):
+    """Remove the timelapse video from an archive."""
+    result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
+    archive = result.scalar_one_or_none()
+    if not archive:
+        raise HTTPException(404, "Archive not found")
+
+    if not archive.timelapse_path:
+        raise HTTPException(404, "No timelapse attached to this archive")
+
+    # Delete the file
+    timelapse_path = settings.base_dir / archive.timelapse_path
+    if timelapse_path.exists():
+        timelapse_path.unlink()
+
+    # Clear the path in database
+    archive.timelapse_path = None
+    await db.commit()
+
+    return {"status": "deleted"}
 
 
 @router.post("/{archive_id}/timelapse/scan")
@@ -1190,9 +1222,9 @@ async def scan_timelapse(
     base_name = Path(archive.filename).stem
 
     # Scan timelapse directory on printer
-    # Try both /timelapse and /timelapse/video (different printer models use different paths)
+    # Different printer models use different paths
     files = []
-    for timelapse_path in ["/timelapse", "/timelapse/video"]:
+    for timelapse_path in ["/timelapse", "/timelapse/video", "/record", "/recording"]:
         try:
             files = await list_files_async(
                 printer.ip_address, printer.access_code, timelapse_path, printer_model=printer.model
@@ -1206,10 +1238,12 @@ async def scan_timelapse(
 
     # Look for matching timelapse
     matching_file = None
-    mp4_files = [f for f in files if not f.get("is_directory") and f.get("name", "").endswith(".mp4")]
+    video_files = [
+        f for f in files if not f.get("is_directory") and f.get("name", "").lower().endswith((".mp4", ".avi"))
+    ]
 
     # Strategy 1: Match by print name in filename
-    for f in mp4_files:
+    for f in video_files:
         fname = f.get("name", "")
         if base_name.lower() in fname.lower():
             matching_file = f
@@ -1228,7 +1262,7 @@ async def scan_timelapse(
         best_match = None
         best_diff = timedelta(hours=24)  # Max 24 hour difference
 
-        for f in mp4_files:
+        for f in video_files:
             fname = f.get("name", "")
             # Parse timestamp from filename like "video_2025-11-24_03-17-40.mp4"
             match = re.search(r"(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})", fname)
@@ -1285,7 +1319,7 @@ async def scan_timelapse(
         best_match = None
         best_diff = timedelta(hours=24)
 
-        for f in mp4_files:
+        for f in video_files:
             mtime = f.get("mtime")
             if mtime:
                 # Timelapse file should be modified during or shortly after the print
@@ -1305,7 +1339,7 @@ async def scan_timelapse(
 
     # Strategy 4: If only one timelapse exists and archive was recently completed, use it
     # This handles cases where printer clock is wrong or timezone issues exist
-    if not matching_file and len(mp4_files) == 1:
+    if not matching_file and len(video_files) == 1:
         from datetime import datetime, timedelta
 
         archive_completed = archive.completed_at or archive.created_at
@@ -1313,8 +1347,8 @@ async def scan_timelapse(
             time_since_completion = datetime.now() - archive_completed
             # If archive was completed within the last hour, assume the single timelapse is for it
             if time_since_completion < timedelta(hours=1):
-                matching_file = mp4_files[0]
-                logger.info("Using single timelapse file as fallback: %s", mp4_files[0].get("name"))
+                matching_file = video_files[0]
+                logger.info("Using single timelapse file as fallback: %s", video_files[0].get("name"))
 
     # Note: We intentionally don't use a "most recent file" fallback because
     # we can't verify if timelapse was actually enabled for this print.
@@ -1329,7 +1363,7 @@ async def scan_timelapse(
                 "size": f.get("size"),
                 "mtime": f.get("mtime").isoformat() if f.get("mtime") else None,
             }
-            for f in mp4_files
+            for f in video_files
         ]
         # Sort by mtime descending (most recent first)
         available_files.sort(key=lambda x: x.get("mtime") or "", reverse=True)
@@ -1414,7 +1448,7 @@ async def select_timelapse(
     # Find the file on the printer
     files = []
     remote_path = None
-    for timelapse_dir in ["/timelapse", "/timelapse/video"]:
+    for timelapse_dir in ["/timelapse", "/timelapse/video", "/record", "/recording"]:
         try:
             files = await list_files_async(
                 printer.ip_address, printer.access_code, timelapse_dir, printer_model=printer.model
@@ -2819,7 +2853,7 @@ async def reprint_archive(
         )
 
     # Register this as an expected print so we don't create a duplicate archive
-    register_expected_print(printer_id, remote_filename, archive_id)
+    register_expected_print(printer_id, remote_filename, archive_id, ams_mapping=body.ams_mapping)
 
     # Use plate_id from request if provided, otherwise auto-detect from 3MF file
     if body.plate_id is not None:

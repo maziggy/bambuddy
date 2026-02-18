@@ -1868,7 +1868,7 @@ async def print_library_file(
         )
 
     # Register this as an expected print so we don't create a duplicate archive
-    register_expected_print(printer_id, remote_filename, archive.id)
+    register_expected_print(printer_id, remote_filename, archive.id, ams_mapping=body.ams_mapping)
 
     # Determine plate ID
     if body.plate_id is not None:

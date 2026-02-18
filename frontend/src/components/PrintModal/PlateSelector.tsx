@@ -1,6 +1,6 @@
 import { Layers, Check, AlertTriangle } from 'lucide-react';
-import { formatTime } from '../../utils/amsHelpers';
 import type { PlateSelectorProps } from './types';
+import { formatDuration } from '../../utils/date';
 
 /**
  * Plate selection grid for multi-plate 3MF files.
@@ -61,7 +61,7 @@ export function PlateSelector({
                   ? plate.objects.slice(0, 3).join(', ') +
                     (plate.objects.length > 3 ? '...' : '')
                   : `${plate.filaments.length} filament${plate.filaments.length !== 1 ? 's' : ''}`}
-                {plate.print_time_seconds != null ? ` • ${formatTime(plate.print_time_seconds)}` : ''}
+                {plate.print_time_seconds != null ? ` • ${formatDuration(plate.print_time_seconds)}` : ''}
               </p>
             </div>
             {selectedPlate === plate.index && (

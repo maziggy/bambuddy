@@ -402,8 +402,9 @@ async def get_printer_status(
 
     # Get AMS mapping from raw_data (which AMS is connected to which nozzle)
     ams_mapping = raw_data.get("ams_mapping", [])
-    # Get per-AMS extruder map: {ams_id: extruder_id} where 0=right, 1=left
-    ams_extruder_map = raw_data.get("ams_extruder_map", {})
+    # Get per-AMS extruder map from state attribute (not raw_data, to avoid race condition
+    # where raw_data gets replaced during MQTT updates and ams_extruder_map is temporarily missing)
+    ams_extruder_map = state.ams_extruder_map or {}
     logger.debug("API returning ams_mapping: %s, ams_extruder_map: %s", ams_mapping, ams_extruder_map)
 
     # tray_now from MQTT is already a global tray ID: (ams_id * 4) + slot_id
@@ -466,6 +467,7 @@ async def get_printer_status(
         big_fan2_speed=state.big_fan2_speed,
         heatbreak_fan_speed=state.heatbreak_fan_speed,
         firmware_version=state.firmware_version,
+        plate_cleared=printer_manager.is_plate_cleared(printer_id),
     )
 
 
@@ -1956,6 +1958,29 @@ async def set_chamber_light(
         raise HTTPException(500, "Failed to control chamber light")
 
     return {"success": True, "message": f"Chamber light {'on' if on else 'off'}"}
+
+
+@router.post("/{printer_id}/hms/clear")
+async def clear_hms_errors(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Clear HMS/print errors on the printer."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    success = client.clear_hms_errors()
+    if not success:
+        raise HTTPException(500, "Failed to clear HMS errors")
+
+    return {"success": True, "message": "HMS errors cleared"}
 
 
 @router.get("/{printer_id}/print/objects")

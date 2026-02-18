@@ -95,17 +95,6 @@ export function getGlobalTrayId(
 }
 
 /**
- * Format seconds to human readable time string.
- */
-export function formatTime(seconds: number | null | undefined): string {
-  if (!seconds) return '';
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
-}
-
-/**
  * Get minimum datetime for scheduling (now + 1 minute).
  * Returns ISO string format for datetime-local input.
  */

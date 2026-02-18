@@ -86,6 +86,7 @@ export default {
     unknown: 'Unbekannt',
     unknownError: 'Unbekannter Fehler',
     today: 'Heute',
+    tomorrow: 'Morgen',
     asap: 'Sofort',
     overdue: 'Überfällig',
     now: 'Jetzt',
@@ -517,6 +518,10 @@ export default {
       noMatchingTimelapse: 'Kein passender Zeitraffer gefunden',
       failedScanTimelapse: 'Fehler beim Suchen nach Zeitraffer',
       failedAttachTimelapse: 'Fehler beim Anhängen des Zeitraffers',
+      timelapseRemoved: 'Zeitraffer entfernt',
+      failedRemoveTimelapse: 'Fehler beim Entfernen des Zeitraffers',
+      timelapseUploaded: 'Zeitraffer hochgeladen: {{filename}}',
+      failedUploadTimelapse: 'Fehler beim Hochladen des Zeitraffers',
       archiveDeleted: 'Archiv gelöscht',
       failedDeleteArchive: 'Fehler beim Löschen des Archivs',
       addedToFavorites: 'Zu Favoriten hinzugefügt',
@@ -542,6 +547,8 @@ export default {
       preview3d: '3D-Vorschau',
       viewTimelapse: 'Zeitraffer ansehen',
       scanForTimelapse: 'Nach Zeitraffer suchen',
+      uploadTimelapse: 'Zeitraffer hochladen',
+      removeTimelapse: 'Zeitraffer entfernen',
       downloadSource3mf: 'Quell-3MF herunterladen',
       uploadSource3mf: 'Quell-3MF hochladen',
       replaceSource3mf: 'Quell-3MF ersetzen',
@@ -638,6 +645,8 @@ export default {
       removeButton: 'Entfernen',
       removeF3d: 'F3D entfernen',
       removeF3dConfirm: 'Möchten Sie die Fusion 360 Designdatei wirklich von "{{name}}" entfernen?',
+      removeTimelapse: 'Zeitraffer entfernen',
+      removeTimelapseConfirm: 'Möchten Sie das Zeitraffervideo wirklich von "{{name}}" entfernen?',
       timelapse: '{{name}} - Zeitraffer',
       selectTimelapse: 'Zeitraffer auswählen',
       selectTimelapseDesc: 'Keine automatische Übereinstimmung gefunden. Wählen Sie den Zeitraffer für diesen Druck:',
@@ -740,6 +749,7 @@ export default {
     clearPlate: 'Druckplatte freigeben & Nächsten starten',
     clearPlateSuccess: 'Druckplatte freigegeben — bereit für nächsten Druck',
     plateReady: 'Druckplatte freigegeben — bereit für nächsten Druck',
+    plateNumber: 'Platte {{index}}',
     // Sections
     sections: {
       currentlyPrinting: 'Aktuell druckend',
@@ -762,6 +772,7 @@ export default {
       printing: 'Druckt',
       queued: 'In Warteschlange',
       totalTime: 'Gesamte Wartezeit',
+      totalWeight: 'Gesamtgewicht der Warteschlange',
       history: 'Verlauf',
     },
     // Filters
@@ -1601,6 +1612,9 @@ export default {
     noErrors: 'Keine Fehler',
     viewOnWiki: 'Im Bambu Lab Wiki ansehen',
     clearInstructions: 'Löschen Sie die Fehler am Drucker, um sie hier zu entfernen.',
+    clearErrors: 'Fehler löschen',
+    clearSuccess: 'HMS-Fehler gelöscht',
+    clearFailed: 'HMS-Fehler konnten nicht gelöscht werden',
   },
 
   // MQTT Debug modal
@@ -1874,7 +1888,6 @@ export default {
     cameraStream: 'Kamera-Stream',
     progress: 'Fortschritt',
     eta: 'ETA',
-    tomorrow: 'Morgen',
     printerIdle: 'Drucker ist inaktiv',
     printerOffline: 'Drucker offline',
     status: {

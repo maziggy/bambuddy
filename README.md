@@ -71,7 +71,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - 3D model preview (Three.js)
 - Duplicate detection & full-text search
 - Photo attachments & failure analysis
-- Timelapse editor (trim, speed, music)
+- Timelapse editor (trim, speed, music) with automatic AVI-to-MP4 conversion for P1-series printers, manual upload & remove
 - Re-print to any connected printer with AMS mapping (auto-match or manual slot selection, multi-plate support, nozzle-aware matching for dual-nozzle H2D/H2D Pro)
 - Plate thumbnail browsing for multi-plate archives (hover to navigate between plates)
 - Archive comparison (side-by-side diff)
@@ -91,7 +91,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - AMS slot RFID re-read
 - AMS slot configuration (model-filtered presets, K profiles, color picker, pre-population for configured slots)
 - Dual external spool support for H2D (Ext-L / Ext-R)
-- HMS error monitoring with history
+- HMS error monitoring with history and clear errors
 - Print success rates & trends
 - Filament usage tracking
 - Cost analytics & failure analysis

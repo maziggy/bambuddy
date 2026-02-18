@@ -130,6 +130,8 @@ class PrinterState:
     active_extruder: int = 0
     # Currently loaded tray (global ID): 254/255 = external spools, 255 = no filament on legacy printers
     tray_now: int = 255
+    # Last valid tray_now (0-253) — survives unload (255) for usage tracking after print completes
+    last_loaded_tray: int = -1
     # Pending load target - used to track what tray we're loading for H2D disambiguation
     pending_tray_target: int | None = None
     # AMS status for filament change tracking (from print.ams.ams_status field)
@@ -277,6 +279,9 @@ class BambuMQTTClient:
         self._was_running: bool = False  # Track if we've seen RUNNING state for current print
         self._completion_triggered: bool = False  # Prevent duplicate completion triggers
         self._timelapse_during_print: bool = False  # Track if timelapse was active during this print
+        self._last_valid_progress: float = 0.0  # Last non-zero progress (firmware resets on cancel)
+        self._last_valid_layer_num: int = 0  # Last non-zero layer (firmware resets on cancel)
+        self._is_dual_nozzle: bool = False  # Set when device.extruder.info has >= 2 entries
         self._message_log: deque[MQTTLogEntry] = deque(maxlen=100)
         self._logging_enabled: bool = False
         self._last_message_time: float = 0.0  # Track when we last received a message
@@ -297,6 +302,18 @@ class BambuMQTTClient:
         # H2D only reports slot number (0-3) in tray_now, not global tray ID
         # We use our tracked value to resolve the correct global ID
         self._last_load_tray_id: int | None = None
+
+        # Captured ams_mapping from print commands on the request topic
+        # Intercepts slicer/Bambuddy print commands to get the slot-to-tray mapping
+        self._captured_ams_mapping: list[int] | None = None
+
+        # Request topic subscription tracking
+        # Some printer MQTT brokers (e.g. P1S) reject subscriptions to the request
+        # topic by killing the TCP connection. We detect this and gracefully degrade.
+        self._request_topic_supported: bool = True
+        self._request_topic_sub_mid: int | None = None
+        self._request_topic_sub_time: float = 0.0
+        self._request_topic_confirmed: bool = False
 
     @property
     def topic_subscribe(self) -> str:
@@ -331,6 +348,19 @@ class BambuMQTTClient:
         if rc == 0:
             self.state.connected = True
             client.subscribe(self.topic_subscribe)
+            # Subscribe to request topic for ams_mapping capture (if supported by broker)
+            if self._request_topic_supported:
+                result, mid = client.subscribe(self.topic_publish)
+                if result == mqtt.MQTT_ERR_SUCCESS:
+                    self._request_topic_sub_mid = mid
+                    self._request_topic_sub_time = time.time()
+                    self._request_topic_confirmed = False
+                else:
+                    logger.warning(
+                        "[%s] Failed to send request topic subscription",
+                        self.serial_number,
+                    )
+                    self._request_topic_supported = False
             # Request full status update (includes nozzle info in push_status response)
             self._request_push_all()
             # Request firmware version info
@@ -345,6 +375,29 @@ class BambuMQTTClient:
         else:
             self.state.connected = False
 
+    def _on_subscribe(self, client, userdata, mid, reason_code_list, properties=None):
+        """Handle SUBACK responses to detect request topic subscription rejection."""
+        if mid == self._request_topic_sub_mid:
+            for rc in reason_code_list:
+                if rc.is_failure:
+                    logger.warning(
+                        "[%s] Request topic subscription rejected (code=%d: %s). "
+                        "ams_mapping capture from slicer-initiated prints unavailable.",
+                        self.serial_number,
+                        rc.value,
+                        rc.getName(),
+                    )
+                    self._request_topic_supported = False
+                else:
+                    logger.info(
+                        "[%s] Request topic subscription accepted. "
+                        "ams_mapping capture enabled for slicer-initiated prints.",
+                        self.serial_number,
+                    )
+                    self._request_topic_confirmed = True
+            self._request_topic_sub_mid = None
+            self._request_topic_sub_time = 0.0
+
     def _on_disconnect(self, client, userdata, disconnect_flags=None, rc=None, properties=None):
         # Ignore spurious disconnect callbacks if we've received a message recently
         # Paho-mqtt sometimes fires disconnect callbacks while the connection is still active
@@ -356,6 +409,23 @@ class BambuMQTTClient:
             return
 
         logger.warning("[%s] MQTT disconnected: rc=%s, flags=%s", self.serial_number, rc, disconnect_flags)
+
+        # Detect if request topic subscription caused the disconnect.
+        # If we just subscribed and got disconnected before any SUBACK confirmation,
+        # the broker likely killed the connection due to the unauthorized subscription.
+        if (
+            self._request_topic_sub_time > 0
+            and not self._request_topic_confirmed
+            and time.time() - self._request_topic_sub_time < 10.0
+        ):
+            logger.warning(
+                "[%s] Disconnected shortly after request topic subscription. Disabling request topic for this printer.",
+                self.serial_number,
+            )
+            self._request_topic_supported = False
+        self._request_topic_sub_mid = None
+        self._request_topic_sub_time = 0.0
+
         self.state.connected = False
         if self.on_state_change:
             self.on_state_change(self.state)
@@ -368,6 +438,11 @@ class BambuMQTTClient:
             # Track last message time - receiving a message proves we're connected
             self._last_message_time = time.time()
             self.state.connected = True
+
+            # Intercept request-topic messages (print commands from slicer/Bambuddy)
+            if msg.topic == self.topic_publish:
+                self._handle_request_message(payload)
+                return
 
             # TEMP: Dump full payload once to find extruder state field
             if not hasattr(self, "_payload_dumped"):
@@ -386,6 +461,20 @@ class BambuMQTTClient:
             self._process_message(payload)
         except json.JSONDecodeError:
             pass  # Ignore non-JSON MQTT messages (e.g. binary or malformed payloads)
+
+    def _handle_request_message(self, data: dict) -> None:
+        """Intercept print commands on the request topic to capture ams_mapping."""
+        print_data = data.get("print", {})
+        if not isinstance(print_data, dict):
+            return
+        command = print_data.get("command", "")
+        if command == "project_file" and "ams_mapping" in print_data:
+            self._captured_ams_mapping = print_data["ams_mapping"]
+            logger.info(
+                "[%s] Captured ams_mapping from print command: %s",
+                self.serial_number,
+                self._captured_ams_mapping,
+            )
 
     def _process_message(self, payload: dict):
         """Process incoming MQTT message from printer."""
@@ -443,6 +532,16 @@ class BambuMQTTClient:
                     f"[{self.serial_number}] Received gcode_state: {print_data.get('gcode_state')}, "
                     f"gcode_file: {print_data.get('gcode_file')}, subtask_name: {print_data.get('subtask_name')}"
                 )
+
+            # Detect dual-nozzle BEFORE processing AMS data (tray_now disambiguation needs it)
+            # device.extruder.info with >= 2 entries only exists on dual-nozzle printers (H2D, H2D Pro)
+            if not self._is_dual_nozzle and "device" in print_data:
+                dev = print_data.get("device")
+                if isinstance(dev, dict):
+                    ext_info = dev.get("extruder", {}).get("info", [])
+                    if isinstance(ext_info, list) and len(ext_info) >= 2:
+                        self._is_dual_nozzle = True
+                        logger.info("[%s] Detected dual-nozzle printer from device.extruder.info", self.serial_number)
 
             # Handle AMS data that comes inside print key
             if "ams" in print_data:
@@ -826,7 +925,9 @@ class BambuMQTTClient:
 
                 # H2D dual-nozzle printers report only slot number (0-3), not global tray ID
                 # Use active_extruder + ams_extruder_map to determine which AMS the slot belongs to
-                if parsed_tray_now >= 0 and parsed_tray_now <= 3:
+                # Single-nozzle printers (X1C, P2S, etc.) always report global IDs, even with multiple AMS
+                ams_map = self.state.ams_extruder_map
+                if self._is_dual_nozzle and 0 <= parsed_tray_now <= 3:
                     # First, check if we have a pending target that matches this slot
                     pending_target = self.state.pending_tray_target
                     if pending_target is not None:
@@ -859,7 +960,8 @@ class BambuMQTTClient:
                         if snow_tray is not None and snow_tray != 255:
                             # snow_tray is already normalized to global ID
                             # Verify the slot matches what we see in tray_now
-                            snow_slot = snow_tray % 4 if snow_tray < 128 else -1
+                            # Regular AMS: slot = global_id % 4; AMS HT (128-135): single slot = 0
+                            snow_slot = snow_tray % 4 if snow_tray < 128 else (0 if snow_tray <= 135 else -1)
                             if snow_slot == parsed_tray_now:
                                 if self.state.tray_now != snow_tray:
                                     logger.debug(
@@ -876,7 +978,6 @@ class BambuMQTTClient:
                                 self.state.tray_now = snow_tray
                         else:
                             # Fallback: snow not available, use ams_extruder_map (less reliable)
-                            ams_map = self.state.ams_extruder_map
                             # Find ALL AMS units on the active extruder
                             ams_on_extruder = []
                             for ams_id_str, ext_id in ams_map.items():
@@ -926,6 +1027,10 @@ class BambuMQTTClient:
                     # We only clear pending_tray_target explicitly in ams_unload_filament().
                     # Trust the printer's reported value.
                     self.state.tray_now = parsed_tray_now
+
+                # Track last valid tray for usage tracking (survives retract → 255 at print end)
+                if 0 <= self.state.tray_now <= 253:
+                    self.state.last_loaded_tray = self.state.tray_now
 
                 logger.debug("[%s] tray_now updated: %s", self.serial_number, self.state.tray_now)
 
@@ -1121,6 +1226,9 @@ class BambuMQTTClient:
         if "subtask_id" in data:
             self.state.subtask_id = data["subtask_id"]
         if "mc_percent" in data:
+            # Save last non-zero progress for usage tracking (firmware resets to 0 on cancel)
+            if self.state.progress > 0:
+                self._last_valid_progress = self.state.progress
             self.state.progress = float(data["mc_percent"])
         if "mc_remaining_time" in data:
             self.state.remaining_time = int(data["mc_remaining_time"])
@@ -1135,6 +1243,9 @@ class BambuMQTTClient:
         if "layer_num" in data:
             new_layer = int(data["layer_num"])
             old_layer = self.state.layer_num
+            # Save last non-zero layer for usage tracking (firmware resets to 0 on cancel)
+            if old_layer > 0:
+                self._last_valid_layer_num = old_layer
             self.state.layer_num = new_layer
             # Trigger layer change callback if layer increased
             if new_layer > old_layer and self.on_layer_change:
@@ -1832,10 +1943,12 @@ class BambuMQTTClient:
                         if "diameter" in nozzle:
                             self.state.nozzles[idx].nozzle_diameter = str(nozzle["diameter"])
 
-        # Preserve AMS, vt_tray, and ams_extruder_map data when updating raw_data
+        # Preserve AMS, vt_tray, ams_extruder_map, and mapping data when updating raw_data
+        # (these fields aren't sent in every MQTT push, only when changed)
         ams_data = self.state.raw_data.get("ams")
         vt_tray_data = self.state.raw_data.get("vt_tray")
         ams_extruder_map_data = self.state.raw_data.get("ams_extruder_map")
+        mapping_data = self.state.raw_data.get("mapping")
         self.state.raw_data = data
         if ams_data is not None:
             self.state.raw_data["ams"] = ams_data
@@ -1843,6 +1956,12 @@ class BambuMQTTClient:
             self.state.raw_data["vt_tray"] = vt_tray_data
         if ams_extruder_map_data is not None:
             self.state.raw_data["ams_extruder_map"] = ams_extruder_map_data
+        if mapping_data is not None and "mapping" not in data:
+            self.state.raw_data["mapping"] = mapping_data
+
+        # Log mapping data when received (for usage tracking debugging)
+        if "mapping" in data:
+            logger.debug("[%s] MQTT mapping field: %s", self.serial_number, data["mapping"])
 
         # Log state transitions for debugging
         if "gcode_state" in data:
@@ -1886,6 +2005,9 @@ class BambuMQTTClient:
             # Reset completion tracking for new print
             self._was_running = True
             self._completion_triggered = False
+            # Reset last valid progress/layer for usage tracking
+            self._last_valid_progress = 0.0
+            self._last_valid_layer_num = 0
             # Initialize timelapse tracking based on current state
             # NOTE: xcam data is parsed BEFORE this code runs in _process_message,
             # so self.state.timelapse may already be set from this message.
@@ -1909,6 +2031,7 @@ class BambuMQTTClient:
                     if self.state.remaining_time > 0
                     else None,  # Convert minutes to seconds
                     "raw_data": data,
+                    "ams_mapping": self._captured_ams_mapping,
                 }
             )
 
@@ -1967,8 +2090,13 @@ class BambuMQTTClient:
                     "raw_data": data,
                     "timelapse_was_active": timelapse_was_active,
                     "hms_errors": hms_errors_data,
+                    "ams_mapping": self._captured_ams_mapping,
+                    # Last valid progress/layer before firmware reset (for partial usage tracking)
+                    "last_progress": self._last_valid_progress,
+                    "last_layer_num": self._last_valid_layer_num,
                 }
             )
+            self._captured_ams_mapping = None
 
         self._previous_gcode_state = self.state.state
         if current_file:
@@ -2064,6 +2192,7 @@ class BambuMQTTClient:
         self._client.username_pw_set("bblp", self.access_code)
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect
+        self._client.on_subscribe = self._on_subscribe
         self._client.on_message = self._on_message
 
         # TLS setup - Bambu uses self-signed certs
@@ -2859,6 +2988,18 @@ class BambuMQTTClient:
         command = {"print": {"command": "resume", "sequence_id": "0"}}
         self._client.publish(self.topic_publish, json.dumps(command), qos=1)
         logger.info("[%s] Sent resume print command", self.serial_number)
+        return True
+
+    def clear_hms_errors(self) -> bool:
+        """Clear HMS/print errors on the printer and locally."""
+        if not self._client or not self.state.connected:
+            logger.warning("[%s] Cannot clear HMS errors: not connected", self.serial_number)
+            return False
+
+        command = {"print": {"command": "clean_print_error", "sequence_id": "0"}}
+        self._client.publish(self.topic_publish, json.dumps(command), qos=1)
+        self.state.hms_errors = []
+        logger.info("[%s] Sent clear HMS errors command", self.serial_number)
         return True
 
     def skip_objects(self, object_ids: list[int]) -> bool:

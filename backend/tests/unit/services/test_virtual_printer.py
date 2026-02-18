@@ -509,6 +509,126 @@ class TestCertificateService:
         assert key_path.exists()
 
 
+class TestBindServer:
+    """Tests for BindServer (port 3000 bind/detect protocol)."""
+
+    @pytest.fixture
+    def bind_server(self):
+        """Create a BindServer instance."""
+        from backend.app.services.virtual_printer.bind_server import BindServer
+
+        return BindServer(
+            serial="09400A391800001",
+            model="O1D",
+            name="Bambuddy",
+        )
+
+    def test_build_frame(self, bind_server):
+        """Verify frame building produces correct format."""
+        payload = {"login": {"command": "detect"}}
+        frame = bind_server._build_frame(payload)
+
+        # Header: 0xA5A5
+        assert frame[:2] == b"\xa5\xa5"
+        # Trailer: 0xA7A7
+        assert frame[-2:] == b"\xa7\xa7"
+        # Length field is total message size (LE uint16)
+        import struct
+
+        total_len = struct.unpack_from("<H", frame, 2)[0]
+        assert total_len == len(frame)
+        # JSON payload is between header and trailer
+        import json
+
+        json_bytes = frame[4:-2]
+        parsed = json.loads(json_bytes)
+        assert parsed == payload
+
+    def test_parse_frame_valid(self, bind_server):
+        """Verify valid frame parsing extracts JSON correctly."""
+        import json
+        import struct
+
+        payload = {"login": {"command": "detect", "sequence_id": "20000"}}
+        json_bytes = json.dumps(payload, separators=(",", ":")).encode()
+        total_len = 4 + len(json_bytes) + 2
+        frame = b"\xa5\xa5" + struct.pack("<H", total_len) + json_bytes + b"\xa7\xa7"
+
+        result = bind_server._parse_frame(frame)
+
+        assert result is not None
+        assert result["login"]["command"] == "detect"
+        assert result["login"]["sequence_id"] == "20000"
+
+    def test_parse_frame_invalid_header(self, bind_server):
+        """Verify invalid header returns None."""
+        result = bind_server._parse_frame(b"\xbb\xbb\x06\x00{}\xa7\xa7")
+        assert result is None
+
+    def test_parse_frame_invalid_trailer(self, bind_server):
+        """Verify invalid trailer returns None."""
+        result = bind_server._parse_frame(b"\xa5\xa5\x06\x00{}\xbb\xbb")
+        assert result is None
+
+    def test_parse_frame_too_short(self, bind_server):
+        """Verify short data returns None."""
+        result = bind_server._parse_frame(b"\xa5\xa5\x00")
+        assert result is None
+
+    def test_parse_frame_invalid_json(self, bind_server):
+        """Verify invalid JSON returns None."""
+        import struct
+
+        bad_json = b"not json"
+        total_len = 4 + len(bad_json) + 2
+        frame = b"\xa5\xa5" + struct.pack("<H", total_len) + bad_json + b"\xa7\xa7"
+        result = bind_server._parse_frame(frame)
+        assert result is None
+
+    def test_build_frame_roundtrip(self, bind_server):
+        """Verify build_frame output can be parsed back."""
+        payload = {
+            "login": {
+                "bind": "free",
+                "command": "detect",
+                "connect": "lan",
+                "dev_cap": 1,
+                "id": "09400A391800001",
+                "model": "O1D",
+                "name": "Bambuddy",
+                "sequence_id": 3021,
+                "version": "01.00.00.00",
+            }
+        }
+        frame = bind_server._build_frame(payload)
+        parsed = bind_server._parse_frame(frame)
+
+        assert parsed is not None
+        assert parsed["login"]["id"] == "09400A391800001"
+        assert parsed["login"]["model"] == "O1D"
+        assert parsed["login"]["name"] == "Bambuddy"
+        assert parsed["login"]["bind"] == "free"
+
+    def test_bind_server_stores_config(self, bind_server):
+        """Verify bind server stores serial, model, name."""
+        assert bind_server.serial == "09400A391800001"
+        assert bind_server.model == "O1D"
+        assert bind_server.name == "Bambuddy"
+        assert bind_server.version == "01.00.00.00"
+
+    def test_bind_server_custom_version(self):
+        """Verify custom firmware version is stored."""
+        from backend.app.services.virtual_printer.bind_server import BindServer
+
+        server = BindServer(
+            serial="TEST123",
+            model="C13",
+            name="Test",
+            version="02.03.04.05",
+        )
+        assert server.version == "02.03.04.05"
+
+
 class TestSlicerProxyManager:
     """Tests for SlicerProxyManager (proxy mode)."""
 
@@ -922,6 +1042,7 @@ class TestVirtualPrinterManagerServerModeIPOverride:
             patch("backend.app.services.virtual_printer.manager.VirtualPrinterSSDPServer") as mock_ssdp_cls,
             patch("backend.app.services.virtual_printer.manager.VirtualPrinterFTPServer"),
             patch("backend.app.services.virtual_printer.manager.SimpleMQTTServer"),
+            patch("backend.app.services.virtual_printer.manager.BindServer"),
             patch.object(manager._cert_service, "delete_printer_certificate"),
             patch.object(
                 manager._cert_service,
@@ -951,6 +1072,7 @@ class TestVirtualPrinterManagerServerModeIPOverride:
             patch("backend.app.services.virtual_printer.manager.VirtualPrinterSSDPServer"),
             patch("backend.app.services.virtual_printer.manager.VirtualPrinterFTPServer"),
             patch("backend.app.services.virtual_printer.manager.SimpleMQTTServer"),
+            patch("backend.app.services.virtual_printer.manager.BindServer"),
             patch.object(manager._cert_service, "delete_printer_certificate"),
             patch.object(
                 manager._cert_service,
@@ -974,6 +1096,7 @@ class TestVirtualPrinterManagerServerModeIPOverride:
             patch("backend.app.services.virtual_printer.manager.VirtualPrinterSSDPServer"),
             patch("backend.app.services.virtual_printer.manager.VirtualPrinterFTPServer"),
             patch("backend.app.services.virtual_printer.manager.SimpleMQTTServer"),
+            patch("backend.app.services.virtual_printer.manager.BindServer"),
             patch.object(manager._cert_service, "delete_printer_certificate"),
             patch.object(
                 manager._cert_service,
@@ -984,3 +1107,129 @@ class TestVirtualPrinterManagerServerModeIPOverride:
             await manager._start_server_mode()
 
             mock_gen_certs.assert_called_once_with(additional_ips=None)
+
+
+class TestBindServer:
+    """Tests for the BindServer (port 3000 bind/detect protocol)."""
+
+    @pytest.fixture
+    def bind_server(self):
+        """Create a BindServer instance."""
+        from backend.app.services.virtual_printer.bind_server import BindServer
+
+        return BindServer(
+            serial="01S00C000000001",
+            model="3DPrinter-X1-Carbon",
+            name="Bambuddy",
+        )
+
+    def test_build_frame(self, bind_server):
+        """Verify frame format: 0xA5A5 + len(u16le) + JSON + 0xA7A7."""
+        payload = {"login": {"command": "detect"}}
+        frame = bind_server._build_frame(payload)
+
+        assert frame[:2] == b"\xa5\xa5"
+        assert frame[-2:] == b"\xa7\xa7"
+
+        # Length field is total message size
+        import struct
+
+        total_len = struct.unpack_from("<H", frame, 2)[0]
+        assert total_len == len(frame)
+
+        # JSON payload is between header and trailer
+        import json
+
+        json_bytes = frame[4:-2]
+        parsed = json.loads(json_bytes)
+        assert parsed == payload
+
+    def test_parse_frame_valid(self, bind_server):
+        """Verify valid frame parsing."""
+        frame = bind_server._build_frame({"login": {"command": "detect", "sequence_id": "20000"}})
+        result = bind_server._parse_frame(frame)
+
+        assert result is not None
+        assert result["login"]["command"] == "detect"
+        assert result["login"]["sequence_id"] == "20000"
+
+    def test_parse_frame_invalid_header(self, bind_server):
+        """Verify invalid header returns None."""
+        frame = b"\xb5\xb5\x10\x00" + b'{"login":{}}' + b"\xa7\xa7"
+        assert bind_server._parse_frame(frame) is None
+
+    def test_parse_frame_invalid_trailer(self, bind_server):
+        """Verify invalid trailer returns None."""
+        frame = b"\xa5\xa5\x10\x00" + b'{"login":{}}' + b"\xb7\xb7"
+        assert bind_server._parse_frame(frame) is None
+
+    def test_parse_frame_too_short(self, bind_server):
+        """Verify short data returns None."""
+        assert bind_server._parse_frame(b"\xa5\xa5\x00") is None
+        assert bind_server._parse_frame(b"") is None
+
+    def test_parse_frame_invalid_json(self, bind_server):
+        """Verify invalid JSON returns None."""
+        import struct
+
+        bad_json = b"not json"
+        total_len = 4 + len(bad_json) + 2
+        frame = b"\xa5\xa5" + struct.pack("<H", total_len) + bad_json + b"\xa7\xa7"
+        assert bind_server._parse_frame(frame) is None
+
+    def test_build_frame_roundtrip(self, bind_server):
+        """Verify build then parse roundtrip."""
+        original = {"login": {"bind": "free", "command": "detect", "id": "01S00C000000001"}}
+        frame = bind_server._build_frame(original)
+        parsed = bind_server._parse_frame(frame)
+        assert parsed == original
+
+    def test_bind_server_stores_config(self, bind_server):
+        """Verify config is stored correctly."""
+        assert bind_server.serial == "01S00C000000001"
+        assert bind_server.model == "3DPrinter-X1-Carbon"
+        assert bind_server.name == "Bambuddy"
+        assert bind_server.version == "01.00.00.00"
+
+    def test_bind_server_custom_version(self):
+        """Verify custom firmware version is stored."""
+        from backend.app.services.virtual_printer.bind_server import BindServer
+
+        server = BindServer(
+            serial="01S00C000000001",
+            model="3DPrinter-X1-Carbon",
+            name="Bambuddy",
+            version="01.09.00.10",
+        )
+        assert server.version == "01.09.00.10"
+
+    @pytest.mark.asyncio
+    async def test_server_mode_creates_bind_server(self):
+        """Verify _start_server_mode creates BindServer with correct params."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterManager
+
+        manager = VirtualPrinterManager()
+        manager._mode = "immediate"
+        manager._access_code = "12345678"
+        manager._remote_interface_ip = ""
+        manager._model = "3DPrinter-X1-Carbon"
+
+        with (
+            patch("backend.app.services.virtual_printer.manager.VirtualPrinterSSDPServer"),
+            patch("backend.app.services.virtual_printer.manager.VirtualPrinterFTPServer"),
+            patch("backend.app.services.virtual_printer.manager.SimpleMQTTServer"),
+            patch("backend.app.services.virtual_printer.manager.BindServer") as mock_bind_cls,
+            patch.object(manager._cert_service, "delete_printer_certificate"),
+            patch.object(
+                manager._cert_service,
+                "generate_certificates",
+                return_value=(Path("/tmp/cert.pem"), Path("/tmp/key.pem")),  # nosec B108
+            ),
+        ):
+            await manager._start_server_mode()
+
+            mock_bind_cls.assert_called_once_with(
+                serial=manager.printer_serial,
+                model="3DPrinter-X1-Carbon",
+                name="Bambuddy",
+            )

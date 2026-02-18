@@ -376,3 +376,51 @@ export function formatTimeOnly(
   const finalOptions = applyTimeFormat({ ...defaultOptions, ...options }, timeFormat);
   return date.toLocaleTimeString([], finalOptions);
 }
+
+/**
+ * Calculate and format an ETA based on remaining minutes from now.
+ *
+ * @param remainingMinutes - Minutes until completion
+ * @param timeFormat - Time format setting ('system', '12h', '24h')
+ * @param t - Optional i18n translation function
+ * @returns Formatted ETA string (e.g., "3:45 PM", "Tomorrow 9:30 AM", "Wed 2:00 PM")
+ */
+export function formatETA(
+  remainingMinutes: number,
+  timeFormat: 'system' | '12h' | '24h' = 'system',
+  t?: (key: string) => string
+): string {
+  const now = new Date();
+  const eta = new Date(now.getTime() + remainingMinutes * 60 * 1000);
+  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const etaDay = new Date(eta);
+  etaDay.setHours(0, 0, 0, 0);
+
+  const timeOptions: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
+  if (timeFormat === '12h') timeOptions.hour12 = true;
+  else if (timeFormat === '24h') timeOptions.hour12 = false;
+
+  const timeStr = eta.toLocaleTimeString([], timeOptions);
+  const dayDiff = Math.floor((etaDay.getTime() - today.getTime()) / 86400000);
+
+  if (dayDiff === 0) return timeStr;
+  if (dayDiff === 1) return `${t?.('common.tomorrow') ?? 'Tomorrow'} ${timeStr}`;
+  return `${eta.toLocaleDateString([], { weekday: 'short' })} ${timeStr}`;
+}
+
+/**
+ * Format a duration in seconds to a human-readable string, with null handling.
+ *
+ * @param seconds - Duration in seconds, or null/undefined
+ * @returns Formatted string (e.g., "2h 30m", "45m") or "--" if no value
+ */
+export function formatDuration(seconds: number | null | undefined): string {
+  if (seconds == null || seconds < 0) return '--';
+  
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  
+  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+}

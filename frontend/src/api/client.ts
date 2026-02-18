@@ -250,6 +250,8 @@ export interface PrinterStatus {
   big_fan2_speed: number | null;     // Chamber/exhaust fan
   heatbreak_fan_speed: number | null; // Hotend heatbreak fan
   firmware_version: string | null;   // Firmware version from MQTT
+  // Queue: user has acknowledged plate is cleared for next queued print
+  plate_cleared: boolean;
 }
 
 export interface PrinterCreate {
@@ -1236,6 +1238,7 @@ export interface PrintQueueItem {
   library_file_thumbnail?: string | null;
   printer_name?: string | null;
   print_time_seconds?: number | null;  // Estimated print time from archive or library file
+  filament_used_grams?: number | null;  // Estimated print weight from archive or library file
   // User tracking (Issue #206)
   created_by_id?: number | null;
   created_by_username?: string | null;
@@ -2343,6 +2346,10 @@ export const api = {
       }
     ),
 
+  // HMS Errors
+  clearHMSErrors: (printerId: number) =>
+    request<{ success: boolean; message: string }>(`/printers/${printerId}/hms/clear`, { method: 'POST' }),
+
   // AMS Control
   refreshAmsSlot: (printerId: number, amsId: number, slotId: number) =>
     request<{ success: boolean; message: string }>(
@@ -2649,6 +2656,10 @@ export const api = {
       `/archives/${id}/timelapse/select?filename=${encodeURIComponent(filename)}`,
       { method: 'POST' }
     ),
+  deleteArchiveTimelapse: (id: number) =>
+    request<{ status: string }>(`/archives/${id}/timelapse`, {
+      method: 'DELETE',
+    }),
   uploadArchiveTimelapse: async (archiveId: number, file: File): Promise<{ status: string; filename: string }> => {
     const formData = new FormData();
     formData.append('file', file);

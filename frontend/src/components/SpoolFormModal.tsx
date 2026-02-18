@@ -171,7 +171,7 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
           rgba: spool.rgba || '808080FF',
           label_weight: spool.label_weight || 1000,
           core_weight: spool.core_weight || 250,
-          core_weight_catalog_id: spool.core_weight_catalog_id || null,
+          core_weight_catalog_id: spool.core_weight_catalog_id ?? null,
           weight_used: spool.weight_used || 0,
           slicer_filament: spool.slicer_filament || '',
           note: spool.note || '',

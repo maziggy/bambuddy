@@ -258,10 +258,8 @@ describe('SpoolFormModal weightTouched', () => {
     fireEvent.focus(weightPicker!);
 
     // Click on "Bambu Lab 250g" option
-    await waitFor(() => {
-      const bambuOption = screen.queryByText('Bambu Lab 250g');
-      if (bambuOption) fireEvent.click(bambuOption);
-    });
+    const bambuOption = await screen.findByText('Bambu Lab 250g');
+    fireEvent.click(bambuOption);
 
     // Click the add spool button
     const addButtons = screen.getAllByRole('button', { name: /add spool/i });
@@ -317,7 +315,7 @@ describe('SpoolFormModal weightTouched', () => {
       const bambuFound = weightInputs.some(input =>
         input.value === 'Bambu Lab 250g' || input.getAttribute('value') === 'Bambu Lab 250g'
       );
-      expect(bambuFound || screen.queryByText('Bambu Lab 250g')).toBeTruthy();
+      expect(bambuFound).toBeTruthy();
     });
   });
 });

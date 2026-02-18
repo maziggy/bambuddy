@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
@@ -260,6 +261,10 @@ _last_progress_milestone: dict[int, int] = {}
 # Track HMS errors that have been notified: {printer_id: set of error codes}
 # This prevents sending duplicate notifications for the same error
 _notified_hms_errors: dict[int, set[str]] = {}
+# Track when HMS errors were last seen: {printer_id: timestamp}
+# Used to debounce clearing — prevents flapping errors from re-triggering notifications
+_hms_last_seen: dict[int, float] = {}
+_HMS_CLEAR_GRACE_SECONDS = 30.0
 
 # Track timelapse file baselines at print start: {printer_id: set of video filenames}
 # Used for snapshot-diff detection at print completion
@@ -432,6 +437,7 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
 
         # Update tracking immediately to prevent duplicate notifications from concurrent callbacks
         _notified_hms_errors[printer_id] = current_error_codes
+        _hms_last_seen[printer_id] = time.time()
 
         if new_error_codes:
             # Get the actual new errors for the notification
@@ -504,9 +510,15 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                 logging.getLogger(__name__).warning(f"HMS error notification failed: {e}")
 
     else:
-        # No HMS errors - clear tracking so future errors get notified
+        # No HMS errors — only clear tracking after a grace period to prevent
+        # flapping errors (brief hms:[] gaps) from re-triggering notifications.
+        # Some HMS codes (e.g. chamber temp regulation during PETG prints) toggle
+        # on/off every few seconds as conditions fluctuate around thresholds.
         if printer_id in _notified_hms_errors:
-            _notified_hms_errors.pop(printer_id, None)
+            last_seen = _hms_last_seen.get(printer_id, 0)
+            if time.time() - last_seen >= _HMS_CLEAR_GRACE_SECONDS:
+                _notified_hms_errors.pop(printer_id, None)
+                _hms_last_seen.pop(printer_id, None)
 
     await ws_manager.send_printer_status(
         printer_id,

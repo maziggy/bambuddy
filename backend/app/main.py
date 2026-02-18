@@ -205,6 +205,7 @@ from backend.app.api.routes import (
     system,
     updates,
     users,
+    virtual_printers,
     webhook,
     websocket,
 )
@@ -3237,55 +3238,15 @@ async def lifespan(app: FastAPI):
     # Start printer runtime tracking
     start_runtime_tracking()
 
-    # Initialize virtual printer manager
+    # Initialize virtual printer manager and sync from DB
     from backend.app.services.virtual_printer import virtual_printer_manager
 
     virtual_printer_manager.set_session_factory(async_session)
-
-    # Auto-start virtual printer if enabled
-    async with async_session() as db:
-        from backend.app.api.routes.settings import get_setting
-
-        vp_enabled = await get_setting(db, "virtual_printer_enabled")
-        if vp_enabled and vp_enabled.lower() == "true":
-            vp_access_code = await get_setting(db, "virtual_printer_access_code") or ""
-            vp_mode = await get_setting(db, "virtual_printer_mode") or "immediate"
-            vp_model = await get_setting(db, "virtual_printer_model") or ""
-            vp_target_printer_id = await get_setting(db, "virtual_printer_target_printer_id")
-            vp_remote_iface = await get_setting(db, "virtual_printer_remote_interface_ip") or ""
-
-            # Look up printer IP and serial if in proxy mode
-            vp_target_ip = ""
-            vp_target_serial = ""
-            if vp_mode == "proxy" and vp_target_printer_id:
-                from backend.app.models.printer import Printer
-
-                result = await db.execute(select(Printer).where(Printer.id == int(vp_target_printer_id)))
-                printer = result.scalar_one_or_none()
-                if printer:
-                    vp_target_ip = printer.ip_address
-                    vp_target_serial = printer.serial_number
-
-            # Proxy mode requires target IP, other modes require access code
-            can_start = (vp_mode == "proxy" and vp_target_ip) or (vp_mode != "proxy" and vp_access_code)
-
-            if can_start:
-                try:
-                    await virtual_printer_manager.configure(
-                        enabled=True,
-                        access_code=vp_access_code,
-                        mode=vp_mode,
-                        model=vp_model,
-                        target_printer_ip=vp_target_ip,
-                        target_printer_serial=vp_target_serial,
-                        remote_interface_ip=vp_remote_iface,
-                    )
-                    if vp_mode == "proxy":
-                        logging.info("Virtual printer proxy started (target=%s)", vp_target_ip)
-                    else:
-                        logging.info("Virtual printer started (model=%s)", vp_model or "default")
-                except Exception as e:
-                    logging.warning("Failed to start virtual printer: %s", e)
+    try:
+        await virtual_printer_manager.sync_from_db()
+        logging.info("Virtual printer manager synced from database")
+    except Exception as e:
+        logging.warning("Failed to sync virtual printers: %s", e)
 
     yield
 
@@ -3299,9 +3260,8 @@ async def lifespan(app: FastAPI):
     printer_manager.disconnect_all()
     await close_spoolman_client()
 
-    # Stop virtual printer if running
-    if virtual_printer_manager.is_enabled:
-        await virtual_printer_manager.configure(enabled=False)
+    # Stop all virtual printer services
+    await virtual_printer_manager.stop_all()
 
     await mqtt_smart_plug_service.disconnect(timeout=2)
 
@@ -3494,6 +3454,7 @@ app.include_router(pending_uploads.router, prefix=app_settings.api_prefix)
 app.include_router(firmware.router, prefix=app_settings.api_prefix)
 app.include_router(github_backup.router, prefix=app_settings.api_prefix)
 app.include_router(metrics.router, prefix=app_settings.api_prefix)
+app.include_router(virtual_printers.router, prefix=app_settings.api_prefix)
 
 
 # Serve static files (React build)

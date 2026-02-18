@@ -1,14 +1,25 @@
 """Network utility functions for interface detection."""
 
 import ipaddress
+import json
 import logging
+import shutil
 import socket
 import struct
+import subprocess
 
 logger = logging.getLogger(__name__)
 
 # Interfaces to exclude from selection
 EXCLUDED_INTERFACE_PREFIXES = ("lo", "docker", "br-", "veth", "virbr")
+
+# Resolve full path to `ip` command (may not be in PATH for service users)
+_IP_CMD: str | None = shutil.which("ip") or shutil.which("ip", path="/usr/sbin:/sbin:/usr/bin:/bin")
+
+
+def _is_excluded(name: str) -> bool:
+    """Check if an interface name should be excluded."""
+    return any(name.startswith(prefix) for prefix in EXCLUDED_INTERFACE_PREFIXES)
 
 
 def get_network_interfaces() -> list[dict]:
@@ -26,7 +37,7 @@ def get_network_interfaces() -> list[dict]:
             name = iface[1]
 
             # Skip excluded interfaces
-            if any(name.startswith(prefix) for prefix in EXCLUDED_INTERFACE_PREFIXES):
+            if _is_excluded(name):
                 continue
 
             try:
@@ -76,6 +87,88 @@ def get_network_interfaces() -> list[dict]:
     return interfaces
 
 
+def get_all_interface_ips() -> list[dict]:
+    """Get all IPs (primary + aliases) for all non-excluded interfaces.
+
+    Uses `ip -j addr show` to see secondary/alias IPs that ioctl misses.
+    Falls back to ioctl-based get_network_interfaces() if `ip` is unavailable.
+
+    Returns:
+        List of dicts with name, ip, netmask, subnet, is_alias, label
+    """
+    if not _IP_CMD:
+        logger.debug("ip command not found, using ioctl fallback")
+        return _fallback_get_all_ips()
+
+    try:
+        result = subprocess.run(
+            [_IP_CMD, "-j", "addr", "show"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            logger.warning("ip addr show failed: %s", result.stderr)
+            return _fallback_get_all_ips()
+
+        interfaces_data = json.loads(result.stdout)
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
+        logger.warning("Failed to run ip -j addr show: %s", e)
+        return _fallback_get_all_ips()
+
+    entries = []
+    for iface in interfaces_data:
+        ifname = iface.get("ifname", "")
+        if _is_excluded(ifname):
+            continue
+
+        ipv4_count = 0
+        for addr_info in iface.get("addr_info", []):
+            if addr_info.get("family") != "inet":
+                continue
+
+            ip = addr_info.get("local", "")
+            prefix = addr_info.get("prefixlen", 24)
+            label = addr_info.get("label", ifname)
+
+            try:
+                network = ipaddress.IPv4Network(f"{ip}/{prefix}", strict=False)
+                netmask = str(network.netmask)
+            except ValueError:
+                continue
+
+            # An alias has ":" in label (e.g. eth0:vp1) or is not the first IPv4
+            is_alias = ":" in label or ipv4_count > 0
+
+            entries.append(
+                {
+                    "name": ifname,
+                    "ip": ip,
+                    "netmask": netmask,
+                    "subnet": str(network),
+                    "is_alias": is_alias,
+                    "label": label,
+                }
+            )
+            ipv4_count += 1
+
+    # Sort: primary IPs first per interface, then by interface name
+    entries.sort(key=lambda e: (e["name"], e["is_alias"], e["ip"]))
+    return entries
+
+
+def _fallback_get_all_ips() -> list[dict]:
+    """Fallback: wrap get_network_interfaces() result with alias fields."""
+    return [
+        {
+            **iface,
+            "is_alias": False,
+            "label": iface["name"],
+        }
+        for iface in get_network_interfaces()
+    ]
+
+
 def find_interface_for_ip(target_ip: str) -> dict | None:
     """Find which interface is on the same subnet as the target IP.
 
@@ -91,9 +184,11 @@ def find_interface_for_ip(target_ip: str) -> dict | None:
         logger.error("Invalid target IP: %s", target_ip)
         return None
 
-    interfaces = get_network_interfaces()
+    interfaces = get_all_interface_ips()
 
     for iface in interfaces:
+        if iface.get("is_alias"):
+            continue
         try:
             network = ipaddress.IPv4Network(iface["subnet"], strict=False)
             if target in network:

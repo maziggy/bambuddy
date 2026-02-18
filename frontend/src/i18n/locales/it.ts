@@ -2675,6 +2675,14 @@ export default {
       placeholder: 'Rilevamento automatico (predefinito)...',
       hint: 'Sovrascrive l\'indirizzo IP pubblicizzato via SSDP e usato nel certificato TLS. Utile quando Bambuddy ha piu interfacce di rete.',
     },
+    bindIp: {
+      title: 'Interfaccia di rete',
+      placeholder: 'Seleziona interfaccia...',
+      hint: 'Interfaccia di rete a cui questa stampante virtuale si collega. Deve essere unica per stampante.',
+    },
+    proxy: {
+      accessCodeHint: 'In modalita proxy, usa il codice di accesso della stampante di destinazione nello slicer. La connessione viene inoltrata in modo trasparente alla stampante reale.',
+    },
     mode: {
       title: 'Modalita',
       archive: 'Archivio',

@@ -2954,6 +2954,14 @@ export default {
       placeholder: 'Auto (défaut)...',
       hint: 'Force l\'IP annoncée via SSDP.',
     },
+    bindIp: {
+      title: 'Interface réseau',
+      placeholder: 'Sélectionner interface...',
+      hint: 'Interface réseau sur laquelle cette imprimante virtuelle écoute. Doit être unique par imprimante.',
+    },
+    proxy: {
+      accessCodeHint: 'En mode proxy, utilisez le code d\'accès de l\'imprimante cible dans le slicer. La connexion est transmise de manière transparente à l\'imprimante réelle.',
+    },
     mode: {
       title: 'Mode',
       archive: 'Archiver',

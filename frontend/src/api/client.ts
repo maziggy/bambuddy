@@ -4492,6 +4492,8 @@ export interface NetworkInterface {
   ip: string;
   netmask: string;
   subnet: string;
+  is_alias?: boolean;
+  label?: string;
 }
 
 export interface VirtualPrinterModels {
@@ -4537,6 +4539,69 @@ export const virtualPrinterApi = {
       method: 'PUT',
     });
   },
+};
+
+// Multi Virtual Printer API
+export interface VirtualPrinterConfig {
+  id: number;
+  name: string;
+  enabled: boolean;
+  mode: VirtualPrinterMode;
+  model: string | null;
+  model_name: string | null;
+  access_code_set: boolean;
+  serial: string;
+  target_printer_id: number | null;
+  bind_ip: string | null;
+  remote_interface_ip: string | null;
+  position: number;
+  status: { running: boolean; pending_files: number; proxy?: VirtualPrinterProxyStatus };
+}
+
+export interface VirtualPrinterListResponse {
+  printers: VirtualPrinterConfig[];
+  models: Record<string, string>;
+}
+
+export const multiVirtualPrinterApi = {
+  list: () => request<VirtualPrinterListResponse>('/virtual-printers'),
+
+  get: (id: number) => request<VirtualPrinterConfig>(`/virtual-printers/${id}`),
+
+  create: (data: {
+    name?: string;
+    enabled?: boolean;
+    mode?: string;
+    model?: string;
+    access_code?: string;
+    target_printer_id?: number;
+    bind_ip?: string;
+    remote_interface_ip?: string;
+  }) =>
+    request<VirtualPrinterConfig>('/virtual-printers', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  update: (id: number, data: {
+    name?: string;
+    enabled?: boolean;
+    mode?: string;
+    model?: string;
+    access_code?: string;
+    target_printer_id?: number;
+    bind_ip?: string;
+    remote_interface_ip?: string;
+  }) =>
+    request<VirtualPrinterConfig>(`/virtual-printers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  remove: (id: number) =>
+    request<{ detail: string; id: number }>(`/virtual-printers/${id}`, {
+      method: 'DELETE',
+    }),
 };
 
 // Pending Uploads API

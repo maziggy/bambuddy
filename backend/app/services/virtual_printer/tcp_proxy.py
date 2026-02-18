@@ -81,6 +81,7 @@ class TLSProxy:
         server_key_path: Path,
         on_connect: Callable[[str], None] | None = None,
         on_disconnect: Callable[[str], None] | None = None,
+        bind_address: str = "0.0.0.0",  # nosec B104
     ):
         """Initialize the TLS proxy.
 
@@ -93,6 +94,7 @@ class TLSProxy:
             server_key_path: Path to server private key
             on_connect: Optional callback when client connects (receives client_id)
             on_disconnect: Optional callback when client disconnects (receives client_id)
+            bind_address: IP address to bind to (default: all interfaces)
         """
         self.name = name
         self.listen_port = listen_port
@@ -102,6 +104,7 @@ class TLSProxy:
         self.server_key_path = server_key_path
         self.on_connect = on_connect
         self.on_disconnect = on_disconnect
+        self.bind_address = bind_address
 
         self._server: asyncio.Server | None = None
         self._running = False
@@ -134,7 +137,7 @@ class TLSProxy:
             return
 
         logger.info(
-            f"Starting {self.name} TLS proxy: 0.0.0.0:{self.listen_port} → {self.target_host}:{self.target_port}"
+            f"Starting {self.name} TLS proxy: {self.bind_address}:{self.listen_port} → {self.target_host}:{self.target_port}"
         )
 
         try:
@@ -147,7 +150,7 @@ class TLSProxy:
             # Start server with TLS
             self._server = await asyncio.start_server(
                 self._handle_client,
-                "0.0.0.0",  # nosec B104
+                self.bind_address,
                 self.listen_port,
                 ssl=self._server_ssl_context,
             )
@@ -355,6 +358,7 @@ class TCPProxy:
         target_port: int,
         on_connect: Callable[[str], None] | None = None,
         on_disconnect: Callable[[str], None] | None = None,
+        bind_address: str = "0.0.0.0",  # nosec B104
     ):
         self.name = name
         self.listen_port = listen_port
@@ -362,6 +366,7 @@ class TCPProxy:
         self.target_port = target_port
         self.on_connect = on_connect
         self.on_disconnect = on_disconnect
+        self.bind_address = bind_address
 
         self._server: asyncio.Server | None = None
         self._running = False
@@ -373,8 +378,9 @@ class TCPProxy:
             return
 
         logger.info(
-            "Starting %s TCP proxy: 0.0.0.0:%s → %s:%s",
+            "Starting %s TCP proxy: %s:%s → %s:%s",
             self.name,
+            self.bind_address,
             self.listen_port,
             self.target_host,
             self.target_port,
@@ -385,7 +391,7 @@ class TCPProxy:
 
             self._server = await asyncio.start_server(
                 self._handle_client,
-                "0.0.0.0",  # nosec B104
+                self.bind_address,
                 self.listen_port,
             )
 
@@ -1053,6 +1059,7 @@ class SlicerProxyManager:
         cert_path: Path,
         key_path: Path,
         on_activity: Callable[[str, str], None] | None = None,
+        bind_address: str = "0.0.0.0",  # nosec B104
     ):
         """Initialize the slicer proxy manager.
 
@@ -1061,11 +1068,13 @@ class SlicerProxyManager:
             cert_path: Path to server certificate
             key_path: Path to server private key
             on_activity: Optional callback for activity logging (name, message)
+            bind_address: IP address to bind proxy listeners to
         """
         self.target_host = target_host
         self.cert_path = cert_path
         self.key_path = key_path
         self.on_activity = on_activity
+        self.bind_address = bind_address
 
         self._ftp_proxy: TLSProxy | None = None
         self._mqtt_proxy: TLSProxy | None = None
@@ -1100,6 +1109,7 @@ class SlicerProxyManager:
             server_key_path=self.key_path,
             on_connect=lambda cid: self._log_activity("FTP", f"connected: {cid}"),
             on_disconnect=lambda cid: self._log_activity("FTP", f"disconnected: {cid}"),
+            bind_address=self.bind_address,
         )
 
         self._mqtt_proxy = TLSProxy(
@@ -1111,6 +1121,7 @@ class SlicerProxyManager:
             server_key_path=self.key_path,
             on_connect=lambda cid: self._log_activity("MQTT", f"connected: {cid}"),
             on_disconnect=lambda cid: self._log_activity("MQTT", f"disconnected: {cid}"),
+            bind_address=self.bind_address,
         )
 
         # Bind/auth proxy (port 3000) - raw TCP, no TLS
@@ -1121,6 +1132,7 @@ class SlicerProxyManager:
             target_port=self.PRINTER_BIND_PORT,
             on_connect=lambda cid: self._log_activity("Bind", f"connected: {cid}"),
             on_disconnect=lambda cid: self._log_activity("Bind", f"disconnected: {cid}"),
+            bind_address=self.bind_address,
         )
 
         # Start as background tasks

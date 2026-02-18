@@ -21,7 +21,7 @@ import { SpoolmanSettings } from '../components/SpoolmanSettings';
 import { SpoolCatalogSettings } from '../components/SpoolCatalogSettings';
 import { ColorCatalogSettings } from '../components/ColorCatalogSettings';
 import { ExternalLinksSettings } from '../components/ExternalLinksSettings';
-import { VirtualPrinterSettings } from '../components/VirtualPrinterSettings';
+import { VirtualPrinterList } from '../components/VirtualPrinterList';
 import { GitHubBackupSettings } from '../components/GitHubBackupSettings';
 import { EmailSettings } from '../components/EmailSettings';
 import { APIBrowser } from '../components/APIBrowser';
@@ -3330,7 +3330,7 @@ export function SettingsPage() {
 
       {/* Virtual Printer Tab */}
       {activeTab === 'virtual-printer' && (
-        <VirtualPrinterSettings />
+        <VirtualPrinterList />
       )}
 
       {/* Filament Tab */}

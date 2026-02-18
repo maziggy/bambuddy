@@ -39,11 +39,13 @@ class BindServer:
         model: str,
         name: str,
         version: str = "01.00.00.00",
+        bind_address: str = "0.0.0.0",  # nosec B104
     ):
         self.serial = serial
         self.model = model
         self.name = name
         self.version = version
+        self.bind_address = bind_address
 
         self._server: asyncio.Server | None = None
         self._running = False
@@ -59,7 +61,7 @@ class BindServer:
             self._running = True
             self._server = await asyncio.start_server(
                 self._handle_client,
-                "0.0.0.0",  # nosec B104
+                self.bind_address,
                 BIND_PORT,
             )
 

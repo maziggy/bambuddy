@@ -474,12 +474,17 @@ class TestBuildLoadedFilamentsTrayInfoIdx:
         assert result[0]["is_external"] is True
 
 
-def _make_3mf_zip(project_settings: dict | None = None) -> zipfile.ZipFile:
+def _make_3mf_zip(
+    project_settings: dict | None = None,
+    slice_info_xml: str | None = None,
+) -> zipfile.ZipFile:
     """Create an in-memory ZipFile mimicking a 3MF with project_settings.config."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         if project_settings is not None:
             zf.writestr("Metadata/project_settings.config", json.dumps(project_settings))
+        if slice_info_xml is not None:
+            zf.writestr("Metadata/slice_info.config", slice_info_xml)
     buf.seek(0)
     return zipfile.ZipFile(buf, "r")
 
@@ -487,8 +492,55 @@ def _make_3mf_zip(project_settings: dict | None = None) -> zipfile.ZipFile:
 class TestExtractNozzleMappingFrom3mf:
     """Test the extract_nozzle_mapping_from_3mf utility."""
 
-    def test_dual_nozzle_mapping(self):
-        """Should return slot->extruder mapping for dual-nozzle files."""
+    def test_group_id_priority_over_filament_nozzle_map(self):
+        """group_id from slice_info should override filament_nozzle_map from project_settings.
+
+        Real-world scenario: "Auto For Flush" mode sets filament_nozzle_map all to 0
+        (user preference) but the actual assignment in slice_info has different group_ids.
+        """
+        # filament_nozzle_map says all on slicer ext 0 → MQTT ext 1 (LEFT)
+        # But slice_info group_id says slot 6 → group 0 (LEFT), slot 12 → group 1 (RIGHT)
+        slice_info = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+          <plate>
+            <filament id="6" type="PLA" color="#56B7E6" used_g="1.84" group_id="0"/>
+            <filament id="12" type="PLA" color="#B39B84" used_g="1.76" group_id="1"/>
+          </plate>
+        </config>"""
+        zf = _make_3mf_zip(
+            {
+                "filament_nozzle_map": ["0"] * 12,
+                "physical_extruder_map": ["1", "0"],
+            },
+            slice_info_xml=slice_info,
+        )
+        result = extract_nozzle_mapping_from_3mf(zf)
+        # group_id 0 → physical_extruder_map[0] = 1 (LEFT)
+        # group_id 1 → physical_extruder_map[1] = 0 (RIGHT)
+        assert result == {6: 1, 12: 0}
+        zf.close()
+
+    def test_fallback_to_filament_nozzle_map_without_group_id(self):
+        """Should fall back to filament_nozzle_map when slice_info has no group_id."""
+        slice_info = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+          <plate>
+            <filament id="1" type="PLA" color="#FF0000" used_g="5.0"/>
+          </plate>
+        </config>"""
+        zf = _make_3mf_zip(
+            {
+                "filament_nozzle_map": ["0", "1", "0"],
+                "physical_extruder_map": ["0", "1"],
+            },
+            slice_info_xml=slice_info,
+        )
+        result = extract_nozzle_mapping_from_3mf(zf)
+        assert result == {1: 0, 2: 1, 3: 0}
+        zf.close()
+
+    def test_fallback_to_filament_nozzle_map_without_slice_info(self):
+        """Should fall back to filament_nozzle_map when no slice_info.config exists."""
         zf = _make_3mf_zip(
             {
                 "filament_nozzle_map": ["0", "1", "0"],
@@ -500,7 +552,7 @@ class TestExtractNozzleMappingFrom3mf:
         zf.close()
 
     def test_single_nozzle_returns_none(self):
-        """All slots on same extruder should return None (single-nozzle)."""
+        """Single physical_extruder_map entry should return None (single-nozzle)."""
         zf = _make_3mf_zip(
             {
                 "filament_nozzle_map": ["0", "0", "0"],
@@ -519,7 +571,7 @@ class TestExtractNozzleMappingFrom3mf:
         zf.close()
 
     def test_missing_fields_returns_none(self):
-        """Missing filament_nozzle_map or physical_extruder_map should return None."""
+        """Missing physical_extruder_map should return None."""
         zf = _make_3mf_zip({"some_other_key": "value"})
         result = extract_nozzle_mapping_from_3mf(zf)
         assert result is None
@@ -562,8 +614,8 @@ class TestNozzleAwareMapping:
         result = scheduler._match_filaments_to_slots(required, loaded)
         assert result == [0, 4]
 
-    def test_nozzle_fallback_when_no_match(self, scheduler):
-        """Should fall back to unfiltered list when nozzle-filtered list is empty."""
+    def test_nozzle_hard_filter_no_fallback(self, scheduler):
+        """Hard filter: no fallback to wrong nozzle when target nozzle has no trays."""
         required = [
             {"slot_id": 1, "type": "PLA", "color": "#FF0000", "nozzle_id": 0},  # Right nozzle
         ]
@@ -571,9 +623,9 @@ class TestNozzleAwareMapping:
             # Only a tray on the left nozzle, none on right
             {"type": "PLA", "color": "#FF0000", "global_tray_id": 4, "extruder_id": 1},
         ]
-        # No trays on extruder 0, so fallback to unfiltered -> should still match
+        # No trays on extruder 0 — hard filter returns -1, no cross-nozzle fallback
         result = scheduler._match_filaments_to_slots(required, loaded)
-        assert result == [4]
+        assert result == [-1]
 
     def test_no_nozzle_id_skips_filtering(self, scheduler):
         """When nozzle_id is None, no nozzle filtering should be applied."""
@@ -620,7 +672,7 @@ class TestNozzleAwareMapping:
         assert result[0]["extruder_id"] is None
 
     def test_external_spool_extruder_id(self, scheduler):
-        """External spool should have extruder_id=0 when ams_extruder_map exists."""
+        """External spool 254 (Ext-L) should have extruder_id=1 (LEFT) when ams_extruder_map exists."""
 
         class MockStatus:
             raw_data = {
@@ -630,7 +682,8 @@ class TestNozzleAwareMapping:
 
         result = scheduler._build_loaded_filaments(MockStatus())
         assert len(result) == 1
-        assert result[0]["extruder_id"] == 0
+        # Default vt_tray id=254 → Ext-L → LEFT nozzle (extruder 1)
+        assert result[0]["extruder_id"] == 1
         assert result[0]["is_external"] is True
 
     def test_external_spool_no_extruder_map(self, scheduler):
@@ -655,3 +708,302 @@ class TestNozzleAwareMapping:
         ]
         result = scheduler._match_filaments_to_slots(required, loaded)
         assert result == [0, 4]
+
+
+# ============================================================================
+# MODEL-SPECIFIC TESTS: Real data from actual printers
+# ============================================================================
+
+
+def _h2d_raw_data():
+    """H2D real data fixture (from live API response 2026-02-18).
+
+    Configuration:
+        LEFT nozzle (extruder 1): AMS 0 (4-slot), AMS 2 (4-slot)
+        RIGHT nozzle (extruder 0): AMS 1 (4-slot), AMS-HT 128 (1-slot, empty)
+        External: 254 (Ext-L, LEFT), 255 (Ext-R, RIGHT, empty)
+
+    ams_extruder_map: {"0": 1, "1": 0, "2": 1, "128": 0}
+    """
+    return {
+        "ams": [
+            {
+                "id": 0,
+                "tray": [
+                    {"id": 0, "tray_type": "PETG", "tray_color": "FFFFFFFF", "tray_info_idx": "GFG02"},
+                    {"id": 1, "tray_type": "PLA", "tray_color": "C8C8C8FF", "tray_info_idx": "GFA06"},
+                    {"id": 2, "tray_type": "PETG", "tray_color": "875718FF", "tray_info_idx": "GFG02"},
+                    {"id": 3, "tray_type": "PLA", "tray_color": "000000FF", "tray_info_idx": "GFA00"},
+                ],
+            },
+            {
+                "id": 1,
+                "tray": [
+                    {"id": 0, "tray_type": "PLA", "tray_color": "FFFFFFFF", "tray_info_idx": "GFA00"},
+                    {"id": 1, "tray_type": "PETG", "tray_color": "000000FF", "tray_info_idx": "GFG02"},
+                    {"id": 2, "tray_type": "PLA", "tray_color": "5F6367FF", "tray_info_idx": "GFA06"},
+                    {"id": 3, "tray_type": "PLA", "tray_color": "B39B84FF", "tray_info_idx": "GFA02"},
+                ],
+            },
+            {
+                "id": 128,
+                "tray": [{"id": 0}],  # AMS-HT, empty
+            },
+            {
+                "id": 2,
+                "tray": [
+                    {"id": 0, "tray_type": "PLA-S", "tray_color": "FFFFFFFF", "tray_info_idx": "P8aa1726"},
+                    {"id": 1, "tray_type": "PLA", "tray_color": "56B7E6FF", "tray_info_idx": "PFUS9924"},
+                    {"id": 2, "tray_type": "PETG", "tray_color": "6EE53CFF", "tray_info_idx": "GFG02"},
+                    {"id": 3, "tray_type": "PLA", "tray_color": "FF0000FF", "tray_info_idx": "PFUS9ac9"},
+                ],
+            },
+        ],
+        "vt_tray": [
+            {"id": 254, "tray_type": "PLA", "tray_color": "000000FF", "tray_info_idx": "P4d64437"},
+            {"id": 255, "tray_type": "", "tray_color": "00000000"},  # empty
+        ],
+        "ams_extruder_map": {"0": 1, "1": 0, "2": 1, "128": 0},
+    }
+
+
+def _x1c_raw_data():
+    """X1C real data fixture (from live API response 2026-02-18).
+
+    Configuration:
+        Single nozzle (extruder 0): AMS 0 (4-slot, all empty), AMS 1 (4-slot, 3 loaded)
+        External: 254 (single, empty)
+
+    ams_extruder_map: {"0": 0, "1": 0}  ← NOT empty, all on extruder 0
+    """
+    return {
+        "ams": [
+            {
+                "id": 0,
+                "tray": [
+                    {"id": 0},  # empty
+                    {"id": 1},  # empty
+                    {"id": 2},  # empty
+                    {"id": 3},  # empty
+                ],
+            },
+            {
+                "id": 1,
+                "tray": [
+                    {"id": 0},  # empty
+                    {"id": 1, "tray_type": "PLA", "tray_color": "EBCFA6FF", "tray_info_idx": "PFUS22b2"},
+                    {"id": 2, "tray_type": "PLA", "tray_color": "FCECD6FF", "tray_info_idx": "P4d64437"},
+                    {"id": 3, "tray_type": "PLA", "tray_color": "0066FFFF", "tray_info_idx": "P4d64437"},
+                ],
+            },
+        ],
+        "vt_tray": [
+            {"id": 254, "tray_type": "", "tray_color": "00000000"},  # empty
+        ],
+        "ams_extruder_map": {"0": 0, "1": 0},
+    }
+
+
+class TestH2DModel:
+    """H2D-specific tests with real printer data (dual nozzle, AMS-HT)."""
+
+    @pytest.fixture
+    def scheduler(self):
+        return PrintScheduler()
+
+    def test_build_loaded_filaments_h2d(self, scheduler):
+        """H2D: correct extruder_id, global_tray_id, AMS-HT handling."""
+
+        class MockStatus:
+            raw_data = _h2d_raw_data()
+
+        result = scheduler._build_loaded_filaments(MockStatus())
+
+        # Should have 13 loaded filaments (4 + 4 + 0 + 4 + 1 external)
+        assert len(result) == 13
+
+        # AMS 0 trays → extruder 1 (LEFT)
+        ams0 = [f for f in result if f["ams_id"] == 0]
+        assert len(ams0) == 4
+        assert all(f["extruder_id"] == 1 for f in ams0)
+        assert [f["global_tray_id"] for f in ams0] == [0, 1, 2, 3]
+
+        # AMS 1 trays → extruder 0 (RIGHT)
+        ams1 = [f for f in result if f["ams_id"] == 1]
+        assert len(ams1) == 4
+        assert all(f["extruder_id"] == 0 for f in ams1)
+        assert [f["global_tray_id"] for f in ams1] == [4, 5, 6, 7]
+
+        # AMS-HT 128 → empty, should not appear
+        ams_ht = [f for f in result if f["ams_id"] == 128]
+        assert len(ams_ht) == 0
+
+        # AMS 2 trays → extruder 1 (LEFT)
+        ams2 = [f for f in result if f["ams_id"] == 2]
+        assert len(ams2) == 4
+        assert all(f["extruder_id"] == 1 for f in ams2)
+        assert [f["global_tray_id"] for f in ams2] == [8, 9, 10, 11]
+
+    def test_external_spool_extruder_h2d(self, scheduler):
+        """H2D: Ext-L (254) = LEFT (extruder 1), Ext-R (255) = RIGHT (extruder 0)."""
+
+        class MockStatus:
+            raw_data = _h2d_raw_data()
+
+        result = scheduler._build_loaded_filaments(MockStatus())
+        ext = [f for f in result if f["is_external"]]
+        assert len(ext) == 1  # Only 254 has filament
+        assert ext[0]["global_tray_id"] == 254
+        # Ext-L (254) should be LEFT nozzle (extruder 1)
+        assert ext[0]["extruder_id"] == 1
+
+    def test_match_left_nozzle_only(self, scheduler):
+        """H2D: left-nozzle requirement only matches left-nozzle AMS."""
+
+        class MockStatus:
+            raw_data = _h2d_raw_data()
+
+        loaded = scheduler._build_loaded_filaments(MockStatus())
+        required = [
+            {"slot_id": 1, "type": "PLA", "color": "#000000", "nozzle_id": 1},  # LEFT
+        ]
+        result = scheduler._match_filaments_to_slots(required, loaded)
+        # Black PLA on LEFT: AMS 0 T4 (global 3)
+        assert result == [3]
+
+    def test_match_right_nozzle_only(self, scheduler):
+        """H2D: right-nozzle requirement only matches right-nozzle AMS."""
+
+        class MockStatus:
+            raw_data = _h2d_raw_data()
+
+        loaded = scheduler._build_loaded_filaments(MockStatus())
+        required = [
+            {"slot_id": 1, "type": "PLA", "color": "#FFFFFF", "nozzle_id": 0},  # RIGHT
+        ]
+        result = scheduler._match_filaments_to_slots(required, loaded)
+        # White PLA on RIGHT: AMS 1 T1 (global 4)
+        assert result == [4]
+
+    def test_reject_cross_nozzle(self, scheduler):
+        """H2D: hard filter rejects cross-nozzle assignment."""
+
+        class MockStatus:
+            raw_data = _h2d_raw_data()
+
+        loaded = scheduler._build_loaded_filaments(MockStatus())
+        # PLA-S only exists on AMS 2 T1 (LEFT), require on RIGHT
+        required = [
+            {"slot_id": 1, "type": "PLA-S", "color": "#FFFFFF", "nozzle_id": 0},
+        ]
+        result = scheduler._match_filaments_to_slots(required, loaded)
+        assert result == [-1]  # No fallback to wrong nozzle
+
+    def test_dual_nozzle_multi_filament(self, scheduler):
+        """H2D: multi-filament print maps to correct nozzles."""
+
+        class MockStatus:
+            raw_data = _h2d_raw_data()
+
+        loaded = scheduler._build_loaded_filaments(MockStatus())
+        required = [
+            {"slot_id": 1, "type": "PETG", "color": "#FFFFFF", "nozzle_id": 1, "tray_info_idx": "GFG02"},
+            {"slot_id": 2, "type": "PLA", "color": "#FFFFFF", "nozzle_id": 0, "tray_info_idx": "GFA00"},
+        ]
+        result = scheduler._match_filaments_to_slots(required, loaded)
+        # PETG white on LEFT: AMS 0 T1 (global 0)
+        # PLA white on RIGHT: AMS 1 T1 (global 4)
+        assert result == [0, 4]
+
+    def test_external_spool_matches_on_correct_nozzle(self, scheduler):
+        """H2D: external spool on left nozzle matches left-nozzle requirement."""
+
+        class MockStatus:
+            raw_data = _h2d_raw_data()
+
+        loaded = scheduler._build_loaded_filaments(MockStatus())
+        required = [
+            {"slot_id": 1, "type": "PLA", "color": "#000000", "nozzle_id": 1, "tray_info_idx": "P4d64437"},
+        ]
+        result = scheduler._match_filaments_to_slots(required, loaded)
+        assert result == [254]  # External spool on left nozzle
+
+
+class TestX1CModel:
+    """X1C-specific tests with real printer data (single nozzle, 2x regular AMS)."""
+
+    @pytest.fixture
+    def scheduler(self):
+        return PrintScheduler()
+
+    def test_build_loaded_filaments_x1c(self, scheduler):
+        """X1C: all filaments on extruder 0, correct global_tray_id."""
+
+        class MockStatus:
+            raw_data = _x1c_raw_data()
+
+        result = scheduler._build_loaded_filaments(MockStatus())
+
+        # Only 3 loaded (AMS 1 trays 1-3)
+        assert len(result) == 3
+        # All on extruder 0
+        assert all(f["extruder_id"] == 0 for f in result)
+        # Correct global tray IDs
+        assert [f["global_tray_id"] for f in result] == [5, 6, 7]
+
+    def test_single_nozzle_no_filtering(self, scheduler):
+        """X1C: single-nozzle 3MF has no nozzle_id, all trays available."""
+
+        class MockStatus:
+            raw_data = _x1c_raw_data()
+
+        loaded = scheduler._build_loaded_filaments(MockStatus())
+        required = [
+            {"slot_id": 1, "type": "PLA", "color": "#0066FF"},  # No nozzle_id
+        ]
+        result = scheduler._match_filaments_to_slots(required, loaded)
+        # Blue PLA → AMS 1 T4 (global 7)
+        assert result == [7]
+
+    def test_tray_info_idx_matching_x1c(self, scheduler):
+        """X1C: tray_info_idx matching works across AMS units."""
+
+        class MockStatus:
+            raw_data = _x1c_raw_data()
+
+        loaded = scheduler._build_loaded_filaments(MockStatus())
+        required = [
+            {"slot_id": 1, "type": "PLA", "color": "#EBCFA6", "tray_info_idx": "PFUS22b2"},
+        ]
+        result = scheduler._match_filaments_to_slots(required, loaded)
+        # Unique tray_info_idx → AMS 1 T2 (global 5)
+        assert result == [5]
+
+    def test_non_unique_tray_info_idx_color_match_x1c(self, scheduler):
+        """X1C: non-unique tray_info_idx falls back to color matching."""
+
+        class MockStatus:
+            raw_data = _x1c_raw_data()
+
+        loaded = scheduler._build_loaded_filaments(MockStatus())
+        # P4d64437 appears in AMS 1 T3 and T4
+        required = [
+            {"slot_id": 1, "type": "PLA", "color": "#FCECD6", "tray_info_idx": "P4d64437"},
+        ]
+        result = scheduler._match_filaments_to_slots(required, loaded)
+        # Should pick AMS 1 T3 (global 6, color FCECD6) over T4 (0066FF)
+        assert result == [6]
+
+    def test_multi_filament_x1c(self, scheduler):
+        """X1C: multi-filament print matches freely across AMS units."""
+
+        class MockStatus:
+            raw_data = _x1c_raw_data()
+
+        loaded = scheduler._build_loaded_filaments(MockStatus())
+        required = [
+            {"slot_id": 1, "type": "PLA", "color": "#EBCFA6"},
+            {"slot_id": 2, "type": "PLA", "color": "#0066FF"},
+        ]
+        result = scheduler._match_filaments_to_slots(required, loaded)
+        assert result == [5, 7]

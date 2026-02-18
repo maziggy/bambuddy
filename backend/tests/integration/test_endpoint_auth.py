@@ -70,7 +70,7 @@ class TestEndpointAuthenticationEnforcement:
     async def test_filaments_list_accessible_without_auth_when_disabled(self, async_client: AsyncClient):
         """Verify filaments list is accessible when auth is disabled."""
         with patch("backend.app.core.auth.is_auth_enabled", return_value=False):
-            response = await async_client.get("/api/v1/filaments/")
+            response = await async_client.get("/api/v1/filament-catalog/")
             assert response.status_code == 200
 
     @pytest.mark.asyncio
@@ -153,7 +153,7 @@ class TestAuthenticationPatterns:
         """Verify require_permission_if_auth_enabled allows access when auth disabled."""
         with patch("backend.app.core.auth.is_auth_enabled", return_value=False):
             # Test a protected endpoint
-            response = await async_client.get("/api/v1/filaments/")
+            response = await async_client.get("/api/v1/filament-catalog/")
             assert response.status_code == 200
 
     @pytest.mark.asyncio
@@ -162,7 +162,7 @@ class TestAuthenticationPatterns:
         """Verify multiple protected endpoints are accessible when auth is disabled."""
         with patch("backend.app.core.auth.is_auth_enabled", return_value=False):
             endpoints = [
-                "/api/v1/filaments/",
+                "/api/v1/filament-catalog/",
                 "/api/v1/external-links/",
                 "/api/v1/notifications/",
                 "/api/v1/maintenance/types",

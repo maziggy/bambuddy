@@ -402,8 +402,9 @@ async def get_printer_status(
 
     # Get AMS mapping from raw_data (which AMS is connected to which nozzle)
     ams_mapping = raw_data.get("ams_mapping", [])
-    # Get per-AMS extruder map: {ams_id: extruder_id} where 0=right, 1=left
-    ams_extruder_map = raw_data.get("ams_extruder_map", {})
+    # Get per-AMS extruder map from state attribute (not raw_data, to avoid race condition
+    # where raw_data gets replaced during MQTT updates and ams_extruder_map is temporarily missing)
+    ams_extruder_map = state.ams_extruder_map or {}
     logger.debug("API returning ams_mapping: %s, ams_extruder_map: %s", ams_mapping, ams_extruder_map)
 
     # tray_now from MQTT is already a global tray ID: (ams_id * 4) + slot_id

@@ -58,7 +58,7 @@ export function buildLoadedFilaments(printerStatus: PrinterStatus | undefined): 
         label: hasDualExternal ? (trayId === 254 ? 'Ext-L' : 'Ext-R') : 'External',
         globalTrayId: trayId,
         trayInfoIdx: extTray.tray_info_idx || '',
-        extruderId: hasDualNozzle ? (trayId - 254) : undefined,
+        extruderId: hasDualNozzle ? (255 - trayId) : undefined,
       });
     }
   }
@@ -100,12 +100,11 @@ export function computeAmsMapping(
     // Get available trays (not already used)
     let available = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId));
 
-    // Nozzle-aware filtering: restrict to trays on the correct nozzle
+    // Nozzle-aware filtering: restrict to trays on the correct nozzle.
+    // This is a hard filter — cross-nozzle assignment causes print failures
+    // ("position of left hotend is abnormal"), so we never fall back to wrong-nozzle trays.
     if (req.nozzle_id != null) {
-      const nozzleFiltered = available.filter((f) => f.extruderId === req.nozzle_id);
-      if (nozzleFiltered.length > 0) {
-        available = nozzleFiltered;
-      }
+      available = available.filter((f) => f.extruderId === req.nozzle_id);
     }
 
     let idxMatch: LoadedFilament | undefined;
@@ -336,12 +335,10 @@ export function useFilamentMapping(
       // Get available trays (not already used)
       let available = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId));
 
-      // Nozzle-aware filtering: restrict to trays on the correct nozzle
+      // Nozzle-aware filtering: restrict to trays on the correct nozzle.
+      // This is a hard filter — cross-nozzle assignment causes print failures.
       if (req.nozzle_id != null) {
-        const nozzleFiltered = available.filter((f) => f.extruderId === req.nozzle_id);
-        if (nozzleFiltered.length > 0) {
-          available = nozzleFiltered;
-        }
+        available = available.filter((f) => f.extruderId === req.nozzle_id);
       }
 
       let idxMatch: LoadedFilament | undefined;

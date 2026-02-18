@@ -64,6 +64,7 @@ import { ConfigureAmsSlotModal } from '../components/ConfigureAmsSlotModal';
 import { useToast } from '../contexts/ToastContext';
 import { ChamberLight } from '../components/icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';
+import { getGlobalTrayId } from '../utils/amsHelpers';
 
 // Complete Bambu Lab filament color mapping by tray_id_name
 // Source: https://github.com/queengooborg/Bambu-Lab-RFID-Library
@@ -2977,8 +2978,7 @@ function PrinterCard({
                         const hasFillLevel = tray?.tray_type && tray.remain >= 0;
                         const isEmpty = !tray?.tray_type;
                         // Check if this is the currently loaded tray
-                        // Global tray ID = ams.id * 4 + tray.id
-                        const globalTrayId = ams.id * 4 + (tray?.id ?? 0);
+                        const globalTrayId = getGlobalTrayId(ams.id, tray?.id ?? 0, false);
                         const isActive = effectiveTrayNow === globalTrayId;
                         // Get cloud preset info if available
                         const cloudInfo = tray?.tray_info_idx ? filamentInfo?.[tray.tray_info_idx] : null;

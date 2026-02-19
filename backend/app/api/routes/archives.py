@@ -18,6 +18,7 @@ from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.archive import PrintArchive
 from backend.app.models.filament import Filament
+from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.user import User
 from backend.app.schemas.archive import ArchiveResponse, ArchiveStats, ArchiveUpdate, ReprintRequest
 from backend.app.services.archive import ArchiveService
@@ -857,9 +858,8 @@ async def rescan_archive(
         archive.designer = metadata["designer"]
 
     # Calculate cost: prefer spool-based cost if available, else catalog-based
-    if archive.filament_used_grams and archive.filament_type:
-        from backend.app.models.spool_usage_history import SpoolUsageHistory
 
+    if archive.filament_used_grams and archive.filament_type:
         usage_result = await db.execute(
             select(func.sum(SpoolUsageHistory.cost)).where(SpoolUsageHistory.print_name == archive.print_name)
         )
@@ -889,6 +889,7 @@ async def recalculate_all_costs(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
 ):
     """Recalculate costs for all archives based on filament usage and prices."""
+
     from backend.app.api.routes.settings import get_setting
 
     result = await db.execute(select(PrintArchive))
@@ -902,17 +903,17 @@ async def recalculate_all_costs(
     default_cost_setting = await get_setting(db, "default_filament_cost")
     default_cost_per_kg = float(default_cost_setting) if default_cost_setting else 25.0
 
-    # Import SpoolUsageHistory for cost lookup
-    from backend.app.models.spool_usage_history import SpoolUsageHistory
+    # Pre-fetch all usage costs in one query
+    usage_costs_result = await db.execute(
+        select(SpoolUsageHistory.print_name, func.sum(SpoolUsageHistory.cost)).group_by(SpoolUsageHistory.print_name)
+    )
+    usage_costs = usage_costs_result.fetchall()
+    cost_map = {row[0]: row[1] for row in usage_costs if row[1] is not None and row[1] > 0}
 
     updated = 0
     for archive in archives:
-        # Prefer sum of spool_usage_history.cost for this archive's print_name
-        usage_result = await db.execute(
-            select(func.sum(SpoolUsageHistory.cost)).where(SpoolUsageHistory.print_name == archive.print_name)
-        )
-        usage_cost = usage_result.scalar()
-        if usage_cost is not None and usage_cost > 0:
+        usage_cost = cost_map.get(archive.print_name)
+        if usage_cost is not None:
             new_cost = round(usage_cost, 2)
         elif archive.filament_used_grams and archive.filament_type:
             primary_type = archive.filament_type.split(",")[0].strip()

@@ -257,7 +257,7 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
   ),
   cost_per_kg: ({ spool, currencySymbol }) => (
     <span className="text-sm text-bambu-gray">
-      {spool.cost_per_kg != null ? `${currencySymbol} ${spool.cost_per_kg.toFixed(2)}` : '-'}
+      {spool.cost_per_kg != null ? `${currencySymbol}${spool.cost_per_kg.toFixed(2)}` : '-'}
     </span>
   ),
 };

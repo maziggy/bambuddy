@@ -239,10 +239,6 @@ class TestSpoolCostPersistence:
         assert result["cost_per_kg"] is None
 
 
-class TestSpoolUsageHistoryCost:
-    """Tests for cost field in SpoolUsageHistory."""
-
-
 class TestCostCalculationScenarios:
     """End-to-end tests for various cost calculation scenarios."""
 

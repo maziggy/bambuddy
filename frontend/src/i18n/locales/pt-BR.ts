@@ -132,6 +132,7 @@ export default {
       offline: 'Offline',
       error: 'Erro',
       finished: 'Concluído',
+      failed: 'Falhou',
       unknown: 'Desconhecido',
     },
     temperatures: {
@@ -151,6 +152,7 @@ export default {
     sort: {
       name: 'Nome',
       status: 'Status',
+      progress: 'Progresso',
       model: 'Modelo',
       location: 'Localização',
       ascending: 'Ordem crescente',
@@ -211,6 +213,13 @@ export default {
     pause: 'Pausar',
     stop: 'Parar',
     camera: 'âmera',
+    cameraGrid: {
+      quality: 'Qualidade:',
+      low: 'Baixa',
+      medium: 'Méd',
+      high: 'Alta',
+      cameraUnavailable: 'Câmera indisponível',
+    },
     skipObject: 'Ignorar objeto',
     reconnect: 'Reconectar',
     mqttDebug: 'Depuração MQTT',

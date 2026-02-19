@@ -47,6 +47,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi } from '../api/client';
 import { formatDateOnly, formatETA, formatDuration } from '../utils/date';
+import { formatFileSize } from '../utils/file';
 import type { Printer, PrinterCreate, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
@@ -1097,7 +1098,6 @@ function getPrinterImage(model: string | null | undefined): string {
   if (modelLower.includes('x1e')) return '/img/printers/x1e.png';
   if (modelLower.includes('x1c') || modelLower.includes('x1carbon')) return '/img/printers/x1c.png';
   if (modelLower.includes('x1')) return '/img/printers/x1c.png';
-  if (modelLower.includes('h2dpro') || modelLower.includes('h2d-pro')) return '/img/printers/h2dpro.png';
   if (modelLower.includes('h2d')) return '/img/printers/h2d.png';
   if (modelLower.includes('h2c')) return '/img/printers/h2c.png';
   if (modelLower.includes('h2s')) return '/img/printers/h2d.png';
@@ -1323,7 +1323,7 @@ function StatusSummaryBar({ printers }: { printers: Printer[] | undefined }) {
   );
 }
 
-type SortOption = 'name' | 'status' | 'model' | 'location';
+type SortOption = 'name' | 'status' | 'model' | 'location' | 'progress';
 type ViewMode = 'expanded' | 'compact';
 
 /**
@@ -1390,6 +1390,354 @@ function mapModelCode(ssdpModel: string | null): string {
     'H2S': 'H2S',
   };
   return modelMap[ssdpModel] || ssdpModel;
+}
+
+/**
+ * CameraGridCard — pure display component.
+ * Receives a canvas ref from the parent CameraGrid; no fetch logic of its own.
+ */
+function CameraGridCard({
+  printerName,
+  connected,
+  state,
+  progress,
+  remainingTime,
+  layerNum,
+  totalLayers,
+  canvasRef,
+  loading,
+  error,
+}: {
+  printerName: string;
+  connected: boolean;
+  state: string | null;
+  progress: number;
+  remainingTime: number | null;
+  layerNum: number | null;
+  totalLayers: number | null;
+  canvasRef: React.RefObject<HTMLCanvasElement | null>;
+  loading: boolean;
+  error: boolean;
+}) {
+  const { t } = useTranslation();
+  const stateKey = !connected ? 'offline' : state === 'RUNNING' ? 'printing' : state === 'PAUSE' ? 'paused' : state === 'FINISH' ? 'finished' : state === 'FAILED' ? 'failed' : 'idle';
+  const stateColor = !connected ? 'text-bambu-gray/60' : state === 'RUNNING' ? 'text-bambu-green' : state === 'PAUSE' ? 'text-yellow-400' : state === 'FAILED' ? 'text-red-400' : 'text-bambu-gray/60';
+  return (
+    <Card className="relative overflow-hidden">
+      <div className="relative w-full aspect-video bg-black">
+        {connected ? (
+          <>
+            <canvas
+              ref={canvasRef}
+              className={`w-full h-full object-cover ${loading || error ? 'hidden' : ''}`}
+            />
+            {loading && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-white/60 animate-spin" />
+              </div>
+            )}
+            {error && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+                <AlertCircle className="w-8 h-8 text-red-400" />
+                <span className="text-xs text-white/50">{t('printers.cameraGrid.cameraUnavailable')}</span>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Video className="w-8 h-8 text-bambu-gray/50" />
+          </div>
+        )}
+        {/* Paused overlay — center alert */}
+        {state === 'PAUSE' && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+            <span className="text-3xl font-bold text-yellow-400/70 uppercase tracking-widest drop-shadow-lg">{t('printers.status.paused')}</span>
+          </div>
+        )}
+        {/* Printer name (top left) + state (top right) */}
+        <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/70 to-transparent px-3 py-1.5 flex items-center justify-between">
+          <span className="text-sm text-white font-medium drop-shadow-sm">{printerName}</span>
+          {state !== 'RUNNING' && state !== 'FINISH' && state !== 'PAUSE' && (
+            <span className={`text-[11px] font-medium drop-shadow-sm uppercase ${stateColor}`}>{t(`printers.status.${stateKey}`)}</span>
+          )}
+        </div>
+        {/* Progress bar + details — bottom */}
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-2">
+          {(state === 'RUNNING' || state === 'PAUSE') && (
+            <>
+              <div className="flex items-center justify-between text-[11px] text-white/80 mb-1 tabular-nums">
+                <div className="flex items-center gap-2">
+                  {remainingTime != null && remainingTime > 0 && (
+                    <span className="flex items-center gap-0.5">
+                      <Clock className="w-3 h-3" />
+                      {formatDuration(remainingTime * 60)}
+                    </span>
+                  )}
+                  {layerNum != null && totalLayers != null && totalLayers > 0 && (
+                    <span className="flex items-center gap-0.5">
+                      <Layers className="w-3 h-3" />
+                      {layerNum}/{totalLayers}
+                    </span>
+                  )}
+                </div>
+                <span>{Math.round(progress)}%</span>
+              </div>
+              <div className="bg-white/20 rounded-full h-1.5">
+                <div
+                  className={`${state === 'PAUSE' ? 'bg-yellow-400' : 'bg-bambu-green'} h-1.5 rounded-full transition-all`}
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * CameraGrid — manages a SINGLE multiplexed HTTP connection for all cameras.
+ *
+ * Uses `GET /camera/grid-stream?ids=1,2,3&fps=5&quality=15&scale=0.5` which
+ * returns binary-framed JPEG data:  [4B printer_id LE][4B length LE][jpeg]
+ *
+ * This avoids the browser's 6-connection-per-origin limit that made the page
+ * unresponsive when > 6 cameras were open simultaneously.
+ */
+function CameraGrid({
+  printers,
+}: {
+  printers: { id: number; name: string; connected: boolean; state: string | null; progress: number; remainingTime: number | null; layerNum: number | null; totalLayers: number | null }[];
+}) {
+  const { t } = useTranslation();
+  // One canvas ref per printer
+  const canvasRefs = useRef<Map<number, React.RefObject<HTMLCanvasElement | null>>>(new Map());
+  const [loadingSet, setLoadingSet] = useState<Set<number>>(new Set());
+  const [errorSet, setErrorSet] = useState<Set<number>>(new Set());
+  const [stats, setStats] = useState<{ bw: string; active: number; total: number; uptime: string }>({
+    bw: '', active: 0, total: 0, uptime: '',
+  });
+  const qualityPresets = { low: { fps: 1, quality: 25, scale: 0.3 }, medium: { fps: 5, quality: 15, scale: 0.5 }, high: { fps: 15, quality: 5, scale: 1 } } as const;
+  type QualityLevel = keyof typeof qualityPresets;
+  const [quality, setQuality] = useState<QualityLevel>('medium');
+  // Mutable counters — updated in the stream loop, read by the stats interval
+  const bytesRef = useRef(0);
+  const activeCamsRef = useRef(new Set<number>());
+  const startTimeRef = useRef(0);
+
+  // Ensure refs exist for all printers
+  const connectedPrinters = printers.filter(p => p.connected);
+  for (const p of connectedPrinters) {
+    if (!canvasRefs.current.has(p.id)) {
+      canvasRefs.current.set(p.id, { current: null });
+    }
+  }
+
+  useEffect(() => {
+    const ids = connectedPrinters.map(p => p.id);
+    if (ids.length === 0) return;
+
+    setLoadingSet(new Set(ids));
+    setErrorSet(new Set());
+    bytesRef.current = 0;
+    activeCamsRef.current = new Set();
+    const t0 = performance.now();
+    startTimeRef.current = t0;
+
+    const controller = new AbortController();
+    let active = true;
+
+    // Compute stats every second
+    const statsInterval = setInterval(() => {
+      const bytes = bytesRef.current;
+      bytesRef.current = 0;
+      const elapsed = Math.floor((performance.now() - t0) / 1000);
+      const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
+      const ss = String(elapsed % 60).padStart(2, '0');
+
+      setStats({
+        bw: `${formatFileSize(bytes)}/s`,
+        active: activeCamsRef.current.size,
+        total: ids.length,
+        uptime: `${mm}:${ss}`,
+      });
+    }, 1000);
+
+    async function startMultiplexedStream() {
+      // Cache canvas 2D contexts — getContext is expensive to call per-frame
+      const ctxCache = new Map<number, CanvasRenderingContext2D>();
+      // Track canvas dimensions to avoid resetting every frame
+      const dimCache = new Map<number, string>();
+      // Track which printers have delivered at least one frame — avoids
+      // calling setState on every single frame after the first.
+      const loadedPrinters = new Set<number>();
+
+      // Growing buffer: pre-allocate and double when full, avoiding O(n) copy per chunk.
+      let buf = new Uint8Array(256 * 1024); // 256 KB initial
+      let bufLen = 0;
+
+      try {
+        const res = await fetch(
+          `/api/v1/printers/camera/grid-stream?ids=${ids.join(',')}&fps=${qualityPresets[quality].fps}&quality=${qualityPresets[quality].quality}&scale=${qualityPresets[quality].scale}`,
+          { signal: controller.signal }
+        );
+        if (!res.ok || !res.body) {
+          setLoadingSet(new Set());
+          setErrorSet(new Set(ids));
+          return;
+        }
+
+        const reader = res.body.getReader();
+
+        while (active) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          // Grow buffer if needed (amortised O(1) via doubling)
+          if (bufLen + value.length > buf.length) {
+            let newSize = buf.length;
+            while (newSize < bufLen + value.length) newSize *= 2;
+            const newBuf = new Uint8Array(newSize);
+            newBuf.set(buf.subarray(0, bufLen));
+            buf = newBuf;
+          }
+          buf.set(value, bufLen);
+          bufLen += value.length;
+          bytesRef.current += value.length;
+
+          // Parse binary frames: [4B printer_id LE][4B length LE][jpeg_data]
+          let offset = 0;
+          while (offset + 8 <= bufLen) {
+            const view = new DataView(buf.buffer, buf.byteOffset + offset, 8);
+            const printerId = view.getUint32(0, true);
+            const jpegLen = view.getUint32(4, true);
+
+            if (offset + 8 + jpegLen > bufLen) break; // incomplete frame
+
+            // Slice out just the JPEG (new buffer, safe to pass to Blob)
+            const frame = buf.slice(offset + 8, offset + 8 + jpegLen);
+            offset += 8 + jpegLen;
+
+            // Draw to the correct canvas
+            const ref = canvasRefs.current.get(printerId);
+            const canvas = ref?.current;
+            if (canvas) {
+              try {
+                const blob = new Blob([frame], { type: 'image/jpeg' });
+                const bitmap = await createImageBitmap(blob);
+                // Only reset canvas dimensions when they actually change
+                const dimKey = `${bitmap.width}x${bitmap.height}`;
+                if (dimCache.get(printerId) !== dimKey) {
+                  canvas.width = bitmap.width;
+                  canvas.height = bitmap.height;
+                  dimCache.set(printerId, dimKey);
+                  ctxCache.delete(printerId); // context invalidated
+                }
+                let ctx = ctxCache.get(printerId);
+                if (!ctx) {
+                  ctx = canvas.getContext('2d')!;
+                  ctxCache.set(printerId, ctx);
+                }
+                ctx.drawImage(bitmap, 0, 0);
+                bitmap.close();
+                activeCamsRef.current.add(printerId);
+
+                // Only trigger React setState once per printer (first frame)
+                if (!loadedPrinters.has(printerId)) {
+                  loadedPrinters.add(printerId);
+                  setLoadingSet(prev => {
+                    const next = new Set(prev);
+                    next.delete(printerId);
+                    return next;
+                  });
+                  setErrorSet(prev => {
+                    if (!prev.has(printerId)) return prev;
+                    const next = new Set(prev);
+                    next.delete(printerId);
+                    return next;
+                  });
+                }
+              } catch {
+                // Invalid JPEG — skip frame
+              }
+            }
+          }
+
+          // Compact: shift remaining bytes to front
+          if (offset > 0) {
+            buf.copyWithin(0, offset, bufLen);
+            bufLen -= offset;
+          }
+        }
+      } catch (e: unknown) {
+        if (e instanceof DOMException && e.name === 'AbortError') return;
+        if (active) {
+          setLoadingSet(new Set());
+          setErrorSet(new Set(ids));
+        }
+      }
+    }
+
+    startMultiplexedStream();
+
+    const onBeforeUnload = () => controller.abort();
+    window.addEventListener('beforeunload', onBeforeUnload);
+
+    return () => {
+      active = false;
+      controller.abort();
+      clearInterval(statsInterval);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectedPrinters.map(p => p.id).join(','), quality]);
+
+  return (
+    <div>
+      {stats.bw && (
+        <div className="flex items-center justify-end gap-3 mb-2 tabular-nums">
+          <div className="flex items-center gap-2 mr-auto">
+            <span className="text-xs text-bambu-gray/60">{t('printers.cameraGrid.quality')}</span>
+            <div className="flex items-center rounded border border-bambu-dark-tertiary">
+              {(['low', 'medium', 'high'] as QualityLevel[]).map((level) => (
+                <button
+                  key={level}
+                  onClick={() => setQuality(level)}
+                  className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                    quality === level
+                      ? 'bg-bambu-green/80 text-white'
+                      : 'text-bambu-gray/50 hover:text-bambu-gray hover:bg-bambu-dark-tertiary'
+                  }`}
+                >
+                  {t(`printers.cameraGrid.${level}`)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <span className="text-xs text-bambu-gray/60 w-20 text-right">{stats.bw}</span>
+          <span className="text-xs text-bambu-gray/60 w-12 text-right">{stats.uptime}</span>
+        </div>
+      )}
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 xxl:grid-cols-5">
+        {printers.map(p => (
+          <CameraGridCard
+            key={p.id}
+            printerName={p.name}
+            connected={p.connected}
+            state={p.state}
+            progress={p.progress}
+            remainingTime={p.remainingTime}
+            layerNum={p.layerNum}
+            totalLayers={p.totalLayers}
+            canvasRef={canvasRefs.current.get(p.id) ?? { current: null }}
+            loading={loadingSet.has(p.id)}
+            error={errorSet.has(p.id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function PrinterCard({
@@ -4907,6 +5255,7 @@ export function PrintersPage() {
   const [hideDisconnected, setHideDisconnected] = useState(() => {
     return localStorage.getItem('hideDisconnectedPrinters') === 'true';
   });
+  const [showCameraGrid, setShowCameraGrid] = useState(false);
   const [showPowerDropdown, setShowPowerDropdown] = useState(false);
   const [poweringOn, setPoweringOn] = useState<number | null>(null);
   const [sortBy, setSortBy] = useState<SortOption>(() => {
@@ -5142,6 +5491,22 @@ export function PrintersPage() {
           return getPriority(statusA) - getPriority(statusB);
         });
         break;
+      case 'progress':
+        // Sort by finish time: soonest to finish first, then idle, then offline
+        sorted.sort((a, b) => {
+          const statusA = queryClient.getQueryData<{ connected: boolean; state: string | null; remaining_time: number | null; progress: number | null }>(['printerStatus', a.id]);
+          const statusB = queryClient.getQueryData<{ connected: boolean; state: string | null; remaining_time: number | null; progress: number | null }>(['printerStatus', b.id]);
+
+          const getFinishScore = (s: typeof statusA) => {
+            if (!s?.connected) return Infinity; // offline last
+            if (s.state !== 'RUNNING') return Infinity - 1; // idle before offline
+            // Running: sort by remaining time (lower = finishes sooner)
+            return s.remaining_time ?? Infinity - 2;
+          };
+
+          return getFinishScore(statusA) - getFinishScore(statusB);
+        });
+        break;
     }
 
     // Apply ascending/descending
@@ -5182,6 +5547,7 @@ export function PrintersPage() {
             >
               <option value="name">{t('printers.sort.name')}</option>
               <option value="status">{t('printers.sort.status')}</option>
+              <option value="progress">{t('printers.sort.progress')}</option>
               <option value="model">{t('printers.sort.model')}</option>
               <option value="location">{t('printers.sort.location')}</option>
             </select>
@@ -5198,7 +5564,8 @@ export function PrintersPage() {
             </button>
           </div>
 
-          {/* Card size selector */}
+          {/* Card size selector — hidden when camera grid is active */}
+          {!showCameraGrid && (
           <div className="flex items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
             {cardSizeLabels.map((label, index) => {
               const size = index + 1;
@@ -5226,6 +5593,7 @@ export function PrintersPage() {
               );
             })}
           </div>
+          )}
 
           <div className="w-px h-6 bg-bambu-dark-tertiary" />
 
@@ -5238,6 +5606,18 @@ export function PrintersPage() {
             />
             {t('printers.hideOffline')}
           </label>
+
+          <button
+            onClick={() => setShowCameraGrid(prev => !prev)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-lg transition-colors ${
+              showCameraGrid
+                ? 'bg-bambu-green/10 border-bambu-green text-bambu-green'
+                : 'bg-white dark:bg-bambu-dark-secondary border-gray-200 dark:border-bambu-dark-tertiary text-gray-600 dark:text-bambu-gray hover:text-gray-900 dark:hover:text-white hover:border-bambu-green'
+            }`}
+            title={t('printers.openCameraOverlay')}
+          >
+            <Video className="w-4 h-4" />
+          </button>
           {/* Power dropdown for offline printers with smart plugs */}
           {hideDisconnected && Object.keys(smartPlugByPrinter).length > 0 && (
             <div className="relative">
@@ -5309,6 +5689,23 @@ export function PrintersPage() {
             </Button>
           </CardContent>
         </Card>
+      ) : showCameraGrid ? (
+        /* Camera grid view — single multiplexed connection for all cameras */
+        <CameraGrid
+          printers={sortedPrinters.map(printer => {
+            const status = queryClient.getQueryData<{ connected: boolean; state: string; progress: number; remaining_time: number | null; layer_num: number | null; total_layers: number | null }>(['printerStatus', printer.id]);
+            return {
+              id: printer.id,
+              name: printer.name,
+              connected: status?.connected ?? false,
+              state: status?.state ?? null,
+              progress: status?.progress ?? 0,
+              remainingTime: status?.remaining_time ?? null,
+              layerNum: status?.layer_num ?? null,
+              totalLayers: status?.total_layers ?? null,
+            };
+          })}
+        />
       ) : groupedPrinters ? (
         /* Grouped by location view */
         <div className="space-y-6">

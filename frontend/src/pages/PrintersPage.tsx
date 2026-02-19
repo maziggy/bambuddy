@@ -2770,7 +2770,7 @@ function PrinterCard({
                                 const inventoryAssignment = onGetAssignment?.(printer.id, ams.id, slotIdx);
                                 const inventoryFill = (() => {
                                   const sp = inventoryAssignment?.spool;
-                                  if (sp && sp.label_weight > 0 && sp.weight_used > 0) {
+                                  if (sp && sp.label_weight > 0 && sp.weight_used != null) {
                                     return Math.round(Math.max(0, sp.label_weight - sp.weight_used) / sp.label_weight * 100);
                                   }
                                   return null;
@@ -2995,7 +2995,7 @@ function PrinterCard({
                         const htInventoryAssignment = onGetAssignment?.(printer.id, ams.id, htTraySlotId);
                         const htInventoryFill = (() => {
                           const sp = htInventoryAssignment?.spool;
-                          if (sp && sp.label_weight > 0 && sp.weight_used > 0) {
+                          if (sp && sp.label_weight > 0 && sp.weight_used != null) {
                             return Math.round(Math.max(0, sp.label_weight - sp.weight_used) / sp.label_weight * 100);
                           }
                           return null;
@@ -3253,7 +3253,7 @@ function PrinterCard({
                               const extInventoryAssignment = onGetAssignment?.(printer.id, 255, slotTrayId);
                               const extInventoryFill = (() => {
                                 const sp = extInventoryAssignment?.spool;
-                                if (sp && sp.label_weight > 0 && sp.weight_used > 0) {
+                                if (sp && sp.label_weight > 0 && sp.weight_used != null) {
                                   return Math.round(Math.max(0, sp.label_weight - sp.weight_used) / sp.label_weight * 100);
                                 }
                                 return null;

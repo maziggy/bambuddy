@@ -31,7 +31,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const [localEnabled, setLocalEnabled] = useState(printer.enabled);
   const [localName, setLocalName] = useState(printer.name);
   const [localAccessCode, setLocalAccessCode] = useState('');
@@ -418,7 +418,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
                 {localRemoteInterfaceIp ? (
                   <span className="flex items-center gap-1 text-xs text-green-400"><Check className="w-3 h-3" /></span>
                 ) : (
-                  <span className="flex items-center gap-1 text-xs text-bambu-gray"><Info className="w-3 h-3" /></span>
+                  <span className="flex items-center gap-1 text-xs text-bambu-gray" title={t('virtualPrinter.remoteInterface.optional')}><Info className="w-3 h-3" /></span>
                 )}
               </div>
               <div className="relative">

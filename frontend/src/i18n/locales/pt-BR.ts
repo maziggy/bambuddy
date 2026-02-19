@@ -217,7 +217,7 @@ export default {
     stop: 'Parar',
     camera: 'âmera',
     cameraGrid: {
-      quality: 'Qualidade:',
+      quality: 'Qualidade',
       low: 'Baixa',
       medium: 'Méd',
       high: 'Alta',

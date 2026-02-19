@@ -322,8 +322,26 @@ export function ConfigureAmsSlotModal({
       let settingId: string;
 
       if (isLocal) {
-        // Local presets have no Bambu Cloud mapping
-        trayInfoIdx = '';
+        // Local presets have no Bambu Cloud setting_id, but need a valid
+        // tray_info_idx for the printer to recognize the filament type.
+        // Map the material type to the closest generic Bambu filament ID.
+        const material = (localPreset?.filament_type || parsed.material || '').toUpperCase();
+        const GENERIC_IDS: Record<string, string> = {
+          'PLA': 'GFL99', 'PLA-CF': 'GFL98', 'PLA SILK': 'GFL96', 'PLA HIGH SPEED': 'GFL95',
+          'PETG': 'GFG99', 'PETG HF': 'GFG96', 'PETG-CF': 'GFG98', 'PCTG': 'GFG97',
+          'ABS': 'GFB99', 'ASA': 'GFB98',
+          'PC': 'GFC99',
+          'PA': 'GFN99', 'PA-CF': 'GFN98', 'NYLON': 'GFN99',
+          'TPU': 'GFU99',
+          'PVA': 'GFS99', 'HIPS': 'GFS98',
+          'PE': 'GFP99', 'PP': 'GFP97',
+        };
+        // Try exact match first, then base material (strip suffixes like "-CF", "+", " HF")
+        trayInfoIdx = GENERIC_IDS[material]
+          || GENERIC_IDS[material.replace(/[-\s]?CF$/, '')]
+          || GENERIC_IDS[material.replace(/\+$/, '')]
+          || GENERIC_IDS[material.split(/[-\s]/)[0]]
+          || '';
         settingId = '';
       } else if (isBuiltin) {
         // Built-in presets use the filament_id directly as tray_info_idx

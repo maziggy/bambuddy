@@ -1642,53 +1642,110 @@ async def configure_ams_slot(
     if not client:
         raise HTTPException(status_code=400, detail="Printer not connected")
 
-    # Detect RFID spool before sending commands
-    is_rfid_spool = False
-    state = printer_manager.get_status(printer_id)
-    if state and state.raw_data:
-        from backend.app.api.routes.inventory import _find_tray_in_ams_data
-        from backend.app.services.spool_tag_matcher import is_valid_tag
+    # Resolve tray_info_idx for the MQTT command.
+    # PFUS* IDs are user-local preset IDs that only the originating slicer
+    # recognises.  When Bambuddy sends them, BambuStudio sees an unknown
+    # filament and actively resets the slot to empty.
+    # Priority:
+    #   1. If the slot already has a recognised preset (GF*/P*) for the same
+    #      material, reuse it — preserves slicer's K-profile association.
+    #   2. Replace PFUS* / empty with a generic Bambu filament ID.
+    _GENERIC_FILAMENT_IDS = {
+        "PLA": "GFL99",
+        "PETG": "GFG99",
+        "ABS": "GFB99",
+        "ASA": "GFB98",
+        "PC": "GFC99",
+        "PA": "GFN99",
+        "NYLON": "GFN99",
+        "TPU": "GFU99",
+        "PVA": "GFS99",
+        "HIPS": "GFS98",
+        "PLA-CF": "GFL98",
+        "PETG-CF": "GFG98",
+        "PA-CF": "GFN98",
+        "PETG HF": "GFG96",
+    }
+    effective_tray_info_idx = tray_info_idx
 
-        ams_data = state.raw_data.get("ams", {})
-        ams_list = (
-            ams_data.get("ams", []) if isinstance(ams_data, dict) else ams_data if isinstance(ams_data, list) else []
-        )
-        current_tray = _find_tray_in_ams_data(ams_list, ams_id, tray_id)
-        if current_tray:
-            is_rfid_spool = is_valid_tag(
-                current_tray.get("tag_uid", ""),
-                current_tray.get("tray_uuid", ""),
+    if not tray_info_idx or tray_info_idx.startswith("PFUS"):
+        # Check if the slot already has a recognised preset for same material
+        current_tray_info_idx = ""
+        current_tray_type = ""
+        state = printer_manager.get_status(printer_id)
+        if state and state.raw_data:
+            from backend.app.api.routes.inventory import _find_tray_in_ams_data
+
+            if ams_id == 255:
+                vt_tray = state.raw_data.get("vt_tray") or []
+                ext_id = tray_id + 254
+                for vt in vt_tray:
+                    if isinstance(vt, dict) and int(vt.get("id", 254)) == ext_id:
+                        current_tray_info_idx = vt.get("tray_info_idx", "")
+                        current_tray_type = vt.get("tray_type", "")
+                        break
+            else:
+                ams_data = state.raw_data.get("ams", {})
+                ams_list = (
+                    ams_data.get("ams", [])
+                    if isinstance(ams_data, dict)
+                    else ams_data
+                    if isinstance(ams_data, list)
+                    else []
+                )
+                cur_tray = _find_tray_in_ams_data(ams_list, ams_id, tray_id)
+                if cur_tray:
+                    current_tray_info_idx = cur_tray.get("tray_info_idx", "")
+                    current_tray_type = cur_tray.get("tray_type", "")
+
+        if (
+            current_tray_info_idx
+            and not current_tray_info_idx.startswith("PFUS")
+            and current_tray_type
+            and current_tray_type.upper() == tray_type.upper()
+        ):
+            logger.info(
+                "[configure_ams_slot] Reusing slot's existing tray_info_idx=%r (same material %r)",
+                current_tray_info_idx,
+                tray_type,
             )
+            effective_tray_info_idx = current_tray_info_idx
+        elif tray_type:
+            material = tray_type.upper().strip()
+            generic = (
+                _GENERIC_FILAMENT_IDS.get(material)
+                or _GENERIC_FILAMENT_IDS.get(material.split("-")[0].split(" ")[0])
+                or ""
+            )
+            if generic:
+                if tray_info_idx:
+                    logger.info("[configure_ams_slot] Replacing user-local %r with generic %r", tray_info_idx, generic)
+                else:
+                    logger.info("[configure_ams_slot] Deriving tray_info_idx=%r from tray_type=%r", generic, tray_type)
+                effective_tray_info_idx = generic
 
     # Send filament setting + K-profile commands
-    filament_id_for_kprofile = kprofile_filament_id if kprofile_filament_id else tray_info_idx
+    filament_id_for_kprofile = kprofile_filament_id if kprofile_filament_id else effective_tray_info_idx
 
-    if is_rfid_spool:
-        # RFID spool: skip ams_set_filament_setting to preserve RFID state (eye icon).
-        # The firmware already has filament config from the RFID tag.
-        logger.info("[configure_ams_slot] RFID spool detected — skipping ams_set_filament_setting")
-    else:
-        # Non-RFID spool: send filament setting (type, color, temp)
-        # When a K-profile is selected, use the K-profile's filament_id as
-        # tray_info_idx so BambuStudio queries the right PA history table.
-        # But always use the PRESET's setting_id (not the K-profile's) —
-        # BambuStudio uses setting_id to identify the filament preset and
-        # overriding it with the K-profile's setting_id confuses the slicer.
-        effective_tray_info_idx = filament_id_for_kprofile if cali_idx >= 0 else tray_info_idx
-        success = client.ams_set_filament_setting(
-            ams_id=ams_id,
-            tray_id=tray_id,
-            tray_info_idx=effective_tray_info_idx,
-            tray_type=tray_type,
-            tray_sub_brands=tray_sub_brands,
-            tray_color=tray_color,
-            nozzle_temp_min=nozzle_temp_min,
-            nozzle_temp_max=nozzle_temp_max,
-            setting_id=setting_id,
-        )
+    # Always send ams_set_filament_setting — the user explicitly clicked
+    # "Configure Slot", so honor that.  Previous versions skipped this for
+    # RFID-tagged slots to preserve the slicer eye icon, but printers cache
+    # stale tag_uid/tray_uuid after a BL spool is removed, causing the check
+    # to false-positive on non-RFID slots and silently drop the command.
+    success = client.ams_set_filament_setting(
+        ams_id=ams_id,
+        tray_id=tray_id,
+        tray_info_idx=effective_tray_info_idx,
+        tray_type=tray_type,
+        tray_sub_brands=tray_sub_brands,
+        tray_color=tray_color,
+        nozzle_temp_min=nozzle_temp_min,
+        nozzle_temp_max=nozzle_temp_max,
+        setting_id=setting_id,
+    )
 
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to send filament configuration command")
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to send filament configuration command")
 
     # Method 1: Select existing calibration profile by cali_idx
     # Do NOT include setting_id — BambuStudio never sends it in extrusion_cali_sel,

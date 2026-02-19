@@ -41,6 +41,9 @@
     "recharts": "^3.5.1",
     "three": "^0.181.2"
   },
+  "overrides": {
+    "minimatch": "^10.2.1"
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@tailwindcss/postcss": "^4.1.17",

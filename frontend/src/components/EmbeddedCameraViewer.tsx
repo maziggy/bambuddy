@@ -137,7 +137,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     },
   });
 
-  const isPrintingWithObjects = (status?.state === 'RUNNING' || status?.state === 'PAUSE' || status?.state === 'PAUSED') && (status?.printable_objects_count ?? 0) >= 2;
+  const isPrintingWithObjects = (status?.state === 'RUNNING' || status?.state === 'PAUSE') && (status?.printable_objects_count ?? 0) >= 2;
 
   // Save state to localStorage (printer-specific)
   useEffect(() => {

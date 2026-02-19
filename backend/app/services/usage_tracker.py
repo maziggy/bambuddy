@@ -63,6 +63,90 @@ def _decode_mqtt_mapping(mapping_raw: list | None) -> list[int] | None:
     return result
 
 
+def _match_slots_by_color(
+    filament_usage: list[dict],
+    ams_raw: dict | list | None,
+) -> list[int] | None:
+    """Match 3MF filament slots to AMS trays by color.
+
+    Fallback mapping for printers that don't provide the MQTT mapping field
+    or request topic subscription (e.g. A1, A1 Mini, P1S, P2S).
+
+    Compares the 3MF slicer filament color (per slot) against each AMS tray's
+    color to find a unique match. Only returns a mapping if every used slot
+    matches exactly one tray (no ambiguity).
+
+    Args:
+        filament_usage: List of 3MF slot dicts with 'slot_id', 'color', 'type'
+        ams_raw: raw_data["ams"] dict or list from printer state
+
+    Returns:
+        List of global tray IDs indexed by slicer slot (0-based), or None.
+    """
+    if not filament_usage or not ams_raw:
+        return None
+
+    ams_data = ams_raw.get("ams", []) if isinstance(ams_raw, dict) else ams_raw if isinstance(ams_raw, list) else []
+    if not ams_data:
+        return None
+
+    # Build map of normalized color → list of global tray IDs
+    color_to_trays: dict[str, list[int]] = {}
+    for ams_unit in ams_data:
+        ams_id = int(ams_unit.get("id", 0))
+        for tray in ams_unit.get("tray", []):
+            tray_id = int(tray.get("id", 0))
+            tray_color = tray.get("tray_color", "")
+            tray_type = tray.get("tray_type", "")
+            if not tray_color or not tray_type:
+                continue
+            # Normalize AMS color: strip alpha (last 2 chars), lowercase
+            norm = tray_color[:6].lower() if len(tray_color) >= 6 else tray_color.lower()
+            if ams_id >= 128:
+                global_id = ams_id  # AMS-HT
+            else:
+                global_id = ams_id * 4 + tray_id
+            color_to_trays.setdefault(norm, []).append(global_id)
+
+    if not color_to_trays:
+        return None
+
+    # Find max slot_id to size the result array
+    max_slot = max(u.get("slot_id", 0) for u in filament_usage)
+    if max_slot <= 0:
+        return None
+
+    result = [-1] * max_slot
+    used_trays: set[int] = set()
+
+    for usage in filament_usage:
+        slot_id = usage.get("slot_id", 0)
+        if slot_id <= 0:
+            continue
+        slot_color = usage.get("color", "").lstrip("#").lower()
+        if len(slot_color) < 6:
+            return None  # Can't match without a valid color
+
+        slot_color = slot_color[:6]  # Strip alpha if present
+        candidates = color_to_trays.get(slot_color, [])
+        # Filter out trays already claimed by another slot
+        available = [t for t in candidates if t not in used_trays]
+
+        if len(available) != 1:
+            # Ambiguous (multiple trays with same color) or no match
+            return None
+
+        result[slot_id - 1] = available[0]
+        used_trays.add(available[0])
+
+    # Only return if at least one valid mapping exists
+    if all(v < 0 for v in result):
+        return None
+
+    logger.info("[UsageTracker] Color-matched slot_to_tray: %s", result)
+    return result
+
+
 @dataclass
 class PrintSession:
     printer_id: int
@@ -392,13 +476,23 @@ async def _track_from_3mf(
             except (json.JSONDecodeError, TypeError):
                 pass
 
+    # 4. Color-match 3MF filament slots to AMS trays (for printers without mapping field)
+    if not slot_to_tray:
+        state = printer_manager.get_status(printer_id)
+        raw_data = getattr(state, "raw_data", None) if state else None
+        if raw_data:
+            matched = _match_slots_by_color(filament_usage, raw_data.get("ams"))
+            if matched:
+                slot_to_tray = matched
+                mapping_source = "color_match"
+
     logger.info(
         "[UsageTracker] 3MF: slot_to_tray=%s (source: %s)",
         slot_to_tray,
         mapping_source or "none",
     )
 
-    # 3. For single-filament non-queue prints, use tray_now from printer state
+    # 5. For single-filament non-queue prints, use tray_now from printer state
     #    Priority: tray_now_at_start > current tray_now > last_loaded_tray > vt_tray check
     nonzero_slots = [u for u in filament_usage if u.get("used_g", 0) > 0]
     tray_now_override: int | None = None

@@ -8,12 +8,7 @@ import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import { ConfirmModal } from './ConfirmModal';
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+import { formatFileSize } from '../utils/file';
 
 function formatTimeAgo(dateStr: string): string {
   const date = new Date(dateStr);

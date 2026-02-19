@@ -50,7 +50,7 @@ import {
   Weight,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { parseUTCDate, formatDateTime, type TimeFormat, formatETA, formatDuration } from '../utils/date';
+import { type TimeFormat, formatETA, formatDuration, formatRelativeTime } from '../utils/date';
 import type { PrintQueueItem, PrintQueueBulkUpdate, Permission } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
@@ -62,21 +62,6 @@ import { useAuth } from '../contexts/AuthContext';
 function formatWeight(g: number, useKg = false): string {
   if (useKg && g >= 1000) return `${(g / 1000).toFixed(1)}kg`;
   return `${Math.round(g)}g`;
-}
-
-function formatRelativeTime(dateString: string | null, timeFormat: TimeFormat = 'system', t?: (key: string, options?: Record<string, unknown>) => string): string {
-  if (!dateString) return t?.('queue.time.asap') ?? 'ASAP';
-  const date = parseUTCDate(dateString);
-  if (!date) return t?.('queue.time.asap') ?? 'ASAP';
-  const now = new Date();
-  const diff = date.getTime() - now.getTime();
-
-  if (diff < -60000) return t?.('queue.time.overdue') ?? 'Overdue';
-  if (diff < 0) return t?.('queue.time.now') ?? 'Now';
-  if (diff < 60000) return t?.('queue.time.lessThanMinute') ?? 'In less than a minute';
-  if (diff < 3600000) return t?.('queue.time.inMinutes', { count: Math.round(diff / 60000) }) ?? `In ${Math.round(diff / 60000)} min`;
-  if (diff < 86400000) return t?.('queue.time.inHours', { count: Math.round(diff / 3600000) }) ?? `In ${Math.round(diff / 3600000)} hours`;
-  return formatDateTime(dateString, timeFormat);
 }
 
 function StatusBadge({ status, waitingReason, printerState, t }: { status: PrintQueueItem['status']; waitingReason?: string | null; printerState?: string | null; t: (key: string) => string }) {
@@ -91,7 +76,7 @@ function StatusBadge({ status, waitingReason, printerState, t }: { status: Print
   }
 
   // Special case: printing but printer is paused
-  if (status === 'printing' && (printerState === 'PAUSE' || printerState === 'PAUSED')) {
+  if (status === 'printing' && printerState === 'PAUSE') {
     return (
       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border text-yellow-400 bg-yellow-400/10 border-yellow-400/20">
         <Pause className="w-3.5 h-3.5" />
@@ -506,9 +491,13 @@ function SortableQueueItem({
               </span>
             )}
             {isPending && !item.manual_start && (
-              <span className="flex items-center gap-1 sm:gap-1.5">
-                <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                {formatRelativeTime(item.scheduled_time, timeFormat, t)}
+              <span className="flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5" />
+                {item.scheduled_time
+                  ? (new Date(item.scheduled_time).getTime() - Date.now() < -60000
+                      ? t?.('queue.time.overdue') ?? 'Overdue'
+                      : formatRelativeTime(item.scheduled_time, timeFormat, t))
+                  : t?.('queue.time.asap') ?? 'ASAP'}
               </span>
             )}
           </div>
@@ -586,7 +575,6 @@ function SortableQueueItem({
         </div>
 
         {/* Status badge + Actions */}
-        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
         <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 sm:gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
           <StatusBadge status={item.status} waitingReason={item.waiting_reason} printerState={printerState} t={t} />
 

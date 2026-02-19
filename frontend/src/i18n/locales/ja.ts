@@ -1784,6 +1784,15 @@ export default {
       title: 'グループを削除',
       message: 'このグループを削除しますか？このグループのユーザーはこれらの権限を失います。',
     },
+    editor: {
+      title: 'グループを編集',
+      createTitle: 'グループを作成',
+      search: '権限を検索...',
+      selectAll: 'すべて選択',
+      clearAll: 'すべて解除',
+      permissionsSelected: '{{count}}件選択',
+      noResults: '検索に一致する権限がありません',
+    },
     title: 'グループ管理',
     subtitle: 'アクセス制御の権限グループを管理',
     system: 'システム',
@@ -2604,6 +2613,8 @@ export default {
     kFactor: 'K値',
     fill: '充填率',
     configure: '設定',
+    used: '使用済み',
+    remainingUnit: '残り',
   },
   printModal: {
     flowCalibration: 'フローキャリブレーション',
@@ -3269,4 +3280,18 @@ export default {
 
   // Spoolman Settings
   spoolmanSettings: {},
+
+  // Time
+  time: {
+    unknown: '-',
+    waiting: '待機中',
+    justNow: 'たった今',
+    now: '今すぐ',
+    minsAgo: '{{count}}分前',
+    inMins: 'あと{{count}}分',
+    hoursAgo: '{{count}}時間前',
+    inHours: 'あと{{count}}時間',
+    daysAgo: '{{count}}日前',
+    inDays: 'あと{{count}}日',
+  },
 };

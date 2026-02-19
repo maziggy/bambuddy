@@ -392,7 +392,7 @@ export function formatETA(
 ): string {
   const now = new Date();
   const eta = new Date(now.getTime() + remainingMinutes * 60 * 1000);
-  
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const etaDay = new Date(eta);
@@ -418,9 +418,70 @@ export function formatETA(
  */
 export function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null || seconds < 0) return '--';
-  
+
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  
+
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+}
+
+type TranslateFunction = (key: string, options?: Record<string, unknown>) => string;
+
+/**
+ * Format a date string as a human-readable relative time expression.
+ *
+ * @param dateStr - UTC date string, or null
+ * @param timeFormat - Time format preference ('12h', '24h', or 'system')
+ * @param t - Optional translation function for i18n support
+ * @returns Relative string (e.g., "5m ago", "in 2h", "3d ago") or formatted date if older than 7 days
+ */
+export function formatRelativeTime(
+  dateStr: string | null,
+  timeFormat: TimeFormat = 'system',
+  t?: TranslateFunction
+): string {
+  if (!dateStr) return t?.('time.unknown') ?? '-';
+
+  const date = parseUTCDate(dateStr);
+  if (!date) return t?.('time.unknown') ?? '-';
+
+  const now = new Date();
+  const diffMs = date.getTime() - now.getTime();
+  const isPast = diffMs < 0;
+  const absDiffMs = Math.abs(diffMs);
+
+  const minutes = Math.floor(absDiffMs / 60000);
+  const hours = Math.floor(absDiffMs / 3600000);
+  const days = Math.floor(absDiffMs / 86400000);
+
+  // Less than 1 minute
+  if (minutes < 1) {
+    return isPast
+      ? t?.('time.justNow') ?? 'Just now'
+      : t?.('time.now') ?? 'Now';
+  }
+
+  // Less than 1 hour
+  if (hours < 1) {
+    return isPast
+      ? t?.('time.minsAgo', { count: minutes }) ?? `${minutes}m ago`
+      : t?.('time.inMins', { count: minutes }) ?? `in ${minutes}m`;
+  }
+
+  // Less than 1 day
+  if (days < 1) {
+    return isPast
+      ? t?.('time.hoursAgo', { count: hours }) ?? `${hours}h ago`
+      : t?.('time.inHours', { count: hours }) ?? `in ${hours}h`;
+  }
+
+  // Less than 7 days
+  if (days < 7) {
+    return isPast
+      ? t?.('time.daysAgo', { count: days }) ?? `${days}d ago`
+      : t?.('time.inDays', { count: days }) ?? `in ${days}d`;
+  }
+
+  // Older than 7 days
+  return formatDateTime(dateStr, timeFormat);
 }

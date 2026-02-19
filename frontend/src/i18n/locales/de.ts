@@ -1815,6 +1815,15 @@ export default {
       message: 'Sind Sie sicher, dass Sie diese Gruppe löschen möchten? Benutzer in dieser Gruppe verlieren diese Berechtigungen.',
       confirm: 'Gruppe löschen',
     },
+    editor: {
+      title: 'Gruppe bearbeiten',
+      createTitle: 'Gruppe erstellen',
+      search: 'Berechtigungen suchen...',
+      selectAll: 'Alle auswählen',
+      clearAll: 'Alle abwählen',
+      permissionsSelected: '{{count}} ausgewählt',
+      noResults: 'Keine Berechtigungen entsprechen Ihrer Suche',
+    },
   },
 
   // Users management
@@ -2682,6 +2691,8 @@ export default {
     kFactor: 'K-Faktor',
     fill: 'Füllstand',
     configure: 'Konfigurieren',
+    used: 'verwendet',
+    remainingUnit: 'verbleibend',
   },
 
   // Print modal
@@ -3433,4 +3444,18 @@ export default {
 
   // Spoolman Settings
   spoolmanSettings: {},
+
+  // Time
+  time: {
+    unknown: '-',
+    waiting: 'Wartend',
+    justNow: 'Gerade eben',
+    now: 'Jetzt',
+    minsAgo: 'vor {{count}}m',
+    inMins: 'in {{count}}m',
+    hoursAgo: 'vor {{count}}h',
+    inHours: 'in {{count}}h',
+    daysAgo: 'vor {{count}}d',
+    inDays: 'in {{count}}d',
+  },
 };

@@ -263,17 +263,29 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
 
   const canOpenInSlicer = isLibrary ? (fileType || '').toLowerCase() === '3mf' : true;
 
-  const handleOpenInSlicer = () => {
+  const handleOpenInSlicer = async () => {
     if (!canOpenInSlicer) return;
-    // URL must include .3mf filename for Bambu Studio to recognize the format
     const filename = title || 'model';
-    if (isLibrary) {
-      const downloadUrl = `${window.location.origin}${api.getLibraryFileDownloadUrl(libraryFileId!)}`;
-      openInSlicer(downloadUrl, preferredSlicer);
-      return;
+    try {
+      if (isLibrary) {
+        const { token } = await api.createLibrarySlicerToken(libraryFileId!);
+        const path = api.getLibrarySlicerDownloadUrl(libraryFileId!, token, filename);
+        openInSlicer(`${window.location.origin}${path}`, preferredSlicer);
+      } else {
+        const { token } = await api.createArchiveSlicerToken(archiveId!);
+        const path = api.getArchiveSlicerDownloadUrl(archiveId!, token, filename);
+        openInSlicer(`${window.location.origin}${path}`, preferredSlicer);
+      }
+    } catch {
+      // Fallback to direct URL (works when auth is disabled)
+      if (isLibrary) {
+        const downloadUrl = `${window.location.origin}${api.getLibraryFileDownloadUrl(libraryFileId!)}`;
+        openInSlicer(downloadUrl, preferredSlicer);
+      } else {
+        const downloadUrl = `${window.location.origin}${api.getArchiveForSlicer(archiveId!, filename)}`;
+        openInSlicer(downloadUrl, preferredSlicer);
+      }
     }
-    const downloadUrl = `${window.location.origin}${api.getArchiveForSlicer(archiveId!, filename)}`;
-    openInSlicer(downloadUrl, preferredSlicer);
   };
 
   return (

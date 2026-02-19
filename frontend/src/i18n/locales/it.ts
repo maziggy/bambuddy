@@ -1628,6 +1628,15 @@ export default {
       message: 'Sei sicuro di voler eliminare questo gruppo? Gli utenti in questo gruppo perderanno questi permessi.',
       confirm: 'Elimina gruppo',
     },
+    editor: {
+      title: 'Modifica gruppo',
+      createTitle: 'Crea gruppo',
+      search: 'Cerca permessi...',
+      selectAll: 'Seleziona tutto',
+      clearAll: 'Deseleziona tutto',
+      permissionsSelected: '{{count}} selezionati',
+      noResults: 'Nessun permesso corrisponde alla ricerca',
+    },
   },
 
   // Users management
@@ -2347,7 +2356,7 @@ export default {
     kProfiles: 'K-Profiles',
     addKProfile: 'Aggiungi K-Profile',
     assignSpool: 'Assegna Bobina',
-    unassignSpool: 'Deassegna',
+    unassignSpool: 'Scollega',
     assignSuccess: 'Bobina assegnata e slot AMS configurato',
     assignFailed: 'Assegnazione bobina fallita',
     selectSpool: 'Seleziona una bobina da assegnare a questo slot',
@@ -2397,8 +2406,10 @@ export default {
     externalSpool: 'Bobina esterna',
     profile: 'Profilo',
     kFactor: 'K Factor',
-    fill: 'Riempi',
+    fill: 'Livello',
     configure: 'Configura',
+    used: 'utilizzato',
+    remainingUnit: 'rimanente',
   },
 
   // Print modal
@@ -2813,5 +2824,19 @@ export default {
     cancel: 'Annulla',
     configuring: 'Configurazione...',
     configureSlot: 'Configura slot',
+  },
+
+  // Time
+  time: {
+    unknown: '-',
+    waiting: 'In attesa',
+    justNow: 'Proprio ora',
+    now: 'Ora',
+    minsAgo: '{{count}}m fa',
+    inMins: 'tra {{count}}m',
+    hoursAgo: '{{count}}h fa',
+    inHours: 'tra {{count}}h',
+    daysAgo: '{{count}}g fa',
+    inDays: 'tra {{count}}g',
   },
 };

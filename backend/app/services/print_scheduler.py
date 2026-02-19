@@ -915,6 +915,7 @@ class PrintScheduler:
                 archive = await archive_service.archive_print(
                     printer_id=item.printer_id,
                     source_file=file_path,
+                    original_filename=filename,
                 )
                 if archive:
                     item.archive_id = archive.id

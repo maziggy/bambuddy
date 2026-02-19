@@ -1815,6 +1815,15 @@ export default {
       message: 'Are you sure you want to delete this group? Users in this group will lose these permissions.',
       confirm: 'Delete Group',
     },
+    editor: {
+      title: 'Edit Group',
+      createTitle: 'Create Group',
+      search: 'Search permissions...',
+      selectAll: 'Select All',
+      clearAll: 'Clear All',
+      permissionsSelected: '{{count}} selected',
+      noResults: 'No permissions match your search',
+    },
   },
 
   // Users management
@@ -2686,6 +2695,8 @@ export default {
     kFactor: 'K Factor',
     fill: 'Fill',
     configure: 'Configure',
+    used: 'used',
+    remainingUnit: 'remaining',
   },
 
   // Print modal
@@ -3438,4 +3449,18 @@ export default {
 
   // Spoolman Settings
   spoolmanSettings: {},
+
+  // Time
+  time: {
+    unknown: '-',
+    waiting: 'Waiting',
+    justNow: 'Just now',
+    now: 'Now',
+    minsAgo: '{{count}}m ago',
+    inMins: 'in {{count}}m',
+    hoursAgo: '{{count}}h ago',
+    inHours: 'in {{count}}h',
+    daysAgo: '{{count}}d ago',
+    inDays: 'in {{count}}d',
+  },
 };

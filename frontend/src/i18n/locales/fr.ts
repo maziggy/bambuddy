@@ -1803,6 +1803,15 @@ export default {
       message: 'Les utilisateurs de ce groupe perdront ces permissions.',
       confirm: 'Supprimer',
     },
+    editor: {
+      title: 'Modifier le groupe',
+      createTitle: 'Créer un groupe',
+      search: 'Rechercher des permissions...',
+      selectAll: 'Tout sélectionner',
+      clearAll: 'Tout désélectionner',
+      permissionsSelected: '{{count}} sélectionnée(s)',
+      noResults: 'Aucune permission ne correspond à votre recherche',
+    },
   },
 
   // Users management
@@ -2674,6 +2683,8 @@ export default {
     kFactor: 'Facteur K',
     fill: 'Remplir',
     configure: 'Configurer',
+    used: 'utilisé',
+    remainingUnit: 'restant',
   },
 
   // Print modal
@@ -3426,4 +3437,18 @@ export default {
 
   // Spoolman Settings
   spoolmanSettings: {},
+
+  // Time
+  time: {
+    unknown: '-',
+    waiting: 'En attente',
+    justNow: 'À l\'instant',
+    now: 'Maintenant',
+    minsAgo: 'il y a {{count}}m',
+    inMins: 'dans {{count}}m',
+    hoursAgo: 'il y a {{count}}h',
+    inHours: 'dans {{count}}h',
+    daysAgo: 'il y a {{count}}j',
+    inDays: 'dans {{count}}j',
+  },
 };

@@ -226,7 +226,7 @@ async def get_printer_status(
 
     # Determine cover URL if there's an active print (including paused)
     cover_url = None
-    if state.state in ("RUNNING", "PAUSE", "PAUSED") and state.gcode_file:
+    if state.state in ("RUNNING", "PAUSE") and state.gcode_file:
         cover_url = f"/api/v1/printers/{printer_id}/cover"
 
     # Convert HMS errors to response format
@@ -1862,7 +1862,7 @@ async def stop_print(
 @router.post("/{printer_id}/clear-plate")
 async def clear_plate(
     printer_id: int,
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CLEAR_PLATE),
     db: AsyncSession = Depends(get_db),
 ):
     """Acknowledge that the build plate has been cleared after a finished/failed print.

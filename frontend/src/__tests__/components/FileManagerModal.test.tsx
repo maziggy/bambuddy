@@ -28,7 +28,7 @@ const mockFiles = [
   {
     name: 'benchy.3mf',
     path: '/benchy.3mf',
-    size: 1024000,
+    size: 1048575,
     is_directory: false,
     mtime: '2024-01-15T10:00:00Z',
   },
@@ -135,8 +135,8 @@ describe('FileManagerModal', () => {
       );
 
       await waitFor(() => {
-        // 1024000 bytes = 1000 KB = ~1.0 MB
-        expect(screen.getByText('1000 KB')).toBeInTheDocument();
+        // 1024000 bytes = 1024.0 KB
+        expect(screen.getByText('1024.0 KB')).toBeInTheDocument();
       });
     });
   });

@@ -5,26 +5,12 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { parseUTCDate } from '../utils/date';
+import { formatRelativeTime } from '../utils/date';
 
 interface PrinterQueueWidgetProps {
   printerId: number;
   printerState?: string | null;
   plateCleared?: boolean;
-}
-
-function formatRelativeTime(dateString: string | null): string {
-  if (!dateString) return 'ASAP';
-  const date = parseUTCDate(dateString);
-  if (!date) return 'ASAP';
-  const now = new Date();
-  const diff = date.getTime() - now.getTime();
-
-  if (diff < 0) return 'Now';
-  if (diff < 60000) return 'In <1 min';
-  if (diff < 3600000) return `In ${Math.round(diff / 60000)} min`;
-  if (diff < 86400000) return `In ${Math.round(diff / 3600000)}h`;
-  return date.toLocaleDateString();
 }
 
 export function PrinterQueueWidget({ printerId, printerState, plateCleared }: PrinterQueueWidgetProps) {
@@ -84,7 +70,7 @@ export function PrinterQueueWidget({ printerId, printerState, plateCleared }: Pr
         ) : (
           <button
             onClick={() => clearPlateMutation.mutate()}
-            disabled={clearPlateMutation.isPending || !hasPermission('printers:control')}
+            disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
             className="w-full py-2 px-3 rounded-lg bg-bambu-green/20 border border-bambu-green/40 text-bambu-green hover:bg-bambu-green/30 transition-colors text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {clearPlateMutation.isPending ? (
@@ -117,7 +103,7 @@ export function PrinterQueueWidget({ printerId, printerState, plateCleared }: Pr
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-xs text-bambu-gray flex items-center gap-1">
             <Clock className="w-3 h-3" />
-            {formatRelativeTime(nextItem?.scheduled_time || null)}
+            {nextItem?.scheduled_time ? formatRelativeTime(nextItem.scheduled_time, 'system', t) : t('time.waiting')}
           </span>
           {totalPending > 1 && (
             <span className="text-xs px-1.5 py-0.5 bg-yellow-400/20 text-yellow-400 rounded">

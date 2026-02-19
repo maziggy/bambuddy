@@ -35,6 +35,7 @@ import { Button } from './Button';
 import { Toggle } from './Toggle';
 import { ConfirmModal } from './ConfirmModal';
 import { useToast } from '../contexts/ToastContext';
+import { formatRelativeTime } from '../utils/date';
 
 interface StatusBadgeProps {
   status: string | null;
@@ -69,29 +70,6 @@ function formatDateTime(dateStr: string | null): string {
   if (!dateStr) return '-';
   const date = new Date(dateStr);
   return date.toLocaleString();
-}
-
-function formatRelativeTime(dateStr: string | null): string {
-  if (!dateStr) return '-';
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = date.getTime() - now.getTime();
-  const diffMins = Math.round(diffMs / 60000);
-
-  if (diffMins < 0) {
-    const absMins = Math.abs(diffMins);
-    if (absMins < 60) return `${absMins}m ago`;
-    const hours = Math.floor(absMins / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    return `${days}d ago`;
-  } else {
-    if (diffMins < 60) return `in ${diffMins}m`;
-    const hours = Math.floor(diffMins / 60);
-    if (hours < 24) return `in ${hours}h`;
-    const days = Math.floor(hours / 24);
-    return `in ${days}d`;
-  }
 }
 
 export function GitHubBackupSettings() {
@@ -563,7 +541,7 @@ export function GitHubBackupSettings() {
                   <div className="flex items-center gap-2 text-bambu-gray">
                     {status.last_backup_at ? (
                       <>
-                        <span>Last backup: {formatRelativeTime(status.last_backup_at)}</span>
+                        <span>Last backup: {formatRelativeTime(status.last_backup_at, 'system', t)}</span>
                         <StatusBadge status={status.last_backup_status} />
                       </>
                     ) : (
@@ -573,7 +551,7 @@ export function GitHubBackupSettings() {
                   {status.next_scheduled_run && (
                     <span className="text-bambu-gray">
                       <Clock className="w-3 h-3 inline mr-1" />
-                      Next: {formatRelativeTime(status.next_scheduled_run)}
+                      Next: {formatRelativeTime(status.next_scheduled_run, 'system', t)}
                     </span>
                   )}
                 </div>

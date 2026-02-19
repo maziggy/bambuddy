@@ -22,6 +22,7 @@ class Permission(StrEnum):
     PRINTERS_CONTROL = "printers:control"  # Start/stop/pause/resume prints
     PRINTERS_FILES = "printers:files"  # Send files to printer
     PRINTERS_AMS_RFID = "printers:ams_rfid"  # Re-read AMS RFID tags
+    PRINTERS_CLEAR_PLATE = "printers:clear_plate"  # Confirm plate cleared for next print
 
     # Archives
     ARCHIVES_READ = "archives:read"
@@ -167,6 +168,7 @@ PERMISSION_CATEGORIES = {
         Permission.PRINTERS_CONTROL,
         Permission.PRINTERS_FILES,
         Permission.PRINTERS_AMS_RFID,
+        Permission.PRINTERS_CLEAR_PLATE,
     ],
     "Archives": [
         Permission.ARCHIVES_READ,
@@ -320,6 +322,7 @@ DEFAULT_GROUPS = {
             Permission.PRINTERS_CONTROL.value,
             Permission.PRINTERS_FILES.value,
             Permission.PRINTERS_AMS_RFID.value,
+            Permission.PRINTERS_CLEAR_PLATE.value,
             # Archives - own items only
             Permission.ARCHIVES_READ.value,
             Permission.ARCHIVES_CREATE.value,

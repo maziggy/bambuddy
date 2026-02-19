@@ -1259,6 +1259,8 @@ export default {
     // Updates
     checkForUpdatesLabel: 'Nach Updates suchen',
     checkPrinterFirmware: 'Drucker-Firmware prüfen',
+    includeBetaUpdates: 'Beta-Versionen einschließen',
+    includeBetaUpdatesDesc: 'Über Beta- und Vorabversionen bei der Updateprüfung benachrichtigen',
     // Queue
     enableRetry: 'Wiederholung aktivieren',
     // Home Assistant

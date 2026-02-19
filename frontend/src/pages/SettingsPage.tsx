@@ -699,6 +699,7 @@ export function SettingsPage() {
       settings.energy_tracking_mode !== localSettings.energy_tracking_mode ||
       settings.check_updates !== localSettings.check_updates ||
       (settings.check_printer_firmware ?? true) !== (localSettings.check_printer_firmware ?? true) ||
+      (settings.include_beta_updates ?? false) !== (localSettings.include_beta_updates ?? false) ||
       settings.notification_language !== localSettings.notification_language ||
       (settings.bed_cooled_threshold ?? 35) !== (localSettings.bed_cooled_threshold ?? 35) ||
       settings.ams_humidity_good !== localSettings.ams_humidity_good ||
@@ -764,6 +765,7 @@ export function SettingsPage() {
         energy_tracking_mode: localSettings.energy_tracking_mode,
         check_updates: localSettings.check_updates,
         check_printer_firmware: localSettings.check_printer_firmware,
+        include_beta_updates: localSettings.include_beta_updates,
         notification_language: localSettings.notification_language,
         bed_cooled_threshold: localSettings.bed_cooled_threshold,
         ams_humidity_good: localSettings.ams_humidity_good,
@@ -1649,6 +1651,24 @@ export function SettingsPage() {
                     type="checkbox"
                     checked={localSettings.check_printer_firmware ?? true}
                     onChange={(e) => updateSetting('check_printer_firmware', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
+              <div className={`flex items-center justify-between ${!localSettings.check_updates ? 'opacity-50' : ''}`}>
+                <div>
+                  <p className="text-white">{t('settings.includeBetaUpdates')}</p>
+                  <p className="text-sm text-bambu-gray">
+                    {t('settings.includeBetaUpdatesDesc')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.include_beta_updates ?? false}
+                    onChange={(e) => updateSetting('include_beta_updates', e.target.checked)}
+                    disabled={!localSettings.check_updates}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>

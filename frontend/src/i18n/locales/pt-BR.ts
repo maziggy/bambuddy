@@ -1815,6 +1815,15 @@ export default {
       message: 'Tem certeza de que deseja excluir este grupo? Os usuários deste grupo perderão essas permissões.',
       confirm: 'Excluir Grupo',
     },
+    editor: {
+      title: 'Editar Grupo',
+      createTitle: 'Criar Grupo',
+      search: 'Pesquisar permissões...',
+      selectAll: 'Selecionar Tudo',
+      clearAll: 'Limpar Tudo',
+      permissionsSelected: '{{count}} selecionada(s)',
+      noResults: 'Nenhuma permissão corresponde à sua pesquisa',
+    },
   },
 
   // Users management

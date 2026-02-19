@@ -1803,6 +1803,15 @@ export default {
       message: 'Les utilisateurs de ce groupe perdront ces permissions.',
       confirm: 'Supprimer',
     },
+    editor: {
+      title: 'Modifier le groupe',
+      createTitle: 'Créer un groupe',
+      search: 'Rechercher des permissions...',
+      selectAll: 'Tout sélectionner',
+      clearAll: 'Tout désélectionner',
+      permissionsSelected: '{{count}} sélectionnée(s)',
+      noResults: 'Aucune permission ne correspond à votre recherche',
+    },
   },
 
   // Users management

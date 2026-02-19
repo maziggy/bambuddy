@@ -70,7 +70,7 @@ export function PrinterQueueWidget({ printerId, printerState, plateCleared }: Pr
         ) : (
           <button
             onClick={() => clearPlateMutation.mutate()}
-            disabled={clearPlateMutation.isPending || !hasPermission('printers:control')}
+            disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
             className="w-full py-2 px-3 rounded-lg bg-bambu-green/20 border border-bambu-green/40 text-bambu-green hover:bg-bambu-green/30 transition-colors text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {clearPlateMutation.isPending ? (

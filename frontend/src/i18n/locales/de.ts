@@ -1815,6 +1815,15 @@ export default {
       message: 'Sind Sie sicher, dass Sie diese Gruppe löschen möchten? Benutzer in dieser Gruppe verlieren diese Berechtigungen.',
       confirm: 'Gruppe löschen',
     },
+    editor: {
+      title: 'Gruppe bearbeiten',
+      createTitle: 'Gruppe erstellen',
+      search: 'Berechtigungen suchen...',
+      selectAll: 'Alle auswählen',
+      clearAll: 'Alle abwählen',
+      permissionsSelected: '{{count}} ausgewählt',
+      noResults: 'Keine Berechtigungen entsprechen Ihrer Suche',
+    },
   },
 
   // Users management

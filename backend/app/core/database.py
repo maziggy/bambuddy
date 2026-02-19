@@ -1364,6 +1364,19 @@ async def seed_default_groups():
 
         await session.commit()
 
+        # Migrate new permissions: grant printers:clear_plate to all groups with printers:control
+        result = await session.execute(select(Group))
+        all_groups = result.scalars().all()
+        for group in all_groups:
+            if (
+                group.permissions
+                and "printers:control" in group.permissions
+                and "printers:clear_plate" not in group.permissions
+            ):
+                group.permissions = [*group.permissions, "printers:clear_plate"]
+                logger.info("Added printers:clear_plate to group '%s' (has printers:control)", group.name)
+        await session.commit()
+
         # Migrate existing users to groups if they're not already in any group
         if groups_created:
             # Refresh to get newly created groups

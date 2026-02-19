@@ -1628,6 +1628,15 @@ export default {
       message: 'Sei sicuro di voler eliminare questo gruppo? Gli utenti in questo gruppo perderanno questi permessi.',
       confirm: 'Elimina gruppo',
     },
+    editor: {
+      title: 'Modifica gruppo',
+      createTitle: 'Crea gruppo',
+      search: 'Cerca permessi...',
+      selectAll: 'Seleziona tutto',
+      clearAll: 'Deseleziona tutto',
+      permissionsSelected: '{{count}} selezionati',
+      noResults: 'Nessun permesso corrisponde alla ricerca',
+    },
   },
 
   // Users management

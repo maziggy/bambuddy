@@ -1815,6 +1815,15 @@ export default {
       message: 'Are you sure you want to delete this group? Users in this group will lose these permissions.',
       confirm: 'Delete Group',
     },
+    editor: {
+      title: 'Edit Group',
+      createTitle: 'Create Group',
+      search: 'Search permissions...',
+      selectAll: 'Select All',
+      clearAll: 'Clear All',
+      permissionsSelected: '{{count}} selected',
+      noResults: 'No permissions match your search',
+    },
   },
 
   // Users management

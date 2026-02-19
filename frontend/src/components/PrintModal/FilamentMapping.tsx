@@ -159,7 +159,9 @@ export function FilamentMapping({
                 <option value="" className="bg-bambu-dark text-bambu-gray">
                   -- Select slot --
                 </option>
-                {loadedFilaments.map((f) => (
+                {loadedFilaments
+                  .filter((f) => item.nozzle_id == null || f.extruderId === item.nozzle_id)
+                  .map((f) => (
                   <option key={f.globalTrayId} value={f.globalTrayId} className="bg-bambu-dark text-white">
                     {f.label}: {f.type} ({f.colorName})
                   </option>

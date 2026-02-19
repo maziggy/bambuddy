@@ -1795,6 +1795,7 @@ async def print_library_file(
     archive = await archive_service.archive_print(
         printer_id=printer_id,
         source_file=file_path,
+        original_filename=lib_file.filename,
     )
 
     if not archive:
@@ -2124,6 +2125,62 @@ async def download_file(
     result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
     file = result.scalar_one_or_none()
 
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    abs_path = to_absolute_path(file.file_path)
+    if not abs_path or not abs_path.exists():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    return FastAPIFileResponse(
+        str(abs_path),
+        filename=file.filename,
+        media_type="application/octet-stream",
+    )
+
+
+@router.post("/files/{file_id}/slicer-token")
+async def create_library_slicer_token(
+    file_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+):
+    """Create a short-lived download token for opening files in slicer applications.
+
+    Slicer protocol handlers (bambustudioopen://, orcaslicer://) cannot send
+    auth headers, so they use this token in the URL path instead.
+    """
+    from backend.app.core.auth import create_slicer_download_token
+
+    result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
+    file = result.scalar_one_or_none()
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    token = create_slicer_download_token("library", file_id)
+    return {"token": token}
+
+
+@router.get("/files/{file_id}/dl/{token}/{filename}")
+async def download_library_file_for_slicer(
+    file_id: int,
+    token: str,
+    filename: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Download a library file using a slicer download token.
+
+    Token-authenticated (no auth headers needed). The token is short-lived
+    and single-use, created by POST /files/{file_id}/slicer-token.
+    Filename is at the end of the URL so slicers can detect the file format.
+    """
+    from backend.app.core.auth import verify_slicer_download_token
+
+    if not verify_slicer_download_token(token, "library", file_id):
+        raise HTTPException(status_code=403, detail="Invalid or expired download token")
+
+    result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
+    file = result.scalar_one_or_none()
     if not file:
         raise HTTPException(status_code=404, detail="File not found")
 

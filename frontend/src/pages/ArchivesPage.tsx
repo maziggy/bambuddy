@@ -74,14 +74,9 @@ import { PendingUploadsPanel } from '../components/PendingUploadsPanel';
 import { TagManagementModal } from '../components/TagManagementModal';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
+import { formatFileSize } from '../utils/file';
 
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 /**
  * Check if an archive filename represents a sliced/printable file.
@@ -104,6 +99,36 @@ function getArchiveFileType(filename: string | null | undefined): string | undef
 }
 
 // formatDate imported from '../utils/date' - handles UTC conversion
+
+/**
+ * Open an archive file in the slicer.
+ * Fetches a short-lived download token, then builds a token-authenticated URL
+ * that bypasses auth middleware (slicer protocol handlers can't send auth headers).
+ */
+async function openInSlicerWithToken(
+  archiveId: number,
+  filename: string,
+  resourceType: 'file' | 'source',
+  slicer: SlicerType,
+): Promise<void> {
+  try {
+    if (resourceType === 'source') {
+      const { token } = await api.createSourceSlicerToken(archiveId);
+      const path = api.getSourceSlicerDownloadUrl(archiveId, token, filename);
+      openInSlicer(`${window.location.origin}${path}`, slicer);
+    } else {
+      const { token } = await api.createArchiveSlicerToken(archiveId);
+      const path = api.getArchiveSlicerDownloadUrl(archiveId, token, filename);
+      openInSlicer(`${window.location.origin}${path}`, slicer);
+    }
+  } catch {
+    // Fallback to direct URL (works when auth is disabled)
+    const path = resourceType === 'source'
+      ? api.getSource3mfForSlicer(archiveId, filename)
+      : api.getArchiveForSlicer(archiveId, filename);
+    openInSlicer(`${window.location.origin}${path}`, slicer);
+  }
+}
 
 function ArchiveCard({
   archive,
@@ -337,8 +362,7 @@ function ArchiveCard({
         icon: <ExternalLink className="w-4 h-4" />,
         onClick: () => {
           const filename = archive.print_name || archive.filename || 'model';
-          const downloadUrl = `${window.location.origin}${api.getArchiveForSlicer(archive.id, filename)}`;
-          openInSlicer(downloadUrl, preferredSlicer);
+          openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
         },
         disabled: !archive.file_path,
         title: !archive.file_path ? t('archives.card.noFileForReprint') : undefined,
@@ -349,8 +373,7 @@ function ArchiveCard({
         icon: <ExternalLink className="w-4 h-4" />,
         onClick: () => {
           const filename = archive.print_name || archive.filename || 'model';
-          const downloadUrl = `${window.location.origin}${api.getArchiveForSlicer(archive.id, filename)}`;
-          openInSlicer(downloadUrl, preferredSlicer);
+          openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
         },
       },
     ]),
@@ -738,8 +761,7 @@ function ArchiveCard({
               e.stopPropagation();
               // Open source 3MF in Bambu Studio - use filename in URL for slicer compatibility
               const sourceName = (archive.print_name || archive.filename || 'source').replace(/\.gcode\.3mf$/i, '') + '_source';
-              const downloadUrl = `${window.location.origin}${api.getSource3mfForSlicer(archive.id, sourceName)}`;
-              openInSlicer(downloadUrl, preferredSlicer);
+              openInSlicerWithToken(archive.id, sourceName, 'source', preferredSlicer);
             }}
             title={t('archives.card.openSource3mf')}
           >
@@ -1008,8 +1030,7 @@ function ArchiveCard({
                 className="min-w-0 p-1 sm:p-1.5"
                 onClick={() => {
                   const filename = archive.print_name || archive.filename || 'model';
-                  const downloadUrl = `${window.location.origin}${api.getArchiveForSlicer(archive.id, filename)}`;
-                  openInSlicer(downloadUrl, preferredSlicer);
+                  openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
                 }}
                 title={t('archives.card.openInBambuStudio')}
               >
@@ -1024,8 +1045,7 @@ function ArchiveCard({
               className="flex-1 min-w-0"
               onClick={() => {
                 const filename = archive.print_name || archive.filename || 'model';
-                const downloadUrl = `${window.location.origin}${api.getArchiveForSlicer(archive.id, filename)}`;
-                openInSlicer(downloadUrl, preferredSlicer);
+                openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
               }}
               title={t('archives.card.openInBambuStudioToSlice')}
             >
@@ -1546,8 +1566,7 @@ function ArchiveListRow({
         icon: <ExternalLink className="w-4 h-4" />,
         onClick: () => {
           const filename = archive.print_name || archive.filename || 'model';
-          const downloadUrl = `${window.location.origin}${api.getArchiveForSlicer(archive.id, filename)}`;
-          openInSlicer(downloadUrl, preferredSlicer);
+          openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
         },
         disabled: !archive.file_path,
         title: !archive.file_path ? t('archives.card.noFileForReprint') : undefined,
@@ -1558,8 +1577,7 @@ function ArchiveListRow({
         icon: <ExternalLink className="w-4 h-4" />,
         onClick: () => {
           const filename = archive.print_name || archive.filename || 'model';
-          const downloadUrl = `${window.location.origin}${api.getArchiveForSlicer(archive.id, filename)}`;
-          openInSlicer(downloadUrl, preferredSlicer);
+          openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
         },
       },
     ]),
@@ -1900,8 +1918,7 @@ function ArchiveListRow({
             size="sm"
             onClick={() => {
               const filename = archive.print_name || archive.filename || 'model';
-              const downloadUrl = `${window.location.origin}${api.getArchiveForSlicer(archive.id, filename)}`;
-              openInSlicer(downloadUrl, preferredSlicer);
+              openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
             }}
             title={t('archives.card.openInBambuStudio')}
           >

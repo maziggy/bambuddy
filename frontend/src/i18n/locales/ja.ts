@@ -1784,6 +1784,15 @@ export default {
       title: 'グループを削除',
       message: 'このグループを削除しますか？このグループのユーザーはこれらの権限を失います。',
     },
+    editor: {
+      title: 'グループを編集',
+      createTitle: 'グループを作成',
+      search: '権限を検索...',
+      selectAll: 'すべて選択',
+      clearAll: 'すべて解除',
+      permissionsSelected: '{{count}}件選択',
+      noResults: '検索に一致する権限がありません',
+    },
     title: 'グループ管理',
     subtitle: 'アクセス制御の権限グループを管理',
     system: 'システム',
@@ -2604,6 +2613,8 @@ export default {
     kFactor: 'K値',
     fill: '充填率',
     configure: '設定',
+    used: '使用済み',
+    remainingUnit: '残り',
   },
   printModal: {
     flowCalibration: 'フローキャリブレーション',
@@ -2818,20 +2829,10 @@ export default {
       hint: 'SSDPで広告され、TLS証明書に使用されるIPアドレスを上書きします。Bambuddyに複数のネットワークインターフェースがある場合に便利です。',
     },
     howItWorks: {
-      step5: '設定したアクセスコードで接続する',
-      step6: 'Bambuddyに「印刷」すると、3MFファイルがアーカイブされる',
-      proxyStep1: 'ターゲットプリンターを選択（LANモードである必要があります）',
-      proxyStep2: 'クロスネットワーク時：スライサーネットワークインターフェースを選択',
-      proxyStep3: 'プロキシを有効化 - プリンターがSSDPでスライサー検出に表示されます',
-      proxyStep4: 'プリンターのアクセスコードで接続',
-      proxyStep5: '通常通り印刷 - トラフィックはBambuddyを経由して中継されます',
-      proxyStep6: 'カメラストリーミングにはNAT/IP転送が必要です（ドキュメント参照）',
       title: '仕組み',
-      titleProxy: '仕組み（プロキシモード）',
-      step1: 'プラットフォーム用のセットアップガイドを完了',
-      step2: '仮想プリンターを有効にしてアクセスコードを設定',
-      step3: 'Bambu StudioまたはOrcaSlicerで「プリンター追加」へ',
-      step4: '「Bambuddy」プリンターが検出リストに表示されます',
+      step1: '同じLAN上では、仮想プリンターはスライサー（Bambu Studio / OrcaSlicer）に自動的に表示されます。他のネットワークからは、IPアドレスとアクセスコードで手動で追加してください。',
+      step2: 'アーカイブ、レビュー、キューモードでは、スライサーの「送信」ボタンを使用して3MFファイルをBambuddyにアップロードします。スライサーは「印刷成功」と表示しますが、ファイルは保存され、印刷はされません。',
+      step3: 'プロキシモードでは、仮想プリンターはすべてのトラフィックを実際のプリンターに転送します。直接接続されているかのように印刷がすぐに開始されます。',
     },
     status: {
       mode: 'モード',
@@ -2849,10 +2850,39 @@ export default {
     toast: {
       accessCodeRequired: '先にアクセスコードを設定してください',
       targetPrinterRequired: '先にターゲットプリンターを選択してください',
+      bindIpRequired: '先にバインドIPを設定してください',
       accessCodeEmpty: 'アクセスコードは空にできません',
       accessCodeLength: 'アクセスコードは8文字である必要があります',
       updated: '仮想プリンター設定を更新しました',
       failedToUpdate: '設定の更新に失敗しました',
+      created: '仮想プリンターを作成しました',
+      failedToCreate: '仮想プリンターの作成に失敗しました',
+      deleted: '仮想プリンターを削除しました',
+      failedToDelete: '仮想プリンターの削除に失敗しました',
+    },
+    list: {
+      title: '仮想プリンター',
+      add: '追加',
+      addFirst: '仮想プリンターを追加',
+      empty: '仮想プリンターが設定されていません。追加して始めましょう。',
+    },
+    bindIp: {
+      title: 'バインドインターフェース',
+      placeholder: 'インターフェースを選択...',
+      hint: 'この仮想プリンターがバインドするネットワークインターフェース。プリンターごとに一意である必要があります。',
+    },
+    proxy: {
+      accessCodeHint: 'プロキシモードでは、スライサーにターゲットプリンターのアクセスコードを使用してください。接続は実際のプリンターに透過的に転送されます。',
+    },
+    addDialog: {
+      title: '仮想プリンターを追加',
+      name: '名前',
+      hint: 'アクセスコード、ターゲットプリンター、その他の設定は作成後に設定できます。',
+      create: '作成',
+    },
+    deleteConfirm: {
+      title: '仮想プリンターを削除',
+      message: '「{{name}}」を削除してもよろしいですか？このプリンターのすべてのサービスが停止されます。',
     },
     title: '仮想プリンター',
     stopped: '停止',
@@ -3269,4 +3299,18 @@ export default {
 
   // Spoolman Settings
   spoolmanSettings: {},
+
+  // Time
+  time: {
+    unknown: '-',
+    waiting: '待機中',
+    justNow: 'たった今',
+    now: '今すぐ',
+    minsAgo: '{{count}}分前',
+    inMins: 'あと{{count}}分',
+    hoursAgo: '{{count}}時間前',
+    inHours: 'あと{{count}}時間',
+    daysAgo: '{{count}}日前',
+    inDays: 'あと{{count}}日',
+  },
 };

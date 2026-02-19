@@ -34,6 +34,7 @@ class FTPSession:
         on_file_received: Callable[[Path, str], None] | None,
         passive_port_range: tuple[int, int] = (50000, 50100),
         pasv_address: str = "",
+        bind_address: str = "0.0.0.0",  # nosec B104
     ):
         self.reader = reader
         self.writer = writer
@@ -43,6 +44,7 @@ class FTPSession:
         self.on_file_received = on_file_received
         self.passive_port_range = passive_port_range
         self.pasv_address = pasv_address
+        self.bind_address = bind_address
 
         self.authenticated = False
         self.username: str | None = None
@@ -218,7 +220,7 @@ class FTPSession:
             try:
                 self.data_server = await asyncio.start_server(
                     self._handle_data_connection,
-                    "0.0.0.0",  # nosec B104
+                    self.bind_address,
                     port,
                     ssl=self.ssl_context,
                 )
@@ -524,6 +526,7 @@ class VirtualPrinterFTPServer:
         key_path: Path,
         port: int = FTP_PORT,
         on_file_received: Callable[[Path, str], None] | None = None,
+        bind_address: str = "0.0.0.0",  # nosec B104
     ):
         """Initialize the FTPS server.
 
@@ -534,6 +537,7 @@ class VirtualPrinterFTPServer:
             key_path: Path to TLS private key file
             port: Port to listen on (default 990)
             on_file_received: Callback when file upload completes (path, source_ip)
+            bind_address: IP address to bind to (default 0.0.0.0)
         """
         self.upload_dir = upload_dir
         self.access_code = access_code
@@ -541,6 +545,7 @@ class VirtualPrinterFTPServer:
         self.key_path = key_path
         self.port = port
         self.on_file_received = on_file_received
+        self.bind_address = bind_address
         self._server: asyncio.Server | None = None
         self._running = False
         self._ssl_context: ssl.SSLContext | None = None
@@ -575,7 +580,7 @@ class VirtualPrinterFTPServer:
             # Create server with SSL - TLS handshake happens before any FTP data
             self._server = await asyncio.start_server(
                 self._handle_client,
-                "0.0.0.0",  # nosec B104
+                self.bind_address,
                 self.port,
                 ssl=self._ssl_context,  # This makes it implicit FTPS!
             )
@@ -619,6 +624,7 @@ class VirtualPrinterFTPServer:
             on_file_received=self.on_file_received,
             passive_port_range=(self.PASSIVE_PORT_MIN, self.PASSIVE_PORT_MAX),
             pasv_address=self._pasv_address,
+            bind_address=self.bind_address,
         )
 
         # Track the session task so we can cancel it on stop

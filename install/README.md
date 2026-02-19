@@ -26,6 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/maziggy/bambuddy/main/install/insta
 |--------|----------|--------|
 | `install.sh` | Linux, macOS | Native (Python venv) |
 | `docker-install.sh` | Linux, macOS | Docker |
+| `update.sh` | Linux (systemd) | Native update helper |
 
 ---
 
@@ -159,12 +160,32 @@ docker compose logs -f      # View logs
 
 **Native installation:**
 ```bash
-cd /opt/bambuddy
-git pull
-source venv/bin/activate
-pip install -r requirements.txt
-cd frontend && npm ci && npm run build
-sudo systemctl restart bambuddy  # Linux
+curl -fsSL https://raw.githubusercontent.com/maziggy/bambuddy/main/install/update.sh -o update.sh
+chmod +x update.sh
+sudo ./update.sh
+```
+
+The updater performs:
+- Root permission check (fails fast before any work)
+- Optional built-in backup API call (`/api/v1/settings/backup`) before update
+- Keeps only the newest 5 local backup ZIP files
+- Local-change warning + confirmation before `git reset --hard`
+- If remote has no new commits, updater exits early without stopping the service
+- Service stop/start with code rollback + service restart attempt if update fails
+
+Useful environment overrides:
+```bash
+# Typical native install defaults
+INSTALL_DIR=/opt/bambuddy SERVICE_NAME=bambuddy sudo ./update.sh
+
+# Require backup to succeed (abort update if backup fails)
+BACKUP_MODE=require sudo ./update.sh
+
+# Skip backup API call
+BACKUP_MODE=skip sudo ./update.sh
+
+# Auth-enabled instances: provide API key for backup endpoint
+BAMBUDDY_API_KEY=bb_xxx BACKUP_MODE=require sudo ./update.sh
 ```
 
 **Docker (pre-built image):**

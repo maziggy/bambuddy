@@ -43,7 +43,7 @@ import {
   HardDrive,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { parseUTCDate } from '../utils/date';
+import { formatRelativeTime } from '../utils/date';
 import type { SlicerSetting, SlicerSettingsResponse, SlicerSettingDetail, SlicerSettingCreate, Printer, FieldDefinition, Permission } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
@@ -88,23 +88,6 @@ function extractMetadata(name: string, inherits?: string): {
 // Check if preset is user-created (editable)
 function isUserPreset(settingId: string): boolean {
   return /^(P[FPM]US|PF\d|PP\d)/.test(settingId);
-}
-
-// Format relative time
-function formatRelativeTime(dateStr: string, t: TFunction): string {
-  const date = parseUTCDate(dateStr);
-  if (!date) return '';
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-
-  if (diffMins < 1) return t('profiles.time.justNow');
-  if (diffMins < 60) return t('profiles.time.minsAgo', { count: diffMins });
-  if (diffHours < 24) return t('profiles.time.hoursAgo', { count: diffHours });
-  if (diffDays < 7) return t('profiles.time.daysAgo', { count: diffDays });
-  return date.toLocaleDateString();
 }
 
 // ============================================================================
@@ -2646,7 +2629,7 @@ function CloudProfilesView({
         {lastSyncTime && (
           <div className="flex items-center gap-1">
             <Clock className="w-3 h-3" />
-            {t('profiles.cloudView.lastSynced')} {formatRelativeTime(lastSyncTime.toISOString(), t)}
+            {t('profiles.cloudView.lastSynced')} {formatRelativeTime(lastSyncTime.toISOString(), 'system', t)}
           </div>
         )}
         <span>{t('profiles.cloudView.showingCount', { showing: filteredPresets.length, total: totalCount })}</span>

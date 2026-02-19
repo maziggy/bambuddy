@@ -1815,6 +1815,15 @@ export default {
       message: 'Are you sure you want to delete this group? Users in this group will lose these permissions.',
       confirm: 'Delete Group',
     },
+    editor: {
+      title: 'Edit Group',
+      createTitle: 'Create Group',
+      search: 'Search permissions...',
+      selectAll: 'Select All',
+      clearAll: 'Clear All',
+      permissionsSelected: '{{count}} selected',
+      noResults: 'No permissions match your search',
+    },
   },
 
   // Users management
@@ -2686,6 +2695,8 @@ export default {
     kFactor: 'K Factor',
     fill: 'Fill',
     configure: 'Configure',
+    used: 'used',
+    remainingUnit: 'remaining',
   },
 
   // Print modal
@@ -2984,19 +2995,9 @@ export default {
     },
     howItWorks: {
       title: 'How it works',
-      titleProxy: 'How it works (Proxy Mode)',
-      step1: 'Complete the setup guide for your platform',
-      step2: 'Enable the virtual printer and set an access code',
-      step3: 'In Bambu Studio or OrcaSlicer, go to "Add Printer"',
-      step4: 'The "Bambuddy" printer should appear in the discovery list',
-      step5: 'Connect using the access code you set',
-      step6: 'When you "print" to Bambuddy, the 3MF file is archived instead',
-      proxyStep1: 'Select the target printer (must be in LAN mode)',
-      proxyStep2: 'For cross-network: select the slicer network interface',
-      proxyStep3: 'Enable the proxy - printer appears in slicer discovery via SSDP',
-      proxyStep4: 'Connect using the printer\'s access code',
-      proxyStep5: 'Print as normal - traffic is relayed through Bambuddy',
-      proxyStep6: 'Camera streaming requires NAT/IP forwarding (see docs)',
+      step1: 'On the same LAN, virtual printers appear in your slicer (Bambu Studio / OrcaSlicer) automatically via discovery. From other networks, add them manually by IP address and access code.',
+      step2: 'In Archive, Review, and Queue modes, use the "Send" button in your slicer to upload 3MF files to Bambuddy. The slicer will show "Print success" — the file is stored, not printed.',
+      step3: 'In Proxy mode, the virtual printer relays all traffic to a real printer — prints start immediately as if connected directly.',
     },
     status: {
       title: 'Status Details',
@@ -3016,8 +3017,37 @@ export default {
       failedToUpdate: 'Failed to update settings',
       accessCodeRequired: 'Please set an access code first',
       targetPrinterRequired: 'Please select a target printer first',
+      bindIpRequired: 'Please set a bind IP first',
       accessCodeEmpty: 'Access code cannot be empty',
       accessCodeLength: 'Access code must be exactly 8 characters',
+      created: 'Virtual printer created',
+      failedToCreate: 'Failed to create virtual printer',
+      deleted: 'Virtual printer deleted',
+      failedToDelete: 'Failed to delete virtual printer',
+    },
+    list: {
+      title: 'Virtual Printers',
+      add: 'Add',
+      addFirst: 'Add Virtual Printer',
+      empty: 'No virtual printers configured. Add one to get started.',
+    },
+    bindIp: {
+      title: 'Bind Interface',
+      placeholder: 'Select interface...',
+      hint: 'Network interface for this virtual printer to bind to. Must be unique per printer.',
+    },
+    proxy: {
+      accessCodeHint: 'In proxy mode, use your target printer\'s access code in the slicer. The connection is forwarded transparently to the real printer.',
+    },
+    addDialog: {
+      title: 'Add Virtual Printer',
+      name: 'Name',
+      hint: 'You can configure access code, target printer, and other settings after creating.',
+      create: 'Create',
+    },
+    deleteConfirm: {
+      title: 'Delete Virtual Printer',
+      message: 'Are you sure you want to delete "{{name}}"? This will stop all services for this printer.',
     },
   },
 
@@ -3438,4 +3468,18 @@ export default {
 
   // Spoolman Settings
   spoolmanSettings: {},
+
+  // Time
+  time: {
+    unknown: '-',
+    waiting: 'Waiting',
+    justNow: 'Just now',
+    now: 'Now',
+    minsAgo: '{{count}}m ago',
+    inMins: 'in {{count}}m',
+    hoursAgo: '{{count}}h ago',
+    inHours: 'in {{count}}h',
+    daysAgo: '{{count}}d ago',
+    inDays: 'in {{count}}d',
+  },
 };

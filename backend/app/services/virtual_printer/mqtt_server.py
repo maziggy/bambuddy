@@ -16,6 +16,21 @@ logger = logging.getLogger(__name__)
 # Default MQTT port for Bambu printers (MQTT over TLS)
 MQTT_PORT = 8883
 
+# Model code → product_name for version response (must match what slicer expects)
+MODEL_PRODUCT_NAMES = {
+    "3DPrinter-X1-Carbon": "X1 Carbon",
+    "3DPrinter-X1": "X1",
+    "C13": "X1E",
+    "C11": "P1P",
+    "C12": "P1S",
+    "N7": "P2S",
+    "N2S": "A1",
+    "N1": "A1 mini",
+    "O1D": "H2D",
+    "O1C": "H2C",
+    "O1S": "H2S",
+}
+
 
 class VirtualPrinterMQTTServer:
     """MQTT broker that accepts connections from slicers.
@@ -168,13 +183,17 @@ class SimpleMQTTServer:
         key_path: Path,
         port: int = MQTT_PORT,
         on_print_command: Callable[[str, dict], None] | None = None,
+        model: str = "",
+        bind_address: str = "0.0.0.0",  # nosec B104
     ):
         self.serial = serial
         self.access_code = access_code
+        self.model = model
         self.cert_path = cert_path
         self.key_path = key_path
         self.port = port
         self.on_print_command = on_print_command
+        self.bind_address = bind_address
         self._running = False
         self._server = None
         self._clients: dict[str, asyncio.StreamWriter] = {}
@@ -255,7 +274,7 @@ class SimpleMQTTServer:
 
             self._server = await asyncio.start_server(
                 connection_handler,
-                "0.0.0.0",  # nosec B104
+                self.bind_address,
                 self.port,
                 ssl=ssl_context,
             )
@@ -594,7 +613,7 @@ class SimpleMQTTServer:
                 }
             }
 
-            await self._publish_to_report(writer, status)
+            await self._publish_to_report(writer, status, self.serial)
 
         except OSError as e:
             logger.error("Failed to send status report: %s", e)
@@ -602,6 +621,9 @@ class SimpleMQTTServer:
     async def _send_version_response(self, writer: asyncio.StreamWriter, sequence_id: str) -> None:
         """Send version info response to the slicer."""
         try:
+            product_name = MODEL_PRODUCT_NAMES.get(self.model, self.model or "X1 Carbon")
+            serial = self.serial
+
             # Build version response matching OrcaSlicer expectations
             # Required fields per module: name, product_name, sw_ver, sw_new_ver, sn, hw_ver, flag
             version_info = {
@@ -611,55 +633,55 @@ class SimpleMQTTServer:
                     "module": [
                         {
                             "name": "ota",
-                            "product_name": "X1 Carbon",
+                            "product_name": product_name,
                             "sw_ver": "01.07.00.00",
                             "sw_new_ver": "",
                             "hw_ver": "OTA",
-                            "sn": self.serial,
+                            "sn": serial,
                             "flag": 0,
                         },
                         {
                             "name": "esp32",
-                            "product_name": "X1 Carbon",
+                            "product_name": product_name,
                             "sw_ver": "01.07.22.25",
                             "sw_new_ver": "",
                             "hw_ver": "AP05",
-                            "sn": self.serial,
+                            "sn": serial,
                             "flag": 0,
                         },
                         {
                             "name": "rv1126",
-                            "product_name": "X1 Carbon",
+                            "product_name": product_name,
                             "sw_ver": "00.00.27.38",
                             "sw_new_ver": "",
                             "hw_ver": "AP05",
-                            "sn": self.serial,
+                            "sn": serial,
                             "flag": 0,
                         },
                         {
                             "name": "th",
-                            "product_name": "X1 Carbon",
+                            "product_name": product_name,
                             "sw_ver": "00.00.04.00",
                             "sw_new_ver": "",
                             "hw_ver": "TH07",
-                            "sn": self.serial,
+                            "sn": serial,
                             "flag": 0,
                         },
                         {
                             "name": "mc",
-                            "product_name": "X1 Carbon",
+                            "product_name": product_name,
                             "sw_ver": "00.00.10.00",
                             "sw_new_ver": "",
                             "hw_ver": "MC07",
-                            "sn": self.serial,
+                            "sn": serial,
                             "flag": 0,
                         },
                     ],
                 }
             }
 
-            await self._publish_to_report(writer, version_info)
-            logger.info("Sent version response")
+            await self._publish_to_report(writer, version_info, serial)
+            logger.info("Sent version response (product_name=%s)", product_name)
 
         except OSError as e:
             logger.error("Failed to send version response: %s", e)
@@ -673,9 +695,9 @@ class SimpleMQTTServer:
         self._current_file = filename
         self._prepare_percent = prepare_percent
 
-    async def _publish_to_report(self, writer: asyncio.StreamWriter, payload: dict) -> None:
+    async def _publish_to_report(self, writer: asyncio.StreamWriter, payload: dict, serial: str = "") -> None:
         """Publish a message on the device report topic."""
-        topic = f"device/{self.serial}/report"
+        topic = f"device/{serial or self.serial}/report"
         message = json.dumps(payload)
 
         topic_bytes = topic.encode("utf-8")

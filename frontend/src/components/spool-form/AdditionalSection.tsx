@@ -54,9 +54,8 @@ function SpoolWeightPicker({
     if (matches.length === 1) {
       onCatalogIdChange(matches[0].id);
     } else if (matches.length === 0) {
-      // No matches, clear selection only if we don't have a catalogId
-      // (to avoid clearing valid IDs when catalog hasn't loaded yet)
-      if (!catalogId) {
+      // No matches, clear selection to prevent stale catalog ID
+      if (catalogId !== null) {
         onCatalogIdChange(null);
       }
     }

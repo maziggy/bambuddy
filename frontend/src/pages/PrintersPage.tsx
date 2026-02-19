@@ -64,6 +64,7 @@ import { ConfigureAmsSlotModal } from '../components/ConfigureAmsSlotModal';
 import { useToast } from '../contexts/ToastContext';
 import { ChamberLight } from '../components/icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';
+import { getGlobalTrayId } from '../utils/amsHelpers';
 
 // Complete Bambu Lab filament color mapping by tray_id_name
 // Source: https://github.com/queengooborg/Bambu-Lab-RFID-Library
@@ -1096,6 +1097,7 @@ function getPrinterImage(model: string | null | undefined): string {
   if (modelLower.includes('x1e')) return '/img/printers/x1e.png';
   if (modelLower.includes('x1c') || modelLower.includes('x1carbon')) return '/img/printers/x1c.png';
   if (modelLower.includes('x1')) return '/img/printers/x1c.png';
+  if (modelLower.includes('h2dpro') || modelLower.includes('h2d-pro')) return '/img/printers/h2dpro.png';
   if (modelLower.includes('h2d')) return '/img/printers/h2d.png';
   if (modelLower.includes('h2c')) return '/img/printers/h2c.png';
   if (modelLower.includes('h2s')) return '/img/printers/h2d.png';
@@ -1774,7 +1776,7 @@ function PrinterCard({
 
   // Query for printable objects (for skip functionality)
   // Fetch when printing with 2+ objects OR when modal is open
-  const isPrintingWithObjects = (status?.state === 'RUNNING' || status?.state === 'PAUSE' || status?.state === 'PAUSED') && (status?.printable_objects_count ?? 0) >= 2;
+  const isPrintingWithObjects = (status?.state === 'RUNNING' || status?.state === 'PAUSE') && (status?.printable_objects_count ?? 0) >= 2;
   const { data: objectsData } = useQuery({
     queryKey: ['printableObjects', printer.id],
     queryFn: () => api.getPrintableObjects(printer.id),
@@ -2367,16 +2369,16 @@ function PrinterCard({
                   {/* Skip Objects button - top right corner, always visible */}
                   <button
                     onClick={() => setShowSkipObjectsModal(true)}
-                    disabled={!(status.state === 'RUNNING' || status.state === 'PAUSE' || status.state === 'PAUSED') || (status.printable_objects_count ?? 0) < 2 || !hasPermission('printers:control')}
+                    disabled={!(status.state === 'RUNNING' || status.state === 'PAUSE') || (status.printable_objects_count ?? 0) < 2 || !hasPermission('printers:control')}
                     className={`absolute top-2 right-2 p-1.5 rounded transition-colors z-10 ${
-                      (status.state === 'RUNNING' || status.state === 'PAUSE' || status.state === 'PAUSED') && (status.printable_objects_count ?? 0) >= 2 && hasPermission('printers:control')
+                      (status.state === 'RUNNING' || status.state === 'PAUSE') && (status.printable_objects_count ?? 0) >= 2 && hasPermission('printers:control')
                         ? 'text-bambu-gray hover:text-white hover:bg-white/10'
                         : 'text-bambu-gray/30 cursor-not-allowed'
                     }`}
                     title={
                       !hasPermission('printers:control')
                         ? t('printers.permission.noControl')
-                        : !(status.state === 'RUNNING' || status.state === 'PAUSE' || status.state === 'PAUSED')
+                        : !(status.state === 'RUNNING' || status.state === 'PAUSE')
                           ? t('printers.skipObjects.onlyWhilePrinting')
                           : (status.printable_objects_count ?? 0) >= 2
                             ? t('printers.skipObjects.tooltip')
@@ -2571,7 +2573,7 @@ function PrinterCard({
             {viewMode === 'expanded' && (() => {
               // Determine print state for control buttons
               const isRunning = status.state === 'RUNNING';
-              const isPaused = status.state === 'PAUSED' || status.state === 'PAUSE';
+              const isPaused = status.state === 'PAUSE';
               const isPrinting = isRunning || isPaused;
               const isControlBusy = stopPrintMutation.isPending || pausePrintMutation.isPending || resumePrintMutation.isPending;
 
@@ -2768,7 +2770,7 @@ function PrinterCard({
                                 const inventoryAssignment = onGetAssignment?.(printer.id, ams.id, slotIdx);
                                 const inventoryFill = (() => {
                                   const sp = inventoryAssignment?.spool;
-                                  if (sp && sp.label_weight > 0 && sp.weight_used > 0) {
+                                  if (sp && sp.label_weight > 0 && sp.weight_used != null) {
                                     return Math.round(Math.max(0, sp.label_weight - sp.weight_used) / sp.label_weight * 100);
                                   }
                                   return null;
@@ -2978,8 +2980,7 @@ function PrinterCard({
                         const hasFillLevel = tray?.tray_type && tray.remain >= 0;
                         const isEmpty = !tray?.tray_type;
                         // Check if this is the currently loaded tray
-                        // Global tray ID = ams.id * 4 + tray.id
-                        const globalTrayId = ams.id * 4 + (tray?.id ?? 0);
+                        const globalTrayId = getGlobalTrayId(ams.id, tray?.id ?? 0, false);
                         const isActive = effectiveTrayNow === globalTrayId;
                         // Get cloud preset info if available
                         const cloudInfo = tray?.tray_info_idx ? filamentInfo?.[tray.tray_info_idx] : null;
@@ -2994,7 +2995,7 @@ function PrinterCard({
                         const htInventoryAssignment = onGetAssignment?.(printer.id, ams.id, htTraySlotId);
                         const htInventoryFill = (() => {
                           const sp = htInventoryAssignment?.spool;
-                          if (sp && sp.label_weight > 0 && sp.weight_used > 0) {
+                          if (sp && sp.label_weight > 0 && sp.weight_used != null) {
                             return Math.round(Math.max(0, sp.label_weight - sp.weight_used) / sp.label_weight * 100);
                           }
                           return null;
@@ -3252,7 +3253,7 @@ function PrinterCard({
                               const extInventoryAssignment = onGetAssignment?.(printer.id, 255, slotTrayId);
                               const extInventoryFill = (() => {
                                 const sp = extInventoryAssignment?.spool;
-                                if (sp && sp.label_weight > 0 && sp.weight_used > 0) {
+                                if (sp && sp.label_weight > 0 && sp.weight_used != null) {
                                   return Math.round(Math.max(0, sp.label_weight - sp.weight_used) / sp.label_weight * 100);
                                 }
                                 return null;

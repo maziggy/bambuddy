@@ -81,6 +81,7 @@ class TLSProxy:
         server_key_path: Path,
         on_connect: Callable[[str], None] | None = None,
         on_disconnect: Callable[[str], None] | None = None,
+        bind_address: str = "0.0.0.0",  # nosec B104
     ):
         """Initialize the TLS proxy.
 
@@ -93,6 +94,7 @@ class TLSProxy:
             server_key_path: Path to server private key
             on_connect: Optional callback when client connects (receives client_id)
             on_disconnect: Optional callback when client disconnects (receives client_id)
+            bind_address: IP address to bind to (default: all interfaces)
         """
         self.name = name
         self.listen_port = listen_port
@@ -102,6 +104,7 @@ class TLSProxy:
         self.server_key_path = server_key_path
         self.on_connect = on_connect
         self.on_disconnect = on_disconnect
+        self.bind_address = bind_address
 
         self._server: asyncio.Server | None = None
         self._running = False
@@ -134,7 +137,7 @@ class TLSProxy:
             return
 
         logger.info(
-            f"Starting {self.name} TLS proxy: 0.0.0.0:{self.listen_port} → {self.target_host}:{self.target_port}"
+            f"Starting {self.name} TLS proxy: {self.bind_address}:{self.listen_port} → {self.target_host}:{self.target_port}"
         )
 
         try:
@@ -147,7 +150,7 @@ class TLSProxy:
             # Start server with TLS
             self._server = await asyncio.start_server(
                 self._handle_client,
-                "0.0.0.0",  # nosec B104
+                self.bind_address,
                 self.listen_port,
                 ssl=self._server_ssl_context,
             )
@@ -343,7 +346,7 @@ class TLSProxy:
 class TCPProxy:
     """Raw TCP proxy that forwards data without TLS termination.
 
-    Used for protocols where the printer doesn't use TLS (e.g., port 3000
+    Used for protocols where the printer doesn't use TLS (e.g., port 3002
     binding/authentication protocol).
     """
 
@@ -355,6 +358,7 @@ class TCPProxy:
         target_port: int,
         on_connect: Callable[[str], None] | None = None,
         on_disconnect: Callable[[str], None] | None = None,
+        bind_address: str = "0.0.0.0",  # nosec B104
     ):
         self.name = name
         self.listen_port = listen_port
@@ -362,6 +366,7 @@ class TCPProxy:
         self.target_port = target_port
         self.on_connect = on_connect
         self.on_disconnect = on_disconnect
+        self.bind_address = bind_address
 
         self._server: asyncio.Server | None = None
         self._running = False
@@ -373,8 +378,9 @@ class TCPProxy:
             return
 
         logger.info(
-            "Starting %s TCP proxy: 0.0.0.0:%s → %s:%s",
+            "Starting %s TCP proxy: %s:%s → %s:%s",
             self.name,
+            self.bind_address,
             self.listen_port,
             self.target_host,
             self.target_port,
@@ -385,7 +391,7 @@ class TCPProxy:
 
             self._server = await asyncio.start_server(
                 self._handle_client,
-                "0.0.0.0",  # nosec B104
+                self.bind_address,
                 self.listen_port,
             )
 
@@ -1039,13 +1045,12 @@ class SlicerProxyManager:
     # Bambu printer ports
     PRINTER_FTP_PORT = 990
     PRINTER_MQTT_PORT = 8883
-    PRINTER_BIND_PORT = 3000
+    PRINTER_BIND_PORTS = [3000, 3002]
 
     # Local listen ports - must match what Bambu Studio expects
     # Note: Port 990 requires root or CAP_NET_BIND_SERVICE capability
     LOCAL_FTP_PORT = 990
     LOCAL_MQTT_PORT = 8883
-    LOCAL_BIND_PORT = 3000
 
     def __init__(
         self,
@@ -1053,6 +1058,7 @@ class SlicerProxyManager:
         cert_path: Path,
         key_path: Path,
         on_activity: Callable[[str, str], None] | None = None,
+        bind_address: str = "0.0.0.0",  # nosec B104
     ):
         """Initialize the slicer proxy manager.
 
@@ -1061,15 +1067,17 @@ class SlicerProxyManager:
             cert_path: Path to server certificate
             key_path: Path to server private key
             on_activity: Optional callback for activity logging (name, message)
+            bind_address: IP address to bind proxy listeners to
         """
         self.target_host = target_host
         self.cert_path = cert_path
         self.key_path = key_path
         self.on_activity = on_activity
+        self.bind_address = bind_address
 
         self._ftp_proxy: TLSProxy | None = None
         self._mqtt_proxy: TLSProxy | None = None
-        self._bind_proxy: TCPProxy | None = None
+        self._bind_proxies: list[TCPProxy] = []
         self._tasks: list[asyncio.Task] = []
 
     async def start(self) -> None:
@@ -1100,6 +1108,7 @@ class SlicerProxyManager:
             server_key_path=self.key_path,
             on_connect=lambda cid: self._log_activity("FTP", f"connected: {cid}"),
             on_disconnect=lambda cid: self._log_activity("FTP", f"disconnected: {cid}"),
+            bind_address=self.bind_address,
         )
 
         self._mqtt_proxy = TLSProxy(
@@ -1111,17 +1120,22 @@ class SlicerProxyManager:
             server_key_path=self.key_path,
             on_connect=lambda cid: self._log_activity("MQTT", f"connected: {cid}"),
             on_disconnect=lambda cid: self._log_activity("MQTT", f"disconnected: {cid}"),
+            bind_address=self.bind_address,
         )
 
-        # Bind/auth proxy (port 3000) - raw TCP, no TLS
-        self._bind_proxy = TCPProxy(
-            name="Bind",
-            listen_port=self.LOCAL_BIND_PORT,
-            target_host=self.target_host,
-            target_port=self.PRINTER_BIND_PORT,
-            on_connect=lambda cid: self._log_activity("Bind", f"connected: {cid}"),
-            on_disconnect=lambda cid: self._log_activity("Bind", f"disconnected: {cid}"),
-        )
+        # Bind/auth proxy (ports 3000 + 3002) - raw TCP, no TLS
+        # Different BambuStudio versions use different ports
+        for bind_port in self.PRINTER_BIND_PORTS:
+            proxy = TCPProxy(
+                name="Bind",
+                listen_port=bind_port,
+                target_host=self.target_host,
+                target_port=bind_port,
+                on_connect=lambda cid: self._log_activity("Bind", f"connected: {cid}"),
+                on_disconnect=lambda cid: self._log_activity("Bind", f"disconnected: {cid}"),
+                bind_address=self.bind_address,
+            )
+            self._bind_proxies.append(proxy)
 
         # Start as background tasks
         async def run_with_logging(proxy: TLSProxy) -> None:
@@ -1139,11 +1153,14 @@ class SlicerProxyManager:
                 run_with_logging(self._mqtt_proxy),
                 name="slicer_proxy_mqtt",
             ),
-            asyncio.create_task(
-                run_with_logging(self._bind_proxy),
-                name="slicer_proxy_bind",
-            ),
         ]
+        for bp in self._bind_proxies:
+            self._tasks.append(
+                asyncio.create_task(
+                    run_with_logging(bp),
+                    name=f"slicer_proxy_bind_{bp.listen_port}",
+                )
+            )
 
         logger.info("Slicer TLS proxy started for %s", self.target_host)
 
@@ -1167,9 +1184,9 @@ class SlicerProxyManager:
             await self._mqtt_proxy.stop()
             self._mqtt_proxy = None
 
-        if self._bind_proxy:
-            await self._bind_proxy.stop()
-            self._bind_proxy = None
+        for bp in self._bind_proxies:
+            await bp.stop()
+        self._bind_proxies = []
 
         # Cancel tasks
         for task in self._tasks:
@@ -1207,8 +1224,8 @@ class SlicerProxyManager:
             "target_host": self.target_host,
             "ftp_port": self.LOCAL_FTP_PORT,
             "mqtt_port": self.LOCAL_MQTT_PORT,
-            "bind_port": self.LOCAL_BIND_PORT,
+            "bind_ports": self.PRINTER_BIND_PORTS,
             "ftp_connections": (len(self._ftp_proxy._active_connections) if self._ftp_proxy else 0),
             "mqtt_connections": (len(self._mqtt_proxy._active_connections) if self._mqtt_proxy else 0),
-            "bind_connections": (len(self._bind_proxy._active_connections) if self._bind_proxy else 0),
+            "bind_connections": sum(len(bp._active_connections) for bp in self._bind_proxies),
         }

@@ -14,6 +14,7 @@
 #   --tz TIMEZONE      Timezone (default: system timezone or UTC)
 #   --build            Build from source instead of using pre-built image
 #   --yes, -y          Non-interactive mode, accept defaults
+#   --redirect-990     Add iptables redirect from 990 -> 9990 (Linux only)
 #   --help, -h         Show this help message
 #
 
@@ -42,6 +43,7 @@ BUILD_FROM_SOURCE="false"
 NON_INTERACTIVE="false"
 OS_TYPE=""
 DOCKER_CMD=""
+REDIRECT_990="false"
 
 # -----------------------------------------------------------------------------
 # Helper Functions
@@ -140,6 +142,7 @@ show_help() {
     echo "  --tz TIMEZONE      Timezone (default: system timezone or UTC)"
     echo "  --build            Build from source instead of using pre-built image"
     echo "  --yes, -y          Non-interactive mode, accept defaults"
+    echo "  --redirect-990     Add iptables redirect from 990 -> 9990 (Linux only)"
     echo "  --help, -h         Show this help message"
     echo ""
     echo "Examples:"
@@ -380,6 +383,10 @@ parse_args() {
                 NON_INTERACTIVE="true"
                 shift
                 ;;
+            --redirect-990)
+                REDIRECT_990="true"
+                shift
+                ;;
             --help|-h)
                 show_help
                 ;;
@@ -389,6 +396,53 @@ parse_args() {
                 ;;
         esac
     done
+}
+
+check_sudo() {
+    if ! command -v sudo &>/dev/null; then
+        log_error "sudo is required for iptables redirect but is not installed. Skipping iptables redirect."
+        return 1
+    fi
+    if ! command -v iptables &>/dev/null; then
+        log_error "iptables is required for iptables redirect but is not installed. Skipping iptables redirect."
+        return 1
+    fi
+    return 0
+}
+
+configure_iptables_redirect() {
+    if [[ "$OS_TYPE" != "linux" ]]; then
+        log_warn "iptables redirect only supported on Linux. Skipping."
+        return
+    fi
+
+    if [[ "$REDIRECT_990" != "true" ]]; then
+        return
+    fi
+
+    if ! check_sudo; then
+        return
+    fi
+
+    log_info "Configuring iptables redirect: 990 -> 9990"
+
+    # Check if rule already exists
+    if sudo iptables -t nat -C PREROUTING -p tcp --dport 990 -j REDIRECT --to-port 9990 2>/dev/null; then
+        log_warn "PREROUTING rule already exists. Skipping."
+    else
+        sudo iptables -t nat -A PREROUTING -p tcp --dport 990 -j REDIRECT --to-port 9990
+        log_success "Added PREROUTING redirect rule"
+    fi
+
+    if sudo iptables -t nat -C OUTPUT -o lo -p tcp --dport 990 -j REDIRECT --to-port 9990 2>/dev/null; then
+        log_warn "OUTPUT rule already exists. Skipping."
+    else
+        sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 990 -j REDIRECT --to-port 9990
+        log_success "Added OUTPUT redirect rule"
+    fi
+
+    log_warn "Note: iptables rules are NOT persistent after reboot."
+    log_warn "To persist them, install iptables-persistent or use a firewall manager."
 }
 
 gather_config() {
@@ -412,6 +466,20 @@ gather_config() {
         prompt "Bind address" "$DEFAULT_BIND_ADDRESS" BIND_ADDRESS
     fi
 
+    # Redirect port 990 -> 9990 (Linux only)
+    if [[ "$OS_TYPE" == "linux" ]]; then
+        if [[ "$NON_INTERACTIVE" == "true" ]]; then
+            # In non-interactive mode, only set REDIRECT_990 if explicitly passed
+            : # Do nothing, REDIRECT_990 is set only if --redirect-990 is passed
+        elif [[ "$REDIRECT_990" != "true" ]]; then
+            echo ""
+            echo "Optional network configuration:"
+            if prompt_yes_no "Add iptables redirect (990 -> 9990)?" "n"; then
+                REDIRECT_990="true"
+            fi
+        fi
+    fi
+
     # Timezone
     detect_timezone
     prompt "Timezone" "$TIMEZONE" TIMEZONE
@@ -432,6 +500,7 @@ gather_config() {
     echo -e "  Bind address:  ${GREEN}$BIND_ADDRESS${NC}"
     echo -e "  Timezone:      ${GREEN}$TIMEZONE${NC}"
     echo -e "  Build source:  ${GREEN}$BUILD_FROM_SOURCE${NC}"
+    echo -e "  Redirect 990:  ${GREEN}$REDIRECT_990${NC}"
     echo ""
 
     if ! prompt_yes_no "Proceed with installation?" "y"; then
@@ -493,6 +562,7 @@ main() {
     create_env_file
     customize_compose
     start_container
+    configure_iptables_redirect
 
     # Done!
     echo ""
@@ -530,6 +600,13 @@ main() {
     echo ""
     echo -e "  ${BOLD}Documentation:${NC}  ${CYAN}https://wiki.bambuddy.cool${NC}"
     echo ""
+
+    # Warn about iptables persistence
+    if [[ "$REDIRECT_990" == "true" ]] && [[ "$OS_TYPE" == "linux" ]]; then
+        echo -e "  ${YELLOW}Note:${NC} iptables redirect rules do NOT survive reboot."
+        echo -e "        Install 'iptables-persistent' if persistence is required."
+        echo ""
+    fi
 
     if [[ "$OS_TYPE" == "macos" ]]; then
         echo -e "  ${YELLOW}Note:${NC} Printer discovery may not work with Docker Desktop."

@@ -118,6 +118,14 @@ export function validateForm(formData: SpoolFormData): ValidationResult {
     errors.material = 'Material is required';
   }
 
+  if (!formData.brand) {
+    errors.brand = 'Brand is required';
+  }
+
+  if (!formData.subtype) {
+    errors.subtype = 'Subtype is required';
+  }
+
   return {
     isValid: Object.keys(errors).length === 0,
     errors,

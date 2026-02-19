@@ -250,7 +250,7 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
           rgba: spool.rgba || '808080FF',
           label_weight: spool.label_weight || 1000,
           core_weight: spool.core_weight || 250,
-          core_weight_catalog_id: spool.core_weight_catalog_id || null,
+          core_weight_catalog_id: spool.core_weight_catalog_id ?? null,
           weight_used: spool.weight_used || 0,
           slicer_filament: spool.slicer_filament || '',
           note: spool.note || '',
@@ -399,7 +399,7 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
     if (!validation.isValid) {
       setErrors(validation.errors);
       // Switch to filament tab if there are errors there
-      if (validation.errors.slicer_filament || validation.errors.material) {
+      if (validation.errors.slicer_filament || validation.errors.material || validation.errors.brand || validation.errors.subtype) {
         setActiveTab('filament');
       }
       return;
@@ -517,6 +517,12 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
                 )}
                 {errors.material && (
                   <p className="mt-1 text-xs text-red-400">{errors.material}</p>
+                )}
+                {errors.brand && (
+                  <p className="mt-1 text-xs text-red-400">{errors.brand}</p>
+                )}
+                {errors.subtype && (
+                  <p className="mt-1 text-xs text-red-400">{errors.subtype}</p>
                 )}
               </div>
 

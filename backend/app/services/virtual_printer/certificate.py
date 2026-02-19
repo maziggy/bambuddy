@@ -48,17 +48,20 @@ class CertificateService:
     - Printer cert with CN=serial_number, signed by the CA
     """
 
-    def __init__(self, cert_dir: Path, serial: str = DEFAULT_SERIAL):
+    def __init__(self, cert_dir: Path, serial: str = DEFAULT_SERIAL, shared_ca_dir: Path | None = None):
         """Initialize the certificate service.
 
         Args:
-            cert_dir: Directory to store certificates
+            cert_dir: Directory to store per-instance certificates
             serial: Serial number to use as CN in printer certificate
+            shared_ca_dir: If set, CA cert/key are read from this directory
+                instead of cert_dir (for multi-instance shared CA)
         """
         self.cert_dir = cert_dir
         self.serial = serial
-        self.ca_cert_path = cert_dir / "bbl_ca.crt"
-        self.ca_key_path = cert_dir / "bbl_ca.key"
+        ca_dir = shared_ca_dir or cert_dir
+        self.ca_cert_path = ca_dir / "bbl_ca.crt"
+        self.ca_key_path = ca_dir / "bbl_ca.key"
         self.cert_path = cert_dir / "virtual_printer.crt"
         self.key_path = cert_dir / "virtual_printer.key"
 

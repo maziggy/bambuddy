@@ -10,8 +10,155 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
+class TestVirtualPrinterInstance:
+    """Tests for VirtualPrinterInstance class."""
+
+    @pytest.fixture
+    def instance(self, tmp_path):
+        """Create a VirtualPrinterInstance with test defaults."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        return VirtualPrinterInstance(
+            vp_id=1,
+            name="TestPrinter",
+            mode="immediate",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800001",
+            base_dir=tmp_path,
+        )
+
+    # ========================================================================
+    # Tests for instance properties
+    # ========================================================================
+
+    def test_instance_stores_parameters(self, instance):
+        """Verify constructor stores parameters correctly."""
+        assert instance.id == 1
+        assert instance.name == "TestPrinter"
+        assert instance.mode == "immediate"
+        assert instance.model == "C11"
+        assert instance.access_code == "12345678"
+        assert instance.serial_suffix == "391800001"
+
+    def test_instance_serial_property(self, instance):
+        """Verify serial is generated from model prefix + suffix."""
+        # C11 = P1P, prefix = 01S00A
+        assert instance.serial == "01S00A391800001"
+
+    def test_instance_serial_x1c(self, tmp_path):
+        """Verify X1C serial uses correct prefix."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        inst = VirtualPrinterInstance(
+            vp_id=2,
+            name="X1C",
+            mode="immediate",
+            model="3DPrinter-X1-Carbon",
+            access_code="12345678",
+            serial_suffix="391800002",
+            base_dir=tmp_path,
+        )
+        assert inst.serial == "00M00A391800002"
+
+    def test_instance_is_proxy_false(self, instance):
+        """Verify is_proxy is False for non-proxy mode."""
+        assert instance.is_proxy is False
+
+    def test_instance_is_proxy_true(self, tmp_path):
+        """Verify is_proxy is True for proxy mode."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        inst = VirtualPrinterInstance(
+            vp_id=3,
+            name="Proxy",
+            mode="proxy",
+            model="C11",
+            access_code="",
+            serial_suffix="391800003",
+            target_printer_ip="192.168.1.100",
+            base_dir=tmp_path,
+        )
+        assert inst.is_proxy is True
+
+    def test_instance_is_running_with_active_tasks(self, instance):
+        """Verify is_running is True when tasks are active."""
+        mock_task = MagicMock()
+        mock_task.done.return_value = False
+        instance._tasks = [mock_task]
+        assert instance.is_running is True
+
+    def test_instance_is_running_with_no_tasks(self, instance):
+        """Verify is_running is False when no tasks."""
+        assert instance.is_running is False
+
+    def test_instance_creates_directories(self, instance, tmp_path):
+        """Verify instance creates upload and cert directories."""
+        assert (tmp_path / "uploads" / "1").exists()
+        assert (tmp_path / "uploads" / "1" / "cache").exists()
+        assert (tmp_path / "certs" / "1").exists()
+
+    # ========================================================================
+    # Tests for status
+    # ========================================================================
+
+    def test_get_status_returns_correct_format(self, instance):
+        """Verify get_status returns expected fields."""
+        instance._pending_files = {"file1.3mf": Path("/tmp/file1.3mf")}
+        mock_task = MagicMock(done=MagicMock(return_value=False))
+        instance._tasks = [mock_task]
+
+        status = instance.get_status()
+        assert status["running"] is True
+        assert status["pending_files"] == 1
+
+    def test_get_status_not_running(self, instance):
+        """Verify get_status when no tasks."""
+        status = instance.get_status()
+        assert status["running"] is False
+        assert status["pending_files"] == 0
+
+    # ========================================================================
+    # Tests for file handling
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    async def test_on_file_received_adds_to_pending(self, instance):
+        """Verify received file is added to pending list in review mode."""
+        instance.mode = "review"
+
+        file_path = Path("/tmp/test.3mf")
+
+        with patch.object(instance, "_queue_file", new_callable=AsyncMock) as mock_queue:
+            await instance.on_file_received(file_path, "192.168.1.100")
+
+            assert "test.3mf" in instance._pending_files
+            mock_queue.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_on_file_received_archives_immediately(self, instance):
+        """Verify file is archived in immediate mode."""
+        file_path = Path("/tmp/test.3mf")
+
+        with patch.object(instance, "_archive_file", new_callable=AsyncMock) as mock_archive:
+            await instance.on_file_received(file_path, "192.168.1.100")
+
+            mock_archive.assert_called_once_with(file_path, "192.168.1.100")
+
+    @pytest.mark.asyncio
+    async def test_archive_file_skips_non_3mf(self, instance):
+        """Verify non-3MF files are skipped and cleaned up."""
+        instance._session_factory = MagicMock()
+        instance._pending_files["verify_job"] = Path("/tmp/verify_job")
+
+        with patch("pathlib.Path.unlink"):
+            await instance._archive_file(Path("/tmp/verify_job"), "192.168.1.100")
+
+            assert "verify_job" not in instance._pending_files
+
+
 class TestVirtualPrinterManager:
-    """Tests for VirtualPrinterManager class."""
+    """Tests for VirtualPrinterManager orchestrator."""
 
     @pytest.fixture
     def manager(self):
@@ -20,183 +167,148 @@ class TestVirtualPrinterManager:
 
         return VirtualPrinterManager()
 
-    # ========================================================================
-    # Tests for configuration
-    # ========================================================================
+    def test_manager_starts_empty(self, manager):
+        """Verify manager starts with no instances."""
+        assert len(manager._instances) == 0
+        assert manager.is_enabled is False
 
-    @pytest.mark.asyncio
-    async def test_configure_sets_parameters(self, manager):
-        """Verify configure stores parameters correctly."""
-        # Mock the start/stop methods to avoid actually starting services
-        manager._start = AsyncMock()
+    def test_manager_get_status_empty(self, manager):
+        """Verify get_status returns disabled state when no instances."""
+        status = manager.get_status()
+        assert status["enabled"] is False
+        assert status["running"] is False
+        assert status["mode"] == "immediate"
 
-        await manager.configure(
-            enabled=True,
-            access_code="12345678",
+    def test_manager_is_enabled_with_instance(self, manager, tmp_path):
+        """Verify is_enabled is True when instances exist."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        inst = VirtualPrinterInstance(
+            vp_id=1,
+            name="Test",
             mode="immediate",
-        )
-
-        assert manager._enabled is True
-        assert manager._access_code == "12345678"
-        assert manager._mode == "immediate"
-
-    @pytest.mark.asyncio
-    async def test_configure_disabled_stops_services(self, manager):
-        """Verify disabling stops all services."""
-        # First simulate enabled state
-        manager._enabled = True
-        manager._tasks = [MagicMock(done=MagicMock(return_value=False))]
-        manager._stop = AsyncMock()
-
-        await manager.configure(enabled=False, access_code="12345678")
-
-        assert manager._enabled is False
-        manager._stop.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_configure_requires_access_code_when_enabling(self, manager):
-        """Verify access code is required when enabling."""
-        with pytest.raises(ValueError, match="Access code is required"):
-            await manager.configure(enabled=True)
-
-    @pytest.mark.asyncio
-    async def test_configure_sets_model(self, manager):
-        """Verify configure stores model correctly."""
-        manager._start = AsyncMock()
-
-        await manager.configure(
-            enabled=True,
+            model="C11",
             access_code="12345678",
+            serial_suffix="391800001",
+            base_dir=tmp_path,
+        )
+        manager._instances[1] = inst
+        assert manager.is_enabled is True
+
+    @pytest.mark.asyncio
+    async def test_manager_remove_instance_server(self, manager, tmp_path):
+        """Verify remove_instance stops and removes a server-mode instance."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        inst = VirtualPrinterInstance(
+            vp_id=1,
+            name="Test",
             mode="immediate",
-            model="C11",  # P1S model code
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800001",
+            base_dir=tmp_path,
         )
+        inst.stop_server = AsyncMock()
+        manager._instances[1] = inst
 
-        assert manager._model == "C11"
+        await manager.remove_instance(1)
+
+        assert 1 not in manager._instances
+        inst.stop_server.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_configure_ignores_invalid_model(self, manager):
-        """Verify configure ignores invalid model codes."""
-        manager._start = AsyncMock()
+    async def test_manager_remove_instance_proxy(self, manager, tmp_path):
+        """Verify remove_instance stops proxy-mode instance."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
 
-        await manager.configure(
-            enabled=True,
-            access_code="12345678",
-            model="INVALID",
+        inst = VirtualPrinterInstance(
+            vp_id=2,
+            name="Proxy",
+            mode="proxy",
+            model="C11",
+            access_code="",
+            serial_suffix="391800002",
+            target_printer_ip="192.168.1.100",
+            base_dir=tmp_path,
         )
+        inst.stop_proxy = AsyncMock()
+        manager._instances[2] = inst
 
-        # Should keep default model (3DPrinter-X1-Carbon = X1C)
-        assert manager._model == "3DPrinter-X1-Carbon"
+        await manager.remove_instance(2)
 
-    @pytest.mark.asyncio
-    async def test_configure_restarts_on_model_change(self, manager):
-        """Verify model change restarts services when running."""
-        # Simulate running state
-        manager._enabled = True
-        manager._model = "3DPrinter-X1-Carbon"
-        manager._tasks = [MagicMock(done=MagicMock(return_value=False))]
-        manager._stop = AsyncMock()
-        manager._start = AsyncMock()
+        assert 2 not in manager._instances
+        inst.stop_proxy.assert_called_once()
 
-        await manager.configure(
-            enabled=True,
+    def test_manager_get_status_with_instance(self, manager, tmp_path):
+        """Verify legacy get_status returns first instance data."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        inst = VirtualPrinterInstance(
+            vp_id=1,
+            name="Bambuddy",
+            mode="immediate",
+            model="C11",
             access_code="12345678",
-            model="C11",  # P1P
+            serial_suffix="391800001",
+            base_dir=tmp_path,
         )
-
-        # Should have stopped and started
-        manager._stop.assert_called_once()
-        manager._start.assert_called_once()
-
-    # ========================================================================
-    # Tests for status
-    # ========================================================================
-
-    def test_get_status_returns_correct_format(self, manager):
-        """Verify get_status returns expected fields."""
-        manager._enabled = True
-        manager._mode = "immediate"
-        manager._model = "C11"  # P1P
-        manager._pending_files = {"file1.3mf": Path("/tmp/file1.3mf")}
-        # Simulate running tasks
-        manager._tasks = [MagicMock(done=MagicMock(return_value=False))]
+        mock_task = MagicMock(done=MagicMock(return_value=False))
+        inst._tasks = [mock_task]
+        inst._pending_files = {"file1.3mf": Path("/tmp/file1.3mf")}
+        manager._instances[1] = inst
 
         status = manager.get_status()
-
         assert status["enabled"] is True
         assert status["running"] is True
         assert status["mode"] == "immediate"
         assert status["name"] == "Bambuddy"
-        assert status["serial"] == "01S00A391800001"  # C11 (P1P) serial prefix
+        assert status["serial"] == "01S00A391800001"
         assert status["model"] == "C11"
         assert status["model_name"] == "P1P"
         assert status["pending_files"] == 1
 
-    def test_get_status_when_stopped(self, manager):
-        """Verify get_status when not running."""
-        manager._enabled = False
-        manager._tasks = []
+    def test_manager_get_all_status(self, manager, tmp_path):
+        """Verify get_all_status returns status for all instances."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
 
-        status = manager.get_status()
+        for i in range(1, 3):
+            inst = VirtualPrinterInstance(
+                vp_id=i,
+                name=f"VP{i}",
+                mode="immediate",
+                model="C11",
+                access_code="12345678",
+                serial_suffix=f"39180000{i}",
+                base_dir=tmp_path,
+            )
+            manager._instances[i] = inst
 
-        assert status["enabled"] is False
-        assert status["running"] is False
-
-    def test_is_running_with_active_tasks(self, manager):
-        """Verify is_running is True when tasks are active."""
-        mock_task = MagicMock()
-        mock_task.done.return_value = False
-        manager._tasks = [mock_task]
-
-        assert manager.is_running is True
-
-    def test_is_running_with_no_tasks(self, manager):
-        """Verify is_running is False when no tasks."""
-        manager._tasks = []
-
-        assert manager.is_running is False
-
-    # ========================================================================
-    # Tests for file handling
-    # ========================================================================
+        statuses = manager.get_all_status()
+        assert len(statuses) == 2
+        assert statuses[0]["name"] == "VP1"
+        assert statuses[1]["name"] == "VP2"
 
     @pytest.mark.asyncio
-    async def test_on_file_received_adds_to_pending(self, manager):
-        """Verify received file is added to pending list."""
-        manager._mode = "queue"
-        manager._session_factory = None  # Disable actual archiving
+    async def test_manager_stop_all(self, manager, tmp_path):
+        """Verify stop_all removes all instances."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
 
-        file_path = Path("/tmp/test.3mf")
+        for i in range(1, 3):
+            inst = VirtualPrinterInstance(
+                vp_id=i,
+                name=f"VP{i}",
+                mode="immediate",
+                model="C11",
+                access_code="12345678",
+                serial_suffix=f"39180000{i}",
+                base_dir=tmp_path,
+            )
+            inst.stop_server = AsyncMock()
+            manager._instances[i] = inst
 
-        with patch.object(manager, "_queue_file", new_callable=AsyncMock) as mock_queue:
-            await manager._on_file_received(file_path, "192.168.1.100")
-
-            assert "test.3mf" in manager._pending_files
-            mock_queue.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_on_file_received_archives_immediately(self, manager):
-        """Verify file is archived in immediate mode."""
-        manager._mode = "immediate"
-        manager._session_factory = None  # Will prevent actual archiving
-
-        file_path = Path("/tmp/test.3mf")
-
-        with patch.object(manager, "_archive_file", new_callable=AsyncMock) as mock_archive:
-            await manager._on_file_received(file_path, "192.168.1.100")
-
-            mock_archive.assert_called_once_with(file_path, "192.168.1.100")
-
-    @pytest.mark.asyncio
-    async def test_archive_file_skips_non_3mf(self, manager):
-        """Verify non-3MF files are skipped and cleaned up."""
-        manager._session_factory = MagicMock()
-        manager._pending_files["verify_job"] = Path("/tmp/verify_job")
-
-        with patch("pathlib.Path.unlink"):
-            await manager._archive_file(Path("/tmp/verify_job"), "192.168.1.100")
-
-            # Should be removed from pending
-            assert "verify_job" not in manager._pending_files
+        await manager.stop_all()
+        assert len(manager._instances) == 0
 
 
 class TestFTPSession:
@@ -510,7 +622,7 @@ class TestCertificateService:
 
 
 class TestBindServer:
-    """Tests for BindServer (port 3000 bind/detect protocol)."""
+    """Tests for BindServer (port 3002 bind/detect protocol)."""
 
     @pytest.fixture
     def bind_server(self):
@@ -628,6 +740,18 @@ class TestBindServer:
         )
         assert server.version == "02.03.04.05"
 
+    def test_bind_ports_constant(self):
+        """Verify BIND_PORTS includes both 3000 and 3002 for slicer compatibility."""
+        from backend.app.services.virtual_printer.bind_server import BIND_PORTS
+
+        assert 3000 in BIND_PORTS
+        assert 3002 in BIND_PORTS
+
+    def test_bind_server_initializes_empty_servers_list(self, bind_server):
+        """Verify bind server starts with empty servers list."""
+        assert bind_server._servers == []
+        assert bind_server._running is False
+
 
 class TestSlicerProxyManager:
     """Tests for SlicerProxyManager (proxy mode)."""
@@ -657,6 +781,8 @@ class TestSlicerProxyManager:
         assert proxy_manager.LOCAL_MQTT_PORT == 8883
         assert proxy_manager.PRINTER_FTP_PORT == 990
         assert proxy_manager.PRINTER_MQTT_PORT == 8883
+        # Bind ports: both 3000 and 3002 for slicer compatibility
+        assert proxy_manager.PRINTER_BIND_PORTS == [3000, 3002]
 
     def test_proxy_manager_stores_target_host(self, proxy_manager):
         """Verify proxy manager stores target host."""
@@ -740,42 +866,28 @@ class TestSSDPProxy:
 class TestVirtualPrinterManagerDirectories:
     """Tests for VirtualPrinterManager directory management."""
 
-    def test_ensure_directories_creates_subdirs(self, tmp_path):
-        """Verify _ensure_directories creates all required subdirectories."""
+    def test_ensure_base_directories_creates_subdirs(self, tmp_path):
+        """Verify _ensure_base_directories creates required base directories."""
         from backend.app.services.virtual_printer.manager import VirtualPrinterManager
 
-        # Create a manager and manually call _ensure_directories with our tmp path
         manager = VirtualPrinterManager()
-        # Override the paths
         manager._base_dir = tmp_path / "virtual_printer"
-        manager._upload_dir = manager._base_dir / "uploads"
-        manager._cert_dir = manager._base_dir / "certs"
+        manager._ensure_base_directories()
 
-        # Call the method
-        manager._ensure_directories()
-
-        # All directories should be created
         assert (tmp_path / "virtual_printer").exists()
         assert (tmp_path / "virtual_printer" / "uploads").exists()
-        assert (tmp_path / "virtual_printer" / "uploads" / "cache").exists()
         assert (tmp_path / "virtual_printer" / "certs").exists()
 
-    def test_ensure_directories_handles_permission_error(self, tmp_path, caplog):
-        """Verify _ensure_directories logs error on permission failure."""
+    def test_ensure_base_directories_handles_permission_error(self, tmp_path, caplog):
+        """Verify _ensure_base_directories logs error on permission failure."""
         import logging
-        from unittest.mock import patch
 
         from backend.app.services.virtual_printer.manager import VirtualPrinterManager
 
-        # Create manager and override paths
         manager = VirtualPrinterManager()
         vp_dir = tmp_path / "virtual_printer"
-
         manager._base_dir = vp_dir
-        manager._upload_dir = vp_dir / "uploads"
-        manager._cert_dir = vp_dir / "certs"
 
-        # Mock mkdir to raise PermissionError (chmod doesn't work as root in Docker)
         original_mkdir = type(vp_dir).mkdir
 
         def mock_mkdir(self, *args, **kwargs):
@@ -784,333 +896,190 @@ class TestVirtualPrinterManagerDirectories:
             return original_mkdir(self, *args, **kwargs)
 
         with caplog.at_level(logging.ERROR), patch.object(type(vp_dir), "mkdir", mock_mkdir):
-            # This should log errors but not raise
-            manager._ensure_directories()
-            # Check that error was logged
+            manager._ensure_base_directories()
             assert "Permission denied" in caplog.text
 
+    def test_instance_creates_per_vp_directories(self, tmp_path):
+        """Verify VirtualPrinterInstance creates per-VP upload and cert dirs."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
 
-class TestVirtualPrinterManagerProxyMode:
-    """Tests for VirtualPrinterManager proxy mode."""
-
-    @pytest.fixture
-    def manager(self):
-        """Create a VirtualPrinterManager instance."""
-        from backend.app.services.virtual_printer.manager import VirtualPrinterManager
-
-        return VirtualPrinterManager()
-
-    @pytest.mark.asyncio
-    async def test_configure_proxy_mode_requires_target_ip(self, manager):
-        """Verify proxy mode requires target_printer_ip."""
-        with pytest.raises(ValueError, match="Target printer IP is required"):
-            await manager.configure(
-                enabled=True,
-                mode="proxy",
-                target_printer_ip="",  # Empty target IP
-            )
-
-    @pytest.mark.asyncio
-    async def test_configure_proxy_mode_does_not_require_access_code(self, manager):
-        """Verify proxy mode does not require access code (uses real printer's)."""
-        manager._start = AsyncMock()
-
-        # Should not raise - proxy mode doesn't need access code
-        await manager.configure(
-            enabled=True,
-            mode="proxy",
-            target_printer_ip="192.168.1.100",
+        VirtualPrinterInstance(
+            vp_id=42,
+            name="Test",
+            mode="immediate",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800042",
+            base_dir=tmp_path,
         )
 
-        assert manager._mode == "proxy"
-        assert manager._target_printer_ip == "192.168.1.100"
+        assert (tmp_path / "uploads" / "42").exists()
+        assert (tmp_path / "uploads" / "42" / "cache").exists()
+        assert (tmp_path / "certs" / "42").exists()
 
-    def test_get_status_proxy_mode_includes_proxy_fields(self, manager):
-        """Verify get_status includes proxy-specific fields in proxy mode."""
-        manager._enabled = True
-        manager._mode = "proxy"
-        manager._target_printer_ip = "192.168.1.100"
-        manager._tasks = [MagicMock(done=MagicMock(return_value=False))]
 
-        # Create a mock proxy with get_status
+class TestVirtualPrinterInstanceProxyMode:
+    """Tests for VirtualPrinterInstance proxy mode."""
+
+    @pytest.fixture
+    def proxy_instance(self, tmp_path):
+        """Create a proxy-mode VirtualPrinterInstance."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        return VirtualPrinterInstance(
+            vp_id=10,
+            name="ProxyTest",
+            mode="proxy",
+            model="C11",
+            access_code="",
+            serial_suffix="391800010",
+            target_printer_ip="192.168.1.100",
+            target_printer_serial="01P00A000000001",
+            base_dir=tmp_path,
+        )
+
+    def test_proxy_instance_properties(self, proxy_instance):
+        """Verify proxy instance stores config correctly."""
+        assert proxy_instance.is_proxy is True
+        assert proxy_instance.mode == "proxy"
+        assert proxy_instance.target_printer_ip == "192.168.1.100"
+        assert proxy_instance.target_printer_serial == "01P00A000000001"
+
+    def test_proxy_instance_does_not_require_access_code(self, proxy_instance):
+        """Verify proxy mode can have empty access code."""
+        assert proxy_instance.access_code == ""
+
+    def test_get_status_proxy_includes_proxy_fields(self, proxy_instance):
+        """Verify get_status includes proxy fields when proxy is active."""
         mock_proxy = MagicMock()
         mock_proxy.get_status.return_value = {
             "running": True,
-            "ftp_port": 990,  # Privileged port for Bambu Studio compatibility
+            "ftp_port": 990,
             "mqtt_port": 8883,
             "ftp_connections": 1,
             "mqtt_connections": 2,
             "target_host": "192.168.1.100",
         }
-        manager._proxy = mock_proxy
+        proxy_instance._proxy = mock_proxy
 
-        status = manager.get_status()
-
-        assert status["mode"] == "proxy"
-        assert status["target_printer_ip"] == "192.168.1.100"
+        status = proxy_instance.get_status()
         assert "proxy" in status
-        assert status["proxy"]["ftp_port"] == 990  # Privileged port for Bambu Studio compatibility
-        assert status["proxy"]["mqtt_port"] == 8883
-        assert status["proxy"]["ftp_connections"] == 1
+        assert status["proxy"]["ftp_port"] == 990
         assert status["proxy"]["mqtt_connections"] == 2
 
-    @pytest.mark.asyncio
-    async def test_configure_proxy_mode_with_remote_interface(self, manager):
-        """Verify proxy mode accepts remote_interface_ip for SSDP proxy."""
-        manager._start = AsyncMock()
+    def test_proxy_instance_stores_remote_interface(self, tmp_path):
+        """Verify proxy instance stores remote_interface_ip."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
 
-        await manager.configure(
-            enabled=True,
+        inst = VirtualPrinterInstance(
+            vp_id=11,
+            name="Proxy2",
             mode="proxy",
+            model="C11",
+            access_code="",
+            serial_suffix="391800011",
             target_printer_ip="192.168.1.100",
             remote_interface_ip="10.0.0.50",
+            base_dir=tmp_path,
         )
-
-        assert manager._mode == "proxy"
-        assert manager._target_printer_ip == "192.168.1.100"
-        assert manager._remote_interface_ip == "10.0.0.50"
-
-    @pytest.mark.asyncio
-    async def test_configure_proxy_mode_restarts_on_remote_interface_change(self, manager):
-        """Verify changing remote_interface_ip restarts services in proxy mode."""
-        # Simulate running state
-        manager._enabled = True
-        manager._mode = "proxy"
-        manager._target_printer_ip = "192.168.1.100"
-        manager._remote_interface_ip = "10.0.0.50"
-        manager._tasks = [MagicMock(done=MagicMock(return_value=False))]
-        manager._stop = AsyncMock()
-        manager._start = AsyncMock()
-
-        await manager.configure(
-            enabled=True,
-            mode="proxy",
-            target_printer_ip="192.168.1.100",
-            remote_interface_ip="10.0.0.99",  # Changed
-        )
-
-        # Should have stopped and started
-        manager._stop.assert_called_once()
-        manager._start.assert_called_once()
+        assert inst.remote_interface_ip == "10.0.0.50"
 
 
-class TestVirtualPrinterManagerServerModeIPOverride:
-    """Tests for remote_interface_ip in server mode (immediate/review/print_queue)."""
+class TestVirtualPrinterInstanceIPOverride:
+    """Tests for remote_interface_ip and bind_ip on VirtualPrinterInstance."""
 
     @pytest.fixture
-    def manager(self):
-        """Create a VirtualPrinterManager instance."""
-        from backend.app.services.virtual_printer.manager import VirtualPrinterManager
+    def instance_with_remote_ip(self, tmp_path):
+        """Create an instance with remote_interface_ip set."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
 
-        return VirtualPrinterManager()
-
-    @pytest.mark.asyncio
-    async def test_configure_immediate_mode_stores_remote_interface_ip(self, manager):
-        """Verify immediate mode stores remote_interface_ip."""
-        manager._start = AsyncMock()
-
-        await manager.configure(
-            enabled=True,
-            access_code="12345678",
+        return VirtualPrinterInstance(
+            vp_id=20,
+            name="IPTest",
             mode="immediate",
+            model="3DPrinter-X1-Carbon",
+            access_code="12345678",
+            serial_suffix="391800020",
+            bind_ip="192.168.1.50",
             remote_interface_ip="10.0.0.50",
+            base_dir=tmp_path,
         )
 
-        assert manager._remote_interface_ip == "10.0.0.50"
+    def test_instance_stores_bind_ip(self, instance_with_remote_ip):
+        """Verify bind_ip is stored."""
+        assert instance_with_remote_ip.bind_ip == "192.168.1.50"
 
-    @pytest.mark.asyncio
-    async def test_configure_review_mode_stores_remote_interface_ip(self, manager):
-        """Verify review mode stores remote_interface_ip."""
-        manager._start = AsyncMock()
+    def test_instance_stores_remote_interface_ip(self, instance_with_remote_ip):
+        """Verify remote_interface_ip is stored."""
+        assert instance_with_remote_ip.remote_interface_ip == "10.0.0.50"
 
-        await manager.configure(
-            enabled=True,
-            access_code="12345678",
-            mode="review",
-            remote_interface_ip="10.0.0.50",
-        )
+    def test_generate_certificates_includes_remote_and_bind_ip(self, instance_with_remote_ip):
+        """Verify generate_certificates passes remote_interface_ip and bind_ip as SANs."""
+        with (
+            patch.object(instance_with_remote_ip._cert_service, "delete_printer_certificate"),
+            patch.object(
+                instance_with_remote_ip._cert_service,
+                "generate_certificates",
+                return_value=(Path("/tmp/cert.pem"), Path("/tmp/key.pem")),
+            ) as mock_gen,
+        ):
+            instance_with_remote_ip.generate_certificates()
+            mock_gen.assert_called_once_with(additional_ips=["10.0.0.50", "192.168.1.50"])
 
-        assert manager._remote_interface_ip == "10.0.0.50"
+    def test_generate_certificates_no_remote_ip(self, tmp_path):
+        """Verify generate_certificates passes only bind_ip when no remote_interface_ip."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
 
-    @pytest.mark.asyncio
-    async def test_configure_print_queue_mode_stores_remote_interface_ip(self, manager):
-        """Verify print_queue mode stores remote_interface_ip."""
-        manager._start = AsyncMock()
-
-        await manager.configure(
-            enabled=True,
-            access_code="12345678",
-            mode="print_queue",
-            remote_interface_ip="10.0.0.50",
-        )
-
-        assert manager._remote_interface_ip == "10.0.0.50"
-
-    @pytest.mark.asyncio
-    async def test_remote_interface_change_restarts_immediate_mode(self, manager):
-        """Verify changing remote_interface_ip restarts services in immediate mode."""
-        manager._enabled = True
-        manager._mode = "immediate"
-        manager._access_code = "12345678"
-        manager._remote_interface_ip = "10.0.0.50"
-        manager._tasks = [MagicMock(done=MagicMock(return_value=False))]
-        manager._stop = AsyncMock()
-        manager._start = AsyncMock()
-
-        await manager.configure(
-            enabled=True,
-            access_code="12345678",
+        inst = VirtualPrinterInstance(
+            vp_id=21,
+            name="NoRemote",
             mode="immediate",
-            remote_interface_ip="10.0.0.99",  # Changed
-        )
-
-        manager._stop.assert_called_once()
-        manager._start.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_remote_interface_change_restarts_review_mode(self, manager):
-        """Verify changing remote_interface_ip restarts services in review mode."""
-        manager._enabled = True
-        manager._mode = "review"
-        manager._access_code = "12345678"
-        manager._remote_interface_ip = "10.0.0.50"
-        manager._tasks = [MagicMock(done=MagicMock(return_value=False))]
-        manager._stop = AsyncMock()
-        manager._start = AsyncMock()
-
-        await manager.configure(
-            enabled=True,
+            model="3DPrinter-X1-Carbon",
             access_code="12345678",
-            mode="review",
-            remote_interface_ip="10.0.0.99",  # Changed
+            serial_suffix="391800021",
+            bind_ip="192.168.1.50",
+            base_dir=tmp_path,
         )
-
-        manager._stop.assert_called_once()
-        manager._start.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_remote_interface_change_restarts_print_queue_mode(self, manager):
-        """Verify changing remote_interface_ip restarts services in print_queue mode."""
-        manager._enabled = True
-        manager._mode = "print_queue"
-        manager._access_code = "12345678"
-        manager._remote_interface_ip = "10.0.0.50"
-        manager._tasks = [MagicMock(done=MagicMock(return_value=False))]
-        manager._stop = AsyncMock()
-        manager._start = AsyncMock()
-
-        await manager.configure(
-            enabled=True,
-            access_code="12345678",
-            mode="print_queue",
-            remote_interface_ip="10.0.0.99",  # Changed
-        )
-
-        manager._stop.assert_called_once()
-        manager._start.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_no_restart_when_remote_interface_unchanged(self, manager):
-        """Verify no restart if remote_interface_ip hasn't changed."""
-        manager._enabled = True
-        manager._mode = "immediate"
-        manager._access_code = "12345678"
-        manager._remote_interface_ip = "10.0.0.50"
-        manager._tasks = [MagicMock(done=MagicMock(return_value=False))]
-        manager._stop = AsyncMock()
-        manager._start = AsyncMock()
-
-        await manager.configure(
-            enabled=True,
-            access_code="12345678",
-            mode="immediate",
-            remote_interface_ip="10.0.0.50",  # Same
-        )
-
-        manager._stop.assert_not_called()
-        manager._start.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_server_mode_passes_advertise_ip_to_ssdp(self, manager):
-        """Verify _start_server_mode passes remote_interface_ip as advertise_ip to SSDP."""
-        manager._mode = "immediate"
-        manager._access_code = "12345678"
-        manager._remote_interface_ip = "10.0.0.50"
-        manager._model = "3DPrinter-X1-Carbon"
 
         with (
-            patch("backend.app.services.virtual_printer.manager.VirtualPrinterSSDPServer") as mock_ssdp_cls,
-            patch("backend.app.services.virtual_printer.manager.VirtualPrinterFTPServer"),
-            patch("backend.app.services.virtual_printer.manager.SimpleMQTTServer"),
-            patch("backend.app.services.virtual_printer.manager.BindServer"),
-            patch.object(manager._cert_service, "delete_printer_certificate"),
+            patch.object(inst._cert_service, "delete_printer_certificate"),
             patch.object(
-                manager._cert_service,
+                inst._cert_service,
                 "generate_certificates",
-                return_value=(Path("/tmp/cert.pem"), Path("/tmp/key.pem")),  # nosec B108
-            ),
+                return_value=(Path("/tmp/cert.pem"), Path("/tmp/key.pem")),
+            ) as mock_gen,
         ):
-            mock_ssdp_cls.return_value.start = AsyncMock()
-            await manager._start_server_mode()
+            inst.generate_certificates()
+            mock_gen.assert_called_once_with(additional_ips=["192.168.1.50"])
 
-            mock_ssdp_cls.assert_called_once_with(
-                name="Bambuddy",
-                serial=manager.printer_serial,
-                model="3DPrinter-X1-Carbon",
-                advertise_ip="10.0.0.50",
-            )
+    def test_generate_certificates_no_ips(self, tmp_path):
+        """Verify generate_certificates passes None when no IPs configured."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
 
-    @pytest.mark.asyncio
-    async def test_server_mode_passes_additional_ips_to_certificate(self, manager):
-        """Verify _start_server_mode includes remote_interface_ip in certificate SANs."""
-        manager._mode = "immediate"
-        manager._access_code = "12345678"
-        manager._remote_interface_ip = "10.0.0.50"
-        manager._model = "3DPrinter-X1-Carbon"
+        inst = VirtualPrinterInstance(
+            vp_id=22,
+            name="NoIPs",
+            mode="immediate",
+            model="3DPrinter-X1-Carbon",
+            access_code="12345678",
+            serial_suffix="391800022",
+            base_dir=tmp_path,
+        )
 
         with (
-            patch("backend.app.services.virtual_printer.manager.VirtualPrinterSSDPServer"),
-            patch("backend.app.services.virtual_printer.manager.VirtualPrinterFTPServer"),
-            patch("backend.app.services.virtual_printer.manager.SimpleMQTTServer"),
-            patch("backend.app.services.virtual_printer.manager.BindServer"),
-            patch.object(manager._cert_service, "delete_printer_certificate"),
+            patch.object(inst._cert_service, "delete_printer_certificate"),
             patch.object(
-                manager._cert_service,
+                inst._cert_service,
                 "generate_certificates",
-                return_value=(Path("/tmp/cert.pem"), Path("/tmp/key.pem")),  # nosec B108
-            ) as mock_gen_certs,
+                return_value=(Path("/tmp/cert.pem"), Path("/tmp/key.pem")),
+            ) as mock_gen,
         ):
-            await manager._start_server_mode()
-
-            mock_gen_certs.assert_called_once_with(additional_ips=["10.0.0.50"])
-
-    @pytest.mark.asyncio
-    async def test_server_mode_no_additional_ips_without_remote_interface(self, manager):
-        """Verify _start_server_mode passes None for additional_ips when no remote interface."""
-        manager._mode = "immediate"
-        manager._access_code = "12345678"
-        manager._remote_interface_ip = ""
-        manager._model = "3DPrinter-X1-Carbon"
-
-        with (
-            patch("backend.app.services.virtual_printer.manager.VirtualPrinterSSDPServer"),
-            patch("backend.app.services.virtual_printer.manager.VirtualPrinterFTPServer"),
-            patch("backend.app.services.virtual_printer.manager.SimpleMQTTServer"),
-            patch("backend.app.services.virtual_printer.manager.BindServer"),
-            patch.object(manager._cert_service, "delete_printer_certificate"),
-            patch.object(
-                manager._cert_service,
-                "generate_certificates",
-                return_value=(Path("/tmp/cert.pem"), Path("/tmp/key.pem")),  # nosec B108
-            ) as mock_gen_certs,
-        ):
-            await manager._start_server_mode()
-
-            mock_gen_certs.assert_called_once_with(additional_ips=None)
+            inst.generate_certificates()
+            mock_gen.assert_called_once_with(additional_ips=None)
 
 
 class TestBindServer:
-    """Tests for the BindServer (port 3000 bind/detect protocol)."""
+    """Tests for the BindServer (port 3002 bind/detect protocol)."""
 
     @pytest.fixture
     def bind_server(self):
@@ -1203,33 +1172,51 @@ class TestBindServer:
         )
         assert server.version == "01.09.00.10"
 
-    @pytest.mark.asyncio
-    async def test_server_mode_creates_bind_server(self):
-        """Verify _start_server_mode creates BindServer with correct params."""
-        from backend.app.services.virtual_printer.manager import VirtualPrinterManager
+    def test_bind_ports_includes_both(self):
+        """Verify BIND_PORTS includes both 3000 and 3002 for slicer compatibility."""
+        from backend.app.services.virtual_printer.bind_server import BIND_PORTS
 
-        manager = VirtualPrinterManager()
-        manager._mode = "immediate"
-        manager._access_code = "12345678"
-        manager._remote_interface_ip = ""
-        manager._model = "3DPrinter-X1-Carbon"
+        assert 3000 in BIND_PORTS
+        assert 3002 in BIND_PORTS
+
+    def test_bind_server_initializes_empty_servers_list(self, bind_server):
+        """Verify bind server starts with empty servers list."""
+        assert bind_server._servers == []
+        assert bind_server._running is False
+
+    @pytest.mark.asyncio
+    async def test_start_server_creates_bind_server(self, tmp_path):
+        """Verify start_server creates BindServer with correct params."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        inst = VirtualPrinterInstance(
+            vp_id=99,
+            name="Bambuddy",
+            mode="immediate",
+            model="3DPrinter-X1-Carbon",
+            access_code="12345678",
+            serial_suffix="391800099",
+            bind_ip="192.168.1.50",
+            base_dir=tmp_path,
+        )
 
         with (
             patch("backend.app.services.virtual_printer.manager.VirtualPrinterSSDPServer"),
             patch("backend.app.services.virtual_printer.manager.VirtualPrinterFTPServer"),
             patch("backend.app.services.virtual_printer.manager.SimpleMQTTServer"),
             patch("backend.app.services.virtual_printer.manager.BindServer") as mock_bind_cls,
-            patch.object(manager._cert_service, "delete_printer_certificate"),
+            patch.object(inst._cert_service, "delete_printer_certificate"),
             patch.object(
-                manager._cert_service,
+                inst._cert_service,
                 "generate_certificates",
                 return_value=(Path("/tmp/cert.pem"), Path("/tmp/key.pem")),  # nosec B108
             ),
         ):
-            await manager._start_server_mode()
+            await inst.start_server()
 
             mock_bind_cls.assert_called_once_with(
-                serial=manager.printer_serial,
+                serial=inst.serial,
                 model="3DPrinter-X1-Carbon",
                 name="Bambuddy",
+                bind_address="192.168.1.50",
             )

@@ -558,7 +558,7 @@ class PrintScheduler:
                         "is_ht": False,
                         "is_external": True,
                         "global_tray_id": tray_id,
-                        "extruder_id": (tray_id - 254) if ams_extruder_map else None,
+                        "extruder_id": (255 - tray_id) if ams_extruder_map else None,
                     }
                 )
 
@@ -634,12 +634,12 @@ class PrintScheduler:
             # Get available trays (not already used)
             available = [f for f in loaded if f["global_tray_id"] not in used_tray_ids]
 
-            # Nozzle-aware filtering: restrict to trays on the correct nozzle
+            # Nozzle-aware filtering: restrict to trays on the correct nozzle.
+            # Hard filter — cross-nozzle assignment causes print failures
+            # ("position of left hotend is abnormal"), so never fall back.
             req_nozzle_id = req.get("nozzle_id")
             if req_nozzle_id is not None:
-                nozzle_filtered = [f for f in available if f.get("extruder_id") == req_nozzle_id]
-                if nozzle_filtered:
-                    available = nozzle_filtered
+                available = [f for f in available if f.get("extruder_id") == req_nozzle_id]
 
             # Check if tray_info_idx is unique among available trays
             if req_tray_info_idx:
@@ -915,6 +915,7 @@ class PrintScheduler:
                 archive = await archive_service.archive_print(
                     printer_id=item.printer_id,
                     source_file=file_path,
+                    original_filename=filename,
                 )
                 if archive:
                     item.archive_id = archive.id

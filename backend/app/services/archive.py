@@ -831,6 +831,7 @@ class ArchiveService:
         source_file: Path,
         print_data: dict | None = None,
         created_by_id: int | None = None,
+        original_filename: str | None = None,
     ) -> PrintArchive | None:
         """Archive a 3MF file with metadata.
 
@@ -839,6 +840,8 @@ class ArchiveService:
             source_file: Path to the 3MF file
             print_data: Print data from MQTT (optional)
             created_by_id: User ID who created this archive (optional, for user tracking)
+            original_filename: Original human-readable filename (optional, for library files
+                stored with UUID names)
         """
         # Verify printer exists if specified
         if printer_id is not None:
@@ -849,7 +852,8 @@ class ArchiveService:
 
         # Create archive directory structure
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        archive_name = f"{timestamp}_{source_file.stem}"
+        display_stem = Path(original_filename).stem if original_filename else source_file.stem
+        archive_name = f"{timestamp}_{display_stem}"
         # Use "unassigned" folder for archives without a printer
         printer_folder = str(printer_id) if printer_id is not None else "unassigned"
         archive_dir = settings.archive_dir / printer_folder / archive_name
@@ -923,12 +927,12 @@ class ArchiveService:
         # Create archive record
         archive = PrintArchive(
             printer_id=printer_id,
-            filename=source_file.name,
+            filename=original_filename or source_file.name,
             file_path=str(dest_file.relative_to(settings.base_dir)),
             file_size=dest_file.stat().st_size,
             content_hash=content_hash,
             thumbnail_path=thumbnail_path,
-            print_name=metadata.get("print_name") or source_file.stem,
+            print_name=metadata.get("print_name") or display_stem,
             print_time_seconds=metadata.get("print_time_seconds"),
             filament_used_grams=metadata.get("filament_used_grams"),
             filament_type=metadata.get("filament_type"),

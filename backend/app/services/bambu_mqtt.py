@@ -279,6 +279,9 @@ class BambuMQTTClient:
         self._was_running: bool = False  # Track if we've seen RUNNING state for current print
         self._completion_triggered: bool = False  # Prevent duplicate completion triggers
         self._timelapse_during_print: bool = False  # Track if timelapse was active during this print
+        self._last_valid_progress: float = 0.0  # Last non-zero progress (firmware resets on cancel)
+        self._last_valid_layer_num: int = 0  # Last non-zero layer (firmware resets on cancel)
+        self._is_dual_nozzle: bool = False  # Set when device.extruder.info has >= 2 entries
         self._message_log: deque[MQTTLogEntry] = deque(maxlen=100)
         self._logging_enabled: bool = False
         self._last_message_time: float = 0.0  # Track when we last received a message
@@ -529,6 +532,16 @@ class BambuMQTTClient:
                     f"[{self.serial_number}] Received gcode_state: {print_data.get('gcode_state')}, "
                     f"gcode_file: {print_data.get('gcode_file')}, subtask_name: {print_data.get('subtask_name')}"
                 )
+
+            # Detect dual-nozzle BEFORE processing AMS data (tray_now disambiguation needs it)
+            # device.extruder.info with >= 2 entries only exists on dual-nozzle printers (H2D, H2D Pro)
+            if not self._is_dual_nozzle and "device" in print_data:
+                dev = print_data.get("device")
+                if isinstance(dev, dict):
+                    ext_info = dev.get("extruder", {}).get("info", [])
+                    if isinstance(ext_info, list) and len(ext_info) >= 2:
+                        self._is_dual_nozzle = True
+                        logger.info("[%s] Detected dual-nozzle printer from device.extruder.info", self.serial_number)
 
             # Handle AMS data that comes inside print key
             if "ams" in print_data:
@@ -912,7 +925,9 @@ class BambuMQTTClient:
 
                 # H2D dual-nozzle printers report only slot number (0-3), not global tray ID
                 # Use active_extruder + ams_extruder_map to determine which AMS the slot belongs to
-                if parsed_tray_now >= 0 and parsed_tray_now <= 3:
+                # Single-nozzle printers (X1C, P2S, etc.) always report global IDs, even with multiple AMS
+                ams_map = self.state.ams_extruder_map
+                if self._is_dual_nozzle and 0 <= parsed_tray_now <= 3:
                     # First, check if we have a pending target that matches this slot
                     pending_target = self.state.pending_tray_target
                     if pending_target is not None:
@@ -945,7 +960,8 @@ class BambuMQTTClient:
                         if snow_tray is not None and snow_tray != 255:
                             # snow_tray is already normalized to global ID
                             # Verify the slot matches what we see in tray_now
-                            snow_slot = snow_tray % 4 if snow_tray < 128 else -1
+                            # Regular AMS: slot = global_id % 4; AMS HT (128-135): single slot = 0
+                            snow_slot = snow_tray % 4 if snow_tray < 128 else (0 if snow_tray <= 135 else -1)
                             if snow_slot == parsed_tray_now:
                                 if self.state.tray_now != snow_tray:
                                     logger.debug(
@@ -962,7 +978,6 @@ class BambuMQTTClient:
                                 self.state.tray_now = snow_tray
                         else:
                             # Fallback: snow not available, use ams_extruder_map (less reliable)
-                            ams_map = self.state.ams_extruder_map
                             # Find ALL AMS units on the active extruder
                             ams_on_extruder = []
                             for ams_id_str, ext_id in ams_map.items():
@@ -975,29 +990,56 @@ class BambuMQTTClient:
                             if len(ams_on_extruder) == 1:
                                 # Single AMS on this extruder - unambiguous
                                 active_ams_id = ams_on_extruder[0]
-                                global_tray_id = active_ams_id * 4 + parsed_tray_now
+                                if 128 <= active_ams_id <= 135:
+                                    # AMS-HT: single slot per unit, global ID = unit ID
+                                    global_tray_id = active_ams_id
+                                else:
+                                    global_tray_id = active_ams_id * 4 + parsed_tray_now
                                 logger.debug(
                                     f"[{self.serial_number}] H2D tray_now fallback: "
                                     f"slot {parsed_tray_now} + single AMS {active_ams_id} -> global ID {global_tray_id}"
                                 )
                                 self.state.tray_now = global_tray_id
                             elif len(ams_on_extruder) > 1:
-                                # Multiple AMS on this extruder - keep current if valid, else use slot as-is
+                                # Multiple AMS on this extruder - keep current if valid, else try to narrow down
                                 current_tray = self.state.tray_now
-                                current_ams = current_tray // 4 if current_tray < 128 else -1
-                                if current_ams in ams_on_extruder and (current_tray % 4) == parsed_tray_now:
+                                # Determine which AMS unit and slot the current tray belongs to
+                                if 0 <= current_tray <= 15:
+                                    current_ams = current_tray // 4
+                                    current_slot = current_tray % 4
+                                elif 128 <= current_tray <= 135:
+                                    current_ams = current_tray  # AMS-HT: ID = tray ID
+                                    current_slot = 0
+                                else:
+                                    current_ams = -1
+                                    current_slot = -1
+                                if current_ams in ams_on_extruder and current_slot == parsed_tray_now:
                                     # Current is valid and matches slot - keep it
                                     logger.debug(
                                         f"[{self.serial_number}] H2D tray_now: multiple AMS {ams_on_extruder}, "
                                         f"keeping current {current_tray} (matches slot {parsed_tray_now})"
                                     )
                                 else:
-                                    # Can't disambiguate - use slot as-is (will be wrong for non-first AMS)
-                                    logger.warning(
-                                        f"[{self.serial_number}] H2D tray_now: multiple AMS {ams_on_extruder} on extruder {active_ext}, "
-                                        f"no snow field, using slot {parsed_tray_now} (may be incorrect)"
-                                    )
-                                    self.state.tray_now = parsed_tray_now
+                                    # Filter candidates: AMS-HT (128-135) only valid for slot 0
+                                    if parsed_tray_now > 0:
+                                        candidates = [a for a in ams_on_extruder if a <= 3]
+                                    else:
+                                        candidates = ams_on_extruder
+                                    if len(candidates) == 1:
+                                        cand = candidates[0]
+                                        resolved = cand if 128 <= cand <= 135 else cand * 4 + parsed_tray_now
+                                        logger.debug(
+                                            f"[{self.serial_number}] H2D tray_now: multiple AMS {ams_on_extruder}, "
+                                            f"narrowed to AMS {cand} -> global ID {resolved}"
+                                        )
+                                        self.state.tray_now = resolved
+                                    else:
+                                        # Genuinely ambiguous - use slot as-is (will be wrong for non-first AMS)
+                                        logger.warning(
+                                            f"[{self.serial_number}] H2D tray_now: multiple AMS {ams_on_extruder} on extruder {active_ext}, "
+                                            f"no snow field, using slot {parsed_tray_now} (may be incorrect)"
+                                        )
+                                        self.state.tray_now = parsed_tray_now
                             else:
                                 # No AMS on this extruder - use slot as-is
                                 logger.warning(
@@ -1014,7 +1056,9 @@ class BambuMQTTClient:
                     self.state.tray_now = parsed_tray_now
 
                 # Track last valid tray for usage tracking (survives retract → 255 at print end)
-                if 0 <= self.state.tray_now <= 253:
+                # Valid physical trays: 0-15 (regular AMS), 128-135 (AMS-HT), 254 (external spool)
+                tn = self.state.tray_now
+                if (0 <= tn <= 15) or (128 <= tn <= 135) or tn == 254:
                     self.state.last_loaded_tray = self.state.tray_now
 
                 logger.debug("[%s] tray_now updated: %s", self.serial_number, self.state.tray_now)
@@ -1211,6 +1255,9 @@ class BambuMQTTClient:
         if "subtask_id" in data:
             self.state.subtask_id = data["subtask_id"]
         if "mc_percent" in data:
+            # Save last non-zero progress for usage tracking (firmware resets to 0 on cancel)
+            if self.state.progress > 0:
+                self._last_valid_progress = self.state.progress
             self.state.progress = float(data["mc_percent"])
         if "mc_remaining_time" in data:
             self.state.remaining_time = int(data["mc_remaining_time"])
@@ -1225,6 +1272,9 @@ class BambuMQTTClient:
         if "layer_num" in data:
             new_layer = int(data["layer_num"])
             old_layer = self.state.layer_num
+            # Save last non-zero layer for usage tracking (firmware resets to 0 on cancel)
+            if old_layer > 0:
+                self._last_valid_layer_num = old_layer
             self.state.layer_num = new_layer
             # Trigger layer change callback if layer increased
             if new_layer > old_layer and self.on_layer_change:
@@ -1984,6 +2034,9 @@ class BambuMQTTClient:
             # Reset completion tracking for new print
             self._was_running = True
             self._completion_triggered = False
+            # Reset last valid progress/layer for usage tracking
+            self._last_valid_progress = 0.0
+            self._last_valid_layer_num = 0
             # Initialize timelapse tracking based on current state
             # NOTE: xcam data is parsed BEFORE this code runs in _process_message,
             # so self.state.timelapse may already be set from this message.
@@ -2067,6 +2120,9 @@ class BambuMQTTClient:
                     "timelapse_was_active": timelapse_was_active,
                     "hms_errors": hms_errors_data,
                     "ams_mapping": self._captured_ams_mapping,
+                    # Last valid progress/layer before firmware reset (for partial usage tracking)
+                    "last_progress": self._last_valid_progress,
+                    "last_layer_num": self._last_valid_layer_num,
                 }
             )
             self._captured_ams_mapping = None

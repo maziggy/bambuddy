@@ -1,10 +1,7 @@
 """Virtual Printer Manager - coordinates SSDP, MQTT, and FTP services.
 
-Supports multiple modes:
-- immediate: Archive uploads immediately
-- review: Queue uploads for user review before archiving
-- print_queue: Archive and add to print queue (unassigned)
-- proxy: Transparent TCP proxy to a real printer (for remote slicer access)
+Each virtual printer runs its own independent services (FTP, MQTT, SSDP, Bind)
+bound to its dedicated IP address, regardless of mode.
 """
 
 import asyncio
@@ -78,497 +75,143 @@ MODEL_SERIAL_PREFIXES = {
 DEFAULT_VIRTUAL_PRINTER_MODEL = "3DPrinter-X1-Carbon"  # X1C
 
 
-class VirtualPrinterManager:
-    """Manages the virtual printer lifecycle and coordinates all services."""
+def _get_serial_for_model(model: str, serial_suffix: str) -> str:
+    """Get serial number for the given model and suffix."""
+    prefix = MODEL_SERIAL_PREFIXES.get(model, "00M09A")
+    return f"{prefix}{serial_suffix}"
 
-    # Fixed configuration
-    PRINTER_NAME = "Bambuddy"
-    SERIAL_SUFFIX = "391800001"  # Fixed suffix for virtual printer
 
-    def __init__(self):
-        """Initialize the virtual printer manager."""
-        self._session_factory: Callable | None = None
-        self._enabled = False
-        self._access_code = ""
-        self._mode = "immediate"
-        self._model = DEFAULT_VIRTUAL_PRINTER_MODEL
-        self._target_printer_ip = ""  # For proxy mode
-        self._target_printer_serial = ""  # For proxy mode (real printer's serial)
-        self._remote_interface_ip = ""  # For proxy mode SSDP (LAN B - slicer network)
+class VirtualPrinterInstance:
+    """Per-printer state and file handling logic.
 
-        # Service instances
-        self._ssdp: VirtualPrinterSSDPServer | None = None
-        self._ssdp_proxy: SSDPProxy | None = None
-        self._ftp: VirtualPrinterFTPServer | None = None
-        self._mqtt: SimpleMQTTServer | None = None
-        self._bind: BindServer | None = None  # For server mode (bind/detect on port 3000)
-        self._proxy: SlicerProxyManager | None = None  # For proxy mode
+    Each instance represents one virtual printer with its own config,
+    upload directory, certificates, and file handling mode.
+    """
 
-        # Background tasks
-        self._tasks: list[asyncio.Task] = []
-
-        # Directories
-        self._base_dir = app_settings.base_dir / "virtual_printer"
-        self._upload_dir = self._base_dir / "uploads"
-        self._cert_dir = self._base_dir / "certs"
-
-        # Create directories early to avoid permission issues later
-        # If running in Docker, these need to be on a writable volume
-        self._ensure_directories()
-
-        # Certificate service
-        self._cert_service = CertificateService(self._cert_dir)
-
-        # Track pending uploads for MQTT correlation
-        self._pending_files: dict[str, Path] = {}
-
-    def _ensure_directories(self) -> None:
-        """Create and verify virtual printer directories are writable.
-
-        Creates all required directories at startup to catch permission
-        issues early rather than when the user tries to enable features.
-        """
-        dirs_to_create = [
-            self._base_dir,
-            self._upload_dir,
-            self._upload_dir / "cache",
-            self._cert_dir,
-        ]
-
-        logger.info("Checking virtual printer directories in %s", self._base_dir)
-
-        for dir_path in dirs_to_create:
-            try:
-                dir_path.mkdir(parents=True, exist_ok=True)
-            except PermissionError:
-                logger.error(
-                    f"Cannot create directory {dir_path}: Permission denied. "
-                    f"For Docker: ensure the data volume is writable by the container user. "
-                    f"For bare metal: run 'sudo chown -R $(whoami) {self._base_dir}'"
-                )
-                continue
-
-            # Verify directory is writable by attempting to create a test file
-            test_file = dir_path / ".write_test"
-            try:
-                test_file.touch()
-                test_file.unlink(missing_ok=True)
-            except PermissionError:
-                logger.error(
-                    f"Directory {dir_path} exists but is not writable. "
-                    f"For Docker: ensure the data volume is writable by the container user (uid/gid). "
-                    f"For bare metal: run 'sudo chown -R $(whoami) {self._base_dir}'"
-                )
-
-    def _get_serial_for_model(self, model: str) -> str:
-        """Get appropriate serial number for the given model.
-
-        Args:
-            model: SSDP model code (e.g., 'BL-P001', 'C11')
-
-        Returns:
-            Serial number with correct prefix for the model
-        """
-        prefix = MODEL_SERIAL_PREFIXES.get(model, "00M09A")
-        return f"{prefix}{self.SERIAL_SUFFIX}"
-
-    @property
-    def printer_serial(self) -> str:
-        """Get the current printer serial number based on model."""
-        return self._get_serial_for_model(self._model)
-
-    def set_session_factory(self, session_factory: Callable) -> None:
-        """Set the database session factory.
-
-        Args:
-            session_factory: Async context manager for database sessions
-        """
+    def __init__(
+        self,
+        *,
+        vp_id: int,
+        name: str,
+        mode: str,
+        model: str,
+        access_code: str,
+        serial_suffix: str,
+        target_printer_ip: str = "",
+        target_printer_serial: str = "",
+        bind_ip: str = "",
+        remote_interface_ip: str = "",
+        base_dir: Path,
+        session_factory: Callable | None = None,
+    ):
+        self.id = vp_id
+        self.name = name
+        self.mode = mode
+        self.model = model
+        self.access_code = access_code
+        self.serial_suffix = serial_suffix
+        self.target_printer_ip = target_printer_ip
+        self.target_printer_serial = target_printer_serial
+        self.bind_ip = bind_ip
+        self.remote_interface_ip = remote_interface_ip
         self._session_factory = session_factory
 
+        # Directories
+        self.upload_dir = base_dir / "uploads" / str(vp_id)
+        self.cert_dir = base_dir / "certs" / str(vp_id)
+        shared_ca_dir = base_dir / "certs"
+
+        # Ensure directories exist
+        self.upload_dir.mkdir(parents=True, exist_ok=True)
+        (self.upload_dir / "cache").mkdir(exist_ok=True)
+        self.cert_dir.mkdir(parents=True, exist_ok=True)
+
+        # Certificate service (shared CA, per-instance printer cert)
+        self._cert_service = CertificateService(
+            cert_dir=self.cert_dir,
+            serial=self.serial,
+            shared_ca_dir=shared_ca_dir,
+        )
+
+        # Pending files for MQTT correlation
+        self._pending_files: dict[str, Path] = {}
+
+        # Per-instance services
+        self._proxy: SlicerProxyManager | None = None
+        self._ftp: VirtualPrinterFTPServer | None = None
+        self._mqtt: SimpleMQTTServer | None = None
+        self._bind: BindServer | None = None
+        self._ssdp: VirtualPrinterSSDPServer | None = None
+        self._ssdp_proxy: SSDPProxy | None = None
+        self._tasks: list[asyncio.Task] = []
+
     @property
-    def is_enabled(self) -> bool:
-        """Check if virtual printer is enabled."""
-        return self._enabled
+    def serial(self) -> str:
+        """Full serial number for this virtual printer."""
+        return _get_serial_for_model(self.model or DEFAULT_VIRTUAL_PRINTER_MODEL, self.serial_suffix)
+
+    @property
+    def cert_path(self) -> Path:
+        return self._cert_service.cert_path
+
+    @property
+    def key_path(self) -> Path:
+        return self._cert_service.key_path
+
+    @property
+    def is_proxy(self) -> bool:
+        return self.mode == "proxy"
 
     @property
     def is_running(self) -> bool:
-        """Check if virtual printer services are running."""
         return len(self._tasks) > 0 and all(not t.done() for t in self._tasks)
 
-    async def configure(
-        self,
-        enabled: bool,
-        access_code: str = "",
-        mode: str = "immediate",
-        model: str = "",
-        target_printer_ip: str = "",
-        target_printer_serial: str = "",
-        remote_interface_ip: str = "",
-    ) -> None:
-        """Configure and start/stop virtual printer.
-
-        Args:
-            enabled: Whether to enable the virtual printer
-            access_code: Authentication password for slicer connections
-            mode: Archive mode - 'immediate', 'review', 'print_queue', or 'proxy'
-            model: SSDP model code (e.g., 'BL-P001' for X1C)
-            target_printer_ip: Target printer IP for proxy mode
-            target_printer_serial: Target printer serial for proxy mode
-            remote_interface_ip: IP of interface on slicer network (LAN B) for SSDP proxy
-        """
-        # Proxy mode has different requirements
-        if mode == "proxy":
-            if enabled and not target_printer_ip:
-                raise ValueError("Target printer IP is required for proxy mode")
-            # Access code not required for proxy mode (uses printer's credentials)
-        else:
-            if enabled and not access_code:
-                raise ValueError("Access code is required when enabling virtual printer")
-
-        # Validate model if provided
-        new_model = model if model and model in VIRTUAL_PRINTER_MODELS else self._model
-        model_changed = new_model != self._model
-        mode_changed = mode != self._mode
-        target_changed = target_printer_ip != self._target_printer_ip
-        serial_changed = target_printer_serial != self._target_printer_serial
-        remote_iface_changed = remote_interface_ip != self._remote_interface_ip
-        old_mode = self._mode
-
-        logger.debug(
-            f"configure() called: enabled={enabled}, self._enabled={self._enabled}, "
-            f"mode={mode}, old_mode={old_mode}, model={model}, new_model={new_model}, "
-            f"target_printer_ip={target_printer_ip}, target_printer_serial={target_printer_serial}, "
-            f"remote_interface_ip={remote_interface_ip}"
-        )
-
-        self._access_code = access_code
-        self._mode = mode
-        self._model = new_model
-        self._target_printer_ip = target_printer_ip
-        self._target_printer_serial = target_printer_serial
-        self._remote_interface_ip = remote_interface_ip
-
-        needs_restart = (
-            model_changed
-            or mode_changed
-            or remote_iface_changed
-            or (mode == "proxy" and (target_changed or serial_changed))
-        )
-
-        if enabled and not self._enabled:
-            logger.info("Starting virtual printer (was disabled)")
-            await self._start()
-        elif not enabled and self._enabled:
-            logger.info("Stopping virtual printer (was enabled)")
-            await self._stop()
-        elif enabled and self._enabled and needs_restart:
-            # Configuration changed while running - restart services
-            logger.info("Configuration changed (mode=%s→%s), restarting...", old_mode, mode)
-            await self._stop()
-            # Give time for ports to be released
-            await asyncio.sleep(0.5)
-            await self._start()
-            logger.info("Virtual printer restarted with new configuration")
-        else:
-            logger.debug("No state change needed (enabled=%s, self._enabled=%s)", enabled, self._enabled)
-
-        self._enabled = enabled
-
-    async def _start(self) -> None:
-        """Start all virtual printer services."""
-        logger.info("Starting virtual printer services (mode=%s)...", self._mode)
-
-        # Proxy mode uses different services
-        if self._mode == "proxy":
-            await self._start_proxy_mode()
-            return
-
-        # Standard modes (immediate, review, print_queue) use FTP/MQTT servers
-        await self._start_server_mode()
-
-    async def _start_proxy_mode(self) -> None:
-        """Start virtual printer in proxy mode (TLS terminating relay)."""
-        logger.info("Starting proxy mode to %s", self._target_printer_ip)
-
-        # In proxy mode, use the REAL printer's serial number
-        # This ensures MQTT topic subscriptions match the real printer's topics
-        proxy_serial = self._target_printer_serial or self.printer_serial
-        logger.info("Proxy mode using serial: %s", proxy_serial)
-
-        # Update certificate service with the real printer's serial
-        self._cert_service.serial = proxy_serial
-
-        # Regenerate printer cert if needed (CA is preserved)
-        # Include remote interface IP in SAN so slicer TLS succeeds
-        additional_ips = []
-        if self._remote_interface_ip:
-            additional_ips.append(self._remote_interface_ip)
+    def generate_certificates(self) -> tuple[Path, Path]:
+        """Generate certificates for this instance."""
+        self._cert_service.serial = self.serial if not self.is_proxy else (self.target_printer_serial or self.serial)
+        additional_ips = [self.remote_interface_ip] if self.remote_interface_ip else None
+        if self.bind_ip:
+            additional_ips = additional_ips or []
+            additional_ips.append(self.bind_ip)
         self._cert_service.delete_printer_certificate()
-        cert_path, key_path = self._cert_service.generate_certificates(additional_ips=additional_ips or None)
-        logger.info("Generated certificate for proxy serial: %s", proxy_serial)
+        return self._cert_service.generate_certificates(additional_ips=additional_ips)
 
-        # Initialize TLS proxy with our certificates
-        self._proxy = SlicerProxyManager(
-            target_host=self._target_printer_ip,
-            cert_path=cert_path,
-            key_path=key_path,
-            on_activity=self._on_proxy_activity,
-        )
+    # -- File handling callbacks --
 
-        # Start services as background tasks
-        async def run_with_logging(coro, name):
-            try:
-                await coro
-            except Exception as e:
-                logger.error("Virtual printer %s failed: %s", name, e)
+    async def on_file_received(self, file_path: Path, source_ip: str) -> None:
+        """Handle file upload completion from FTP."""
+        logger.info("[VP %s] Received file: %s from %s", self.name, file_path.name, source_ip)
 
-        self._tasks = []
-
-        # SSDP setup: use SSDPProxy if remote interface is configured
-        # Local interface is auto-detected from target printer IP
-        if self._remote_interface_ip:
-            # Auto-detect local interface based on target printer IP
-            from backend.app.services.network_utils import find_interface_for_ip
-
-            local_iface = find_interface_for_ip(self._target_printer_ip)
-            if local_iface:
-                local_interface_ip = local_iface["ip"]
-                logger.info(
-                    f"SSDP proxy mode: LAN A ({local_interface_ip}, auto-detected) -> LAN B ({self._remote_interface_ip})"
-                )
-                self._ssdp_proxy = SSDPProxy(
-                    local_interface_ip=local_interface_ip,
-                    remote_interface_ip=self._remote_interface_ip,
-                    target_printer_ip=self._target_printer_ip,
-                )
-                self._tasks.append(
-                    asyncio.create_task(
-                        run_with_logging(self._ssdp_proxy.start(), "SSDP Proxy"),
-                        name="virtual_printer_ssdp_proxy",
-                    )
-                )
-            else:
-                logger.warning(
-                    f"Could not auto-detect local interface for printer {self._target_printer_ip}, "
-                    "falling back to single-interface SSDP"
-                )
-                self._start_fallback_ssdp(proxy_serial, run_with_logging)
-        else:
-            # Single interface: broadcast SSDP on same network (fallback)
-            self._start_fallback_ssdp(proxy_serial, run_with_logging)
-
-        # Add TLS proxy task
-        self._tasks.append(
-            asyncio.create_task(
-                run_with_logging(self._proxy.start(), "Proxy"),
-                name="virtual_printer_proxy",
-            )
-        )
-
-        logger.info(
-            "Virtual printer proxy target: FTP %s:%d, MQTT %s:%d, Bind %s:%d",
-            self._target_printer_ip,
-            SlicerProxyManager.PRINTER_FTP_PORT,
-            self._target_printer_ip,
-            SlicerProxyManager.PRINTER_MQTT_PORT,
-            self._target_printer_ip,
-            SlicerProxyManager.PRINTER_BIND_PORT,
-        )
-
-    def _start_fallback_ssdp(self, proxy_serial: str, run_with_logging) -> None:
-        """Start single-interface SSDP server as fallback."""
-        logger.info("SSDP broadcast mode (single interface)")
-        self._ssdp = VirtualPrinterSSDPServer(
-            name=f"{self.PRINTER_NAME} (Proxy)",
-            serial=proxy_serial,
-            model=self._model,
-        )
-        self._tasks.append(
-            asyncio.create_task(
-                run_with_logging(self._ssdp.start(), "SSDP"),
-                name="virtual_printer_ssdp",
-            )
-        )
-
-    async def _start_server_mode(self) -> None:
-        """Start virtual printer in server mode (FTP/MQTT servers)."""
-        # Update certificate service with current serial (based on model)
-        current_serial = self.printer_serial
-        self._cert_service.serial = current_serial
-
-        # Regenerate printer cert if serial changed (CA is preserved)
-        # Include remote interface IP in SAN so slicer TLS succeeds on that interface
-        additional_ips = []
-        if self._remote_interface_ip:
-            additional_ips.append(self._remote_interface_ip)
-        self._cert_service.delete_printer_certificate()
-        cert_path, key_path = self._cert_service.generate_certificates(additional_ips=additional_ips or None)
-        logger.info("Generated certificate for serial: %s", current_serial)
-
-        # Create directories
-        self._upload_dir.mkdir(parents=True, exist_ok=True)
-        (self._upload_dir / "cache").mkdir(exist_ok=True)
-
-        # Initialize services
-        self._ssdp = VirtualPrinterSSDPServer(
-            name=self.PRINTER_NAME,
-            serial=self.printer_serial,
-            model=self._model,
-            advertise_ip=self._remote_interface_ip,
-        )
-
-        self._ftp = VirtualPrinterFTPServer(
-            upload_dir=self._upload_dir,
-            access_code=self._access_code,
-            cert_path=cert_path,
-            key_path=key_path,
-            on_file_received=self._on_file_received,
-        )
-
-        self._mqtt = SimpleMQTTServer(
-            serial=self.printer_serial,
-            access_code=self._access_code,
-            cert_path=cert_path,
-            key_path=key_path,
-            on_print_command=self._on_print_command,
-        )
-
-        # Bind server responds to slicer detect/bind requests on port 3000
-        self._bind = BindServer(
-            serial=self.printer_serial,
-            model=self._model,
-            name=self.PRINTER_NAME,
-        )
-
-        # Start services as background tasks
-        # Wrap each in error handler so one failure doesn't stop others
-        async def run_with_logging(coro, name):
-            try:
-                await coro
-            except Exception as e:
-                logger.error("Virtual printer %s failed: %s", name, e)
-
-        self._tasks = [
-            asyncio.create_task(run_with_logging(self._ssdp.start(), "SSDP"), name="virtual_printer_ssdp"),
-            asyncio.create_task(run_with_logging(self._ftp.start(), "FTP"), name="virtual_printer_ftp"),
-            asyncio.create_task(run_with_logging(self._mqtt.start(), "MQTT"), name="virtual_printer_mqtt"),
-            asyncio.create_task(run_with_logging(self._bind.start(), "Bind"), name="virtual_printer_bind"),
-        ]
-
-        logger.info("Virtual printer '%s' started (serial: %s)", self.PRINTER_NAME, self.printer_serial)
-
-    def _on_proxy_activity(self, name: str, message: str) -> None:
-        """Handle proxy activity for logging."""
-        logger.info("Proxy %s: %s", name, message)
-
-    async def _stop(self) -> None:
-        """Stop all virtual printer services."""
-        logger.info("Stopping virtual printer services...")
-
-        # Stop services first - this closes servers and cancels active sessions
-        if self._ftp:
-            await self._ftp.stop()
-            self._ftp = None
-
-        if self._mqtt:
-            await self._mqtt.stop()
-            self._mqtt = None
-
-        if self._ssdp:
-            await self._ssdp.stop()
-            self._ssdp = None
-
-        if self._bind:
-            await self._bind.stop()
-            self._bind = None
-
-        if self._ssdp_proxy:
-            await self._ssdp_proxy.stop()
-            self._ssdp_proxy = None
-
-        if self._proxy:
-            await self._proxy.stop()
-            self._proxy = None
-
-        # Cancel remaining tasks with short timeout
-        for task in self._tasks:
-            task.cancel()
-
-        if self._tasks:
-            try:
-                await asyncio.wait_for(asyncio.gather(*self._tasks, return_exceptions=True), timeout=1.0)
-            except TimeoutError:
-                logger.debug("Some tasks didn't stop in time")
-
-        self._tasks = []
-
-        logger.info("Virtual printer stopped")
-
-    async def _on_file_received(self, file_path: Path, source_ip: str) -> None:
-        """Handle file upload completion from FTP.
-
-        Args:
-            file_path: Path to uploaded file
-            source_ip: IP address of the uploading slicer
-        """
-        logger.info("Virtual printer received file: %s from %s", file_path.name, source_ip)
-
-        # Store file reference for MQTT correlation
         self._pending_files[file_path.name] = file_path
 
-        # Handle based on mode:
-        # - immediate: archive right away
-        # - review: create pending upload record for user review before archiving
-        # - print_queue: archive and add to print queue (unassigned)
-        if self._mode == "immediate":
+        if self.mode == "immediate":
             await self._archive_file(file_path, source_ip)
-        elif self._mode == "print_queue":
+        elif self.mode == "print_queue":
             await self._add_to_print_queue(file_path, source_ip)
         else:
-            # "review" mode (or legacy "queue" mode)
             await self._queue_file(file_path, source_ip)
 
-        # Reset MQTT status back to IDLE after file processing
-        # This tells the slicer the printer is done with the file
+        # Reset MQTT status back to IDLE
         if self._mqtt and file_path.suffix.lower() == ".3mf":
             self._mqtt.set_gcode_state("IDLE")
 
-    async def _on_print_command(self, filename: str, data: dict) -> None:
-        """Handle print command from MQTT.
-
-        In a real printer, this would start the print. For virtual printer,
-        we just log it since archiving is handled by file upload.
-
-        Args:
-            filename: Name of the file to print
-            data: Print command data (contains settings like timelapse, bed_leveling, etc.)
-        """
-        logger.info("Virtual printer received print command for: %s", filename)
-        logger.debug("Print command data: %s", data)
-
-        # The file should already be archived from FTP upload
-        # This command just confirms the slicer's intent to "print"
+    async def on_print_command(self, filename: str, data: dict) -> None:
+        """Handle print command from MQTT."""
+        logger.info("[VP %s] Print command for: %s", self.name, filename)
 
     async def _archive_file(self, file_path: Path, source_ip: str) -> None:
-        """Archive file immediately.
-
-        Args:
-            file_path: Path to the 3MF file
-            source_ip: IP address of uploader
-        """
+        """Archive file immediately."""
         if not self._session_factory:
             logger.error("Cannot archive: no database session factory configured")
             return
 
-        # Only archive 3MF files
         if file_path.suffix.lower() != ".3mf":
             logger.debug("Skipping non-3MF file: %s", file_path.name)
-            # Remove from pending and clean up
             self._pending_files.pop(file_path.name, None)
             try:
                 file_path.unlink()
             except OSError:
-                pass  # Best-effort removal of non-3MF file; may already be gone
+                pass
             return
 
         try:
@@ -576,10 +219,8 @@ class VirtualPrinterManager:
 
             async with self._session_factory() as db:
                 service = ArchiveService(db)
-
-                # Archive the print
                 archive = await service.archive_print(
-                    printer_id=None,  # No physical printer
+                    printer_id=None,
                     source_file=file_path,
                     print_data={
                         "status": "archived",
@@ -587,42 +228,30 @@ class VirtualPrinterManager:
                         "source_ip": source_ip,
                     },
                 )
-
                 if archive:
-                    logger.info("Archived virtual printer upload: %s - %s", archive.id, archive.print_name)
-
-                    # Clean up uploaded file (it's now copied to archive)
+                    logger.info("[VP %s] Archived: %s - %s", self.name, archive.id, archive.print_name)
                     try:
                         file_path.unlink()
                     except OSError:
-                        pass  # Best-effort cleanup of uploaded file after archiving
-                    # Remove from pending
+                        pass
                     self._pending_files.pop(file_path.name, None)
                 else:
                     logger.error("Failed to archive file: %s", file_path.name)
-
-        except Exception as e:  # Mixed async DB + archive operations
+        except Exception as e:
             logger.error("Error archiving file: %s", e)
 
     async def _queue_file(self, file_path: Path, source_ip: str) -> None:
-        """Queue file for user review.
-
-        Args:
-            file_path: Path to the 3MF file
-            source_ip: IP address of uploader
-        """
+        """Queue file for user review."""
         if not self._session_factory:
             logger.error("Cannot queue: no database session factory configured")
             return
 
-        # Only queue 3MF files
         if file_path.suffix.lower() != ".3mf":
-            logger.debug("Skipping non-3MF file: %s", file_path.name)
             self._pending_files.pop(file_path.name, None)
             try:
                 file_path.unlink()
             except OSError:
-                pass  # Best-effort removal of non-3MF file; may already be gone
+                pass
             return
 
         try:
@@ -639,34 +268,23 @@ class VirtualPrinterManager:
                 )
                 db.add(pending)
                 await db.commit()
-
-                logger.info("Queued virtual printer upload: %s - %s", pending.id, file_path.name)
-
-                # Remove from pending files dict
+                logger.info("[VP %s] Queued: %s - %s", self.name, pending.id, file_path.name)
                 self._pending_files.pop(file_path.name, None)
-
         except Exception as e:
             logger.error("Error queueing file: %s", e)
 
     async def _add_to_print_queue(self, file_path: Path, source_ip: str) -> None:
-        """Archive file and add to print queue (unassigned).
-
-        Args:
-            file_path: Path to the 3MF file
-            source_ip: IP address of uploader
-        """
+        """Archive file and add to print queue (unassigned)."""
         if not self._session_factory:
             logger.error("Cannot add to print queue: no database session factory configured")
             return
 
-        # Only process 3MF files
         if file_path.suffix.lower() != ".3mf":
-            logger.debug("Skipping non-3MF file: %s", file_path.name)
             self._pending_files.pop(file_path.name, None)
             try:
                 file_path.unlink()
             except OSError:
-                pass  # Best-effort removal of non-3MF file; may already be gone
+                pass
             return
 
         try:
@@ -675,10 +293,8 @@ class VirtualPrinterManager:
 
             async with self._session_factory() as db:
                 service = ArchiveService(db)
-
-                # First, archive the print
                 archive = await service.archive_print(
-                    printer_id=None,  # No physical printer
+                    printer_id=None,
                     source_file=file_path,
                     print_data={
                         "status": "archived",
@@ -686,62 +302,425 @@ class VirtualPrinterManager:
                         "source_ip": source_ip,
                     },
                 )
-
                 if archive:
-                    logger.info("Archived virtual printer upload: %s - %s", archive.id, archive.print_name)
-
-                    # Now add to print queue (unassigned)
+                    logger.info("[VP %s] Archived: %s - %s", self.name, archive.id, archive.print_name)
                     queue_item = PrintQueueItem(
-                        printer_id=None,  # Unassigned - user will assign later
+                        printer_id=None,
                         archive_id=archive.id,
-                        position=1,  # Will be adjusted when assigned to a printer
+                        position=1,
                         status="pending",
                     )
                     db.add(queue_item)
                     await db.commit()
-
-                    logger.info(
-                        "Added to print queue (unassigned): queue_id=%s, archive_id=%s", queue_item.id, archive.id
-                    )
-
-                    # Clean up uploaded file (it's now copied to archive)
+                    logger.info("[VP %s] Added to queue: %s", self.name, queue_item.id)
                     try:
                         file_path.unlink()
                     except OSError:
-                        pass  # Best-effort cleanup of uploaded file after archiving and queuing
-                    # Remove from pending
+                        pass
                     self._pending_files.pop(file_path.name, None)
                 else:
                     logger.error("Failed to archive file: %s", file_path.name)
-
-        except Exception as e:  # Mixed async DB + archive + queue operations
+        except Exception as e:
             logger.error("Error adding to print queue: %s", e)
 
-    def get_status(self) -> dict:
-        """Get virtual printer status.
+    # -- Service lifecycle --
 
-        Returns:
-            Status dictionary with enabled, running, mode, etc.
-        """
-        status = {
-            "enabled": self._enabled,
+    async def start_server(self) -> None:
+        """Start server-mode services (FTP, MQTT, SSDP, Bind) on this VP's bind_ip."""
+        logger.info("[VP %s] Starting server-mode services on %s", self.name, self.bind_ip)
+
+        cert_path, key_path = self.generate_certificates()
+        bind_addr = self.bind_ip or "0.0.0.0"  # nosec B104
+
+        async def run_with_logging(coro, svc_name):
+            try:
+                await coro
+            except Exception as e:
+                logger.error("[VP %s] %s failed: %s", self.name, svc_name, e)
+
+        self._tasks = []
+
+        # FTP server
+        self._ftp = VirtualPrinterFTPServer(
+            upload_dir=self.upload_dir,
+            access_code=self.access_code,
+            cert_path=cert_path,
+            key_path=key_path,
+            on_file_received=self.on_file_received,
+            bind_address=bind_addr,
+        )
+        self._tasks.append(
+            asyncio.create_task(
+                run_with_logging(self._ftp.start(), "FTP"),
+                name=f"vp_{self.id}_ftp",
+            )
+        )
+
+        # MQTT server
+        self._mqtt = SimpleMQTTServer(
+            serial=self.serial,
+            access_code=self.access_code,
+            cert_path=cert_path,
+            key_path=key_path,
+            on_print_command=self.on_print_command,
+            model=self.model or DEFAULT_VIRTUAL_PRINTER_MODEL,
+            bind_address=bind_addr,
+        )
+        self._tasks.append(
+            asyncio.create_task(
+                run_with_logging(self._mqtt.start(), "MQTT"),
+                name=f"vp_{self.id}_mqtt",
+            )
+        )
+
+        # Bind server
+        self._bind = BindServer(
+            serial=self.serial,
+            model=self.model or DEFAULT_VIRTUAL_PRINTER_MODEL,
+            name=self.name,
+            bind_address=bind_addr,
+        )
+        self._tasks.append(
+            asyncio.create_task(
+                run_with_logging(self._bind.start(), "Bind"),
+                name=f"vp_{self.id}_bind",
+            )
+        )
+
+        # SSDP server
+        self._ssdp = VirtualPrinterSSDPServer(
+            name=self.name,
+            serial=self.serial,
+            model=self.model or DEFAULT_VIRTUAL_PRINTER_MODEL,
+            advertise_ip=self.remote_interface_ip or self.bind_ip or "",
+            bind_ip=bind_addr,
+        )
+        self._tasks.append(
+            asyncio.create_task(
+                run_with_logging(self._ssdp.start(), "SSDP"),
+                name=f"vp_{self.id}_ssdp",
+            )
+        )
+
+        logger.info("[VP %s] Server-mode services started on %s", self.name, bind_addr)
+
+    async def stop_server(self) -> None:
+        """Stop server-mode services."""
+        if self._ftp:
+            await self._ftp.stop()
+            self._ftp = None
+        if self._mqtt:
+            await self._mqtt.stop()
+            self._mqtt = None
+        if self._bind:
+            await self._bind.stop()
+            self._bind = None
+        if self._ssdp:
+            await self._ssdp.stop()
+            self._ssdp = None
+        await self._cancel_tasks()
+
+    async def start_proxy(self) -> None:
+        """Start proxy mode services for this instance."""
+        logger.info("[VP %s] Starting proxy mode to %s", self.name, self.target_printer_ip)
+
+        cert_path, key_path = self.generate_certificates()
+
+        self._proxy = SlicerProxyManager(
+            target_host=self.target_printer_ip,
+            cert_path=cert_path,
+            key_path=key_path,
+            on_activity=lambda n, m: logger.info("[VP %s] Proxy %s: %s", self.name, n, m),
+            bind_address=self.bind_ip or "0.0.0.0",  # nosec B104
+        )
+
+        async def run_with_logging(coro, svc_name):
+            try:
+                await coro
+            except Exception as e:
+                logger.error("[VP %s] %s failed: %s", self.name, svc_name, e)
+
+        self._tasks = []
+
+        # SSDP for proxy
+        proxy_serial = self.target_printer_serial or self.serial
+        if self.remote_interface_ip:
+            from backend.app.services.network_utils import find_interface_for_ip
+
+            local_iface = find_interface_for_ip(self.target_printer_ip)
+            if local_iface:
+                self._ssdp_proxy = SSDPProxy(
+                    local_interface_ip=local_iface["ip"],
+                    remote_interface_ip=self.remote_interface_ip,
+                    target_printer_ip=self.target_printer_ip,
+                )
+                self._tasks.append(
+                    asyncio.create_task(
+                        run_with_logging(self._ssdp_proxy.start(), "SSDP Proxy"),
+                        name=f"vp_{self.id}_ssdp_proxy",
+                    )
+                )
+            else:
+                self._start_fallback_ssdp(proxy_serial, run_with_logging)
+        else:
+            self._start_fallback_ssdp(proxy_serial, run_with_logging)
+
+        self._tasks.append(
+            asyncio.create_task(
+                run_with_logging(self._proxy.start(), "Proxy"),
+                name=f"vp_{self.id}_proxy",
+            )
+        )
+
+    def _start_fallback_ssdp(self, proxy_serial: str, run_with_logging) -> None:
+        """Start single-interface SSDP server as fallback for proxy mode."""
+        self._ssdp = VirtualPrinterSSDPServer(
+            name=f"{self.name} (Proxy)",
+            serial=proxy_serial,
+            model=self.model or DEFAULT_VIRTUAL_PRINTER_MODEL,
+            advertise_ip=self.bind_ip or "",
+            bind_ip=self.bind_ip or "",
+        )
+        self._tasks.append(
+            asyncio.create_task(
+                run_with_logging(self._ssdp.start(), "SSDP"),
+                name=f"vp_{self.id}_ssdp",
+            )
+        )
+
+    async def stop_proxy(self) -> None:
+        """Stop proxy mode services for this instance."""
+        if self._proxy:
+            await self._proxy.stop()
+            self._proxy = None
+        if self._ssdp:
+            await self._ssdp.stop()
+            self._ssdp = None
+        if self._ssdp_proxy:
+            await self._ssdp_proxy.stop()
+            self._ssdp_proxy = None
+        await self._cancel_tasks()
+
+    async def _cancel_tasks(self) -> None:
+        """Cancel all running tasks and wait for cleanup."""
+        for task in self._tasks:
+            task.cancel()
+        if self._tasks:
+            try:
+                await asyncio.wait_for(asyncio.gather(*self._tasks, return_exceptions=True), timeout=1.0)
+            except TimeoutError:
+                pass
+        self._tasks = []
+
+    def get_status(self) -> dict:
+        """Get status for this instance."""
+        status: dict = {
             "running": self.is_running,
-            "mode": self._mode,
-            "name": self.PRINTER_NAME,
-            "serial": self.printer_serial,
-            "model": self._model,
-            "model_name": VIRTUAL_PRINTER_MODELS.get(self._model, self._model),
             "pending_files": len(self._pending_files),
         }
-
-        # Add proxy-specific status
-        if self._mode == "proxy":
-            status["target_printer_ip"] = self._target_printer_ip
-            if self._proxy:
-                proxy_status = self._proxy.get_status()
-                status["proxy"] = proxy_status
-
+        if self.is_proxy and self._proxy:
+            status["proxy"] = self._proxy.get_status()
         return status
+
+
+class VirtualPrinterManager:
+    """Multi-instance virtual printer registry and orchestrator.
+
+    Every VP runs its own independent services on a dedicated bind IP.
+    """
+
+    def __init__(self):
+        self._session_factory: Callable | None = None
+        self._instances: dict[int, VirtualPrinterInstance] = {}
+
+        # Directories
+        self._base_dir = app_settings.base_dir / "virtual_printer"
+
+        # Ensure base directories exist
+        self._ensure_base_directories()
+
+    def _ensure_base_directories(self) -> None:
+        """Create base directories at startup."""
+        for dir_path in [self._base_dir, self._base_dir / "uploads", self._base_dir / "certs"]:
+            try:
+                dir_path.mkdir(parents=True, exist_ok=True)
+            except PermissionError:
+                logger.error(
+                    f"Cannot create directory {dir_path}: Permission denied. "
+                    f"For Docker: ensure the data volume is writable by the container user. "
+                    f"For bare metal: run 'sudo chown -R $(whoami) {self._base_dir}'"
+                )
+
+    def set_session_factory(self, session_factory: Callable) -> None:
+        """Set the database session factory."""
+        self._session_factory = session_factory
+
+    @property
+    def is_enabled(self) -> bool:
+        """Check if any virtual printer is running."""
+        return len(self._instances) > 0
+
+    async def sync_from_db(self) -> None:
+        """Load all VPs from DB, reconcile running state."""
+        if not self._session_factory:
+            logger.warning("Cannot sync virtual printers: no session factory")
+            return
+
+        from sqlalchemy import select
+
+        from backend.app.models.printer import Printer
+        from backend.app.models.virtual_printer import VirtualPrinter
+
+        async with self._session_factory() as db:
+            result = await db.execute(
+                select(VirtualPrinter).where(VirtualPrinter.enabled == True).order_by(VirtualPrinter.position)  # noqa: E712
+            )
+            enabled_vps = result.scalars().all()
+
+        # Stop instances that are no longer enabled or changed mode
+        enabled_ids = {vp.id for vp in enabled_vps}
+        for vp_id in list(self._instances.keys()):
+            if vp_id not in enabled_ids:
+                await self.remove_instance(vp_id)
+
+        # Look up printer IPs for proxy VPs
+        proxy_vps = [vp for vp in enabled_vps if vp.mode == "proxy"]
+        proxy_ips: dict[int, tuple[str, str]] = {}
+        if proxy_vps:
+            async with self._session_factory() as db:
+                for pvp in proxy_vps:
+                    if pvp.target_printer_id:
+                        result = await db.execute(select(Printer).where(Printer.id == pvp.target_printer_id))
+                        printer = result.scalar_one_or_none()
+                        if printer:
+                            proxy_ips[pvp.id] = (printer.ip_address, printer.serial_number)
+
+        # Start instances for all enabled VPs (skip already running)
+        for vp in enabled_vps:
+            if vp.id in self._instances:
+                continue
+
+            if vp.mode == "proxy":
+                ip_info = proxy_ips.get(vp.id)
+                if not ip_info:
+                    logger.warning("Proxy VP %s: target printer not found, skipping", vp.name)
+                    continue
+                target_ip, target_serial = ip_info
+                instance = VirtualPrinterInstance(
+                    vp_id=vp.id,
+                    name=vp.name,
+                    mode=vp.mode,
+                    model=vp.model or DEFAULT_VIRTUAL_PRINTER_MODEL,
+                    access_code=vp.access_code or "",
+                    serial_suffix=vp.serial_suffix,
+                    target_printer_ip=target_ip,
+                    target_printer_serial=target_serial,
+                    bind_ip=vp.bind_ip or "",
+                    remote_interface_ip=vp.remote_interface_ip or "",
+                    base_dir=self._base_dir,
+                    session_factory=self._session_factory,
+                )
+                self._instances[vp.id] = instance
+                await instance.start_proxy()
+                logger.info("Started proxy VP: %s → %s", instance.name, target_ip)
+            else:
+                instance = VirtualPrinterInstance(
+                    vp_id=vp.id,
+                    name=vp.name,
+                    mode=vp.mode,
+                    model=vp.model or DEFAULT_VIRTUAL_PRINTER_MODEL,
+                    access_code=vp.access_code or "",
+                    serial_suffix=vp.serial_suffix,
+                    bind_ip=vp.bind_ip or "",
+                    remote_interface_ip=vp.remote_interface_ip or "",
+                    base_dir=self._base_dir,
+                    session_factory=self._session_factory,
+                )
+                self._instances[vp.id] = instance
+                await instance.start_server()
+                logger.info("Started server-mode VP: %s on %s", instance.name, vp.bind_ip)
+
+    async def remove_instance(self, vp_id: int) -> None:
+        """Stop and remove a single VP instance."""
+        instance = self._instances.pop(vp_id, None)
+        if instance:
+            if instance.is_proxy:
+                await instance.stop_proxy()
+            else:
+                await instance.stop_server()
+            logger.info("Removed VP instance: %s", instance.name)
+
+    async def stop_all(self) -> None:
+        """Shutdown all virtual printer services."""
+        logger.info("Stopping all virtual printer services...")
+
+        for vp_id in list(self._instances.keys()):
+            await self.remove_instance(vp_id)
+
+        logger.info("All virtual printer services stopped")
+
+    def get_instance(self, vp_id: int) -> VirtualPrinterInstance | None:
+        """Get a running instance by ID."""
+        return self._instances.get(vp_id)
+
+    def get_all_status(self) -> list[dict]:
+        """Get status for all running instances."""
+        return [
+            {
+                "id": inst.id,
+                "name": inst.name,
+                "mode": inst.mode,
+                **inst.get_status(),
+            }
+            for inst in self._instances.values()
+        ]
+
+    # -- Legacy single-printer compat --
+
+    def get_status(self) -> dict:
+        """Get status for first virtual printer (backward compat)."""
+        if self._instances:
+            first = next(iter(self._instances.values()))
+            return {
+                "enabled": True,
+                "running": first.is_running,
+                "mode": first.mode,
+                "name": first.name,
+                "serial": first.serial,
+                "model": first.model or DEFAULT_VIRTUAL_PRINTER_MODEL,
+                "model_name": VIRTUAL_PRINTER_MODELS.get(
+                    first.model or DEFAULT_VIRTUAL_PRINTER_MODEL,
+                    first.model or DEFAULT_VIRTUAL_PRINTER_MODEL,
+                ),
+                "pending_files": first.get_status().get("pending_files", 0),
+                **({"target_printer_ip": first.target_printer_ip} if first.is_proxy else {}),
+                **({"proxy": first.get_status().get("proxy", {})} if first.is_proxy else {}),
+            }
+        return {
+            "enabled": False,
+            "running": False,
+            "mode": "immediate",
+            "name": "Bambuddy",
+            "serial": "",
+            "model": DEFAULT_VIRTUAL_PRINTER_MODEL,
+            "model_name": VIRTUAL_PRINTER_MODELS[DEFAULT_VIRTUAL_PRINTER_MODEL],
+            "pending_files": 0,
+        }
+
+    async def configure(
+        self,
+        enabled: bool,
+        access_code: str = "",
+        mode: str = "immediate",
+        model: str = "",
+        target_printer_ip: str = "",
+        target_printer_serial: str = "",
+        remote_interface_ip: str = "",
+    ) -> None:
+        """Legacy single-printer configure. Delegates to sync_from_db()."""
+        # This method is kept for backward compat with the settings endpoint.
+        # The actual work is done by sync_from_db() which reads from the DB.
+        await self.sync_from_db()
 
 
 # Global instance

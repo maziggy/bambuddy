@@ -1628,6 +1628,15 @@ export default {
       message: 'Sei sicuro di voler eliminare questo gruppo? Gli utenti in questo gruppo perderanno questi permessi.',
       confirm: 'Elimina gruppo',
     },
+    editor: {
+      title: 'Modifica gruppo',
+      createTitle: 'Crea gruppo',
+      search: 'Cerca permessi...',
+      selectAll: 'Seleziona tutto',
+      clearAll: 'Deseleziona tutto',
+      permissionsSelected: '{{count}} selezionati',
+      noResults: 'Nessun permesso corrisponde alla ricerca',
+    },
   },
 
   // Users management
@@ -2397,8 +2406,10 @@ export default {
     externalSpool: 'Bobina esterna',
     profile: 'Profilo',
     kFactor: 'K Factor',
-    fill: 'Residuo',
+    fill: 'Livello',
     configure: 'Configura',
+    used: 'utilizzato',
+    remainingUnit: 'rimanente',
   },
 
   // Print modal
@@ -2675,6 +2686,14 @@ export default {
       placeholder: 'Rilevamento automatico (predefinito)...',
       hint: 'Sovrascrive l\'indirizzo IP pubblicizzato via SSDP e usato nel certificato TLS. Utile quando Bambuddy ha piu interfacce di rete.',
     },
+    bindIp: {
+      title: 'Interfaccia di rete',
+      placeholder: 'Seleziona interfaccia...',
+      hint: 'Interfaccia di rete a cui questa stampante virtuale si collega. Deve essere unica per stampante.',
+    },
+    proxy: {
+      accessCodeHint: 'In modalita proxy, usa il codice di accesso della stampante di destinazione nello slicer. La connessione viene inoltrata in modo trasparente alla stampante reale.',
+    },
     mode: {
       title: 'Modalita',
       archive: 'Archivio',
@@ -2693,19 +2712,9 @@ export default {
     },
     howItWorks: {
       title: 'Come funziona',
-      titleProxy: 'Come funziona (Modalita proxy)',
-      step1: 'Completa la guida di configurazione per la tua piattaforma',
-      step2: 'Abilita la stampante virtuale e imposta un codice accesso',
-      step3: 'In Bambu Studio o OrcaSlicer, vai su "Aggiungi stampante"',
-      step4: 'La stampante "Bambuddy" dovrebbe apparire nella lista',
-      step5: 'Connettiti usando il codice accesso impostato',
-      step6: 'Quando "stampi" su Bambuddy, il file 3MF viene archiviato',
-      proxyStep1: 'Seleziona la stampante target (deve essere in modalita LAN)',
-      proxyStep2: 'Per rete diversa: seleziona l\'interfaccia rete slicer',
-      proxyStep3: 'Abilita il proxy - la stampante appare via SSDP',
-      proxyStep4: 'Connettiti usando il codice accesso della stampante',
-      proxyStep5: 'Stampa normalmente - il traffico è inoltrato via Bambuddy',
-      proxyStep6: 'Lo streaming della camera richiede NAT/IP forwarding (vedi docs)',
+      step1: 'Sulla stessa LAN, le stampanti virtuali appaiono automaticamente nel tuo slicer (Bambu Studio / OrcaSlicer). Da altre reti, aggiungile manualmente tramite indirizzo IP e codice di accesso.',
+      step2: 'In modalità Archivio, Revisione e Coda, usa il pulsante "Invia" nel tuo slicer per caricare file 3MF su Bambuddy. Lo slicer mostrerà "Stampa riuscita" — il file viene salvato, non stampato.',
+      step3: 'In modalità Proxy, la stampante virtuale inoltra tutto il traffico a una stampante reale — le stampe partono immediatamente come con una connessione diretta.',
     },
     status: {
       title: 'Dettagli stato',
@@ -2813,5 +2822,19 @@ export default {
     cancel: 'Annulla',
     configuring: 'Configurazione...',
     configureSlot: 'Configura slot',
+  },
+
+  // Time
+  time: {
+    unknown: '-',
+    waiting: 'In attesa',
+    justNow: 'Proprio ora',
+    now: 'Ora',
+    minsAgo: '{{count}}m fa',
+    inMins: 'tra {{count}}m',
+    hoursAgo: '{{count}}h fa',
+    inHours: 'tra {{count}}h',
+    daysAgo: '{{count}}g fa',
+    inDays: 'tra {{count}}g',
   },
 };

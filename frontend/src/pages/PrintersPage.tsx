@@ -1407,6 +1407,9 @@ function CameraGridCard({
   canvasRef,
   loading,
   error,
+  onPause,
+  onStop,
+  onResume,
 }: {
   printerName: string;
   connected: boolean;
@@ -1418,10 +1421,15 @@ function CameraGridCard({
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   loading: boolean;
   error: boolean;
+  onPause?: () => void;
+  onStop?: () => void;
+  onResume?: () => void;
 }) {
   const { t } = useTranslation();
   const stateKey = !connected ? 'offline' : state === 'RUNNING' ? 'printing' : state === 'PAUSE' ? 'paused' : state === 'FINISH' ? 'finished' : state === 'FAILED' ? 'failed' : 'idle';
   const stateColor = !connected ? 'text-bambu-gray/60' : state === 'RUNNING' ? 'text-bambu-green' : state === 'PAUSE' ? 'text-yellow-400' : state === 'FAILED' ? 'text-red-400' : 'text-bambu-gray/60';
+  const isRunning = state === 'RUNNING';
+  const isPaused = state === 'PAUSE';
   return (
     <Card className="relative overflow-hidden">
       <div className="relative w-full aspect-video bg-black">
@@ -1448,17 +1456,45 @@ function CameraGridCard({
             <Video className="w-8 h-8 text-bambu-gray/50" />
           </div>
         )}
-        {/* Paused overlay — center alert */}
-        {state === 'PAUSE' && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-            <span className="text-3xl font-bold text-yellow-400/70 uppercase tracking-widest drop-shadow-lg">{t('printers.status.paused')}</span>
-          </div>
-        )}
-        {/* Printer name (top left) + state (top right) */}
+        {/* Paused overlay — fade in/out 2s */}
+        <div className={`absolute inset-0 flex items-center justify-center bg-black/50 transition-opacity duration-[2000ms] ${isPaused ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+          <span className="text-3xl font-bold text-yellow-400/70 uppercase tracking-widest drop-shadow-lg">{t('printers.status.paused')}</span>
+        </div>
+        {/* Printer name (top left) + controls/state (top right) */}
         <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/70 to-transparent px-3 py-1.5 flex items-center justify-between">
           <span className="text-sm text-white font-medium drop-shadow-sm">{printerName}</span>
-          {state !== 'RUNNING' && state !== 'FINISH' && state !== 'PAUSE' && (
-            <span className={`text-[11px] font-medium drop-shadow-sm uppercase ${stateColor}`}>{t(`printers.status.${stateKey}`)}</span>
+          {(isRunning || isPaused) ? (
+            <div className="flex items-center gap-1">
+              {isRunning && onPause && (
+                <button
+                  onClick={onPause}
+                  className="p-1 rounded bg-white/10 hover:bg-white/40 transition-colors"
+                  title={t('printers.pause')}
+                >
+                  <Pause className="w-3.5 h-3.5 text-white/60 hover:text-white transition-colors" />
+                </button>
+              )}
+              {isPaused && onResume && (
+                <button
+                  onClick={onResume}
+                  className="p-1 rounded bg-white/10 hover:bg-white/40 transition-colors"
+                  title={t('printers.resume')}
+                >
+                  <Play className="w-3.5 h-3.5 text-white/60 hover:text-white transition-colors" />
+                </button>
+              )}
+              {onStop && (
+                <button
+                  onClick={onStop}
+                  className="p-1 rounded bg-white/10 hover:bg-red-500/60 transition-colors"
+                  title={t('printers.stop')}
+                >
+                  <Square className="w-3.5 h-3.5 text-white/60 hover:text-white transition-colors" />
+                </button>
+              )}
+            </div>
+          ) : state !== 'FINISH' && (
+            <span className={`text-[11px] font-medium drop-shadow-sm uppercase ${stateColor} ${state === 'FAILED' ? 'animate-pulse' : ''}`}>{t(`printers.status.${stateKey}`)}</span>
           )}
         </div>
         {/* Progress bar + details — bottom */}
@@ -1511,6 +1547,8 @@ function CameraGrid({
   printers: { id: number; name: string; connected: boolean; state: string | null; progress: number; remainingTime: number | null; layerNum: number | null; totalLayers: number | null }[];
 }) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
   // One canvas ref per printer
   const canvasRefs = useRef<Map<number, React.RefObject<HTMLCanvasElement | null>>>(new Map());
   const [loadingSet, setLoadingSet] = useState<Set<number>>(new Set());
@@ -1518,6 +1556,34 @@ function CameraGrid({
   const [stats, setStats] = useState<{ bw: string; active: number; total: number; uptime: string }>({
     bw: '', active: 0, total: 0, uptime: '',
   });
+  // Print control — confirmation modal
+  const [confirmAction, setConfirmAction] = useState<{ type: 'pause' | 'stop' | 'resume'; printerId: number; printerName: string } | null>(null);
+
+  const pauseMutation = useMutation({
+    mutationFn: (id: number) => api.pausePrint(id),
+    onSuccess: (_, id) => { showToast(t('printers.toast.printPaused')); queryClient.invalidateQueries({ queryKey: ['printerStatus', id] }); },
+    onError: (err: Error) => showToast(err.message || t('printers.toast.failedToPausePrint'), 'error'),
+  });
+  const stopMutation = useMutation({
+    mutationFn: (id: number) => api.stopPrint(id),
+    onSuccess: (_, id) => { showToast(t('printers.toast.printStopped')); queryClient.invalidateQueries({ queryKey: ['printerStatus', id] }); },
+    onError: (err: Error) => showToast(err.message || t('printers.toast.failedToStopPrint'), 'error'),
+  });
+  const resumeMutation = useMutation({
+    mutationFn: (id: number) => api.resumePrint(id),
+    onSuccess: (_, id) => { showToast(t('printers.toast.printResumed')); queryClient.invalidateQueries({ queryKey: ['printerStatus', id] }); },
+    onError: (err: Error) => showToast(err.message || t('printers.toast.failedToResumePrint'), 'error'),
+  });
+
+  const handleConfirm = () => {
+    if (!confirmAction) return;
+    const { type, printerId } = confirmAction;
+    if (type === 'pause') pauseMutation.mutate(printerId);
+    else if (type === 'stop') stopMutation.mutate(printerId);
+    else if (type === 'resume') resumeMutation.mutate(printerId);
+    setConfirmAction(null);
+  };
+
   const qualityPresets = { low: { fps: 1, quality: 25, scale: 0.3 }, medium: { fps: 5, quality: 15, scale: 0.5 }, high: { fps: 15, quality: 5, scale: 1 } } as const;
   type QualityLevel = keyof typeof qualityPresets;
   const [quality, setQuality] = useState<QualityLevel>('medium');
@@ -1733,9 +1799,24 @@ function CameraGrid({
             canvasRef={canvasRefs.current.get(p.id) ?? { current: null }}
             loading={loadingSet.has(p.id)}
             error={errorSet.has(p.id)}
+            onPause={() => setConfirmAction({ type: 'pause', printerId: p.id, printerName: p.name })}
+            onStop={() => setConfirmAction({ type: 'stop', printerId: p.id, printerName: p.name })}
+            onResume={() => setConfirmAction({ type: 'resume', printerId: p.id, printerName: p.name })}
           />
         ))}
       </div>
+
+      {/* Print control confirmation modal */}
+      {confirmAction && (
+        <ConfirmModal
+          title={t(`printers.confirm.${confirmAction.type}Title`)}
+          message={t(`printers.confirm.${confirmAction.type}Message`, { name: confirmAction.printerName })}
+          confirmText={t(`printers.confirm.${confirmAction.type}Button`)}
+          variant={confirmAction.type === 'stop' ? 'danger' : 'default'}
+          onConfirm={handleConfirm}
+          onCancel={() => setConfirmAction(null)}
+        />
+      )}
     </div>
   );
 }
@@ -5454,6 +5535,17 @@ export function PrintersPage() {
 
   const cardSizeLabels = ['S', 'M', 'L', 'XL'];
 
+  // Subscribe to printer status changes so status/progress sorts react to live data.
+  // Re-renders when any printer's status query updates (WebSocket or polling).
+  const [statusTick, setStatusTick] = useState(0);
+  useEffect(() => {
+    if (sortBy !== 'status' && sortBy !== 'progress') return;
+    const unsubscribe = queryClient.getQueryCache().subscribe(() => {
+      setStatusTick(t => t + 1);
+    });
+    return unsubscribe;
+  }, [sortBy, queryClient]);
+
   // Sort printers based on selected option
   const sortedPrinters = useMemo(() => {
     if (!printers) return [];
@@ -5499,8 +5591,8 @@ export function PrintersPage() {
 
           const getFinishScore = (s: typeof statusA) => {
             if (!s?.connected) return Infinity; // offline last
-            if (s.state !== 'RUNNING') return Infinity - 1; // idle before offline
-            // Running: sort by remaining time (lower = finishes sooner)
+            if (s.state !== 'RUNNING' && s.state !== 'PAUSE') return Infinity - 1; // idle before offline
+            // Running/Paused: sort by remaining time (lower = finishes sooner)
             return s.remaining_time ?? Infinity - 2;
           };
 
@@ -5515,7 +5607,8 @@ export function PrintersPage() {
     }
 
     return sorted;
-  }, [printers, sortBy, sortAsc, queryClient]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [printers, sortBy, sortAsc, queryClient, statusTick]);
 
   // Group printers by location when sorted by location
   const groupedPrinters = useMemo(() => {
@@ -5543,7 +5636,7 @@ export function PrintersPage() {
             <select
               value={sortBy}
               onChange={(e) => handleSortChange(e.target.value as SortOption)}
-              className="text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg px-2 py-1.5 text-white focus:border-bambu-green focus:outline-none"
+              className="text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg pl-2 pr-8 py-1.5 text-white focus:border-bambu-green focus:outline-none"
             >
               <option value="name">{t('printers.sort.name')}</option>
               <option value="status">{t('printers.sort.status')}</option>
@@ -5611,7 +5704,7 @@ export function PrintersPage() {
             onClick={() => setShowCameraGrid(prev => !prev)}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-lg transition-colors ${
               showCameraGrid
-                ? 'bg-bambu-green/10 border-bambu-green text-bambu-green'
+                ? 'bg-bambu-green/10 border-bambu-green text-bambu-green hover:bg-bambu-dark-secondary hover:border-bambu-dark-tertiary hover:text-bambu-gray cursor-pointer'
                 : 'bg-white dark:bg-bambu-dark-secondary border-gray-200 dark:border-bambu-dark-tertiary text-gray-600 dark:text-bambu-gray hover:text-gray-900 dark:hover:text-white hover:border-bambu-green'
             }`}
             title={t('printers.openCameraOverlay')}

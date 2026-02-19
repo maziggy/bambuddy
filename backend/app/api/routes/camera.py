@@ -553,15 +553,15 @@ async def _ensure_producer(
         stream_generator = generate_rtsp_mjpeg_stream
 
     stream_id = f"{printer_id}-{uuid.uuid4().hex[:8]}"
-    gen_kwargs: dict = dict(
-        ip_address=printer.ip_address,
-        access_code=printer.access_code,
-        model=printer.model,
-        fps=fps_clamped,
-        stream_id=stream_id,
-        printer_id=printer_id,
-        raw=True,
-    )
+    gen_kwargs: dict = {
+        "ip_address": printer.ip_address,
+        "access_code": printer.access_code,
+        "model": printer.model,
+        "fps": fps_clamped,
+        "stream_id": stream_id,
+        "printer_id": printer_id,
+        "raw": True,
+    }
     if stream_generator is generate_rtsp_mjpeg_stream:
         gen_kwargs["quality"] = quality
         gen_kwargs["scale"] = scale
@@ -626,7 +626,7 @@ async def camera_grid_stream(
         """Round-robin across all printers, yielding binary-framed JPEG data."""
         frame_interval = 1.0 / fps
         # Track last seen sequence per printer to avoid sending duplicates
-        seen_seqs: dict[int, int] = {pid: 0 for pid in entries}
+        seen_seqs: dict[int, int] = dict.fromkeys(entries, 0)
 
         while True:
             if await request.is_disconnected():

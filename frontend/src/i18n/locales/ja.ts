@@ -438,7 +438,7 @@ export default {
     viewHmsErrors: '{{count}}件のHMSエラーを表示',
     camera: 'カメラ',
     cameraGrid: {
-      quality: '画質:',
+      quality: '画質',
       low: '低',
       medium: '中',
       high: '高',

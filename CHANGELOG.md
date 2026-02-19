@@ -2,7 +2,9 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
-## [0.2.1b] - Not released
+## [0.2.1] - Unreleased
+
+## [0.2.1b] - 2026-02-19
 
 ### Fixed
 - **PAUSED State Never Matched** ([#447](https://github.com/maziggy/bambuddy/issues/447)) — Removed dead `PAUSED` checks across frontend and backend. The printer only sends `PAUSE` via MQTT `gcode_state`, so `PAUSED` comparisons were unreachable code.

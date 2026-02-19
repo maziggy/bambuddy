@@ -990,29 +990,56 @@ class BambuMQTTClient:
                             if len(ams_on_extruder) == 1:
                                 # Single AMS on this extruder - unambiguous
                                 active_ams_id = ams_on_extruder[0]
-                                global_tray_id = active_ams_id * 4 + parsed_tray_now
+                                if 128 <= active_ams_id <= 135:
+                                    # AMS-HT: single slot per unit, global ID = unit ID
+                                    global_tray_id = active_ams_id
+                                else:
+                                    global_tray_id = active_ams_id * 4 + parsed_tray_now
                                 logger.debug(
                                     f"[{self.serial_number}] H2D tray_now fallback: "
                                     f"slot {parsed_tray_now} + single AMS {active_ams_id} -> global ID {global_tray_id}"
                                 )
                                 self.state.tray_now = global_tray_id
                             elif len(ams_on_extruder) > 1:
-                                # Multiple AMS on this extruder - keep current if valid, else use slot as-is
+                                # Multiple AMS on this extruder - keep current if valid, else try to narrow down
                                 current_tray = self.state.tray_now
-                                current_ams = current_tray // 4 if current_tray < 128 else -1
-                                if current_ams in ams_on_extruder and (current_tray % 4) == parsed_tray_now:
+                                # Determine which AMS unit and slot the current tray belongs to
+                                if 0 <= current_tray <= 15:
+                                    current_ams = current_tray // 4
+                                    current_slot = current_tray % 4
+                                elif 128 <= current_tray <= 135:
+                                    current_ams = current_tray  # AMS-HT: ID = tray ID
+                                    current_slot = 0
+                                else:
+                                    current_ams = -1
+                                    current_slot = -1
+                                if current_ams in ams_on_extruder and current_slot == parsed_tray_now:
                                     # Current is valid and matches slot - keep it
                                     logger.debug(
                                         f"[{self.serial_number}] H2D tray_now: multiple AMS {ams_on_extruder}, "
                                         f"keeping current {current_tray} (matches slot {parsed_tray_now})"
                                     )
                                 else:
-                                    # Can't disambiguate - use slot as-is (will be wrong for non-first AMS)
-                                    logger.warning(
-                                        f"[{self.serial_number}] H2D tray_now: multiple AMS {ams_on_extruder} on extruder {active_ext}, "
-                                        f"no snow field, using slot {parsed_tray_now} (may be incorrect)"
-                                    )
-                                    self.state.tray_now = parsed_tray_now
+                                    # Filter candidates: AMS-HT (128-135) only valid for slot 0
+                                    if parsed_tray_now > 0:
+                                        candidates = [a for a in ams_on_extruder if a <= 3]
+                                    else:
+                                        candidates = ams_on_extruder
+                                    if len(candidates) == 1:
+                                        cand = candidates[0]
+                                        resolved = cand if 128 <= cand <= 135 else cand * 4 + parsed_tray_now
+                                        logger.debug(
+                                            f"[{self.serial_number}] H2D tray_now: multiple AMS {ams_on_extruder}, "
+                                            f"narrowed to AMS {cand} -> global ID {resolved}"
+                                        )
+                                        self.state.tray_now = resolved
+                                    else:
+                                        # Genuinely ambiguous - use slot as-is (will be wrong for non-first AMS)
+                                        logger.warning(
+                                            f"[{self.serial_number}] H2D tray_now: multiple AMS {ams_on_extruder} on extruder {active_ext}, "
+                                            f"no snow field, using slot {parsed_tray_now} (may be incorrect)"
+                                        )
+                                        self.state.tray_now = parsed_tray_now
                             else:
                                 # No AMS on this extruder - use slot as-is
                                 logger.warning(
@@ -1029,7 +1056,9 @@ class BambuMQTTClient:
                     self.state.tray_now = parsed_tray_now
 
                 # Track last valid tray for usage tracking (survives retract → 255 at print end)
-                if 0 <= self.state.tray_now <= 253:
+                # Valid physical trays: 0-15 (regular AMS), 128-135 (AMS-HT), 254 (external spool)
+                tn = self.state.tray_now
+                if (0 <= tn <= 15) or (128 <= tn <= 135) or tn == 254:
                     self.state.last_loaded_tray = self.state.tray_now
 
                 logger.debug("[%s] tray_now updated: %s", self.serial_number, self.state.tray_now)

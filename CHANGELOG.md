@@ -2,7 +2,15 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
-## [0.2.1b] - Not released
+## [0.2.1b2] - Unreleased
+
+### Fixed
+- **Queue Stuck on "Busy" for "Any Model" Jobs** ([#435](https://github.com/maziggy/bambuddy/issues/435)) — When a print was queued with "Any [Model]" (e.g., "Any P1S"), it was created with `printer_id=NULL` and `target_model="P1S"`. After the assigned printer finished, the queue widget queried only for items matching `printer_id=X`, missing the next pending model-based item (`printer_id IS NULL`). With no next item found, the "Clear Plate & Start Next" button never appeared, leaving the scheduler stuck reporting "Busy". The queue API now accepts an optional `target_model` parameter; when combined with `printer_id`, it uses OR logic to also return unassigned items whose `target_model` matches the printer's model. The frontend passes the printer's model through to this query.
+
+### New Features
+- **Include Beta Updates Setting** — New toggle in Settings → Updates to opt in to beta/prerelease update notifications. Default: off (stable only). The update checker now fetches `/releases` instead of `/releases/latest` and filters by `parse_version()` prerelease detection (not GitHub's `prerelease` flag, which may not be set correctly). Users on the Docker `latest` tag will no longer see notifications for beta releases they can't install.
+
+## [0.2.1b] - 2026-02-19
 
 ### Fixed
 - **PAUSED State Never Matched** ([#447](https://github.com/maziggy/bambuddy/issues/447)) — Removed dead `PAUSED` checks across frontend and backend. The printer only sends `PAUSE` via MQTT `gcode_state`, so `PAUSED` comparisons were unreachable code.

@@ -9,18 +9,19 @@ import { formatRelativeTime } from '../utils/date';
 
 interface PrinterQueueWidgetProps {
   printerId: number;
+  printerModel?: string | null;
   printerState?: string | null;
   plateCleared?: boolean;
 }
 
-export function PrinterQueueWidget({ printerId, printerState, plateCleared }: PrinterQueueWidgetProps) {
+export function PrinterQueueWidget({ printerId, printerModel, printerState, plateCleared }: PrinterQueueWidgetProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
   const { data: queue } = useQuery({
-    queryKey: ['queue', printerId, 'pending'],
-    queryFn: () => api.getQueue(printerId, 'pending'),
+    queryKey: ['queue', printerId, 'pending', printerModel],
+    queryFn: () => api.getQueue(printerId, 'pending', printerModel || undefined),
     refetchInterval: 30000,
   });
 

@@ -1259,6 +1259,8 @@ export default {
     // Updates
     checkForUpdatesLabel: 'Check for updates',
     checkPrinterFirmware: 'Check printer firmware',
+    includeBetaUpdates: 'Include beta versions',
+    includeBetaUpdatesDesc: 'Notify about beta and prerelease versions when checking for updates',
     // Queue
     enableRetry: 'Enable retry',
     // Home Assistant

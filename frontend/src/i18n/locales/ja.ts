@@ -1248,6 +1248,8 @@ export default {
     captureFinishPhoto: '完了写真を撮影',
     noPrintersConfigured: 'プリンターが設定されていません',
     checkPrinterFirmware: 'プリンターファームウェアの確認',
+    includeBetaUpdates: 'ベータ版を含める',
+    includeBetaUpdatesDesc: 'アップデート確認時にベータ版およびプレリリース版を通知する',
     enableRetry: 'リトライを有効化',
     homeAssistantDescription: 'Home Assistantに接続してHA REST APIでスマートプラグを制御します。switch、light、input_booleanエンティティに対応しています。',
     environmentManagedLabel: '(環境変数で管理)',

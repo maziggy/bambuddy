@@ -11,6 +11,7 @@ class SpoolBase(BaseModel):
     brand: str | None = None
     label_weight: int = 1000
     core_weight: int = 250
+    core_weight_catalog_id: int | None = None
     weight_used: float = 0
     slicer_filament: str | None = None
     slicer_filament_name: str | None = None
@@ -35,6 +36,7 @@ class SpoolUpdate(BaseModel):
     brand: str | None = None
     label_weight: int | None = None
     core_weight: int | None = None
+    core_weight_catalog_id: int | None = None
     weight_used: float | None = None
     slicer_filament: str | None = None
     slicer_filament_name: str | None = None

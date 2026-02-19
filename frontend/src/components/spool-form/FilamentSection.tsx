@@ -161,7 +161,7 @@ export function FilamentSection({
 
       {/* Brand (dropdown with search) */}
       <div>
-        <label className="block text-sm font-medium text-bambu-gray mb-1">{t('inventory.brand')}</label>
+        <label className="block text-sm font-medium text-bambu-gray mb-1">{t('inventory.brand')} *</label>
         <div className="relative" ref={brandRef}>
           <input
             type="text"
@@ -221,7 +221,7 @@ export function FilamentSection({
 
       {/* Variant / Subtype */}
       <div>
-        <label className="block text-sm font-medium text-bambu-gray mb-1">{t('inventory.subtype')}</label>
+        <label className="block text-sm font-medium text-bambu-gray mb-1">{t('inventory.subtype')} *</label>
         <div className="relative" ref={subtypeRef}>
           <input
             type="text"

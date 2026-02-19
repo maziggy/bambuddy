@@ -472,7 +472,7 @@ describe('VirtualPrinterSettings', () => {
 
       await waitFor(() => {
         expect(screen.getByText('How it works:')).toBeInTheDocument();
-        expect(screen.getByText(/Complete the setup guide for your platform/)).toBeInTheDocument();
+        expect(screen.getByText(/virtual printers appear in your slicer/)).toBeInTheDocument();
       });
     });
   });

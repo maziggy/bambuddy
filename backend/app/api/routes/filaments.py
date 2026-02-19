@@ -14,7 +14,7 @@ from backend.app.schemas.filament import (
     FilamentUpdate,
 )
 
-router = APIRouter(prefix="/filaments", tags=["filaments"])
+router = APIRouter(prefix="/filament-catalog", tags=["filament-catalog"])
 
 
 @router.get("/", response_model=list[FilamentResponse])

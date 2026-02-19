@@ -1771,6 +1771,7 @@ export interface InventorySpool {
   brand: string | null;
   label_weight: number;
   core_weight: number;
+  core_weight_catalog_id: number | null;
   weight_used: number;
   slicer_filament: string | null;
   slicer_filament_name: string | null;
@@ -1969,7 +1970,7 @@ export interface ExternalLinkUpdate {
 
 // Permission type - all available permissions
 export type Permission =
-  | 'printers:read' | 'printers:create' | 'printers:update' | 'printers:delete' | 'printers:control' | 'printers:files' | 'printers:ams_rfid'
+  | 'printers:read' | 'printers:create' | 'printers:update' | 'printers:delete' | 'printers:control' | 'printers:files' | 'printers:ams_rfid' | 'printers:clear_plate'
   | 'archives:read' | 'archives:create'
   | 'archives:update_own' | 'archives:update_all' | 'archives:delete_own' | 'archives:delete_all'
   | 'archives:reprint_own' | 'archives:reprint_all'
@@ -2785,6 +2786,10 @@ export const api = {
   },
   getSource3mfForSlicer: (archiveId: number, filename: string) =>
     `${API_BASE}/archives/${archiveId}/source/${encodeURIComponent(filename.endsWith('.3mf') ? filename : filename + '.3mf')}`,
+  createSourceSlicerToken: (archiveId: number) =>
+    request<{ token: string }>(`/archives/${archiveId}/source-slicer-token`, { method: 'POST' }),
+  getSourceSlicerDownloadUrl: (archiveId: number, token: string, filename: string) =>
+    `${API_BASE}/archives/${archiveId}/source-dl/${token}/${encodeURIComponent(filename.endsWith('.3mf') ? filename : filename + '.3mf')}`,
   uploadSource3mf: async (archiveId: number, file: File): Promise<{ status: string; filename: string }> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -2907,6 +2912,10 @@ export const api = {
     `${API_BASE}/archives/${archiveId}/project-image/${encodeURIComponent(imagePath)}`,
   getArchiveForSlicer: (id: number, filename: string) =>
     `${API_BASE}/archives/${id}/file/${encodeURIComponent(filename.endsWith('.3mf') ? filename : filename + '.3mf')}`,
+  createArchiveSlicerToken: (archiveId: number) =>
+    request<{ token: string }>(`/archives/${archiveId}/slicer-token`, { method: 'POST' }),
+  getArchiveSlicerDownloadUrl: (archiveId: number, token: string, filename: string) =>
+    `${API_BASE}/archives/${archiveId}/dl/${token}/${encodeURIComponent(filename.endsWith('.3mf') ? filename : filename + '.3mf')}`,
   getArchivePlates: (archiveId: number) =>
     request<ArchivePlatesResponse>(`/archives/${archiveId}/plates`),
   getArchiveFilamentRequirements: (archiveId: number, plateId?: number) =>
@@ -3179,10 +3188,11 @@ export const api = {
     request<HASensorEntity[]>('/smart-plugs/ha/sensors'),
 
   // Print Queue
-  getQueue: (printerId?: number, status?: string) => {
+  getQueue: (printerId?: number, status?: string, targetModel?: string) => {
     const params = new URLSearchParams();
     if (printerId) params.set('printer_id', String(printerId));
     if (status) params.set('status', status);
+    if (targetModel) params.set('target_model', targetModel);
     return request<PrintQueueItem[]>(`/queue/?${params}`);
   },
   getQueueItem: (id: number) => request<PrintQueueItem>(`/queue/${id}`),
@@ -3312,10 +3322,10 @@ export const api = {
       { method: 'POST' }
     ),
 
-  // Filaments
-  listFilaments: () => request<Filament[]>('/filaments/'),
-  getFilament: (id: number) => request<Filament>(`/filaments/${id}`),
-  getFilamentsByType: (type: string) => request<Filament[]>(`/filaments/by-type/${type}`),
+  // Filament Catalog (material types with cost/temp data)
+  listFilaments: () => request<Filament[]>('/filament-catalog/'),
+  getFilament: (id: number) => request<Filament>(`/filament-catalog/${id}`),
+  getFilamentsByType: (type: string) => request<Filament[]>(`/filament-catalog/by-type/${type}`),
 
   // Notification Providers
   getNotificationProviders: () => request<NotificationProvider[]>('/notifications/'),
@@ -3937,6 +3947,10 @@ export const api = {
   deleteLibraryFile: (id: number) =>
     request<{ status: string; message: string }>(`/library/files/${id}`, { method: 'DELETE' }),
   getLibraryFileDownloadUrl: (id: number) => `${API_BASE}/library/files/${id}/download`,
+  createLibrarySlicerToken: (fileId: number) =>
+    request<{ token: string }>(`/library/files/${fileId}/slicer-token`, { method: 'POST' }),
+  getLibrarySlicerDownloadUrl: (fileId: number, token: string, filename: string) =>
+    `${API_BASE}/library/files/${fileId}/dl/${token}/${encodeURIComponent(filename)}`,
   downloadLibraryFile: async (id: number, filename?: string): Promise<void> => {
     const headers: Record<string, string> = {};
     if (authToken) {
@@ -4492,6 +4506,8 @@ export interface NetworkInterface {
   ip: string;
   netmask: string;
   subnet: string;
+  is_alias?: boolean;
+  label?: string;
 }
 
 export interface VirtualPrinterModels {
@@ -4537,6 +4553,69 @@ export const virtualPrinterApi = {
       method: 'PUT',
     });
   },
+};
+
+// Multi Virtual Printer API
+export interface VirtualPrinterConfig {
+  id: number;
+  name: string;
+  enabled: boolean;
+  mode: VirtualPrinterMode;
+  model: string | null;
+  model_name: string | null;
+  access_code_set: boolean;
+  serial: string;
+  target_printer_id: number | null;
+  bind_ip: string | null;
+  remote_interface_ip: string | null;
+  position: number;
+  status: { running: boolean; pending_files: number; proxy?: VirtualPrinterProxyStatus };
+}
+
+export interface VirtualPrinterListResponse {
+  printers: VirtualPrinterConfig[];
+  models: Record<string, string>;
+}
+
+export const multiVirtualPrinterApi = {
+  list: () => request<VirtualPrinterListResponse>('/virtual-printers'),
+
+  get: (id: number) => request<VirtualPrinterConfig>(`/virtual-printers/${id}`),
+
+  create: (data: {
+    name?: string;
+    enabled?: boolean;
+    mode?: string;
+    model?: string;
+    access_code?: string;
+    target_printer_id?: number;
+    bind_ip?: string;
+    remote_interface_ip?: string;
+  }) =>
+    request<VirtualPrinterConfig>('/virtual-printers', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  update: (id: number, data: {
+    name?: string;
+    enabled?: boolean;
+    mode?: string;
+    model?: string;
+    access_code?: string;
+    target_printer_id?: number;
+    bind_ip?: string;
+    remote_interface_ip?: string;
+  }) =>
+    request<VirtualPrinterConfig>(`/virtual-printers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  remove: (id: number) =>
+    request<{ detail: string; id: number }>(`/virtual-printers/${id}`, {
+      method: 'DELETE',
+    }),
 };
 
 // Pending Uploads API

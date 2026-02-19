@@ -1,12 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, ChevronRight, Check, Save, Mail } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDateOnly } from '../utils/date';
 import { getCurrencySymbol, SUPPORTED_CURRENCIES } from '../utils/currency';
-import type { AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, Group, GroupCreate, GroupUpdate, Permission, PermissionCategory, StorageUsageResponse } from '../api/client';
+import type { AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse } from '../api/client';
 import { Card, CardContent, CardHeader } from '../components/Card';
 import { Button } from '../components/Button';
 import { SmartPlugCard } from '../components/SmartPlugCard';
@@ -21,7 +21,7 @@ import { SpoolmanSettings } from '../components/SpoolmanSettings';
 import { SpoolCatalogSettings } from '../components/SpoolCatalogSettings';
 import { ColorCatalogSettings } from '../components/ColorCatalogSettings';
 import { ExternalLinksSettings } from '../components/ExternalLinksSettings';
-import { VirtualPrinterSettings } from '../components/VirtualPrinterSettings';
+import { VirtualPrinterList } from '../components/VirtualPrinterList';
 import { GitHubBackupSettings } from '../components/GitHubBackupSettings';
 import { EmailSettings } from '../components/EmailSettings';
 import { APIBrowser } from '../components/APIBrowser';
@@ -158,19 +158,7 @@ export function SettingsPage() {
   });
 
   // Group management state
-  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
-  const [editingGroup, setEditingGroup] = useState<Group | null>(null);
   const [deleteGroupId, setDeleteGroupId] = useState<number | null>(null);
-  const [groupFormData, setGroupFormData] = useState<{
-    name: string;
-    description: string;
-    permissions: Permission[];
-  }>({
-    name: '',
-    description: '',
-    permissions: [],
-  });
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
   // Home Assistant test connection state
   const [haTestResult, setHaTestResult] = useState<{ success: boolean; message: string | null; error: string | null } | null>(null);
@@ -402,12 +390,6 @@ export function SettingsPage() {
     enabled: authEnabled && hasPermission('groups:read'),
   });
 
-  const { data: permissionsData } = useQuery({
-    queryKey: ['permissions'],
-    queryFn: () => api.getPermissions(),
-    enabled: authEnabled && hasPermission('groups:read'),
-  });
-
   const createUserMutation = useMutation({
     mutationFn: (data: UserCreate) => api.createUser(data),
     onSuccess: () => {
@@ -474,32 +456,6 @@ export function SettingsPage() {
       setDeleteUserLoading(false);
     }
   };
-
-  const createGroupMutation = useMutation({
-    mutationFn: (data: GroupCreate) => api.createGroup(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['groups'] });
-      setShowCreateGroupModal(false);
-      resetGroupForm();
-      showToast(t('settings.toast.groupCreated'));
-    },
-    onError: (error: Error) => {
-      showToast(error.message, 'error');
-    },
-  });
-
-  const updateGroupMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: GroupUpdate }) => api.updateGroup(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['groups'] });
-      setEditingGroup(null);
-      resetGroupForm();
-      showToast(t('settings.toast.groupUpdated'));
-    },
-    onError: (error: Error) => {
-      showToast(error.message, 'error');
-    },
-  });
 
   const deleteGroupMutation = useMutation({
     mutationFn: (id: number) => api.deleteGroup(id),
@@ -596,95 +552,6 @@ export function SettingsPage() {
         ? prev.group_ids.filter(id => id !== groupId)
         : [...prev.group_ids, groupId],
     }));
-  };
-
-  // Group management handlers
-  const resetGroupForm = () => {
-    setGroupFormData({ name: '', description: '', permissions: [] });
-    setExpandedCategories(new Set());
-  };
-
-  const handleCreateGroup = () => {
-    if (!groupFormData.name.trim()) {
-      showToast(t('settings.toast.enterGroupName'), 'error');
-      return;
-    }
-    createGroupMutation.mutate({
-      name: groupFormData.name,
-      description: groupFormData.description || undefined,
-      permissions: groupFormData.permissions,
-    });
-  };
-
-  const handleUpdateGroup = () => {
-    if (!editingGroup) return;
-    if (!groupFormData.name.trim()) {
-      showToast(t('settings.toast.enterGroupName'), 'error');
-      return;
-    }
-    updateGroupMutation.mutate({
-      id: editingGroup.id,
-      data: {
-        name: groupFormData.name !== editingGroup.name ? groupFormData.name : undefined,
-        description: groupFormData.description,
-        permissions: groupFormData.permissions,
-      },
-    });
-  };
-
-  const startEditGroup = (group: Group) => {
-    setEditingGroup(group);
-    setGroupFormData({
-      name: group.name,
-      description: group.description || '',
-      permissions: group.permissions,
-    });
-    const cats = new Set<string>();
-    permissionsData?.categories.forEach((cat) => {
-      if (cat.permissions.some((p) => group.permissions.includes(p.value))) {
-        cats.add(cat.name);
-      }
-    });
-    setExpandedCategories(cats);
-  };
-
-  const toggleCategory = (categoryName: string) => {
-    setExpandedCategories((prev) => {
-      const next = new Set(prev);
-      if (next.has(categoryName)) {
-        next.delete(categoryName);
-      } else {
-        next.add(categoryName);
-      }
-      return next;
-    });
-  };
-
-  const togglePermission = (permission: Permission) => {
-    setGroupFormData((prev) => {
-      const permissions = prev.permissions.includes(permission)
-        ? prev.permissions.filter((p) => p !== permission)
-        : [...prev.permissions, permission];
-      return { ...prev, permissions };
-    });
-  };
-
-  const toggleCategoryPermissions = (category: PermissionCategory, checked: boolean) => {
-    setGroupFormData((prev) => {
-      const categoryPerms = category.permissions.map((p) => p.value);
-      const otherPerms = prev.permissions.filter((p) => !categoryPerms.includes(p));
-      const permissions = checked ? [...otherPerms, ...categoryPerms] : otherPerms;
-      return { ...prev, permissions };
-    });
-  };
-
-  const isCategoryFullySelected = (category: PermissionCategory) => {
-    return category.permissions.every((p) => groupFormData.permissions.includes(p.value));
-  };
-
-  const isCategoryPartiallySelected = (category: PermissionCategory) => {
-    const selected = category.permissions.filter((p) => groupFormData.permissions.includes(p.value));
-    return selected.length > 0 && selected.length < category.permissions.length;
   };
 
   const applyUpdateMutation = useMutation({
@@ -3330,7 +3197,7 @@ export function SettingsPage() {
 
       {/* Virtual Printer Tab */}
       {activeTab === 'virtual-printer' && (
-        <VirtualPrinterSettings />
+        <VirtualPrinterList />
       )}
 
       {/* Filament Tab */}
@@ -3899,10 +3766,7 @@ export function SettingsPage() {
                       {hasPermission('groups:create') && (
                         <Button
                           size="sm"
-                          onClick={() => {
-                            setShowCreateGroupModal(true);
-                            resetGroupForm();
-                          }}
+                          onClick={() => navigate('/groups/new')}
                         >
                           <Plus className="w-4 h-4" />
                           {t('settings.addGroup')}
@@ -3943,7 +3807,7 @@ export function SettingsPage() {
                               </div>
                               <div className="flex items-center gap-1">
                                 {hasPermission('groups:update') && (
-                                  <Button size="sm" variant="ghost" onClick={() => startEditGroup(group)}>
+                                  <Button size="sm" variant="ghost" onClick={() => navigate(`/groups/${group.id}/edit`)}>
                                     <Edit2 className="w-4 h-4" />
                                   </Button>
                                 )}
@@ -4454,165 +4318,6 @@ export function SettingsPage() {
                   </div>
                 </>
               )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Create/Edit Group Modal */}
-      {(showCreateGroupModal || editingGroup) && (
-        <div
-          className="fixed inset-0 bg-black flex items-center justify-center z-50 p-4"
-          onClick={() => {
-            setShowCreateGroupModal(false);
-            setEditingGroup(null);
-            resetGroupForm();
-          }}
-        >
-          <Card
-            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto"
-            onClick={(e: React.MouseEvent) => e.stopPropagation()}
-          >
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Shield className="w-5 h-5 text-bambu-green" />
-                  <h2 className="text-lg font-semibold text-white">
-                    {editingGroup ? 'Edit Group' : 'Create Group'}
-                  </h2>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setShowCreateGroupModal(false);
-                    setEditingGroup(null);
-                    resetGroupForm();
-                  }}
-                >
-                  <X className="w-5 h-5" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-white mb-2">{t('settings.groupName')}</label>
-                  <input
-                    type="text"
-                    value={groupFormData.name}
-                    onChange={(e) => setGroupFormData({ ...groupFormData, name: e.target.value })}
-                    disabled={editingGroup?.is_system}
-                    className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors disabled:opacity-50"
-                    placeholder={t('settings.enterGroupName')}
-                  />
-                  {editingGroup?.is_system && (
-                    <p className="text-xs text-yellow-400 mt-1">{t('settings.systemGroupWarning')}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-white mb-2">Description</label>
-                  <textarea
-                    value={groupFormData.description}
-                    onChange={(e) => setGroupFormData({ ...groupFormData, description: e.target.value })}
-                    rows={2}
-                    className="w-full px-4 py-3 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors resize-none"
-                    placeholder={t('settings.enterDescriptionOptional')}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-white mb-2">
-                    Permissions ({groupFormData.permissions.length} selected)
-                  </label>
-                  <div className="space-y-2 max-h-96 overflow-y-auto">
-                    {permissionsData?.categories.map((category) => (
-                      <div key={category.name} className="border border-bambu-dark-tertiary rounded-lg overflow-hidden">
-                        <div
-                          className="flex items-center justify-between px-4 py-2 bg-bambu-dark-secondary cursor-pointer hover:bg-bambu-dark-tertiary transition-colors"
-                          onClick={() => toggleCategory(category.name)}
-                        >
-                          <div className="flex items-center gap-3">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleCategoryPermissions(category, !isCategoryFullySelected(category));
-                              }}
-                              className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
-                                isCategoryFullySelected(category)
-                                  ? 'bg-bambu-green border-bambu-green'
-                                  : isCategoryPartiallySelected(category)
-                                  ? 'bg-bambu-green/50 border-bambu-green'
-                                  : 'border-bambu-gray hover:border-white'
-                              }`}
-                            >
-                              {(isCategoryFullySelected(category) || isCategoryPartiallySelected(category)) && (
-                                <Check className="w-3 h-3 text-white" />
-                              )}
-                            </button>
-                            <span className="text-white font-medium">{category.name}</span>
-                            <span className="text-xs text-bambu-gray">
-                              ({category.permissions.filter((p) => groupFormData.permissions.includes(p.value)).length}/
-                              {category.permissions.length})
-                            </span>
-                          </div>
-                          {expandedCategories.has(category.name) ? (
-                            <ChevronDown className="w-4 h-4 text-bambu-gray" />
-                          ) : (
-                            <ChevronRight className="w-4 h-4 text-bambu-gray" />
-                          )}
-                        </div>
-                        {expandedCategories.has(category.name) && (
-                          <div className="p-3 bg-bambu-dark space-y-2">
-                            {category.permissions.map((perm) => (
-                              <label
-                                key={perm.value}
-                                className="flex items-center gap-3 px-2 py-1.5 rounded hover:bg-bambu-dark-secondary cursor-pointer"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={groupFormData.permissions.includes(perm.value)}
-                                  onChange={() => togglePermission(perm.value)}
-                                  className="w-4 h-4 rounded border-bambu-gray text-bambu-green focus:ring-bambu-green focus:ring-offset-0 bg-bambu-dark-secondary"
-                                />
-                                <span className="text-sm text-bambu-gray">{perm.label}</span>
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <div className="mt-6 flex justify-end gap-3">
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    setShowCreateGroupModal(false);
-                    setEditingGroup(null);
-                    resetGroupForm();
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={editingGroup ? handleUpdateGroup : handleCreateGroup}
-                  disabled={createGroupMutation.isPending || updateGroupMutation.isPending || !groupFormData.name.trim()}
-                >
-                  {(createGroupMutation.isPending || updateGroupMutation.isPending) ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      {editingGroup ? 'Saving...' : 'Creating...'}
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-4 h-4" />
-                      {editingGroup ? 'Save Changes' : 'Create Group'}
-                    </>
-                  )}
-                </Button>
-              </div>
             </CardContent>
           </Card>
         </div>

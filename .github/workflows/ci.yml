@@ -151,7 +151,23 @@ jobs:
 
       - name: Run npm audit
         working-directory: frontend
-        run: npm audit --audit-level=high
+        run: |
+          # Only fail on fixable high/critical vulnerabilities.
+          # Unfixable issues (e.g. npm's bundled tar) are tracked via security.yml.
+          npm audit --json > /tmp/audit.json 2>/dev/null || true
+          python3 -c "
+          import json, sys
+          data = json.load(open('/tmp/audit.json'))
+          vulns = data.get('vulnerabilities', {})
+          fixable = {n: v for n, v in vulns.items()
+                     if v.get('severity') in ('high', 'critical') and v.get('fixAvailable')}
+          if fixable:
+              for name, v in fixable.items():
+                  print(f'FIXABLE {v[\"severity\"].upper()}: {name}')
+              sys.exit(1)
+          total = sum(1 for v in vulns.values() if v.get('severity') in ('high', 'critical'))
+          print(f'npm audit: {total} high/critical (0 fixable), {len(vulns)} total known')
+          "
 
   frontend-typecheck:
     name: Frontend Type Check

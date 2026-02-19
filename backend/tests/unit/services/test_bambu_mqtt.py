@@ -1632,6 +1632,92 @@ class TestTrayNowDualNozzleH2DFallback(_H2DFixtureMixin):
         h2d_client._process_message(_ams_payload(2))
         assert h2d_client.state.tray_now == 2
 
+    def test_single_ams_ht_on_extruder_returns_unit_id(self, h2d_client):
+        """AMS-HT 128 alone on left extruder, slot 0 → global ID 128 (not 512)."""
+        # Switch to left extruder (where AMS-HT 128 is mapped)
+        h2d_client._process_message(_extruder_state_payload(0x0100))
+        # Only AMS-HT 128 on left extruder; no snow available
+        h2d_client._process_message(_ams_payload(0))
+        assert h2d_client.state.tray_now == 128
+
+    def test_single_ams_ht_ignores_nonzero_slot(self, h2d_client):
+        """AMS-HT has single slot; even if printer reports slot 1, global ID = unit ID."""
+        h2d_client.state.ams_extruder_map = {"129": 0}
+        h2d_client._process_message(_ams_payload(1))
+        # AMS-HT 129: global ID = 129, not 129*4+1=517
+        assert h2d_client.state.tray_now == 129
+
+    def test_multiple_ams_keeps_current_ams_ht(self, h2d_client):
+        """Current tray is AMS-HT 128, slot 0 reported → keeps 128."""
+        h2d_client.state.ams_extruder_map = {"0": 0, "128": 0}
+        h2d_client.state.tray_now = 128
+        h2d_client._process_message(_ams_payload(0))
+        assert h2d_client.state.tray_now == 128
+
+    def test_multiple_ams_slot_nonzero_excludes_ams_ht(self, h2d_client):
+        """Slot > 0 eliminates AMS-HT candidates; single regular AMS left → resolves."""
+        # AMS 0 + AMS-HT 128 both on right extruder
+        h2d_client.state.ams_extruder_map = {"0": 0, "128": 0}
+        h2d_client.state.tray_now = 255  # no current match
+        # Slot 2 → can't be AMS-HT → only AMS 0 → global = 0*4+2 = 2
+        h2d_client._process_message(_ams_payload(2))
+        assert h2d_client.state.tray_now == 2
+
+    def test_multiple_ams_slot_nonzero_narrows_to_single_ht_excluded(self, h2d_client):
+        """Two regular AMS + one AMS-HT, slot > 0 → AMS-HT excluded but still ambiguous."""
+        h2d_client.state.ams_extruder_map = {"0": 0, "1": 0, "128": 0}
+        h2d_client.state.tray_now = 255
+        # Slot 3 → excludes AMS-HT, but AMS 0 and AMS 1 both remain → ambiguous
+        h2d_client._process_message(_ams_payload(3))
+        assert h2d_client.state.tray_now == 3  # raw slot fallback
+
+
+# ---------------------------------------------------------------------------
+# 6b. H2D last_loaded_tray validation
+# ---------------------------------------------------------------------------
+
+
+class TestLastLoadedTrayValidation(_H2DFixtureMixin):
+    """last_loaded_tray only stores physically valid tray IDs."""
+
+    def test_regular_ams_tray_stored(self, h2d_client):
+        """Valid regular AMS tray (0-15) → stored in last_loaded_tray."""
+        h2d_client.state.tray_now = 7
+        # Trigger tray_now processing via AMS message
+        h2d_client._process_message(
+            _extruder_info_payload(
+                [
+                    {"id": 0, "snow": 1 << 8 | 3},  # AMS 1 slot 3 → global 7
+                    {"id": 1, "snow": 0xFF00FF},
+                ]
+            )
+        )
+        h2d_client._process_message(_ams_payload(3))
+        assert h2d_client.state.tray_now == 7
+        assert h2d_client.state.last_loaded_tray == 7
+
+    def test_ams_ht_tray_stored(self, h2d_client):
+        """Valid AMS-HT tray (128-135) → stored in last_loaded_tray."""
+        h2d_client._process_message(_extruder_state_payload(0x0100))
+        h2d_client._process_message(
+            _extruder_info_payload(
+                [
+                    {"id": 0, "snow": 0xFF00FF},
+                    {"id": 1, "snow": 128 << 8 | 0},
+                ]
+            )
+        )
+        h2d_client._process_message(_ams_payload(0))
+        assert h2d_client.state.tray_now == 128
+        assert h2d_client.state.last_loaded_tray == 128
+
+    def test_unloaded_not_stored(self, h2d_client):
+        """tray_now=255 (unloaded) → last_loaded_tray unchanged."""
+        h2d_client.state.last_loaded_tray = 5
+        h2d_client._process_message(_ams_payload(255))
+        assert h2d_client.state.tray_now == 255
+        assert h2d_client.state.last_loaded_tray == 5
+
 
 # ---------------------------------------------------------------------------
 # 7. H2D Active extruder switching

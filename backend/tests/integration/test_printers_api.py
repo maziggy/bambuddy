@@ -580,6 +580,230 @@ class TestAMSRefreshAPI:
             assert "unload" in response.json()["detail"].lower()
 
 
+class TestConfigureAMSSlotAPI:
+    """Integration tests for AMS slot configure endpoint — tray_info_idx resolution."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_configure_not_connected(self, async_client: AsyncClient, printer_factory):
+        """Verify error when printer is not connected."""
+        printer = await printer_factory(name="Disconnected")
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = None
+
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/slots/0/0/configure",
+                params={
+                    "tray_info_idx": "GFL99",
+                    "tray_type": "PLA",
+                    "tray_sub_brands": "PLA Basic",
+                    "tray_color": "FF0000FF",
+                    "nozzle_temp_min": 190,
+                    "nozzle_temp_max": 230,
+                },
+            )
+
+            assert response.status_code == 400
+            assert "not connected" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_configure_with_gf_id_keeps_it(self, async_client: AsyncClient, printer_factory):
+        """Standard Bambu GF* filament IDs are sent as-is."""
+        printer = await printer_factory(name="H2D")
+
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+        mock_client.request_status_update.return_value = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = None  # No existing state
+
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/slots/2/3/configure",
+                params={
+                    "tray_info_idx": "GFL05",
+                    "tray_type": "PLA",
+                    "tray_sub_brands": "PLA Basic",
+                    "tray_color": "FFFFFFFF",
+                    "nozzle_temp_min": 190,
+                    "nozzle_temp_max": 230,
+                },
+            )
+
+            assert response.status_code == 200
+            call_kwargs = mock_client.ams_set_filament_setting.call_args
+            assert call_kwargs.kwargs["tray_info_idx"] == "GFL05"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_configure_pfus_replaced_with_generic(self, async_client: AsyncClient, printer_factory):
+        """PFUS* user-local IDs are replaced with generic Bambu IDs."""
+        printer = await printer_factory(name="H2D")
+
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+        mock_client.request_status_update.return_value = True
+
+        mock_status = MagicMock()
+        mock_status.raw_data = {"ams": {"ams": []}}  # No existing tray data
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = mock_status
+
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/slots/2/3/configure",
+                params={
+                    "tray_info_idx": "PFUS9ac902733670a9",
+                    "tray_type": "PLA",
+                    "tray_sub_brands": "Devil Design PLA",
+                    "tray_color": "FF0000FF",
+                    "nozzle_temp_min": 190,
+                    "nozzle_temp_max": 230,
+                },
+            )
+
+            assert response.status_code == 200
+            call_kwargs = mock_client.ams_set_filament_setting.call_args
+            assert call_kwargs.kwargs["tray_info_idx"] == "GFL99"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_configure_pfus_reuses_existing_slot_id(self, async_client: AsyncClient, printer_factory):
+        """When slot already has a recognised preset for same material, reuse it."""
+        printer = await printer_factory(name="H2D")
+
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+        mock_client.request_status_update.return_value = True
+
+        # Simulate slot already configured by slicer with cloud-synced preset
+        mock_status = MagicMock()
+        mock_status.raw_data = {
+            "ams": {
+                "ams": [
+                    {
+                        "id": 2,
+                        "tray": [
+                            {
+                                "id": 3,
+                                "tray_info_idx": "P4d64437",
+                                "tray_type": "PLA",
+                                "tray_color": "FF0000FF",
+                            }
+                        ],
+                    }
+                ]
+            }
+        }
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = mock_status
+
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/slots/2/3/configure",
+                params={
+                    "tray_info_idx": "PFUS9ac902733670a9",
+                    "tray_type": "PLA",
+                    "tray_sub_brands": "Devil Design PLA",
+                    "tray_color": "FF0000FF",
+                    "nozzle_temp_min": 190,
+                    "nozzle_temp_max": 230,
+                },
+            )
+
+            assert response.status_code == 200
+            call_kwargs = mock_client.ams_set_filament_setting.call_args
+            # Should reuse the slicer's P4d64437, not replace with GFL99
+            assert call_kwargs.kwargs["tray_info_idx"] == "P4d64437"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_configure_pfus_different_material_uses_generic(self, async_client: AsyncClient, printer_factory):
+        """When slot has a recognised preset but for DIFFERENT material, use generic."""
+        printer = await printer_factory(name="H2D")
+
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+        mock_client.request_status_update.return_value = True
+
+        # Slot currently has PETG but user is configuring PLA
+        mock_status = MagicMock()
+        mock_status.raw_data = {
+            "ams": {
+                "ams": [
+                    {
+                        "id": 2,
+                        "tray": [{"id": 3, "tray_info_idx": "GFG99", "tray_type": "PETG", "tray_color": "FFFFFFFF"}],
+                    }
+                ]
+            }
+        }
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = mock_status
+
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/slots/2/3/configure",
+                params={
+                    "tray_info_idx": "PFUS9ac902733670a9",
+                    "tray_type": "PLA",
+                    "tray_sub_brands": "Devil Design PLA",
+                    "tray_color": "FF0000FF",
+                    "nozzle_temp_min": 190,
+                    "nozzle_temp_max": 230,
+                },
+            )
+
+            assert response.status_code == 200
+            call_kwargs = mock_client.ams_set_filament_setting.call_args
+            # Different material → should NOT reuse PETG ID, use generic PLA
+            assert call_kwargs.kwargs["tray_info_idx"] == "GFL99"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_configure_empty_id_uses_generic(self, async_client: AsyncClient, printer_factory):
+        """Empty tray_info_idx (local preset) is replaced with generic."""
+        printer = await printer_factory(name="H2D")
+
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+        mock_client.request_status_update.return_value = True
+
+        mock_status = MagicMock()
+        mock_status.raw_data = {"ams": {"ams": []}}
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = mock_status
+
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/slots/2/3/configure",
+                params={
+                    "tray_info_idx": "",
+                    "tray_type": "PETG",
+                    "tray_sub_brands": "PETG Basic",
+                    "tray_color": "FFFFFFFF",
+                    "nozzle_temp_min": 220,
+                    "nozzle_temp_max": 260,
+                },
+            )
+
+            assert response.status_code == 200
+            call_kwargs = mock_client.ams_set_filament_setting.call_args
+            assert call_kwargs.kwargs["tray_info_idx"] == "GFG99"
+
+
 class TestSkipObjectsAPI:
     """Integration tests for skip objects endpoints."""
 

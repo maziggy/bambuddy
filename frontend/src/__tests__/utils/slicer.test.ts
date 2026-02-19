@@ -50,8 +50,8 @@ describe('slicer utility', () => {
       openInSlicer('http://localhost:8000/file.3mf', 'bambu_studio');
 
       expect(appendSpy).toHaveBeenCalled();
-      expect(createdLink.href).toContain('bambustudio://');
-      expect(createdLink.href).toContain(encodeURIComponent('http://localhost:8000/file.3mf'));
+      expect(createdLink.href).toContain('bambustudio://open?file=');
+      expect(createdLink.href).toContain('http://localhost:8000/file.3mf');
       expect(clickSpy).toHaveBeenCalled();
       expect(removeSpy).toHaveBeenCalled();
     });
@@ -63,11 +63,11 @@ describe('slicer utility', () => {
       expect(createdLink.href).toContain('bambustudioopen://');
     });
 
-    it('uses bambustudioopen:// protocol on Linux for bambu_studio', () => {
+    it('uses bambustudio://open?file= on Linux for bambu_studio', () => {
       vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (X11; Linux x86_64)');
       openInSlicer('http://localhost:8000/file.3mf', 'bambu_studio');
 
-      expect(createdLink.href).toContain('bambustudioopen://');
+      expect(createdLink.href).toContain('bambustudio://open?file=');
     });
 
     it('uses orcaslicer:// protocol for orcaslicer on all platforms', () => {

@@ -10,7 +10,7 @@
 #   ./docker-publish.sh 0.1.9b --ghcr-only    # Only push to GHCR
 #   ./docker-publish.sh 0.1.9b --dockerhub-only # Only push to Docker Hub
 #
-# Note: All versions are also tagged as 'latest'
+# Note: Stable versions are also tagged as 'latest'. Beta versions (ending in 'b') are not.
 #
 # Prerequisites:
 #   1. Log in to ghcr.io:
@@ -143,13 +143,22 @@ if ! docker buildx inspect --bootstrap | grep -q "linux/arm64"; then
     docker run --privileged --rm tonistiigi/binfmt --install all
 fi
 
+# Only tag as 'latest' for stable releases (not beta versions ending in 'b')
+TAG_LATEST=true
+if [[ "$VERSION" =~ b$ ]]; then
+    TAG_LATEST=false
+    echo -e "${YELLOW}Beta version detected — skipping 'latest' tag${NC}"
+fi
+
 # Build tags for all target registries
 TAGS=""
 if [ "$PUSH_GHCR" = true ]; then
-    TAGS="$TAGS -t ${GHCR_IMAGE}:${VERSION} -t ${GHCR_IMAGE}:latest"
+    TAGS="$TAGS -t ${GHCR_IMAGE}:${VERSION}"
+    [ "$TAG_LATEST" = true ] && TAGS="$TAGS -t ${GHCR_IMAGE}:latest"
 fi
 if [ "$PUSH_DOCKERHUB" = true ]; then
-    TAGS="$TAGS -t ${DOCKERHUB_IMAGE}:${VERSION} -t ${DOCKERHUB_IMAGE}:latest"
+    TAGS="$TAGS -t ${DOCKERHUB_IMAGE}:${VERSION}"
+    [ "$TAG_LATEST" = true ] && TAGS="$TAGS -t ${DOCKERHUB_IMAGE}:latest"
 fi
 
 echo -e "${BLUE}[3/4] Building and pushing...${NC}"
@@ -209,15 +218,19 @@ if [ "$PARALLEL" = true ]; then
 
     if [ "$PUSH_GHCR" = true ]; then
         echo -e "${BLUE}  Creating GHCR manifest...${NC}"
+        GHCR_MANIFEST_TAGS="-t ${GHCR_IMAGE}:${VERSION}"
+        [ "$TAG_LATEST" = true ] && GHCR_MANIFEST_TAGS="$GHCR_MANIFEST_TAGS -t ${GHCR_IMAGE}:latest"
         docker buildx imagetools create \
-            -t "${GHCR_IMAGE}:${VERSION}" -t "${GHCR_IMAGE}:latest" \
+            $GHCR_MANIFEST_TAGS \
             "${GHCR_IMAGE}:${VERSION}-amd64" \
             "${GHCR_IMAGE}:${VERSION}-arm64"
     fi
     if [ "$PUSH_DOCKERHUB" = true ]; then
         echo -e "${BLUE}  Creating Docker Hub manifest...${NC}"
+        DH_MANIFEST_TAGS="-t ${DOCKERHUB_IMAGE}:${VERSION}"
+        [ "$TAG_LATEST" = true ] && DH_MANIFEST_TAGS="$DH_MANIFEST_TAGS -t ${DOCKERHUB_IMAGE}:latest"
         docker buildx imagetools create \
-            -t "${DOCKERHUB_IMAGE}:${VERSION}" -t "${DOCKERHUB_IMAGE}:latest" \
+            $DH_MANIFEST_TAGS \
             "${DOCKERHUB_IMAGE}:${VERSION}-amd64" \
             "${DOCKERHUB_IMAGE}:${VERSION}-arm64"
     fi
@@ -249,12 +262,12 @@ echo -e "${GREEN}================================================${NC}"
 if [ "$PUSH_GHCR" = true ]; then
     echo "  GHCR:"
     echo "    - ${GHCR_IMAGE}:${VERSION}"
-    echo "    - ${GHCR_IMAGE}:latest"
+    [ "$TAG_LATEST" = true ] && echo "    - ${GHCR_IMAGE}:latest"
 fi
 if [ "$PUSH_DOCKERHUB" = true ]; then
     echo "  Docker Hub:"
     echo "    - ${DOCKERHUB_IMAGE}:${VERSION}"
-    echo "    - ${DOCKERHUB_IMAGE}:latest"
+    [ "$TAG_LATEST" = true ] && echo "    - ${DOCKERHUB_IMAGE}:latest"
 fi
 echo ""
 echo -e "${BLUE}Supported platforms:${NC}"

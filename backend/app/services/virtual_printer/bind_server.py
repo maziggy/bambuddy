@@ -1,7 +1,8 @@
-"""Bind/detect server for virtual printer discovery (port 3000).
+"""Bind/detect server for virtual printer discovery (ports 3000 + 3002).
 
-Bambu slicers (BambuStudio, OrcaSlicer) connect to port 3000 on a printer
-to perform the "bind with access code" handshake before using MQTT/FTP.
+Bambu slicers (BambuStudio, OrcaSlicer) connect to a printer on port 3000
+or 3002 to perform the "bind with access code" handshake before using
+MQTT/FTP. The port varies by slicer version, so we listen on both.
 
 Protocol:
   - Framing: 0xA5A5 + uint16_le(total_msg_size) + JSON payload + 0xA7A7
@@ -19,7 +20,7 @@ import struct
 
 logger = logging.getLogger(__name__)
 
-BIND_PORT = 3000
+BIND_PORTS = [3000, 3002]
 FRAME_HEADER = b"\xa5\xa5"
 FRAME_TRAILER = b"\xa7\xa7"
 HEADER_SIZE = 4  # 2 bytes magic + 2 bytes length
@@ -27,10 +28,13 @@ TRAILER_SIZE = 2
 
 
 class BindServer:
-    """Responds to slicer bind/detect requests on port 3000.
+    """Responds to slicer bind/detect requests on ports 3000 and 3002.
 
     In server mode, Bambuddy IS the printer — it responds with its own
     identity so the slicer can discover and bind to it.
+
+    Different BambuStudio versions connect on different ports (3000 or 3002),
+    so we listen on both to ensure compatibility.
     """
 
     def __init__(
@@ -39,42 +43,55 @@ class BindServer:
         model: str,
         name: str,
         version: str = "01.00.00.00",
+        bind_address: str = "0.0.0.0",  # nosec B104
     ):
         self.serial = serial
         self.model = model
         self.name = name
         self.version = version
+        self.bind_address = bind_address
 
-        self._server: asyncio.Server | None = None
+        self._servers: list[asyncio.Server] = []
         self._running = False
 
     async def start(self) -> None:
-        """Start the bind server on port 3000."""
+        """Start the bind server on ports 3000 and 3002."""
         if self._running:
             return
 
-        logger.info("Starting bind server on port %s (serial=%s, model=%s)", BIND_PORT, self.serial, self.model)
+        self._running = True
+        logger.info(
+            "Starting bind server on ports %s (serial=%s, model=%s)",
+            BIND_PORTS,
+            self.serial,
+            self.model,
+        )
 
         try:
-            self._running = True
-            self._server = await asyncio.start_server(
-                self._handle_client,
-                "0.0.0.0",  # nosec B104
-                BIND_PORT,
-            )
+            for port in BIND_PORTS:
+                try:
+                    server = await asyncio.start_server(
+                        self._handle_client,
+                        self.bind_address,
+                        port,
+                    )
+                    self._servers.append(server)
+                    logger.info("Bind server listening on %s:%s", self.bind_address, port)
+                except OSError as e:
+                    if e.errno == 98:
+                        logger.warning("Bind server port %s already in use, skipping", port)
+                    elif e.errno == 13:
+                        logger.warning("Bind server: cannot bind to port %s (permission denied), skipping", port)
+                    else:
+                        logger.warning("Bind server: failed to bind port %s: %s", port, e)
 
-            logger.info("Bind server listening on port %s", BIND_PORT)
+            if not self._servers:
+                logger.error("Bind server: could not bind to any port")
+                return
 
-            async with self._server:
-                await self._server.serve_forever()
+            # Serve all successfully bound ports
+            await asyncio.gather(*(s.serve_forever() for s in self._servers))
 
-        except OSError as e:
-            if e.errno == 98:
-                logger.error("Bind server port %s is already in use", BIND_PORT)
-            elif e.errno == 13:
-                logger.error("Bind server: cannot bind to port %s (permission denied)", BIND_PORT)
-            else:
-                logger.error("Bind server error: %s", e)
         except asyncio.CancelledError:
             logger.debug("Bind server task cancelled")
         except Exception as e:
@@ -87,13 +104,13 @@ class BindServer:
         logger.info("Stopping bind server")
         self._running = False
 
-        if self._server:
+        for server in self._servers:
             try:
-                self._server.close()
-                await self._server.wait_closed()
+                server.close()
+                await server.wait_closed()
             except OSError as e:
                 logger.debug("Error closing bind server: %s", e)
-            self._server = None
+        self._servers = []
 
     async def _handle_client(
         self,

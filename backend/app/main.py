@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
@@ -205,6 +206,7 @@ from backend.app.api.routes import (
     system,
     updates,
     users,
+    virtual_printers,
     webhook,
     websocket,
 )
@@ -260,6 +262,10 @@ _last_progress_milestone: dict[int, int] = {}
 # Track HMS errors that have been notified: {printer_id: set of error codes}
 # This prevents sending duplicate notifications for the same error
 _notified_hms_errors: dict[int, set[str]] = {}
+# Track when HMS errors were last seen: {printer_id: timestamp}
+# Used to debounce clearing — prevents flapping errors from re-triggering notifications
+_hms_last_seen: dict[int, float] = {}
+_HMS_CLEAR_GRACE_SECONDS = 30.0
 
 # Track timelapse file baselines at print start: {printer_id: set of video filenames}
 # Used for snapshot-diff detection at print completion
@@ -432,6 +438,7 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
 
         # Update tracking immediately to prevent duplicate notifications from concurrent callbacks
         _notified_hms_errors[printer_id] = current_error_codes
+        _hms_last_seen[printer_id] = time.time()
 
         if new_error_codes:
             # Get the actual new errors for the notification
@@ -504,9 +511,15 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                 logging.getLogger(__name__).warning(f"HMS error notification failed: {e}")
 
     else:
-        # No HMS errors - clear tracking so future errors get notified
+        # No HMS errors — only clear tracking after a grace period to prevent
+        # flapping errors (brief hms:[] gaps) from re-triggering notifications.
+        # Some HMS codes (e.g. chamber temp regulation during PETG prints) toggle
+        # on/off every few seconds as conditions fluctuate around thresholds.
         if printer_id in _notified_hms_errors:
-            _notified_hms_errors.pop(printer_id, None)
+            last_seen = _hms_last_seen.get(printer_id, 0)
+            if time.time() - last_seen >= _HMS_CLEAR_GRACE_SECONDS:
+                _notified_hms_errors.pop(printer_id, None)
+                _hms_last_seen.pop(printer_id, None)
 
     await ws_manager.send_printer_status(
         printer_id,
@@ -3237,55 +3250,15 @@ async def lifespan(app: FastAPI):
     # Start printer runtime tracking
     start_runtime_tracking()
 
-    # Initialize virtual printer manager
+    # Initialize virtual printer manager and sync from DB
     from backend.app.services.virtual_printer import virtual_printer_manager
 
     virtual_printer_manager.set_session_factory(async_session)
-
-    # Auto-start virtual printer if enabled
-    async with async_session() as db:
-        from backend.app.api.routes.settings import get_setting
-
-        vp_enabled = await get_setting(db, "virtual_printer_enabled")
-        if vp_enabled and vp_enabled.lower() == "true":
-            vp_access_code = await get_setting(db, "virtual_printer_access_code") or ""
-            vp_mode = await get_setting(db, "virtual_printer_mode") or "immediate"
-            vp_model = await get_setting(db, "virtual_printer_model") or ""
-            vp_target_printer_id = await get_setting(db, "virtual_printer_target_printer_id")
-            vp_remote_iface = await get_setting(db, "virtual_printer_remote_interface_ip") or ""
-
-            # Look up printer IP and serial if in proxy mode
-            vp_target_ip = ""
-            vp_target_serial = ""
-            if vp_mode == "proxy" and vp_target_printer_id:
-                from backend.app.models.printer import Printer
-
-                result = await db.execute(select(Printer).where(Printer.id == int(vp_target_printer_id)))
-                printer = result.scalar_one_or_none()
-                if printer:
-                    vp_target_ip = printer.ip_address
-                    vp_target_serial = printer.serial_number
-
-            # Proxy mode requires target IP, other modes require access code
-            can_start = (vp_mode == "proxy" and vp_target_ip) or (vp_mode != "proxy" and vp_access_code)
-
-            if can_start:
-                try:
-                    await virtual_printer_manager.configure(
-                        enabled=True,
-                        access_code=vp_access_code,
-                        mode=vp_mode,
-                        model=vp_model,
-                        target_printer_ip=vp_target_ip,
-                        target_printer_serial=vp_target_serial,
-                        remote_interface_ip=vp_remote_iface,
-                    )
-                    if vp_mode == "proxy":
-                        logging.info("Virtual printer proxy started (target=%s)", vp_target_ip)
-                    else:
-                        logging.info("Virtual printer started (model=%s)", vp_model or "default")
-                except Exception as e:
-                    logging.warning("Failed to start virtual printer: %s", e)
+    try:
+        await virtual_printer_manager.sync_from_db()
+        logging.info("Virtual printer manager synced from database")
+    except Exception as e:
+        logging.warning("Failed to sync virtual printers: %s", e)
 
     yield
 
@@ -3299,9 +3272,8 @@ async def lifespan(app: FastAPI):
     printer_manager.disconnect_all()
     await close_spoolman_client()
 
-    # Stop virtual printer if running
-    if virtual_printer_manager.is_enabled:
-        await virtual_printer_manager.configure(enabled=False)
+    # Stop all virtual printer services
+    await virtual_printer_manager.stop_all()
 
     await mqtt_smart_plug_service.disconnect(timeout=2)
 
@@ -3356,6 +3328,10 @@ PUBLIC_API_PATTERNS = [
     # Camera (streams loaded via <img> tag)
     "/camera/stream",  # /printers/{id}/camera/stream
     "/camera/snapshot",  # /printers/{id}/camera/snapshot
+    # Slicer token-authenticated downloads — protocol handlers (bambustudioopen://,
+    # orcaslicer://) cannot send auth headers. These endpoints validate a short-lived
+    # download token in the URL path instead.
+    "/dl/",  # /archives/{id}/dl/{token}/{filename}, /library/files/{id}/dl/{token}/{filename}
 ]
 
 
@@ -3494,6 +3470,7 @@ app.include_router(pending_uploads.router, prefix=app_settings.api_prefix)
 app.include_router(firmware.router, prefix=app_settings.api_prefix)
 app.include_router(github_backup.router, prefix=app_settings.api_prefix)
 app.include_router(metrics.router, prefix=app_settings.api_prefix)
+app.include_router(virtual_printers.router, prefix=app_settings.api_prefix)
 
 
 # Serve static files (React build)

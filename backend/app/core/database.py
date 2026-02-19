@@ -103,6 +103,7 @@ async def init_db():
         spool_k_profile,
         spool_usage_history,
         user,
+        virtual_printer,
     )
 
     async with engine.begin() as conn:
@@ -1185,6 +1186,12 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already applied
 
+    # Migration: Add core_weight_catalog_id to track which catalog entry was used for empty spool weight
+    try:
+        await conn.execute(text("ALTER TABLE spool ADD COLUMN core_weight_catalog_id INTEGER"))
+    except OperationalError:
+        pass  # Already applied
+
     # Migration: Create spool_usage_history table for filament consumption tracking
     try:
         await conn.execute(
@@ -1215,6 +1222,70 @@ async def run_migrations(conn):
         await conn.execute(text("ALTER TABLE notification_providers ADD COLUMN on_bed_cooled BOOLEAN DEFAULT 0"))
     except OperationalError:
         pass  # Already applied
+
+    # Migration: Migrate single virtual printer key-value settings to virtual_printers table
+    try:
+        # Check if virtual_printers table has any rows
+        result = await conn.execute(text("SELECT COUNT(*) FROM virtual_printers"))
+        count = result.scalar() or 0
+
+        if count == 0:
+            # Check if old key-value settings exist
+            result = await conn.execute(text("SELECT value FROM settings WHERE key = 'virtual_printer_enabled'"))
+            row = result.fetchone()
+            if row:
+                # Old settings exist — migrate to first virtual printer row
+                old_enabled = row[0] == "true" if row[0] else False
+
+                result = await conn.execute(
+                    text("SELECT value FROM settings WHERE key = 'virtual_printer_access_code'")
+                )
+                row = result.fetchone()
+                old_access_code = row[0] if row else None
+
+                result = await conn.execute(text("SELECT value FROM settings WHERE key = 'virtual_printer_mode'"))
+                row = result.fetchone()
+                old_mode = row[0] if row else "immediate"
+                if old_mode == "queue":
+                    old_mode = "review"
+
+                result = await conn.execute(text("SELECT value FROM settings WHERE key = 'virtual_printer_model'"))
+                row = result.fetchone()
+                old_model = row[0] if row else "3DPrinter-X1-Carbon"
+
+                result = await conn.execute(
+                    text("SELECT value FROM settings WHERE key = 'virtual_printer_target_printer_id'")
+                )
+                row = result.fetchone()
+                old_target_id = int(row[0]) if row and row[0] else None
+
+                result = await conn.execute(
+                    text("SELECT value FROM settings WHERE key = 'virtual_printer_remote_interface_ip'")
+                )
+                row = result.fetchone()
+                old_remote_iface = row[0] if row else None
+
+                await conn.execute(
+                    text("""
+                        INSERT INTO virtual_printers
+                            (name, enabled, mode, model, access_code, target_printer_id,
+                             bind_ip, remote_interface_ip, serial_suffix, position)
+                        VALUES
+                            (:name, :enabled, :mode, :model, :access_code, :target_id,
+                             NULL, :remote_iface, '391800001', 0)
+                    """),
+                    {
+                        "name": "Bambuddy",
+                        "enabled": old_enabled,
+                        "mode": old_mode or "immediate",
+                        "model": old_model,
+                        "access_code": old_access_code,
+                        "target_id": old_target_id,
+                        "remote_iface": old_remote_iface,
+                    },
+                )
+    except OperationalError:
+        pass  # Table may not exist yet on first run
 
 
 async def seed_notification_templates():
@@ -1356,6 +1427,19 @@ async def seed_default_groups():
                     if updated:
                         group.permissions = new_permissions
 
+        await session.commit()
+
+        # Migrate new permissions: grant printers:clear_plate to all groups with printers:control
+        result = await session.execute(select(Group))
+        all_groups = result.scalars().all()
+        for group in all_groups:
+            if (
+                group.permissions
+                and "printers:control" in group.permissions
+                and "printers:clear_plate" not in group.permissions
+            ):
+                group.permissions = [*group.permissions, "printers:clear_plate"]
+                logger.info("Added printers:clear_plate to group '%s' (has printers:control)", group.name)
         await session.commit()
 
         # Migrate existing users to groups if they're not already in any group

@@ -1803,6 +1803,15 @@ export default {
       message: 'Les utilisateurs de ce groupe perdront ces permissions.',
       confirm: 'Supprimer',
     },
+    editor: {
+      title: 'Modifier le groupe',
+      createTitle: 'Créer un groupe',
+      search: 'Rechercher des permissions...',
+      selectAll: 'Tout sélectionner',
+      clearAll: 'Tout désélectionner',
+      permissionsSelected: '{{count}} sélectionnée(s)',
+      noResults: 'Aucune permission ne correspond à votre recherche',
+    },
   },
 
   // Users management
@@ -2674,6 +2683,8 @@ export default {
     kFactor: 'Facteur K',
     fill: 'Remplir',
     configure: 'Configurer',
+    used: 'utilisé',
+    remainingUnit: 'restant',
   },
 
   // Print modal
@@ -2954,6 +2965,14 @@ export default {
       placeholder: 'Auto (défaut)...',
       hint: 'Force l\'IP annoncée via SSDP.',
     },
+    bindIp: {
+      title: 'Interface réseau',
+      placeholder: 'Sélectionner interface...',
+      hint: 'Interface réseau sur laquelle cette imprimante virtuelle écoute. Doit être unique par imprimante.',
+    },
+    proxy: {
+      accessCodeHint: 'En mode proxy, utilisez le code d\'accès de l\'imprimante cible dans le slicer. La connexion est transmise de manière transparente à l\'imprimante réelle.',
+    },
     mode: {
       title: 'Mode',
       archive: 'Archiver',
@@ -2972,19 +2991,9 @@ export default {
     },
     howItWorks: {
       title: 'Fonctionnement',
-      titleProxy: 'Fonctionnement (Mode Proxy)',
-      step1: 'Suivez le guide pour votre plateforme',
-      step2: 'Activez et réglez le code d\'accès',
-      step3: 'Dans le Slicer, allez dans "Ajouter Imprimante"',
-      step4: '"Bambuddy" apparaîtra dans la découverte',
-      step5: 'Connectez avec votre code d\'accès',
-      step6: 'Imprimez vers Bambuddy : le 3MF est archivé',
-      proxyStep1: 'Cible réelle en mode LAN',
-      proxyStep2: 'Choisissez l\'interface réseau',
-      proxyStep3: 'Activez le proxy',
-      proxyStep4: 'Connectez avec le code de la vraie imprimante',
-      proxyStep5: 'Le trafic est relayé par Bambuddy',
-      proxyStep6: 'Streaming caméra : voir doc NAT/IP forwarding',
+      step1: 'Sur le même LAN, les imprimantes virtuelles apparaissent automatiquement dans votre slicer (Bambu Studio / OrcaSlicer). Depuis d\'autres réseaux, ajoutez-les manuellement par adresse IP et code d\'accès.',
+      step2: 'En mode Archive, Revue et File d\'attente, utilisez le bouton "Envoyer" dans votre slicer pour envoyer des fichiers 3MF à Bambuddy. Le slicer affichera "Impression réussie" — le fichier est stocké, pas imprimé.',
+      step3: 'En mode Proxy, l\'imprimante virtuelle relaie tout le trafic vers une vraie imprimante — les impressions démarrent immédiatement comme en connexion directe.',
     },
     status: {
       title: 'Détails du statut',
@@ -3426,4 +3435,18 @@ export default {
 
   // Spoolman Settings
   spoolmanSettings: {},
+
+  // Time
+  time: {
+    unknown: '-',
+    waiting: 'En attente',
+    justNow: 'À l\'instant',
+    now: 'Maintenant',
+    minsAgo: 'il y a {{count}}m',
+    inMins: 'dans {{count}}m',
+    hoursAgo: 'il y a {{count}}h',
+    inHours: 'dans {{count}}h',
+    daysAgo: 'il y a {{count}}j',
+    inDays: 'dans {{count}}j',
+  },
 };

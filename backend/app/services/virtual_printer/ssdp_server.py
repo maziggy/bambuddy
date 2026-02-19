@@ -34,21 +34,24 @@ class VirtualPrinterSSDPServer:
         serial: str = "00M09A391800001",  # X1C serial format for compatibility
         model: str = "BL-P001",  # X1C model code for best compatibility
         advertise_ip: str = "",
+        bind_ip: str = "",
     ):
         """Initialize the SSDP server.
 
         Args:
             name: Display name shown in slicer discovery
-            serial: Unique serial number for this virtual printer (must match cert CN)
-            model: Model code (BL-P001=X1C, C11=P1S, O1D=H2D)
+            serial: Unique serial number
+            model: Model code
             advertise_ip: Override IP to advertise instead of auto-detecting
+            bind_ip: IP address to bind the SSDP socket to
         """
         self.name = name
         self.serial = serial
         self.model = model
+        self._bind_ip = bind_ip
         self._running = False
         self._socket: socket.socket | None = None
-        self._local_ip: str | None = advertise_ip or None
+        self._local_ip: str | None = advertise_ip or bind_ip or None
 
     def _get_local_ip(self) -> str:
         """Get the local IP address to advertise."""
@@ -67,14 +70,8 @@ class VirtualPrinterSSDPServer:
             return "127.0.0.1"
 
     def _build_notify_message(self) -> bytes:
-        """Build SSDP NOTIFY message for periodic announcements.
-
-        Format matches real Bambu printer SSDP broadcasts observed on the network.
-        Real printers use Host: 239.255.255.250:1990 (port 1990 in header).
-        """
+        """Build SSDP NOTIFY message for periodic announcements."""
         ip = self._get_local_ip()
-        # Match exact format of real Bambu printers (captured via tcpdump)
-        # Key: DevBind.bambu.com: free - tells slicer printer is NOT cloud-bound
         message = (
             "NOTIFY * HTTP/1.1\r\n"
             f"Host: {SSDP_MULTICAST_ADDR}:1990\r\n"
@@ -98,13 +95,8 @@ class VirtualPrinterSSDPServer:
         return message.encode()
 
     def _build_response_message(self) -> bytes:
-        """Build SSDP response message for M-SEARCH requests.
-
-        Format matches real Bambu printer SSDP responses.
-        """
+        """Build SSDP response message for M-SEARCH requests."""
         ip = self._get_local_ip()
-        # Match format of real Bambu printers
-        # Key: DevBind.bambu.com: free - tells slicer printer is NOT cloud-bound
         message = (
             "HTTP/1.1 200 OK\r\n"
             "Server: UPnP/1.0\r\n"
@@ -147,11 +139,18 @@ class VirtualPrinterSSDPServer:
             # Set non-blocking mode
             self._socket.setblocking(False)
 
-            # Bind to SSDP port
-            self._socket.bind(("", SSDP_PORT))
+            # Bind to SSDP port on specific interface (or all interfaces)
+            self._socket.bind((self._bind_ip or "", SSDP_PORT))
 
-            # Join multicast group
-            mreq = struct.pack("4sl", socket.inet_aton(SSDP_MULTICAST_ADDR), socket.INADDR_ANY)
+            # Join multicast group (on specific interface if bind_ip is set)
+            if self._bind_ip:
+                mreq = struct.pack(
+                    "4s4s",
+                    socket.inet_aton(SSDP_MULTICAST_ADDR),
+                    socket.inet_aton(self._bind_ip),
+                )
+            else:
+                mreq = struct.pack("4sl", socket.inet_aton(SSDP_MULTICAST_ADDR), socket.INADDR_ANY)
             self._socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
 
             # Enable broadcast
@@ -226,17 +225,16 @@ class VirtualPrinterSSDPServer:
             self._socket = None
 
     async def _send_notify(self) -> None:
-        """Send SSDP NOTIFY message via broadcast (like real Bambu printers)."""
+        """Send SSDP NOTIFY message via broadcast."""
         if not self._socket:
             return
 
         try:
             msg = self._build_notify_message()
-            # Real Bambu printers broadcast to 255.255.255.255, not multicast
             self._socket.sendto(msg, (SSDP_BROADCAST_ADDR, SSDP_PORT))
             logger.debug("Sent SSDP NOTIFY for %s", self.name)
         except OSError as e:
-            logger.debug("Failed to send NOTIFY: %s", e)
+            logger.debug("Failed to send NOTIFY for %s: %s", self.name, e)
 
     async def _send_byebye(self) -> None:
         """Send SSDP byebye message when shutting down."""
@@ -282,7 +280,7 @@ class VirtualPrinterSSDPServer:
                 self._socket.sendto(response, addr)
                 logger.info("Sent SSDP response to %s for virtual printer '%s'", addr[0], self.name)
             except OSError as e:
-                logger.debug("Failed to send SSDP response: %s", e)
+                logger.debug("Failed to send SSDP response for %s: %s", self.name, e)
 
 
 class SSDPProxy:

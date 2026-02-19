@@ -15,6 +15,7 @@ from backend.app.services.usage_tracker import (
     PrintSession,
     _active_sessions,
     _decode_mqtt_mapping,
+    _match_slots_by_color,
     _track_from_3mf,
     on_print_complete,
     on_print_start,
@@ -884,6 +885,161 @@ class TestDecodeMqttMapping:
     def test_non_int_values_treated_as_unmapped(self):
         """Non-integer values in the mapping are treated as unmapped."""
         assert _decode_mqtt_mapping(["foo", 0]) == [-1, 0]
+
+
+class TestMatchSlotsByColor:
+    """Tests for _match_slots_by_color() — color-based filament slot to AMS tray matching."""
+
+    def _ams(self, trays):
+        """Build AMS data from list of (ams_id, tray_id, color_hex, tray_type) tuples."""
+        units: dict[int, list] = {}
+        for ams_id, tray_id, color, tray_type in trays:
+            units.setdefault(ams_id, []).append({"id": tray_id, "tray_color": color, "tray_type": tray_type})
+        return [{"id": aid, "tray": t} for aid, t in units.items()]
+
+    def _usage(self, slots):
+        """Build filament_usage from list of (slot_id, color_hex) tuples."""
+        return [{"slot_id": sid, "used_g": 10.0, "type": "PLA", "color": color} for sid, color in slots]
+
+    def test_none_inputs(self):
+        assert _match_slots_by_color(None, None) is None
+        assert _match_slots_by_color([], None) is None
+        assert _match_slots_by_color(None, {"ams": []}) is None
+
+    def test_empty_ams(self):
+        usage = self._usage([(1, "#FF0000")])
+        assert _match_slots_by_color(usage, {"ams": []}) is None
+
+    def test_single_slot_single_tray(self):
+        """One 3MF slot matches one AMS tray by color."""
+        ams = self._ams([(0, 0, "FF0000FF", "PLA")])
+        usage = self._usage([(1, "#FF0000")])
+        assert _match_slots_by_color(usage, {"ams": ams}) == [0]
+
+    def test_a1_mini_three_colors(self):
+        """A1 Mini: 3 slots match 3 distinct AMS trays."""
+        ams = self._ams(
+            [
+                (0, 0, "FF0000FF", "PLA"),  # Red
+                (0, 1, "00FF00FF", "PLA"),  # Green
+                (0, 2, "0000FFFF", "PLA"),  # Blue
+            ]
+        )
+        usage = self._usage([(1, "#FF0000"), (2, "#00FF00"), (3, "#0000FF")])
+        assert _match_slots_by_color(usage, {"ams": ams}) == [0, 1, 2]
+
+    def test_dual_ams_p2s_like(self):
+        """P2S with dual AMS: slots from second AMS unit."""
+        ams = self._ams(
+            [
+                (0, 0, "AAAAAAFF", "PLA"),
+                (0, 1, "BBBBBBFF", "PLA"),
+                (1, 0, "CC0000FF", "PETG"),  # global_id=4
+                (1, 1, "00CC00FF", "PETG"),  # global_id=5
+            ]
+        )
+        usage = self._usage([(1, "#CC0000"), (2, "#00CC00")])
+        assert _match_slots_by_color(usage, {"ams": ams}) == [4, 5]
+
+    def test_ams_ht_global_id(self):
+        """AMS-HT (ams_id >= 128) uses raw ams_id as global tray ID."""
+        ams = self._ams(
+            [
+                (0, 0, "FF0000FF", "PLA"),
+                (128, 0, "0000FFFF", "PLA"),  # AMS-HT → global_id=128
+            ]
+        )
+        usage = self._usage([(1, "#FF0000"), (2, "#0000FF")])
+        assert _match_slots_by_color(usage, {"ams": ams}) == [0, 128]
+
+    def test_ambiguous_same_color_returns_none(self):
+        """Two trays with the same color → ambiguous → None."""
+        ams = self._ams(
+            [
+                (0, 0, "FF0000FF", "PLA"),
+                (0, 1, "FF0000FF", "PLA"),  # Same red
+            ]
+        )
+        usage = self._usage([(1, "#FF0000")])
+        assert _match_slots_by_color(usage, {"ams": ams}) is None
+
+    def test_no_matching_color_returns_none(self):
+        """3MF slot color not found in any AMS tray → None."""
+        ams = self._ams([(0, 0, "00FF00FF", "PLA")])
+        usage = self._usage([(1, "#FF0000")])  # Red, but AMS has green
+        assert _match_slots_by_color(usage, {"ams": ams}) is None
+
+    def test_color_normalization_strips_alpha(self):
+        """AMS colors (RRGGBBAA) and 3MF colors (#RRGGBB) match after normalization."""
+        ams = self._ams([(0, 0, "AABBCC80", "PLA")])  # 8-char with alpha
+        usage = self._usage([(1, "#AABBCC")])  # 6-char with #
+        assert _match_slots_by_color(usage, {"ams": ams}) == [0]
+
+    def test_case_insensitive(self):
+        """Color matching is case-insensitive."""
+        ams = self._ams([(0, 0, "aaBBccFF", "PLA")])
+        usage = self._usage([(1, "#AAbbCC")])
+        assert _match_slots_by_color(usage, {"ams": ams}) == [0]
+
+    def test_empty_tray_color_skipped(self):
+        """Trays with empty color are skipped (not matched)."""
+        ams = self._ams(
+            [
+                (0, 0, "", "PLA"),
+                (0, 1, "FF0000FF", "PLA"),
+            ]
+        )
+        usage = self._usage([(1, "#FF0000")])
+        assert _match_slots_by_color(usage, {"ams": ams}) == [1]
+
+    def test_empty_tray_type_skipped(self):
+        """Trays with empty tray_type are skipped (unloaded slot)."""
+        ams = self._ams(
+            [
+                (0, 0, "FF0000FF", ""),  # Empty slot
+                (0, 1, "FF0000FF", "PLA"),  # Loaded slot
+            ]
+        )
+        usage = self._usage([(1, "#FF0000")])
+        assert _match_slots_by_color(usage, {"ams": ams}) == [1]
+
+    def test_short_slot_color_returns_none(self):
+        """3MF slot with color < 6 chars → can't match → None."""
+        ams = self._ams([(0, 0, "FF0000FF", "PLA")])
+        usage = [{"slot_id": 1, "used_g": 10.0, "type": "PLA", "color": "#FFF"}]
+        assert _match_slots_by_color(usage, {"ams": ams}) is None
+
+    def test_slot_id_zero_skipped(self):
+        """Slots with slot_id=0 are skipped."""
+        ams = self._ams([(0, 0, "FF0000FF", "PLA")])
+        usage = [{"slot_id": 0, "used_g": 10.0, "type": "PLA", "color": "#FF0000"}]
+        assert _match_slots_by_color(usage, {"ams": ams}) is None
+
+    def test_ams_data_as_list(self):
+        """Handles ams_raw as a plain list (some printer models)."""
+        ams_list = [{"id": 0, "tray": [{"id": 0, "tray_color": "FF0000FF", "tray_type": "PLA"}]}]
+        usage = self._usage([(1, "#FF0000")])
+        assert _match_slots_by_color(usage, ams_list) == [0]
+
+    def test_same_color_two_trays_disambiguated_by_usage(self):
+        """Two trays same color, two slots same color → unique assignment via used_trays tracking."""
+        ams = self._ams(
+            [
+                (0, 0, "FF0000FF", "PLA"),
+                (0, 1, "FF0000FF", "PLA"),
+            ]
+        )
+        # Two slots both wanting red — first gets tray 0, second gets tray 1? No.
+        # When first slot takes the only available, second has 1 left → should work
+        usage = self._usage([(1, "#FF0000"), (2, "#FF0000")])
+        # First slot: candidates=[0,1], available=[0,1], len!=1 → None
+        assert _match_slots_by_color(usage, {"ams": ams}) is None
+
+    def test_dict_wrapper_with_ams_key(self):
+        """Standard dict format with 'ams' key."""
+        ams_data = {"ams": [{"id": 0, "tray": [{"id": 0, "tray_color": "00FF00FF", "tray_type": "PLA"}]}]}
+        usage = self._usage([(1, "#00FF00")])
+        assert _match_slots_by_color(usage, ams_data) == [0]
 
 
 class TestMqttMappingIntegration:

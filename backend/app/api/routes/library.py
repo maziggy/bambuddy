@@ -54,7 +54,7 @@ from backend.app.schemas.library import (
     ZipExtractResponse,
     ZipExtractResult,
 )
-from backend.app.services.archive import ArchiveService, ThreeMFParser
+from backend.app.services.archive import ThreeMFParser
 from backend.app.services.stl_thumbnail import generate_stl_thumbnail
 from backend.app.utils.threemf_tools import extract_nozzle_mapping_from_3mf
 
@@ -1737,23 +1737,15 @@ async def print_library_file(
     db: AsyncSession = Depends(get_db),
     _: User | None = Depends(require_permission_if_auth_enabled(Permission.PRINTERS_CONTROL)),
 ):
-    """Print a library file directly.
+    """Dispatch a library file for send/start on a printer.
 
-    This endpoint:
-    1. Creates an archive from the library file
-    2. Uploads the file to the printer
-    3. Starts the print
+    The actual send/start work is handled asynchronously by background
+    dispatch so the UI can continue immediately.
 
     Only sliced files (.gcode or .gcode.3mf) can be printed.
     """
-    from backend.app.main import register_expected_print
     from backend.app.models.printer import Printer
-    from backend.app.services.bambu_ftp import (
-        delete_file_async,
-        get_ftp_retry_settings,
-        upload_file_async,
-        with_ftp_retry,
-    )
+    from backend.app.services.background_dispatch import DispatchEnqueueRejected, background_dispatch
     from backend.app.services.printer_manager import printer_manager
 
     # Use defaults if no body provided
@@ -1790,131 +1782,34 @@ async def print_library_file(
     if not printer_manager.is_connected(printer_id):
         raise HTTPException(status_code=400, detail="Printer is not connected")
 
-    # Create archive from the library file
-    archive_service = ArchiveService(db)
-    archive = await archive_service.archive_print(
-        printer_id=printer_id,
-        source_file=file_path,
-        original_filename=lib_file.filename,
-    )
+    plate_name = body.plate_name
+    if not plate_name and body.plate_id is not None:
+        plate_name = f"Plate {body.plate_id}"
 
-    if not archive:
-        raise HTTPException(status_code=500, detail="Failed to create archive")
+    dispatch_source_name = lib_file.filename
+    if plate_name:
+        dispatch_source_name = f"{lib_file.filename} • {plate_name}"
 
-    await db.flush()
-
-    # Prepare remote filename
-    base_name = lib_file.filename
-    if base_name.endswith(".gcode.3mf"):
-        base_name = base_name[:-10]
-    elif base_name.endswith(".3mf"):
-        base_name = base_name[:-4]
-    remote_filename = f"{base_name}.3mf"
-    remote_path = f"/{remote_filename}"
-
-    # Get FTP retry settings
-    ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
-
-    logger.info(
-        f"Library print FTP upload starting: printer={printer.name} ({printer.model}), "
-        f"ip={printer.ip_address}, file={remote_filename}, local_path={file_path}, "
-        f"retry_enabled={ftp_retry_enabled}, retry_count={ftp_retry_count}, timeout={ftp_timeout}"
-    )
-
-    # Delete existing file if present (avoids 553 error)
-    logger.debug("Deleting existing file %s if present...", remote_path)
-    delete_result = await delete_file_async(
-        printer.ip_address,
-        printer.access_code,
-        remote_path,
-        socket_timeout=ftp_timeout,
-        printer_model=printer.model,
-    )
-    logger.debug("Delete result: %s", delete_result)
-
-    # Upload file to printer
-    if ftp_retry_enabled:
-        uploaded = await with_ftp_retry(
-            upload_file_async,
-            printer.ip_address,
-            printer.access_code,
-            file_path,
-            remote_path,
-            socket_timeout=ftp_timeout,
-            printer_model=printer.model,
-            max_retries=ftp_retry_count,
-            retry_delay=ftp_retry_delay,
-            operation_name=f"Upload for print to {printer.name}",
+    try:
+        dispatch_result = await background_dispatch.dispatch_print_library_file(
+            file_id=file_id,
+            filename=dispatch_source_name,
+            printer_id=printer_id,
+            printer_name=printer.name,
+            options=body.model_dump(exclude_none=True),
+            requested_by_user_id=None,
+            requested_by_username=None,
         )
-    else:
-        uploaded = await upload_file_async(
-            printer.ip_address,
-            printer.access_code,
-            file_path,
-            remote_path,
-            socket_timeout=ftp_timeout,
-            printer_model=printer.model,
-        )
-
-    if not uploaded:
-        logger.error(
-            f"FTP upload failed for library print: printer={printer.name}, model={printer.model}, "
-            f"ip={printer.ip_address}, file={remote_filename}. "
-            "Check logs above for storage diagnostics and specific error codes."
-        )
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to upload file to printer. Check if SD card is inserted and properly formatted (FAT32/exFAT). "
-            "See server logs for detailed diagnostics.",
-        )
-
-    # Register this as an expected print so we don't create a duplicate archive
-    register_expected_print(printer_id, remote_filename, archive.id, ams_mapping=body.ams_mapping)
-
-    # Determine plate ID
-    if body.plate_id is not None:
-        plate_id = body.plate_id
-    else:
-        plate_id = 1
-        try:
-            with zipfile.ZipFile(file_path, "r") as zf:
-                for name in zf.namelist():
-                    if name.startswith("Metadata/plate_") and name.endswith(".gcode"):
-                        plate_str = name[15:-6]
-                        plate_id = int(plate_str)
-                        break
-        except (ValueError, zipfile.BadZipFile, OSError):
-            pass  # Default plate_id=1 if archive is unreadable or has no gcode
-
-    logger.info(
-        f"Print library file {file_id}: archive_id={archive.id}, plate_id={plate_id}, "
-        f"ams_mapping={body.ams_mapping}, bed_levelling={body.bed_levelling}"
-    )
-
-    # Start the print
-    started = printer_manager.start_print(
-        printer_id,
-        remote_filename,
-        plate_id,
-        ams_mapping=body.ams_mapping,
-        timelapse=body.timelapse,
-        bed_levelling=body.bed_levelling,
-        flow_cali=body.flow_cali,
-        vibration_cali=body.vibration_cali,
-        layer_inspect=body.layer_inspect,
-        use_ams=body.use_ams,
-    )
-
-    if not started:
-        raise HTTPException(status_code=500, detail="Failed to start print")
-
-    await db.commit()
+    except DispatchEnqueueRejected as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
 
     return {
-        "status": "printing",
+        "status": "dispatched",
         "printer_id": printer_id,
-        "archive_id": archive.id,
+        "archive_id": None,
         "filename": lib_file.filename,
+        "dispatch_job_id": dispatch_result["dispatch_job_id"],
+        "dispatch_position": dispatch_result["dispatch_position"],
     }
 
 

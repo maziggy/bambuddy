@@ -5,6 +5,79 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import delete, or_, select
+
+from backend.app.api.routes import (
+    ams_history,
+    api_keys,
+    archives,
+    auth,
+    background_dispatch as background_dispatch_routes,
+    camera,
+    cloud,
+    discovery,
+    external_links,
+    filaments,
+    firmware,
+    github_backup,
+    groups,
+    inventory,
+    kprofiles,
+    library,
+    local_presets,
+    maintenance,
+    metrics,
+    notification_templates,
+    notifications,
+    pending_uploads,
+    print_log,
+    print_queue,
+    printers,
+    projects,
+    settings as settings_routes,
+    smart_plugs,
+    spoolman,
+    support,
+    system,
+    updates,
+    users,
+    virtual_printers,
+    webhook,
+    websocket,
+)
+from backend.app.api.routes.maintenance import _get_printer_maintenance_internal, ensure_default_types
+from backend.app.api.routes.support import init_debug_logging
+from backend.app.core.config import APP_VERSION, settings as app_settings
+from backend.app.core.database import async_session, init_db
+from backend.app.core.websocket import ws_manager
+from backend.app.models.smart_plug import SmartPlug
+from backend.app.services.archive import ArchiveService
+from backend.app.services.background_dispatch import background_dispatch
+from backend.app.services.bambu_ftp import download_file_async, get_ftp_retry_settings, with_ftp_retry
+from backend.app.services.bambu_mqtt import PrinterState
+from backend.app.services.github_backup import github_backup_service
+from backend.app.services.homeassistant import homeassistant_service
+from backend.app.services.mqtt_relay import mqtt_relay
+from backend.app.services.mqtt_smart_plug import mqtt_smart_plug_service
+from backend.app.services.notification_service import notification_service
+from backend.app.services.print_scheduler import scheduler as print_scheduler
+from backend.app.services.printer_manager import (
+    init_printer_connections,
+    printer_manager,
+    printer_state_to_dict,
+)
+from backend.app.services.smart_plug_manager import smart_plug_manager
+from backend.app.services.spoolman import close_spoolman_client, get_spoolman_client, init_spoolman_client
+from backend.app.services.spoolman_tracking import (
+    cleanup_tracking as _cleanup_spoolman_tracking,
+    report_usage as _report_spoolman_usage,
+    store_print_data as _store_spoolman_print_data,
+)
+from backend.app.services.tasmota import tasmota_service
+
 
 # =============================================================================
 # Dependency Check - runs before other imports to give helpful error messages
@@ -126,10 +199,8 @@ def check_dependencies():
 check_dependencies()
 # =============================================================================
 
-from fastapi import FastAPI
 
 # Import settings first for logging configuration
-from backend.app.core.config import APP_VERSION, settings as app_settings
 
 # Configure logging based on settings
 # DEBUG=true -> DEBUG level, else use LOG_LEVEL setting
@@ -169,74 +240,7 @@ if not app_settings.debug:
     logging.getLogger("paho.mqtt").setLevel(logging.WARNING)
 
 logging.info("Bambuddy starting - debug=%s, log_level=%s", app_settings.debug, log_level_str)
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
-from sqlalchemy import delete, or_, select
 
-from backend.app.api.routes import (
-    ams_history,
-    api_keys,
-    archives,
-    auth,
-    camera,
-    cloud,
-    discovery,
-    external_links,
-    filaments,
-    firmware,
-    github_backup,
-    groups,
-    inventory,
-    kprofiles,
-    library,
-    local_presets,
-    maintenance,
-    metrics,
-    notification_templates,
-    notifications,
-    pending_uploads,
-    print_log,
-    print_queue,
-    printers,
-    projects,
-    settings as settings_routes,
-    smart_plugs,
-    spoolman,
-    support,
-    system,
-    updates,
-    users,
-    virtual_printers,
-    webhook,
-    websocket,
-)
-from backend.app.api.routes.maintenance import _get_printer_maintenance_internal, ensure_default_types
-from backend.app.api.routes.support import init_debug_logging
-from backend.app.core.database import async_session, init_db
-from backend.app.core.websocket import ws_manager
-from backend.app.models.smart_plug import SmartPlug
-from backend.app.services.archive import ArchiveService
-from backend.app.services.bambu_ftp import download_file_async, get_ftp_retry_settings, with_ftp_retry
-from backend.app.services.bambu_mqtt import PrinterState
-from backend.app.services.github_backup import github_backup_service
-from backend.app.services.homeassistant import homeassistant_service
-from backend.app.services.mqtt_relay import mqtt_relay
-from backend.app.services.mqtt_smart_plug import mqtt_smart_plug_service
-from backend.app.services.notification_service import notification_service
-from backend.app.services.print_scheduler import scheduler as print_scheduler
-from backend.app.services.printer_manager import (
-    init_printer_connections,
-    printer_manager,
-    printer_state_to_dict,
-)
-from backend.app.services.smart_plug_manager import smart_plug_manager
-from backend.app.services.spoolman import close_spoolman_client, get_spoolman_client, init_spoolman_client
-from backend.app.services.spoolman_tracking import (
-    cleanup_tracking as _cleanup_spoolman_tracking,
-    report_usage as _report_spoolman_usage,
-    store_print_data as _store_spoolman_print_data,
-)
-from backend.app.services.tasmota import tasmota_service
 
 # Track active prints: {(printer_id, filename): archive_id}
 _active_prints: dict[tuple[int, str], int] = {}
@@ -320,7 +324,8 @@ def register_expected_print(printer_id: int, filename: str, archive_id: int, ams
 
 
 _last_status_broadcast: dict[int, str] = {}
-_nozzle_count_updated: set[int] = set()  # Track printers where we've updated nozzle_count
+# Track printers where we've updated nozzle_count
+_nozzle_count_updated: set[int] = set()
 
 
 async def on_printer_status_change(printer_id: int, state: PrinterState):
@@ -2848,7 +2853,8 @@ _ams_history_task: asyncio.Task | None = None
 AMS_HISTORY_INTERVAL = 300  # Record every 5 minutes
 AMS_HISTORY_RETENTION_DAYS = 30  # Keep data for 30 days
 _ams_cleanup_counter = 0  # Track recordings to trigger periodic cleanup
-_ams_alarm_cooldown: dict[str, datetime] = {}  # Track alarm cooldowns (printer_id:ams_id:type -> last_alarm_time)
+# Track alarm cooldowns (printer_id:ams_id:type -> last_alarm_time)
+_ams_alarm_cooldown: dict[str, datetime] = {}
 AMS_ALARM_COOLDOWN_MINUTES = 60  # Don't send same alarm more than once per hour
 
 
@@ -3232,6 +3238,9 @@ async def lifespan(app: FastAPI):
     # Start the print scheduler
     asyncio.create_task(print_scheduler.run())
 
+    # Start background dispatch worker for send/start operations
+    await background_dispatch.start()
+
     # Start the smart plug scheduler for time-based on/off
     smart_plug_manager.start_scheduler()
 
@@ -3264,6 +3273,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     print_scheduler.stop()
+    await background_dispatch.stop()
     smart_plug_manager.stop_scheduler()
     notification_service.stop_digest_scheduler()
     github_backup_service.stop_scheduler()
@@ -3297,7 +3307,8 @@ PUBLIC_API_ROUTES = {
     "/api/v1/auth/status",
     "/api/v1/auth/login",
     "/api/v1/auth/setup",  # Needed for initial setup and recovery
-    "/api/v1/auth/advanced-auth/status",  # Advanced auth status needed for login page
+    # Advanced auth status needed for login page
+    "/api/v1/auth/advanced-auth/status",
     "/api/v1/auth/forgot-password",  # Password reset for advanced auth
     # Version check for updates (no sensitive data)
     "/api/v1/updates/version",
@@ -3449,6 +3460,7 @@ app.include_router(local_presets.router, prefix=app_settings.api_prefix)
 app.include_router(smart_plugs.router, prefix=app_settings.api_prefix)
 app.include_router(print_log.router, prefix=app_settings.api_prefix)
 app.include_router(print_queue.router, prefix=app_settings.api_prefix)
+app.include_router(background_dispatch_routes.router, prefix=app_settings.api_prefix)
 app.include_router(kprofiles.router, prefix=app_settings.api_prefix)
 app.include_router(notifications.router, prefix=app_settings.api_prefix)
 app.include_router(notification_templates.router, prefix=app_settings.api_prefix)

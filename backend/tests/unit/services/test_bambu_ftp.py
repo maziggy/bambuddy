@@ -870,3 +870,47 @@ class TestFailureScenarios:
         result2 = client.download_file("/cache/retry.bin")
         assert result2 == b"data after retry"
         client.disconnect()
+
+    def test_upload_succeeds_despite_voidresp_error(self, ftp_client_factory, ftp_server, tmp_path):
+        """Upload returns True even when voidresp() gets a non-clean response.
+
+        Regression: Previously, a voidresp() error after successful data transfer
+        returned False, which caused with_ftp_retry to re-upload the entire file
+        in a loop.
+        """
+        content = b"voidresp test data"
+        local = tmp_path / "voidresp_test.3mf"
+        local.write_bytes(content)
+        client = ftp_client_factory(printer_model="X1C")
+        client.connect()
+        result = client.upload_file(local, "/cache/voidresp_test.3mf")
+        assert result is True
+        client.disconnect()
+        # Verify the file is actually on the server
+        time.sleep(_UPLOAD_FLUSH_DELAY)
+        client2 = ftp_client_factory()
+        client2.connect()
+        downloaded = client2.download_file("/cache/voidresp_test.3mf")
+        assert downloaded == content
+        client2.disconnect()
+
+    def test_upload_a1_skips_voidresp(self, ftp_client_factory, ftp_server, tmp_path):
+        """A1 models skip voidresp() entirely and still return True.
+
+        Regression: A1 printers hang on voidresp() after transfercmd uploads.
+        """
+        content = b"A1 upload test"
+        local = tmp_path / "a1_test.3mf"
+        local.write_bytes(content)
+        client = ftp_client_factory(printer_model="A1")
+        client.connect()
+        result = client.upload_file(local, "/cache/a1_test.3mf")
+        assert result is True
+        client.disconnect()
+        # Verify the file is actually on the server
+        time.sleep(_UPLOAD_FLUSH_DELAY)
+        client2 = ftp_client_factory()
+        client2.connect()
+        downloaded = client2.download_file("/cache/a1_test.3mf")
+        assert downloaded == content
+        client2.disconnect()

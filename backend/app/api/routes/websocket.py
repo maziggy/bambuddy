@@ -3,6 +3,7 @@ import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from backend.app.core.websocket import ws_manager
+from backend.app.services.background_dispatch import background_dispatch
 from backend.app.services.printer_manager import printer_manager, printer_state_to_dict
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,15 @@ async def websocket_endpoint(websocket: WebSocket):
                     "type": "printer_status",
                     "printer_id": printer_id,
                     "data": printer_state_to_dict(state, printer_id, printer_manager.get_model(printer_id)),
+                }
+            )
+
+        dispatch_state = await background_dispatch.get_state()
+        if (dispatch_state.get("dispatched", 0) + dispatch_state.get("processing", 0)) > 0:
+            await websocket.send_json(
+                {
+                    "type": "background_dispatch",
+                    "data": dispatch_state,
                 }
             )
         logger.info("Sent initial status for %s printers", len(statuses))

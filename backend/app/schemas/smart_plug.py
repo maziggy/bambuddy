@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, model_validator
 
 class SmartPlugBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    plug_type: Literal["tasmota", "homeassistant", "mqtt"] = "tasmota"
+    plug_type: Literal["tasmota", "homeassistant", "mqtt", "rest"] = "tasmota"
 
     # Tasmota fields (required when plug_type="tasmota")
     ip_address: str | None = Field(default=None, pattern=r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
@@ -41,6 +41,15 @@ class SmartPlugBase(BaseModel):
         default=None, max_length=50
     )  # What value means "ON" (e.g., "ON", "true", "1")
 
+    # REST API plug fields (required when plug_type="rest")
+    # User-defined URLs for each action; GET or POST method is configurable
+    rest_on_url: str | None = Field(default=None, max_length=500)      # URL to turn on
+    rest_off_url: str | None = Field(default=None, max_length=500)     # URL to turn off
+    rest_toggle_url: str | None = Field(default=None, max_length=500)  # URL to toggle (optional)
+    rest_status_url: str | None = Field(default=None, max_length=500)  # URL to query status (optional)
+    rest_method: Literal["GET", "POST"] = "GET"                        # HTTP method to use
+    rest_state_on_value: str | None = Field(default=None, max_length=100)  # Substring in response body meaning ON
+
     # Legacy multiplier - kept for backward compatibility
     mqtt_multiplier: float = Field(default=1.0, ge=0.0001, le=10000)  # Deprecated, use mqtt_power_multiplier
 
@@ -69,7 +78,10 @@ class SmartPlugBase(BaseModel):
             raise ValueError("ip_address is required for Tasmota plugs")
         if self.plug_type == "homeassistant" and not self.ha_entity_id:
             raise ValueError("ha_entity_id is required for Home Assistant plugs")
-        if self.plug_type == "mqtt":
+        if self.plug_type == "rest":
+            if not self.rest_on_url and not self.rest_off_url and not self.rest_status_url:
+                raise ValueError("At least one URL (on_url, off_url, or status_url) must be configured for REST plugs")
+                if self.plug_type == "mqtt":
             # Determine the effective power topic (new field takes priority, fall back to legacy)
             power_topic = self.mqtt_power_topic or self.mqtt_topic
             # Path is optional - if not set, raw MQTT payload value will be used
@@ -111,6 +123,14 @@ class SmartPlugUpdate(BaseModel):
     mqtt_state_topic: str | None = None
     mqtt_state_path: str | None = None
     mqtt_state_on_value: str | None = None
+
+    # REST API plug fields
+    rest_on_url: str | None = None
+    rest_off_url: str | None = None
+    rest_toggle_url: str | None = None
+    rest_status_url: str | None = None
+    rest_method: Literal["GET", "POST"] | None = None
+    rest_state_on_value: str | None = None
     printer_id: int | None = None
     enabled: bool | None = None
     auto_on: bool | None = None

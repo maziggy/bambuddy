@@ -100,7 +100,7 @@ function QuickStatsWidget({
         </div>
         <div>
           <p className="text-xs text-bambu-gray">{t('stats.energyCost')}</p>
-          <p className="text-xl font-bold text-white">{currency} {stats?.total_energy_cost.toFixed(3) || '0.00'}</p>
+          <p className="text-xl font-bold text-white">{currency} {stats?.total_energy_cost.toFixed(2) || '0.00'}</p>
         </div>
       </div>
     </div>

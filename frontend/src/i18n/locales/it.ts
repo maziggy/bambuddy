@@ -2357,7 +2357,7 @@ export default {
     brand: 'Marchio',
     searchBrand: 'Cerca marchio...',
     useCustomBrand: 'Usa "{{brand}}"',
-      useCustomMaterial: 'Usa materiale personalizzato: {{material}}',
+    useCustomMaterial: 'Usa materiale personalizzato: {{material}}',
     colorName: 'Nome Colore',
     colorNamePlaceholder: 'Jade White, Fire Red...',
     color: 'Colore',

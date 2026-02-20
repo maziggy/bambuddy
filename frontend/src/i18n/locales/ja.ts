@@ -2479,7 +2479,7 @@ export default {
     brand: 'ブランド',
     searchBrand: 'ブランドを検索...',
     useCustomBrand: '「{{brand}}」を使用',
-      useCustomMaterial: 'カスタム素材を使用: {{material}}',
+    useCustomMaterial: 'カスタム素材を使用: {{material}}',
     colorName: '色名',
     colorNamePlaceholder: 'Jade White, Fire Red...',
     color: '色',

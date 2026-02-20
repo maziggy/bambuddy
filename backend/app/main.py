@@ -3378,6 +3378,11 @@ async def lifespan(app: FastAPI):
     # Start printer runtime tracking
     start_runtime_tracking()
 
+    # Start periodic camera frame buffer cleanup
+    from backend.app.api.routes.camera import start_frame_buffer_cleanup
+
+    start_frame_buffer_cleanup()
+
     # Start SpoolBuddy device watchdog
     start_spoolbuddy_watchdog()
 
@@ -3404,6 +3409,9 @@ async def lifespan(app: FastAPI):
     github_backup_service.stop_scheduler()
     stop_ams_history_recording()
     stop_runtime_tracking()
+    from backend.app.api.routes.camera import stop_frame_buffer_cleanup
+
+    stop_frame_buffer_cleanup()
     stop_spoolbuddy_watchdog()
     stop_camera_cleanup()
     printer_manager.disconnect_all()

@@ -905,6 +905,20 @@ export function filterKnownHMSErrors(errors: HMSError[]): HMSError[] {
   });
 }
 
+// Get description for the most severe known HMS error (exported for camera grid)
+export function getTopHMSError(errors: HMSError[]): { description: string; severity: number } | null {
+  let best: { description: string; severity: number } | null = null;
+  for (const error of errors) {
+    const codeNum = parseInt(error.code.replace('0x', ''), 16) || 0;
+    const shortCode = getShortCode(error.attr, codeNum);
+    const desc = ERROR_DESCRIPTIONS[shortCode];
+    if (desc && (best === null || error.severity < best.severity)) {
+      best = { description: desc, severity: error.severity };
+    }
+  }
+  return best;
+}
+
 function getHMSHomeUrl(): string {
   return `https://wiki.bambulab.com/en/hms/home`;
 }

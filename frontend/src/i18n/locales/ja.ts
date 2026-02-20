@@ -549,6 +549,7 @@ export default {
     openCameraWindow: 'カメラを新しいウィンドウで開く',
     firmwareUpdateButton: 'アップデート',
     clickToViewHmsErrors: 'クリックしてHMSエラーを表示',
+    clickToDismiss: 'クリックして非表示',
     developerModeWarning: '開発者LANモードが有効になっていません: {{names}}。一部の機能が動作しない可能性があります。',
     howToEnable: '有効化方法',
     incompatibleFile: 'このファイルは{{slicedFor}}用にスライスされていますが、このプリンターは{{printerModel}}です',

@@ -460,6 +460,7 @@ export default {
     },
     // HMS errors
     clickToViewHmsErrors: 'Clique para ver erros do HMS',
+    clickToDismiss: 'Clique para dispensar',
     estimatedCompletion: 'Tempo estimado de conclusão',
     slotOptions: 'Opções de slot',
     // AMS hover popup

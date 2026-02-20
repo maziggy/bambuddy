@@ -42,7 +42,13 @@ import {
   XCircle,
   User,
   Home,
+  Grid,
+  LayoutGrid,
+  Grid2x2,
+  WifiOff,
 } from 'lucide-react';
+
+import CameraGridDecoderWorker from '../workers/cameraGridDecoder.worker?worker';
 
 import { useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi } from '../api/client';
@@ -1218,21 +1224,24 @@ function StatusSummaryBar({ printers }: { printers: Printer[] | undefined }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
 
-  // Subscribe to query cache changes to re-render when status updates
-  // Throttled to prevent rapid re-renders from causing tab crashes
+  // Subscribe to query cache changes to re-render when status updates.
+  // Throttled: coalesces rapid cache events into at most one update per 500ms
+  // to prevent "Maximum update depth exceeded" from cascading rAF callbacks.
   const [cacheTick, setCacheTick] = useState(0);
   useEffect(() => {
-    let pending = false;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
     const unsubscribe = queryClient.getQueryCache().subscribe(() => {
-      if (!pending) {
-        pending = true;
-        requestAnimationFrame(() => {
+      if (!timerId) {
+        timerId = setTimeout(() => {
           setCacheTick(t => t + 1);
-          pending = false;
-        });
+          timerId = null;
+        }, 500);
       }
     });
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      if (timerId) clearTimeout(timerId);
+    };
   }, [queryClient]);
 
   const { counts, nextFinish } = useMemo(() => {
@@ -1394,9 +1403,12 @@ function mapModelCode(ssdpModel: string | null): string {
 
 /**
  * CameraGridCard — pure display component.
- * Receives a canvas ref from the parent CameraGrid; no fetch logic of its own.
+ * Receives a canvas ref from the parent CameraGrid.
+ * Registers an IntersectionObserver to report visibility to the worker
+ * so off-screen cards skip JPEG decoding entirely.
  */
 function CameraGridCard({
+  printerId,
   printerName,
   connected,
   state,
@@ -1407,10 +1419,20 @@ function CameraGridCard({
   canvasRef,
   loading,
   error,
+  reconnecting,
+  reconnectCountdown,
+  reconnectAttempt,
+  reconnectMax,
   onPause,
   onStop,
   onResume,
+  onVisibilityChange,
+  onClearPlate,
+  plateCleared,
+  clearPlateLoading,
+  layout,
 }: {
+  printerId: number;
   printerName: string;
   connected: boolean;
   state: string | null;
@@ -1421,30 +1443,71 @@ function CameraGridCard({
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   loading: boolean;
   error: boolean;
+  reconnecting: boolean;
+  reconnectCountdown: number;
+  reconnectAttempt: number;
+  reconnectMax: number;
   onPause?: () => void;
   onStop?: () => void;
   onResume?: () => void;
+  onVisibilityChange?: (printerId: number, visible: boolean) => void;
+  onClearPlate?: () => void;
+  plateCleared: boolean;
+  clearPlateLoading?: boolean;
+  layout: 'compact' | 'default' | 'large';
 }) {
   const { t } = useTranslation();
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [clearPlateClicked, setClearPlateClicked] = useState(false);
+
+  // IntersectionObserver for visibility tracking
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el || !onVisibilityChange) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => onVisibilityChange(printerId, entry.isIntersecting),
+      { threshold: 0 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [printerId, onVisibilityChange]);
+
   const stateKey = !connected ? 'offline' : state === 'RUNNING' ? 'printing' : state === 'PAUSE' ? 'paused' : state === 'FINISH' ? 'finished' : state === 'FAILED' ? 'failed' : 'idle';
   const stateColor = !connected ? 'text-bambu-gray/60' : state === 'RUNNING' ? 'text-bambu-green' : state === 'PAUSE' ? 'text-yellow-400' : state === 'FAILED' ? 'text-red-400' : 'text-bambu-gray/60';
   const isRunning = state === 'RUNNING';
   const isPaused = state === 'PAUSE';
+  const textSm = layout === 'compact' ? 'text-[10px]' : 'text-sm';
+  const textXs = layout === 'compact' ? 'text-[9px]' : 'text-[11px]';
+  const iconSm = layout === 'compact' ? 'w-2.5 h-2.5' : 'w-3 h-3';
+  const iconCtrl = layout === 'compact' ? 'w-3 h-3' : 'w-3.5 h-3.5';
+  const barH = layout === 'compact' ? 'h-1' : 'h-1.5';
+
   return (
-    <Card className="relative overflow-hidden">
+    <Card className="relative overflow-hidden group" ref={cardRef}>
       <div className="relative w-full aspect-video bg-black">
         {connected ? (
           <>
             <canvas
               ref={canvasRef}
-              className={`w-full h-full object-cover ${loading || error ? 'hidden' : ''}`}
+              className={`w-full h-full object-cover ${loading || error || reconnecting ? 'hidden' : ''}`}
             />
-            {loading && (
+            {loading && !reconnecting && (
               <div className="absolute inset-0 flex items-center justify-center">
                 <Loader2 className="w-8 h-8 text-white/60 animate-spin" />
               </div>
             )}
-            {error && (
+            {reconnecting && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/70 z-10">
+                <div className="text-center">
+                  <WifiOff className="w-6 h-6 text-white/50 mx-auto mb-1.5" />
+                  <p className="text-xs text-white/70 mb-0.5">{t('printers.cameraGrid.connectionLost')}</p>
+                  <p className="text-[10px] text-white/40">
+                    {t('printers.cameraGrid.reconnecting', { countdown: reconnectCountdown, attempt: reconnectAttempt, max: reconnectMax })}
+                  </p>
+                </div>
+              </div>
+            )}
+            {error && !reconnecting && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
                 <AlertCircle className="w-8 h-8 text-red-400" />
                 <span className="text-xs text-white/50">{t('printers.cameraGrid.cameraUnavailable')}</span>
@@ -1458,73 +1521,100 @@ function CameraGridCard({
         )}
         {/* Paused overlay — fade in/out 2s */}
         <div className={`absolute inset-0 flex items-center justify-center bg-black/50 transition-opacity duration-[2000ms] ${isPaused ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-          <span className="text-3xl font-bold text-yellow-400/70 uppercase tracking-widest drop-shadow-lg">{t('printers.status.paused')}</span>
+          <span className={`${layout === 'compact' ? 'text-xl' : 'text-3xl'} font-bold text-yellow-400/70 uppercase tracking-widest drop-shadow-lg`}>{t('printers.status.paused')}</span>
+        </div>
+        {/* Finished overlay */}
+        <div className={`absolute inset-0 flex items-center justify-center bg-black/50 transition-opacity duration-[2000ms] ${state === 'FINISH' ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+          <span className={`${layout === 'compact' ? 'text-xl' : 'text-3xl'} font-bold text-bambu-green/70 uppercase tracking-widest drop-shadow-lg`}>{t('printers.status.finished')}</span>
         </div>
         {/* Printer name (top left) + controls/state (top right) */}
         <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/70 to-transparent px-3 py-1.5 flex items-center justify-between">
-          <span className="text-sm text-white font-medium drop-shadow-sm">{printerName}</span>
-          {(isRunning || isPaused) ? (
-            <div className="flex items-center gap-1">
-              {isRunning && onPause && (
-                <button
-                  onClick={onPause}
-                  className="p-1 rounded bg-white/10 hover:bg-white/40 transition-colors"
-                  title={t('printers.pause')}
-                >
-                  <Pause className="w-3.5 h-3.5 text-white/60 hover:text-white transition-colors" />
-                </button>
-              )}
-              {isPaused && onResume && (
-                <button
-                  onClick={onResume}
-                  className="p-1 rounded bg-white/10 hover:bg-white/40 transition-colors"
-                  title={t('printers.resume')}
-                >
-                  <Play className="w-3.5 h-3.5 text-white/60 hover:text-white transition-colors" />
-                </button>
-              )}
-              {onStop && (
-                <button
-                  onClick={onStop}
-                  className="p-1 rounded bg-white/10 hover:bg-red-500/60 transition-colors"
-                  title={t('printers.stop')}
-                >
-                  <Square className="w-3.5 h-3.5 text-white/60 hover:text-white transition-colors" />
-                </button>
-              )}
-            </div>
-          ) : state !== 'FINISH' && (
-            <span className={`text-[11px] font-medium drop-shadow-sm uppercase ${stateColor} ${state === 'FAILED' ? 'animate-pulse' : ''}`}>{t(`printers.status.${stateKey}`)}</span>
-          )}
+          <span className={`${textSm} text-white font-medium drop-shadow-sm`}>{printerName}</span>
+          <div className="flex items-center gap-1">
+            {(isRunning || isPaused) ? (
+              <>
+                {isRunning && onPause && (
+                  <button
+                    onClick={onPause}
+                    className="p-1 rounded bg-white/10 hover:bg-white/40 transition-colors"
+                    title={t('printers.pause')}
+                  >
+                    <Pause className={`${iconCtrl} text-white/60 hover:text-white transition-colors`} />
+                  </button>
+                )}
+                {isPaused && onResume && (
+                  <button
+                    onClick={onResume}
+                    className="p-1 rounded bg-white/10 hover:bg-white/40 transition-colors"
+                    title={t('printers.resume')}
+                  >
+                    <Play className={`${iconCtrl} text-white/60 hover:text-white transition-colors`} />
+                  </button>
+                )}
+                {onStop && (
+                  <button
+                    onClick={onStop}
+                    className="p-1 rounded bg-white/10 hover:bg-red-500/60 transition-colors"
+                    title={t('printers.stop')}
+                  >
+                    <Square className={`${iconCtrl} text-white/60 hover:text-white transition-colors`} />
+                  </button>
+                )}
+              </>
+            ) : state !== 'FINISH' && (
+              <span className={`${textXs} font-medium drop-shadow-sm uppercase ${stateColor} ${state === 'FAILED' ? 'animate-pulse' : ''}`}>{t(`printers.status.${stateKey}`)}</span>
+            )}
+          </div>
         </div>
         {/* Progress bar + details — bottom */}
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-2">
           {(state === 'RUNNING' || state === 'PAUSE') && (
             <>
-              <div className="flex items-center justify-between text-[11px] text-white/80 mb-1 tabular-nums">
+              <div className={`flex items-center justify-between ${textXs} text-white/80 mb-1 tabular-nums`}>
                 <div className="flex items-center gap-2">
                   {remainingTime != null && remainingTime > 0 && (
                     <span className="flex items-center gap-0.5">
-                      <Clock className="w-3 h-3" />
+                      <Clock className={iconSm} />
                       {formatDuration(remainingTime * 60)}
                     </span>
                   )}
                   {layerNum != null && totalLayers != null && totalLayers > 0 && (
                     <span className="flex items-center gap-0.5">
-                      <Layers className="w-3 h-3" />
+                      <Layers className={iconSm} />
                       {layerNum}/{totalLayers}
                     </span>
                   )}
                 </div>
                 <span>{Math.round(progress)}%</span>
               </div>
-              <div className="bg-white/20 rounded-full h-1.5">
+              <div className={`bg-white/20 rounded-full ${barH}`}>
                 <div
-                  className={`${state === 'PAUSE' ? 'bg-yellow-400' : 'bg-bambu-green'} h-1.5 rounded-full transition-all`}
+                  className={`${state === 'PAUSE' ? 'bg-yellow-400' : 'bg-bambu-green'} ${barH} rounded-full transition-all`}
                   style={{ width: `${progress}%` }}
                 />
               </div>
             </>
+          )}
+          {(state === 'FINISH' || state === 'FAILED') && !plateCleared && !clearPlateClicked && onClearPlate && (
+            <button
+              onClick={() => { setClearPlateClicked(true); onClearPlate(); }}
+              disabled={clearPlateLoading}
+              className="w-full py-1.5 rounded-lg bg-bambu-green text-white text-xs font-semibold hover:bg-bambu-green/80 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 animate-[fadeIn_0.2s_ease-in]"
+            >
+              {clearPlateLoading ? (
+                <Loader2 className={`${iconSm} animate-spin`} />
+              ) : null}
+              {t('queue.clearPlate')}
+            </button>
+          )}
+          {clearPlateClicked && !plateCleared && (
+            <button
+              disabled
+              className="w-full py-1.5 rounded-lg bg-bambu-green text-white text-xs font-semibold flex items-center justify-center gap-1.5 animate-[fadeOut_0.4s_ease-out_forwards]"
+            >
+              <Loader2 className={`${iconSm} animate-spin`} />
+              {t('queue.clearPlate')}
+            </button>
           )}
         </div>
       </div>
@@ -1532,32 +1622,65 @@ function CameraGridCard({
   );
 }
 
+// Reconnect constants (matching CameraPage)
+const GRID_MAX_RECONNECT_ATTEMPTS = 5;
+const GRID_INITIAL_RECONNECT_DELAY = 2000; // 2s
+const GRID_MAX_RECONNECT_DELAY = 30000;    // 30s
+
+type GridLayout = 'compact' | 'default' | 'large';
+const GRID_LAYOUT_COLS: Record<GridLayout, string> = {
+  compact: 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 xxl:grid-cols-6',
+  default: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 xxl:grid-cols-5',
+  large:   'grid-cols-1 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 xxl:grid-cols-4',
+};
+const GRID_LAYOUT_ICONS: Record<GridLayout, React.ComponentType<{ className?: string }>> = {
+  compact: Grid,
+  default: Grid2x2,
+  large: LayoutGrid,
+};
+
 /**
  * CameraGrid — manages a SINGLE multiplexed HTTP connection for all cameras.
  *
  * Uses `GET /camera/grid-stream?ids=1,2,3&fps=5&quality=15&scale=0.5` which
  * returns binary-framed JPEG data:  [4B printer_id LE][4B length LE][jpeg]
  *
- * This avoids the browser's 6-connection-per-origin limit that made the page
- * unresponsive when > 6 cameras were open simultaneously.
+ * Optimisations:
+ *  - Web Worker: JPEG decoding (createImageBitmap) runs off the main thread;
+ *    decoded ImageBitmaps are transferred back for cheap drawImage on main thread
+ *  - IntersectionObserver: off-screen cards skip decoding entirely
+ *  - Exponential-backoff reconnect: auto-retries on stream drop (2s → 30s, 5 attempts)
  */
 function CameraGrid({
   printers,
+  layout,
 }: {
-  printers: { id: number; name: string; connected: boolean; state: string | null; progress: number; remainingTime: number | null; layerNum: number | null; totalLayers: number | null }[];
+  printers: { id: number; name: string; connected: boolean; state: string | null; progress: number; remainingTime: number | null; layerNum: number | null; totalLayers: number | null; plateCleared: boolean }[];
+  layout: GridLayout;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  // One canvas ref per printer
+  const { hasPermission } = useAuth();
+
+  // One canvas ref per printer (parent-managed, like original)
   const canvasRefs = useRef<Map<number, React.RefObject<HTMLCanvasElement | null>>>(new Map());
+
   const [loadingSet, setLoadingSet] = useState<Set<number>>(new Set());
   const [errorSet, setErrorSet] = useState<Set<number>>(new Set());
   const [stats, setStats] = useState<{ bw: string; active: number; total: number; uptime: string }>({
     bw: '', active: 0, total: 0, uptime: '',
   });
+
+  // Reconnect state
+  const [reconnecting, setReconnecting] = useState(false);
+  const [reconnectCountdown, setReconnectCountdown] = useState(0);
+  const reconnectAttemptsRef = useRef(0);
+
   // Print control — confirmation modal
   const [confirmAction, setConfirmAction] = useState<{ type: 'pause' | 'stop' | 'resume'; printerId: number; printerName: string } | null>(null);
+
+  // Layout is now controlled by parent via props
 
   const pauseMutation = useMutation({
     mutationFn: (id: number) => api.pausePrint(id),
@@ -1574,6 +1697,15 @@ function CameraGrid({
     onSuccess: (_, id) => { showToast(t('printers.toast.printResumed')); queryClient.invalidateQueries({ queryKey: ['printerStatus', id] }); },
     onError: (err: Error) => showToast(err.message || t('printers.toast.failedToResumePrint'), 'error'),
   });
+  const clearPlateMutation = useMutation({
+    mutationFn: (id: number) => api.clearPlate(id),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: ['queue', id] });
+      queryClient.invalidateQueries({ queryKey: ['printerStatus', id] });
+      showToast(t('queue.clearPlateSuccess'), 'success');
+    },
+    onError: (err: Error) => showToast(err.message, 'error'),
+  });
 
   const handleConfirm = () => {
     if (!confirmAction) return;
@@ -1584,21 +1716,32 @@ function CameraGrid({
     setConfirmAction(null);
   };
 
-  const qualityPresets = { low: { fps: 1, quality: 25, scale: 0.3 }, medium: { fps: 5, quality: 15, scale: 0.5 }, high: { fps: 15, quality: 5, scale: 1 } } as const;
+  // fps = frames/sec, quality = ffmpeg -q:v (2=best, 31=worst), scale = resolution multiplier
+  const qualityPresets = { low: { fps: 2, quality: 25, scale: 0.25 }, medium: { fps: 5, quality: 15, scale: 0.5 }, high: { fps: 15, quality: 3, scale: 1 } } as const;
   type QualityLevel = keyof typeof qualityPresets;
   const [quality, setQuality] = useState<QualityLevel>('medium');
+
   // Mutable counters — updated in the stream loop, read by the stats interval
   const bytesRef = useRef(0);
   const activeCamsRef = useRef(new Set<number>());
-  const startTimeRef = useRef(0);
+
+  // Worker ref — one worker per CameraGrid lifetime
+  const workerRef = useRef<Worker | null>(null);
+
+  const connectedPrinters = printers.filter(p => p.connected);
+  const connectedIdsKey = connectedPrinters.map(p => p.id).join(',');
 
   // Ensure refs exist for all printers
-  const connectedPrinters = printers.filter(p => p.connected);
   for (const p of connectedPrinters) {
     if (!canvasRefs.current.has(p.id)) {
       canvasRefs.current.set(p.id, { current: null });
     }
   }
+
+  // Visibility callback — forward to worker
+  const handleVisibilityChange = useCallback((printerId: number, visible: boolean) => {
+    workerRef.current?.postMessage({ type: 'visibility', printerId, visible });
+  }, []);
 
   useEffect(() => {
     const ids = connectedPrinters.map(p => p.id);
@@ -1606,13 +1749,77 @@ function CameraGrid({
 
     setLoadingSet(new Set(ids));
     setErrorSet(new Set());
+    setReconnecting(false);
+    setReconnectCountdown(0);
+    reconnectAttemptsRef.current = 0;
     bytesRef.current = 0;
     activeCamsRef.current = new Set();
     const t0 = performance.now();
-    startTimeRef.current = t0;
 
-    const controller = new AbortController();
+    // Spin up worker for off-thread JPEG decoding
+    const worker = new CameraGridDecoderWorker();
+    workerRef.current = worker;
+
+    // Seed worker with all printer IDs as visible — IntersectionObserver only
+    // fires on changes, so already-visible cards won't re-notify a new worker.
+    for (const id of ids) {
+      worker.postMessage({ type: 'visibility', printerId: id, visible: true });
+    }
+
+    // Cache canvas 2D contexts — getContext is expensive to call per-frame
+    const ctxCache = new Map<number, CanvasRenderingContext2D>();
+    // Track canvas dimensions to avoid resetting every frame
+    const dimCache = new Map<number, string>();
+    // Track which printers have delivered at least one frame
+    const loadedPrinters = new Set<number>();
+
+    // Worker sends back decoded ImageBitmaps — draw them on the main thread
+    worker.onmessage = (e: MessageEvent) => {
+      if (e.data.type !== 'frame') return;
+      const pid = e.data.printerId as number;
+      const bitmap = e.data.bitmap as ImageBitmap;
+
+      const ref = canvasRefs.current.get(pid);
+      const canvas = ref?.current;
+      if (!canvas) { bitmap.close(); return; }
+
+      // Only reset canvas dimensions when they actually change
+      const dimKey = `${bitmap.width}x${bitmap.height}`;
+      if (dimCache.get(pid) !== dimKey) {
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        dimCache.set(pid, dimKey);
+        ctxCache.delete(pid); // context invalidated
+      }
+      let ctx = ctxCache.get(pid);
+      if (!ctx) {
+        ctx = canvas.getContext('2d')!;
+        ctxCache.set(pid, ctx);
+      }
+      ctx.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      activeCamsRef.current.add(pid);
+
+      // Only trigger React setState once per printer (first frame)
+      if (!loadedPrinters.has(pid)) {
+        loadedPrinters.add(pid);
+        setLoadingSet(prev => {
+          if (!prev.has(pid)) return prev;
+          const next = new Set(prev);
+          next.delete(pid);
+          return next;
+        });
+        setErrorSet(prev => {
+          if (!prev.has(pid)) return prev;
+          const next = new Set(prev);
+          next.delete(pid);
+          return next;
+        });
+      }
+    };
+
     let active = true;
+    const controllerRef = { current: new AbortController() };
 
     // Compute stats every second
     const statsInterval = setInterval(() => {
@@ -1631,28 +1838,26 @@ function CameraGrid({
     }, 1000);
 
     async function startMultiplexedStream() {
-      // Cache canvas 2D contexts — getContext is expensive to call per-frame
-      const ctxCache = new Map<number, CanvasRenderingContext2D>();
-      // Track canvas dimensions to avoid resetting every frame
-      const dimCache = new Map<number, string>();
-      // Track which printers have delivered at least one frame — avoids
-      // calling setState on every single frame after the first.
-      const loadedPrinters = new Set<number>();
-
-      // Growing buffer: pre-allocate and double when full, avoiding O(n) copy per chunk.
-      let buf = new Uint8Array(256 * 1024); // 256 KB initial
+      // Growing buffer: pre-allocate and double when full
+      let buf = new Uint8Array(256 * 1024);
       let bufLen = 0;
 
       try {
         const res = await fetch(
           `/api/v1/printers/camera/grid-stream?ids=${ids.join(',')}&fps=${qualityPresets[quality].fps}&quality=${qualityPresets[quality].quality}&scale=${qualityPresets[quality].scale}`,
-          { signal: controller.signal }
+          { signal: controllerRef.current.signal },
         );
         if (!res.ok || !res.body) {
-          setLoadingSet(new Set());
-          setErrorSet(new Set(ids));
-          return;
+          throw new Error(`HTTP ${res.status}`);
         }
+
+        // Connection successful — reset reconnect state and first-frame tracker
+        reconnectAttemptsRef.current = 0;
+        setReconnecting(false);
+        setReconnectCountdown(0);
+        loadedPrinters.clear();
+        setLoadingSet(new Set(ids));
+        setErrorSet(new Set());
 
         const reader = res.body.getReader();
 
@@ -1660,7 +1865,7 @@ function CameraGrid({
           const { done, value } = await reader.read();
           if (done) break;
 
-          // Grow buffer if needed (amortised O(1) via doubling)
+          // Grow buffer if needed
           if (bufLen + value.length > buf.length) {
             let newSize = buf.length;
             while (newSize < bufLen + value.length) newSize *= 2;
@@ -1681,53 +1886,13 @@ function CameraGrid({
 
             if (offset + 8 + jpegLen > bufLen) break; // incomplete frame
 
-            // Slice out just the JPEG (new buffer, safe to pass to Blob)
-            const frame = buf.slice(offset + 8, offset + 8 + jpegLen);
+            // Send JPEG to worker for off-thread decoding
+            const jpeg = buf.slice(offset + 8, offset + 8 + jpegLen).buffer;
+            worker.postMessage(
+              { type: 'frame', printerId, jpeg },
+              [jpeg], // transfer ownership — zero-copy
+            );
             offset += 8 + jpegLen;
-
-            // Draw to the correct canvas
-            const ref = canvasRefs.current.get(printerId);
-            const canvas = ref?.current;
-            if (canvas) {
-              try {
-                const blob = new Blob([frame], { type: 'image/jpeg' });
-                const bitmap = await createImageBitmap(blob);
-                // Only reset canvas dimensions when they actually change
-                const dimKey = `${bitmap.width}x${bitmap.height}`;
-                if (dimCache.get(printerId) !== dimKey) {
-                  canvas.width = bitmap.width;
-                  canvas.height = bitmap.height;
-                  dimCache.set(printerId, dimKey);
-                  ctxCache.delete(printerId); // context invalidated
-                }
-                let ctx = ctxCache.get(printerId);
-                if (!ctx) {
-                  ctx = canvas.getContext('2d')!;
-                  ctxCache.set(printerId, ctx);
-                }
-                ctx.drawImage(bitmap, 0, 0);
-                bitmap.close();
-                activeCamsRef.current.add(printerId);
-
-                // Only trigger React setState once per printer (first frame)
-                if (!loadedPrinters.has(printerId)) {
-                  loadedPrinters.add(printerId);
-                  setLoadingSet(prev => {
-                    const next = new Set(prev);
-                    next.delete(printerId);
-                    return next;
-                  });
-                  setErrorSet(prev => {
-                    if (!prev.has(printerId)) return prev;
-                    const next = new Set(prev);
-                    next.delete(printerId);
-                    return next;
-                  });
-                }
-              } catch {
-                // Invalid JPEG — skip frame
-              }
-            }
           }
 
           // Compact: shift remaining bytes to front
@@ -1736,59 +1901,102 @@ function CameraGrid({
             bufLen -= offset;
           }
         }
+
+        // Stream ended cleanly (server closed) — treat as recoverable
+        if (active) throw new Error('Stream ended');
       } catch (e: unknown) {
         if (e instanceof DOMException && e.name === 'AbortError') return;
-        if (active) {
+        if (!active) return;
+
+        // --- Exponential backoff reconnect ---
+        const attempt = reconnectAttemptsRef.current;
+        if (attempt >= GRID_MAX_RECONNECT_ATTEMPTS) {
+          // Exhausted retries — show error
+          setReconnecting(false);
           setLoadingSet(new Set());
           setErrorSet(new Set(ids));
+          return;
+        }
+
+        const delay = Math.min(
+          GRID_INITIAL_RECONNECT_DELAY * Math.pow(2, attempt),
+          GRID_MAX_RECONNECT_DELAY,
+        );
+        reconnectAttemptsRef.current = attempt + 1;
+        setReconnecting(true);
+
+        // Countdown timer
+        let remaining = Math.ceil(delay / 1000);
+        setReconnectCountdown(remaining);
+        const countdownId = setInterval(() => {
+          remaining -= 1;
+          if (remaining <= 0) {
+            clearInterval(countdownId);
+            setReconnectCountdown(0);
+          } else {
+            setReconnectCountdown(remaining);
+          }
+        }, 1000);
+
+        // Wait then retry
+        await new Promise(resolve => setTimeout(resolve, delay));
+        clearInterval(countdownId);
+
+        if (active) {
+          loadedPrinters.clear();
+          setLoadingSet(new Set(ids));
+          setErrorSet(new Set());
+          controllerRef.current = new AbortController();
+          startMultiplexedStream();
         }
       }
     }
 
     startMultiplexedStream();
 
-    const onBeforeUnload = () => controller.abort();
+    const onBeforeUnload = () => controllerRef.current.abort();
     window.addEventListener('beforeunload', onBeforeUnload);
 
     return () => {
       active = false;
-      controller.abort();
+      controllerRef.current.abort();
       clearInterval(statsInterval);
       window.removeEventListener('beforeunload', onBeforeUnload);
+      worker.terminate();
+      workerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectedPrinters.map(p => p.id).join(','), quality]);
+  }, [connectedIdsKey, quality]);
 
   return (
     <div>
-      {stats.bw && (
-        <div className="flex items-center justify-end gap-3 mb-2 tabular-nums">
-          <div className="flex items-center gap-2 mr-auto">
-            <span className="text-xs text-bambu-gray/60">{t('printers.cameraGrid.quality')}</span>
-            <div className="flex items-center rounded border border-bambu-dark-tertiary">
-              {(['low', 'medium', 'high'] as QualityLevel[]).map((level) => (
-                <button
-                  key={level}
-                  onClick={() => setQuality(level)}
-                  className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${
-                    quality === level
-                      ? 'bg-bambu-green/80 text-white'
-                      : 'text-bambu-gray/50 hover:text-bambu-gray hover:bg-bambu-dark-tertiary'
-                  }`}
-                >
-                  {t(`printers.cameraGrid.${level}`)}
-                </button>
-              ))}
-            </div>
+      <div className="flex items-center justify-end gap-3 mb-2 tabular-nums">
+        <div className="flex items-center gap-2 mr-auto">
+          <span className="text-xs text-bambu-gray/60">{t('printers.cameraGrid.quality')}</span>
+          <div className="flex items-center rounded border border-bambu-dark-tertiary">
+            {(['low', 'medium', 'high'] as QualityLevel[]).map((level) => (
+              <button
+                key={level}
+                onClick={() => setQuality(level)}
+                className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                  quality === level
+                    ? 'bg-bambu-green/80 text-white'
+                    : 'text-bambu-gray/50 hover:text-bambu-gray hover:bg-bambu-dark-tertiary'
+                }`}
+              >
+                {t(`printers.cameraGrid.${level}`)}
+              </button>
+            ))}
           </div>
-          <span className="text-xs text-bambu-gray/60 w-20 text-right">{stats.bw}</span>
-          <span className="text-xs text-bambu-gray/60 w-12 text-right">{stats.uptime}</span>
         </div>
-      )}
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 xxl:grid-cols-5">
+        <span className="text-xs text-bambu-gray/60 w-20 text-right">{stats.bw || '--'}</span>
+        <span className="text-xs text-bambu-gray/60 w-12 text-right">{stats.uptime || '--'}</span>
+      </div>
+      <div className={`grid ${layout === 'compact' ? 'gap-2' : 'gap-4'} ${GRID_LAYOUT_COLS[layout]}`}>
         {printers.map(p => (
           <CameraGridCard
             key={p.id}
+            printerId={p.id}
             printerName={p.name}
             connected={p.connected}
             state={p.state}
@@ -1799,9 +2007,18 @@ function CameraGrid({
             canvasRef={canvasRefs.current.get(p.id) ?? { current: null }}
             loading={loadingSet.has(p.id)}
             error={errorSet.has(p.id)}
+            reconnecting={reconnecting}
+            reconnectCountdown={reconnectCountdown}
+            reconnectAttempt={reconnectAttemptsRef.current}
+            reconnectMax={GRID_MAX_RECONNECT_ATTEMPTS}
             onPause={() => setConfirmAction({ type: 'pause', printerId: p.id, printerName: p.name })}
             onStop={() => setConfirmAction({ type: 'stop', printerId: p.id, printerName: p.name })}
             onResume={() => setConfirmAction({ type: 'resume', printerId: p.id, printerName: p.name })}
+            onVisibilityChange={handleVisibilityChange}
+            onClearPlate={hasPermission('printers:clear_plate') ? () => clearPlateMutation.mutate(p.id) : undefined}
+            plateCleared={p.plateCleared}
+            clearPlateLoading={clearPlateMutation.isPending && clearPlateMutation.variables === p.id}
+            layout={layout}
           />
         ))}
       </div>
@@ -1817,6 +2034,7 @@ function CameraGrid({
           onCancel={() => setConfirmAction(null)}
         />
       )}
+
     </div>
   );
 }
@@ -5337,6 +5555,10 @@ export function PrintersPage() {
     return localStorage.getItem('hideDisconnectedPrinters') === 'true';
   });
   const [showCameraGrid, setShowCameraGrid] = useState(false);
+  const [cameraGridLayout, setCameraGridLayout] = useState<GridLayout>(() => {
+    const saved = localStorage.getItem('cameraGrid.layout');
+    return (saved === 'compact' || saved === 'default' || saved === 'large') ? saved : 'default';
+  });
   const [showPowerDropdown, setShowPowerDropdown] = useState(false);
   const [poweringOn, setPoweringOn] = useState<number | null>(null);
   const [sortBy, setSortBy] = useState<SortOption>(() => {
@@ -5537,11 +5759,20 @@ export function PrintersPage() {
 
   // Subscribe to printer status changes so status/progress sorts react to live data.
   // Re-renders when any printer's status query updates (WebSocket or polling).
+  // Deferred via rAF to avoid "Cannot update X while rendering Y" when child
+  // mutations invalidate queries synchronously during commit phase.
   const [statusTick, setStatusTick] = useState(0);
   useEffect(() => {
     if (sortBy !== 'status' && sortBy !== 'progress') return;
+    let pending = false;
     const unsubscribe = queryClient.getQueryCache().subscribe(() => {
-      setStatusTick(t => t + 1);
+      if (!pending) {
+        pending = true;
+        requestAnimationFrame(() => {
+          setStatusTick(t => t + 1);
+          pending = false;
+        });
+      }
     });
     return unsubscribe;
   }, [sortBy, queryClient]);
@@ -5657,8 +5888,36 @@ export function PrintersPage() {
             </button>
           </div>
 
-          {/* Card size selector — hidden when camera grid is active */}
-          {!showCameraGrid && (
+          {/* Size selector — card sizes when normal view, grid layout icons when camera grid */}
+          {showCameraGrid ? (
+          <div className="flex items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
+            {(['compact', 'default', 'large'] as GridLayout[]).map((l, index) => {
+              const Icon = GRID_LAYOUT_ICONS[l];
+              const isSelected = cameraGridLayout === l;
+              return (
+                <button
+                  key={l}
+                  onClick={() => {
+                    setCameraGridLayout(l);
+                    localStorage.setItem('cameraGrid.layout', l);
+                  }}
+                  className={`px-2 py-1.5 transition-colors ${
+                    index === 0 ? 'rounded-l-lg' : ''
+                  } ${
+                    index === 2 ? 'rounded-r-lg' : ''
+                  } ${
+                    isSelected
+                      ? 'bg-bambu-green text-white'
+                      : 'text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white'
+                  }`}
+                  title={t(`printers.cameraGrid.layout.${l}`)}
+                >
+                  <Icon className="w-4 h-4" />
+                </button>
+              );
+            })}
+          </div>
+          ) : (
           <div className="flex items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
             {cardSizeLabels.map((label, index) => {
               const size = index + 1;
@@ -5785,8 +6044,9 @@ export function PrintersPage() {
       ) : showCameraGrid ? (
         /* Camera grid view — single multiplexed connection for all cameras */
         <CameraGrid
+          layout={cameraGridLayout}
           printers={sortedPrinters.map(printer => {
-            const status = queryClient.getQueryData<{ connected: boolean; state: string; progress: number; remaining_time: number | null; layer_num: number | null; total_layers: number | null }>(['printerStatus', printer.id]);
+            const status = queryClient.getQueryData<{ connected: boolean; state: string; progress: number; remaining_time: number | null; layer_num: number | null; total_layers: number | null; plate_cleared?: boolean }>(['printerStatus', printer.id]);
             return {
               id: printer.id,
               name: printer.name,
@@ -5796,6 +6056,7 @@ export function PrintersPage() {
               remainingTime: status?.remaining_time ?? null,
               layerNum: status?.layer_num ?? null,
               totalLayers: status?.total_layers ?? null,
+              plateCleared: status?.plate_cleared ?? true,
             };
           })}
         />

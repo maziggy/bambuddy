@@ -387,6 +387,11 @@ body {
   animation: slide-in-left 0.3s ease-out;
 }
 
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
 /* Card shadows - uses theme-specific shadow */
 .card-shadow {
   box-shadow: var(--card-shadow);

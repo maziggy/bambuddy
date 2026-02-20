@@ -3325,8 +3325,9 @@ PUBLIC_API_PATTERNS = [
     "/timelapse",  # /archives/{id}/timelapse (video)
     "/cover",  # /printers/{id}/cover
     "/icon",  # /external-links/{id}/icon
-    # Camera (streams loaded via <img> tag)
+    # Camera (streams loaded via <img> tag or fetch)
     "/camera/stream",  # /printers/{id}/camera/stream
+    "/camera/grid-stream",  # /printers/camera/grid-stream (multiplexed binary stream via fetch)
     "/camera/snapshot",  # /printers/{id}/camera/snapshot
     # Slicer token-authenticated downloads — protocol handlers (bambustudioopen://,
     # orcaslicer://) cannot send auth headers. These endpoints validate a short-lived
@@ -3439,6 +3440,9 @@ async def auth_middleware(request, call_next):
 app.include_router(auth.router, prefix=app_settings.api_prefix)
 app.include_router(users.router, prefix=app_settings.api_prefix)
 app.include_router(groups.router, prefix=app_settings.api_prefix)
+app.include_router(
+    camera.router, prefix=app_settings.api_prefix
+)  # Before printers — /printers/camera/* must match before /{printer_id}
 app.include_router(printers.router, prefix=app_settings.api_prefix)
 app.include_router(archives.router, prefix=app_settings.api_prefix)
 app.include_router(filaments.router, prefix=app_settings.api_prefix)
@@ -3455,7 +3459,6 @@ app.include_router(notification_templates.router, prefix=app_settings.api_prefix
 app.include_router(spoolman.router, prefix=app_settings.api_prefix)
 app.include_router(updates.router, prefix=app_settings.api_prefix)
 app.include_router(maintenance.router, prefix=app_settings.api_prefix)
-app.include_router(camera.router, prefix=app_settings.api_prefix)
 app.include_router(external_links.router, prefix=app_settings.api_prefix)
 app.include_router(projects.router, prefix=app_settings.api_prefix)
 app.include_router(library.router, prefix=app_settings.api_prefix)

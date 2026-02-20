@@ -74,15 +74,16 @@ class _SharedStream:
     self-stops after IDLE_TIMEOUT seconds without any viewer activity.
     """
 
-    __slots__ = ("frame", "frame_seq", "task", "error", "alive", "last_accessed")
+    __slots__ = ("frame", "frame_seq", "task", "error", "alive", "last_accessed", "params_key")
 
-    def __init__(self) -> None:
+    def __init__(self, params_key: str = "") -> None:
         self.frame: bytes | None = None
         self.frame_seq: int = 0
         self.task: asyncio.Task | None = None
         self.error: str | None = None
         self.alive: bool = True
         self.last_accessed: float = time.monotonic()
+        self.params_key: str = params_key  # e.g. "5-15-0.5" for fps-quality-scale
 
 
 class SharedStreamHub:
@@ -106,21 +107,35 @@ class SharedStreamHub:
         self._lock = asyncio.Lock()
         self._streams: dict[int, _SharedStream] = {}
 
-    async def get_or_start(self, printer_id: int, starter_fn) -> _SharedStream:
-        """Return the shared stream for a printer, starting a producer if needed."""
+    async def get_or_start(self, printer_id: int, starter_fn, params_key: str = "") -> _SharedStream:
+        """Return the shared stream for a printer, starting a producer if needed.
+
+        If params_key differs from the running producer (e.g. quality changed),
+        the old producer is stopped and a new one starts with the new settings.
+        """
         async with self._lock:
             entry = self._streams.get(printer_id)
             if entry is not None and entry.alive:
-                entry.last_accessed = time.monotonic()
-                logger.info("Reusing existing producer for printer %s", printer_id)
-                return entry
+                if params_key and entry.params_key != params_key:
+                    # Quality/fps/scale changed — kill old producer so a new one starts
+                    logger.info(
+                        "Params changed for printer %s (%s → %s), restarting producer",
+                        printer_id, entry.params_key, params_key,
+                    )
+                    entry.alive = False
+                    if entry.task:
+                        entry.task.cancel()
+                else:
+                    entry.last_accessed = time.monotonic()
+                    logger.info("Reusing existing producer for printer %s", printer_id)
+                    return entry
             # Start a new producer
-            entry = _SharedStream()
+            entry = _SharedStream(params_key=params_key)
             self._streams[printer_id] = entry
             entry.task = asyncio.create_task(
                 self._run_producer(printer_id, starter_fn, entry)
             )
-            logger.info("Started new producer for printer %s", printer_id)
+            logger.info("Started new producer for printer %s (params=%s)", printer_id, params_key)
             return entry
 
     def make_viewer(self, entry: _SharedStream, fps: int) -> AsyncGenerator[bytes, None]:
@@ -569,8 +584,9 @@ async def _ensure_producer(
     def starter_fn():
         return stream_generator(**gen_kwargs)
 
+    params_key = f"{fps_clamped}-{quality}-{scale}"
     _stream_start_times[printer_id] = time.monotonic()
-    return await _hub.get_or_start(printer_id, starter_fn)
+    return await _hub.get_or_start(printer_id, starter_fn, params_key=params_key)
 
 
 @router.get("/camera/grid-stream")

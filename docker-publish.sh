@@ -145,7 +145,7 @@ fi
 
 # Only tag as 'latest' for stable releases (not beta versions ending in 'b')
 TAG_LATEST=true
-if [[ "$VERSION" =~ b$ ]]; then
+if [[ "$VERSION" =~ b[0-9]*$ ]]; then
     TAG_LATEST=false
     echo -e "${YELLOW}Beta version detected — skipping 'latest' tag${NC}"
 fi

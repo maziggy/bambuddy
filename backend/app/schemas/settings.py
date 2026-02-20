@@ -35,6 +35,7 @@ class AppSettings(BaseModel):
     # Updates
     check_updates: bool = Field(default=True, description="Automatically check for updates on startup")
     check_printer_firmware: bool = Field(default=True, description="Check for printer firmware updates from Bambu Lab")
+    include_beta_updates: bool = Field(default=False, description="Include beta/prerelease versions in update checks")
 
     # Language
     notification_language: str = Field(default="en", description="Language for push notifications (en, de)")
@@ -165,6 +166,7 @@ class AppSettingsUpdate(BaseModel):
     spoolman_report_partial_usage: bool | None = None
     check_updates: bool | None = None
     check_printer_firmware: bool | None = None
+    include_beta_updates: bool | None = None
     notification_language: str | None = None
     bed_cooled_threshold: float | None = None
     ams_humidity_good: int | None = None

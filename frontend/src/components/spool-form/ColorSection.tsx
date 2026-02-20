@@ -130,10 +130,8 @@ export function ColorSection({
     return matches;
   }, [colorSearch, matchedCatalogColors]);
 
-  // Only show catalog section if searching AND (brand or material selected), or if there are matched catalog colors
-  const showCatalogSection = colorSearch
-    ? !!(formData.brand || formData.material)
-    : matchedCatalogColors.length > 0;
+  // Only show catalog section if there are matched catalog colors
+  const showCatalogSection = matchedCatalogColors.length > 0;
 
 
 

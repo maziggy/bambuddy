@@ -882,6 +882,33 @@ export default {
     },
   },
 
+  backgroundDispatch: {
+    unknownFile: 'Unknown file',
+    unknownPrinter: 'Unknown printer',
+    startingPrints: 'Starting prints',
+    progressSummary: '{{complete}}/{{total}} complete • Dispatched: {{dispatched}} • Processing: {{processing}}',
+    expandDetails: 'Expand dispatch details',
+    collapseDetails: 'Collapse dispatch details',
+    dismissToast: 'Dismiss dispatch toast',
+    cancelDispatchJob: 'Cancel dispatch job',
+    cancel: 'Cancel',
+    cancelling: 'Cancelling…',
+    status: {
+      dispatched: 'Dispatched',
+      processing: 'Processing',
+      completed: 'Completed',
+      failed: 'Failed',
+      cancelled: 'Cancelled',
+    },
+    toast: {
+      cancellingUpload: 'Cancelling upload...',
+      cancelled: 'Dispatch cancelled',
+      cancelFailed: 'Failed to cancel dispatch',
+      completeWithFailures: 'Background dispatch complete: {{completed}} succeeded, {{failed}} failed',
+      completeSuccess: 'Background dispatch complete: {{completed}} succeeded',
+    },
+  },
+
   // Statistics page
   stats: {
     title: 'Tableau de bord',

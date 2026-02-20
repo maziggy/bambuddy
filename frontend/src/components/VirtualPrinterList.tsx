@@ -34,7 +34,7 @@ export function VirtualPrinterList() {
   return (
     <div className="space-y-4">
       {/* Top row - Setup Required (25%) + How it works (75%) */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-stretch">
         <Card className="border-l-4 border-l-yellow-500">
           <CardContent className="py-3 px-4">
             <div className="flex items-start gap-2">

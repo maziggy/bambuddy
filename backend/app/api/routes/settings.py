@@ -89,6 +89,7 @@ async def get_settings(
                 "spoolman_report_partial_usage",
                 "check_updates",
                 "check_printer_firmware",
+                "include_beta_updates",
                 "virtual_printer_enabled",
                 "ftp_retry_enabled",
                 "mqtt_enabled",

@@ -189,6 +189,11 @@ async def check_for_updates(
             "message": "Update checks are disabled",
         }
 
+    # Check if beta updates should be included
+    result = await db.execute(select(Settings).where(Settings.key == "include_beta_updates"))
+    beta_setting = result.scalar_one_or_none()
+    include_beta = beta_setting and beta_setting.value.lower() == "true"
+
     _update_status = {
         "status": "checking",
         "progress": 0,
@@ -199,7 +204,7 @@ async def check_for_updates(
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest",
+                f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page=20",
                 headers={"Accept": "application/vnd.github.v3+json"},
                 timeout=10.0,
             )
@@ -220,7 +225,36 @@ async def check_for_updates(
                 }
 
             response.raise_for_status()
-            release_data = response.json()
+            releases = response.json()
+
+            # Find the appropriate release based on beta setting
+            release_data = None
+            for release in releases:
+                tag = release.get("tag_name", "")
+                if include_beta:
+                    # Accept any release (first = newest)
+                    release_data = release
+                    break
+                else:
+                    # Skip prereleases (based on version parsing, not GitHub flag)
+                    parsed = parse_version(tag)
+                    if parsed[4] == 0:  # is_prerelease == 0
+                        release_data = release
+                        break
+
+            if not release_data:
+                _update_status = {
+                    "status": "idle",
+                    "progress": 100,
+                    "message": "No releases found",
+                    "error": None,
+                }
+                return {
+                    "update_available": False,
+                    "current_version": APP_VERSION,
+                    "latest_version": None,
+                    "message": "No releases found",
+                }
 
             latest_version = release_data.get("tag_name", "").lstrip("v")
             release_name = release_data.get("name", latest_version)

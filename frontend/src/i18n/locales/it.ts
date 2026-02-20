@@ -869,6 +869,33 @@ export default {
     },
   },
 
+  backgroundDispatch: {
+    unknownFile: 'File sconosciuto',
+    unknownPrinter: 'Stampante sconosciuta',
+    startingPrints: 'Avvio stampe',
+    progressSummary: '{{complete}}/{{total}} completati • Inviati: {{dispatched}} • In elaborazione: {{processing}}',
+    expandDetails: 'Espandi dettagli dispatch',
+    collapseDetails: 'Comprimi dettagli dispatch',
+    dismissToast: 'Chiudi notifica dispatch',
+    cancelDispatchJob: 'Annulla job dispatch',
+    cancel: 'Annulla',
+    cancelling: 'Annullamento…',
+    status: {
+      dispatched: 'Inviato',
+      processing: 'In elaborazione',
+      completed: 'Completato',
+      failed: 'Fallito',
+      cancelled: 'Annullato',
+    },
+    toast: {
+      cancellingUpload: 'Annullamento upload...',
+      cancelled: 'Dispatch annullato',
+      cancelFailed: 'Impossibile annullare il dispatch',
+      completeWithFailures: 'Dispatch in background completato: {{completed}} riusciti, {{failed}} falliti',
+      completeSuccess: 'Dispatch in background completato: {{completed}} riusciti',
+    },
+  },
+
   // Statistics page
   stats: {
     title: 'Dashboard',
@@ -1151,6 +1178,8 @@ export default {
     // Updates
     checkForUpdatesLabel: 'Controlla aggiornamenti',
     checkPrinterFirmware: 'Controlla firmware stampante',
+    includeBetaUpdates: 'Includi versioni beta',
+    includeBetaUpdatesDesc: 'Notifica versioni beta e prerelease durante il controllo aggiornamenti',
     // Queue
     enableRetry: 'Abilita retry',
     // Home Assistant

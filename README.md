@@ -98,6 +98,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - CSV/Excel export
 
 ### ⏰ Scheduling & Automation
+- **Background print dispatch** — FTP uploads and print-start commands run in the background with real-time WebSocket progress toasts (per-job upload bars, status badges, cancel button)
 - Print queue with drag-and-drop
 - Multi-printer selection (send to multiple printers at once)
 - Model-based queue assignment (send to "any X1C" for load balancing) with location filtering

@@ -48,30 +48,11 @@ def _make_assignment(spool_id=1, printer_id=1, ams_id=0, tray_id=0):
 
 
 def _make_archive(archive_id=1, file_path=None):
-    """Create a mock PrintArchive object with a temp file, and register cleanup."""
+    """Create a mock PrintArchive object with a temp file."""
     if file_path is None:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".3mf", prefix="test_print_") as tmp:
             file_path = tmp.name
-        # Register cleanup for this file after the test
-        import pytest
-
-        frame = None
-        try:
-            raise Exception
-        except Exception:
-            import sys
-
-            frame = sys._getframe(1)
-        request = frame.f_locals.get("request")
-        if request is not None:
-
-            def cleanup():
-                try:
-                    os.remove(file_path)
-                except Exception:
-                    pass
-
-            request.addfinalizer(cleanup)
+        # Cleanup is handled by the autouse cleanup_temp_archives fixture
     archive = MagicMock()
     archive.id = archive_id
     archive.file_path = file_path

@@ -115,6 +115,18 @@ export function FilamentMapping({
     }
   };
 
+  // Extract cost display logic from JSX IIFE to a variable
+  const hasAnyCost = Array.from(trayCostMap.values()).some((v) => v != null && v > 0);
+  const costDisplay = (totalCost > 0 || hasAnyCost) ? (
+    <div className="text-xs text-bambu-gray">
+      {t('printModal.totalCost')} <span className="text-white">{currencySymbol}{totalCost.toFixed(2)}</span>
+    </div>
+  ) : (
+    <div className="text-xs text-bambu-gray">
+      {t('printModal.totalCost')} <span className="text-white">N/A</span>
+    </div>
+  );
+
   return (
     <div className="mb-4">
       <button
@@ -214,23 +226,7 @@ export function FilamentMapping({
               )}
             </div>
           ))}
-          {(() => {
-            // Check if any tray has a configured cost_per_kg
-            const hasAnyCost = Array.from(trayCostMap.values()).some((v) => v != null && v > 0);
-            if (totalCost > 0 || hasAnyCost) {
-              return (
-                <div className="text-xs text-bambu-gray">
-                  {t('printModal.totalCost')} <span className="text-white">{currencySymbol}{totalCost.toFixed(2)}</span>
-                </div>
-              );
-            } else {
-              return (
-                <div className="text-xs text-bambu-gray">
-                  {t('printModal.totalCost')} <span className="text-white">N/A</span>
-                </div>
-              );
-            }
-          })()}
+          {costDisplay}
           {hasTypeMismatch && (
             <p className="text-xs text-orange-400 mt-2">Required filament type not found in printer.</p>
           )}

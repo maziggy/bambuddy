@@ -448,15 +448,27 @@ async def on_print_complete(
         archive_result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
         archive = archive_result.scalar_one_or_none()
         if archive and total_cost == 0 and archive.print_name and archive.printer_id:
+            # Only claim usage records not already claimed by another archive with same print_name/printer_id
+            # This avoids double-counting for reprints with same name
+            from backend.app.models.archive import PrintArchive
+
+            subq = select(PrintArchive.id).where(
+                PrintArchive.print_name == archive.print_name,
+                PrintArchive.printer_id == archive.printer_id,
+                PrintArchive.id != archive.id,
+            )
             legacy_cost_result = await db.execute(
                 select(func.coalesce(func.sum(SpoolUsageHistory.cost), 0)).where(
-                    SpoolUsageHistory.archive_id is None,
+                    SpoolUsageHistory.archive_id.is_(None),
                     SpoolUsageHistory.print_name == archive.print_name,
                     SpoolUsageHistory.printer_id == archive.printer_id,
+                    ~SpoolUsageHistory.id.in_(
+                        select(SpoolUsageHistory.id).where(SpoolUsageHistory.archive_id.in_(subq))
+                    ),
                 )
             )
             total_cost = legacy_cost_result.scalar() or 0
-        if archive:
+        if archive and total_cost > 0:
             archive.cost = total_cost
             await db.commit()
 

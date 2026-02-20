@@ -271,10 +271,19 @@ async def on_print_complete(
 
     Returns a list of dicts describing what was logged (for WebSocket broadcast).
     """
+    from sqlalchemy import select
+
+    from backend.app.api.routes.settings import get_setting
+    from backend.app.models.spool_usage_history import SpoolUsageHistory
+
     session = _active_sessions.pop(printer_id, None)
     status = data.get("status", "completed")
     results = []
     handled_trays: set[tuple[int, int]] = set()
+
+    # Fetch default filament cost from settings for fallback
+    default_cost_str = await get_setting(db, "default_filament_cost")
+    default_filament_cost = float(default_cost_str) if default_cost_str else 0.0
 
     logger.info(
         "[UsageTracker] on_print_complete: printer=%d, archive=%s, session=%s, ams_mapping=%s",
@@ -312,6 +321,7 @@ async def on_print_complete(
             tray_now_at_start=session.tray_now_at_start if session else -1,
             last_progress=data.get("last_progress", 0.0),
             last_layer_num=data.get("last_layer_num", 0),
+            default_filament_cost=default_filament_cost,
             spool_assignments=session.spool_assignments if session else None,
         )
         results.extend(threemf_results)
@@ -375,6 +385,12 @@ async def on_print_complete(
                     spool.weight_used = (spool.weight_used or 0) + weight_grams
                     spool.last_used = datetime.now(timezone.utc)
 
+                    # Calculate cost for this usage
+                    cost = None
+                    cost_per_kg = spool.cost_per_kg if spool.cost_per_kg is not None else default_filament_cost
+                    if cost_per_kg > 0:
+                        cost = round((weight_grams / 1000.0) * cost_per_kg, 2)
+
                     # Insert usage history record
                     history = SpoolUsageHistory(
                         spool_id=spool.id,
@@ -383,6 +399,8 @@ async def on_print_complete(
                         weight_used=round(weight_grams, 1),
                         percent_used=delta_pct,
                         status=status,
+                        cost=cost,
+                        archive_id=archive_id,
                     )
                     db.add(history)
 
@@ -395,6 +413,7 @@ async def on_print_complete(
                             "ams_id": ams_id,
                             "tray_id": tray_id,
                             "material": spool.material,
+                            "cost": cost,
                         }
                     )
 
@@ -412,6 +431,35 @@ async def on_print_complete(
     if results:
         await db.commit()
 
+    # --- Update PrintArchive.cost to sum all SpoolUsageHistory costs for this archive ---
+
+    if archive_id:
+        from sqlalchemy import func, select
+
+        from backend.app.models.archive import PrintArchive
+
+        # First try: sum by archive_id
+        cost_result = await db.execute(
+            select(func.coalesce(func.sum(SpoolUsageHistory.cost), 0)).where(SpoolUsageHistory.archive_id == archive_id)
+        )
+        total_cost = cost_result.scalar() or 0
+
+        # Fallback: if no cost found, sum by print_name and printer_id (legacy)
+        archive_result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
+        archive = archive_result.scalar_one_or_none()
+        if archive and total_cost == 0 and archive.print_name and archive.printer_id:
+            legacy_cost_result = await db.execute(
+                select(func.coalesce(func.sum(SpoolUsageHistory.cost), 0)).where(
+                    SpoolUsageHistory.archive_id.is_(None),
+                    SpoolUsageHistory.print_name == archive.print_name,
+                    SpoolUsageHistory.printer_id == archive.printer_id,
+                )
+            )
+            total_cost = legacy_cost_result.scalar() or 0
+        if archive and total_cost > 0:
+            archive.cost = round(total_cost, 2)
+            await db.commit()
+
     return results
 
 
@@ -427,6 +475,7 @@ async def _track_from_3mf(
     tray_now_at_start: int = -1,
     last_progress: float = 0.0,
     last_layer_num: int = 0,
+    default_filament_cost: float = 0.0,
     spool_assignments: dict[tuple[int, int], int] | None = None,
 ) -> list[dict]:
     """Track usage from 3MF per-filament slicer data (primary path).
@@ -675,6 +724,12 @@ async def _track_from_3mf(
 
         percent = round(weight_grams / (spool.label_weight or 1000) * 100)
 
+        # Calculate cost for this usage
+        cost = None
+        cost_per_kg = spool.cost_per_kg if spool.cost_per_kg is not None else default_filament_cost
+        if cost_per_kg > 0:
+            cost = round((weight_grams / 1000.0) * cost_per_kg, 2)
+
         # Insert usage history record
         history = SpoolUsageHistory(
             spool_id=spool.id,
@@ -683,6 +738,8 @@ async def _track_from_3mf(
             weight_used=round(weight_grams, 1),
             percent_used=percent,
             status=status,
+            cost=cost,
+            archive_id=archive_id,
         )
         db.add(history)
 
@@ -695,6 +752,7 @@ async def _track_from_3mf(
                 "ams_id": ams_id,
                 "tray_id": tray_id,
                 "material": spool.material,
+                "cost": cost,
             }
         )
 

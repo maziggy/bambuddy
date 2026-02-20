@@ -2402,6 +2402,7 @@ async def on_print_complete(printer_id: int, data: dict):
                         }
                     )
                     log_timing("Usage tracker")
+
     except Exception as e:
         logger.warning("Usage tracker on_print_complete failed: %s", e)
 

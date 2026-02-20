@@ -31,6 +31,8 @@ def _make_spool(spool_id=1, label_weight=1000, weight_used=0, tag_uid=None, tray
     spool.tag_uid = tag_uid
     spool.tray_uuid = tray_uuid
     spool.last_used = None
+    spool.cost_per_kg = None
+    spool.material = "PLA"
     return spool
 
 
@@ -86,6 +88,8 @@ def _mock_db_sequential(responses):
             result.scalar_one_or_none.return_value = responses[idx]
         else:
             result.scalar_one_or_none.return_value = None
+        # For cost aggregation queries that use .scalar() instead of .scalar_one_or_none()
+        result.scalar.return_value = None
         return result
 
     db.execute = mock_execute
@@ -166,6 +170,15 @@ class TestOnPrintComplete:
         _active_sessions.clear()
         yield
         _active_sessions.clear()
+
+    @pytest.fixture(autouse=True)
+    def _mock_get_setting(self):
+        with patch(
+            "backend.app.api.routes.settings.get_setting",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            yield
 
     @pytest.mark.asyncio
     async def test_bl_spool_uses_3mf(self):

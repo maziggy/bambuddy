@@ -22,6 +22,7 @@ class SpoolBase(BaseModel):
     tray_uuid: str | None = None
     data_origin: str | None = None
     tag_type: str | None = None
+    cost_per_kg: float | None = Field(default=None, ge=0)
 
 
 class SpoolCreate(SpoolBase):
@@ -47,6 +48,7 @@ class SpoolUpdate(BaseModel):
     tray_uuid: str | None = None
     data_origin: str | None = None
     tag_type: str | None = None
+    cost_per_kg: float | None = Field(default=None, ge=0)
 
 
 class SpoolKProfileBase(BaseModel):

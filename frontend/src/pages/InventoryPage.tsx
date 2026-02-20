@@ -15,6 +15,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { ColumnConfigModal, type ColumnConfig } from '../components/ColumnConfigModal';
 import { useToast } from '../contexts/ToastContext';
 import { resolveSpoolColorName } from '../utils/colors';
+import { getCurrencySymbol } from '../utils/currency';
 import { formatDateInput, parseUTCDate, type DateFormat } from '../utils/date';
 import { formatSlotLabel } from '../utils/amsHelpers';
 
@@ -52,6 +53,7 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'data_origin', label: 'Data Origin', visible: false },
   { id: 'tag_type', label: 'Linked Tag Type', visible: false },
   { id: 'remaining', label: 'Remaining', visible: true },
+  { id: 'cost_per_kg', label: 'Cost/kg', visible: false },
 ];
 
 function loadColumnConfig(): ColumnConfig[] {
@@ -112,6 +114,7 @@ type CellCtx = {
   remaining: number;
   pct: number;
   assignmentMap: Record<number, SpoolAssignment>;
+  currencySymbol: string;
   dateFormat: DateFormat;
 };
 
@@ -141,6 +144,7 @@ const columnHeaders: Record<string, (t: TFn) => string> = {
   data_origin: () => 'Data Origin',
   tag_type: () => 'Linked Tag Type',
   remaining: (t) => t('inventory.remaining'),
+  cost_per_kg: (t) => t('inventory.costPerKg'),
 };
 
 // Column cell renderers (25 columns — matching SpoolBuddy exactly)
@@ -255,6 +259,11 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
       <span className="text-xs text-bambu-gray min-w-[40px] text-right">{Math.round(remaining)}g</span>
     </div>
   ),
+  cost_per_kg: ({ spool, currencySymbol }) => (
+    <span className="text-sm text-bambu-gray">
+      {spool.cost_per_kg != null ? `${currencySymbol}${spool.cost_per_kg.toFixed(2)}` : '-'}
+    </span>
+  ),
 };
 
 // Sort value extractors — return a comparable value for each sortable column
@@ -283,6 +292,7 @@ const columnSortValues: Record<string, (spool: InventorySpool, assignmentMap: Re
   note: (s) => (s.note || '').toLowerCase(),
   data_origin: (s) => (s.data_origin || '').toLowerCase(),
   tag_type: (s) => (s.tag_type || '').toLowerCase(),
+  cost_per_kg: (s) => s.cost_per_kg ?? 0,
 };
 
 const SORT_STATE_KEY = 'bambuddy-inventory-sort';
@@ -404,6 +414,8 @@ export default function InventoryPage() {
   }, [spools]);
 
   const inPrinterCount = assignments?.length ?? 0;
+
+  const currencySymbol = getCurrencySymbol(settings?.currency || 'USD');
 
   // Map spool_id -> assignment for location column
   const assignmentMap = useMemo(() => {
@@ -940,7 +952,7 @@ export default function InventoryPage() {
                       >
                         {visibleColumns.map((colId) => (
                           <td key={colId} className="py-3 px-4">
-                            {columnCells[colId]?.({ spool, remaining, pct, assignmentMap, dateFormat })}
+                            {columnCells[colId]?.({ spool, remaining, pct, assignmentMap, currencySymbol, dateFormat })}
                           </td>
                         ))}
                         <td className="py-3 px-4">
@@ -1064,6 +1076,7 @@ export default function InventoryPage() {
           isOpen={true}
           onClose={() => setFormModal(null)}
           spool={formModal.spool}
+          currencySymbol={currencySymbol}
         />
       )}
 

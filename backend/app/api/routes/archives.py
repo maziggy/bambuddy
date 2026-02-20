@@ -2,6 +2,7 @@ import io
 import json
 import logging
 import zipfile
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
@@ -18,6 +19,7 @@ from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.archive import PrintArchive
 from backend.app.models.filament import Filament
+from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.user import User
 from backend.app.schemas.archive import ArchiveResponse, ArchiveStats, ArchiveUpdate, ReprintRequest
 from backend.app.services.archive import ArchiveService
@@ -856,18 +858,34 @@ async def rescan_archive(
     if metadata.get("designer"):
         archive.designer = metadata["designer"]
 
-    # Calculate cost based on filament usage and type
+    # Calculate cost: prefer spool-based cost if available, else catalog-based
+
     if archive.filament_used_grams and archive.filament_type:
-        primary_type = archive.filament_type.split(",")[0].strip()
-        filament_result = await db.execute(select(Filament).where(Filament.type == primary_type).limit(1))
-        filament = filament_result.scalar_one_or_none()
-        if filament:
-            archive.cost = round((archive.filament_used_grams / 1000) * filament.cost_per_kg, 2)
+        usage_result = await db.execute(
+            select(func.sum(SpoolUsageHistory.cost)).where(SpoolUsageHistory.archive_id == archive.id)
+        )
+        usage_cost = usage_result.scalar()
+        if usage_cost is not None and usage_cost > 0:
+            archive.cost = float(Decimal(str(usage_cost)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
         else:
-            # Use default filament cost from settings
-            default_cost_setting = await get_setting(db, "default_filament_cost")
-            default_cost_per_kg = float(default_cost_setting) if default_cost_setting else 25.0
-            archive.cost = round((archive.filament_used_grams / 1000) * default_cost_per_kg, 2)
+            primary_type = archive.filament_type.split(",")[0].strip()
+            filament_result = await db.execute(select(Filament).where(Filament.type == primary_type).limit(1))
+            filament = filament_result.scalar_one_or_none()
+            if filament:
+                archive.cost = float(
+                    Decimal(str((archive.filament_used_grams / 1000) * filament.cost_per_kg)).quantize(
+                        Decimal("0.01"), rounding=ROUND_HALF_UP
+                    )
+                )
+            else:
+                # Use default filament cost from settings
+                default_cost_setting = await get_setting(db, "default_filament_cost")
+                default_cost_per_kg = float(default_cost_setting) if default_cost_setting else 25.0
+                archive.cost = float(
+                    Decimal(str((archive.filament_used_grams / 1000) * default_cost_per_kg)).quantize(
+                        Decimal("0.01"), rounding=ROUND_HALF_UP
+                    )
+                )
 
     await db.commit()
     await db.refresh(archive)
@@ -880,6 +898,7 @@ async def recalculate_all_costs(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
 ):
     """Recalculate costs for all archives based on filament usage and prices."""
+
     from backend.app.api.routes.settings import get_setting
 
     result = await db.execute(select(PrintArchive))
@@ -893,15 +912,38 @@ async def recalculate_all_costs(
     default_cost_setting = await get_setting(db, "default_filament_cost")
     default_cost_per_kg = float(default_cost_setting) if default_cost_setting else 25.0
 
+    # Pre-fetch all usage costs by archive_id
+    usage_costs_result = await db.execute(
+        select(SpoolUsageHistory.archive_id, func.sum(SpoolUsageHistory.cost)).group_by(SpoolUsageHistory.archive_id)
+    )
+    usage_costs = usage_costs_result.fetchall()
+    cost_map = {row[0]: row[1] for row in usage_costs if row[0] is not None and row[1] is not None and row[1] > 0}
+
     updated = 0
     for archive in archives:
-        if archive.filament_used_grams and archive.filament_type:
-            primary_type = archive.filament_type.split(",")[0].strip()
-            cost_per_kg = filaments.get(primary_type, default_cost_per_kg)
-            new_cost = round((archive.filament_used_grams / 1000) * cost_per_kg, 2)
-            if archive.cost != new_cost:
-                archive.cost = new_cost
-                updated += 1
+        usage_cost = cost_map.get(archive.id)
+        if usage_cost is not None:
+            new_cost = round(usage_cost, 2)
+        else:
+            # Fallback: sum costs for old records by print_name
+            usage_result = await db.execute(
+                select(func.sum(SpoolUsageHistory.cost)).where(
+                    SpoolUsageHistory.print_name == archive.print_name,
+                    SpoolUsageHistory.archive_id.is_(None),
+                )
+            )
+            fallback_cost = usage_result.scalar()
+            if fallback_cost is not None and fallback_cost > 0:
+                new_cost = round(fallback_cost, 2)
+            elif archive.filament_used_grams and archive.filament_type:
+                primary_type = archive.filament_type.split(",")[0].strip()
+                cost_per_kg = filaments.get(primary_type, default_cost_per_kg)
+                new_cost = round((archive.filament_used_grams / 1000) * cost_per_kg, 2)
+            else:
+                new_cost = None
+        if new_cost is not None and archive.cost != new_cost:
+            archive.cost = new_cost
+            updated += 1
 
     await db.commit()
     return {"message": f"Recalculated costs for {updated} archives", "updated": updated}

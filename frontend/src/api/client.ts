@@ -1798,6 +1798,7 @@ export interface InventorySpool {
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+  cost_per_kg: number | null;
   k_profiles?: SpoolKProfile[];
 }
 
@@ -1809,6 +1810,7 @@ export interface SpoolUsageRecord {
   weight_used: number;
   percent_used: number;
   status: string;
+  cost: number | null;
   created_at: string;
 }
 

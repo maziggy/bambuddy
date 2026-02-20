@@ -570,7 +570,7 @@ async def get_archive_stats(
                     total_energy_kwh += mqtt_data.energy
 
         total_energy_kwh = round(total_energy_kwh, 3)
-        total_energy_cost = round(total_energy_kwh * energy_cost_per_kwh, 2)
+        total_energy_cost = round(total_energy_kwh * energy_cost_per_kwh, 3)
     else:
         # Print mode: sum up per-print energy from archives
         energy_kwh_result = await db.execute(select(func.sum(PrintArchive.energy_kwh)))
@@ -591,7 +591,7 @@ async def get_archive_stats(
         average_time_accuracy=average_accuracy,
         time_accuracy_by_printer=accuracy_by_printer if accuracy_by_printer else None,
         total_energy_kwh=round(total_energy_kwh, 3),
-        total_energy_cost=round(total_energy_cost, 2),
+        total_energy_cost=round(total_energy_cost, 3),
     )
 
 

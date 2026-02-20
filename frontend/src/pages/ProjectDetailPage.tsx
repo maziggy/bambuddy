@@ -640,7 +640,7 @@ export function ProjectDetailPage() {
                 <div>
                   <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.cost.energy')}</p>
                   <p className="text-lg font-semibold text-white">
-                    {stats.total_energy_kwh.toFixed(2)} kWh
+                    {stats.total_energy_kwh.toFixed(3)} kWh
                     {stats.total_energy_cost > 0 && (
                       <span className="text-sm text-bambu-gray ml-1">
                         ({currency}{stats.total_energy_cost.toFixed(2)})

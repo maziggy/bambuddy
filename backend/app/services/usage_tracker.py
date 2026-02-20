@@ -155,14 +155,17 @@ class PrintSession:
     tray_remain_start: dict[tuple[int, int], int] = field(default_factory=dict)
     # tray_now at print start (correct value, unlike at completion where it's 255)
     tray_now_at_start: int = -1
+    # Snapshot of spool assignments at print start: {(ams_id, tray_id): spool_id}
+    # Prevents usage loss when on_ams_change unlinks a spool mid-print
+    spool_assignments: dict[tuple[int, int], int] = field(default_factory=dict)
 
 
 # Module-level storage, keyed by printer_id
 _active_sessions: dict[int, PrintSession] = {}
 
 
-async def on_print_start(printer_id: int, data: dict, printer_manager) -> None:
-    """Capture AMS tray remain% at print start."""
+async def on_print_start(printer_id: int, data: dict, printer_manager, db: AsyncSession | None = None) -> None:
+    """Capture AMS tray remain% and spool assignments at print start."""
     state = printer_manager.get_status(printer_id)
     if not state or not state.raw_data:
         logger.debug("[UsageTracker] No state for printer %d, skipping", printer_id)
@@ -215,6 +218,20 @@ async def on_print_start(printer_id: int, data: dict, printer_manager) -> None:
             )
         logger.info("[UsageTracker] PRINT START printer %d AMS %d: %s", printer_id, ams_id, ", ".join(tray_summary))
 
+    # Snapshot spool assignments so usage isn't lost if on_ams_change unlinks mid-print
+    spool_assignments: dict[tuple[int, int], int] = {}
+    if db:
+        assign_result = await db.execute(select(SpoolAssignment).where(SpoolAssignment.printer_id == printer_id))
+        for assignment in assign_result.scalars().all():
+            spool_assignments[(assignment.ams_id, assignment.tray_id)] = assignment.spool_id
+        if spool_assignments:
+            logger.info(
+                "[UsageTracker] Snapshotted %d spool assignments for printer %d: %s",
+                len(spool_assignments),
+                printer_id,
+                {f"{k[0]}-{k[1]}": v for k, v in spool_assignments.items()},
+            )
+
     # Always create session (even without valid remain data) so print_name
     # is available at completion for 3MF-based tracking
     session = PrintSession(
@@ -223,6 +240,7 @@ async def on_print_start(printer_id: int, data: dict, printer_manager) -> None:
         started_at=datetime.now(timezone.utc),
         tray_remain_start=tray_remain_start,
         tray_now_at_start=tray_now_at_start,
+        spool_assignments=spool_assignments,
     )
     _active_sessions[printer_id] = session
 
@@ -294,6 +312,7 @@ async def on_print_complete(
             tray_now_at_start=session.tray_now_at_start if session else -1,
             last_progress=data.get("last_progress", 0.0),
             last_layer_num=data.get("last_layer_num", 0),
+            spool_assignments=session.spool_assignments if session else None,
         )
         results.extend(threemf_results)
 
@@ -328,20 +347,23 @@ async def on_print_complete(
                     if delta_pct <= 0:
                         continue  # No consumption or tray was refilled
 
-                    # Look up SpoolAssignment for this slot
-                    result = await db.execute(
-                        select(SpoolAssignment).where(
-                            SpoolAssignment.printer_id == printer_id,
-                            SpoolAssignment.ams_id == ams_id,
-                            SpoolAssignment.tray_id == tray_id,
+                    # Look up spool: prefer snapshot (survives mid-print unlink), fall back to live query
+                    spool_id = session.spool_assignments.get(key) if session.spool_assignments else None
+                    if spool_id is None:
+                        result = await db.execute(
+                            select(SpoolAssignment).where(
+                                SpoolAssignment.printer_id == printer_id,
+                                SpoolAssignment.ams_id == ams_id,
+                                SpoolAssignment.tray_id == tray_id,
+                            )
                         )
-                    )
-                    assignment = result.scalar_one_or_none()
-                    if not assignment:
-                        continue
+                        assignment = result.scalar_one_or_none()
+                        if not assignment:
+                            continue
+                        spool_id = assignment.spool_id
 
                     # Load spool
-                    spool_result = await db.execute(select(Spool).where(Spool.id == assignment.spool_id))
+                    spool_result = await db.execute(select(Spool).where(Spool.id == spool_id))
                     spool = spool_result.scalar_one_or_none()
                     if not spool:
                         continue
@@ -405,6 +427,7 @@ async def _track_from_3mf(
     tray_now_at_start: int = -1,
     last_progress: float = 0.0,
     last_layer_num: int = 0,
+    spool_assignments: dict[tuple[int, int], int] | None = None,
 ) -> list[dict]:
     """Track usage from 3MF per-filament slicer data (primary path).
 
@@ -613,21 +636,26 @@ async def _track_from_3mf(
         if key in handled_trays:
             continue
 
-        # Find spool assignment for this tray
-        assign_result = await db.execute(
-            select(SpoolAssignment).where(
-                SpoolAssignment.printer_id == printer_id,
-                SpoolAssignment.ams_id == ams_id,
-                SpoolAssignment.tray_id == tray_id,
+        # Find spool: prefer snapshot (survives mid-print unlink), fall back to live query
+        spool_id = spool_assignments.get(key) if spool_assignments else None
+        if spool_id is None:
+            assign_result = await db.execute(
+                select(SpoolAssignment).where(
+                    SpoolAssignment.printer_id == printer_id,
+                    SpoolAssignment.ams_id == ams_id,
+                    SpoolAssignment.tray_id == tray_id,
+                )
             )
-        )
-        assignment = assign_result.scalar_one_or_none()
-        if not assignment:
-            logger.info("[UsageTracker] 3MF: no spool assignment at printer %d AMS%d-T%d", printer_id, ams_id, tray_id)
-            continue
+            assignment = assign_result.scalar_one_or_none()
+            if not assignment:
+                logger.info(
+                    "[UsageTracker] 3MF: no spool assignment at printer %d AMS%d-T%d", printer_id, ams_id, tray_id
+                )
+                continue
+            spool_id = assignment.spool_id
 
         # Load spool
-        spool_result = await db.execute(select(Spool).where(Spool.id == assignment.spool_id))
+        spool_result = await db.execute(select(Spool).where(Spool.id == spool_id))
         spool = spool_result.scalar_one_or_none()
         if not spool:
             continue

@@ -2695,13 +2695,16 @@ class BambuMQTTClient:
 
         # Signal that we received the response (only if we were waiting for one)
         # Use thread-safe method since MQTT callbacks run in a different thread
-        if self._pending_kprofile_response:
+        # Capture in local var to avoid TOCTOU race: asyncio thread can clear
+        # self._pending_kprofile_response between the check and the .set() call
+        event = self._pending_kprofile_response
+        if event:
             logger.info("[%s] Got %s K-profiles for nozzle=%s", self.serial_number, len(profiles), response_nozzle)
             if self._loop and self._loop.is_running():
-                self._loop.call_soon_threadsafe(self._pending_kprofile_response.set)
+                self._loop.call_soon_threadsafe(event.set)
             else:
                 # Fallback for when loop is not available
-                self._pending_kprofile_response.set()
+                event.set()
 
     async def get_kprofiles(
         self, nozzle_diameter: str = "0.4", timeout: float = 5.0, max_retries: int = 3

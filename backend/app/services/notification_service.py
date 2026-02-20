@@ -208,9 +208,11 @@ class NotificationService:
         client = await self._get_client()
 
         if image_data:
-            # ntfy supports image attachments via multipart form-data
+            # ntfy supports image attachments via multipart form-data.
+            # HTTP headers cannot contain newlines, but ntfy interprets
+            # literal \n (backslash-n) as newlines in the Message header.
             headers["Filename"] = "photo.jpg"
-            headers["Message"] = message
+            headers["Message"] = message.replace("\n", "\\n")
             response = await client.put(url, content=image_data, headers=headers)
         else:
             response = await client.post(url, content=message, headers=headers)

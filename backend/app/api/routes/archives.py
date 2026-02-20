@@ -929,7 +929,7 @@ async def recalculate_all_costs(
             usage_result = await db.execute(
                 select(func.sum(SpoolUsageHistory.cost)).where(
                     SpoolUsageHistory.print_name == archive.print_name,
-                    SpoolUsageHistory.archive_id is None,
+                    SpoolUsageHistory.archive_id.is_(None),
                 )
             )
             fallback_cost = usage_result.scalar()

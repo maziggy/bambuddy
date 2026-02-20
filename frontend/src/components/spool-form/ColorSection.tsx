@@ -133,8 +133,6 @@ export function ColorSection({
   // Only show catalog section if there are matched catalog colors
   const showCatalogSection = matchedCatalogColors.length > 0;
 
-
-
   // Fallback hardcoded colors for search/expand
   const filteredFallbackColors = useMemo(() => {
     if (colorSearch) {

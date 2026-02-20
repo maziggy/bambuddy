@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.printer_manager import printer_manager
+from backend.app.services.rest_plug import rest_plug_service
 from backend.app.services.tasmota import tasmota_service
 
 if TYPE_CHECKING:
@@ -36,6 +37,8 @@ class SmartPlugManager:
             # Configure HA service with current settings
             await self._configure_ha_service(db)
             return homeassistant_service
+        if plug.plug_type == "rest":
+            return rest_plug_service
         return tasmota_service
 
     async def _configure_ha_service(self, db: AsyncSession | None = None):

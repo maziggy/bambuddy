@@ -1234,6 +1234,16 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already applied
 
+    # Migration: Add archive_id column to spool_usage_history for linking to print_archives
+    try:
+        await conn.execute(
+            text(
+                "ALTER TABLE spool_usage_history ADD COLUMN archive_id INTEGER REFERENCES print_archives(id) ON DELETE SET NULL"
+            )
+        )
+    except OperationalError:
+        pass  # Already applied
+
     # Migration: Migrate single virtual printer key-value settings to virtual_printers table
     try:
         # Check if virtual_printers table has any rows

@@ -346,11 +346,13 @@ export default function InventoryPage() {
     return 15;
   });
 
+
+
+  // Settings query (single declaration)
   const { data: settings } = useQuery({
     queryKey: ['settings'],
     queryFn: api.getSettings,
   });
-
   const dateFormat: DateFormat = settings?.date_format || 'system';
 
   const { data: spools, isLoading } = useQuery({
@@ -365,10 +367,7 @@ export default function InventoryPage() {
     refetchInterval: 30000,
   });
 
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-  });
+
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.deleteSpool(id),

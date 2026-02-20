@@ -144,7 +144,7 @@ async def compute_project_stats(
         parts_progress_percent=parts_progress_percent,
         estimated_cost=round((sums.total_filament_cost or 0), 2),
         total_energy_kwh=round((sums.total_energy or 0), 3),
-        total_energy_cost=round((sums.total_energy_cost or 0), 2),
+        total_energy_cost=round((sums.total_energy_cost or 0), 3),
         remaining_prints=remaining_prints,
         remaining_parts=remaining_parts,
         bom_total_items=bom_stats.total or 0,

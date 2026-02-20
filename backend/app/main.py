@@ -1055,10 +1055,10 @@ async def on_print_start(printer_id: int, data: dict):
             from backend.app.api.routes.settings import get_setting
 
             _spoolman_on = await get_setting(db, "spoolman_enabled")
-        if not _spoolman_on or _spoolman_on.lower() != "true":
-            from backend.app.services.usage_tracker import on_print_start as usage_on_print_start
+            if not _spoolman_on or _spoolman_on.lower() != "true":
+                from backend.app.services.usage_tracker import on_print_start as usage_on_print_start
 
-            await usage_on_print_start(printer_id, data, printer_manager)
+                await usage_on_print_start(printer_id, data, printer_manager, db=db)
     except Exception as e:
         logger.warning("Usage tracker on_print_start failed: %s", e)
 
@@ -2119,40 +2119,46 @@ async def on_print_complete(printer_id: int, data: dict):
     # auto-start files found in root on power cycle, causing ghost prints.
     # Must run before the archive_id early-return so it executes even when archiving is disabled.
     try:
-        printer_info = printer_manager.get_printer(printer_id)
-        if printer_info and subtask_name:
-            from backend.app.services.bambu_ftp import delete_file_async
+        if subtask_name:
+            async with async_session() as db:
+                from backend.app.models.printer import Printer
 
-            # Try both .3mf and .gcode extensions — the printer may have either
-            for ext in (".3mf", ".gcode"):
-                remote_path = f"/{subtask_name}{ext}"
-                # Retry up to 3 times — the printer may still lock the filesystem briefly after a print ends
-                for attempt in range(1, 4):
-                    try:
-                        delete_result = await delete_file_async(
-                            printer_info.ip_address,
-                            printer_info.access_code,
-                            remote_path,
-                            printer_model=printer_info.model,
-                        )
-                        if delete_result:
-                            logger.info("Deleted %s from printer %s SD card", remote_path, printer_info.name)
-                        break  # Success or file doesn't exist — no need to retry
-                    except Exception as e:
-                        if attempt < 3:
-                            logger.debug(
-                                "SD card cleanup attempt %d/3 failed for %s: %s, retrying in 2s",
-                                attempt,
+                result = await db.execute(select(Printer).where(Printer.id == printer_id))
+                printer = result.scalar_one_or_none()
+
+            if printer:
+                from backend.app.services.bambu_ftp import delete_file_async
+
+                # Try both .3mf and .gcode extensions — the printer may have either
+                for ext in (".3mf", ".gcode"):
+                    remote_path = f"/{subtask_name}{ext}"
+                    # Retry up to 3 times — the printer may still lock the filesystem briefly after a print ends
+                    for attempt in range(1, 4):
+                        try:
+                            delete_result = await delete_file_async(
+                                printer.ip_address,
+                                printer.access_code,
                                 remote_path,
-                                e,
+                                printer_model=printer.model,
                             )
-                            await asyncio.sleep(2)
-                        else:
-                            logger.debug(
-                                "SD card cleanup failed after 3 attempts for %s: %s (non-critical)",
-                                remote_path,
-                                e,
-                            )
+                            if delete_result:
+                                logger.info("Deleted %s from printer %s SD card", remote_path, printer.name)
+                            break  # Success or file doesn't exist — no need to retry
+                        except Exception as e:
+                            if attempt < 3:
+                                logger.debug(
+                                    "SD card cleanup attempt %d/3 failed for %s: %s, retrying in 2s",
+                                    attempt,
+                                    remote_path,
+                                    e,
+                                )
+                                await asyncio.sleep(2)
+                            else:
+                                logger.debug(
+                                    "SD card cleanup failed after 3 attempts for %s: %s (non-critical)",
+                                    remote_path,
+                                    e,
+                                )
     except Exception as e:
         logger.debug("SD card file cleanup failed for printer %s: %s (non-critical)", printer_id, e)
 
@@ -2441,7 +2447,7 @@ async def on_print_complete(printer_id: int, data: dict):
 
                         energy_cost_per_kwh = await get_setting(db, "energy_cost_per_kwh")
                         cost_per_kwh = float(energy_cost_per_kwh) if energy_cost_per_kwh else 0.15
-                        energy_cost = round(energy_used * cost_per_kwh, 2)
+                        energy_cost = round(energy_used * cost_per_kwh, 3)
 
                         from backend.app.models.archive import PrintArchive
 

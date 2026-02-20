@@ -1527,7 +1527,7 @@ export function SettingsPage() {
                   </span>
                   <input
                     type="number"
-                    step="0.01"
+                    step="0.001"
                     min="0"
                     value={localSettings.energy_cost_per_kwh}
                     onChange={(e) =>
@@ -2580,7 +2580,7 @@ export function SettingsPage() {
                         Today
                       </div>
                       <div className="text-xl font-bold text-white">
-                        {plugEnergySummary.totalToday.toFixed(2)}
+                        {plugEnergySummary.totalToday.toFixed(3)}
                         <span className="text-sm font-normal text-bambu-gray ml-1">kWh</span>
                       </div>
                       {(localSettings?.energy_cost_per_kwh ?? 0) > 0 && (
@@ -2597,7 +2597,7 @@ export function SettingsPage() {
                         Yesterday
                       </div>
                       <div className="text-xl font-bold text-white">
-                        {plugEnergySummary.totalYesterday.toFixed(2)}
+                        {plugEnergySummary.totalYesterday.toFixed(3)}
                         <span className="text-sm font-normal text-bambu-gray ml-1">kWh</span>
                       </div>
                       {(localSettings?.energy_cost_per_kwh ?? 0) > 0 && (

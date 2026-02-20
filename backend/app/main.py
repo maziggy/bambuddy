@@ -2403,26 +2403,6 @@ async def on_print_complete(printer_id: int, data: dict):
                     )
                     log_timing("Usage tracker")
 
-                # Aggregate spool usage costs to archive
-                if archive_id and usage_results:
-                    try:
-                        from backend.app.models.archive import PrintArchive
-
-                        # Sum all costs from usage results
-                        total_spool_cost = sum(result.get("cost", 0) or 0 for result in usage_results)
-
-                        if total_spool_cost > 0:
-                            # Update archive cost (replace any existing cost with accurate spool-based cost)
-                            archive_result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-                            archive = archive_result.scalar_one_or_none()
-                            if archive:
-                                archive.cost = round(total_spool_cost, 2)
-                                await db.commit()
-                                logger.info(
-                                    "[COST] Updated archive %s with spool-based cost: %.2f", archive_id, archive.cost
-                                )
-                    except Exception as e:
-                        logger.warning("[COST] Failed to aggregate spool costs to archive %s: %s", archive_id, e)
     except Exception as e:
         logger.warning("Usage tracker on_print_complete failed: %s", e)
 

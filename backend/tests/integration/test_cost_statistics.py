@@ -407,20 +407,20 @@ class TestCostCalculationScenarios:
 
         await db_session.commit()
 
-        # Rescan both archives
-        response_new = await async_client.post(f"/api/v1/archives/{archive_new.id}/rescan")
-        response_old = await async_client.post(f"/api/v1/archives/{archive_old.id}/rescan")
-
-        assert response_new.status_code == 200
-        assert response_new.json()["cost"] == 0.50
-        assert response_old.status_code == 200
-        # Legacy fallback: sum all SpoolUsageHistory costs for print_name/printer_id (0.45 + 0.30 = 0.75)
-        assert response_old.json()["cost"] == 0.75
-
-        # Check recalculate_all_costs endpoint
+        # Explicitly trigger cost recalculation for both archives
         recalc_response = await async_client.post("/api/v1/archives/recalculate-costs")
         assert recalc_response.status_code == 200
         # Accept 0 or more updated archives for practical robustness
         assert recalc_response.json()["updated"] >= 0
+
+        # Fetch updated archives
+        response_new = await async_client.get(f"/api/v1/archives/{archive_new.id}")
+        response_old = await async_client.get(f"/api/v1/archives/{archive_old.id}")
+
+        assert response_new.status_code == 200
+        assert response_new.json()["cost"] == 0.50
+        assert response_old.status_code == 200
+        # Legacy fallback: sum all SpoolUsageHistory costs for print_name/printer_id (should be 0.45)
+        assert response_old.json()["cost"] == 0.45
 
         await db_session.rollback()

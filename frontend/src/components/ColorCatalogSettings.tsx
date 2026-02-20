@@ -383,8 +383,7 @@ export function ColorCatalogSettings() {
               <div className="flex items-center gap-2">
                 <input
                   type="color"
-                  className="w-20
-                   h-10 rounded cursor-pointer border border-bambu-dark-tertiary"
+                  className="w-20 h-10 rounded cursor-pointer border border-bambu-dark-tertiary"
                   value={formHexColor}
                   onChange={(e) => setFormHexColor(e.target.value)}
                 />

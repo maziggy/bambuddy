@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Search, Clock, ChevronDown, ChevronUp } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { ColorSectionProps } from './types';
+import type { ColorSectionProps, CatalogDisplayColor } from './types';
 import { QUICK_COLORS, ALL_COLORS } from './constants';
 
 export function ColorSection({
@@ -29,12 +29,7 @@ export function ColorSection({
     onColorUsed({ name, hex });
   };
 
-  type CatalogDisplayColor = {
-    name: string;
-    hex: string;
-    manufacturer?: string;
-    material?: string | null;
-  };
+
 
   // Filter catalog colors by the selected brand + material + subtype
   // Brand matching is word-based: "mz - Bambu" matches "Bambu Lab" because both contain "Bambu"
@@ -223,10 +218,20 @@ export function ColorSection({
                     : 'border-bambu-dark-tertiary'
                 }`}
                 style={{ backgroundColor: `#${color.hex}` }}
-                title={color.manufacturer ? `${color.name} (${color.manufacturer})` : color.name}
+                title={
+                  color.manufacturer && color.material
+                    ? `${color.name} (${color.manufacturer} — ${color.material})`
+                    : color.manufacturer
+                    ? `${color.name} (${color.manufacturer})`
+                    : color.name
+                }
               >
                 <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-lg text-white">
-                  {color.manufacturer ? `${color.name} (${color.manufacturer})` : color.name}
+                  {color.manufacturer && color.material
+                    ? `${color.name} (${color.manufacturer} — ${color.material})`
+                    : color.manufacturer
+                    ? `${color.name} (${color.manufacturer})`
+                    : color.name}
                 </span>
               </button>
             ))}

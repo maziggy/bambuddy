@@ -182,15 +182,6 @@ export function FilamentSection({
               setMaterialDropdownOpen(true);
               setMaterialSearch('');
             }}
-            onBlur={() => {
-              if (
-                materialSearch &&
-                !filteredMaterials.includes(materialSearch)
-              ) {
-                updateField('material', materialSearch);
-                setMaterialDropdownOpen(false);
-              }
-            }}
           />
           <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray/50 pointer-events-none" />
           {materialDropdownOpen && (
@@ -223,9 +214,10 @@ export function FilamentSection({
                   onClick={() => {
                     updateField('material', materialSearch);
                     setMaterialDropdownOpen(false);
+                    setMaterialSearch('');
                   }}
                 >
-                  {t('inventory.useCustomBrand', { brand: materialSearch }).replace('brand', 'material')}
+                  {t('inventory.useCustomBrand', { brand: materialSearch })}
                 </button>
               )}
             </div>

@@ -13,6 +13,7 @@ All notable changes to Bambuddy will be documented in this file.
 
 ### Improved
 - **Background Dispatch Test Coverage** — Added 5 backend unit tests for dispatch cancel races (single-lock TOCTOU fix), batch counter reset re-check, and job lifecycle. Added 2 FTP regression tests for voidresp error handling (upload-loop prevention) and A1 model voidresp skip. Added 1 frontend test for reprint toast suppression.
+- **Frontend Pre-Commit Hooks** ([#458](https://github.com/maziggy/bambuddy/issues/458)) — Added `frontend-typecheck` (`tsc --noEmit`) and `frontend-lint` (`eslint .`) hooks to the pre-commit config. Both hooks only trigger when `frontend/src/**/*.{ts,tsx}` files are staged.
 
 ## [0.2.1b] - 2026-02-19
 

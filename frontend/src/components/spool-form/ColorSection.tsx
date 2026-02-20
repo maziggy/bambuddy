@@ -59,7 +59,7 @@ export function ColorSection({
           name: c.color_name,
           hex: c.hex_color.replace('#', '').substring(0, 6),
           manufacturer: c.manufacturer,
-          material: c.material,
+          material: typeof c.material === 'string' ? c.material : undefined,
         }));
       }
     }
@@ -78,7 +78,7 @@ export function ColorSection({
           name: c.color_name,
           hex: c.hex_color.replace('#', '').substring(0, 6),
           manufacturer: c.manufacturer,
-          material: c.material,
+          material: typeof c.material === 'string' ? c.material : undefined,
         }));
       }
       // Try without trailing "+" (e.g. "PLA Silk+" -> "PLA Silk")
@@ -93,7 +93,7 @@ export function ColorSection({
             name: c.color_name,
             hex: c.hex_color.replace('#', '').substring(0, 6),
             manufacturer: c.manufacturer,
-            material: c.material,
+            material: typeof c.material === 'string' ? c.material : undefined,
           }));
         }
       }
@@ -110,7 +110,7 @@ export function ColorSection({
           name: c.color_name,
           hex: c.hex_color.replace('#', '').substring(0, 6),
           manufacturer: c.manufacturer,
-          material: c.material,
+          material: typeof c.material === 'string' ? c.material : undefined,
         }));
       }
     }

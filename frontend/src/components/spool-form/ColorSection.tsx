@@ -29,8 +29,6 @@ export function ColorSection({
     onColorUsed({ name, hex });
   };
 
-
-
   // Filter catalog colors by the selected brand + material + subtype
   // Brand matching is word-based: "mz - Bambu" matches "Bambu Lab" because both contain "Bambu"
   // Material matching: try exact "PETG Basic" first, fall back to base material "PETG" prefix
@@ -137,11 +135,7 @@ export function ColorSection({
     ? !!(formData.brand || formData.material)
     : matchedCatalogColors.length > 0;
 
-  // Search within matched catalog colors
-  const filteredCatalogColors = useMemo(() => {
-    if (!colorSearch) return matchedCatalogColors;
-    return catalogSearchResults;
-  }, [catalogSearchResults, colorSearch, matchedCatalogColors]);
+
 
   // Fallback hardcoded colors for search/expand
   const filteredFallbackColors = useMemo(() => {
@@ -207,7 +201,7 @@ export function ColorSection({
             {colorSearch ? t('inventory.searchResults') : `${formData.brand}${formData.material ? ` ${formData.material}` : ''}`}
           </span>
           <div className="flex flex-wrap gap-1.5">
-            {filteredCatalogColors.map(color => (
+            {catalogSearchResults.map(color => (
               <button
                 key={`${color.hex}-${color.name}-${color.manufacturer ?? ''}`}
                 type="button"
@@ -226,7 +220,7 @@ export function ColorSection({
                     : color.name
                 }
               >
-                <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-lg text-white">
+                <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-lg text-white">
                   {color.manufacturer && color.material
                     ? `${color.name} (${color.manufacturer} — ${color.material})`
                     : color.manufacturer
@@ -235,7 +229,7 @@ export function ColorSection({
                 </span>
               </button>
             ))}
-            {filteredCatalogColors.length === 0 && (
+            {catalogSearchResults.length === 0 && (
               <p className="text-sm text-bambu-gray py-1">{t('inventory.noColorsFound')}</p>
             )}
           </div>

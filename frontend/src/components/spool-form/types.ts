@@ -1,3 +1,6 @@
+
+import type { Printer, SpoolKProfile } from '../../api/client';
+
 // Catalog color display type (moved from component)
 export interface CatalogDisplayColor {
   name: string;
@@ -5,7 +8,6 @@ export interface CatalogDisplayColor {
   manufacturer?: string;
   material?: string;
 }
-import type { Printer, SpoolKProfile } from '../../api/client';
 
 // Form data structure
 export interface SpoolFormData {

@@ -18,6 +18,7 @@ from backend.app.core.permissions import Permission
 from backend.app.models.printer import Printer
 from backend.app.models.user import User
 from backend.app.services.camera import (
+    ChamberConnectionClosed,
     capture_camera_frame,
     generate_chamber_image_stream,
     get_camera_port,
@@ -47,6 +48,51 @@ _stream_start_times: dict[int, float] = {}
 
 # Track active external camera streams by printer ID
 _active_external_streams: set[int] = set()
+
+# Max age for stale frame buffer entries (5 minutes)
+_FRAME_BUFFER_MAX_AGE = 300.0
+_CLEANUP_INTERVAL = 60.0  # seconds between periodic cleanup runs
+_cleanup_task: asyncio.Task | None = None
+
+
+def _cleanup_stale_frame_buffers() -> None:
+    """Remove stale entries from module-level frame dicts.
+
+    Called periodically to prevent unbounded growth if stream generators
+    crash without running their finally blocks.
+    """
+    now = time.monotonic()
+    stale_ids = [pid for pid, ts in _last_frame_times.items() if now - ts > _FRAME_BUFFER_MAX_AGE]
+    for pid in stale_ids:
+        _last_frames.pop(pid, None)
+        _last_frame_times.pop(pid, None)
+        _stream_start_times.pop(pid, None)
+    if stale_ids:
+        logger.info("Cleaned up stale frame buffers for printers: %s", stale_ids)
+
+
+async def _periodic_cleanup_loop() -> None:
+    """Background task that runs stale frame buffer cleanup on a fixed interval."""
+    while True:
+        await asyncio.sleep(_CLEANUP_INTERVAL)
+        _cleanup_stale_frame_buffers()
+
+
+def start_frame_buffer_cleanup() -> None:
+    """Start the periodic cleanup background task."""
+    global _cleanup_task
+    if _cleanup_task is None:
+        _cleanup_task = asyncio.create_task(_periodic_cleanup_loop())
+        logger.info("Started periodic frame buffer cleanup (every %.0fs)", _CLEANUP_INTERVAL)
+
+
+def stop_frame_buffer_cleanup() -> None:
+    """Stop the periodic cleanup background task."""
+    global _cleanup_task
+    if _cleanup_task is not None:
+        _cleanup_task.cancel()
+        _cleanup_task = None
+        logger.info("Stopped periodic frame buffer cleanup")
 
 
 def get_buffered_frame(printer_id: int) -> bytes | None:
@@ -110,31 +156,46 @@ class SharedStreamHub:
     async def get_or_start(self, printer_id: int, starter_fn, params_key: str = "") -> _SharedStream:
         """Return the shared stream for a printer, starting a producer if needed.
 
-        If params_key differs from the running producer (e.g. quality changed),
-        the old producer is stopped and a new one starts with the new settings.
+        Always reuses an existing alive producer regardless of params — this
+        prevents different clients (grid vs single camera) from fighting over
+        quality settings.  Use restart() to explicitly change quality.
         """
         async with self._lock:
             entry = self._streams.get(printer_id)
             if entry is not None and entry.alive:
-                if params_key and entry.params_key != params_key:
-                    # Quality/fps/scale changed — kill old producer so a new one starts
-                    logger.info(
-                        "Params changed for printer %s (%s → %s), restarting producer",
-                        printer_id, entry.params_key, params_key,
-                    )
-                    entry.alive = False
-                    if entry.task:
-                        entry.task.cancel()
-                else:
-                    entry.last_accessed = time.monotonic()
-                    logger.info("Reusing existing producer for printer %s", printer_id)
-                    return entry
+                entry.last_accessed = time.monotonic()
+                return entry
             # Start a new producer
             entry = _SharedStream(params_key=params_key)
             self._streams[printer_id] = entry
-            entry.task = asyncio.create_task(
-                self._run_producer(printer_id, starter_fn, entry)
-            )
+            entry.task = asyncio.create_task(self._run_producer(printer_id, starter_fn, entry))
+            logger.info("Started new producer for printer %s (params=%s)", printer_id, params_key)
+            return entry
+
+    async def restart(self, printer_id: int, starter_fn, params_key: str) -> _SharedStream:
+        """Stop the existing producer and start a new one with different params.
+
+        Called when a client explicitly changes quality settings.
+        """
+        async with self._lock:
+            old = self._streams.get(printer_id)
+            if old is not None and old.alive:
+                if old.params_key == params_key:
+                    # Same params — no need to restart
+                    old.last_accessed = time.monotonic()
+                    return old
+                logger.info(
+                    "Restarting producer for printer %s (%s → %s)",
+                    printer_id,
+                    old.params_key,
+                    params_key,
+                )
+                old.alive = False
+                if old.task:
+                    old.task.cancel()
+            entry = _SharedStream(params_key=params_key)
+            self._streams[printer_id] = entry
+            entry.task = asyncio.create_task(self._run_producer(printer_id, starter_fn, entry))
             logger.info("Started new producer for printer %s (params=%s)", printer_id, params_key)
             return entry
 
@@ -145,6 +206,7 @@ class SharedStreamHub:
         ends (client disconnect, CancelledError, GC), it simply stops
         iterating.  No locks, no unsubscribe, no aclose() needed.
         """
+
         async def _viewer():
             frame_interval = 1.0 / fps if fps > 0 else 0.1
             seen_seq = 0
@@ -154,12 +216,15 @@ class SharedStreamHub:
                 # Touch last_accessed so the producer knows someone is watching
                 entry.last_accessed = time.monotonic()
 
+                # Snapshot both seq and frame together so they stay consistent
+                # (producer may update both between our reads otherwise)
                 seq = entry.frame_seq
+                frame = entry.frame
+
                 if seq <= seen_seq:
                     await asyncio.sleep(0.05)
                     continue
 
-                frame = entry.frame
                 if frame is None:
                     break
 
@@ -180,9 +245,7 @@ class SharedStreamHub:
 
         return _viewer()
 
-    async def _run_producer(
-        self, printer_id: int, starter_fn, entry: _SharedStream
-    ) -> None:
+    async def _run_producer(self, printer_id: int, starter_fn, entry: _SharedStream) -> None:
         """Background task: read raw frames from ffmpeg/chamber into the shared buffer.
 
         Self-cleans when done: sets alive=False and removes itself from _streams.
@@ -200,8 +263,12 @@ class SharedStreamHub:
                 if time.monotonic() - entry.last_accessed > self.IDLE_TIMEOUT:
                     logger.info(
                         "Producer idle for printer %s (%.0fs), auto-stopping",
-                        printer_id, self.IDLE_TIMEOUT,
+                        printer_id,
+                        self.IDLE_TIMEOUT,
                     )
+                    # Mark dead before breaking so get_or_start() won't hand out
+                    # this dying entry to a new viewer during cleanup
+                    entry.alive = False
                     break
         except asyncio.CancelledError:
             logger.info("Producer cancelled for printer %s", printer_id)
@@ -218,7 +285,8 @@ class SharedStreamHub:
                     await source.aclose()
                 except Exception:
                     pass
-            # 3. Remove from registry
+            # 3. Remove from registry — identity check ensures we don't remove
+            #    a replacement entry created by get_or_start() during our cleanup
             async with self._lock:
                 if self._streams.get(printer_id) is entry:
                     del self._streams[printer_id]
@@ -233,10 +301,13 @@ class SharedStreamHub:
         # Mark dead — viewers will stop on next poll
         entry.alive = False
         entry.frame = None
-        # Cancel the producer task (its finally block handles source cleanup)
+        # Cancel and await the producer so its finally block runs (closes ffmpeg/SSL)
         if entry.task and not entry.task.done():
             entry.task.cancel()
-            # Don't await — the producer cleans up itself in its finally block
+            try:
+                await asyncio.wait_for(asyncio.shield(entry.task), timeout=5.0)
+            except (asyncio.CancelledError, TimeoutError, Exception):
+                pass  # Best effort — task will clean up on its own eventually
         return True
 
     def is_active(self, printer_id: int) -> bool:
@@ -282,13 +353,24 @@ async def generate_chamber_mjpeg_stream(
     try:
         frame_interval = 1.0 / fps if fps > 0 else 0.2
         last_frame_time = 0.0
+        consecutive_timeouts = 0
 
         while True:
             # Read next frame
-            frame = await read_next_chamber_frame(reader, timeout=30.0)
-            if frame is None:
-                logger.warning("Chamber image stream ended for %s", stream_id)
+            try:
+                frame = await read_next_chamber_frame(reader, timeout=30.0)
+            except ChamberConnectionClosed as e:
+                logger.warning("Chamber image stream broken for %s: %s", stream_id, e)
                 break
+
+            if frame is None:
+                # Timeout — retry a few times before giving up
+                consecutive_timeouts += 1
+                if consecutive_timeouts >= 3:
+                    logger.warning("Chamber image stream stalled for %s (%d timeouts)", stream_id, consecutive_timeouts)
+                    break
+                continue
+            consecutive_timeouts = 0
 
             # Save frame to buffer for photo capture and track timestamp
             if printer_id is not None:
@@ -396,16 +478,18 @@ async def generate_rtsp_mjpeg_stream(
     ]
     if vf_filters:
         cmd.extend(["-vf", ",".join(vf_filters)])
-    cmd.extend([
-        "-f",
-        "mjpeg",
-        "-q:v",
-        str(quality),
-        "-r",
-        str(fps),
-        "-an",  # No audio
-        "-",  # Output to stdout
-    ])
+    cmd.extend(
+        [
+            "-f",
+            "mjpeg",
+            "-q:v",
+            str(quality),
+            "-r",
+            str(fps),
+            "-an",  # No audio
+            "-",  # Output to stdout
+        ]
+    )
 
     logger.info(
         "Starting RTSP camera stream for %s (stream_id=%s, model=%s, fps=%s)", ip_address, stream_id, model, fps
@@ -542,6 +626,7 @@ async def _ensure_producer(
     quality: int,
     scale: float,
     printer: Printer | None = None,
+    force_quality: bool = False,
 ) -> _SharedStream | None:
     """Start or reuse a shared producer for a single printer.
 
@@ -549,6 +634,8 @@ async def _ensure_producer(
     or has an external camera (not supported via the hub).
 
     Pass an already-fetched ``printer`` to skip the DB lookup.
+    Set ``force_quality=True`` to restart the producer if params changed
+    (used when a client explicitly switches quality).
     """
     if printer is None:
         result = await db.execute(select(Printer).where(Printer.id == printer_id))
@@ -586,6 +673,8 @@ async def _ensure_producer(
 
     params_key = f"{fps_clamped}-{quality}-{scale}"
     _stream_start_times[printer_id] = time.monotonic()
+    if force_quality:
+        return await _hub.restart(printer_id, starter_fn, params_key=params_key)
     return await _hub.get_or_start(printer_id, starter_fn, params_key=params_key)
 
 
@@ -596,6 +685,7 @@ async def camera_grid_stream(
     fps: int = 5,
     quality: int = 15,
     scale: float = 0.5,
+    force: bool = Query(False, description="Force restart producers with new quality settings"),
     db: AsyncSession = Depends(get_db),
 ):
     """Multiplexed camera stream for the camera grid.
@@ -629,7 +719,7 @@ async def camera_grid_stream(
     # Start producers for all requested printers
     entries: dict[int, _SharedStream] = {}
     for pid in printer_ids:
-        entry = await _ensure_producer(pid, db, fps, quality, scale)
+        entry = await _ensure_producer(pid, db, fps, quality, scale, force_quality=force)
         if entry is not None:
             entries[pid] = entry
 

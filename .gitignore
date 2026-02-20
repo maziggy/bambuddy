@@ -68,3 +68,5 @@ data/
 *.sarif
 
 debug_logs/
+
+photos/

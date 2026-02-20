@@ -262,8 +262,16 @@ async def generate_chamber_image_stream(
         return None
 
 
+class ChamberConnectionClosed(Exception):
+    """Raised when the chamber image connection is closed by the printer."""
+
+
 async def read_next_chamber_frame(reader: asyncio.StreamReader, timeout: float = 10.0) -> bytes | None:
-    """Read the next JPEG frame from an established chamber image connection."""
+    """Read the next JPEG frame from an established chamber image connection.
+
+    Returns JPEG bytes on success, None on timeout (caller can retry).
+    Raises ChamberConnectionClosed if the TCP connection is broken (caller should stop).
+    """
     try:
         # Read the 16-byte header
         header = await asyncio.wait_for(reader.readexactly(16), timeout=timeout)
@@ -273,7 +281,7 @@ async def read_next_chamber_frame(reader: asyncio.StreamReader, timeout: float =
 
         if payload_size == 0 or payload_size > 10_000_000:
             logger.error("Chamber image: invalid payload size %s", payload_size)
-            return None
+            raise ChamberConnectionClosed(f"invalid payload size {payload_size}")
 
         # Read the JPEG data
         jpeg_data = await asyncio.wait_for(
@@ -285,13 +293,15 @@ async def read_next_chamber_frame(reader: asyncio.StreamReader, timeout: float =
 
     except asyncio.IncompleteReadError:
         logger.warning("Chamber image: connection closed by printer")
-        return None
+        raise ChamberConnectionClosed("connection closed by printer")
     except TimeoutError:
         logger.warning("Chamber image: read timeout")
         return None
+    except ChamberConnectionClosed:
+        raise  # Don't catch our own exception in the generic handler
     except Exception as e:
         logger.error("Chamber image: error reading frame: %s", e)
-        return None
+        raise ChamberConnectionClosed(str(e))
 
 
 async def capture_camera_frame(

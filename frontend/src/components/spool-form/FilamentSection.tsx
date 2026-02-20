@@ -66,7 +66,15 @@ export function FilamentSection({
   const filteredBrands = useMemo(() => {
     if (!brandSearch) return availableBrands;
     const search = brandSearch.toLowerCase();
-    return availableBrands.filter(b => b.toLowerCase().includes(search));
+    const filtered = availableBrands.filter(b => b.toLowerCase().includes(search));
+    // Sort: exact match first, then others
+    return filtered.sort((a, b) => {
+      const aExact = a.toLowerCase() === search;
+      const bExact = b.toLowerCase() === search;
+      if (aExact && !bExact) return -1;
+      if (!aExact && bExact) return 1;
+      return a.localeCompare(b);
+    });
   }, [availableBrands, brandSearch]);
 
   const filteredVariants = useMemo(() => {
@@ -78,7 +86,15 @@ export function FilamentSection({
   const filteredMaterials = useMemo(() => {
     if (!materialSearch) return availableMaterials;
     const search = materialSearch.toLowerCase();
-    return availableMaterials.filter(m => m.toLowerCase().includes(search));
+    const filtered = availableMaterials.filter(m => m.toLowerCase().includes(search));
+    // Sort: exact match first, then others
+    return filtered.sort((a, b) => {
+      const aExact = a.toLowerCase() === search;
+      const bExact = b.toLowerCase() === search;
+      if (aExact && !bExact) return -1;
+      if (!aExact && bExact) return 1;
+      return a.localeCompare(b);
+    });
   }, [materialSearch, availableMaterials]);
 
   useEffect(() => {

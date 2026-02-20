@@ -152,20 +152,18 @@ jobs:
       - name: Run npm audit
         working-directory: frontend
         run: |
-          # Only audit production dependencies and filter out npm-internal packages
-          # (npm audit reports vulnerabilities in its own bundled deps like tar/minimatch).
+          # Only audit production dependencies and filter out npm-internal packages.
+          # npm 10.x audit/ls reports vulns in its own bundled deps (npm, tar, minimatch)
+          # so we parse package-lock.json directly to get the real prod dep list.
           npm audit --omit=dev --json > /tmp/audit.json 2>/dev/null || true
-          npm ls --omit=dev --all --json 2>/dev/null > /tmp/deps.json || true
           python3 -c "
-          import json, sys, subprocess
+          import json, sys
           data = json.load(open('/tmp/audit.json'))
-          deps = json.load(open('/tmp/deps.json'))
+          lock = json.load(open('package-lock.json'))
           prod = set()
-          def walk(obj):
-              for name, info in (obj.get('dependencies') or {}).items():
-                  prod.add(name)
-                  walk(info)
-          walk(deps)
+          for path, info in lock.get('packages', {}).items():
+              if path and not info.get('dev') and not info.get('devOptional'):
+                  prod.add(path.split('node_modules/')[-1])
           vulns = data.get('vulnerabilities', {})
           fixable = {n: v for n, v in vulns.items()
                      if n in prod and v.get('severity') in ('high', 'critical') and v.get('fixAvailable')}

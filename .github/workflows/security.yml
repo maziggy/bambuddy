@@ -278,23 +278,21 @@ jobs:
         working-directory: frontend
         run: |
           npm audit --omit=dev --json > npm-audit-raw.json 2>/dev/null || true
-          # Filter audit results to only include actual project dependencies
-          # (npm audit sometimes reports vulnerabilities in the npm CLI itself)
+          # Filter audit results to only include actual project dependencies.
+          # npm 10.x audit/ls reports vulns in its own bundled deps (npm, tar, minimatch)
+          # so we parse package-lock.json directly to get the real prod dep list.
           node -e "
             const fs = require('fs');
             const raw = fs.readFileSync('npm-audit-raw.json', 'utf8');
             let results;
             try { results = JSON.parse(raw); } catch { results = { vulnerabilities: {} }; }
-            const depTree = JSON.parse(require('child_process').execSync(
-              'npm ls --omit=dev --all --json 2>/dev/null', { encoding: 'utf8' }
-            ));
+            const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
             const prodDeps = new Set();
-            (function walk(obj) {
-              for (const [name, info] of Object.entries(obj.dependencies || {})) {
-                prodDeps.add(name);
-                walk(info);
+            for (const [path, info] of Object.entries(lock.packages || {})) {
+              if (path && !info.dev && !info.devOptional) {
+                prodDeps.add(path.split('node_modules/').pop());
               }
-            })(depTree);
+            }
             const vulns = results.vulnerabilities || {};
             const filtered = {};
             for (const [name, info] of Object.entries(vulns)) {

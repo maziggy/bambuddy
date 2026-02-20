@@ -42,3 +42,17 @@ repos:
         pass_filenames: false
         types: [python]
         files: ^backend/app/
+      - id: frontend-typecheck
+        name: TypeScript type check
+        entry: bash -c 'cd frontend && npx tsc --noEmit'
+        language: system
+        pass_filenames: false
+        files: ^frontend/src/
+        types_or: [ts, tsx]
+      - id: frontend-lint
+        name: ESLint
+        entry: bash -c 'cd frontend && npx eslint .'
+        language: system
+        pass_filenames: false
+        files: ^frontend/src/
+        types_or: [ts, tsx]

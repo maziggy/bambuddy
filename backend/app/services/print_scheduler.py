@@ -512,14 +512,14 @@ class PrintScheduler:
         # Parse AMS units from raw_data
         ams_data = status.raw_data.get("ams", [])
         for ams_unit in ams_data:
-            ams_id = ams_unit.get("id", 0)
+            ams_id = int(ams_unit.get("id", 0))
             trays = ams_unit.get("tray", [])
             is_ht = len(trays) == 1  # AMS-HT has single tray
 
             for tray in trays:
                 tray_type = tray.get("tray_type")
                 if tray_type:
-                    tray_id = tray.get("id", 0)
+                    tray_id = int(tray.get("id", 0))
                     tray_color = tray.get("tray_color", "")
                     # tray_info_idx identifies the specific spool (e.g., "GFA00", "P4d64437")
                     tray_info_idx = tray.get("tray_info_idx", "")

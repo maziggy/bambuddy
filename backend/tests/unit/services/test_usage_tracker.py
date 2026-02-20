@@ -399,3 +399,274 @@ class TestTrackFrom3MF:
         assert len(results) == 1
         assert results[0]["ams_id"] == 1
         assert results[0]["tray_id"] == 0
+
+
+class TestSpoolAssignmentSnapshot:
+    """Tests for spool assignment snapshotting at print start (#459).
+
+    When a spool runs empty mid-print, on_ams_change deletes the SpoolAssignment.
+    The snapshot captured at print start ensures usage is still attributed correctly.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _clear_sessions(self):
+        _active_sessions.clear()
+        yield
+        _active_sessions.clear()
+
+    @pytest.mark.asyncio
+    async def test_on_print_start_snapshots_assignments_with_db(self):
+        """on_print_start captures spool assignments when db is provided."""
+        ams_data = [{"id": 0, "tray": [{"id": 0, "remain": 80}, {"id": 1, "remain": 60}]}]
+        pm = _make_printer_manager(_make_printer_state(ams_data, tray_now=0))
+
+        assignment_0 = _make_assignment(spool_id=10, printer_id=1, ams_id=0, tray_id=0)
+        assignment_1 = _make_assignment(spool_id=20, printer_id=1, ams_id=0, tray_id=1)
+
+        db = AsyncMock()
+        scalars_mock = MagicMock()
+        scalars_mock.all.return_value = [assignment_0, assignment_1]
+        result_mock = MagicMock()
+        result_mock.scalars.return_value = scalars_mock
+        db.execute = AsyncMock(return_value=result_mock)
+
+        await on_print_start(1, {"subtask_name": "Benchy"}, pm, db=db)
+
+        session = _active_sessions[1]
+        assert session.spool_assignments == {(0, 0): 10, (0, 1): 20}
+
+    @pytest.mark.asyncio
+    async def test_on_print_start_empty_snapshot_without_db(self):
+        """on_print_start creates empty snapshot when no db provided."""
+        ams_data = [{"id": 0, "tray": [{"id": 0, "remain": 80}]}]
+        pm = _make_printer_manager(_make_printer_state(ams_data, tray_now=0))
+
+        await on_print_start(1, {"subtask_name": "Benchy"}, pm)
+
+        session = _active_sessions[1]
+        assert session.spool_assignments == {}
+
+    @pytest.mark.asyncio
+    async def test_3mf_uses_snapshot_instead_of_live_query(self):
+        """_track_from_3mf uses snapshot spool_id without querying SpoolAssignment."""
+        spool = _make_spool(id=42, label_weight=1000)
+        archive = MagicMock()
+        archive.file_path = "archives/test.3mf"
+
+        # db: archive, queue_item(None), spool — NO assignment query needed
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                MagicMock(scalar_one_or_none=MagicMock(return_value=archive)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
+            ]
+        )
+
+        pm = _make_printer_manager(_make_printer_state([], tray_now=0))
+        filament_usage = [{"slot_id": 1, "used_g": 15.0, "type": "PLA", "color": "#FF0000"}]
+
+        with (
+            patch("backend.app.core.config.settings") as mock_settings,
+            patch("backend.app.utils.threemf_tools.extract_filament_usage_from_3mf", return_value=filament_usage),
+        ):
+            mock_path = MagicMock()
+            mock_path.exists.return_value = True
+            mock_settings.base_dir.__truediv__ = MagicMock(return_value=mock_path)
+
+            results = await _track_from_3mf(
+                printer_id=1,
+                archive_id=10,
+                status="completed",
+                print_name="Test",
+                handled_trays=set(),
+                printer_manager=pm,
+                db=db,
+                spool_assignments={(0, 0): 42},
+            )
+
+        assert len(results) == 1
+        assert results[0]["spool_id"] == 42
+        assert results[0]["weight_used"] == 15.0
+
+    @pytest.mark.asyncio
+    async def test_3mf_falls_back_to_live_query_without_snapshot(self):
+        """_track_from_3mf queries SpoolAssignment when no snapshot exists."""
+        spool = _make_spool(id=5, label_weight=1000)
+        assignment = _make_assignment(spool_id=5)
+        archive = MagicMock()
+        archive.file_path = "archives/test.3mf"
+
+        # db: archive, queue_item(None), assignment, spool
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                MagicMock(scalar_one_or_none=MagicMock(return_value=archive)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=assignment)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
+            ]
+        )
+
+        pm = _make_printer_manager(_make_printer_state([], tray_now=0))
+        filament_usage = [{"slot_id": 1, "used_g": 10.0, "type": "PLA", "color": "#FF0000"}]
+
+        with (
+            patch("backend.app.core.config.settings") as mock_settings,
+            patch("backend.app.utils.threemf_tools.extract_filament_usage_from_3mf", return_value=filament_usage),
+        ):
+            mock_path = MagicMock()
+            mock_path.exists.return_value = True
+            mock_settings.base_dir.__truediv__ = MagicMock(return_value=mock_path)
+
+            results = await _track_from_3mf(
+                printer_id=1,
+                archive_id=10,
+                status="completed",
+                print_name="Test",
+                handled_trays=set(),
+                printer_manager=pm,
+                db=db,
+                spool_assignments=None,
+            )
+
+        assert len(results) == 1
+        assert results[0]["spool_id"] == 5
+
+    @pytest.mark.asyncio
+    async def test_ams_delta_uses_snapshot_over_live_query(self):
+        """AMS remain% fallback uses snapshot spool_id instead of live query."""
+        spool = _make_spool(id=77, label_weight=1000)
+
+        _active_sessions[1] = PrintSession(
+            printer_id=1,
+            print_name="Benchy",
+            started_at=datetime.now(timezone.utc),
+            tray_remain_start={(0, 0): 80},
+            spool_assignments={(0, 0): 77},
+        )
+
+        # Current remain = 70% → 10% delta → 100g
+        ams_data = [{"id": 0, "tray": [{"id": 0, "remain": 70}]}]
+        pm = _make_printer_manager(_make_printer_state(ams_data))
+
+        # db only returns spool (NO assignment query)
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
+            ]
+        )
+
+        results = await on_print_complete(
+            printer_id=1,
+            data={"status": "completed"},
+            printer_manager=pm,
+            db=db,
+            archive_id=None,
+        )
+
+        assert len(results) == 1
+        assert results[0]["spool_id"] == 77
+        assert results[0]["weight_used"] == 100.0
+
+    @pytest.mark.asyncio
+    async def test_ams_delta_falls_back_to_live_query_without_snapshot(self):
+        """AMS remain% fallback queries SpoolAssignment when snapshot is empty."""
+        spool = _make_spool(id=33, label_weight=1000)
+        assignment = _make_assignment(spool_id=33)
+
+        _active_sessions[1] = PrintSession(
+            printer_id=1,
+            print_name="Benchy",
+            started_at=datetime.now(timezone.utc),
+            tray_remain_start={(0, 0): 80},
+            spool_assignments={},  # Empty snapshot (pre-upgrade session)
+        )
+
+        ams_data = [{"id": 0, "tray": [{"id": 0, "remain": 70}]}]
+        pm = _make_printer_manager(_make_printer_state(ams_data))
+
+        # db returns assignment then spool
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                MagicMock(scalar_one_or_none=MagicMock(return_value=assignment)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
+            ]
+        )
+
+        results = await on_print_complete(
+            printer_id=1,
+            data={"status": "completed"},
+            printer_manager=pm,
+            db=db,
+            archive_id=None,
+        )
+
+        assert len(results) == 1
+        assert results[0]["spool_id"] == 33
+
+    @pytest.mark.asyncio
+    async def test_snapshot_survives_mid_print_unlink(self):
+        """Core bug scenario: snapshot provides spool_id after mid-print unlink.
+
+        Simulates the #459 scenario: spool runs empty mid-print, on_ams_change
+        deletes the SpoolAssignment, but the snapshot from print start still
+        has the spool_id so usage is correctly attributed at print completion.
+        """
+        spool = _make_spool(id=8, label_weight=1000, weight_used=50)
+        archive = MagicMock()
+        archive.file_path = "archives/big_print.3mf"
+
+        # Session was created at print start WITH snapshot
+        _active_sessions[1] = PrintSession(
+            printer_id=1,
+            print_name="Big Print",
+            started_at=datetime.now(timezone.utc),
+            tray_remain_start={(0, 0): 90},
+            spool_assignments={(0, 0): 8},  # Snapshot from print start
+        )
+
+        pm = _make_printer_manager(
+            _make_printer_state(
+                [{"id": 0, "tray": [{"id": 0, "remain": 75}]}],
+                tray_now=0,
+            )
+        )
+
+        filament_usage = [{"slot_id": 1, "used_g": 14.2, "type": "PLA", "color": "#FF0000"}]
+
+        # db: archive, queue_item(None), spool
+        # NOTE: No assignment in db — it was deleted by on_ams_change mid-print!
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                MagicMock(scalar_one_or_none=MagicMock(return_value=archive)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
+            ]
+        )
+
+        with (
+            patch("backend.app.core.config.settings") as mock_settings,
+            patch("backend.app.utils.threemf_tools.extract_filament_usage_from_3mf", return_value=filament_usage),
+        ):
+            mock_path = MagicMock()
+            mock_path.exists.return_value = True
+            mock_settings.base_dir.__truediv__ = MagicMock(return_value=mock_path)
+
+            results = await on_print_complete(
+                printer_id=1,
+                data={"status": "completed"},
+                printer_manager=pm,
+                db=db,
+                archive_id=100,
+            )
+
+        # Usage should be tracked despite assignment being deleted mid-print
+        assert len(results) >= 1
+        assert results[0]["spool_id"] == 8
+        assert results[0]["weight_used"] == 14.2
+        # Spool weight should be updated: 50 + 14.2 = 64.2
+        assert spool.weight_used == 64.2

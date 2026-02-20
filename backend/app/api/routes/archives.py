@@ -2389,7 +2389,8 @@ async def get_archive_plates(
                 for gf in gcode_files:
                     # "Metadata/plate_5.gcode" -> 5
                     try:
-                        plate_str = gf[15:-6]  # Remove "Metadata/plate_" and ".gcode"
+                        # Remove "Metadata/plate_" and ".gcode"
+                        plate_str = gf[15:-6]
                         plate_indices.append(int(plate_str))
                     except ValueError:
                         pass  # Skip gcode file with non-numeric plate index
@@ -2792,14 +2793,9 @@ async def reprint_archive(
         )
     ),
 ):
-    """Send an archived 3MF file to a printer and start printing."""
-    from backend.app.main import register_expected_print
+    """Dispatch an archived 3MF file for send/start on a printer."""
     from backend.app.models.printer import Printer
-    from backend.app.services.bambu_ftp import (
-        get_ftp_retry_settings,
-        upload_file_async,
-        with_ftp_retry,
-    )
+    from backend.app.services.background_dispatch import DispatchEnqueueRejected, background_dispatch
     from backend.app.services.printer_manager import printer_manager
 
     user, can_modify_all = auth_result
@@ -2829,139 +2825,54 @@ async def reprint_archive(
     if not printer_manager.is_connected(printer_id):
         raise HTTPException(400, "Printer is not connected")
 
-    # Get the sliced 3MF file path
     if not archive.file_path:
         raise HTTPException(
             404,
             "No 3MF file available for this archive. "
             "The file could not be downloaded from the printer when the print was recorded.",
         )
+
+    # Validate archive file exists
     file_path = settings.base_dir / archive.file_path
     if not file_path.is_file():
         raise HTTPException(404, "Archive file not found")
 
-    # Upload file to printer via FTP
-    from backend.app.services.bambu_ftp import delete_file_async
+    plate_name = body.plate_name
+    if not plate_name and body.plate_id is not None:
+        plate_name = f"Plate {body.plate_id}"
 
-    # Use a clean filename to avoid issues with double extensions like .gcode.3mf
-    # The printer might reject filenames with unusual extensions
-    base_name = archive.filename
-    if base_name.endswith(".gcode.3mf"):
-        base_name = base_name[:-10]  # Remove .gcode.3mf
-    elif base_name.endswith(".3mf"):
-        base_name = base_name[:-4]  # Remove .3mf
-    remote_filename = f"{base_name}.3mf"
-    remote_path = f"/{remote_filename}"
+    dispatch_source_name = archive.filename
+    if plate_name:
+        dispatch_source_name = f"{archive.filename} • {plate_name}"
 
-    # Get FTP retry settings
-    ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
+    try:
+        dispatch_result = await background_dispatch.dispatch_reprint_archive(
+            archive_id=archive_id,
+            archive_name=dispatch_source_name,
+            printer_id=printer_id,
+            printer_name=printer.name,
+            options=body.model_dump(exclude_none=True),
+            requested_by_user_id=user.id if user else None,
+            requested_by_username=user.username if user else None,
+        )
+    except DispatchEnqueueRejected as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
 
     logger.info(
-        f"Reprint FTP upload starting: printer={printer.name} ({printer.model}), "
-        f"ip={printer.ip_address}, file={remote_filename}, local_path={file_path}, "
-        f"retry_enabled={ftp_retry_enabled}, retry_count={ftp_retry_count}, timeout={ftp_timeout}"
-    )
-
-    # Delete existing file if present (avoids 553 error)
-    logger.debug("Deleting existing file %s if present...", remote_path)
-    delete_result = await delete_file_async(
-        printer.ip_address,
-        printer.access_code,
-        remote_path,
-        socket_timeout=ftp_timeout,
-        printer_model=printer.model,
-    )
-    logger.debug("Delete result: %s", delete_result)
-
-    if ftp_retry_enabled:
-        uploaded = await with_ftp_retry(
-            upload_file_async,
-            printer.ip_address,
-            printer.access_code,
-            file_path,
-            remote_path,
-            socket_timeout=ftp_timeout,
-            printer_model=printer.model,
-            max_retries=ftp_retry_count,
-            retry_delay=ftp_retry_delay,
-            operation_name=f"Upload for reprint to {printer.name}",
-        )
-    else:
-        uploaded = await upload_file_async(
-            printer.ip_address,
-            printer.access_code,
-            file_path,
-            remote_path,
-            socket_timeout=ftp_timeout,
-            printer_model=printer.model,
-        )
-
-    if not uploaded:
-        logger.error(
-            f"FTP upload failed for reprint: printer={printer.name}, model={printer.model}, "
-            f"ip={printer.ip_address}, file={remote_filename}. "
-            "Check logs above for storage diagnostics and specific error codes."
-        )
-        raise HTTPException(
-            500,
-            "Failed to upload file to printer. Check if SD card is inserted and properly formatted (FAT32/exFAT). "
-            "See server logs for detailed diagnostics.",
-        )
-
-    # Register this as an expected print so we don't create a duplicate archive
-    register_expected_print(printer_id, remote_filename, archive_id, ams_mapping=body.ams_mapping)
-
-    # Use plate_id from request if provided, otherwise auto-detect from 3MF file
-    if body.plate_id is not None:
-        plate_id = body.plate_id
-    else:
-        # Auto-detect plate ID from 3MF file (legacy behavior for single-plate files)
-        plate_id = 1
-        try:
-            with zipfile.ZipFile(file_path, "r") as zf:
-                for name in zf.namelist():
-                    if name.startswith("Metadata/plate_") and name.endswith(".gcode"):
-                        # Extract plate number from "Metadata/plate_X.gcode"
-                        plate_str = name[15:-6]  # Remove "Metadata/plate_" and ".gcode"
-                        plate_id = int(plate_str)
-                        break
-        except (ValueError, zipfile.BadZipFile, OSError):
-            pass  # Default to plate 1 if detection fails
-
-    logger.info(
-        f"Reprint archive {archive_id}: plate_id={plate_id}, "
-        f"ams_mapping={body.ams_mapping}, bed_levelling={body.bed_levelling}, "
-        f"flow_cali={body.flow_cali}, vibration_cali={body.vibration_cali}, "
-        f"layer_inspect={body.layer_inspect}, timelapse={body.timelapse}"
-    )
-
-    # Start the print with options
-    started = printer_manager.start_print(
+        "Dispatched reprint archive %s for printer %s (dispatch_job_id=%s, dispatch_position=%s)",
+        archive_id,
         printer_id,
-        remote_filename,
-        plate_id,
-        ams_mapping=body.ams_mapping,
-        timelapse=body.timelapse,
-        bed_levelling=body.bed_levelling,
-        flow_cali=body.flow_cali,
-        vibration_cali=body.vibration_cali,
-        layer_inspect=body.layer_inspect,
-        use_ams=body.use_ams,
+        dispatch_result["dispatch_job_id"],
+        dispatch_result["dispatch_position"],
     )
-
-    if not started:
-        raise HTTPException(500, "Failed to start print")
-
-    # Track who started this print (Issue #206)
-    if user:
-        printer_manager.set_current_print_user(printer_id, user.id, user.username)
-        logger.info("Reprint started by user: %s", user.username)
 
     return {
-        "status": "printing",
+        "status": "dispatched",
         "printer_id": printer_id,
         "archive_id": archive_id,
         "filename": archive.filename,
+        "dispatch_job_id": dispatch_result["dispatch_job_id"],
+        "dispatch_position": dispatch_result["dispatch_position"],
     }
 
 

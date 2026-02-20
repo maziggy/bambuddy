@@ -141,7 +141,7 @@ export function ColorSection({
   const filteredCatalogColors = useMemo(() => {
     if (!colorSearch) return matchedCatalogColors;
     return catalogSearchResults;
-  }, [catalogSearchResults, colorSearch]);
+  }, [catalogSearchResults, colorSearch, matchedCatalogColors]);
 
   // Fallback hardcoded colors for search/expand
   const filteredFallbackColors = useMemo(() => {

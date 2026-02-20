@@ -2552,6 +2552,7 @@ export default {
     brand: 'Marca',
     searchBrand: 'Pesquisar marca...',
     useCustomBrand: 'Usar "{{brand}}"',
+      useCustomMaterial: 'Usar material personalizado: {{material}}',
     colorName: 'Nome da Cor',
     colorNamePlaceholder: 'Jade White, Fire Red...',
     color: 'Cor',

@@ -233,7 +233,7 @@ export function FilamentSection({
                     setMaterialSearch('');
                   }}
                 >
-                  {t('inventory.useCustomBrand', { brand: materialSearch })}
+                  {t('inventory.useCustomMaterial', { material: materialSearch })}
                 </button>
               )}
             </div>

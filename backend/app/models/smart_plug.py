@@ -7,7 +7,7 @@ from backend.app.core.database import Base
 
 
 class SmartPlug(Base):
-    """Smart plug for printer power control (Tasmota, Home Assistant, or MQTT)."""
+    """Smart plug for printer power control (Tasmota, Home Assistant, MQTT, or REST API)."""
 
     __tablename__ = "smart_plugs"
 
@@ -15,7 +15,7 @@ class SmartPlug(Base):
     name: Mapped[str] = mapped_column(String(100))
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)  # IPv4/IPv6 (required for Tasmota)
 
-    # Plug type: "tasmota" (default), "homeassistant", or "mqtt"
+    # Plug type: "tasmota" (default), "homeassistant", "mqtt", or "rest"
     plug_type: Mapped[str] = mapped_column(String(20), default="tasmota")
     # Home Assistant entity ID (e.g., "switch.printer_plug")
     ha_entity_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -49,6 +49,15 @@ class SmartPlug(Base):
 
     # Legacy multiplier - kept for backward compatibility
     mqtt_multiplier: Mapped[float] = mapped_column(Float, default=1.0)  # Deprecated, use mqtt_power_multiplier
+
+    # REST API plug fields (required when plug_type="rest")
+    # User-defined URLs for each action; Bambuddy will call them via HTTP GET or POST
+    rest_on_url: Mapped[str | None] = mapped_column(String(500), nullable=True)      # URL to turn on
+    rest_off_url: Mapped[str | None] = mapped_column(String(500), nullable=True)     # URL to turn off
+    rest_toggle_url: Mapped[str | None] = mapped_column(String(500), nullable=True)  # URL to toggle (optional)
+    rest_status_url: Mapped[str | None] = mapped_column(String(500), nullable=True)  # URL to query status (optional)
+    rest_method: Mapped[str] = mapped_column(String(10), default="GET")              # HTTP method: "GET" or "POST"
+    rest_state_on_value: Mapped[str | None] = mapped_column(String(100), nullable=True)  # Substring in response that means ON
 
     # Link to printer (multiple plugs/scripts can be linked to one printer)
     printer_id: Mapped[int | None] = mapped_column(ForeignKey("printers.id", ondelete="SET NULL"), nullable=True)

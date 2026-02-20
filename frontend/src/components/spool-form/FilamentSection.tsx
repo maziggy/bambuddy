@@ -240,7 +240,6 @@ export function FilamentSection({
           )}
         </div>
       </div>
-
       {/* Brand (dropdown with search) */}
       <div>
         <label className="block text-sm font-medium text-bambu-gray mb-1">{t('inventory.brand')} *</label>

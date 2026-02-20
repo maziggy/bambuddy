@@ -172,6 +172,7 @@ export function AdditionalSection({
   formData,
   updateField,
   spoolCatalog,
+  currencySymbol,
 }: AdditionalSectionProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -264,6 +265,7 @@ export function AdditionalSection({
         <label className="block text-sm font-medium text-bambu-gray mb-1">{t('inventory.costPerKg', 'Cost per kg')}</label>
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-bambu-gray text-sm pointer-events-none">{currencySymbol}</span>
             <input
               type="number"
               value={formData.cost_per_kg ?? ''}
@@ -274,7 +276,8 @@ export function AdditionalSection({
                 const value = e.target.value === '' ? null : parseFloat(e.target.value);
                 updateField('cost_per_kg', value);
               }}
-              className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
+              style={{ paddingLeft: `${Math.max(2, currencySymbol.length * 0.6 + 1)}rem` }}
+              className="w-full py-2 pr-3 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
             />
           </div>
         </div>

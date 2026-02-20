@@ -2,6 +2,7 @@ import io
 import json
 import logging
 import zipfile
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
@@ -865,18 +866,26 @@ async def rescan_archive(
         )
         usage_cost = usage_result.scalar()
         if usage_cost is not None and usage_cost > 0:
-            archive.cost = round(usage_cost, 2)
+            archive.cost = float(Decimal(str(usage_cost)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
         else:
             primary_type = archive.filament_type.split(",")[0].strip()
             filament_result = await db.execute(select(Filament).where(Filament.type == primary_type).limit(1))
             filament = filament_result.scalar_one_or_none()
             if filament:
-                archive.cost = round((archive.filament_used_grams / 1000) * filament.cost_per_kg, 2)
+                archive.cost = float(
+                    Decimal(str((archive.filament_used_grams / 1000) * filament.cost_per_kg)).quantize(
+                        Decimal("0.01"), rounding=ROUND_HALF_UP
+                    )
+                )
             else:
                 # Use default filament cost from settings
                 default_cost_setting = await get_setting(db, "default_filament_cost")
                 default_cost_per_kg = float(default_cost_setting) if default_cost_setting else 25.0
-                archive.cost = round((archive.filament_used_grams / 1000) * default_cost_per_kg, 2)
+                archive.cost = float(
+                    Decimal(str((archive.filament_used_grams / 1000) * default_cost_per_kg)).quantize(
+                        Decimal("0.01"), rounding=ROUND_HALF_UP
+                    )
+                )
 
     await db.commit()
     await db.refresh(archive)

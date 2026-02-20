@@ -91,6 +91,7 @@ export interface ColorSectionProps extends SectionProps {
 // Additional section props
 export interface AdditionalSectionProps extends SectionProps {
   spoolCatalog: { id: number; name: string; weight: number }[];
+  currencySymbol: string;
 }
 
 // PA Profile section props

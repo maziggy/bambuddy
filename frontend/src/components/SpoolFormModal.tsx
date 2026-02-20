@@ -22,9 +22,10 @@ interface SpoolFormModalProps {
   onClose: () => void;
   spool?: InventorySpool | null;
   printersWithCalibrations?: PrinterWithCalibrations[];
+  currencySymbol: string;
 }
 
-export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibrations = [] }: SpoolFormModalProps) {
+export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibrations = [], currencySymbol }: SpoolFormModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -471,6 +472,7 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
                   formData={formData}
                   updateField={updateField}
                   spoolCatalog={spoolCatalog}
+                  currencySymbol={currencySymbol}
                 />
               </div>
 

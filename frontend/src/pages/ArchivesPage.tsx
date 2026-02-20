@@ -923,7 +923,7 @@ function ArchiveCard({
               {archive.filament_used_grams.toFixed(1)}g
             </div>
           )}
-          {archive.cost != null && archive.cost > 0 && (
+          {archive.cost != null && (
             <div className="flex items-center gap-1.5 text-bambu-gray">
               <Coins className="w-3 h-3" />
               {currency}{archive.cost.toFixed(2)}

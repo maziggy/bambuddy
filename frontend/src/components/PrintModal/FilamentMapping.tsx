@@ -46,9 +46,7 @@ export function FilamentMapping({
     const map = new Map<number, number | null>();
     for (const assignment of assignments || []) {
       const isExternal = assignment.ams_id === 255;
-      const globalTrayId = isExternal
-        ? 254 + assignment.tray_id
-        : getGlobalTrayId(assignment.ams_id, assignment.tray_id, false);
+      const globalTrayId = getGlobalTrayId(assignment.ams_id, assignment.tray_id, isExternal);
       map.set(globalTrayId, assignment.spool?.cost_per_kg ?? null);
     }
     return map;
@@ -216,9 +214,23 @@ export function FilamentMapping({
               )}
             </div>
           ))}
-          <div className="text-xs text-bambu-gray">
-            {t('printModal.totalCost')} <span className="text-white">{currencySymbol}{totalCost.toFixed(2)}</span>
-          </div>
+          {(() => {
+            // Check if any tray has a configured cost_per_kg
+            const hasAnyCost = Array.from(trayCostMap.values()).some((v) => v != null && v > 0);
+            if (totalCost > 0 || hasAnyCost) {
+              return (
+                <div className="text-xs text-bambu-gray">
+                  {t('printModal.totalCost')} <span className="text-white">{currencySymbol}{totalCost.toFixed(2)}</span>
+                </div>
+              );
+            } else {
+              return (
+                <div className="text-xs text-bambu-gray">
+                  {t('printModal.totalCost')} <span className="text-white">N/A</span>
+                </div>
+              );
+            }
+          })()}
           {hasTypeMismatch && (
             <p className="text-xs text-orange-400 mt-2">Required filament type not found in printer.</p>
           )}

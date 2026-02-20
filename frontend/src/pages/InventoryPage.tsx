@@ -1068,6 +1068,7 @@ export default function InventoryPage() {
           isOpen={true}
           onClose={() => setFormModal(null)}
           spool={formModal.spool}
+          currencySymbol={currencySymbol}
         />
       )}
 

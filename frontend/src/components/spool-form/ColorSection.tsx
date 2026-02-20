@@ -127,28 +127,26 @@ export function ColorSection({
 
   const catalogSearchResults = useMemo<CatalogDisplayColor[]>(() => {
     if (!colorSearch) return matchedCatalogColors;
-    if (catalogColors.length === 0) return [];
+    if (matchedCatalogColors.length === 0) return [];
     const q = colorSearch.toLowerCase();
-    const matches = catalogColors.filter(c =>
-      c.color_name.toLowerCase().includes(q) ||
-      c.manufacturer.toLowerCase().includes(q) ||
+    const matches = matchedCatalogColors.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      (c.manufacturer?.toLowerCase().includes(q) ?? false) ||
       (c.material?.toLowerCase().includes(q) ?? false),
     );
-    return matches.map(c => ({
-      name: c.color_name,
-      hex: c.hex_color.replace('#', '').substring(0, 6),
-      manufacturer: c.manufacturer,
-      material: c.material,
-    }));
-  }, [catalogColors, colorSearch, matchedCatalogColors]);
+    return matches;
+  }, [colorSearch, matchedCatalogColors]);
 
-  const showCatalogSection = colorSearch ? true : matchedCatalogColors.length > 0;
+  // Only show catalog section if searching AND (brand or material selected), or if there are matched catalog colors
+  const showCatalogSection = colorSearch
+    ? !!(formData.brand || formData.material)
+    : matchedCatalogColors.length > 0;
 
   // Search within matched catalog colors
   const filteredCatalogColors = useMemo(() => {
     if (!colorSearch) return matchedCatalogColors;
     return catalogSearchResults;
-  }, [catalogSearchResults, colorSearch, matchedCatalogColors]);
+  }, [catalogSearchResults, colorSearch]);
 
   // Fallback hardcoded colors for search/expand
   const filteredFallbackColors = useMemo(() => {

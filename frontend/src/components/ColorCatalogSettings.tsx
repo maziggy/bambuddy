@@ -407,7 +407,7 @@ export function ColorCatalogSettings() {
                 <button
                   onClick={handleAdd}
                   disabled={saving}
-                  className="w-24 ml-12 px-3 py-2 bg-bambu-green text-white rounded-lg hover:bg-bambu-green/80 flex items-center justify-center gap-1"
+                  className="w-24 px-3 py-2 bg-bambu-green text-white rounded-lg hover:bg-bambu-green/80 flex items-center justify-center gap-3"
                 >
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                   {t('common.add')}

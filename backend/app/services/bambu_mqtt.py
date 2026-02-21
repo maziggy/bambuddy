@@ -2058,7 +2058,8 @@ class BambuMQTTClient:
         # Parse developer LAN mode from "fun" field
         if "fun" in data:
             try:
-                fun_int = int(data["fun"], 16)
+                fun_val = data["fun"]
+                fun_int = fun_val if isinstance(fun_val, int) else int(fun_val, 16)
                 self.state.developer_mode = (fun_int & 0x20000000) == 0
             except (ValueError, TypeError):
                 pass

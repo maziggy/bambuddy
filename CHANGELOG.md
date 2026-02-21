@@ -2,7 +2,14 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
-## [0.2.1b2] - Unreleased
+## [0.2.1b3] - Unreleased
+
+### Fixed
+- **Developer Mode Detection Always Reports Null** — The MQTT `fun` field is an integer in the JSON payload, but the parser used `int(value, 16)` which requires a string argument. This raised `TypeError` on every message, silently caught by the exception handler, so `developer_mode` was never set. Now handles both integer and hex string formats.
+- **File Manager Rename Doesn't Update Displayed Name** ([#460](https://github.com/maziggy/bambuddy/issues/460)) — Renaming a file in the File Manager updated the `filename` field but not `file_metadata.print_name`, which the UI uses as the primary display name. Since `print_name` is extracted from inside the 3MF at upload time, it always took precedence over the renamed `filename`. The rename endpoint now also updates `print_name` in the file metadata when present.
+- **Finish Photo Not Captured When Archive Has No Source 3MF** ([#484](https://github.com/maziggy/bambuddy/issues/484)) — When a print completed but the 3MF source file wasn't downloaded from the printer (e.g. FTP download failure), the archive's `file_path` was null. The finish photo capture silently skipped because it derived the save directory from `file_path`. Now falls back to `archive/{id}/` so the photo is captured regardless.
+
+## [0.2.1b2] - 2026-02-21
 
 ### Fixed
 - **Wrong AMS Unit Displayed With Dual AMS on P2S** ([#420](https://github.com/maziggy/bambuddy/issues/420)) — On P2S printers with two AMS units, the UI highlighted the wrong AMS when printing from the second unit (e.g., printing from AMS-B slot 2 but AMS-A slot 2 was shown as active). The P2S firmware sends local slot IDs (0-3) in `tray_now`, not global tray IDs — contrary to the previous assumption that all single-nozzle printers report global IDs. Filament usage tracking was unaffected because it uses the MQTT `mapping` field (snow-encoded with correct AMS hardware IDs). The display now cross-references `tray_now` with the MQTT mapping field to resolve the correct AMS unit when multiple AMS units are detected via `ams_exist_bits`. Falls back to the raw value when no mapping is available (e.g., manual filament load outside of a print) or when the mapping is ambiguous.

@@ -420,6 +420,11 @@ export default {
       clickToEdit: '{{label}} - Click to edit',
       clickToAddLabel: 'Click to add label',
     },
+    // Automation
+    plateAutomation: {
+      enabledClick: 'Automation enabled - Click to disable',
+      disabledClick: 'Automation disabled - Click to enable',
+    },
     // Fans
     fans: {
       partCooling: 'Part Cooling Fan',

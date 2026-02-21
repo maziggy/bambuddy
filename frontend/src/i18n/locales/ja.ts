@@ -386,6 +386,11 @@ export default {
       clickToEdit: '{{label}} - クリックして編集',
       clickToAddLabel: 'クリックしてラベルを追加',
     },
+    // Automation
+    plateAutomation: {
+      enabledClick: '自動化が有効 - 無効にするにはクリック',
+      disabledClick: '自動化が無効 - 有効にするにはクリック',
+    },
     fans: {
       partCooling: 'パーツ冷却ファン',
       auxiliary: '補助ファン',

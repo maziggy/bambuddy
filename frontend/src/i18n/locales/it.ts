@@ -411,6 +411,11 @@ export default {
       clickToEdit: '{{label}} - Clicca per modificare',
       clickToAddLabel: 'Clicca per aggiungere etichetta',
     },
+    // Automation
+    plateAutomation: {
+      enabledClick: 'Automazione attivata - Clicca per disattivare',
+      disabledClick: 'Automazione disattivata - Clicca per attivare',
+    },
     // Fans
     fans: {
       partCooling: 'Ventola raffreddamento parte',

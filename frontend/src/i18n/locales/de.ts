@@ -420,6 +420,11 @@ export default {
       clickToEdit: '{{label}} - Zum Bearbeiten klicken',
       clickToAddLabel: 'Zum Hinzufügen einer Bezeichnung klicken',
     },
+    // Automation
+    plateAutomation: {
+      enabledClick: 'Automatisierung aktiviert - Klicken zum Deaktivieren',
+      disabledClick: 'Automatisierung deaktiviert - Klicken zum Aktivieren',
+    },
     // Fans
     fans: {
       partCooling: 'Bauteilkühlung',

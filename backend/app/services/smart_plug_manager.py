@@ -231,6 +231,12 @@ class SmartPlugManager:
                 plug.ha_entity_id,
                 plug.username,
                 plug.password,
+                plug.rest_on_url,
+                plug.rest_off_url,
+                plug.rest_toggle_url,
+                plug.rest_status_url,
+                plug.rest_method,
+                plug.rest_state_on_value,
                 printer_id,
                 delay_seconds,
             )
@@ -245,6 +251,12 @@ class SmartPlugManager:
         ha_entity_id: str | None,
         username: str | None,
         password: str | None,
+        rest_on_url: str | None,
+        rest_off_url: str | None,
+        rest_toggle_url: str | None,
+        rest_status_url: str | None,
+        rest_method: str,
+        rest_state_on_value: str | None,
         printer_id: int,
         delay_seconds: int,
     ):
@@ -260,6 +272,12 @@ class SmartPlugManager:
                     self.ha_entity_id = ha_entity_id
                     self.username = username
                     self.password = password
+                    self.rest_on_url = rest_on_url
+                    self.rest_off_url = rest_off_url
+                    self.rest_toggle_url = rest_toggle_url
+                    self.rest_status_url = rest_status_url
+                    self.rest_method = rest_method
+                    self.rest_state_on_value = rest_state_on_value
                     self.name = f"plug_{plug_id}"
 
             plug_info = PlugInfo()
@@ -296,6 +314,12 @@ class SmartPlugManager:
                 plug.ha_entity_id,
                 plug.username,
                 plug.password,
+                plug.rest_on_url,
+                plug.rest_off_url,
+                plug.rest_toggle_url,
+                plug.rest_status_url,
+                plug.rest_method,
+                plug.rest_state_on_value,
                 printer_id,
                 temp_threshold,
             )
@@ -310,6 +334,12 @@ class SmartPlugManager:
         ha_entity_id: str | None,
         username: str | None,
         password: str | None,
+        rest_on_url: str | None,
+        rest_off_url: str | None,
+        rest_toggle_url: str | None,
+        rest_status_url: str | None,
+        rest_method: str,
+        rest_state_on_value: str | None,
         printer_id: int,
         temp_threshold: int,
     ):
@@ -354,6 +384,12 @@ class SmartPlugManager:
                                 self.ha_entity_id = ha_entity_id
                                 self.username = username
                                 self.password = password
+                                self.rest_on_url = rest_on_url
+                                self.rest_off_url = rest_off_url
+                                self.rest_toggle_url = rest_toggle_url
+                                self.rest_status_url = rest_status_url
+                                self.rest_method = rest_method
+                                self.rest_state_on_value = rest_state_on_value
                                 self.name = f"plug_{plug_id}"
 
                         plug_info = PlugInfo()

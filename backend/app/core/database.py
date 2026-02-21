@@ -1216,6 +1216,32 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already applied
 
+    # Migration: Add REST API plug columns to smart_plugs
+    try:
+        await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN rest_on_url VARCHAR(500)"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN rest_off_url VARCHAR(500)"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN rest_toggle_url VARCHAR(500)"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN rest_status_url VARCHAR(500)"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN rest_method VARCHAR(10) DEFAULT 'GET'"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN rest_state_on_value VARCHAR(100)"))
+    except OperationalError:
+        pass  # Already applied
+
 
 async def seed_notification_templates():
     """Seed default notification templates if they don't exist."""

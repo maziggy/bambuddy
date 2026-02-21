@@ -16,7 +16,7 @@ services:
       - NET_BIND_SERVICE
     #
     # LINUX: Use host mode for printer discovery and camera streaming
-    # network_mode: host
+    #network_mode: host
     #
     # macOS/WINDOWS: Docker Desktop doesn't support host mode.
     # Comment out "network_mode: host" above and uncomment "ports:" below.
@@ -34,7 +34,7 @@ services:
       #
       # Share virtual printer certs with native installation
       # This ensures the slicer only needs to trust one CA certificate.
-      - ./virtual_printer:/app/data/virtual_printer
+      # - ./virtual_printer:/app/data/virtual_printer
     environment:
       - TZ=${TZ:-Europe/Berlin}
       # Port BamBuddy runs on (default: 8000)

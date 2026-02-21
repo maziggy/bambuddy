@@ -754,6 +754,8 @@ class TestAttachTimelapseBackgroundConversion:
         mock_create_task.assert_called_once()
         # Verify task name includes archive ID
         assert "timelapse-convert-1" in mock_create_task.call_args[1]["name"]
+        # Close the unawaited coroutine to prevent GC warning
+        mock_create_task.call_args[0][0].close()
 
 
 class TestDeleteTimelapse:

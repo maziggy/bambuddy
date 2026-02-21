@@ -155,6 +155,8 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Built-in spool inventory with AMS slot assignment, usage tracking, and remaining weight management
 - Automatic filament consumption tracking: 3MF slicer estimates for all spools (primary), AMS remain% delta as fallback
 - Per-layer gcode accuracy for partial prints (failed/cancelled), with linear scaling fallback
+- **Per-spool cost tracking** — Set cost/kg on each spool; costs are automatically calculated at print completion and aggregated to archives. Print modal shows real-time cost preview. Configurable default cost and currency in Settings.
+- **Bulk spool addition** — Add multiple identical spools at once (quantity 1–100) with a single form submission. Quick Add mode for stock spools that only need material, color, and weight.
 - Spool catalog, color catalog, PA profile matching, and low-stock alerts
 
 ### 🔧 Integrations

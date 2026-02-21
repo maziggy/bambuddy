@@ -29,6 +29,10 @@ class Spool(Base):
     nozzle_temp_max: Mapped[int | None] = mapped_column()  # Override max temp
     note: Mapped[str | None] = mapped_column(String(500))
     added_full: Mapped[bool | None] = mapped_column()  # Whether spool was added as full (unused)
+
+    # Cost tracking
+    cost_per_kg: Mapped[float | None] = mapped_column(Float)  # Cost per kilogram
+
     last_used: Mapped[datetime | None] = mapped_column(DateTime)  # Last time this spool was used in a print
     encode_time: Mapped[datetime | None] = mapped_column(DateTime)  # When spool was encoded/written to tag
     tag_uid: Mapped[str | None] = mapped_column(String(16))  # RFID tag UID (16 hex chars)

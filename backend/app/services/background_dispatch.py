@@ -664,6 +664,12 @@ class BackgroundDispatchService:
                 )
 
                 if not started:
+                    await self._cleanup_sd_card_file(
+                        printer_ip,
+                        printer_access_code,
+                        remote_path,
+                        printer_model,
+                    )
                     raise RuntimeError("Failed to start print")
 
                 if job.requested_by_user_id and job.requested_by_username:
@@ -821,6 +827,12 @@ class BackgroundDispatchService:
                 )
 
                 if not started:
+                    await self._cleanup_sd_card_file(
+                        printer_ip,
+                        printer_access_code,
+                        remote_path,
+                        printer_model,
+                    )
                     await db.rollback()
                     raise RuntimeError("Failed to start print")
 
@@ -829,6 +841,19 @@ class BackgroundDispatchService:
                 await db.rollback()
                 await self._set_active_message(job, f"Cancelled upload on {printer_name}.")
                 raise
+
+    @staticmethod
+    async def _cleanup_sd_card_file(
+        printer_ip: str,
+        access_code: str,
+        remote_path: str,
+        printer_model: str | None,
+    ):
+        """Best-effort delete of uploaded file from printer SD card."""
+        try:
+            await delete_file_async(printer_ip, access_code, remote_path, printer_model=printer_model)
+        except Exception:
+            pass  # Best-effort — don't fail the error handler
 
     @staticmethod
     def _resolve_plate_id(file_path: Path, requested_plate_id: int | None) -> int:

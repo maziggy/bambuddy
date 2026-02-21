@@ -93,6 +93,7 @@ describe('SpoolFormModal weightTouched', () => {
         isOpen={true}
         onClose={vi.fn()}
         spool={existingSpool}
+        currencySymbol="$"
       />
     );
 
@@ -124,6 +125,7 @@ describe('SpoolFormModal weightTouched', () => {
         isOpen={true}
         onClose={vi.fn()}
         spool={existingSpool}
+        currencySymbol="$"
       />
     );
 
@@ -138,6 +140,8 @@ describe('SpoolFormModal weightTouched', () => {
 
     // Change the remaining weight from 700 to 500 (weight_used becomes 1000 - 500 = 500)
     fireEvent.change(remainingInput, { target: { value: '500' } });
+    // Blur triggers updateField('weight_used', ...) which sets weightTouched
+    fireEvent.blur(remainingInput);
 
     // Click Save
     const saveButton = screen.getByRole('button', { name: /save/i });
@@ -158,6 +162,7 @@ describe('SpoolFormModal weightTouched', () => {
       <SpoolFormModal
         isOpen={true}
         onClose={vi.fn()}
+        currencySymbol="$"
       />
     );
 
@@ -196,6 +201,7 @@ describe('SpoolFormModal weightTouched', () => {
         isOpen={true}
         onClose={vi.fn()}
         spool={spoolWithCatalogId}
+        currencySymbol="$"
       />
     );
 
@@ -237,6 +243,7 @@ describe('SpoolFormModal weightTouched', () => {
       <SpoolFormModal
         isOpen={true}
         onClose={vi.fn()}
+        currencySymbol="$"
       />
     );
 
@@ -277,6 +284,70 @@ describe('SpoolFormModal weightTouched', () => {
     expect(payload).toHaveProperty('core_weight_catalog_id', 2); // ID of "Bambu Lab 250g"
   });
 
+  it('preserves cost_per_kg when editing spool', async () => {
+    const spoolWithCost: InventorySpool = {
+      ...existingSpool,
+      cost_per_kg: 25.50,
+    };
+
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={spoolWithCost}
+        currencySymbol="$"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Spool')).toBeInTheDocument();
+    });
+
+    // Click Save without changing cost
+    const saveButton = screen.getByRole('button', { name: /save/i });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(api.updateSpool).toHaveBeenCalledTimes(1);
+    });
+
+    const [spoolId, payload] = vi.mocked(api.updateSpool).mock.calls[0];
+    expect(spoolId).toBe(1);
+    // cost_per_kg should be preserved in the update payload
+    expect(payload).toHaveProperty('cost_per_kg', 25.50);
+  });
+
+  it('sends null cost_per_kg when spool has no cost', async () => {
+    const spoolWithoutCost: InventorySpool = {
+      ...existingSpool,
+      cost_per_kg: null,
+    };
+
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={spoolWithoutCost}
+        currencySymbol="$"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Spool')).toBeInTheDocument();
+    });
+
+    const saveButton = screen.getByRole('button', { name: /save/i });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(api.updateSpool).toHaveBeenCalledTimes(1);
+    });
+
+    const [, payload] = vi.mocked(api.updateSpool).mock.calls[0];
+    // cost_per_kg should be null when not set
+    expect(payload).toHaveProperty('cost_per_kg', null);
+  });
+
   it('displays correct catalog name when duplicates exist', async () => {
     const spoolWithCatalogId: InventorySpool = {
       ...existingSpool,
@@ -297,6 +368,7 @@ describe('SpoolFormModal weightTouched', () => {
         isOpen={true}
         onClose={vi.fn()}
         spool={spoolWithCatalogId}
+        currencySymbol="$"
       />
     );
 

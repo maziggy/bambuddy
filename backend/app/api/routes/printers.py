@@ -91,6 +91,29 @@ async def list_usb_cameras(
     return {"cameras": cameras}
 
 
+@router.get("/developer-mode-warnings")
+async def get_developer_mode_warnings(
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    db: AsyncSession = Depends(get_db),
+):
+    """Check if any connected printer lacks developer LAN mode."""
+    result = await db.execute(select(Printer).where(Printer.is_active == True))  # noqa: E712
+    printers = result.scalars().all()
+    statuses = printer_manager.get_all_statuses()
+
+    warnings = []
+    for printer in printers:
+        state = statuses.get(printer.id)
+        if state and state.connected and state.developer_mode is False:
+            warnings.append(
+                {
+                    "printer_id": printer.id,
+                    "name": printer.name,
+                }
+            )
+    return warnings
+
+
 @router.get("/{printer_id}", response_model=PrinterResponse)
 async def get_printer(
     printer_id: int,
@@ -467,6 +490,7 @@ async def get_printer_status(
         big_fan2_speed=state.big_fan2_speed,
         heatbreak_fan_speed=state.heatbreak_fan_speed,
         firmware_version=state.firmware_version,
+        developer_mode=state.developer_mode if state else None,
         plate_cleared=printer_manager.is_plate_cleared(printer_id),
     )
 
@@ -1643,13 +1667,12 @@ async def configure_ams_slot(
         raise HTTPException(status_code=400, detail="Printer not connected")
 
     # Resolve tray_info_idx for the MQTT command.
-    # PFUS* IDs are user-local preset IDs that only the originating slicer
-    # recognises.  When Bambuddy sends them, BambuStudio sees an unknown
-    # filament and actively resets the slot to empty.
     # Priority:
-    #   1. If the slot already has a recognised preset (GF*/P*) for the same
-    #      material, reuse it — preserves slicer's K-profile association.
-    #   2. Replace PFUS* / empty with a generic Bambu filament ID.
+    #   1. Use the provided tray_info_idx if set (including cloud-synced
+    #      custom presets like PFUS* / P*).
+    #   2. Reuse the slot's existing tray_info_idx if it's a specific
+    #      (non-generic) preset for the same material.
+    #   3. Fall back to a generic Bambu filament ID.
     _GENERIC_FILAMENT_IDS = {
         "PLA": "GFL99",
         "PETG": "GFG99",
@@ -1666,10 +1689,11 @@ async def configure_ams_slot(
         "PA-CF": "GFN98",
         "PETG HF": "GFG96",
     }
+    _GENERIC_ID_VALUES = set(_GENERIC_FILAMENT_IDS.values())
     effective_tray_info_idx = tray_info_idx
 
-    if not tray_info_idx or tray_info_idx.startswith("PFUS"):
-        # Check if the slot already has a recognised preset for same material
+    if not tray_info_idx:
+        # No preset provided — try slot reuse or generic fallback
         current_tray_info_idx = ""
         current_tray_type = ""
         state = printer_manager.get_status(printer_id)
@@ -1700,7 +1724,7 @@ async def configure_ams_slot(
 
         if (
             current_tray_info_idx
-            and not current_tray_info_idx.startswith("PFUS")
+            and current_tray_info_idx not in _GENERIC_ID_VALUES
             and current_tray_type
             and current_tray_type.upper() == tray_type.upper()
         ):
@@ -1718,10 +1742,7 @@ async def configure_ams_slot(
                 or ""
             )
             if generic:
-                if tray_info_idx:
-                    logger.info("[configure_ams_slot] Replacing user-local %r with generic %r", tray_info_idx, generic)
-                else:
-                    logger.info("[configure_ams_slot] Deriving tray_info_idx=%r from tray_type=%r", generic, tray_type)
+                logger.info("[configure_ams_slot] Falling back to generic %r for material %r", generic, tray_type)
                 effective_tray_info_idx = generic
 
     # Send filament setting + K-profile commands

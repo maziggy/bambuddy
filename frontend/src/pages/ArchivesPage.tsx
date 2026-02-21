@@ -48,10 +48,12 @@ import {
   User,
   Play,
   ClipboardList,
+  Coins,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { openInSlicer, type SlicerType } from '../utils/slicer';
 import { formatDateTime, formatDateOnly, parseUTCDate, type TimeFormat, formatDuration } from '../utils/date';
+import { getCurrencySymbol } from '../utils/currency';
 import { useIsMobile } from '../hooks/useIsMobile';
 import type { Archive, ProjectListItem } from '../api/client';
 import { Card, CardContent } from '../components/Card';
@@ -140,6 +142,7 @@ function ArchiveCard({
   isHighlighted,
   timeFormat = 'system',
   preferredSlicer = 'bambu_studio',
+  currency,
   t,
 }: {
   archive: Archive;
@@ -151,6 +154,7 @@ function ArchiveCard({
   isHighlighted?: boolean;
   timeFormat?: TimeFormat;
   preferredSlicer?: SlicerType;
+  currency: string;
   t: TFunction;
 }) {
   // Debug: log when card is highlighted
@@ -917,6 +921,12 @@ function ArchiveCard({
             <div className="flex items-center gap-1.5 text-bambu-gray">
               <Package className="w-3 h-3" />
               {archive.filament_used_grams.toFixed(1)}g
+            </div>
+          )}
+          {archive.cost != null && (
+            <div className="flex items-center gap-1.5 text-bambu-gray">
+              <Coins className="w-3 h-3" />
+              {currency}{archive.cost.toFixed(2)}
             </div>
           )}
           {(archive.layer_height || archive.total_layers) && (
@@ -2383,6 +2393,7 @@ export function ArchivesPage() {
 
   const timeFormat: TimeFormat = settings?.time_format || 'system';
   const preferredSlicer: SlicerType = settings?.preferred_slicer || 'bambu_studio';
+  const currency = getCurrencySymbol(settings?.currency || 'USD');
 
   const bulkDeleteMutation = useMutation({
     mutationFn: async (ids: number[]) => {
@@ -3195,6 +3206,7 @@ export function ArchivesPage() {
               isHighlighted={archive.id === highlightedArchiveId}
               timeFormat={timeFormat}
               preferredSlicer={preferredSlicer}
+              currency={currency}
               t={t}
             />
           ))}

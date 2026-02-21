@@ -172,11 +172,14 @@ export function AdditionalSection({
   formData,
   updateField,
   spoolCatalog,
+  currencySymbol,
 }: AdditionalSectionProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const [measuredInput, setMeasuredInput] = useState('');
   const [isMeasuredFocused, setIsMeasuredFocused] = useState(false);
+  const [remainingInput, setRemainingInput] = useState('');
+  const [isRemainingFocused, setIsRemainingFocused] = useState(false);
 
   const remainingWeight = Math.max(0, formData.label_weight - formData.weight_used);
   const measuredDefault = formData.core_weight + remainingWeight;
@@ -186,6 +189,12 @@ export function AdditionalSection({
       setMeasuredInput(String(measuredDefault));
     }
   }, [isMeasuredFocused, measuredDefault]);
+
+  useEffect(() => {
+    if (!isRemainingFocused) {
+      setRemainingInput(String(remainingWeight));
+    }
+  }, [isRemainingFocused, remainingWeight]);
 
   return (
     <div className="space-y-4">
@@ -205,12 +214,24 @@ export function AdditionalSection({
           <div className="relative flex-1">
             <input
               type="number"
-              value={remainingWeight}
+              value={remainingInput}
               min={0}
               max={formData.label_weight}
+              onFocus={() => setIsRemainingFocused(true)}
               onChange={(e) => {
-                const remaining = parseInt(e.target.value) || 0;
-                updateField('weight_used', Math.max(0, formData.label_weight - remaining));
+                setRemainingInput(e.target.value);
+              }}
+              onBlur={() => {
+                setIsRemainingFocused(false);
+                const raw = remainingInput.trim();
+                const remaining = Number(raw);
+                if (!raw || !Number.isFinite(remaining) || remaining < 0 || remaining > formData.label_weight) {
+                  setRemainingInput(String(remainingWeight));
+                  return;
+                }
+                const rounded = Math.round(remaining);
+                updateField('weight_used', Math.max(0, formData.label_weight - rounded));
+                setRemainingInput(String(rounded));
               }}
               className="w-full px-3 py-2 pr-7 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
             />
@@ -256,6 +277,29 @@ export function AdditionalSection({
             <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-bambu-gray">g</span>
           </div>
           <span className="text-xs text-bambu-gray shrink-0">/ {formData.core_weight + formData.label_weight}g</span>
+        </div>
+      </div>
+
+      {/* Cost per kg */}
+      <div>
+        <label className="block text-sm font-medium text-bambu-gray mb-1">{t('inventory.costPerKg', 'Cost per kg')}</label>
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-bambu-gray text-sm pointer-events-none">{currencySymbol}</span>
+            <input
+              type="number"
+              value={formData.cost_per_kg ?? ''}
+              min={0}
+              step={0.01}
+              placeholder="0.00"
+              onChange={(e) => {
+                const value = e.target.value === '' ? null : parseFloat(e.target.value);
+                updateField('cost_per_kg', value);
+              }}
+              style={{ paddingLeft: `${Math.max(2, currencySymbol.length * 0.6 + 1)}rem` }}
+              className="w-full py-2 pr-3 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
+            />
+          </div>
         </div>
       </div>
 

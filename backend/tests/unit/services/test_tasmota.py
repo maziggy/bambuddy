@@ -38,10 +38,11 @@ class TestTasmotaService:
         url = service._build_url("192.168.1.100", "Power On")
         assert url == "http://192.168.1.100/cm?cmnd=Power%20On"
 
-    def test_build_url_with_auth(self, service):
-        """Verify URL includes credentials when provided."""
-        url = service._build_url("192.168.1.100", "Power On", username="admin", password="secret")
-        assert url == "http://admin:secret@192.168.1.100/cm?cmnd=Power%20On"
+    def test_build_url_never_includes_credentials(self, service):
+        """Verify URL never contains credentials (they go via httpx auth param)."""
+        url = service._build_url("192.168.1.100", "Power On")
+        assert url == "http://192.168.1.100/cm?cmnd=Power%20On"
+        assert "@" not in url
 
     def test_build_url_encodes_special_characters(self, service):
         """Verify special characters in commands are encoded."""

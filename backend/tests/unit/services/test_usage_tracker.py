@@ -27,6 +27,8 @@ def _make_spool(*, id=1, label_weight=1000, weight_used=0, tag_uid=None, tray_uu
     spool.tag_uid = tag_uid
     spool.tray_uuid = tray_uuid
     spool.last_used = None
+    spool.cost_per_kg = None
+    spool.material = "PLA"
     return spool
 
 
@@ -111,6 +113,15 @@ class TestOnPrintCompleteAMSDelta:
         _active_sessions.clear()
         yield
         _active_sessions.clear()
+
+    @pytest.fixture(autouse=True)
+    def _mock_get_setting(self):
+        with patch(
+            "backend.app.api.routes.settings.get_setting",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            yield
 
     @pytest.mark.asyncio
     async def test_computes_delta_and_updates_spool(self):
@@ -414,6 +425,15 @@ class TestSpoolAssignmentSnapshot:
         yield
         _active_sessions.clear()
 
+    @pytest.fixture(autouse=True)
+    def _mock_get_setting(self):
+        with patch(
+            "backend.app.api.routes.settings.get_setting",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            yield
+
     @pytest.mark.asyncio
     async def test_on_print_start_snapshots_assignments_with_db(self):
         """on_print_start captures spool assignments when db is provided."""
@@ -637,7 +657,7 @@ class TestSpoolAssignmentSnapshot:
 
         filament_usage = [{"slot_id": 1, "used_g": 14.2, "type": "PLA", "color": "#FF0000"}]
 
-        # db: archive, queue_item(None), spool
+        # db: archive, queue_item(None), spool, then cost aggregation queries
         # NOTE: No assignment in db — it was deleted by on_ams_change mid-print!
         db = AsyncMock()
         db.execute = AsyncMock(
@@ -645,6 +665,9 @@ class TestSpoolAssignmentSnapshot:
                 MagicMock(scalar_one_or_none=MagicMock(return_value=archive)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
+                # Cost aggregation: sum query (uses .scalar()), archive lookup
+                MagicMock(scalar=MagicMock(return_value=0)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
             ]
         )
 

@@ -76,6 +76,9 @@ async def test_engine():
         project,
         settings,
         smart_plug,
+        spool,
+        spool_assignment,
+        spool_usage_history,
         user,
     )
 

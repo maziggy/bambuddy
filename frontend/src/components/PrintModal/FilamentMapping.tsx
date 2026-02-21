@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Circle, Check, AlertTriangle, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../../api/client';
 import { useFilamentMapping } from '../../hooks/useFilamentMapping';
+import { getGlobalTrayId } from '../../utils/amsHelpers';
 import { getColorName } from '../../utils/colors';
 import type { FilamentMappingProps } from './types';
 
@@ -16,6 +17,8 @@ export function FilamentMapping({
   filamentReqs,
   manualMappings,
   onManualMappingChange,
+  currencySymbol,
+  defaultCostPerKg,
   defaultExpanded = false,
 }: FilamentMappingProps & { defaultExpanded?: boolean }) {
   const { t } = useTranslation();
@@ -30,9 +33,43 @@ export function FilamentMapping({
     enabled: !!printerId,
   });
 
+  const { data: assignments } = useQuery({
+    queryKey: ['spool-assignments', printerId],
+    queryFn: () => api.getAssignments(printerId),
+    enabled: !!printerId,
+  });
+
   const { loadedFilaments, filamentComparison, hasTypeMismatch, hasColorMismatch } =
     useFilamentMapping(filamentReqs, printerStatus, manualMappings);
 
+  const trayCostMap = useMemo(() => {
+    const map = new Map<number, number | null>();
+    for (const assignment of assignments || []) {
+      const isExternal = assignment.ams_id === 255;
+      const globalTrayId = getGlobalTrayId(assignment.ams_id, assignment.tray_id, isExternal);
+      map.set(globalTrayId, assignment.spool?.cost_per_kg ?? null);
+    }
+    return map;
+  }, [assignments]);
+
+  const totalCost = useMemo(() => {
+    let total = 0;
+    for (const item of filamentComparison) {
+      const trayId = item.loaded?.globalTrayId;
+      if (trayId == null) continue;
+      const assignedCost = trayCostMap.get(trayId) ?? null;
+      const costPerKg = assignedCost ?? defaultCostPerKg;
+      if (costPerKg > 0) {
+        total += (item.used_grams / 1000) * costPerKg;
+      }
+    }
+    return total;
+  }, [filamentComparison, trayCostMap, defaultCostPerKg]);
+
+  const hasAnyCost = useMemo(
+    () => Array.from(trayCostMap.values()).some((v) => v != null && v > 0),
+    [trayCostMap]
+  );
   const hasFilamentReqs = filamentReqs?.filaments && filamentReqs.filaments.length > 0;
   const isDualNozzle = filamentReqs?.filaments?.some((f) => f.nozzle_id != null) ?? false;
 
@@ -90,7 +127,7 @@ export function FilamentMapping({
         className="flex items-center gap-2 text-sm text-bambu-gray hover:text-white transition-colors w-full"
       >
         <Circle className="w-4 h-4" fill={statusColor} stroke="none" />
-        <span>Filament Mapping</span>
+        <span>{t('printModal.filamentMapping')}</span>
         {hasTypeMismatch ? (
           <span className="text-xs text-orange-400">(Type not found)</span>
         ) : hasColorMismatch ? (
@@ -181,6 +218,12 @@ export function FilamentMapping({
               )}
             </div>
           ))}
+          <div className="text-xs text-bambu-gray">
+            {t('printModal.totalCost')}{' '}
+            <span className="text-white">
+              {totalCost > 0 || hasAnyCost ? `${currencySymbol}${totalCost.toFixed(2)}` : 'N/A'}
+            </span>
+          </div>
           {hasTypeMismatch && (
             <p className="text-xs text-orange-400 mt-2">Required filament type not found in printer.</p>
           )}

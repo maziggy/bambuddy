@@ -1,7 +1,8 @@
 """Integration tests for inventory spool assignment — tray_info_idx resolution.
 
-Tests that PFUS* user-local preset IDs are replaced with generic Bambu IDs,
-and that existing recognised presets on slots are reused when the material matches.
+Tests that the spool's own slicer_filament (including PFUS* cloud-synced
+custom presets) takes priority, with slot reuse and generic fallback as
+lower-priority fallbacks.
 """
 
 from unittest.mock import MagicMock, patch
@@ -59,8 +60,8 @@ class TestAssignSpoolTrayInfoIdx:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_pfus_replaced_with_generic(self, async_client: AsyncClient, printer_factory, spool_factory):
-        """PFUS* user-local IDs are replaced with generic Bambu IDs."""
+    async def test_pfus_slicer_filament_used_directly(self, async_client: AsyncClient, printer_factory, spool_factory):
+        """PFUS* cloud-synced custom preset IDs are sent to the printer."""
         printer = await printer_factory(name="H2D")
         spool = await spool_factory(slicer_filament="PFUS9ac902733670a9", material="PLA")
 
@@ -81,12 +82,14 @@ class TestAssignSpoolTrayInfoIdx:
 
             assert response.status_code == 200
             call_kwargs = mock_client.ams_set_filament_setting.call_args
-            assert call_kwargs.kwargs["tray_info_idx"] == "GFL99"
+            assert call_kwargs.kwargs["tray_info_idx"] == "PFUS9ac902733670a9"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_reuses_existing_recognised_preset(self, async_client: AsyncClient, printer_factory, spool_factory):
-        """When slot already has a recognised preset for same material, reuse it."""
+    async def test_spool_preset_takes_priority_over_slot(
+        self, async_client: AsyncClient, printer_factory, spool_factory
+    ):
+        """Spool's own slicer_filament takes priority over slot's existing preset."""
         printer = await printer_factory(name="H2D")
         spool = await spool_factory(slicer_filament="PFUS9ac902733670a9", material="PLA")
 
@@ -110,13 +113,15 @@ class TestAssignSpoolTrayInfoIdx:
 
             assert response.status_code == 200
             call_kwargs = mock_client.ams_set_filament_setting.call_args
-            # Should reuse the slicer's cloud-synced ID
-            assert call_kwargs.kwargs["tray_info_idx"] == "P4d64437"
+            # Spool's own preset wins over slot's existing one
+            assert call_kwargs.kwargs["tray_info_idx"] == "PFUS9ac902733670a9"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_different_material_uses_generic(self, async_client: AsyncClient, printer_factory, spool_factory):
-        """When slot has a preset for a DIFFERENT material, use generic ID."""
+    async def test_spool_preset_used_even_if_different_material_on_slot(
+        self, async_client: AsyncClient, printer_factory, spool_factory
+    ):
+        """Spool's own slicer_filament is used regardless of what's on the slot."""
         printer = await printer_factory(name="H2D")
         spool = await spool_factory(slicer_filament="PFUS9ac902733670a9", material="PETG")
 
@@ -140,7 +145,7 @@ class TestAssignSpoolTrayInfoIdx:
 
             assert response.status_code == 200
             call_kwargs = mock_client.ams_set_filament_setting.call_args
-            assert call_kwargs.kwargs["tray_info_idx"] == "GFG99"
+            assert call_kwargs.kwargs["tray_info_idx"] == "PFUS9ac902733670a9"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -196,8 +201,8 @@ class TestAssignSpoolTrayInfoIdx:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_existing_pfus_on_slot_not_reused(self, async_client: AsyncClient, printer_factory, spool_factory):
-        """A PFUS* ID already on the slot should NOT be reused (it's also user-local)."""
+    async def test_spool_pfus_used_over_slot_pfus(self, async_client: AsyncClient, printer_factory, spool_factory):
+        """Spool's own PFUS preset is used even when slot has a different PFUS."""
         printer = await printer_factory(name="H2D")
         spool = await spool_factory(slicer_filament="PFUS1111111111", material="PLA")
 
@@ -221,5 +226,101 @@ class TestAssignSpoolTrayInfoIdx:
 
             assert response.status_code == 200
             call_kwargs = mock_client.ams_set_filament_setting.call_args
-            # Should NOT reuse the PFUS on the slot — use generic instead
-            assert call_kwargs.kwargs["tray_info_idx"] == "GFL99"
+            # Spool's own preset wins
+            assert call_kwargs.kwargs["tray_info_idx"] == "PFUS1111111111"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_generic_on_slot_not_reused_over_spool_preset(
+        self, async_client: AsyncClient, printer_factory, spool_factory
+    ):
+        """Generic ID on slot (e.g. GFB99) must not override spool's own preset."""
+        printer = await printer_factory(name="P2S")
+        spool = await spool_factory(slicer_filament="PFUScda4c46fc9031", material="ABS")
+
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+
+        # Slot stuck on generic ABS from a previous assignment
+        status = _make_mock_status(
+            ams_data=[{"id": 0, "tray": [{"id": 1, "tray_info_idx": "GFB99", "tray_type": "ABS"}]}]
+        )
+
+        with patch("backend.app.services.printer_manager.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = status
+
+            response = await async_client.post(
+                "/api/v1/inventory/assignments",
+                json={"spool_id": spool.id, "printer_id": printer.id, "ams_id": 0, "tray_id": 1},
+            )
+
+            assert response.status_code == 200
+            call_kwargs = mock_client.ams_set_filament_setting.call_args
+            # Spool's preset wins — generic on slot must not be sticky
+            assert call_kwargs.kwargs["tray_info_idx"] == "PFUScda4c46fc9031"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_no_preset_with_generic_on_slot_still_uses_generic(
+        self, async_client: AsyncClient, printer_factory, spool_factory
+    ):
+        """Spool without preset + generic on slot → generic fallback (not slot reuse)."""
+        printer = await printer_factory(name="P2S")
+        spool = await spool_factory(slicer_filament=None, material="ABS")
+
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+
+        # Slot has generic ABS
+        status = _make_mock_status(
+            ams_data=[{"id": 0, "tray": [{"id": 1, "tray_info_idx": "GFB99", "tray_type": "ABS"}]}]
+        )
+
+        with patch("backend.app.services.printer_manager.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = status
+
+            response = await async_client.post(
+                "/api/v1/inventory/assignments",
+                json={"spool_id": spool.id, "printer_id": printer.id, "ams_id": 0, "tray_id": 1},
+            )
+
+            assert response.status_code == 200
+            call_kwargs = mock_client.ams_set_filament_setting.call_args
+            # Still gets generic, but via fallback — not via sticky reuse
+            assert call_kwargs.kwargs["tray_info_idx"] == "GFB99"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_no_preset_reuses_specific_slot_preset(
+        self, async_client: AsyncClient, printer_factory, spool_factory
+    ):
+        """Spool without preset + specific preset on slot → reuse slot's preset."""
+        printer = await printer_factory(name="X1C")
+        spool = await spool_factory(slicer_filament=None, material="PLA")
+
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+
+        # Slot has a specific Bambu PLA preset (not generic)
+        status = _make_mock_status(
+            ams_data=[{"id": 0, "tray": [{"id": 0, "tray_info_idx": "GFA05", "tray_type": "PLA"}]}]
+        )
+
+        with patch("backend.app.services.printer_manager.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = status
+
+            response = await async_client.post(
+                "/api/v1/inventory/assignments",
+                json={"spool_id": spool.id, "printer_id": printer.id, "ams_id": 0, "tray_id": 0},
+            )
+
+            assert response.status_code == 200
+            call_kwargs = mock_client.ams_set_filament_setting.call_args
+            # Slot's specific preset is reused when spool has no own preset
+            assert call_kwargs.kwargs["tray_info_idx"] == "GFA05"

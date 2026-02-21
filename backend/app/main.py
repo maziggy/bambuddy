@@ -431,6 +431,14 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
         # Reset milestone tracking when print restarts or new print begins
         _last_progress_milestone[printer_id] = 0
 
+    # HMS error codes that should not trigger notifications.
+    # These are infrastructure/auth issues, not actionable print errors.
+    _HMS_NOTIFICATION_SUPPRESS = {
+        "0500_0007",  # MQTT command verification failed (auth/bind issue, not a print error)
+        "0500_4001",  # Failed to connect to Bambu Cloud (network issue)
+        "0500_400E",  # Printing was cancelled (user action, not an error)
+    }
+
     # Check for new HMS errors and send notifications
     current_hms_errors = getattr(state, "hms_errors", []) or []
     if current_hms_errors:
@@ -482,6 +490,9 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                         error_code_int = int(error.code.replace("0x", ""), 16) if error.code else 0
                         error_code_masked = error_code_int & 0xFFFF
                         short_code = f"{(error.attr >> 16) & 0xFFFF:04X}_{error_code_masked:04X}"
+
+                        if short_code in _HMS_NOTIFICATION_SUPPRESS:
+                            continue
 
                         error_type = f"{module_name} Error"
                         # Look up human-readable description
@@ -1000,7 +1011,7 @@ def _load_objects_from_archive(archive, printer_id: int, logger) -> None:
         from backend.app.services.archive import extract_printable_objects_from_3mf
 
         file_path = app_settings.base_dir / archive.file_path
-        if file_path.exists() and str(file_path).endswith(".3mf"):
+        if file_path.is_file() and str(file_path).endswith(".3mf"):
             with open(file_path, "rb") as f:
                 threemf_data = f.read()
             # Extract with positions for UI overlay
@@ -2143,24 +2154,24 @@ async def on_print_complete(printer_id: int, data: dict):
                             )
                             if delete_result:
                                 logger.info("Deleted %s from printer %s SD card", remote_path, printer.name)
-                            break  # Success or file doesn't exist — no need to retry
+                                break
                         except Exception as e:
-                            if attempt < 3:
-                                logger.debug(
-                                    "SD card cleanup attempt %d/3 failed for %s: %s, retrying in 2s",
-                                    attempt,
-                                    remote_path,
-                                    e,
-                                )
-                                await asyncio.sleep(2)
-                            else:
-                                logger.debug(
-                                    "SD card cleanup failed after 3 attempts for %s: %s (non-critical)",
-                                    remote_path,
-                                    e,
-                                )
+                            delete_result = False
+                            logger.warning(
+                                "SD card cleanup attempt %d/3 raised for %s: %s",
+                                attempt,
+                                remote_path,
+                                e,
+                            )
+                        if not delete_result and attempt < 3:
+                            await asyncio.sleep(2)
+                        elif not delete_result:
+                            logger.warning(
+                                "SD card cleanup failed after 3 attempts for %s (file may linger on SD card)",
+                                remote_path,
+                            )
     except Exception as e:
-        logger.debug("SD card file cleanup failed for printer %s: %s (non-critical)", printer_id, e)
+        logger.warning("SD card file cleanup failed for printer %s: %s", printer_id, e)
 
     log_timing("SD card cleanup")
 
@@ -2402,6 +2413,7 @@ async def on_print_complete(printer_id: int, data: dict):
                         }
                     )
                     log_timing("Usage tracker")
+
     except Exception as e:
         logger.warning("Usage tracker on_print_complete failed: %s", e)
 
@@ -2492,7 +2504,11 @@ async def on_print_complete(printer_id: int, data: dict):
                             from datetime import datetime
                             from pathlib import Path
 
-                            archive_dir = app_settings.base_dir / Path(archive.file_path).parent
+                            if archive.file_path:
+                                archive_dir = app_settings.base_dir / Path(archive.file_path).parent
+                            else:
+                                logger.warning("[PHOTO-BG] Archive %s has no file_path, using fallback dir", archive_id)
+                                archive_dir = app_settings.archive_dir / str(archive.id)
                             photo_filename = None
 
                             # Check for external camera first

@@ -7,7 +7,7 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 # Application version - single source of truth
-APP_VERSION = "0.2.1b2"
+APP_VERSION = "0.2.1b3"
 GITHUB_REPO = "maziggy/bambuddy"
 
 # App directory - where the application is installed (for static files)

@@ -250,6 +250,8 @@ export interface PrinterStatus {
   big_fan2_speed: number | null;     // Chamber/exhaust fan
   heatbreak_fan_speed: number | null; // Hotend heatbreak fan
   firmware_version: string | null;   // Firmware version from MQTT
+  // Developer LAN mode: true = enabled, false = disabled, null = unknown
+  developer_mode: boolean | null;
   // Queue: user has acknowledged plate is cleared for next queued print
   plate_cleared: boolean;
 }
@@ -1798,6 +1800,7 @@ export interface InventorySpool {
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+  cost_per_kg: number | null;
   k_profiles?: SpoolKProfile[];
 }
 
@@ -1809,6 +1812,7 @@ export interface SpoolUsageRecord {
   weight_used: number;
   percent_used: number;
   status: string;
+  cost: number | null;
   created_at: string;
 }
 
@@ -2290,6 +2294,8 @@ export const api = {
       `/printers/${id}?delete_archives=${deleteArchives}`,
       { method: 'DELETE' }
     ),
+  getDeveloperModeWarnings: () =>
+    request<{ printer_id: number; name: string }[]>('/printers/developer-mode-warnings'),
   getPrinterStatus: (id: number) =>
     request<PrinterStatus>(`/printers/${id}/status`),
   refreshPrinterStatus: (id: number) =>
@@ -3466,6 +3472,11 @@ export const api = {
     request<InventorySpool>('/inventory/spools', {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+  bulkCreateSpools: (data: Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>, quantity: number) =>
+    request<InventorySpool[]>('/inventory/spools/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ spool: data, quantity }),
     }),
   updateSpool: (id: number, data: Partial<Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>>) =>
     request<InventorySpool>(`/inventory/spools/${id}`, {

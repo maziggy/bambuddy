@@ -23,6 +23,20 @@ JPEG_END = b"\xff\xd9"
 # Cache the ffmpeg path after first lookup
 _ffmpeg_path: str | None = None
 
+# ---------------------------------------------------------------------------
+# Global semaphore limiting concurrent RTSP ffmpeg processes
+# ---------------------------------------------------------------------------
+_MAX_RTSP_FFMPEG: int = 20
+_rtsp_semaphore: asyncio.Semaphore | None = None
+
+
+def get_rtsp_semaphore() -> asyncio.Semaphore:
+    """Return the global RTSP ffmpeg semaphore (lazily created on first call)."""
+    global _rtsp_semaphore
+    if _rtsp_semaphore is None:
+        _rtsp_semaphore = asyncio.Semaphore(_MAX_RTSP_FFMPEG)
+    return _rtsp_semaphore
+
 
 def get_ffmpeg_path() -> str | None:
     """Find the ffmpeg executable path.

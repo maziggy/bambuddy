@@ -2499,12 +2499,16 @@ async def on_print_complete(printer_id: int, data: dict):
                         result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
                         archive = result.scalar_one_or_none()
 
-                        if archive and archive.file_path:
+                        if archive:
                             import uuid
                             from datetime import datetime
                             from pathlib import Path
 
-                            archive_dir = app_settings.base_dir / Path(archive.file_path).parent
+                            if archive.file_path:
+                                archive_dir = app_settings.base_dir / Path(archive.file_path).parent
+                            else:
+                                logger.warning("[PHOTO-BG] Archive %s has no file_path, using fallback dir", archive_id)
+                                archive_dir = app_settings.archive_dir / str(archive.id)
                             photo_filename = None
 
                             # Check for external camera first

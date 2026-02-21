@@ -18,6 +18,7 @@ class PrinterBase(BaseModel):
     external_camera_url: str | None = None
     external_camera_type: str | None = None  # "mjpeg", "rtsp", "snapshot", "usb"
     external_camera_enabled: bool = False
+    plate_automation_enabled: bool = False
 
 
 class PrinterCreate(PrinterBase):
@@ -63,7 +64,6 @@ class PrinterResponse(PrinterBase):
     external_camera_type: str | None = None
     external_camera_enabled: bool = False
     plate_detection_enabled: bool = False
-    plate_automation_enabled: bool = False
     plate_detection_roi: PlateDetectionROI | None = None
     created_at: datetime
     updated_at: datetime

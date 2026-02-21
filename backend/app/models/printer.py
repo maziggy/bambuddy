@@ -30,6 +30,8 @@ class Printer(Base):
     external_camera_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     # Plate detection - check if build plate is empty before starting print
     plate_detection_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Plate automation - simple enabled/disabled flag for automation feature
+    plate_automation_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     # ROI for plate detection (percentages: 0.0-1.0)
     plate_detection_roi_x: Mapped[float | None] = mapped_column(Float, nullable=True)  # X start %
     plate_detection_roi_y: Mapped[float | None] = mapped_column(Float, nullable=True)  # Y start %

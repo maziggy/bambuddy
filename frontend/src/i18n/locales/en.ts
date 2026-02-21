@@ -276,6 +276,8 @@ export default {
       failedToSaveDetectionArea: 'Failed to save detection area',
       plateCheckEnabled: 'Plate check enabled',
       plateCheckDisabled: 'Plate check disabled',
+      automationEnabled: 'Automation enabled',
+      automationDisabled: 'Automation disabled',
       calibrationSaved: 'Calibration saved!',
       calibrationFailed: 'Calibration failed',
       rfidRereadInitiated: 'RFID re-read initiated',

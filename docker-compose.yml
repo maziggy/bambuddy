@@ -8,7 +8,7 @@ services:
     container_name: bambuddy
     # Run as current user to avoid permission issues with mounted volumes
     # Override with: PUID=$(id -u) PGID=$(id -g) docker compose up -d
-    user: "${PUID:-1000}:${PGID:-1000}"
+    user: "${PUID:-501}:${PGID:-20}"
     #
     # Proxy mode: allow binding to port 990 (FTP) as non-root user.
     # Without this, the FTP proxy silently fails and sending prints won't work.
@@ -16,18 +16,18 @@ services:
       - NET_BIND_SERVICE
     #
     # LINUX: Use host mode for printer discovery and camera streaming
-    network_mode: host
+    # network_mode: host
     #
     # macOS/WINDOWS: Docker Desktop doesn't support host mode.
     # Comment out "network_mode: host" above and uncomment "ports:" below.
     # Note: Printer discovery won't work - add printers manually by IP.
-    #ports:
-    #  - "${PORT:-8000}:8000"
-    #  - "3000:3000"                  # Virtual printer bind/detect
-    #  - "3002:3002"                  # Virtual printer bind/detect
-    #  - "8883:8883"                  # Virtual printer MQTT
-    #  - "9990:9990"                  # Virtual printer FTP control
-    #  - "50000-50100:50000-50100"    # Virtual printer FTP passive data
+    ports:
+      - "${PORT:-8000}:8000"
+      - "3000:3000"                  # Virtual printer bind/detect
+      - "3002:3002"                  # Virtual printer bind/detect
+      - "8883:8883"                  # Virtual printer MQTT
+      - "9990:9990"                  # Virtual printer FTP control
+      - "50000-50100:50000-50100"    # Virtual printer FTP passive data
     volumes:
       - bambuddy_data:/app/data
       - bambuddy_logs:/app/logs
@@ -43,7 +43,7 @@ services:
       # Virtual printer: Set to the Docker host's IP when using bridge mode (ports:).
       # Required for FTP passive mode to work behind NAT.
       # Example: VIRTUAL_PRINTER_PASV_ADDRESS=192.168.1.100
-      #- VIRTUAL_PRINTER_PASV_ADDRESS=
+      - VIRTUAL_PRINTER_PASV_ADDRESS=192.168.10.125
     restart: unless-stopped
 
 volumes:

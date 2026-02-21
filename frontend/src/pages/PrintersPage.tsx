@@ -38,6 +38,7 @@ import {
   AirVent,
   Download,
   ScanSearch,
+  Recycle,
   CheckCircle,
   XCircle,
   User,
@@ -1500,6 +1501,8 @@ function PrinterCard({
   const [isSavingRoi, setIsSavingRoi] = useState(false);
   const [plateCheckLightWasOff, setPlateCheckLightWasOff] = useState(false);
 
+  // Plate automation: only a simple enabled/disabled toggle is supported
+
   const { data: status } = useQuery({
     queryKey: ['printerStatus', printer.id],
     queryFn: () => api.getPrinterStatus(printer.id),
@@ -1774,6 +1777,16 @@ function PrinterCard({
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToUpdateSetting'), 'error'),
   });
 
+  // Plate automation setting mutation (scaffold)
+  const plateAutomationMutation = useMutation({
+    mutationFn: (enabled: boolean) => (api as any).updatePrinter(printer.id, { plate_automation_enabled: enabled }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['printers'] });
+      showToast(plateAutomationMutation.variables ? t('printers.toast.automationEnabled') : t('printers.toast.automationDisabled'));
+    },
+    onError: (error: Error) => showToast(error.message || t('printers.toast.failedToUpdateSetting'), 'error'),
+  });
+
   // Query for printable objects (for skip functionality)
   // Fetch when printing with 2+ objects OR when modal is open
   const isPrintingWithObjects = (status?.state === 'RUNNING' || status?.state === 'PAUSE') && (status?.printable_objects_count ?? 0) >= 2;
@@ -1847,6 +1860,11 @@ function PrinterCard({
   // Toggle plate detection enabled/disabled
   const handleTogglePlateDetection = () => {
     plateDetectionMutation.mutate(!printer.plate_detection_enabled);
+  };
+
+  // Toggle plate automation enabled/disabled
+  const handleTogglePlateAutomation = () => {
+    plateAutomationMutation.mutate(!((printer as any).plate_automation_enabled));
   };
 
   // Open plate detection management modal (for calibration/references)
@@ -1953,6 +1971,7 @@ function PrinterCard({
       setIsSavingRoi(false);
     }
   };
+  
 
   // Close plate check modal on Escape key
   useEffect(() => {
@@ -3585,6 +3604,25 @@ function PrinterCard({
                   )}
                 </Button>
               </div>
+              
+              {/* Plate automation toggle (simple on/off) */}
+              <div className={`inline-flex rounded-md ${(printer as any).plate_automation_enabled ? 'ring-1 ring-green-500' : ''} ml-2`}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleTogglePlateAutomation}
+                  disabled={!status?.connected || plateAutomationMutation.isPending || !hasPermission('printers:update')}
+                  title={!hasPermission('printers:update') ? t('printers.plateAutomation.noPermission') : ((printer as any).plate_automation_enabled ? t('printers.plateAutomation.enabledClick') : t('printers.plateAutomation.disabledClick'))}
+                  className={`${(printer as any).plate_automation_enabled ? "!border-green-500 !text-green-400 hover:!bg-green-500/20" : ""}`}
+                >
+                  {plateAutomationMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Recycle className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
+
               <Button
                 variant="secondary"
                 size="sm"

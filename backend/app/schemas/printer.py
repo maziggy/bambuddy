@@ -50,6 +50,7 @@ class PrinterUpdate(BaseModel):
     external_camera_type: str | None = None
     external_camera_enabled: bool | None = None
     plate_detection_enabled: bool | None = None
+    plate_automation_enabled: bool | None = None
     plate_detection_roi: PlateDetectionROI | None = None
 
 
@@ -62,6 +63,7 @@ class PrinterResponse(PrinterBase):
     external_camera_type: str | None = None
     external_camera_enabled: bool = False
     plate_detection_enabled: bool = False
+    plate_automation_enabled: bool = False
     plate_detection_roi: PlateDetectionROI | None = None
     created_at: datetime
     updated_at: datetime
@@ -88,6 +90,7 @@ class PrinterResponse(PrinterBase):
             "nozzle_count": printer.nozzle_count,
             "print_hours_offset": printer.print_hours_offset,
             "plate_detection_enabled": printer.plate_detection_enabled,
+            "plate_automation_enabled": printer.plate_automation_enabled,
             "created_at": printer.created_at,
             "updated_at": printer.updated_at,
         }

@@ -267,6 +267,8 @@ export default {
       failedToSaveDetectionArea: 'Impossibile salvare area rilevamento',
       plateCheckEnabled: 'Controllo piatto abilitato',
       plateCheckDisabled: 'Controllo piatto disabilitato',
+      automationEnabled: 'Automazione abilitata',
+      automationDisabled: 'Automazione disabilitata',
       calibrationSaved: 'Calibrazione salvata!',
       calibrationFailed: 'Calibrazione non riuscita',
       rfidRereadInitiated: 'Rilettura RFID avviata',

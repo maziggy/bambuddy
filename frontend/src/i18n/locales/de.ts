@@ -276,6 +276,8 @@ export default {
       failedToSaveDetectionArea: 'Erkennungsbereich konnte nicht gespeichert werden',
       plateCheckEnabled: 'Plattenprüfung aktiviert',
       plateCheckDisabled: 'Plattenprüfung deaktiviert',
+      automationEnabled: 'Automatisierung aktiviert',
+      automationDisabled: 'Automatisierung deaktiviert',
       calibrationSaved: 'Kalibrierung gespeichert!',
       calibrationFailed: 'Kalibrierung fehlgeschlagen',
       rfidRereadInitiated: 'RFID-Neueinlesen gestartet',

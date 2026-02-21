@@ -183,6 +183,13 @@ async def run_migrations(conn):
         # Column already exists
         pass
 
+    # Migration: Add plate_automation_enabled column to printers
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN plate_automation_enabled BOOLEAN DEFAULT 0"))
+    except OperationalError:
+        # Column already exists
+        pass
+
     # Migration: Add interval_type column to maintenance_types
     try:
         await conn.execute(text("ALTER TABLE maintenance_types ADD COLUMN interval_type VARCHAR(20) DEFAULT 'hours'"))

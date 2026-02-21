@@ -100,6 +100,7 @@ export interface Printer {
   external_camera_type: string | null;  // "mjpeg", "rtsp", "snapshot"
   external_camera_enabled: boolean;
   plate_detection_enabled: boolean;  // Check plate before print
+  plate_automation_enabled?: boolean; // Automation enabled flag
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
   created_at: string;
   updated_at: string;
@@ -268,6 +269,7 @@ export interface PrinterCreate {
   external_camera_type?: string | null;
   external_camera_enabled?: boolean;
   plate_detection_enabled?: boolean;
+  plate_automation_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
 }
 

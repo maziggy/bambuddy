@@ -276,6 +276,8 @@ export default {
       failedToSaveDetectionArea: 'Échec enregistrement zone',
       plateCheckEnabled: 'Vérification plateau activée',
       plateCheckDisabled: 'Vérification plateau désactivée',
+      automationEnabled: 'Automatisation activée',
+      automationDisabled: 'Automatisation désactivée',
       calibrationSaved: 'Calibration enregistrée !',
       calibrationFailed: 'Échec de la calibration',
       rfidRereadInitiated: 'Lecture RFID initiée',

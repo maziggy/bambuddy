@@ -276,6 +276,8 @@ export default {
       failedToSaveDetectionArea: 'Falha ao salvar área de detecção',
       plateCheckEnabled: 'Verificação da placa ativada',
       plateCheckDisabled: 'Verificação da placa desativada',
+      automationEnabled: 'Automação ativada',
+      automationDisabled: 'Automação desativada',
       calibrationSaved: 'Calibração salva!',
       calibrationFailed: 'Falha na calibração',
       rfidRereadInitiated: 'Releitura de RFID iniciada',

@@ -249,6 +249,8 @@ export default {
       failedToSaveDetectionArea: '検出エリアの保存に失敗しました',
       plateCheckEnabled: 'プレートチェックを有効にしました',
       plateCheckDisabled: 'プレートチェックを無効にしました',
+      automationEnabled: '自動化を有効にしました',
+      automationDisabled: '自動化を無効にしました',
       calibrationSaved: 'キャリブレーションを保存しました！',
       calibrationFailed: 'キャリブレーションに失敗しました',
     },

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Search, Clock, ChevronDown, ChevronUp } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { ColorSectionProps } from './types';
+import type { ColorSectionProps, CatalogDisplayColor } from './types';
 import { QUICK_COLORS, ALL_COLORS } from './constants';
 
 export function ColorSection({
@@ -32,7 +32,7 @@ export function ColorSection({
   // Filter catalog colors by the selected brand + material + subtype
   // Brand matching is word-based: "mz - Bambu" matches "Bambu Lab" because both contain "Bambu"
   // Material matching: try exact "PETG Basic" first, fall back to base material "PETG" prefix
-  const matchedCatalogColors = useMemo(() => {
+  const matchedCatalogColors = useMemo<CatalogDisplayColor[]>(() => {
     if (catalogColors.length === 0) return [];
     const brand = formData.brand?.trim();
     const material = formData.material?.toLowerCase().trim();
@@ -51,6 +51,19 @@ export function ColorSection({
       return brandWords.some(w => mfrLower.includes(w));
     };
 
+    // If only brand is provided, return all colors for that manufacturer
+    if (brand && !material) {
+      const byBrand = catalogColors.filter(c => brandMatches(c.manufacturer));
+      if (byBrand.length > 0) {
+        return byBrand.map(c => ({
+          name: c.color_name,
+          hex: c.hex_color.replace('#', '').substring(0, 6),
+          manufacturer: c.manufacturer,
+          material: typeof c.material === 'string' ? c.material : undefined,
+        }));
+      }
+    }
+
     // Build the combined material+subtype string to match catalog entries
     const fullMaterial = material && subtype ? `${material} ${subtype}` : '';
 
@@ -64,6 +77,8 @@ export function ColorSection({
         return exact.map(c => ({
           name: c.color_name,
           hex: c.hex_color.replace('#', '').substring(0, 6),
+          manufacturer: c.manufacturer,
+          material: typeof c.material === 'string' ? c.material : undefined,
         }));
       }
       // Try without trailing "+" (e.g. "PLA Silk+" -> "PLA Silk")
@@ -77,6 +92,8 @@ export function ColorSection({
           return normMatch.map(c => ({
             name: c.color_name,
             hex: c.hex_color.replace('#', '').substring(0, 6),
+            manufacturer: c.manufacturer,
+            material: typeof c.material === 'string' ? c.material : undefined,
           }));
         }
       }
@@ -92,6 +109,8 @@ export function ColorSection({
         return byMaterial.map(c => ({
           name: c.color_name,
           hex: c.hex_color.replace('#', '').substring(0, 6),
+          manufacturer: c.manufacturer,
+          material: typeof c.material === 'string' ? c.material : undefined,
         }));
       }
     }
@@ -99,14 +118,20 @@ export function ColorSection({
     return [];
   }, [catalogColors, formData.brand, formData.material, formData.subtype]);
 
-  const hasCatalogMatch = matchedCatalogColors.length > 0;
-
-  // Search within matched catalog colors
-  const filteredCatalogColors = useMemo(() => {
+  const catalogSearchResults = useMemo<CatalogDisplayColor[]>(() => {
     if (!colorSearch) return matchedCatalogColors;
+    if (matchedCatalogColors.length === 0) return [];
     const q = colorSearch.toLowerCase();
-    return matchedCatalogColors.filter(c => c.name.toLowerCase().includes(q));
-  }, [matchedCatalogColors, colorSearch]);
+    const matches = matchedCatalogColors.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      (c.manufacturer?.toLowerCase().includes(q) ?? false) ||
+      (c.material?.toLowerCase().includes(q) ?? false),
+    );
+    return matches;
+  }, [colorSearch, matchedCatalogColors]);
+
+  // Only show catalog section if there are matched catalog colors
+  const showCatalogSection = matchedCatalogColors.length > 0;
 
   // Fallback hardcoded colors for search/expand
   const filteredFallbackColors = useMemo(() => {
@@ -165,16 +190,16 @@ export function ColorSection({
       </div>
 
       {/* Color Swatches */}
-      {hasCatalogMatch ? (
+      {showCatalogSection ? (
         /* Catalog colors matching selected brand/material */
         <div className="space-y-1.5">
           <span className="text-xs text-bambu-gray">
             {colorSearch ? t('inventory.searchResults') : `${formData.brand}${formData.material ? ` ${formData.material}` : ''}`}
           </span>
           <div className="flex flex-wrap gap-1.5">
-            {filteredCatalogColors.map(color => (
+            {catalogSearchResults.map(color => (
               <button
-                key={`${color.hex}-${color.name}`}
+                key={`${color.hex}-${color.name}-${color.manufacturer ?? ''}`}
                 type="button"
                 onClick={() => selectColor(color.hex, color.name)}
                 className={`w-6 h-6 rounded border-2 transition-all hover:scale-110 hover:z-20 relative group ${
@@ -183,14 +208,24 @@ export function ColorSection({
                     : 'border-bambu-dark-tertiary'
                 }`}
                 style={{ backgroundColor: `#${color.hex}` }}
-                title={color.name}
+                title={
+                  color.manufacturer && color.material
+                    ? `${color.name} (${color.manufacturer} — ${color.material})`
+                    : color.manufacturer
+                    ? `${color.name} (${color.manufacturer})`
+                    : color.name
+                }
               >
                 <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-lg text-white">
-                  {color.name}
+                  {color.manufacturer && color.material
+                    ? `${color.name} (${color.manufacturer} — ${color.material})`
+                    : color.manufacturer
+                    ? `${color.name} (${color.manufacturer})`
+                    : color.name}
                 </span>
               </button>
             ))}
-            {filteredCatalogColors.length === 0 && (
+            {catalogSearchResults.length === 0 && (
               <p className="text-sm text-bambu-gray py-1">{t('inventory.noColorsFound')}</p>
             )}
           </div>

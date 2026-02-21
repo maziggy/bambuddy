@@ -22,6 +22,7 @@ from backend.app.models.user import User
 from backend.app.schemas.spool import (
     SpoolAssignmentCreate,
     SpoolAssignmentResponse,
+    SpoolBulkCreate,
     SpoolCreate,
     SpoolKProfileBase,
     SpoolKProfileResponse,
@@ -482,6 +483,24 @@ async def create_spool(
     return result.scalar_one()
 
 
+@router.post("/spools/bulk", response_model=list[SpoolResponse])
+async def bulk_create_spools(
+    data: SpoolBulkCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Create multiple identical spools."""
+    spools = []
+    for _ in range(data.quantity):
+        spool = Spool(**data.spool.model_dump())
+        db.add(spool)
+        spools.append(spool)
+    await db.commit()
+    ids = [s.id for s in spools]
+    result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id.in_(ids)))
+    return list(result.scalars().all())
+
+
 @router.patch("/spools/{spool_id}", response_model=SpoolResponse)
 async def update_spool(
     spool_id: int,
@@ -714,14 +733,34 @@ async def assign_spool(
 
             # Resolve tray_info_idx for the MQTT command.
             # Priority:
-            #   1. Reuse the slot's existing tray_info_idx if it's a recognised
-            #      preset (GF*/P*) for the same material — this preserves the
-            #      slicer's K-profile association.
-            #   2. Replace PFUS* (user-local IDs unknown to other slicers) and
-            #      empty IDs with a generic Bambu filament ID.
-            if (
+            #   1. Use the spool's own slicer_filament if set (including
+            #      cloud-synced custom presets like PFUS* / P*).
+            #   2. Reuse the slot's existing tray_info_idx if it's a specific
+            #      (non-generic) preset for the same material.
+            #   3. Fall back to a generic Bambu filament ID.
+            _GENERIC_IDS = {
+                "PLA": "GFL99",
+                "PETG": "GFG99",
+                "ABS": "GFB99",
+                "ASA": "GFB98",
+                "PC": "GFC99",
+                "PA": "GFN99",
+                "NYLON": "GFN99",
+                "TPU": "GFU99",
+                "PVA": "GFS99",
+                "HIPS": "GFS98",
+                "PLA-CF": "GFL98",
+                "PETG-CF": "GFG98",
+                "PA-CF": "GFN98",
+                "PETG HF": "GFG96",
+            }
+            _GENERIC_ID_VALUES = set(_GENERIC_IDS.values())
+
+            if tray_info_idx:
+                logger.info("Spool assign: using spool's slicer_filament=%r", tray_info_idx)
+            elif (
                 current_tray_info_idx
-                and not current_tray_info_idx.startswith("PFUS")
+                and current_tray_info_idx not in _GENERIC_ID_VALUES
                 and fingerprint_type
                 and fingerprint_type.upper() == tray_type.upper()
             ):
@@ -731,27 +770,11 @@ async def assign_spool(
                     tray_type,
                 )
                 tray_info_idx = current_tray_info_idx
-            elif (not tray_info_idx or tray_info_idx.startswith("PFUS")) and tray_type:
-                _GENERIC_IDS = {
-                    "PLA": "GFL99",
-                    "PETG": "GFG99",
-                    "ABS": "GFB99",
-                    "ASA": "GFB98",
-                    "PC": "GFC99",
-                    "PA": "GFN99",
-                    "NYLON": "GFN99",
-                    "TPU": "GFU99",
-                    "PVA": "GFS99",
-                    "HIPS": "GFS98",
-                    "PLA-CF": "GFL98",
-                    "PETG-CF": "GFG98",
-                    "PA-CF": "GFN98",
-                    "PETG HF": "GFG96",
-                }
+            elif tray_type:
                 material = tray_type.upper().strip()
                 generic = _GENERIC_IDS.get(material) or _GENERIC_IDS.get(material.split("-")[0].split(" ")[0]) or ""
                 if generic:
-                    logger.info("Spool assign: replacing %r with generic %r", tray_info_idx, generic)
+                    logger.info("Spool assign: falling back to generic %r for material %r", generic, tray_type)
                     tray_info_idx = generic
 
             # Temperature: use spool overrides if set, else material defaults

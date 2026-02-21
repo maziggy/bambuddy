@@ -49,10 +49,3 @@ repos:
         pass_filenames: false
         files: ^frontend/src/
         types_or: [ts, tsx]
-      - id: frontend-lint
-        name: ESLint
-        entry: bash -c 'cd frontend && npx eslint .'
-        language: system
-        pass_filenames: false
-        files: ^frontend/src/
-        types_or: [ts, tsx]

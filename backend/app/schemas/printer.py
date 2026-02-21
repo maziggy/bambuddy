@@ -245,5 +245,7 @@ class PrinterStatus(BaseModel):
     heatbreak_fan_speed: int | None = None  # Hotend heatbreak fan
     # Firmware version (from info.module[name="ota"].sw_ver)
     firmware_version: str | None = None
+    # Developer LAN mode: True = enabled, False = disabled (MQTT encryption), None = unknown
+    developer_mode: bool | None = None
     # Queue: user has acknowledged plate is cleared for next queued print
     plate_cleared: bool = False

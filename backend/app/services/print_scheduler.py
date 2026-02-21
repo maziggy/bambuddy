@@ -1112,6 +1112,17 @@ class PrintScheduler:
             except Exception:
                 pass  # Don't fail if MQTT fails
         else:
+            # Clean up uploaded file from SD card to prevent phantom prints
+            try:
+                await delete_file_async(
+                    printer.ip_address,
+                    printer.access_code,
+                    remote_path,
+                    printer_model=printer.model,
+                )
+            except Exception:
+                pass  # Best-effort — don't fail the error handler
+
             # Print command failed - revert status
             item.status = "failed"
             item.error_message = "Failed to send print command to printer"

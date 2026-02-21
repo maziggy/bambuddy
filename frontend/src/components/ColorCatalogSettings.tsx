@@ -383,37 +383,37 @@ export function ColorCatalogSettings() {
               <div className="flex items-center gap-2">
                 <input
                   type="color"
-                  className="w-10 h-10 rounded cursor-pointer border border-bambu-dark-tertiary"
+                  className="w-20 h-10 rounded cursor-pointer border border-bambu-dark-tertiary"
                   value={formHexColor}
                   onChange={(e) => setFormHexColor(e.target.value)}
                 />
                 <input
                   type="text"
-                  className="flex-1 px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                  className="w-32 px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
                   placeholder="#FFFFFF"
                   value={formHexColor}
                   onChange={(e) => setFormHexColor(e.target.value)}
                 />
               </div>
-              <input
-                type="text"
-                className="px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
-                placeholder={t('settings.colorCatalog.materialOptional')}
-                value={formMaterial}
-                onChange={(e) => setFormMaterial(e.target.value)}
-              />
-              <div className="flex gap-2">
+              <div className="flex items-center gap-1">
+                <input
+                  type="text"
+                  className="flex-1 max-w-lg min-w-[200px] px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                  placeholder={t('settings.colorCatalog.materialOptional')}
+                  value={formMaterial}
+                  onChange={(e) => setFormMaterial(e.target.value)}
+                />
                 <button
                   onClick={handleAdd}
                   disabled={saving}
-                  className="flex-1 px-3 py-2 bg-bambu-green text-white rounded-lg hover:bg-bambu-green/80 flex items-center justify-center gap-1"
+                  className="w-24 px-3 py-2 bg-bambu-green text-white rounded-lg hover:bg-bambu-green/80 flex items-center justify-center gap-3"
                 >
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                   {t('common.add')}
                 </button>
                 <button
                   onClick={() => { setShowAddForm(false); resetForm(); }}
-                  className="p-2 rounded-lg text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary"
+                  className="p-2 ml-2 rounded-lg text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary"
                 >
                   <X className="w-4 h-4" />
                 </button>

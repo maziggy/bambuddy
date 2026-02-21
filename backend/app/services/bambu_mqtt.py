@@ -163,8 +163,14 @@ class PrinterState:
     big_fan1_speed: int | None = None  # Auxiliary fan
     big_fan2_speed: int | None = None  # Chamber/exhaust fan
     heatbreak_fan_speed: int | None = None  # Hotend heatbreak fan
+    # Tray change history during current print: [(global_tray_id, layer_num), ...]
+    # Used by usage tracker to split filament weight on mid-print tray switch
+    tray_change_log: list = field(default_factory=list)
     # Firmware version info (from info.module[name="ota"].sw_ver)
     firmware_version: str | None = None
+    # Developer LAN mode: parsed from MQTT "fun" field bit 0x20000000
+    # True = dev mode ON (no encryption), False = dev mode OFF (encryption required), None = unknown
+    developer_mode: bool | None = None
 
 
 # Stage name mapping from BambuStudio DeviceManager.cpp
@@ -872,6 +878,34 @@ class BambuMQTTClient:
         if "filament_tangle_detect" in xcam_data:
             self.state.print_options.filament_tangle_detect = bool(xcam_data.get("filament_tangle_detect"))
 
+    @staticmethod
+    def _resolve_local_slot_from_mapping(local_slot: int, mapping_raw: list | None) -> int | None:
+        """Resolve a local AMS slot ID to a global tray ID using the MQTT mapping field.
+
+        The MQTT mapping field is an array of snow-encoded values:
+        each entry = ams_hw_id * 256 + slot_id (65535 = unmapped).
+
+        Finds entries where the local slot matches, then computes the global tray ID.
+        Returns the global ID if exactly one AMS matches, or None if ambiguous/unavailable.
+        """
+        if not isinstance(mapping_raw, list) or not mapping_raw:
+            return None
+
+        candidates: set[int] = set()
+        for value in mapping_raw:
+            if not isinstance(value, int) or value >= 65535:
+                continue
+            ams_hw_id = value >> 8
+            slot = value & 0xFF
+            if 0 <= ams_hw_id <= 3 and (slot & 0x03) == local_slot:
+                candidates.add(ams_hw_id * 4 + local_slot)
+            elif 128 <= ams_hw_id <= 135 and local_slot == 0:
+                candidates.add(ams_hw_id)
+
+        if len(candidates) == 1:
+            return candidates.pop()
+        return None
+
     def _handle_ams_data(self, ams_data):
         """Handle AMS data changes for Spoolman integration.
 
@@ -925,7 +959,8 @@ class BambuMQTTClient:
 
                 # H2D dual-nozzle printers report only slot number (0-3), not global tray ID
                 # Use active_extruder + ams_extruder_map to determine which AMS the slot belongs to
-                # Single-nozzle printers (X1C, P2S, etc.) always report global IDs, even with multiple AMS
+                # Single-nozzle printers with multiple AMS (e.g. P2S) also report local slot IDs (#420)
+                # — disambiguated below using MQTT mapping field
                 ams_map = self.state.ams_extruder_map
                 if self._is_dual_nozzle and 0 <= parsed_tray_now <= 3:
                     # First, check if we have a pending target that matches this slot
@@ -1047,6 +1082,37 @@ class BambuMQTTClient:
                                     f"using slot {parsed_tray_now}"
                                 )
                                 self.state.tray_now = parsed_tray_now
+                elif not self._is_dual_nozzle and 0 <= parsed_tray_now <= 3:
+                    # Single-nozzle printer with tray_now in 0-3 range.
+                    # P2S (and possibly other models) with multiple AMS units sends LOCAL slot IDs
+                    # in tray_now, not global tray IDs (#420). Use the MQTT mapping field
+                    # (snow-encoded) to resolve the correct AMS unit.
+                    ams_exist_raw = ams_data.get("ams_exist_bits", "0")
+                    try:
+                        ams_exist = int(ams_exist_raw, 16) if isinstance(ams_exist_raw, str) else int(ams_exist_raw)
+                    except (ValueError, TypeError):
+                        ams_exist = 0
+                    num_ams = bin(ams_exist).count("1")
+
+                    if num_ams > 1:
+                        # Multiple AMS on single-nozzle — tray_now is likely a local slot ID.
+                        # Cross-reference with MQTT mapping field to find the correct AMS unit.
+                        mapping_raw = self.state.raw_data.get("mapping")
+                        resolved = self._resolve_local_slot_from_mapping(parsed_tray_now, mapping_raw)
+                        if resolved is not None:
+                            if resolved != parsed_tray_now:
+                                logger.debug(
+                                    f"[{self.serial_number}] Multi-AMS tray_now: "
+                                    f"local slot {parsed_tray_now} -> global ID {resolved} (from mapping)"
+                                )
+                            self.state.tray_now = resolved
+                        else:
+                            # No mapping available (not printing, or ambiguous) — use as-is.
+                            # This matches the old behavior and is correct for AMS 0.
+                            self.state.tray_now = parsed_tray_now
+                    else:
+                        # Single AMS — local slot 0-3 equals global ID
+                        self.state.tray_now = parsed_tray_now
                 else:
                     # tray_now > 3 means it's already a global ID, or 255 means unloaded
                     # Note: Do NOT clear pending_tray_target on tray_now=255 here.
@@ -1059,6 +1125,15 @@ class BambuMQTTClient:
                 # Valid physical trays: 0-15 (regular AMS), 128-135 (AMS-HT), 254 (external spool)
                 tn = self.state.tray_now
                 if (0 <= tn <= 15) or (128 <= tn <= 135) or tn == 254:
+                    # Log tray change for mid-print usage splitting
+                    if tn != self.state.last_loaded_tray and self.state.state in ("RUNNING", "PAUSE"):
+                        self.state.tray_change_log.append((tn, self.state.layer_num))
+                        logger.info(
+                            "[%s] Tray change during print: tray=%d at layer=%d",
+                            self.serial_number,
+                            tn,
+                            self.state.layer_num,
+                        )
                     self.state.last_loaded_tray = self.state.tray_now
 
                 logger.debug("[%s] tray_now updated: %s", self.serial_number, self.state.tray_now)
@@ -1979,6 +2054,15 @@ class BambuMQTTClient:
         ams_extruder_map_data = self.state.raw_data.get("ams_extruder_map")
         mapping_data = self.state.raw_data.get("mapping")
         self.state.raw_data = data
+
+        # Parse developer LAN mode from "fun" field
+        if "fun" in data:
+            try:
+                fun_val = data["fun"]
+                fun_int = fun_val if isinstance(fun_val, int) else int(fun_val, 16)
+                self.state.developer_mode = (fun_int & 0x20000000) == 0
+            except (ValueError, TypeError):
+                pass
         if ams_data is not None:
             self.state.raw_data["ams"] = ams_data
         if vt_tray_data is not None:
@@ -2037,6 +2121,11 @@ class BambuMQTTClient:
             # Reset last valid progress/layer for usage tracking
             self._last_valid_progress = 0.0
             self._last_valid_layer_num = 0
+            # Clear and seed tray change log for mid-print usage splitting
+            self.state.tray_change_log.clear()
+            tn = self.state.tray_now
+            if (0 <= tn <= 15) or (128 <= tn <= 135) or tn == 254:
+                self.state.tray_change_log.append((tn, 0))
             # Initialize timelapse tracking based on current state
             # NOTE: xcam data is parsed BEFORE this code runs in _process_message,
             # so self.state.timelapse may already be set from this message.

@@ -640,8 +640,8 @@ class TestConfigureAMSSlotAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_configure_pfus_replaced_with_generic(self, async_client: AsyncClient, printer_factory):
-        """PFUS* user-local IDs are replaced with generic Bambu IDs."""
+    async def test_configure_pfus_sent_directly(self, async_client: AsyncClient, printer_factory):
+        """PFUS* cloud-synced custom preset IDs are sent to the printer."""
         printer = await printer_factory(name="H2D")
 
         mock_client = MagicMock()
@@ -670,12 +670,12 @@ class TestConfigureAMSSlotAPI:
 
             assert response.status_code == 200
             call_kwargs = mock_client.ams_set_filament_setting.call_args
-            assert call_kwargs.kwargs["tray_info_idx"] == "GFL99"
+            assert call_kwargs.kwargs["tray_info_idx"] == "PFUS9ac902733670a9"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_configure_pfus_reuses_existing_slot_id(self, async_client: AsyncClient, printer_factory):
-        """When slot already has a recognised preset for same material, reuse it."""
+    async def test_configure_pfus_takes_priority_over_slot(self, async_client: AsyncClient, printer_factory):
+        """Provided PFUS* preset takes priority over slot's existing preset."""
         printer = await printer_factory(name="H2D")
 
         mock_client = MagicMock()
@@ -721,13 +721,13 @@ class TestConfigureAMSSlotAPI:
 
             assert response.status_code == 200
             call_kwargs = mock_client.ams_set_filament_setting.call_args
-            # Should reuse the slicer's P4d64437, not replace with GFL99
-            assert call_kwargs.kwargs["tray_info_idx"] == "P4d64437"
+            # Provided preset wins over slot's existing one
+            assert call_kwargs.kwargs["tray_info_idx"] == "PFUS9ac902733670a9"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_configure_pfus_different_material_uses_generic(self, async_client: AsyncClient, printer_factory):
-        """When slot has a recognised preset but for DIFFERENT material, use generic."""
+    async def test_configure_pfus_used_regardless_of_slot_material(self, async_client: AsyncClient, printer_factory):
+        """Provided PFUS* preset is used even when slot has a different material."""
         printer = await printer_factory(name="H2D")
 
         mock_client = MagicMock()
@@ -766,8 +766,8 @@ class TestConfigureAMSSlotAPI:
 
             assert response.status_code == 200
             call_kwargs = mock_client.ams_set_filament_setting.call_args
-            # Different material → should NOT reuse PETG ID, use generic PLA
-            assert call_kwargs.kwargs["tray_info_idx"] == "GFL99"
+            # Provided preset wins — slot's material is irrelevant
+            assert call_kwargs.kwargs["tray_info_idx"] == "PFUS9ac902733670a9"
 
     @pytest.mark.asyncio
     @pytest.mark.integration

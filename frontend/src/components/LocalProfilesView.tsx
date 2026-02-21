@@ -22,7 +22,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 
 // Known material types for name-parsing fallback
-const MATERIAL_TYPES = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'PC', 'PA', 'PVA', 'HIPS', 'PP', 'PET', 'NYLON'];
+const MATERIAL_TYPES = ['PLA', 'PETG', 'PCTG', 'ABS', 'ASA', 'TPU', 'PC', 'PA', 'PVA', 'HIPS', 'PP', 'PET', 'NYLON'];
 
 const FILAMENT_TYPE_COLORS: Record<string, string> = {
   PLA: 'E8E8E8', PETG: '4A90D9', ABS: 'E67E22', ASA: 'D35400',

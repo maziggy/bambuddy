@@ -1935,6 +1935,9 @@ async def update_file(
         if "/" in data.filename or "\\" in data.filename:
             raise HTTPException(status_code=400, detail="Filename cannot contain path separators")
         file.filename = data.filename
+        # Also update print_name in file_metadata so the display name matches
+        if file.file_metadata and "print_name" in file.file_metadata:
+            file.file_metadata = {**file.file_metadata, "print_name": data.filename}
 
     if data.folder_id is not None:
         if data.folder_id == 0:

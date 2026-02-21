@@ -495,6 +495,7 @@ async def _collect_support_info() -> dict:
                     "external_camera_configured": bool(printer.external_camera_url),
                     "plate_detection_enabled": printer.plate_detection_enabled,
                     "hms_error_count": len(state.hms_errors) if state else 0,
+                    "developer_mode": state.developer_mode if state else None,
                     "nozzle_rack_count": len(state.nozzle_rack) if state else 0,
                 }
             )
@@ -512,11 +513,13 @@ async def _collect_support_info() -> dict:
             "cloud_token",
             "mqtt_password",
             "email",
+            "username",
             "vapid",
             "private_key",
             "public_key",
             "webhook",
             "url",
+            "path",  # Filesystem paths may contain usernames
             "config",  # URLs may contain IPs, configs may have embedded secrets
         }
         for s in all_settings:
@@ -660,17 +663,26 @@ async def _collect_support_info() -> dict:
     return info
 
 
-def _sanitize_log_content(content: str) -> str:
+def _sanitize_log_content(content: str, sensitive_strings: dict[str, str] | None = None) -> str:
     """Remove sensitive data from log content."""
-    # Replace IP addresses with [IP]
-    content = re.sub(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b", "[IP]", content)
+    # First, replace known sensitive values (database-aware exact matching)
+    # This catches printer names, usernames, and other arbitrary user-chosen strings
+    # that regex patterns cannot detect
+    if sensitive_strings:
+        # Sort by length descending to avoid partial matches (e.g. "My Printer 1" before "My Printer")
+        for value, label in sorted(sensitive_strings.items(), key=lambda x: len(x[0]), reverse=True):
+            if len(value) < 3:
+                continue  # Skip very short strings to prevent over-redaction
+            content = re.sub(re.escape(value), label, content)
+
+    # Replace credentials in URLs (e.g. http://user:pass@host)
+    content = re.sub(r"(https?://)[^/:@\s]+:[^/@\s]+@", r"\1[CREDENTIALS]@", content)
 
     # Replace email addresses
     content = re.sub(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "[EMAIL]", content)
 
     # Replace Bambu Lab printer serial numbers (format: 00M/01D/01S/01P/03W + alphanumeric, 12-16 chars total)
-    # These appear in logs as [SERIAL] or in messages
-    content = re.sub(r"\b(0[0-3][A-Z0-9])[A-Z0-9]{9,13}\b", r"\1[SERIAL]", content)
+    content = re.sub(r"\b0[0-3][A-Z0-9][A-Z0-9]{9,13}\b", "[SERIAL]", content, flags=re.IGNORECASE)
 
     # Replace paths with usernames
     content = re.sub(r"/home/[^/\s]+/", "/home/[user]/", content)
@@ -680,7 +692,7 @@ def _sanitize_log_content(content: str) -> str:
     return content
 
 
-def _get_log_content(max_bytes: int = 10 * 1024 * 1024) -> bytes:
+def _get_log_content(max_bytes: int = 10 * 1024 * 1024, sensitive_strings: dict[str, str] | None = None) -> bytes:
     """Get log file content, limited to max_bytes from the end."""
     log_file = settings.log_dir / "bambuddy.log"
     if not log_file.exists():
@@ -698,7 +710,7 @@ def _get_log_content(max_bytes: int = 10 * 1024 * 1024) -> bytes:
             content = f.read().decode("utf-8", errors="replace")
 
     # Sanitize sensitive data
-    content = _sanitize_log_content(content)
+    content = _sanitize_log_content(content, sensitive_strings)
     return content.encode("utf-8")
 
 
@@ -707,16 +719,39 @@ async def generate_support_bundle(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
 ):
     """Generate a support bundle ZIP file for issue reporting."""
-    # Check if debug logging is enabled
+    # Check if debug logging is enabled and collect sensitive values for redaction
     async with async_session() as db:
         enabled, _enabled_at = await _get_debug_setting(db)
 
-    if not enabled:
-        raise HTTPException(
-            status_code=400,
-            detail="Debug logging must be enabled before generating a support bundle. "
-            "Please enable debug logging, reproduce the issue, then generate the bundle.",
-        )
+        if not enabled:
+            raise HTTPException(
+                status_code=400,
+                detail="Debug logging must be enabled before generating a support bundle. "
+                "Please enable debug logging, reproduce the issue, then generate the bundle.",
+            )
+
+        # Collect known sensitive values for log redaction
+        sensitive_strings: dict[str, str] = {}
+
+        # Printer names and serial numbers
+        result = await db.execute(select(Printer.name, Printer.serial_number))
+        for name, serial in result.all():
+            if name:
+                sensitive_strings[name] = "[PRINTER]"
+            if serial:
+                sensitive_strings[serial] = "[SERIAL]"
+
+        # Auth usernames
+        result = await db.execute(select(User.username))
+        for (username,) in result.all():
+            if username:
+                sensitive_strings[username] = "[USER]"
+
+        # Bambu Cloud email
+        result = await db.execute(select(Settings.value).where(Settings.key == "bambu_cloud_email"))
+        cloud_email = result.scalar_one_or_none()
+        if cloud_email:
+            sensitive_strings[cloud_email] = "[EMAIL]"
 
     # Collect support info
     support_info = await _collect_support_info()
@@ -730,7 +765,7 @@ async def generate_support_bundle(
         zf.writestr("support-info.json", json.dumps(support_info, indent=2, default=str))
 
         # Add log file
-        log_content = _get_log_content()
+        log_content = _get_log_content(sensitive_strings=sensitive_strings)
         zf.writestr("bambuddy.log", log_content)
 
     zip_buffer.seek(0)

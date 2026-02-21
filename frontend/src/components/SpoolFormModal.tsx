@@ -1,14 +1,15 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { X, Loader2, Save, Beaker, Palette } from 'lucide-react';
+import { X, Loader2, Save, Beaker, Palette, Zap } from 'lucide-react';
 import { api } from '../api/client';
 import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import type { SpoolFormData, PrinterWithCalibrations, ColorPreset } from './spool-form/types';
 import { defaultFormData, validateForm } from './spool-form/types';
-import { buildFilamentOptions, extractBrandsFromPresets, findPresetOption, loadRecentColors, saveRecentColor } from './spool-form/utils';
+import { buildFilamentOptions, extractBrandsFromPresets, findPresetOption, loadRecentColors, parsePresetName, saveRecentColor } from './spool-form/utils';
+import { MATERIALS } from './spool-form/constants';
 import { FilamentSection } from './spool-form/FilamentSection';
 import { ColorSection } from './spool-form/ColorSection';
 import { AdditionalSection } from './spool-form/AdditionalSection';
@@ -22,9 +23,10 @@ interface SpoolFormModalProps {
   onClose: () => void;
   spool?: InventorySpool | null;
   printersWithCalibrations?: PrinterWithCalibrations[];
+  currencySymbol: string;
 }
 
-export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibrations = [] }: SpoolFormModalProps) {
+export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibrations = [], currencySymbol }: SpoolFormModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -36,6 +38,8 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
   const [errors, setErrors] = useState<Partial<Record<keyof SpoolFormData, string>>>({});
   const [activeTab, setActiveTab] = useState<TabId>('filament');
   const [weightTouched, setWeightTouched] = useState(false);
+  const [quickAdd, setQuickAdd] = useState(false);
+  const [quantity, setQuantity] = useState(1);
 
   // Cloud presets
   const [cloudAuthenticated, setCloudAuthenticated] = useState(false);
@@ -148,10 +152,88 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
   );
 
   // Extract brands from presets
-  const availableBrands = useMemo(
-    () => extractBrandsFromPresets(cloudPresets, localPresets),
-    [cloudPresets, localPresets],
-  );
+  const baseAvailableBrands = useMemo(() => {
+    const presetBrands = extractBrandsFromPresets(cloudPresets, localPresets);
+    const catalogBrands = colorCatalog
+      .map(entry => entry.manufacturer?.trim())
+      .filter((brand): brand is string => !!brand);
+    const brandSet = new Set<string>([...presetBrands, ...catalogBrands]);
+    return Array.from(brandSet).sort((a, b) => a.localeCompare(b));
+  }, [cloudPresets, localPresets, colorCatalog]);
+
+  const baseAvailableMaterials = useMemo(() => {
+    const catalogMaterials = colorCatalog
+      .map(entry => entry.material?.trim())
+      .filter((material): material is string => !!material);
+    const materialSet = new Set<string>([...MATERIALS, ...catalogMaterials]);
+    return Array.from(materialSet).sort((a, b) => a.localeCompare(b));
+  }, [colorCatalog]);
+
+  const brandMaterialPairs = useMemo(() => {
+    const pairs: Array<{ brand: string; material: string }> = [];
+
+    for (const entry of colorCatalog) {
+      const brand = entry.manufacturer?.trim();
+      const material = entry.material?.trim();
+      if (brand && material) pairs.push({ brand, material });
+    }
+
+    for (const preset of cloudPresets) {
+      const parsed = parsePresetName(preset.name);
+      if (parsed.brand && parsed.material) {
+        pairs.push({ brand: parsed.brand, material: parsed.material });
+      }
+    }
+
+    for (const preset of localPresets) {
+      const parsed = parsePresetName(preset.name);
+      const brand = preset.filament_vendor?.trim() || parsed.brand;
+      const material = parsed.material;
+      if (brand && material) {
+        pairs.push({ brand, material });
+      }
+    }
+
+    return pairs;
+  }, [cloudPresets, colorCatalog, localPresets]);
+
+  const brandToMaterials = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const pair of brandMaterialPairs) {
+      const brandKey = pair.brand.toLowerCase();
+      const materialKey = pair.material.toLowerCase();
+      if (!map.has(brandKey)) map.set(brandKey, new Set());
+      map.get(brandKey)!.add(materialKey);
+    }
+    return map;
+  }, [brandMaterialPairs]);
+
+  const materialToBrands = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const pair of brandMaterialPairs) {
+      const brandKey = pair.brand.toLowerCase();
+      const materialKey = pair.material.toLowerCase();
+      if (!map.has(materialKey)) map.set(materialKey, new Set());
+      map.get(materialKey)!.add(brandKey);
+    }
+    return map;
+  }, [brandMaterialPairs]);
+
+  const availableBrands = useMemo(() => {
+    if (!formData.material) return baseAvailableBrands;
+    const materialKey = formData.material.toLowerCase();
+    const brandKeys = materialToBrands.get(materialKey);
+    if (!brandKeys || brandKeys.size === 0) return baseAvailableBrands;
+    return baseAvailableBrands.filter(brand => brandKeys.has(brand.toLowerCase()));
+  }, [baseAvailableBrands, formData.material, materialToBrands]);
+
+  const availableMaterials = useMemo(() => {
+    if (!formData.brand) return baseAvailableMaterials;
+    const brandKey = formData.brand.toLowerCase();
+    const materialKeys = brandToMaterials.get(brandKey);
+    if (!materialKeys || materialKeys.size === 0) return baseAvailableMaterials;
+    return baseAvailableMaterials.filter(material => materialKeys.has(material.toLowerCase()));
+  }, [baseAvailableMaterials, formData.brand, brandToMaterials]);
 
   // Find selected preset option
   const selectedPresetOption = useMemo(
@@ -175,6 +257,7 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
           weight_used: spool.weight_used || 0,
           slicer_filament: spool.slicer_filament || '',
           note: spool.note || '',
+          cost_per_kg: spool.cost_per_kg ?? null,
         });
         setPresetInputValue(spool.slicer_filament_name || spool.slicer_filament || '');
 
@@ -194,6 +277,8 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
         setFormData(defaultFormData);
         setPresetInputValue('');
         setSelectedProfiles(new Set());
+        setQuickAdd(false);
+        setQuantity(1);
       }
       setErrors({});
       setActiveTab('filament');
@@ -233,6 +318,24 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
       }
       await queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
       showToast(t('inventory.spoolCreated'), 'success');
+      onClose();
+    },
+    onError: (error: Error) => {
+      showToast(error.message, 'error');
+    },
+  });
+
+  const bulkCreateMutation = useMutation({
+    mutationFn: ({ data, qty }: { data: Record<string, unknown>; qty: number }) =>
+      api.bulkCreateSpools(data as Parameters<typeof api.bulkCreateSpools>[0], qty),
+    onSuccess: async (newSpools) => {
+      if (selectedProfiles.size > 0) {
+        for (const spool of newSpools) {
+          await saveKProfiles(spool.id);
+        }
+      }
+      await queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
+      showToast(t('inventory.spoolsCreated', { count: newSpools.length }), 'success');
       onClose();
     },
     onError: (error: Error) => {
@@ -316,7 +419,7 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
   if (!isOpen) return null;
 
   const handleSubmit = () => {
-    const validation = validateForm(formData);
+    const validation = validateForm(formData, quickAdd);
     if (!validation.isValid) {
       setErrors(validation.errors);
       // Switch to filament tab if there are errors there
@@ -343,6 +446,7 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
       nozzle_temp_min: null,
       nozzle_temp_max: null,
       note: formData.note || null,
+      cost_per_kg: formData.cost_per_kg,
     };
 
     // Only send weight_used when creating or when explicitly changed by the user.
@@ -353,12 +457,14 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
 
     if (isEditing) {
       updateMutation.mutate(data);
+    } else if (quantity > 1) {
+      bulkCreateMutation.mutate({ data, qty: quantity });
     } else {
       createMutation.mutate(data);
     }
   };
 
-  const isPending = createMutation.isPending || updateMutation.isPending;
+  const isPending = createMutation.isPending || bulkCreateMutation.isPending || updateMutation.isPending;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -381,6 +487,32 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
           </button>
         </div>
 
+        {/* Quick Add toggle — only in create mode */}
+        {!isEditing && (
+          <div className="flex items-center justify-between px-4 py-2 border-b border-bambu-dark-tertiary flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 text-amber-400" />
+              <span className="text-sm text-white">{t('inventory.quickAdd')}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setQuickAdd(!quickAdd);
+                if (!quickAdd) setActiveTab('filament');
+              }}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                quickAdd ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                  quickAdd ? 'translate-x-4' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+          </div>
+        )}
+
         {/* Tabs */}
         <div className="flex border-b border-bambu-dark-tertiary flex-shrink-0">
           <button
@@ -394,22 +526,24 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
             <Palette className="w-4 h-4" />
             {t('inventory.filamentInfoTab')}
           </button>
-          <button
-            onClick={() => setActiveTab('pa-profile')}
-            className={`flex-1 px-4 py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
-              activeTab === 'pa-profile'
-                ? 'text-bambu-green border-b-2 border-bambu-green'
-                : 'text-bambu-gray hover:text-white'
-            }`}
-          >
-            <Beaker className="w-4 h-4" />
-            {t('inventory.paProfileTab')}
-            {selectedProfileCount > 0 && (
-              <span className="text-xs px-1.5 py-0.5 rounded-full bg-bambu-green/20 text-bambu-green">
-                {selectedProfileCount}
-              </span>
-            )}
-          </button>
+          {!quickAdd && (
+            <button
+              onClick={() => setActiveTab('pa-profile')}
+              className={`flex-1 px-4 py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
+                activeTab === 'pa-profile'
+                  ? 'text-bambu-green border-b-2 border-bambu-green'
+                  : 'text-bambu-gray hover:text-white'
+              }`}
+            >
+              <Beaker className="w-4 h-4" />
+              {t('inventory.paProfileTab')}
+              {selectedProfileCount > 0 && (
+                <span className="text-xs px-1.5 py-0.5 rounded-full bg-bambu-green/20 text-bambu-green">
+                  {selectedProfileCount}
+                </span>
+              )}
+            </button>
+          )}
         </div>
 
         {/* Content */}
@@ -431,19 +565,12 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
                   selectedPresetOption={selectedPresetOption}
                   filamentOptions={filamentOptions}
                   availableBrands={availableBrands}
+                  availableMaterials={availableMaterials}
+                  quickAdd={quickAdd}
+                  quantity={quantity}
+                  onQuantityChange={setQuantity}
+                  errors={errors}
                 />
-                {errors.slicer_filament && (
-                  <p className="mt-1 text-xs text-red-400">{errors.slicer_filament}</p>
-                )}
-                {errors.material && (
-                  <p className="mt-1 text-xs text-red-400">{errors.material}</p>
-                )}
-                {errors.brand && (
-                  <p className="mt-1 text-xs text-red-400">{errors.brand}</p>
-                )}
-                {errors.subtype && (
-                  <p className="mt-1 text-xs text-red-400">{errors.subtype}</p>
-                )}
               </div>
 
               {/* Color Section */}
@@ -469,6 +596,7 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
                   formData={formData}
                   updateField={updateField}
                   spoolCatalog={spoolCatalog}
+                  currencySymbol={currencySymbol}
                 />
               </div>
 

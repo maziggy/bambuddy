@@ -2,6 +2,7 @@ import io
 import json
 import logging
 import zipfile
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
@@ -18,6 +19,7 @@ from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.archive import PrintArchive
 from backend.app.models.filament import Filament
+from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.user import User
 from backend.app.schemas.archive import ArchiveResponse, ArchiveStats, ArchiveUpdate, ReprintRequest
 from backend.app.services.archive import ArchiveService
@@ -570,7 +572,7 @@ async def get_archive_stats(
                     total_energy_kwh += mqtt_data.energy
 
         total_energy_kwh = round(total_energy_kwh, 3)
-        total_energy_cost = round(total_energy_kwh * energy_cost_per_kwh, 2)
+        total_energy_cost = round(total_energy_kwh * energy_cost_per_kwh, 3)
     else:
         # Print mode: sum up per-print energy from archives
         energy_kwh_result = await db.execute(select(func.sum(PrintArchive.energy_kwh)))
@@ -591,7 +593,7 @@ async def get_archive_stats(
         average_time_accuracy=average_accuracy,
         time_accuracy_by_printer=accuracy_by_printer if accuracy_by_printer else None,
         total_energy_kwh=round(total_energy_kwh, 3),
-        total_energy_cost=round(total_energy_cost, 2),
+        total_energy_cost=round(total_energy_cost, 3),
     )
 
 
@@ -827,7 +829,7 @@ async def rescan_archive(
         raise HTTPException(404, "Archive not found")
 
     file_path = settings.base_dir / archive.file_path
-    if not file_path.exists():
+    if not file_path.is_file():
         raise HTTPException(404, "Archive file not found")
 
     # Parse the 3MF file
@@ -856,18 +858,34 @@ async def rescan_archive(
     if metadata.get("designer"):
         archive.designer = metadata["designer"]
 
-    # Calculate cost based on filament usage and type
+    # Calculate cost: prefer spool-based cost if available, else catalog-based
+
     if archive.filament_used_grams and archive.filament_type:
-        primary_type = archive.filament_type.split(",")[0].strip()
-        filament_result = await db.execute(select(Filament).where(Filament.type == primary_type).limit(1))
-        filament = filament_result.scalar_one_or_none()
-        if filament:
-            archive.cost = round((archive.filament_used_grams / 1000) * filament.cost_per_kg, 2)
+        usage_result = await db.execute(
+            select(func.sum(SpoolUsageHistory.cost)).where(SpoolUsageHistory.archive_id == archive.id)
+        )
+        usage_cost = usage_result.scalar()
+        if usage_cost is not None and usage_cost > 0:
+            archive.cost = float(Decimal(str(usage_cost)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
         else:
-            # Use default filament cost from settings
-            default_cost_setting = await get_setting(db, "default_filament_cost")
-            default_cost_per_kg = float(default_cost_setting) if default_cost_setting else 25.0
-            archive.cost = round((archive.filament_used_grams / 1000) * default_cost_per_kg, 2)
+            primary_type = archive.filament_type.split(",")[0].strip()
+            filament_result = await db.execute(select(Filament).where(Filament.type == primary_type).limit(1))
+            filament = filament_result.scalar_one_or_none()
+            if filament:
+                archive.cost = float(
+                    Decimal(str((archive.filament_used_grams / 1000) * filament.cost_per_kg)).quantize(
+                        Decimal("0.01"), rounding=ROUND_HALF_UP
+                    )
+                )
+            else:
+                # Use default filament cost from settings
+                default_cost_setting = await get_setting(db, "default_filament_cost")
+                default_cost_per_kg = float(default_cost_setting) if default_cost_setting else 25.0
+                archive.cost = float(
+                    Decimal(str((archive.filament_used_grams / 1000) * default_cost_per_kg)).quantize(
+                        Decimal("0.01"), rounding=ROUND_HALF_UP
+                    )
+                )
 
     await db.commit()
     await db.refresh(archive)
@@ -880,6 +898,7 @@ async def recalculate_all_costs(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
 ):
     """Recalculate costs for all archives based on filament usage and prices."""
+
     from backend.app.api.routes.settings import get_setting
 
     result = await db.execute(select(PrintArchive))
@@ -893,15 +912,38 @@ async def recalculate_all_costs(
     default_cost_setting = await get_setting(db, "default_filament_cost")
     default_cost_per_kg = float(default_cost_setting) if default_cost_setting else 25.0
 
+    # Pre-fetch all usage costs by archive_id
+    usage_costs_result = await db.execute(
+        select(SpoolUsageHistory.archive_id, func.sum(SpoolUsageHistory.cost)).group_by(SpoolUsageHistory.archive_id)
+    )
+    usage_costs = usage_costs_result.fetchall()
+    cost_map = {row[0]: row[1] for row in usage_costs if row[0] is not None and row[1] is not None and row[1] > 0}
+
     updated = 0
     for archive in archives:
-        if archive.filament_used_grams and archive.filament_type:
-            primary_type = archive.filament_type.split(",")[0].strip()
-            cost_per_kg = filaments.get(primary_type, default_cost_per_kg)
-            new_cost = round((archive.filament_used_grams / 1000) * cost_per_kg, 2)
-            if archive.cost != new_cost:
-                archive.cost = new_cost
-                updated += 1
+        usage_cost = cost_map.get(archive.id)
+        if usage_cost is not None:
+            new_cost = round(usage_cost, 2)
+        else:
+            # Fallback: sum costs for old records by print_name
+            usage_result = await db.execute(
+                select(func.sum(SpoolUsageHistory.cost)).where(
+                    SpoolUsageHistory.print_name == archive.print_name,
+                    SpoolUsageHistory.archive_id.is_(None),
+                )
+            )
+            fallback_cost = usage_result.scalar()
+            if fallback_cost is not None and fallback_cost > 0:
+                new_cost = round(fallback_cost, 2)
+            elif archive.filament_used_grams and archive.filament_type:
+                primary_type = archive.filament_type.split(",")[0].strip()
+                cost_per_kg = filaments.get(primary_type, default_cost_per_kg)
+                new_cost = round((archive.filament_used_grams / 1000) * cost_per_kg, 2)
+            else:
+                new_cost = None
+        if new_cost is not None and archive.cost != new_cost:
+            archive.cost = new_cost
+            updated += 1
 
     await db.commit()
     return {"message": f"Recalculated costs for {updated} archives", "updated": updated}
@@ -924,7 +966,7 @@ async def rescan_all_archives(
     for archive in archives:
         try:
             file_path = settings.base_dir / archive.file_path
-            if not file_path.exists():
+            if not file_path.is_file():
                 errors.append({"id": archive.id, "error": "File not found"})
                 continue
 
@@ -994,7 +1036,7 @@ async def backfill_content_hashes(
     for archive in archives:
         try:
             file_path = settings.base_dir / archive.file_path
-            if not file_path.exists():
+            if not file_path.is_file():
                 errors.append({"id": archive.id, "error": "File not found"})
                 continue
 
@@ -1053,7 +1095,7 @@ async def download_archive(
         raise HTTPException(404, "Archive not found")
 
     file_path = settings.base_dir / archive.file_path
-    if not file_path.exists():
+    if not file_path.is_file():
         raise HTTPException(404, "File not found")
 
     # Use inline disposition to let browser/OS handle file association
@@ -1081,7 +1123,7 @@ async def download_archive_with_filename(
         raise HTTPException(404, "Archive not found")
 
     file_path = settings.base_dir / archive.file_path
-    if not file_path.exists():
+    if not file_path.is_file():
         raise HTTPException(404, "File not found")
 
     return FileResponse(
@@ -1137,7 +1179,7 @@ async def download_archive_for_slicer(
         raise HTTPException(404, "Archive not found")
 
     file_path = settings.base_dir / archive.file_path
-    if not file_path.exists():
+    if not file_path.is_file():
         raise HTTPException(404, "File not found")
 
     return FileResponse(
@@ -1780,8 +1822,7 @@ async def upload_photo(
         raise HTTPException(400, "File must be an image (.jpg, .jpeg, .png, .webp)")
 
     # Get archive directory
-    file_path = settings.base_dir / archive.file_path
-    archive_dir = file_path.parent
+    archive_dir = settings.base_dir / Path(archive.file_path).parent
     photos_dir = archive_dir / "photos"
     photos_dir.mkdir(exist_ok=True)
 
@@ -1822,8 +1863,8 @@ async def get_photo(
     if not archive:
         raise HTTPException(404, "Archive not found")
 
-    file_path = settings.base_dir / archive.file_path
-    photo_path = file_path.parent / "photos" / filename
+    archive_dir = settings.base_dir / Path(archive.file_path).parent
+    photo_path = archive_dir / "photos" / filename
 
     if not photo_path.exists():
         raise HTTPException(404, "Photo not found")
@@ -1858,8 +1899,8 @@ async def delete_photo(
         raise HTTPException(404, "Photo not found")
 
     # Delete file
-    file_path = settings.base_dir / archive.file_path
-    photo_path = file_path.parent / "photos" / filename
+    archive_dir = settings.base_dir / Path(archive.file_path).parent
+    photo_path = archive_dir / "photos" / filename
     if photo_path.exists():
         photo_path.unlink()
 
@@ -1949,7 +1990,7 @@ async def get_archive_capabilities(
         raise HTTPException(404, "Archive not found")
 
     file_path = settings.base_dir / archive.file_path
-    if not file_path.exists():
+    if not file_path.is_file():
         raise HTTPException(404, "File not found")
 
     has_model = False
@@ -2167,7 +2208,7 @@ async def get_gcode(
         raise HTTPException(404, "Archive not found")
 
     file_path = settings.base_dir / archive.file_path
-    if not file_path.exists():
+    if not file_path.is_file():
         raise HTTPException(404, "File not found")
 
     try:
@@ -2209,7 +2250,7 @@ async def get_plate_preview(
         raise HTTPException(404, "Archive not found")
 
     file_path = settings.base_dir / archive.file_path
-    if not file_path.exists():
+    if not file_path.is_file():
         raise HTTPException(404, "File not found")
 
     try:
@@ -2370,7 +2411,7 @@ async def get_archive_plates(
         raise HTTPException(404, "Archive not found")
 
     file_path = settings.base_dir / archive.file_path
-    if not file_path.exists():
+    if not file_path.is_file():
         raise HTTPException(404, "Archive file not found")
 
     plates = []
@@ -2638,7 +2679,7 @@ async def get_plate_thumbnail(
         raise HTTPException(404, "Archive not found")
 
     file_path = settings.base_dir / archive.file_path
-    if not file_path.exists():
+    if not file_path.is_file():
         raise HTTPException(404, "Archive file not found")
 
     try:
@@ -2677,7 +2718,7 @@ async def get_filament_requirements(
         raise HTTPException(404, "Archive not found")
 
     file_path = settings.base_dir / archive.file_path
-    if not file_path.exists():
+    if not file_path.is_file():
         raise HTTPException(404, "Archive file not found")
 
     filaments = []
@@ -2897,7 +2938,7 @@ async def get_project_page(
         raise HTTPException(404, "Archive not found")
 
     file_path = settings.base_dir / archive.file_path
-    if not file_path.exists():
+    if not file_path.is_file():
         raise HTTPException(404, "Archive file not found")
 
     parser = ProjectPageParser(file_path)
@@ -2922,7 +2963,7 @@ async def update_project_page(
         raise HTTPException(404, "Archive not found")
 
     file_path = settings.base_dir / archive.file_path
-    if not file_path.exists():
+    if not file_path.is_file():
         raise HTTPException(404, "Archive file not found")
 
     parser = ProjectPageParser(file_path)
@@ -2954,7 +2995,7 @@ async def get_project_image(
         raise HTTPException(404, "Archive not found")
 
     file_path = settings.base_dir / archive.file_path
-    if not file_path.exists():
+    if not file_path.is_file():
         raise HTTPException(404, "Archive file not found")
 
     parser = ProjectPageParser(file_path)

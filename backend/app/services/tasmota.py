@@ -18,19 +18,10 @@ class TasmotaService:
     def __init__(self, timeout: float = 5.0):
         self.timeout = timeout
 
-    def _build_url(
-        self,
-        ip: str,
-        command: str,
-        username: str | None = None,
-        password: str | None = None,
-    ) -> str:
+    def _build_url(self, ip: str, command: str) -> str:
         """Build Tasmota command URL."""
         # URL encode the command
         cmd = command.replace(" ", "%20")
-
-        if username and password:
-            return f"http://{username}:{password}@{ip}/cm?cmnd={cmd}"
         return f"http://{ip}/cm?cmnd={cmd}"
 
     @staticmethod
@@ -53,11 +44,12 @@ class TasmotaService:
         if not self._validate_ip(ip):
             logger.warning("Blocked Tasmota request to invalid IP: %s", ip)
             return None
-        url = self._build_url(ip, command, username, password)
+        url = self._build_url(ip, command)
+        auth = (username, password) if username and password else None
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(url)
+                response = await client.get(url, auth=auth)
                 response.raise_for_status()
                 return response.json()
         except httpx.TimeoutException:

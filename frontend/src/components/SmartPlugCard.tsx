@@ -265,7 +265,7 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
               )}
               {status.energy.today !== null && status.energy.today !== undefined && (
                 <div className="flex-1 text-center border-l border-bambu-dark-tertiary">
-                  <p className="text-lg font-semibold text-white">{status.energy.today.toFixed(2)}</p>
+                  <p className="text-lg font-semibold text-white">{status.energy.today.toFixed(3)}</p>
                   <p className="text-xs text-bambu-gray">kWh Today</p>
                 </div>
               )}

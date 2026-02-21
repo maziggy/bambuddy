@@ -11,6 +11,7 @@ class SpoolUsageHistoryResponse(BaseModel):
     weight_used: float
     percent_used: int
     status: str
+    cost: float | None = None
     created_at: datetime
 
     class Config:

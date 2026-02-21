@@ -91,7 +91,7 @@ function QuickStatsWidget({
         </div>
         <div>
           <p className="text-xs text-bambu-gray">{t('stats.energyUsed')}</p>
-          <p className="text-xl font-bold text-white">{stats?.total_energy_kwh.toFixed(2) || '0.00'} kWh</p>
+          <p className="text-xl font-bold text-white">{stats?.total_energy_kwh.toFixed(3) || '0.000'} kWh</p>
         </div>
       </div>
       <div className="flex items-start gap-3">

@@ -80,7 +80,7 @@ interface ConfigureAmsSlotModalProps {
 }
 
 // Known filament material types
-const MATERIAL_TYPES = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'PC', 'PA', 'NYLON', 'PVA', 'HIPS', 'PP', 'PET'];
+const MATERIAL_TYPES = ['PLA', 'PETG', 'PCTG', 'ABS', 'ASA', 'TPU', 'PC', 'PA', 'NYLON', 'PVA', 'HIPS', 'PP', 'PET'];
 
 // Extract filament type from preset name by finding known material type
 function parsePresetName(name: string): { material: string; brand: string; variant: string } {
@@ -390,6 +390,9 @@ export function ConfigureAmsSlotModal({
         } else if (material.includes('TPU')) {
         tempMin = 200;
         tempMax = 240;
+      } else if (material === 'PCTG') {
+        tempMin = 220;
+        tempMax = 260;
       } else if (material.includes('PC')) {
         tempMin = 260;
         tempMax = 300;

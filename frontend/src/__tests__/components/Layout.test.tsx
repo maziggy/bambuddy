@@ -53,6 +53,9 @@ describe('Layout', () => {
       }),
       http.get('/api/v1/auth/status', () => {
         return HttpResponse.json({ auth_enabled: false, requires_setup: false });
+      }),
+      http.get('/api/v1/printers/developer-mode-warnings', () => {
+        return HttpResponse.json([]);
       })
     );
   });
@@ -181,6 +184,74 @@ describe('Layout', () => {
       await waitFor(() => {
         // Modal should be closed
         expect(document.body.textContent).not.toContain('Print Paused!');
+      });
+    });
+  });
+
+  describe('developer mode warning banner', () => {
+    it('shows warning banner when printers lack developer mode', async () => {
+      server.use(
+        http.get('/api/v1/printers/developer-mode-warnings', () => {
+          return HttpResponse.json([
+            { printer_id: 1, name: 'X1 Carbon' },
+          ]);
+        })
+      );
+
+      render(<Layout />);
+
+      await waitFor(() => {
+        expect(document.body.textContent).toContain('Developer LAN mode is not enabled on');
+        expect(document.body.textContent).toContain('X1 Carbon');
+      });
+    });
+
+    it('shows multiple printer names in warning banner', async () => {
+      server.use(
+        http.get('/api/v1/printers/developer-mode-warnings', () => {
+          return HttpResponse.json([
+            { printer_id: 1, name: 'X1 Carbon' },
+            { printer_id: 2, name: 'P1S' },
+          ]);
+        })
+      );
+
+      render(<Layout />);
+
+      await waitFor(() => {
+        expect(document.body.textContent).toContain('X1 Carbon');
+        expect(document.body.textContent).toContain('P1S');
+      });
+    });
+
+    it('hides warning banner when no printers lack developer mode', async () => {
+      // Default handler returns empty array
+      render(<Layout />);
+
+      await waitFor(() => {
+        const sidebar = document.querySelector('aside');
+        expect(sidebar).toBeInTheDocument();
+      });
+
+      // Banner should not be present
+      expect(document.body.textContent).not.toContain('Developer LAN mode is not enabled on');
+    });
+
+    it('shows how to enable link in warning banner', async () => {
+      server.use(
+        http.get('/api/v1/printers/developer-mode-warnings', () => {
+          return HttpResponse.json([
+            { printer_id: 1, name: 'X1 Carbon' },
+          ]);
+        })
+      );
+
+      render(<Layout />);
+
+      await waitFor(() => {
+        expect(document.body.textContent).toContain('How to enable');
+        const link = document.querySelector('a[href*="enable-developer-mode"]');
+        expect(link).toBeInTheDocument();
       });
     });
   });

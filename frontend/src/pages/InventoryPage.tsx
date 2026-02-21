@@ -15,6 +15,9 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { ColumnConfigModal, type ColumnConfig } from '../components/ColumnConfigModal';
 import { useToast } from '../contexts/ToastContext';
 import { resolveSpoolColorName } from '../utils/colors';
+import { getCurrencySymbol } from '../utils/currency';
+import { formatDateInput, parseUTCDate, type DateFormat } from '../utils/date';
+import { formatSlotLabel } from '../utils/amsHelpers';
 
 type ArchiveFilter = 'active' | 'archived';
 type UsageFilter = 'all' | 'used' | 'new';
@@ -49,7 +52,9 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'tag_id', label: 'Tag ID', visible: false },
   { id: 'data_origin', label: 'Data Origin', visible: false },
   { id: 'tag_type', label: 'Linked Tag Type', visible: false },
+  { id: 'stock', label: 'Stock', visible: false },
   { id: 'remaining', label: 'Remaining', visible: true },
+  { id: 'cost_per_kg', label: 'Cost/kg', visible: false },
 ];
 
 function loadColumnConfig(): ColumnConfig[] {
@@ -98,10 +103,11 @@ const MATERIAL_COLORS: Record<string, string> = {
 
 type TFn = (key: string) => string;
 
-function formatDate(dateStr: string | null): string {
+function formatInventoryDate(dateStr: string | null, dateFormat: DateFormat = 'system'): string {
   if (!dateStr) return '-';
-  const date = new Date(dateStr);
-  return date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  const date = parseUTCDate(dateStr);
+  if (!date) return '-';
+  return formatDateInput(date, dateFormat);
 }
 
 type CellCtx = {
@@ -109,6 +115,9 @@ type CellCtx = {
   remaining: number;
   pct: number;
   assignmentMap: Record<number, SpoolAssignment>;
+  currencySymbol: string;
+  dateFormat: DateFormat;
+  t: TFn;
 };
 
 // Column header labels (25 columns — matching SpoolBuddy exactly)
@@ -136,7 +145,9 @@ const columnHeaders: Record<string, (t: TFn) => string> = {
   tag_id: () => 'Tag ID',
   data_origin: () => 'Data Origin',
   tag_type: () => 'Linked Tag Type',
+  stock: (t) => t('inventory.stock'),
   remaining: (t) => t('inventory.remaining'),
+  cost_per_kg: (t) => t('inventory.costPerKg'),
 };
 
 // Column cell renderers (25 columns — matching SpoolBuddy exactly)
@@ -144,14 +155,14 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
   id: ({ spool }) => (
     <span className="text-sm font-medium text-white">{spool.id}</span>
   ),
-  added_time: ({ spool }) => (
-    <span className="text-sm text-bambu-gray">{formatDate(spool.created_at)}</span>
+  added_time: ({ spool, dateFormat }) => (
+    <span className="text-sm text-bambu-gray">{formatInventoryDate(spool.created_at, dateFormat)}</span>
   ),
-  encode_time: ({ spool }) => (
-    <span className="text-sm text-bambu-gray">{formatDate(spool.encode_time)}</span>
+  encode_time: ({ spool, dateFormat }) => (
+    <span className="text-sm text-bambu-gray">{formatInventoryDate(spool.encode_time, dateFormat)}</span>
   ),
-  last_used_time: ({ spool }) => (
-    <span className="text-sm text-bambu-gray">{spool.last_used ? formatDate(spool.last_used) : 'Never'}</span>
+  last_used_time: ({ spool, dateFormat }) => (
+    <span className="text-sm text-bambu-gray">{spool.last_used ? formatInventoryDate(spool.last_used, dateFormat) : 'Never'}</span>
   ),
   rgba: ({ spool }) => (
     <div className="flex items-center justify-center">
@@ -183,12 +194,12 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
     const assignment = assignmentMap[spool.id];
     if (!assignment) return <span className="text-sm text-bambu-gray">-</span>;
     const printerLabel = assignment.printer_name || `Printer ${assignment.printer_id}`;
-    // Bambu slot notation: AMS 0=A, 1=B, 2=C, 3=D; tray 0-based → 1-based
-    const slotLetter = String.fromCharCode(65 + assignment.ams_id);
-    const slotNumber = assignment.tray_id + 1;
+    const isExternal = assignment.ams_id === 254 || assignment.ams_id === 255;
+    const isHt = !isExternal && assignment.ams_id >= 128;
+    const slotLabel = formatSlotLabel(assignment.ams_id, assignment.tray_id, isHt, isExternal);
     return (
       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-500/20 text-purple-400">
-        {printerLabel} {slotLetter}{slotNumber}
+        {printerLabel} {slotLabel}
       </span>
     );
   },
@@ -240,6 +251,16 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
   tag_type: ({ spool }) => (
     <span className="text-sm text-bambu-gray">{spool.tag_type || '-'}</span>
   ),
+  stock: ({ spool, t }) => {
+    if (!spool.slicer_filament) {
+      return (
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-500/20 text-amber-400">
+          {t('inventory.stock')}
+        </span>
+      );
+    }
+    return <span className="text-sm text-bambu-gray">-</span>;
+  },
   remaining: ({ remaining, pct }) => (
     <div className="flex items-center gap-2">
       <div className="flex-1 h-2 bg-bambu-dark-tertiary rounded-full overflow-hidden">
@@ -250,6 +271,11 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
       </div>
       <span className="text-xs text-bambu-gray min-w-[40px] text-right">{Math.round(remaining)}g</span>
     </div>
+  ),
+  cost_per_kg: ({ spool, currencySymbol }) => (
+    <span className="text-sm text-bambu-gray">
+      {spool.cost_per_kg != null ? `${currencySymbol}${spool.cost_per_kg.toFixed(2)}` : '-'}
+    </span>
   ),
 };
 
@@ -267,7 +293,9 @@ const columnSortValues: Record<string, (spool: InventorySpool, assignmentMap: Re
   location: (s, am) => {
     const a = am[s.id];
     if (!a) return '';
-    return `${a.printer_name || ''} ${String.fromCharCode(65 + a.ams_id)}${a.tray_id + 1}`;
+    const isExt = a.ams_id === 254 || a.ams_id === 255;
+    const isHt = !isExt && a.ams_id >= 128;
+    return `${a.printer_name || ''} ${formatSlotLabel(a.ams_id, a.tray_id, isHt, isExt)}`;
   },
   label_weight: (s) => s.label_weight,
   net: (s) => Math.max(0, s.label_weight - s.weight_used),
@@ -277,6 +305,8 @@ const columnSortValues: Record<string, (spool: InventorySpool, assignmentMap: Re
   note: (s) => (s.note || '').toLowerCase(),
   data_origin: (s) => (s.data_origin || '').toLowerCase(),
   tag_type: (s) => (s.tag_type || '').toLowerCase(),
+  stock: (s) => s.slicer_filament ? 1 : 0,
+  cost_per_kg: (s) => s.cost_per_kg ?? 0,
 };
 
 const SORT_STATE_KEY = 'bambuddy-inventory-sort';
@@ -311,6 +341,7 @@ export default function InventoryPage() {
   const [usageFilter, setUsageFilter] = useState<UsageFilter>('all');
   const [materialFilter, setMaterialFilter] = useState('');
   const [brandFilter, setBrandFilter] = useState('');
+  const [stockFilter, setStockFilter] = useState<'all' | 'stock' | 'configured'>('all');
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [sortState, setSortState] = useState<SortState>(loadSortState);
@@ -329,6 +360,13 @@ export default function InventoryPage() {
     } catch { /* ignore */ }
     return 15;
   });
+
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: api.getSettings,
+  });
+
+  const dateFormat: DateFormat = settings?.date_format || 'system';
 
   const { data: spools, isLoading } = useQuery({
     queryKey: ['inventory-spools'],
@@ -392,6 +430,8 @@ export default function InventoryPage() {
 
   const inPrinterCount = assignments?.length ?? 0;
 
+  const currencySymbol = getCurrencySymbol(settings?.currency || 'USD');
+
   // Map spool_id -> assignment for location column
   const assignmentMap = useMemo(() => {
     const map: Record<number, SpoolAssignment> = {};
@@ -437,6 +477,13 @@ export default function InventoryPage() {
       filtered = filtered.filter((s) => s.brand === brandFilter);
     }
 
+    // Stock filter
+    if (stockFilter === 'stock') {
+      filtered = filtered.filter((s) => !s.slicer_filament);
+    } else if (stockFilter === 'configured') {
+      filtered = filtered.filter((s) => !!s.slicer_filament);
+    }
+
     // Global search
     if (search) {
       const q = search.toLowerCase();
@@ -451,7 +498,7 @@ export default function InventoryPage() {
     }
 
     return filtered;
-  }, [spools, archiveFilter, usageFilter, materialFilter, brandFilter, search]);
+  }, [spools, archiveFilter, usageFilter, materialFilter, brandFilter, stockFilter, search]);
 
   // Reset page on filter changes
   const resetPage = () => setPageIndex(0);
@@ -461,7 +508,7 @@ export default function InventoryPage() {
   const uniqueBrands = [...new Set(spools?.map((s) => s.brand).filter(Boolean) || [])].sort() as string[];
 
   // Check if any filters are non-default
-  const hasActiveFilters = archiveFilter !== 'active' || usageFilter !== 'all' || !!materialFilter || !!brandFilter || !!search;
+  const hasActiveFilters = archiveFilter !== 'active' || usageFilter !== 'all' || !!materialFilter || !!brandFilter || stockFilter !== 'all' || !!search;
 
   const handleColumnConfigSave = (config: ColumnConfig[]) => {
     setColumnConfig(config);
@@ -523,6 +570,7 @@ export default function InventoryPage() {
     setUsageFilter('all');
     setMaterialFilter('');
     setBrandFilter('');
+    setStockFilter('all');
     setSearch('');
     resetPage();
   };
@@ -733,6 +781,40 @@ export default function InventoryPage() {
           </button>
         </div>
 
+        {/* Stock filter chips */}
+        <div className="flex items-center rounded-lg border border-bambu-dark-tertiary overflow-hidden">
+          <button
+            onClick={() => { setStockFilter('all'); resetPage(); }}
+            className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+              stockFilter === 'all'
+                ? 'bg-bambu-green/20 text-bambu-green'
+                : 'text-bambu-gray hover:bg-bambu-dark-tertiary'
+            }`}
+          >
+            {t('inventory.all')}
+          </button>
+          <button
+            onClick={() => { setStockFilter('stock'); resetPage(); }}
+            className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+              stockFilter === 'stock'
+                ? 'bg-amber-500/20 text-amber-400'
+                : 'text-bambu-gray hover:bg-bambu-dark-tertiary'
+            }`}
+          >
+            {t('inventory.stock')}
+          </button>
+          <button
+            onClick={() => { setStockFilter('configured'); resetPage(); }}
+            className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+              stockFilter === 'configured'
+                ? 'bg-bambu-green/20 text-bambu-green'
+                : 'text-bambu-gray hover:bg-bambu-dark-tertiary'
+            }`}
+          >
+            {t('inventory.configured')}
+          </button>
+        </div>
+
         <div className="w-px h-5 bg-bambu-dark-tertiary" />
 
         {/* Material dropdown chip */}
@@ -927,7 +1009,7 @@ export default function InventoryPage() {
                       >
                         {visibleColumns.map((colId) => (
                           <td key={colId} className="py-3 px-4">
-                            {columnCells[colId]?.({ spool, remaining, pct, assignmentMap })}
+                            {columnCells[colId]?.({ spool, remaining, pct, assignmentMap, currencySymbol, dateFormat, t })}
                           </td>
                         ))}
                         <td className="py-3 px-4">
@@ -1051,6 +1133,7 @@ export default function InventoryPage() {
           isOpen={true}
           onClose={() => setFormModal(null)}
           spool={formModal.spool}
+          currencySymbol={currencySymbol}
         />
       )}
 

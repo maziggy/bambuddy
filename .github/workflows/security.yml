@@ -85,7 +85,7 @@ jobs:
 
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
+        if: always() && hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: trivy-results.sarif
           category: trivy
@@ -102,7 +102,7 @@ jobs:
 
       - name: Upload Trivy config results
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
+        if: always() && hashFiles('trivy-config-results.sarif') != ''
         with:
           sarif_file: trivy-config-results.sarif
           category: trivy-config
@@ -141,13 +141,49 @@ jobs:
           path: pip-audit-results.json
           retention-days: 30
 
-      - name: Create issue on vulnerability
-        if: steps.pip-audit.outputs.vulnerabilities_found == 'true'
+      - name: Create or close pip security issue
+        if: always()
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const results = JSON.parse(fs.readFileSync('pip-audit-results.json', 'utf8'));
+
+            // Check for existing open issue
+            const existingIssues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'security,automated'
+            });
+            const existingIssue = existingIssues.data.find(i => i.title.startsWith('Security Alert:') && i.title.includes('Python'));
+
+            // If no vulnerabilities found, auto-close any stale issue
+            if ('${{ steps.pip-audit.outputs.vulnerabilities_found }}' !== 'true') {
+              if (existingIssue) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: existingIssue.number,
+                  body: 'All Python vulnerabilities have been resolved. Closing automatically.'
+                });
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: existingIssue.number,
+                  state: 'closed'
+                });
+                console.log(`Auto-closed resolved issue #${existingIssue.number}`);
+              }
+              return;
+            }
+
+            let results;
+            try {
+              results = JSON.parse(fs.readFileSync('pip-audit-results.json', 'utf8'));
+            } catch {
+              console.log('Could not read audit results');
+              return;
+            }
 
             // Build vulnerability table
             let table = '| Package | Version | Vulnerability | Fix Version |\n';
@@ -159,17 +195,29 @@ jobs:
               }
             }
 
-            const title = `Security Alert: ${results.dependencies?.reduce((acc, d) => acc + (d.vulns?.length || 0), 0) || 0} Python vulnerabilities found`;
+            const vulnCount = results.dependencies?.reduce((acc, d) => acc + (d.vulns?.length || 0), 0) || 0;
 
-            // Check for existing open issue
-            const existingIssues = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              labels: 'security,automated'
-            });
+            if (vulnCount === 0) {
+              console.log('No vulnerabilities to report');
+              if (existingIssue) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: existingIssue.number,
+                  body: 'All Python vulnerabilities have been resolved. Closing automatically.'
+                });
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: existingIssue.number,
+                  state: 'closed'
+                });
+                console.log(`Auto-closed resolved issue #${existingIssue.number}`);
+              }
+              return;
+            }
 
-            const existingIssue = existingIssues.data.find(i => i.title.startsWith('Security Alert:') && i.title.includes('Python'));
+            const title = `Security Alert: ${vulnCount} Python vulnerabilities found`;
 
             const body = `## Automated Security Audit Results
 
@@ -182,7 +230,6 @@ jobs:
             1. Review each vulnerability
             2. Update affected packages: \`pip install --upgrade <package>\`
             3. Run \`pip-audit\` locally to verify fixes
-            4. Close this issue when resolved
 
             ---
             *This issue was automatically created by the security audit workflow.*`;
@@ -230,22 +277,22 @@ jobs:
         id: npm-audit
         working-directory: frontend
         run: |
-          npm audit --omit=dev --json > npm-audit-raw.json 2>&1 || true
-          # Filter audit results to only include actual project dependencies
-          # (npm audit sometimes reports vulnerabilities in the npm CLI itself)
+          npm audit --omit=dev --json > npm-audit-raw.json 2>/dev/null || true
+          # Filter audit results to only include actual project dependencies.
+          # npm 10.x audit/ls reports vulns in its own bundled deps (npm, tar, minimatch)
+          # so we parse package-lock.json directly to get the real prod dep list.
           node -e "
             const fs = require('fs');
-            const results = JSON.parse(fs.readFileSync('npm-audit-raw.json', 'utf8'));
-            const depTree = JSON.parse(require('child_process').execSync(
-              'npm ls --omit=dev --all --json 2>/dev/null', { encoding: 'utf8' }
-            ));
+            const raw = fs.readFileSync('npm-audit-raw.json', 'utf8');
+            let results;
+            try { results = JSON.parse(raw); } catch { results = { vulnerabilities: {} }; }
+            const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
             const prodDeps = new Set();
-            (function walk(obj) {
-              for (const [name, info] of Object.entries(obj.dependencies || {})) {
-                prodDeps.add(name);
-                walk(info);
+            for (const [path, info] of Object.entries(lock.packages || {})) {
+              if (path && !info.dev && !info.devOptional) {
+                prodDeps.add(path.split('node_modules/').pop());
               }
-            })(depTree);
+            }
             const vulns = results.vulnerabilities || {};
             const filtered = {};
             for (const [name, info] of Object.entries(vulns)) {
@@ -269,19 +316,70 @@ jobs:
           path: frontend/npm-audit-results.json
           retention-days: 30
 
-      - name: Create issue on vulnerability
-        if: steps.npm-audit.outputs.vulnerabilities_found == 'true'
+      - name: Create or close npm security issue
+        if: always()
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const results = JSON.parse(fs.readFileSync('frontend/npm-audit-results.json', 'utf8'));
+
+            // Check for existing open issue
+            const existingIssues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'security,automated'
+            });
+            const existingIssue = existingIssues.data.find(i => i.title.startsWith('Security Alert:') && i.title.includes('npm'));
+
+            // If filter didn't flag vulnerabilities, auto-close any stale issue
+            if ('${{ steps.npm-audit.outputs.vulnerabilities_found }}' !== 'true') {
+              if (existingIssue) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: existingIssue.number,
+                  body: 'All npm production vulnerabilities have been resolved. Closing automatically.'
+                });
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: existingIssue.number,
+                  state: 'closed'
+                });
+                console.log(`Auto-closed resolved issue #${existingIssue.number}`);
+              }
+              return;
+            }
+
+            let results;
+            try {
+              results = JSON.parse(fs.readFileSync('frontend/npm-audit-results.json', 'utf8'));
+            } catch {
+              console.log('Could not read filtered audit results');
+              return;
+            }
 
             const vulns = results.vulnerabilities || {};
             const vulnCount = Object.keys(vulns).length;
 
             if (vulnCount === 0) {
               console.log('No vulnerabilities to report');
+              if (existingIssue) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: existingIssue.number,
+                  body: 'All npm production vulnerabilities have been resolved. Closing automatically.'
+                });
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: existingIssue.number,
+                  state: 'closed'
+                });
+                console.log(`Auto-closed resolved issue #${existingIssue.number}`);
+              }
               return;
             }
 
@@ -296,16 +394,6 @@ jobs:
 
             const title = `Security Alert: ${vulnCount} npm vulnerabilities found`;
 
-            // Check for existing open issue
-            const existingIssues = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              labels: 'security,automated'
-            });
-
-            const existingIssue = existingIssues.data.find(i => i.title.startsWith('Security Alert:') && i.title.includes('npm'));
-
             const body = `## Automated Security Audit Results
 
             The weekly security audit found vulnerabilities in npm dependencies.
@@ -317,7 +405,6 @@ jobs:
             1. Review each vulnerability: \`npm audit\`
             2. Auto-fix if possible: \`npm audit fix\`
             3. Manual fix for breaking changes: \`npm audit fix --force\` (review changes!)
-            4. Close this issue when resolved
 
             ---
             *This issue was automatically created by the security audit workflow.*`;

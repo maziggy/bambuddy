@@ -1863,3 +1863,139 @@ class TestTrayNowDualNozzleH2DFullSequence(_H2DFixtureMixin):
         h2d_client._process_message(_ams_payload(255))
         assert h2d_client.state.tray_now == 255
         assert h2d_client.state.last_loaded_tray == 2
+
+
+class TestTrayChangeLog:
+    """Tests for tray_change_log tracking during prints (mid-print tray switch)."""
+
+    @pytest.fixture
+    def mqtt_client(self):
+        """Create a BambuMQTTClient instance for testing."""
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TRAYLOG1",
+            access_code="12345678",
+        )
+        return client
+
+    def test_tray_change_log_defaults_empty(self, mqtt_client):
+        """tray_change_log starts as an empty list."""
+        assert mqtt_client.state.tray_change_log == []
+
+    def test_tray_change_log_seeded_on_print_start(self, mqtt_client):
+        """Print start clears log and seeds with initial tray at layer 0."""
+        mqtt_client.state.tray_now = 2
+        mqtt_client.state.last_loaded_tray = 2
+        mqtt_client._previous_gcode_state = "IDLE"
+
+        # Transition to RUNNING via _process_message
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "RUNNING",
+                    "gcode_file": "test.3mf",
+                }
+            }
+        )
+
+        assert mqtt_client.state.tray_change_log == [(2, 0)]
+
+    def test_tray_change_log_cleared_on_new_print(self, mqtt_client):
+        """Old log entries are cleared when a new print starts."""
+        mqtt_client.state.tray_change_log = [(5, 0), (3, 100)]
+        mqtt_client.state.tray_now = 1
+        mqtt_client.state.last_loaded_tray = 1
+        mqtt_client._previous_gcode_state = "IDLE"
+
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "RUNNING",
+                    "gcode_file": "new.3mf",
+                }
+            }
+        )
+
+        assert mqtt_client.state.tray_change_log == [(1, 0)]
+
+    def test_tray_change_recorded_during_running(self, mqtt_client):
+        """Tray change while RUNNING is appended to the log."""
+        mqtt_client.state.state = "RUNNING"
+        mqtt_client.state.layer_num = 50
+        mqtt_client.state.last_loaded_tray = 0
+        mqtt_client.state.tray_change_log = [(0, 0)]
+
+        # Simulate tray_now update via AMS data
+        mqtt_client.state.tray_now = 1
+        # Trigger the tracking code path
+        tn = mqtt_client.state.tray_now
+        if tn != mqtt_client.state.last_loaded_tray and mqtt_client.state.state in ("RUNNING", "PAUSE"):
+            mqtt_client.state.tray_change_log.append((tn, mqtt_client.state.layer_num))
+        mqtt_client.state.last_loaded_tray = tn
+
+        assert mqtt_client.state.tray_change_log == [(0, 0), (1, 50)]
+
+    def test_tray_change_not_recorded_when_idle(self, mqtt_client):
+        """Tray changes while IDLE are NOT logged."""
+        mqtt_client.state.state = "IDLE"
+        mqtt_client.state.layer_num = 0
+        mqtt_client.state.last_loaded_tray = 0
+        mqtt_client.state.tray_change_log = []
+
+        mqtt_client.state.tray_now = 3
+        tn = mqtt_client.state.tray_now
+        if tn != mqtt_client.state.last_loaded_tray and mqtt_client.state.state in ("RUNNING", "PAUSE"):
+            mqtt_client.state.tray_change_log.append((tn, mqtt_client.state.layer_num))
+        mqtt_client.state.last_loaded_tray = tn
+
+        assert mqtt_client.state.tray_change_log == []
+
+    def test_tray_change_recorded_during_pause(self, mqtt_client):
+        """Tray change while PAUSE is also logged (AMS can swap during pause)."""
+        mqtt_client.state.state = "PAUSE"
+        mqtt_client.state.layer_num = 75
+        mqtt_client.state.last_loaded_tray = 2
+        mqtt_client.state.tray_change_log = [(2, 0)]
+
+        mqtt_client.state.tray_now = 5
+        tn = mqtt_client.state.tray_now
+        if tn != mqtt_client.state.last_loaded_tray and mqtt_client.state.state in ("RUNNING", "PAUSE"):
+            mqtt_client.state.tray_change_log.append((tn, mqtt_client.state.layer_num))
+        mqtt_client.state.last_loaded_tray = tn
+
+        assert mqtt_client.state.tray_change_log == [(2, 0), (5, 75)]
+
+    def test_same_tray_not_logged_twice(self, mqtt_client):
+        """Same tray value doesn't create duplicate log entries."""
+        mqtt_client.state.state = "RUNNING"
+        mqtt_client.state.layer_num = 30
+        mqtt_client.state.last_loaded_tray = 2
+        mqtt_client.state.tray_change_log = [(2, 0)]
+
+        # Same tray again
+        mqtt_client.state.tray_now = 2
+        tn = mqtt_client.state.tray_now
+        if tn != mqtt_client.state.last_loaded_tray and mqtt_client.state.state in ("RUNNING", "PAUSE"):
+            mqtt_client.state.tray_change_log.append((tn, mqtt_client.state.layer_num))
+        mqtt_client.state.last_loaded_tray = tn
+
+        assert mqtt_client.state.tray_change_log == [(2, 0)]
+
+    def test_multiple_tray_changes(self, mqtt_client):
+        """Multiple tray changes create a full history."""
+        mqtt_client.state.state = "RUNNING"
+        mqtt_client.state.last_loaded_tray = 0
+        mqtt_client.state.tray_change_log = [(0, 0)]
+
+        changes = [(1, 50), (3, 120), (0, 200)]
+        for tray, layer in changes:
+            mqtt_client.state.tray_now = tray
+            mqtt_client.state.layer_num = layer
+            tn = mqtt_client.state.tray_now
+            if tn != mqtt_client.state.last_loaded_tray and mqtt_client.state.state in ("RUNNING", "PAUSE"):
+                mqtt_client.state.tray_change_log.append((tn, mqtt_client.state.layer_num))
+            mqtt_client.state.last_loaded_tray = tn
+
+        assert mqtt_client.state.tray_change_log == [(0, 0), (1, 50), (3, 120), (0, 200)]

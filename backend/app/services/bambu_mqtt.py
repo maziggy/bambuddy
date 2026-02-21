@@ -163,6 +163,9 @@ class PrinterState:
     big_fan1_speed: int | None = None  # Auxiliary fan
     big_fan2_speed: int | None = None  # Chamber/exhaust fan
     heatbreak_fan_speed: int | None = None  # Hotend heatbreak fan
+    # Tray change history during current print: [(global_tray_id, layer_num), ...]
+    # Used by usage tracker to split filament weight on mid-print tray switch
+    tray_change_log: list = field(default_factory=list)
     # Firmware version info (from info.module[name="ota"].sw_ver)
     firmware_version: str | None = None
 
@@ -1059,6 +1062,15 @@ class BambuMQTTClient:
                 # Valid physical trays: 0-15 (regular AMS), 128-135 (AMS-HT), 254 (external spool)
                 tn = self.state.tray_now
                 if (0 <= tn <= 15) or (128 <= tn <= 135) or tn == 254:
+                    # Log tray change for mid-print usage splitting
+                    if tn != self.state.last_loaded_tray and self.state.state in ("RUNNING", "PAUSE"):
+                        self.state.tray_change_log.append((tn, self.state.layer_num))
+                        logger.info(
+                            "[%s] Tray change during print: tray=%d at layer=%d",
+                            self.serial_number,
+                            tn,
+                            self.state.layer_num,
+                        )
                     self.state.last_loaded_tray = self.state.tray_now
 
                 logger.debug("[%s] tray_now updated: %s", self.serial_number, self.state.tray_now)
@@ -2037,6 +2049,11 @@ class BambuMQTTClient:
             # Reset last valid progress/layer for usage tracking
             self._last_valid_progress = 0.0
             self._last_valid_layer_num = 0
+            # Clear and seed tray change log for mid-print usage splitting
+            self.state.tray_change_log.clear()
+            tn = self.state.tray_now
+            if (0 <= tn <= 15) or (128 <= tn <= 135) or tn == 254:
+                self.state.tray_change_log.append((tn, 0))
             # Initialize timelapse tracking based on current state
             # NOTE: xcam data is parsed BEFORE this code runs in _process_message,
             # so self.state.timelapse may already be set from this message.

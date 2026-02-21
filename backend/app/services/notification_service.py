@@ -214,6 +214,12 @@ class NotificationService:
             headers["Filename"] = "photo.jpg"
             headers["Message"] = message.replace("\n", "\\n")
             response = await client.put(url, content=image_data, headers=headers)
+
+            if response.status_code == 400 and "attachments not allowed" in response.text:
+                # Server has attachments disabled — retry without the image
+                headers.pop("Filename", None)
+                headers.pop("Message", None)
+                response = await client.post(url, content=message, headers=headers)
         else:
             response = await client.post(url, content=message, headers=headers)
 

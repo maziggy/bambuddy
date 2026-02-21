@@ -431,6 +431,14 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
         # Reset milestone tracking when print restarts or new print begins
         _last_progress_milestone[printer_id] = 0
 
+    # HMS error codes that should not trigger notifications.
+    # These are infrastructure/auth issues, not actionable print errors.
+    _HMS_NOTIFICATION_SUPPRESS = {
+        "0500_0007",  # MQTT command verification failed (auth/bind issue, not a print error)
+        "0500_4001",  # Failed to connect to Bambu Cloud (network issue)
+        "0500_400E",  # Printing was cancelled (user action, not an error)
+    }
+
     # Check for new HMS errors and send notifications
     current_hms_errors = getattr(state, "hms_errors", []) or []
     if current_hms_errors:
@@ -482,6 +490,9 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                         error_code_int = int(error.code.replace("0x", ""), 16) if error.code else 0
                         error_code_masked = error_code_int & 0xFFFF
                         short_code = f"{(error.attr >> 16) & 0xFFFF:04X}_{error_code_masked:04X}"
+
+                        if short_code in _HMS_NOTIFICATION_SUPPRESS:
+                            continue
 
                         error_type = f"{module_name} Error"
                         # Look up human-readable description

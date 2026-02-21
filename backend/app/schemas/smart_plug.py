@@ -81,7 +81,7 @@ class SmartPlugBase(BaseModel):
         if self.plug_type == "rest":
             if not self.rest_on_url and not self.rest_off_url and not self.rest_status_url:
                 raise ValueError("At least one URL (on_url, off_url, or status_url) must be configured for REST plugs")
-                if self.plug_type == "mqtt":
+        if self.plug_type == "mqtt":
             # Determine the effective power topic (new field takes priority, fall back to legacy)
             power_topic = self.mqtt_power_topic or self.mqtt_topic
             # Path is optional - if not set, raw MQTT payload value will be used
@@ -101,7 +101,7 @@ class SmartPlugCreate(SmartPlugBase):
 
 class SmartPlugUpdate(BaseModel):
     name: str | None = None
-    plug_type: Literal["tasmota", "homeassistant", "mqtt"] | None = None
+    plug_type: Literal["tasmota", "homeassistant", "mqtt", "rest"] | None = None
     ip_address: str | None = None
     ha_entity_id: str | None = None
     # Home Assistant energy sensor entities (optional)

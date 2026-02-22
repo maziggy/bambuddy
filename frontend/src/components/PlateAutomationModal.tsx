@@ -34,15 +34,24 @@ export function PlateAutomationModal({ isOpen, onClose, printerId, initial = nul
     setEndAfter(initial?.end_code_after ?? '');
   }, [isOpen, initial]);
 
-  const createMut = useMutation<Automation, Error, Partial<Automation>>((data: Partial<Automation>) => api.createAutomation(printerId, data));
-  const updateMut = useMutation<Automation, Error, { id: number; data: Partial<Automation> }>((args: { id: number; data: Partial<Automation> }) => api.updateAutomation(args.id, args.data));
-  const deleteMut = useMutation<void, Error, number>((id: number) => api.deleteAutomation(id));
+  const createMut = useMutation<Automation, Error, Partial<Automation>>({
+    mutationFn: (data: Partial<Automation>) => api.createAutomation(printerId, data),
+  });
+  const updateMut = useMutation<Automation, Error, { id: number; data: Partial<Automation> }>({
+    mutationFn: (args: { id: number; data: Partial<Automation> }) => api.updateAutomation(args.id, args.data),
+  });
+  const deleteMut = useMutation<void, Error, number>({
+    mutationFn: (id: number) => api.deleteAutomation(id),
+  });
+
+  const [saving, setSaving] = useState(false);
 
   const isAllBlank = () => {
     return [startCode, startDetect, startAfter, endCode, endDetect, endAfter].every(s => !s || s.trim() === '');
   };
 
   const handleSave = async () => {
+    setSaving(true);
     try {
       const payload: Partial<Automation> = {
         start_code: startCode || '',
@@ -71,6 +80,9 @@ export function PlateAutomationModal({ isOpen, onClose, printerId, initial = nul
     } catch (e) {
       // Let outer components show error toasts; keep modal open
       console.error('Failed to save automation', e);
+    } finally {
+      setSaving(false);
+    }
     }
   };
 
@@ -121,7 +133,7 @@ export function PlateAutomationModal({ isOpen, onClose, printerId, initial = nul
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button onClick={handleSave}>
-            {(createMut.isLoading || updateMut.isLoading || deleteMut.isLoading) ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save'}
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save'}
           </Button>
         </div>
       </div>

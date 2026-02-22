@@ -5,7 +5,7 @@ import zipfile
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
@@ -89,6 +89,100 @@ async def list_usb_cameras(
 
     cameras = list_usb_cameras()
     return {"cameras": cameras}
+
+
+@router.get("/available-filaments")
+async def get_available_filaments(
+    model: str = Query(..., description="Target printer model"),
+    location: str | None = Query(None, description="Optional location filter"),
+    _=RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get deduplicated list of filaments loaded across all active printers of a given model.
+
+    Used by the frontend to offer filament override options for model-based queue assignment.
+    """
+    from backend.app.utils.printer_models import normalize_printer_model, normalize_printer_model_id
+
+    # Normalize model name
+    normalized_model = normalize_printer_model(model) or normalize_printer_model_id(model) or model
+
+    query = (
+        select(Printer).where(func.lower(Printer.model) == normalized_model.lower()).where(Printer.is_active == True)  # noqa: E712
+    )
+    if location:
+        query = query.where(Printer.location == location)
+
+    result = await db.execute(query)
+    printers_list = list(result.scalars().all())
+
+    if not printers_list:
+        return []
+
+    # Collect filaments from all matching printers
+    # Dedup key includes extruder_id so same color on different nozzles appears separately
+    seen: set[tuple[str, str, int | None]] = set()  # (type_upper, color_normalized, extruder_id)
+    filaments = []
+
+    for printer in printers_list:
+        status = printer_manager.get_status(printer.id)
+        if not status:
+            continue
+
+        # Get ams_extruder_map for dual-nozzle printers
+        ams_extruder_map = status.raw_data.get("ams_extruder_map", {})
+
+        # AMS trays
+        for ams_unit in status.raw_data.get("ams", []):
+            ams_id = str(ams_unit.get("id", 0))
+            extruder_id = ams_extruder_map.get(ams_id)
+            for tray in ams_unit.get("tray", []):
+                tray_type = tray.get("tray_type")
+                if not tray_type:
+                    continue
+                tray_color = tray.get("tray_color", "")
+                # Normalize color: remove alpha, add hash
+                hex_color = tray_color.replace("#", "")[:6] if tray_color else "808080"
+                color = f"#{hex_color}"
+                tray_info_idx = tray.get("tray_info_idx", "")
+
+                key = (tray_type.upper(), hex_color.lower(), extruder_id)
+                if key not in seen:
+                    seen.add(key)
+                    filaments.append(
+                        {
+                            "type": tray_type,
+                            "color": color,
+                            "tray_info_idx": tray_info_idx,
+                            "extruder_id": extruder_id,
+                        }
+                    )
+
+        # External spools (vt_tray)
+        for vt in status.raw_data.get("vt_tray") or []:
+            vt_type = vt.get("tray_type")
+            if not vt_type:
+                continue
+            vt_color = vt.get("tray_color", "")
+            hex_color = vt_color.replace("#", "")[:6] if vt_color else "808080"
+            color = f"#{hex_color}"
+            tray_info_idx = vt.get("tray_info_idx", "")
+            vt_id = int(vt.get("id", 254))
+            extruder_id = (255 - vt_id) if ams_extruder_map else None
+
+            key = (vt_type.upper(), hex_color.lower(), extruder_id)
+            if key not in seen:
+                seen.add(key)
+                filaments.append(
+                    {
+                        "type": vt_type,
+                        "color": color,
+                        "tray_info_idx": tray_info_idx,
+                        "extruder_id": extruder_id,
+                    }
+                )
+
+    return filaments
 
 
 @router.get("/developer-mode-warnings")

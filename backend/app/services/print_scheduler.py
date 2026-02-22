@@ -154,8 +154,29 @@ class PrintScheduler:
                         except json.JSONDecodeError:
                             pass  # Ignore malformed filament types; treat as no constraint
 
+                    # Parse filament overrides if present
+                    filament_overrides = None
+                    if item.filament_overrides:
+                        try:
+                            filament_overrides = json.loads(item.filament_overrides)
+                        except json.JSONDecodeError:
+                            pass
+
+                    # If overrides exist, use override types for validation instead
+                    effective_types = required_types
+                    if filament_overrides:
+                        override_types = sorted({o["type"] for o in filament_overrides if "type" in o})
+                        if override_types:
+                            # Merge: keep original types for non-overridden slots, add override types
+                            effective_types = sorted(set(required_types or []) | set(override_types))
+
                     printer_id, waiting_reason = await self._find_idle_printer_for_model(
-                        db, item.target_model, busy_printers, required_types, item.target_location
+                        db,
+                        item.target_model,
+                        busy_printers,
+                        effective_types,
+                        item.target_location,
+                        filament_overrides=filament_overrides,
                     )
 
                     # Update waiting_reason if changed and send notification when first waiting
@@ -233,6 +254,7 @@ class PrintScheduler:
         exclude_ids: set[int],
         required_filament_types: list[str] | None = None,
         target_location: str | None = None,
+        filament_overrides: list[dict] | None = None,
     ) -> tuple[int | None, str | None]:
         """Find an idle, connected printer matching the model with compatible filaments.
 
@@ -272,6 +294,7 @@ class PrintScheduler:
         printers_busy = []
         printers_offline = []
         printers_missing_filament = []
+        candidates: list[tuple[int, int]] = []  # (printer_id, color_match_count)
 
         for printer in printers:
             if printer.id in exclude_ids:
@@ -297,8 +320,18 @@ class PrintScheduler:
                     logger.debug("Skipping printer %s (%s) - missing filaments: %s", printer.id, printer.name, missing)
                     continue
 
-            # Found a matching printer - clear waiting reason
-            return printer.id, None
+            # If filament overrides with colors, prefer printers with exact color matches
+            if filament_overrides:
+                color_matches = self._count_override_color_matches(printer.id, filament_overrides)
+                candidates.append((printer.id, color_matches))
+            else:
+                # No overrides - take first available (existing behavior)
+                return printer.id, None
+
+        # If we have candidates from override matching, pick the one with most color matches
+        if candidates:
+            candidates.sort(key=lambda c: c[1], reverse=True)
+            return candidates[0][0], None
 
         # Build waiting reason from what we found
         reasons = []
@@ -353,6 +386,38 @@ class PrintScheduler:
 
         return missing
 
+    def _count_override_color_matches(self, printer_id: int, overrides: list[dict]) -> int:
+        """Count how many filament overrides have an exact color match on the printer.
+
+        Used to prefer printers that already have the desired override colors loaded.
+        """
+        status = printer_manager.get_status(printer_id)
+        if not status:
+            return 0
+
+        # Collect loaded filaments' type+color pairs
+        loaded: set[tuple[str, str]] = set()
+        for ams_unit in status.raw_data.get("ams", []):
+            for tray in ams_unit.get("tray", []):
+                tray_type = tray.get("tray_type")
+                tray_color = tray.get("tray_color", "")
+                if tray_type:
+                    color_norm = tray_color.replace("#", "").lower()[:6]
+                    loaded.add((tray_type.upper(), color_norm))
+        for vt in status.raw_data.get("vt_tray") or []:
+            vt_type = vt.get("tray_type")
+            if vt_type:
+                color_norm = (vt.get("tray_color", "") or "").replace("#", "").lower()[:6]
+                loaded.add((vt_type.upper(), color_norm))
+
+        matches = 0
+        for o in overrides:
+            o_type = (o.get("type") or "").upper()
+            o_color = (o.get("color") or "").replace("#", "").lower()[:6]
+            if (o_type, o_color) in loaded:
+                matches += 1
+        return matches
+
     async def _compute_ams_mapping_for_printer(
         self, db: AsyncSession, printer_id: int, item: PrintQueueItem
     ) -> list[int] | None:
@@ -380,6 +445,29 @@ class PrintScheduler:
         if not filament_reqs:
             logger.debug("No filament requirements found for queue item %s", item.id)
             return None
+
+        # Apply filament overrides if present
+        if item.filament_overrides:
+            try:
+                overrides = json.loads(item.filament_overrides)
+                override_map = {o["slot_id"]: o for o in overrides}
+                for req in filament_reqs:
+                    if req["slot_id"] in override_map:
+                        override = override_map[req["slot_id"]]
+                        req["type"] = override["type"]
+                        req["color"] = override["color"]
+                        # Clear tray_info_idx so matching uses type+color instead of
+                        # the original 3MF's tray_info_idx (which would match the old filament)
+                        req["tray_info_idx"] = ""
+                        logger.debug(
+                            "Queue item %s: Override slot %d -> %s %s",
+                            item.id,
+                            req["slot_id"],
+                            override["type"],
+                            override["color"],
+                        )
+            except (json.JSONDecodeError, KeyError, TypeError) as e:
+                logger.warning("Failed to apply filament overrides for queue item %s: %s", item.id, e)
 
         # Build loaded filaments from printer status
         loaded_filaments = self._build_loaded_filaments(status)

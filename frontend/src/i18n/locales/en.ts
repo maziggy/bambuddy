@@ -2775,6 +2775,11 @@ export default {
     rightNozzle: 'R',
     leftNozzleTooltip: 'Left nozzle',
     rightNozzleTooltip: 'Right nozzle',
+    filamentOverride: 'Filament Override',
+    filamentOverrideHint: 'Optionally override filaments for model-based assignment. The scheduler will match against your selected filaments instead of the original 3MF values.',
+    originalFilament: 'Original',
+    overrideWith: 'Override with',
+    resetToOriginal: 'Reset to original',
   },
 
   // Backup

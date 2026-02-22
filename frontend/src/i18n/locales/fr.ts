@@ -2759,6 +2759,11 @@ export default {
     rightNozzle: 'D',
     leftNozzleTooltip: 'Buse gauche',
     rightNozzleTooltip: 'Buse droite',
+    filamentOverride: 'Remplacement de filament',
+    filamentOverrideHint: 'Remplacez optionnellement les filaments pour l\'affectation par modèle. Le planificateur utilisera vos filaments sélectionnés au lieu des valeurs 3MF d\'origine.',
+    originalFilament: 'Original',
+    overrideWith: 'Remplacer par',
+    resetToOriginal: 'Revenir à l\'original',
   },
 
   // Backup

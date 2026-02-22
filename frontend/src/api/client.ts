@@ -1224,6 +1224,7 @@ export interface PrintQueueItem {
   auto_off_after: boolean;
   manual_start: boolean;  // Requires manual trigger to start (staged)
   ams_mapping: number[] | null;  // AMS slot mapping for multi-color prints
+  filament_overrides: Array<{ slot_id: number; type: string; color: string }> | null;  // Filament overrides for model-based assignment
   plate_id: number | null;  // Plate ID for multi-plate 3MF files
   // Print options
   bed_levelling: boolean;
@@ -1253,6 +1254,7 @@ export interface PrintQueueItemCreate {
   printer_id?: number | null;  // null = unassigned
   target_model?: string | null;  // Target printer model (mutually exclusive with printer_id)
   target_location?: string | null;  // Target location filter (only used with target_model)
+  filament_overrides?: Array<{ slot_id: number; type: string; color: string }> | null;
   // Either archive_id OR library_file_id must be provided
   archive_id?: number | null;
   library_file_id?: number | null;
@@ -1275,6 +1277,7 @@ export interface PrintQueueItemUpdate {
   printer_id?: number | null;  // null = unassign
   target_model?: string | null;  // Target printer model (mutually exclusive with printer_id)
   target_location?: string | null;  // Target location filter (only used with target_model)
+  filament_overrides?: Array<{ slot_id: number; type: string; color: string }> | null;
   position?: number;
   scheduled_time?: string | null;
   require_previous_success?: boolean;
@@ -2298,6 +2301,11 @@ export const api = {
     ),
   getDeveloperModeWarnings: () =>
     request<{ printer_id: number; name: string }[]>('/printers/developer-mode-warnings'),
+  getAvailableFilaments: (model: string, location?: string) => {
+    const params = new URLSearchParams({ model });
+    if (location) params.set('location', location);
+    return request<Array<{ type: string; color: string; tray_info_idx: string; extruder_id: number | null }>>(`/printers/available-filaments?${params}`);
+  },
   getPrinterStatus: (id: number) =>
     request<PrinterStatus>(`/printers/${id}/status`),
   refreshPrinterStatus: (id: number) =>

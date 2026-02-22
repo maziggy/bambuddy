@@ -22,6 +22,7 @@ from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.models.spool_catalog import SpoolCatalogEntry
 from backend.app.models.spool_k_profile import SpoolKProfile
 from backend.app.models.spool_usage_history import SpoolUsageHistory
+from backend.app.models.spoolbuddy_device import SpoolBuddyDevice
 from backend.app.models.user import User
 
 __all__ = [
@@ -55,4 +56,5 @@ __all__ = [
     "SpoolCatalogEntry",
     "SpoolUsageHistory",
     "ColorCatalogEntry",
+    "SpoolBuddyDevice",
 ]

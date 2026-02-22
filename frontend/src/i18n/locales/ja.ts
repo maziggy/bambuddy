@@ -2686,6 +2686,11 @@ export default {
     rightNozzle: 'R',
     leftNozzleTooltip: '左ノズル',
     rightNozzleTooltip: '右ノズル',
+    filamentOverride: 'フィラメントオーバーライド',
+    filamentOverrideHint: 'モデルベースの割り当てに使用するフィラメントをオプションで上書きします。スケジューラは元の3MF値ではなく、選択したフィラメントに基づいてマッチングします。',
+    originalFilament: 'オリジナル',
+    overrideWith: '変更先',
+    resetToOriginal: 'オリジナルに戻す',
   },
   backup: {
     restoreBackup: 'バックアップの復元',

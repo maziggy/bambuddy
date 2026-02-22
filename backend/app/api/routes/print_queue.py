@@ -169,6 +169,14 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         except json.JSONDecodeError:
             required_filament_types_parsed = None
 
+    # Parse filament_overrides from JSON string
+    filament_overrides_parsed = None
+    if item.filament_overrides:
+        try:
+            filament_overrides_parsed = json.loads(item.filament_overrides)
+        except json.JSONDecodeError:
+            filament_overrides_parsed = None
+
     # Create response with parsed ams_mapping
     item_dict = {
         "id": item.id,
@@ -176,6 +184,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "target_model": item.target_model,
         "target_location": item.target_location,
         "required_filament_types": required_filament_types_parsed,
+        "filament_overrides": filament_overrides_parsed,
         "waiting_reason": item.waiting_reason,
         "archive_id": item.archive_id,
         "library_file_id": item.library_file_id,
@@ -375,6 +384,19 @@ async def add_to_queue(
                 required_filament_types = json.dumps(filament_types)
                 logger.info("Extracted filament types for model-based queue: %s", filament_types)
 
+    # If filament overrides are provided, update required_filament_types to match override types
+    filament_overrides_json = None
+    if data.filament_overrides and target_model_norm:
+        filament_overrides_json = json.dumps(data.filament_overrides)
+        # Update required_filament_types from overrides so scheduler validates against overridden types
+        override_types = sorted({o["type"] for o in data.filament_overrides if "type" in o})
+        if override_types:
+            # Merge with existing types (overrides may only cover some slots)
+            existing_types = set(json.loads(required_filament_types)) if required_filament_types else set()
+            # Replace types for overridden slots, keep others
+            all_types = existing_types | set(override_types)
+            required_filament_types = json.dumps(sorted(all_types))
+
     # Get next position for this printer (or for unassigned/model-based items)
     if data.printer_id is not None:
         result = await db.execute(
@@ -396,6 +418,7 @@ async def add_to_queue(
         target_model=target_model_norm,
         target_location=data.target_location,
         required_filament_types=required_filament_types,
+        filament_overrides=filament_overrides_json,
         archive_id=data.archive_id,
         library_file_id=data.library_file_id,
         scheduled_time=data.scheduled_time,
@@ -612,6 +635,12 @@ async def update_queue_item(
     # Serialize ams_mapping to JSON for TEXT column storage
     if "ams_mapping" in update_data:
         update_data["ams_mapping"] = json.dumps(update_data["ams_mapping"]) if update_data["ams_mapping"] else None
+
+    # Serialize filament_overrides to JSON for TEXT column storage
+    if "filament_overrides" in update_data:
+        update_data["filament_overrides"] = (
+            json.dumps(update_data["filament_overrides"]) if update_data["filament_overrides"] else None
+        )
 
     for field, value in update_data.items():
         setattr(item, field, value)

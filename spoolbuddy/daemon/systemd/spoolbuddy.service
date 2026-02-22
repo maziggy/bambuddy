@@ -1,0 +1,19 @@
+[Unit]
+Description=SpoolBuddy Daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mz
+WorkingDirectory=/opt/bambuddy/spoolbuddy
+Environment=SPOOLBUDDY_BACKEND_URL=http://bambuddy:5000
+Environment=SPOOLBUDDY_API_KEY=bb_change_me
+ExecStart=/opt/bambuddy/venv/bin/python -m daemon.main
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

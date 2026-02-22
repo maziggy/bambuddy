@@ -2481,6 +2481,11 @@ export default {
     rightNozzle: 'R',
     leftNozzleTooltip: 'Ugello sinistro',
     rightNozzleTooltip: 'Ugello destro',
+    filamentOverride: 'Sostituzione filamento',
+    filamentOverrideHint: 'Sostituisci opzionalmente i filamenti per l\'assegnazione basata sul modello. Lo scheduler abbinerà i filamenti selezionati invece dei valori 3MF originali.',
+    originalFilament: 'Originale',
+    overrideWith: 'Sostituisci con',
+    resetToOriginal: 'Ripristina originale',
   },
 
   // Backup

@@ -102,6 +102,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Print queue with drag-and-drop
 - Multi-printer selection (send to multiple printers at once)
 - Model-based queue assignment (send to "any X1C" for load balancing) with location filtering
+- Filament override for model-based queue (swap filament colors/types before scheduling)
 - Filament validation (only assign to printers with required filaments)
 - Per-printer AMS mapping (individual slot configuration for print farms)
 - Scheduled prints (date/time)

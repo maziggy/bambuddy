@@ -39,6 +39,7 @@ from backend.app.api.routes import (
     projects,
     settings as settings_routes,
     smart_plugs,
+    spoolbuddy,
     spoolman,
     support,
     system,
@@ -3175,6 +3176,40 @@ def stop_runtime_tracking():
         logging.getLogger(__name__).info("Printer runtime tracking stopped")
 
 
+# SpoolBuddy device watchdog
+_spoolbuddy_watchdog_task: asyncio.Task | None = None
+SPOOLBUDDY_WATCHDOG_INTERVAL = 15
+
+
+async def _spoolbuddy_watchdog_loop():
+    """Periodic check for SpoolBuddy devices that have gone offline."""
+    from backend.app.api.routes.spoolbuddy import spoolbuddy_watchdog
+
+    while True:
+        try:
+            await spoolbuddy_watchdog()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logging.getLogger(__name__).warning("SpoolBuddy watchdog failed: %s", e)
+        await asyncio.sleep(SPOOLBUDDY_WATCHDOG_INTERVAL)
+
+
+def start_spoolbuddy_watchdog():
+    global _spoolbuddy_watchdog_task
+    if _spoolbuddy_watchdog_task is None:
+        _spoolbuddy_watchdog_task = asyncio.create_task(_spoolbuddy_watchdog_loop())
+        logging.getLogger(__name__).info("SpoolBuddy watchdog started")
+
+
+def stop_spoolbuddy_watchdog():
+    global _spoolbuddy_watchdog_task
+    if _spoolbuddy_watchdog_task:
+        _spoolbuddy_watchdog_task.cancel()
+        _spoolbuddy_watchdog_task = None
+        logging.getLogger(__name__).info("SpoolBuddy watchdog stopped")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -3281,6 +3316,9 @@ async def lifespan(app: FastAPI):
     # Start printer runtime tracking
     start_runtime_tracking()
 
+    # Start SpoolBuddy device watchdog
+    start_spoolbuddy_watchdog()
+
     # Initialize virtual printer manager and sync from DB
     from backend.app.services.virtual_printer import virtual_printer_manager
 
@@ -3301,6 +3339,7 @@ async def lifespan(app: FastAPI):
     github_backup_service.stop_scheduler()
     stop_ams_history_recording()
     stop_runtime_tracking()
+    stop_spoolbuddy_watchdog()
     printer_manager.disconnect_all()
     await close_spoolman_client()
 
@@ -3505,6 +3544,7 @@ app.include_router(firmware.router, prefix=app_settings.api_prefix)
 app.include_router(github_backup.router, prefix=app_settings.api_prefix)
 app.include_router(metrics.router, prefix=app_settings.api_prefix)
 app.include_router(virtual_printers.router, prefix=app_settings.api_prefix)
+app.include_router(spoolbuddy.router, prefix=app_settings.api_prefix)
 
 
 # Serve static files (React build)

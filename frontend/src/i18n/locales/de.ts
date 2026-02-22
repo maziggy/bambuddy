@@ -2771,6 +2771,11 @@ export default {
     rightNozzle: 'R',
     leftNozzleTooltip: 'Linke Düse',
     rightNozzleTooltip: 'Rechte Düse',
+    filamentOverride: 'Filament-Überschreibung',
+    filamentOverrideHint: 'Filamente für modellbasierte Zuweisung optional überschreiben. Der Planer wird gegen die ausgewählten Filamente statt der ursprünglichen 3MF-Werte abgleichen.',
+    originalFilament: 'Original',
+    overrideWith: 'Ersetzen mit',
+    resetToOriginal: 'Auf Original zurücksetzen',
   },
 
   // Backup

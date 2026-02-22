@@ -388,8 +388,10 @@ export default {
     },
     // Automation
     plateAutomation: {
+      noPermission: 'プリンタを更新する権限がありません',
       enabledClick: '自動化が有効 - 無効にするにはクリック',
       disabledClick: '自動化が無効 - 有効にするにはクリック',
+      manageCustomization: 'プレート自動化のカスタムGCODEを管理',
     },
     fans: {
       partCooling: 'パーツ冷却ファン',

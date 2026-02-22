@@ -106,6 +106,19 @@ export interface Printer {
   updated_at: string;
 }
 
+export interface Automation {
+  id: number;
+  printer_id: number;
+  start_code: string | null;
+  start_code_detect: string | null;
+  start_code_after: string | null;
+  end_code: string | null;
+  end_code_detect: string | null;
+  end_code_after: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface HMSError {
   code: string;
   attr: number;  // Attribute value for constructing wiki URL
@@ -2352,6 +2365,23 @@ export const api = {
   setChamberLight: (printerId: number, on: boolean) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/chamber-light?on=${on}`, {
       method: 'POST',
+    }),
+
+  // Plate Automation CRUD
+  getAutomations: (printerId: number) => request<Automation[]>(`/printers/${printerId}/automation`),
+  createAutomation: (printerId: number, data: Partial<Automation>) =>
+    request<Automation>(`/printers/${printerId}/automation`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateAutomation: (automationId: number, data: Partial<Automation>) =>
+    request<Automation>(`/automation/${automationId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteAutomation: (automationId: number) =>
+    request<void>(`/automation/${automationId}`, {
+      method: 'DELETE',
     }),
 
   // Skip Objects

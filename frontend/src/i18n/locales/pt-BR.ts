@@ -422,8 +422,10 @@ export default {
     },
     // Automation
     plateAutomation: {
+      noPermission: 'Você não tem permissão para atualizar impressoras',
       enabledClick: 'Automação ativada - Clique para desativar',
       disabledClick: 'Automação desativada - Clique para ativar',
+      manageCustomization: 'Gerenciar GCODE personalizado para automação da mesa',
     },
     // Fans
     fans: {

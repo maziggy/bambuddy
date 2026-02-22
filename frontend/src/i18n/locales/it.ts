@@ -413,8 +413,10 @@ export default {
     },
     // Automation
     plateAutomation: {
+      noPermission: "Non hai l'autorizzazione per aggiornare le stampanti",
       enabledClick: 'Automazione attivata - Clicca per disattivare',
       disabledClick: 'Automazione disattivata - Clicca per attivare',
+      manageCustomization: 'Gestisci GCODE personalizzato per l\'automazione del piatto',
     },
     // Fans
     fans: {

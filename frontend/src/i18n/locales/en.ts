@@ -422,8 +422,10 @@ export default {
     },
     // Automation
     plateAutomation: {
+      noPermission: 'You do not have permission to update printers',
       enabledClick: 'Automation enabled - Click to disable',
       disabledClick: 'Automation disabled - Click to enable',
+      manageCustomization: 'Manage plate automation custom GCODE',
     },
     // Fans
     fans: {

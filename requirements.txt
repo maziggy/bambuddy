@@ -58,3 +58,7 @@ httpx>=0.26.0
 ruff>=0.2.0
 
 pillow>=12.1.1
+
+# SpoolBuddy Hardware (PN5180 NFC reader, scale)
+gpiod>=2.2.0
+spidev>=3.6

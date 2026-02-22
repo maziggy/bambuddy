@@ -27,13 +27,14 @@
 
 ### Setup Steps
 
-#### 1. Enable SPI
+#### 1. Enable SPI and I2C
 
-After a fresh Raspberry Pi OS install, SPI is disabled by default.
+After a fresh Raspberry Pi OS install, SPI and I2C are disabled by default.
 
 ```bash
 sudo raspi-config
 # Navigate to: Interface Options -> SPI -> Enable
+# Navigate to: Interface Options -> I2C -> Enable
 sudo reboot
 ```
 
@@ -42,16 +43,28 @@ Verify after reboot:
 ```bash
 ls /dev/spidev0.*
 # Should show: /dev/spidev0.0  /dev/spidev0.1
+
+ls /dev/i2c-*
+# Should include: /dev/i2c-1
 ```
 
-#### 2. Disable automatic CS (kernel SPI chip-select)
+#### 2. Configure `/boot/firmware/config.txt`
 
-Since we use manual CS on GPIO23, we need to tell the SPI driver not to
-drive any hardware CS pins. Add this to `/boot/firmware/config.txt`:
+Add the following lines under the `[all]` section:
 
 ```
+# SpoolBuddy: I2C bus 0 for NAU7802 scale (GPIO0/GPIO1)
+dtparam=i2c_vc=on
+
+# SpoolBuddy: Disable SPI auto CS (manual CS on GPIO23 for PN5180)
 dtoverlay=spi0-0cs
 ```
+
+- `i2c_vc=on` enables I2C bus 0 (GPIO0/GPIO1). The default `i2c_arm` only
+  enables bus 1 (GPIO2/GPIO3). The NAU7802 is wired to bus 0.
+- `spi0-0cs` disables the kernel SPI driver's automatic chip-select. We use
+  manual CS on GPIO23 because the driver's CS timing doesn't meet the PN5180's
+  requirements.
 
 Then reboot:
 
@@ -59,23 +72,35 @@ Then reboot:
 sudo reboot
 ```
 
+Verify after reboot:
+
+```bash
+ls /dev/i2c-0
+# Should exist
+
+sudo i2cdetect -y 0
+# Should show 0x2A (NAU7802)
+```
+
 #### 3. Install system packages
 
 ```bash
-sudo apt install python3-spidev python3-libgpiod gpiod libgpiod3
+sudo apt install python3-spidev python3-libgpiod gpiod libgpiod3 i2c-tools
 ```
 
 - `python3-spidev` / `libgpiod3` — system libraries for SPI and GPIO access
 - `gpiod` — command-line GPIO tools (useful for debugging)
+- `i2c-tools` — I2C diagnostic tools (`i2cdetect`, `i2cget`, etc.)
 
 #### 4. Install Python dependencies (in venv)
 
 ```bash
-pip install spidev gpiod
+pip install spidev gpiod smbus2
 ```
 
-- `spidev` — Python SPI bindings
+- `spidev` — Python SPI bindings (PN5180 NFC reader)
 - `gpiod` — Python GPIO bindings via libgpiod (works on both RPi 4 and RPi 5)
+- `smbus2` — Python I2C bindings (NAU7802 scale)
 
 #### 5. Solder all connections
 
@@ -144,3 +169,19 @@ Place a tag on the reader. Supported tag types:
 | SDA         | Pin 27           | GPIO 0 | Yellow     |
 | SCL         | Pin 28           | GPIO 1 | White      |
 | GND         | Pin 30           | —      | Black      |
+
+> **I2C Bus:** Uses I2C bus 0 (GPIO0/GPIO1), enabled via `dtparam=i2c_vc=on`
+> in config.txt. Bus 1 (GPIO2/GPIO3) is the default but those pins are not
+> used here.
+
+### Verify
+
+```bash
+sudo i2cdetect -y 0
+# Should show 0x2A
+
+sudo python3 spoolbuddy/scale_diag.py
+```
+
+The diagnostic reads 10 samples at 10 SPS and shows raw ADC values, average,
+and spread. Typical idle readings are around ~500k with a spread under 20k.

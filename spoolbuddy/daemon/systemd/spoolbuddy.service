@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
+User=mz
 WorkingDirectory=/opt/bambuddy/spoolbuddy
 Environment=SPOOLBUDDY_BACKEND_URL=http://bambuddy:5000
 Environment=SPOOLBUDDY_API_KEY=bb_change_me

@@ -12,9 +12,10 @@ interface PrinterQueueWidgetProps {
   printerModel?: string | null;
   printerState?: string | null;
   plateCleared?: boolean;
+  plateAutomation?: boolean;
 }
 
-export function PrinterQueueWidget({ printerId, printerModel, printerState, plateCleared }: PrinterQueueWidgetProps) {
+export function PrinterQueueWidget({ printerId, printerModel, printerState, plateCleared, plateAutomation }: PrinterQueueWidgetProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -44,7 +45,7 @@ export function PrinterQueueWidget({ printerId, printerModel, printerState, plat
     return null;
   }
 
-  const needsClearPlate = (printerState === 'FINISH' || printerState === 'FAILED') && !plateCleared;
+  const needsClearPlate = (printerState === 'FINISH' || printerState === 'FAILED') && !plateCleared && (!plateAutomation || printerState === 'FAILED');
 
   if (needsClearPlate) {
     return (

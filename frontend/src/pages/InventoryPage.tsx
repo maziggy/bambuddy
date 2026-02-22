@@ -5,7 +5,7 @@ import {
   Plus, Loader2, Trash2, Archive, RotateCcw, Edit2, Package,
   Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   TrendingDown, Layers, Printer, AlertTriangle, X, Clock, LayoutGrid, TableProperties, Columns,
-  ArrowUp, ArrowDown, ArrowUpDown,
+  ArrowUp, ArrowDown, ArrowUpDown, Group, ChevronDown,
 } from 'lucide-react';
 import { api } from '../api/client';
 import type { InventorySpool, SpoolAssignment } from '../api/client';
@@ -24,6 +24,14 @@ type UsageFilter = 'all' | 'used' | 'new';
 type ViewMode = 'table' | 'cards';
 type SortDirection = 'asc' | 'desc';
 type SortState = { column: string; direction: SortDirection } | null;
+
+type DisplayItem =
+  | { type: 'single'; spool: InventorySpool }
+  | { type: 'group'; key: string; spools: InventorySpool[]; representative: InventorySpool };
+
+function spoolGroupKey(s: InventorySpool): string {
+  return `${s.material}|${s.subtype || ''}|${s.brand || ''}|${s.color_name || ''}|${s.rgba || ''}|${s.label_weight}`;
+}
 
 // Column definitions for the inventory table
 const COLUMN_CONFIG_KEY = 'bambuddy-inventory-columns';
@@ -101,7 +109,7 @@ const MATERIAL_COLORS: Record<string, string> = {
   PET: 'bg-sky-500/20 text-sky-400',
 };
 
-type TFn = (key: string) => string;
+type TFn = (key: string, opts?: Record<string, unknown>) => string;
 
 function formatInventoryDate(dateStr: string | null, dateFormat: DateFormat = 'system'): string {
   if (!dateStr) return '-';
@@ -347,6 +355,12 @@ export default function InventoryPage() {
   const [sortState, setSortState] = useState<SortState>(loadSortState);
   const [columnConfig, setColumnConfig] = useState<ColumnConfig[]>(loadColumnConfig);
   const [showColumnModal, setShowColumnModal] = useState(false);
+  const [groupSimilar, setGroupSimilar] = useState(() => {
+    try {
+      return localStorage.getItem('bambuddy-inventory-group') === 'true';
+    } catch { return false; }
+  });
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   // Pagination state (pageSize persisted to localStorage)
   const [pageIndex, setPageIndex] = useState(0);
@@ -552,12 +566,71 @@ export default function InventoryPage() {
     return sorted;
   }, [filteredSpools, sortState, assignmentMap]);
 
+  // Group similar spools when toggle is active
+  const displayItems = useMemo((): DisplayItem[] => {
+    if (!groupSimilar) return sortedSpools.map((s) => ({ type: 'single' as const, spool: s }));
+
+    const groups = new Map<string, InventorySpool[]>();
+
+    for (const spool of sortedSpools) {
+      // Only group unused & unassigned spools
+      if (spool.weight_used > 0 || assignmentMap[spool.id]) {
+        // Will be added as singles in the walk below
+      } else {
+        const key = spoolGroupKey(spool);
+        const arr = groups.get(key);
+        if (arr) arr.push(spool);
+        else groups.set(key, [spool]);
+      }
+    }
+
+    const items: DisplayItem[] = [];
+    const processedKeys = new Set<string>();
+
+    // Walk sortedSpools order so groups appear at the position of their first member
+    for (const spool of sortedSpools) {
+      if (spool.weight_used > 0 || assignmentMap[spool.id]) {
+        items.push({ type: 'single', spool });
+        continue;
+      }
+      const key = spoolGroupKey(spool);
+      if (processedKeys.has(key)) continue;
+      processedKeys.add(key);
+      const members = groups.get(key)!;
+      if (members.length === 1) {
+        items.push({ type: 'single', spool: members[0] });
+      } else {
+        items.push({ type: 'group', key, spools: members, representative: members[0] });
+      }
+    }
+    return items;
+  }, [sortedSpools, groupSimilar, assignmentMap]);
+
   // Pagination (after sorting) — pageSize -1 means "All"
   const showAll = pageSize === -1;
-  const effectivePageSize = showAll ? sortedSpools.length || 1 : pageSize;
-  const totalPages = Math.max(1, Math.ceil(sortedSpools.length / effectivePageSize));
+  const totalDisplayItems = displayItems.length;
+  const effectivePageSize = showAll ? totalDisplayItems || 1 : pageSize;
+  const totalPages = Math.max(1, Math.ceil(totalDisplayItems / effectivePageSize));
   const safePageIndex = showAll ? 0 : Math.min(pageIndex, totalPages - 1);
-  const pagedSpools = showAll ? sortedSpools : sortedSpools.slice(safePageIndex * effectivePageSize, (safePageIndex + 1) * effectivePageSize);
+  const pagedItems = showAll
+    ? displayItems
+    : displayItems.slice(safePageIndex * effectivePageSize, (safePageIndex + 1) * effectivePageSize);
+  const toggleGroupSimilar = () => {
+    const next = !groupSimilar;
+    setGroupSimilar(next);
+    setExpandedGroups(new Set());
+    resetPage();
+    try { localStorage.setItem('bambuddy-inventory-group', String(next)); } catch { /* ignore */ }
+  };
+
+  const toggleGroupExpand = (key: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   const handlePageSizeChange = (size: number) => {
     setPageSize(size);
@@ -688,6 +761,19 @@ export default function InventoryPage() {
               <span className="hidden sm:inline">{t('inventory.columns')}</span>
             </button>
           )}
+          {/* Group similar toggle */}
+          <button
+            onClick={toggleGroupSimilar}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border rounded-lg transition-colors ${
+              groupSimilar
+                ? 'bg-bambu-green/20 text-bambu-green border-bambu-green/30'
+                : 'text-bambu-gray border-bambu-dark-tertiary hover:bg-bambu-dark-tertiary'
+            }`}
+            title={t('inventory.groupSimilar')}
+          >
+            <Group className="w-4 h-4" />
+            <span className="hidden sm:inline">{t('inventory.groupSimilar')}</span>
+          </button>
           {/* Table / Cards toggle */}
           <div className="flex bg-bambu-dark-primary border border-bambu-dark-tertiary rounded-lg overflow-hidden">
             <button
@@ -866,6 +952,7 @@ export default function InventoryPage() {
         {/* Results count */}
         <span className="ml-auto text-xs text-bambu-gray">
           {sortedSpools.length} {sortedSpools.length !== 1 ? t('inventory.spools') : t('inventory.spool')}
+          {groupSimilar && totalDisplayItems < sortedSpools.length && ` (${totalDisplayItems} ${t('inventory.groupedRows')})`}
         </span>
       </div>
 
@@ -876,69 +963,80 @@ export default function InventoryPage() {
         </div>
       ) : viewMode === 'cards' ? (
         /* Cards view */
-        pagedSpools.length > 0 ? (
+        pagedItems.length > 0 ? (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {pagedSpools.map((spool) => {
+              {pagedItems.map((item) => {
+                if (item.type === 'group') {
+                  const { key, spools: groupSpools, representative: rep } = item;
+                  const colorStyle = rep.rgba ? `#${rep.rgba.substring(0, 6)}` : '#808080';
+                  const isExpanded = expandedGroups.has(key);
+                  return (
+                    <div key={`group-${key}`} className="col-span-full">
+                      {/* Group header card */}
+                      <div
+                        className="bg-bambu-dark-secondary rounded-lg overflow-hidden border border-bambu-green/30 hover:border-bambu-green transition-colors cursor-pointer"
+                        onClick={() => toggleGroupExpand(key)}
+                      >
+                        <div className="h-10 flex items-center px-4 gap-3" style={{ backgroundColor: colorStyle }}>
+                          <span className="bg-white/90 text-gray-800 px-3 py-0.5 rounded-full text-sm font-medium">
+                            {resolveSpoolColorName(rep.color_name, rep.rgba) || '-'}
+                          </span>
+                        </div>
+                        <div className="px-4 py-3 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <ChevronDown className={`w-4 h-4 text-bambu-gray transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
+                            <div>
+                              <h3 className="font-semibold text-white">{rep.material}{rep.subtype ? ` ${rep.subtype}` : ''}</h3>
+                              <p className="text-sm text-bambu-gray">{rep.brand || '-'}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-bambu-gray">{formatWeight(rep.label_weight)}</span>
+                            <span className="text-xs font-medium bg-bambu-green/20 text-bambu-green px-2 py-0.5 rounded-full">
+                              {t('inventory.groupedSpools', { count: groupSpools.length })}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Expanded individual spools */}
+                      {isExpanded && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-2 ml-4">
+                          {groupSpools.map((spool) => {
+                            const remaining = Math.max(0, spool.label_weight - spool.weight_used);
+                            const pct = spool.label_weight > 0 ? (remaining / spool.label_weight) * 100 : 0;
+                            const spoolColor = spool.rgba ? `#${spool.rgba.substring(0, 6)}` : '#808080';
+                            return (
+                              <SpoolCard
+                                key={spool.id}
+                                spool={spool}
+                                remaining={remaining}
+                                pct={pct}
+                                colorStyle={spoolColor}
+                                onClick={() => setFormModal({ spool })}
+                                t={t}
+                              />
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+                const spool = item.spool;
                 const remaining = Math.max(0, spool.label_weight - spool.weight_used);
                 const pct = spool.label_weight > 0 ? (remaining / spool.label_weight) * 100 : 0;
                 const colorStyle = spool.rgba ? `#${spool.rgba.substring(0, 6)}` : '#808080';
                 return (
-                  <div
+                  <SpoolCard
                     key={spool.id}
-                    className={`bg-bambu-dark-secondary rounded-lg overflow-hidden border border-bambu-dark-tertiary hover:border-bambu-green transition-colors cursor-pointer ${spool.archived_at ? 'opacity-50' : ''}`}
+                    spool={spool}
+                    remaining={remaining}
+                    pct={pct}
+                    colorStyle={colorStyle}
                     onClick={() => setFormModal({ spool })}
-                  >
-                    {/* Color header */}
-                    <div className="h-14 flex items-center justify-center" style={{ backgroundColor: colorStyle }}>
-                      <span className="bg-white/90 text-gray-800 px-3 py-0.5 rounded-full text-sm font-medium">
-                        {resolveSpoolColorName(spool.color_name, spool.rgba) || '-'}
-                      </span>
-                    </div>
-                    {/* Content */}
-                    <div className="p-4 space-y-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <h3 className="font-semibold text-white">{spool.material}{spool.subtype ? ` ${spool.subtype}` : ''}</h3>
-                          <p className="text-sm text-bambu-gray">{spool.brand || '-'}</p>
-                        </div>
-                        <span className="text-xs font-mono text-bambu-gray bg-bambu-dark-tertiary px-2 py-1 rounded">#{spool.id}</span>
-                      </div>
-                      {/* Progress */}
-                      <div>
-                        <div className="flex justify-between text-xs text-bambu-gray mb-1">
-                          <span>{t('inventory.remaining')}</span>
-                          <span>{Math.round(pct)}%</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 h-2 bg-bambu-dark-tertiary rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${pct > 50 ? 'bg-bambu-green' : pct > 20 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                              style={{ width: `${Math.min(pct, 100)}%` }}
-                            />
-                          </div>
-                          <span className="text-xs text-bambu-gray min-w-[40px] text-right">{Math.round(remaining)}g</span>
-                        </div>
-                      </div>
-                      {/* Weight info */}
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div>
-                          <span className="text-bambu-gray/60">{t('inventory.labelWeight')}: </span>
-                          <span className="text-bambu-gray">{formatWeight(spool.label_weight)}</span>
-                        </div>
-                        <div>
-                          <span className="text-bambu-gray/60">{t('inventory.weightUsed')}: </span>
-                          <span className="text-bambu-gray">{spool.weight_used > 0 ? formatWeight(spool.weight_used) : '-'}</span>
-                        </div>
-                      </div>
-                      {/* Note */}
-                      {spool.note && (
-                        <div className="text-xs text-bambu-gray/60 pt-2 border-t border-bambu-dark-tertiary truncate" title={spool.note}>
-                          {spool.note}
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                    t={t}
+                  />
                 );
               })}
             </div>
@@ -946,7 +1044,7 @@ export default function InventoryPage() {
             <PaginationBar
               pageIndex={safePageIndex}
               pageSize={pageSize}
-              totalRows={sortedSpools.length}
+              totalRows={totalDisplayItems}
               totalPages={totalPages}
               onPageChange={setPageIndex}
               onPageSizeChange={handlePageSizeChange}
@@ -962,7 +1060,7 @@ export default function InventoryPage() {
         )
       ) : (
         /* Table view */
-        pagedSpools.length > 0 ? (
+        pagedItems.length > 0 ? (
           <div className="bg-bambu-dark-secondary rounded-lg overflow-hidden border border-bambu-dark-tertiary">
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -996,58 +1094,51 @@ export default function InventoryPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {pagedSpools.map((spool) => {
+                  {pagedItems.map((item) => {
+                    if (item.type === 'group') {
+                      const { key, spools: groupSpools, representative: rep } = item;
+                      const isExpanded = expandedGroups.has(key);
+                      const remaining = Math.max(0, rep.label_weight - rep.weight_used);
+                      const pct = rep.label_weight > 0 ? (remaining / rep.label_weight) * 100 : 0;
+                      return (
+                        <SpoolTableGroup
+                          key={`group-${key}`}
+                          spools={groupSpools}
+                          representative={rep}
+                          remaining={remaining}
+                          pct={pct}
+                          isExpanded={isExpanded}
+                          onToggle={() => toggleGroupExpand(key)}
+                          onEdit={(s) => setFormModal({ spool: s })}
+                          onArchive={(id) => setConfirmAction({ type: 'archive', spoolId: id })}
+                          onDelete={(id) => setConfirmAction({ type: 'delete', spoolId: id })}
+                          visibleColumns={visibleColumns}
+                          assignmentMap={assignmentMap}
+                          currencySymbol={currencySymbol}
+                          dateFormat={dateFormat}
+                          t={t}
+                        />
+                      );
+                    }
+                    const spool = item.spool;
                     const remaining = Math.max(0, spool.label_weight - spool.weight_used);
                     const pct = spool.label_weight > 0 ? (remaining / spool.label_weight) * 100 : 0;
                     return (
-                      <tr
+                      <SpoolTableRow
                         key={spool.id}
-                        className={`border-b border-bambu-dark-tertiary/50 hover:bg-bambu-dark-tertiary/30 transition-colors cursor-pointer ${
-                          spool.archived_at ? 'opacity-50' : ''
-                        }`}
-                        onClick={() => setFormModal({ spool })}
-                      >
-                        {visibleColumns.map((colId) => (
-                          <td key={colId} className="py-3 px-4">
-                            {columnCells[colId]?.({ spool, remaining, pct, assignmentMap, currencySymbol, dateFormat, t })}
-                          </td>
-                        ))}
-                        <td className="py-3 px-4">
-                          <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              onClick={() => setFormModal({ spool })}
-                              className="p-1.5 text-bambu-gray hover:text-white rounded transition-colors"
-                              title={t('inventory.editSpool')}
-                            >
-                              <Edit2 className="w-4 h-4" />
-                            </button>
-                            {spool.archived_at ? (
-                              <button
-                                onClick={() => restoreMutation.mutate(spool.id)}
-                                className="p-1.5 text-bambu-gray hover:text-bambu-green rounded transition-colors"
-                                title={t('inventory.restore')}
-                              >
-                                <RotateCcw className="w-4 h-4" />
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => setConfirmAction({ type: 'archive', spoolId: spool.id })}
-                                className="p-1.5 text-bambu-gray hover:text-yellow-400 rounded transition-colors"
-                                title={t('inventory.archive')}
-                              >
-                                <Archive className="w-4 h-4" />
-                              </button>
-                            )}
-                            <button
-                              onClick={() => setConfirmAction({ type: 'delete', spoolId: spool.id })}
-                              className="p-1.5 text-bambu-gray hover:text-red-400 rounded transition-colors"
-                              title={t('common.delete')}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
+                        spool={spool}
+                        remaining={remaining}
+                        pct={pct}
+                        onEdit={() => setFormModal({ spool })}
+                        onRestore={() => restoreMutation.mutate(spool.id)}
+                        onArchive={() => setConfirmAction({ type: 'archive', spoolId: spool.id })}
+                        onDelete={() => setConfirmAction({ type: 'delete', spoolId: spool.id })}
+                        visibleColumns={visibleColumns}
+                        assignmentMap={assignmentMap}
+                        currencySymbol={currencySymbol}
+                        dateFormat={dateFormat}
+                        t={t}
+                      />
                     );
                   })}
                 </tbody>
@@ -1058,10 +1149,10 @@ export default function InventoryPage() {
             <div className="flex items-center justify-between px-4 py-3 bg-bambu-dark-tertiary/50 border-t border-bambu-dark-tertiary text-sm">
               <span className="text-bambu-gray">
                 {showAll
-                  ? `${sortedSpools.length} ${sortedSpools.length !== 1 ? t('inventory.spools') : t('inventory.spool')}`
+                  ? `${totalDisplayItems} ${totalDisplayItems !== 1 ? t('inventory.spools') : t('inventory.spool')}`
                   : <>{t('inventory.showing')} {safePageIndex * effectivePageSize + 1} {t('inventory.to')}{' '}
-                    {Math.min((safePageIndex + 1) * effectivePageSize, sortedSpools.length)}{' '}
-                    {t('inventory.of')} {sortedSpools.length} {t('inventory.spools')}</>
+                    {Math.min((safePageIndex + 1) * effectivePageSize, totalDisplayItems)}{' '}
+                    {t('inventory.of')} {totalDisplayItems} {t('inventory.spools')}</>
                 }
               </span>
 
@@ -1242,6 +1333,210 @@ function PaginationBar({
         )}
       </div>
     </div>
+  );
+}
+
+/* Spool card for cards view */
+function SpoolCard({
+  spool, remaining, pct, colorStyle, onClick, t,
+}: {
+  spool: InventorySpool;
+  remaining: number;
+  pct: number;
+  colorStyle: string;
+  onClick: () => void;
+  t: (key: string, opts?: Record<string, unknown>) => string;
+}) {
+  return (
+    <div
+      className={`bg-bambu-dark-secondary rounded-lg overflow-hidden border border-bambu-dark-tertiary hover:border-bambu-green transition-colors cursor-pointer ${spool.archived_at ? 'opacity-50' : ''}`}
+      onClick={onClick}
+    >
+      <div className="h-14 flex items-center justify-center" style={{ backgroundColor: colorStyle }}>
+        <span className="bg-white/90 text-gray-800 px-3 py-0.5 rounded-full text-sm font-medium">
+          {resolveSpoolColorName(spool.color_name, spool.rgba) || '-'}
+        </span>
+      </div>
+      <div className="p-4 space-y-3">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h3 className="font-semibold text-white">
+              {spool.material}{spool.subtype ? ` ${spool.subtype}` : ''}
+            </h3>
+            <p className="text-sm text-bambu-gray">{spool.brand || '-'}</p>
+          </div>
+          <span className="text-xs font-mono text-bambu-gray bg-bambu-dark-tertiary px-2 py-1 rounded">
+            #{spool.id}
+          </span>
+        </div>
+        <div>
+          <div className="flex justify-between text-xs text-bambu-gray mb-1">
+            <span>{t('inventory.remaining')}</span>
+            <span>{Math.round(pct)}%</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-2 bg-bambu-dark-tertiary rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full ${pct > 50 ? 'bg-bambu-green' : pct > 20 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                style={{ width: `${Math.min(pct, 100)}%` }}
+              />
+            </div>
+            <span className="text-xs text-bambu-gray min-w-[40px] text-right">
+              {Math.round(remaining)}g
+            </span>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div>
+            <span className="text-bambu-gray/60">{t('inventory.labelWeight')}: </span>
+            <span className="text-bambu-gray">{formatWeight(spool.label_weight)}</span>
+          </div>
+          <div>
+            <span className="text-bambu-gray/60">{t('inventory.weightUsed')}: </span>
+            <span className="text-bambu-gray">
+              {spool.weight_used > 0 ? formatWeight(spool.weight_used) : '-'}
+            </span>
+          </div>
+        </div>
+        {spool.note && (
+          <div
+            className="text-xs text-bambu-gray/60 pt-2 border-t border-bambu-dark-tertiary truncate"
+            title={spool.note}
+          >
+            {spool.note}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* Single spool row for table view */
+function SpoolTableRow({
+  spool, remaining, pct, onEdit, onRestore, onArchive, onDelete,
+  visibleColumns, assignmentMap, currencySymbol, dateFormat, t,
+}: {
+  spool: InventorySpool;
+  remaining: number;
+  pct: number;
+  onEdit: () => void;
+  onRestore: () => void;
+  onArchive: () => void;
+  onDelete: () => void;
+  visibleColumns: string[];
+  assignmentMap: Record<number, SpoolAssignment>;
+  currencySymbol: string;
+  dateFormat: DateFormat;
+  t: TFn;
+}) {
+  return (
+    <tr
+      className={`border-b border-bambu-dark-tertiary/50 hover:bg-bambu-dark-tertiary/30 transition-colors cursor-pointer ${
+        spool.archived_at ? 'opacity-50' : ''
+      }`}
+      onClick={onEdit}
+    >
+      {visibleColumns.map((colId) => (
+        <td key={colId} className="py-3 px-4">
+          {columnCells[colId]?.({ spool, remaining, pct, assignmentMap, currencySymbol, dateFormat, t })}
+        </td>
+      ))}
+      <td className="py-3 px-4">
+        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+          <button onClick={onEdit} className="p-1.5 text-bambu-gray hover:text-white rounded transition-colors" title={t('inventory.editSpool')}>
+            <Edit2 className="w-4 h-4" />
+          </button>
+          {spool.archived_at ? (
+            <button onClick={onRestore} className="p-1.5 text-bambu-gray hover:text-bambu-green rounded transition-colors" title={t('inventory.restore')}>
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          ) : (
+            <button onClick={onArchive} className="p-1.5 text-bambu-gray hover:text-yellow-400 rounded transition-colors" title={t('inventory.archive')}>
+              <Archive className="w-4 h-4" />
+            </button>
+          )}
+          <button onClick={onDelete} className="p-1.5 text-bambu-gray hover:text-red-400 rounded transition-colors" title={t('common.delete')}>
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+/* Grouped spool rows for table view */
+function SpoolTableGroup({
+  spools, representative, remaining, pct, isExpanded, onToggle,
+  onEdit, onArchive, onDelete,
+  visibleColumns, assignmentMap, currencySymbol, dateFormat, t,
+}: {
+  spools: InventorySpool[];
+  representative: InventorySpool;
+  remaining: number;
+  pct: number;
+  isExpanded: boolean;
+  onToggle: () => void;
+  onEdit: (spool: InventorySpool) => void;
+  onArchive: (id: number) => void;
+  onDelete: (id: number) => void;
+  visibleColumns: string[];
+  assignmentMap: Record<number, SpoolAssignment>;
+  currencySymbol: string;
+  dateFormat: DateFormat;
+  t: TFn;
+}) {
+  return (
+    <>
+      {/* Group header row */}
+      <tr
+        className="border-b border-bambu-dark-tertiary/50 hover:bg-bambu-dark-tertiary/30 transition-colors cursor-pointer bg-bambu-green/5"
+        onClick={onToggle}
+      >
+        {visibleColumns.map((colId, idx) => (
+          <td key={colId} className="py-3 px-4">
+            {idx === 0 ? (
+              <div className="flex items-center gap-2">
+                <ChevronDown className={`w-4 h-4 text-bambu-gray transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
+                {columnCells[colId]?.({ spool: representative, remaining, pct, assignmentMap, currencySymbol, dateFormat, t })}
+              </div>
+            ) : colId === 'id' ? (
+              <span className="text-xs font-medium bg-bambu-green/20 text-bambu-green px-2 py-0.5 rounded-full">
+                {t('inventory.groupedSpools', { count: spools.length })}
+              </span>
+            ) : (
+              columnCells[colId]?.({ spool: representative, remaining, pct, assignmentMap, currencySymbol, dateFormat, t })
+            )}
+          </td>
+        ))}
+        <td className="py-3 px-4">
+          <span className="text-xs text-bambu-gray">
+            {spools.map((s) => `#${s.id}`).join(', ')}
+          </span>
+        </td>
+      </tr>
+      {/* Expanded individual rows */}
+      {isExpanded && spools.map((spool) => {
+        const r = Math.max(0, spool.label_weight - spool.weight_used);
+        const p = spool.label_weight > 0 ? (r / spool.label_weight) * 100 : 0;
+        return (
+          <SpoolTableRow
+            key={spool.id}
+            spool={spool}
+            remaining={r}
+            pct={p}
+            onEdit={() => onEdit(spool)}
+            onRestore={() => {}}
+            onArchive={() => onArchive(spool.id)}
+            onDelete={() => onDelete(spool.id)}
+            visibleColumns={visibleColumns}
+            assignmentMap={assignmentMap}
+            currencySymbol={currencySymbol}
+            dateFormat={dateFormat}
+            t={t}
+          />
+        );
+      })}
+    </>
   );
 }
 

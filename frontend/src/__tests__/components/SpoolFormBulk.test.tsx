@@ -3,9 +3,11 @@
  *
  * Verifies:
  * - Quick-add toggle appears only in create mode
- * - Quick-add mode hides slicer preset, brand, subtype fields
+ * - Quick-add mode shows brand and subtype as optional (no asterisk)
+ * - Quick-add mode hides slicer preset field
  * - Quick-add mode hides PA Profile tab
- * - Quantity field is rendered in filament section
+ * - Quantity field is only rendered in quick-add mode
+ * - Quantity field is hidden in edit mode
  * - Bulk create calls bulkCreateSpools when quantity > 1
  * - Single quantity calls createSpool as before
  * - validateForm with quickAdd=true only requires material
@@ -199,7 +201,7 @@ describe('SpoolFormModal quick-add toggle', () => {
     });
   });
 
-  it('renders quantity field', async () => {
+  it('hides quantity field by default (non-quick-add)', async () => {
     render(
       <SpoolFormModal
         isOpen={true}
@@ -212,8 +214,88 @@ describe('SpoolFormModal quick-add toggle', () => {
       expect(screen.getByRole('heading', { name: 'Add Spool' })).toBeInTheDocument();
     });
 
-    // Quantity field should be visible
-    expect(screen.getByText('Quantity')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('1')).toBeInTheDocument();
+    // Quantity field should NOT be visible in normal create mode
+    expect(screen.queryByText('Quantity')).not.toBeInTheDocument();
+  });
+
+  it('shows quantity field only in quick-add mode', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        currencySymbol="$"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Add Spool' })).toBeInTheDocument();
+    });
+
+    // Toggle quick-add on
+    const toggleButtons = screen.getAllByRole('button');
+    const quickAddToggle = toggleButtons.find(btn =>
+      btn.getAttribute('type') === 'button' &&
+      btn.className.includes('rounded-full') &&
+      btn.closest('div')?.textContent?.includes('Quick Add')
+    );
+    expect(quickAddToggle).toBeTruthy();
+    fireEvent.click(quickAddToggle!);
+
+    // Quantity field should now be visible
+    await waitFor(() => {
+      expect(screen.getByText('Quantity')).toBeInTheDocument();
+    });
+  });
+
+  it('hides quantity field in edit mode', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={existingSpool}
+        currencySymbol="$"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Spool')).toBeInTheDocument();
+    });
+
+    // Quantity field should NOT be visible in edit mode
+    expect(screen.queryByText('Quantity')).not.toBeInTheDocument();
+  });
+
+  it('shows brand and subtype in quick-add mode without asterisk', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        currencySymbol="$"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Add Spool' })).toBeInTheDocument();
+    });
+
+    // Toggle quick-add on
+    const toggleButtons = screen.getAllByRole('button');
+    const quickAddToggle = toggleButtons.find(btn =>
+      btn.getAttribute('type') === 'button' &&
+      btn.className.includes('rounded-full') &&
+      btn.closest('div')?.textContent?.includes('Quick Add')
+    );
+    fireEvent.click(quickAddToggle!);
+
+    // Brand and Subtype should be visible (without asterisk = optional)
+    await waitFor(() => {
+      const brandLabel = screen.getByText('Brand');
+      expect(brandLabel).toBeInTheDocument();
+      expect(brandLabel.textContent).not.toContain('*');
+
+      const subtypeLabel = screen.getByText('Subtype');
+      expect(subtypeLabel).toBeInTheDocument();
+      expect(subtypeLabel.textContent).not.toContain('*');
+    });
   });
 });

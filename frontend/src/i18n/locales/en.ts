@@ -2672,6 +2672,10 @@ export default {
     table: 'Table',
     cards: 'Cards',
     net: 'Net',
+    // Grouping
+    groupSimilar: 'Group',
+    groupedSpools: '{{count}} identical spools',
+    groupedRows: 'rows',
     // Column config
     columns: 'Columns',
     configureColumns: 'Configure Columns',

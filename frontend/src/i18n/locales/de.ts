@@ -2668,6 +2668,10 @@ export default {
     table: 'Tabelle',
     cards: 'Karten',
     net: 'Netto',
+    // Grouping
+    groupSimilar: 'Gruppieren',
+    groupedSpools: '{{count}} identische Spulen',
+    groupedRows: 'Zeilen',
     // Column config
     columns: 'Spalten',
     configureColumns: 'Spalten konfigurieren',

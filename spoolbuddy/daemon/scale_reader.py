@@ -11,7 +11,7 @@ MOVING_AVG_SIZE = 5
 
 class ScaleReader:
     def __init__(self, tare_offset: int = 0, calibration_factor: float = 1.0):
-        from spoolbuddy.scale_diag import NAU7802
+        from scale_diag import NAU7802
 
         self._scale = NAU7802()
         self._tare_offset = tare_offset

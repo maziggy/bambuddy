@@ -16,7 +16,7 @@ class NFCState(Enum):
 
 class NFCReader:
     def __init__(self):
-        from spoolbuddy.read_tag import PN5180
+        from read_tag import PN5180
 
         self._nfc = PN5180()
         self._state = NFCState.IDLE

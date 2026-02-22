@@ -83,7 +83,7 @@ export function PlateAutomationModal({ isOpen, onClose, printerId, initial = nul
     } finally {
       setSaving(false);
     }
-    }
+    
   };
 
   if (!isOpen) return null;

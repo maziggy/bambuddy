@@ -1,7 +1,9 @@
 import logging
 import os
 from pathlib import Path
+from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 # Application version - single source of truth
@@ -46,8 +48,9 @@ def _migrate_database() -> Path:
     return new_db if new_db.exists() or not old_db.exists() else old_db
 
 
-# Determine database path (handles migration)
-_db_path = _migrate_database()
+# Determine database path (only relevant for SQLite)
+_db_type_env = os.environ.get("DB_TYPE", "sqlite").lower()
+_db_path = _migrate_database() if _db_type_env == "sqlite" else None
 
 
 class Settings(BaseSettings):
@@ -60,7 +63,15 @@ class Settings(BaseSettings):
     plate_calibration_dir: Path = _plate_cal_dir  # Plate detection references
     static_dir: Path = _app_dir / "static"  # Static files are part of app, not data
     log_dir: Path = _log_dir
-    database_url: str = f"sqlite+aiosqlite:///{_db_path}"
+
+    # Database configuration
+    db_type: Literal["sqlite", "mysql"] = "sqlite"
+    db_host: str = "localhost"
+    db_port: int = 3306
+    db_name: str = "bambuddy"
+    db_user: str = ""
+    db_password: str = ""
+    database_url: str = ""  # Computed from db_type; can be overridden directly
 
     # Logging
     log_level: str = "INFO"  # Override with LOG_LEVEL env var or DEBUG=true
@@ -72,6 +83,32 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+
+    @model_validator(mode="after")
+    def _build_database_url(self) -> "Settings":
+        if self.database_url:
+            return self
+        if self.db_type == "mysql":
+            if not self.db_user:
+                raise ValueError("DB_USER is required when DB_TYPE=mysql")
+            if not self.db_password:
+                raise ValueError("DB_PASSWORD is required when DB_TYPE=mysql")
+            self.database_url = (
+                f"mysql+aiomysql://{self.db_user}:{self.db_password}"
+                f"@{self.db_host}:{self.db_port}/{self.db_name}"
+                f"?charset=utf8mb4"
+            )
+        else:
+            self.database_url = f"sqlite+aiosqlite:///{_db_path}"
+        return self
+
+    @property
+    def is_sqlite(self) -> bool:
+        return self.db_type == "sqlite"
+
+    @property
+    def is_mysql(self) -> bool:
+        return self.db_type == "mysql"
 
 
 settings = Settings()

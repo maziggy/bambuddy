@@ -5,6 +5,8 @@ uvicorn[standard]>=0.27.0
 # Database
 sqlalchemy>=2.0.0
 aiosqlite>=0.19.0
+aiomysql>=0.2.0
+alembic>=1.13.0
 greenlet>=3.0.0
 
 # Pydantic

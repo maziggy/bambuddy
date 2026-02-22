@@ -55,13 +55,9 @@ async def get_external_login_url(db: AsyncSession) -> str:
 
 async def set_setting(db: AsyncSession, key: str, value: str) -> None:
     """Set a single setting value."""
-    from sqlalchemy import func
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+    from backend.app.core.database import upsert_setting
 
-    # Use upsert (INSERT ... ON CONFLICT UPDATE) for reliability
-    stmt = sqlite_insert(Settings).values(key=key, value=value)
-    stmt = stmt.on_conflict_do_update(index_elements=["key"], set_={"value": value, "updated_at": func.now()})
-    await db.execute(stmt)
+    await upsert_setting(db, key, value)
 
 
 @router.get("", response_model=AppSettings)

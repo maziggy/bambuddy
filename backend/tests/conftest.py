@@ -17,6 +17,7 @@ import pytest
 # This must happen before settings/config are loaded
 os.environ["LOG_TO_FILE"] = "false"
 os.environ["DEBUG"] = "false"
+os.environ["DB_TYPE"] = "sqlite"  # Tests always use SQLite, even if MySQL is configured
 
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine  # noqa: E402

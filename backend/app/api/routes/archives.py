@@ -168,22 +168,34 @@ async def search_archives(
     from sqlalchemy import text
     from sqlalchemy.orm import selectinload
 
-    # Prepare search query - add wildcard for partial matches
-    search_term = q.strip()
-    if not search_term.endswith("*"):
-        search_term = f"{search_term}*"
+    from backend.app.core.config import settings as app_settings
 
-    # Build the FTS query
-    # Using MATCH for FTS5 full-text search
-    fts_query = text("""
-        SELECT rowid FROM archive_fts
-        WHERE archive_fts MATCH :search_term
-        ORDER BY rank
-        LIMIT :limit OFFSET :offset
-    """)
+    search_term = q.strip()
+
+    if app_settings.is_mysql:
+        # MySQL FULLTEXT search with BOOLEAN MODE for wildcard support
+        mysql_term = f"{search_term}*" if not search_term.endswith("*") else search_term
+        fts_query = text("""
+            SELECT id FROM print_archives
+            WHERE MATCH(print_name, filename, tags, notes, designer, filament_type)
+            AGAINST(:search_term IN BOOLEAN MODE)
+            LIMIT :limit OFFSET :offset
+        """)
+    else:
+        # SQLite FTS5 search
+        if not search_term.endswith("*"):
+            search_term = f"{search_term}*"
+        mysql_term = None
+        fts_query = text("""
+            SELECT rowid FROM archive_fts
+            WHERE archive_fts MATCH :search_term
+            ORDER BY rank
+            LIMIT :limit OFFSET :offset
+        """)
 
     try:
-        result = await db.execute(fts_query, {"search_term": search_term, "limit": limit + 100, "offset": 0})
+        term = mysql_term if app_settings.is_mysql else search_term
+        result = await db.execute(fts_query, {"search_term": term, "limit": limit + 100, "offset": 0})
         matched_ids = [row[0] for row in result.fetchall()]
     except Exception as e:
         logger.warning("FTS search failed, falling back to LIKE search: %s", e)
@@ -250,8 +262,16 @@ async def rebuild_search_index(
     """
     from sqlalchemy import text
 
+    from backend.app.core.config import settings as app_settings
+
+    if app_settings.is_mysql:
+        # MySQL FULLTEXT indexes are maintained automatically — no rebuild needed
+        result = await db.execute(text("SELECT COUNT(*) FROM print_archives"))
+        count = result.scalar() or 0
+        return {"message": f"MySQL FULLTEXT index covers {count} entries (maintained automatically)"}
+
     try:
-        # Clear and rebuild the FTS index
+        # SQLite: Clear and rebuild the FTS5 index
         await db.execute(text("DELETE FROM archive_fts"))
 
         # Repopulate from print_archives

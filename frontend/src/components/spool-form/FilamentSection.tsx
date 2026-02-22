@@ -255,10 +255,11 @@ export function FilamentSection({
         )}
       </div>
 
-      {/* Brand (dropdown with search) — hidden in quick-add mode */}
-      {!quickAdd && (
-        <div>
-          <label className="block text-sm font-medium text-bambu-gray mb-1">{t('inventory.brand')} *</label>
+      {/* Brand (dropdown with search) */}
+      <div>
+        <label className="block text-sm font-medium text-bambu-gray mb-1">
+          {t('inventory.brand')}{!quickAdd && ' *'}
+        </label>
           <div className="relative" ref={brandRef}>
             <input
               type="text"
@@ -317,13 +318,13 @@ export function FilamentSection({
           {errors?.brand && (
             <p className="mt-1 text-xs text-red-400">{errors.brand}</p>
           )}
-        </div>
-      )}
+      </div>
 
-      {/* Variant / Subtype — hidden in quick-add mode */}
-      {!quickAdd && (
-        <div>
-          <label className="block text-sm font-medium text-bambu-gray mb-1">{t('inventory.subtype')} *</label>
+      {/* Variant / Subtype */}
+      <div>
+        <label className="block text-sm font-medium text-bambu-gray mb-1">
+          {t('inventory.subtype')}{!quickAdd && ' *'}
+        </label>
           <div className="relative" ref={subtypeRef}>
             <input
               type="text"
@@ -381,8 +382,7 @@ export function FilamentSection({
           {errors?.subtype && (
             <p className="mt-1 text-xs text-red-400">{errors.subtype}</p>
           )}
-        </div>
-      )}
+      </div>
 
       {/* Label Weight */}
       <div>
@@ -412,21 +412,23 @@ export function FilamentSection({
         </div>
       </div>
 
-      {/* Quantity */}
-      <div>
-        <label className="block text-sm font-medium text-bambu-gray mb-1">{t('inventory.quantity')}</label>
-        <input
-          type="number"
-          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
-          value={quantity}
-          min={1}
-          max={100}
-          onChange={(e) => {
-            const val = Math.max(1, Math.min(100, parseInt(e.target.value) || 1));
-            onQuantityChange(val);
-          }}
-        />
-      </div>
+      {/* Quantity — only in quick-add mode */}
+      {quickAdd && (
+        <div>
+          <label className="block text-sm font-medium text-bambu-gray mb-1">{t('inventory.quantity')}</label>
+          <input
+            type="number"
+            className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
+            value={quantity}
+            min={1}
+            max={100}
+            onChange={(e) => {
+              const val = Math.max(1, Math.min(100, parseInt(e.target.value) || 1));
+              onQuantityChange(val);
+            }}
+          />
+        </div>
+      )}
 
     </div>
   );

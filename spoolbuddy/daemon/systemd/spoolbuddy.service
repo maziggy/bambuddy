@@ -9,7 +9,7 @@ User=pi
 WorkingDirectory=/opt/bambuddy/spoolbuddy
 Environment=SPOOLBUDDY_BACKEND_URL=http://bambuddy:5000
 Environment=SPOOLBUDDY_API_KEY=bb_change_me
-ExecStart=/usr/bin/python3 -m daemon.main
+ExecStart=/opt/bambuddy/venv/bin/python -m daemon.main
 Restart=always
 RestartSec=5
 StandardOutput=journal

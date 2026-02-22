@@ -157,6 +157,14 @@ export function Layout() {
     refetchInterval: 30 * 1000,
     refetchOnWindowFocus: true,
   });
+  // Dismissible developer mode warning banner
+  const [dismissedDevModeWarning, setDismissedDevModeWarning] = useState(() => {
+    return sessionStorage.getItem('dismissedDevModeWarning') === '1';
+  });
+  const handleDismissDevModeWarning = () => {
+    setDismissedDevModeWarning(true);
+    sessionStorage.setItem('dismissedDevModeWarning', '1');
+  };
 
   // Fetch pending queue items count for badge
   const { data: queueItems } = useQuery({
@@ -816,7 +824,7 @@ export function Layout() {
             </div>
           </div>
         )}
-        {devModeWarnings && devModeWarnings.length > 0 && (
+        {devModeWarnings && devModeWarnings.length > 0 && !dismissedDevModeWarning && (
           <div className="bg-orange-500/20 border-b border-orange-500/30 px-4 py-2 flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm">
               <ShieldAlert className="w-4 h-4 text-orange-500" />
@@ -832,6 +840,14 @@ export function Layout() {
                 {t('printers.howToEnable', { defaultValue: 'How to enable' })}
               </a>
             </div>
+            <button
+              onClick={handleDismissDevModeWarning}
+              className="ml-4 p-1 rounded hover:bg-orange-500/40 focus:outline-none"
+              aria-label="Dismiss developer mode warning"
+              title="Dismiss"
+            >
+              <X className="w-4 h-4 text-orange-300" />
+            </button>
           </div>
         )}
         {/* Persistent update banner */}

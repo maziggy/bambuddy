@@ -62,7 +62,7 @@ import { FilamentHoverCard, EmptySlotHoverCard } from '../components/FilamentHov
 import { LinkSpoolModal } from '../components/LinkSpoolModal';
 import { AssignSpoolModal } from '../components/AssignSpoolModal';
 import { ConfigureAmsSlotModal } from '../components/ConfigureAmsSlotModal';
-import PlateAutomationModal from '../components/PlateAutomationModal';
+import { PlateAutomationModal } from '../components/PlateAutomationModal';
 import { useToast } from '../contexts/ToastContext';
 import { ChamberLight } from '../components/icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';

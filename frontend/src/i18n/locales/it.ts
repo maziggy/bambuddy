@@ -738,6 +738,7 @@ export default {
     reorderHint: 'La posizione influisce solo sugli elementi ASAP. Quelli programmati partono all\'orario.',
     addedBy: 'Aggiunto da {{name}}',
     plateNumber: 'Piatto {{index}}',
+    automated: 'Automatico',
     // Sections
     sections: {
       currentlyPrinting: 'In stampa',

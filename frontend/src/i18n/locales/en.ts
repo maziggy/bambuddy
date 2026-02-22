@@ -759,6 +759,7 @@ export default {
     clearPlateSuccess: 'Plate cleared — ready for next print',
     plateReady: 'Plate cleared — ready for next print',
     plateNumber: 'Plate {{index}}',
+    automated: 'Automated',
     // Sections
     sections: {
       currentlyPrinting: 'Currently Printing',

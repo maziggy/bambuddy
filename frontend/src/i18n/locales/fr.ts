@@ -751,6 +751,7 @@ export default {
     clearPlateSuccess: 'Plateau vidé — prêt pour l\'impression suivante',
     plateReady: 'Plateau vidé — prêt pour l\'impression suivante',
     plateNumber: 'Plateau {{index}}',
+    automated: 'Automatisé',
     // Sections
     sections: {
       currentlyPrinting: 'En cours',

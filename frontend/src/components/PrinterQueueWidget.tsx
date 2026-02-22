@@ -102,6 +102,11 @@ export function PrinterQueueWidget({ printerId, printerModel, printerState, plat
             </p>
           </div>
         </div>
+        { plateAutomation ? (
+           <span className="text-xs px-1.5 py-0.5 bg-green-400/20 text-green-400 rounded flex-shrink-0">
+              {t('queue.automated')}
+            </span>
+        ) : null }
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-xs text-bambu-gray flex items-center gap-1">
             <Clock className="w-3 h-3" />

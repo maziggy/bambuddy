@@ -759,6 +759,7 @@ export default {
     clearPlateSuccess: 'Placa limpa — pronta para a próxima impressão',
     plateReady: 'Placa limpa — pronta para a próxima impressão',
     plateNumber: 'Placa {{index}}',
+    automated: 'Automatizado',
     // Sections
     sections: {
       currentlyPrinting: 'Imprimindo Atualmente',

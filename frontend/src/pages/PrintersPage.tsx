@@ -1497,6 +1497,7 @@ function PrinterCard({
     roi?: { x: number; y: number; w: number; h: number };
   } | null>(null);
   const [isCheckingPlate, setIsCheckingPlate] = useState(false);
+  const [isAutomation, setIsAutomation] = useState(false);
   const [isCalibrating, setIsCalibrating] = useState(false);
   const [editingRoi, setEditingRoi] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [isSavingRoi, setIsSavingRoi] = useState(false);
@@ -1872,7 +1873,7 @@ function PrinterCard({
 
   // Open plate automation modal (load existing automation config)
   const handleOpenPlateAutomation = async () => {
-    setIsCheckingPlate(true);
+    setIsAutomation(true);
     try {
       const data = await api.getAutomations(printer.id);
       const record = Array.isArray(data) && data.length > 0 ? data[0] : null;
@@ -1881,7 +1882,7 @@ function PrinterCard({
     } catch (error) {
       showToast(error instanceof Error ? error.message : t('printers.toast.failedToLoadAutomation'), 'error');
     } finally {
-      setIsCheckingPlate(false);
+      setIsAutomation(false);
     }
   };
 
@@ -3643,11 +3644,11 @@ function PrinterCard({
                   variant="secondary"
                   size="sm"
                   onClick={handleOpenPlateAutomation}
-                  disabled={!status?.connected || isCheckingPlate || !hasPermission('printers:update')}
+                  disabled={!status?.connected || isAutomation || !hasPermission('printers:update')}
                   title={!hasPermission('printers:update') ? t('printers.plateAutomation.noPermission') : t('printers.plateAutomation.manageCustomization')}
                   className={`!rounded-l-none !px-1.5 ${printer.plate_automation_enabled ? "!border-green-500 !text-green-400 hover:!bg-green-500/20" : ""}`}
                 >
-                  {isCheckingPlate ? (
+                  {isAutomation ? (
                     <Loader2 className="w-3 h-3 animate-spin" />
                   ) : (
                     <ChevronDown className="w-3 h-3" />

@@ -276,6 +276,8 @@ export default {
       failedToSaveDetectionArea: 'Échec enregistrement zone',
       plateCheckEnabled: 'Vérification plateau activée',
       plateCheckDisabled: 'Vérification plateau désactivée',
+      automationEnabled: 'Automatisation activée',
+      automationDisabled: 'Automatisation désactivée',
       calibrationSaved: 'Calibration enregistrée !',
       calibrationFailed: 'Échec de la calibration',
       rfidRereadInitiated: 'Lecture RFID initiée',
@@ -417,6 +419,11 @@ export default {
       labelPlaceholder: 'Étiquette...',
       clickToEdit: '{{label}} - Modifier',
       clickToAddLabel: 'Ajouter une étiquette',
+    },
+    // Automation
+    plateAutomation: {
+      enabledClick: 'Automatisation activée - Cliquez pour désactiver',
+      disabledClick: 'Automatisation désactivée - Cliquez pour activer',
     },
     // Fans
     fans: {
@@ -744,6 +751,7 @@ export default {
     clearPlateSuccess: 'Plateau vidé — prêt pour l\'impression suivante',
     plateReady: 'Plateau vidé — prêt pour l\'impression suivante',
     plateNumber: 'Plateau {{index}}',
+    automated: 'Automatisé',
     // Sections
     sections: {
       currentlyPrinting: 'En cours',

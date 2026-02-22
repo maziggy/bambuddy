@@ -276,6 +276,8 @@ export default {
       failedToSaveDetectionArea: 'Failed to save detection area',
       plateCheckEnabled: 'Plate check enabled',
       plateCheckDisabled: 'Plate check disabled',
+      automationEnabled: 'Automation enabled',
+      automationDisabled: 'Automation disabled',
       calibrationSaved: 'Calibration saved!',
       calibrationFailed: 'Calibration failed',
       rfidRereadInitiated: 'RFID re-read initiated',
@@ -417,6 +419,11 @@ export default {
       labelPlaceholder: 'Label...',
       clickToEdit: '{{label}} - Click to edit',
       clickToAddLabel: 'Click to add label',
+    },
+    // Automation
+    plateAutomation: {
+      enabledClick: 'Automation enabled - Click to disable',
+      disabledClick: 'Automation disabled - Click to enable',
     },
     // Fans
     fans: {
@@ -752,6 +759,7 @@ export default {
     clearPlateSuccess: 'Plate cleared — ready for next print',
     plateReady: 'Plate cleared — ready for next print',
     plateNumber: 'Plate {{index}}',
+    automated: 'Automated',
     // Sections
     sections: {
       currentlyPrinting: 'Currently Printing',

@@ -12,9 +12,10 @@ interface PrinterQueueWidgetProps {
   printerModel?: string | null;
   printerState?: string | null;
   plateCleared?: boolean;
+  plateAutomation?: boolean;
 }
 
-export function PrinterQueueWidget({ printerId, printerModel, printerState, plateCleared }: PrinterQueueWidgetProps) {
+export function PrinterQueueWidget({ printerId, printerModel, printerState, plateCleared, plateAutomation }: PrinterQueueWidgetProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -44,7 +45,7 @@ export function PrinterQueueWidget({ printerId, printerModel, printerState, plat
     return null;
   }
 
-  const needsClearPlate = (printerState === 'FINISH' || printerState === 'FAILED') && !plateCleared;
+  const needsClearPlate = (printerState === 'FINISH' || printerState === 'FAILED') && !plateCleared && (!plateAutomation || printerState === 'FAILED');
 
   if (needsClearPlate) {
     return (
@@ -101,6 +102,11 @@ export function PrinterQueueWidget({ printerId, printerModel, printerState, plat
             </p>
           </div>
         </div>
+        { plateAutomation ? (
+           <span className="text-xs px-1.5 py-0.5 bg-green-400/20 text-green-400 rounded flex-shrink-0">
+              {t('queue.automated')}
+            </span>
+        ) : null }
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-xs text-bambu-gray flex items-center gap-1">
             <Clock className="w-3 h-3" />

@@ -1,0 +1,20 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    command: sleep infinity
+    volumes:
+      - ..:/workspaces/bambuddy:cached
+      - bambuddy-pip-cache:/home/vscode/.cache/pip
+      - bambuddy-npm-cache:/home/vscode/.npm
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      DEBUG: "true"
+      BACKEND_PORT: "8000"
+      DEVCONTAINER: "true"
+
+volumes:
+  bambuddy-pip-cache:
+  bambuddy-npm-cache:

@@ -14,6 +14,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 3000,
   },
   server: {
+    host: process.env.DEVCONTAINER === 'true' ? '0.0.0.0' : undefined,
     proxy: {
       '/api/v1/ws': {
         target: backendUrl,

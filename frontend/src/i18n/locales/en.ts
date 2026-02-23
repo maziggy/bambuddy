@@ -113,12 +113,6 @@ export default {
     right: 'Right',
   },
 
-  // Inventory/Spool assignment
-  inventory: {
-    assignMismatchTitle: 'Material mismatch',
-    assignMismatchMessage: 'The selected spool material ({{spoolMaterial}}) does not match the AMS profile ({{trayMaterial}}) for {{location}}. Assign anyway?',
-    assignMismatchConfirm: 'Assign Anyway',
-  },
   // Printers page
   printers: {
     title: 'Printers',

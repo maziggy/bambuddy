@@ -2823,10 +2823,10 @@ export default {
     originalFilament: 'Original',
     overrideWith: 'Ersetzen mit',
     resetToOriginal: 'Auf Original zurücksetzen',
-    insufficientFilamentTitle: 'Not enough filament',
-    insufficientFilamentMessage: 'Some assigned spools have less filament remaining than this print needs:',
-    insufficientFilamentLine: '{{printer}} - {{slot}}: needs {{required}}g, remaining {{remaining}}g',
-    printAnyway: 'Print anyway',
+    insufficientFilamentTitle: 'Nicht genug Filament',
+    insufficientFilamentMessage: 'Einige zugewiesene Spulen haben weniger Filament als dieser Druck benötigt:',
+    insufficientFilamentLine: '{{printer}} - {{slot}}: benötigt {{required}}g, verbleibend {{remaining}}g',
+    printAnyway: 'Trotzdem drucken',
   },
 
   // Backup

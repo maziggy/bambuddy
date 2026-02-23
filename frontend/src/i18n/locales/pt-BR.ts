@@ -118,6 +118,10 @@ export default {
     assignMismatchTitle: 'Incompatibilidade de material',
     assignMismatchMessage: 'O material do carretel selecionado ({{spoolMaterial}}) não corresponde ao perfil AMS ({{trayMaterial}}) para {{location}}. Atribuir mesmo assim?',
     assignMismatchConfirm: 'Atribuir mesmo assim',
+    insufficientFilamentTitle: 'Filamento insuficiente',
+    insufficientFilamentMessage: 'Alguns dos carretéis atribuídos têm menos filamento restante do que o necessário para esta impressão:',
+    insufficientFilamentLine: '{{printer}} - {{slot}}: necessário {{required}}g, restante {{remaining}}g',
+    printAnyway: 'Imprimir mesmo assim',
   },
   // Printers page
   printers: {

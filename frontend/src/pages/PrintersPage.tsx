@@ -1779,7 +1779,7 @@ function PrinterCard({
 
   // Plate automation setting mutation (scaffold)
   const plateAutomationMutation = useMutation({
-    mutationFn: (enabled: boolean) => (api as any).updatePrinter(printer.id, { plate_automation_enabled: enabled }),
+    mutationFn: (enabled: boolean) => api.updatePrinter(printer.id, { plate_automation_enabled: enabled }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['printers'] });
       showToast(plateAutomationMutation.variables ? t('printers.toast.automationEnabled') : t('printers.toast.automationDisabled'));

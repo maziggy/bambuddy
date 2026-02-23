@@ -263,6 +263,7 @@ async def update_printer(
         printer_manager.disconnect_printer(printer_id)
         if printer.is_active:
             await printer_manager.connect_printer(printer)
+    printer_manager.set_automation(printer_id, printer.plate_automation_enabled)  # Update automation based on new setting
 
     return printer
 

@@ -124,21 +124,30 @@ class PrinterManager:
         """Clear the current print user when print completes (Issue #206)."""
         self._current_print_user.pop(printer_id, None)
 
-    def set_plate_cleared(self, printer_id: int):
-        """Mark that user has cleared the build plate for this printer."""
-        self._plate_cleared.add(printer_id)
+    def set_automation(self, printer_id: int, enabled: bool = False):
+        """Mark that user has enabled automation for this printer."""
+        if enabled:
+            logger.info("Enabling automation for printer %s based on database setting", printer_id)
+            self._automation.add(printer_id)
+        else:
+            logger.info("Disabling automation for printer %s based on database setting", printer_id)
+            self._automation.discard(printer_id)
+
+    def is_automation(self, printer_id: int) -> bool:
+        """Check if user has enabled automation for this printer."""
+        return printer_id in self._automation
 
     def is_plate_cleared(self, printer_id: int) -> bool:
         """Check if user has confirmed the plate is cleared."""
         return printer_id in self._plate_cleared
-
-    def is_automation(self, printer_id: int) -> bool:
-        """Check if user has confirmed the printer is automated."""
-        return printer_id in self._automation
-
+    
     def consume_plate_cleared(self, printer_id: int):
         """Clear the plate-cleared flag (called when scheduler starts next print)."""
         self._plate_cleared.discard(printer_id)
+
+    def set_plate_cleared(self, printer_id: int):
+        """Mark that user has cleared the build plate for this printer."""
+        self._plate_cleared.add(printer_id)
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop):
         """Set the event loop for async callbacks."""
@@ -229,11 +238,10 @@ class PrinterManager:
         self._clients[printer_id] = client
         self._models[printer_id] = printer.model  # Cache model for feature detection
         self._printer_info[printer_id] = PrinterInfo(printer.name, printer.serial_number)
+        self.set_automation(printer_id, printer.plate_automation_enabled)  # Set automation based on database setting
         if printer.plate_automation_enabled:
-            logger.info("Enabling automation for printer %s based on database setting", printer_id)
             self._automation.add(printer_id)
         else:
-            logger.info("Disabling automation for printer %s based on database setting", printer_id)
             self._automation.discard(printer_id)
 
         # Wait a moment for connection

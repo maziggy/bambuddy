@@ -111,6 +111,12 @@ export default {
     right: 'Direita',
   },
 
+  // Inventory/Spool assignment
+  inventory: {
+    assignMismatchTitle: 'Incompatibilidade de material',
+    assignMismatchMessage: 'O material do carretel selecionado ({{spoolMaterial}}) não corresponde ao perfil AMS ({{trayMaterial}}) para {{location}}. Atribuir mesmo assim?',
+    assignMismatchConfirm: 'Atribuir mesmo assim',
+  },
   // Printers page
   printers: {
     title: 'Impressoras',

@@ -111,12 +111,6 @@ export default {
     right: 'Rechts',
   },
 
-  // Inventory/Spool assignment
-  inventory: {
-    assignMismatchTitle: 'Material stimmt nicht überein',
-    assignMismatchMessage: 'Das ausgewählte Spulenmaterial ({{spoolMaterial}}) stimmt nicht mit dem AMS-Profil ({{trayMaterial}}) für {{location}} überein. Trotzdem zuweisen?',
-    assignMismatchConfirm: 'Trotzdem zuweisen',
-  },
   // Printers page
   printers: {
     title: 'Drucker',

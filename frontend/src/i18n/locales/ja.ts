@@ -3028,10 +3028,10 @@ export default {
     originalFilament: 'オリジナル',
     overrideWith: '変更先',
     resetToOriginal: 'オリジナルに戻す',
-    insufficientFilamentTitle: 'Not enough filament',
-    insufficientFilamentMessage: 'Some assigned spools have less filament remaining than this print needs:',
-    insufficientFilamentLine: '{{printer}} - {{slot}}: needs {{required}}g, remaining {{remaining}}g',
-    printAnyway: 'Print anyway',
+    insufficientFilamentTitle: 'フィラメントが不足しています',
+    insufficientFilamentMessage: '割り当てられたスプールの一部は、この印刷に必要な量より残量が少ないです:',
+    insufficientFilamentLine: '{{printer}} - {{slot}}: 必要 {{required}}g、残り {{remaining}}g',
+    printAnyway: 'それでも印刷',
   },
 
   // Backup

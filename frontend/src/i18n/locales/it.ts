@@ -108,12 +108,6 @@ export default {
     right: 'Destra',
   },
 
-  // Inventory/Spool assignment
-  inventory: {
-    assignMismatchTitle: 'Materiale non corrispondente',
-    assignMismatchMessage: 'Il materiale della bobina selezionata ({{spoolMaterial}}) non corrisponde al profilo AMS ({{trayMaterial}}) per {{location}}. Assegnare comunque?',
-    assignMismatchConfirm: 'Assegna comunque',
-  },
   // Printers page
   printers: {
     title: 'Stampanti',
@@ -2474,6 +2468,9 @@ export default {
     weightCheck: 'Controllo Peso',
     lastWeighed: 'Ultima pesatura',
     neverWeighed: 'Mai pesato',
+    assignMismatchTitle: 'Materiale non corrispondente',
+    assignMismatchMessage: 'Il materiale della bobina selezionata ({{spoolMaterial}}) non corrisponde al profilo AMS ({{trayMaterial}}) per {{location}}. Assegnare comunque?',
+    assignMismatchConfirm: 'Assegna comunque',
   },
 
   // Timelapse

@@ -111,12 +111,6 @@ export default {
     right: 'Droite',
   },
 
-  // Inventory/Spool assignment
-  inventory: {
-    assignMismatchTitle: 'Incompatibilité de matériau',
-    assignMismatchMessage: 'Le matériau de la bobine sélectionnée ({{spoolMaterial}}) ne correspond pas au profil AMS ({{trayMaterial}}) pour {{location}}. Assigner quand même ?',
-    assignMismatchConfirm: 'Assigner quand même',
-  },
   // Printers page
   printers: {
     title: 'Imprimantes',
@@ -2740,6 +2734,9 @@ export default {
     clearHistory: 'Effacer',
     historyCleared: 'Historique effacé',
     fillSourceLabel: '(Inv)',
+    assignMismatchTitle: 'Incompatibilité de matériau',
+    assignMismatchMessage: 'Le matériau de la bobine sélectionnée ({{spoolMaterial}}) ne correspond pas au profil AMS ({{trayMaterial}}) pour {{location}}. Assigner quand même ?',
+    assignMismatchConfirm: 'Assigner quand même',
   },
 
   // Timelapse

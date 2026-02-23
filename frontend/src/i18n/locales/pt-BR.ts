@@ -111,16 +111,12 @@ export default {
     right: 'Direita',
   },
 
-  // Inventory/Spool assignment
-  inventory: {
-    assignMismatchTitle: 'Incompatibilidade de material',
-    assignMismatchMessage: 'O material do carretel selecionado ({{spoolMaterial}}) não corresponde ao perfil AMS ({{trayMaterial}}) para {{location}}. Atribuir mesmo assim?',
-    assignMismatchConfirm: 'Atribuir mesmo assim',
-    insufficientFilamentTitle: 'Filamento insuficiente',
-    insufficientFilamentMessage: 'Alguns dos carretéis atribuídos têm menos filamento restante do que o necessário para esta impressão:',
-    insufficientFilamentLine: '{{printer}} - {{slot}}: necessário {{required}}g, restante {{remaining}}g',
-    printAnyway: 'Imprimir mesmo assim',
-  },
+
+    // insufficientFilamentTitle: 'Filamento insuficiente',
+    // insufficientFilamentMessage: 'Alguns dos carretéis atribuídos têm menos filamento restante do que o necessário para esta impressão:',
+    // insufficientFilamentLine: '{{printer}} - {{slot}}: necessário {{required}}g, restante {{remaining}}g',
+    // printAnyway: 'Imprimir mesmo assim',
+
   // Printers page
   printers: {
     title: 'Impressoras',
@@ -2754,6 +2750,9 @@ export default {
     clearHistory: 'Limpar',
     historyCleared: 'Histórico de uso limpo',
     fillSourceLabel: '(Inv)',
+    assignMismatchTitle: 'Incompatibilidade de material',
+    assignMismatchMessage: 'O material do carretel selecionado ({{spoolMaterial}}) não corresponde ao perfil AMS ({{trayMaterial}}) para {{location}}. Atribuir mesmo assim?',
+    assignMismatchConfirm: 'Atribuir mesmo assim',
   },
 
   // Timelapse
@@ -2823,6 +2822,9 @@ export default {
     originalFilament: 'Original',
     overrideWith: 'Substituir por',
     resetToOriginal: 'Restaurar original',
+    insufficientFilamentTitle: 'Filamento insuficiente',
+    insufficientFilamentMessage: 'Alguns dos carretéis atribuídos têm menos filamento restante do que o necessário para esta impressão:',
+    insufficientFilamentLine: '{{printer}} - {{slot}}: necessário {{required}}g, restante {{remaining}}g',
   },
 
   // Backup

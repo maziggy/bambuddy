@@ -253,32 +253,34 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
           </Button>
         </div>
 
+
         {assignMutation.isError && (
           <div className="mx-4 mb-4 p-2 bg-red-500/20 border border-red-500/50 rounded text-sm text-red-400">
             {(assignMutation.error as Error).message}
           </div>
         )}
 
-      {showMismatchConfirm && trayInfo && selectedSpoolId && (
-        <ConfirmModal
-          title={t('inventory.assignMismatchTitle')}
-          message={t('inventory.assignMismatchMessage', {
-            spoolMaterial: spools?.find((spool: InventorySpool) => spool.id === selectedSpoolId)?.material ?? '',
-            trayMaterial: trayInfo.type,
-            location: trayInfo.location,
-          })}
-          confirmText={t('inventory.assignMismatchConfirm')}
-          variant="warning"
-          isLoading={assignMutation.isPending}
-          onConfirm={handleConfirmMismatch}
-          onCancel={() => {
-            if (!assignMutation.isPending) {
-              setShowMismatchConfirm(false);
-              setPendingAssignId(null);
-            }
-          }}
-        />
-      )}
+        {showMismatchConfirm && trayInfo && selectedSpoolId && (
+          <ConfirmModal
+            title={t('inventory.assignMismatchTitle')}
+            message={t('inventory.assignMismatchMessage', {
+              spoolMaterial: spools?.find((spool: InventorySpool) => spool.id === selectedSpoolId)?.material ?? '',
+              trayMaterial: trayInfo.type,
+              location: trayInfo.location,
+            })}
+            confirmText={t('inventory.assignMismatchConfirm')}
+            variant="warning"
+            isLoading={assignMutation.isPending}
+            onConfirm={handleConfirmMismatch}
+            onCancel={() => {
+              if (!assignMutation.isPending) {
+                setShowMismatchConfirm(false);
+                setPendingAssignId(null);
+              }
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }

@@ -112,11 +112,6 @@ export default {
     left: '左',
     right: '右',
   },
-  inventory: {
-    assignMismatchTitle: '材料の不一致',
-    assignMismatchMessage: '選択したスプールの材料（{{spoolMaterial}}）は、{{location}} のAMSプロファイル（{{trayMaterial}}）と一致しません。本当に割り当てますか？',
-    assignMismatchConfirm: '強制的に割り当て',
-  },
   printers: {
     title: 'プリンター',
     addPrinter: 'プリンターを追加',
@@ -2956,7 +2951,9 @@ export default {
     clearHistory: 'クリア',
     historyCleared: '使用履歴がクリアされました',
     fillSourceLabel: '(Inv)',
-    lowStockThresholdError: 'しきい値は0.1から99.9の間でなければなりません',
+    assignMismatchTitle: '材料の不一致',
+    assignMismatchMessage: '選択したスプールの材料（{{spoolMaterial}}）は、{{location}} のAMSプロファイル（{{trayMaterial}}）と一致しません。本当に割り当てますか？',
+    assignMismatchConfirm: '強制的に割り当て',
   },
 
   // Timelapse

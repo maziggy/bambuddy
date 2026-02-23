@@ -113,12 +113,6 @@ export default {
     right: 'Rechts',
   },
 
-  // Inventory/Spool assignment
-  inventory: {
-    assignMismatchTitle: 'Material stimmt nicht überein',
-    assignMismatchMessage: 'Das ausgewählte Spulenmaterial ({{spoolMaterial}}) stimmt nicht mit dem AMS-Profil ({{trayMaterial}}) für {{location}} überein. Trotzdem zuweisen?',
-    assignMismatchConfirm: 'Trotzdem zuweisen',
-  },
   // Printers page
   printers: {
     title: 'Drucker',
@@ -2955,7 +2949,9 @@ export default {
     clearHistory: 'Löschen',
     historyCleared: 'Verbrauchshistorie gelöscht',
     fillSourceLabel: '(Inv)',
-    lowStockThresholdError: 'Der Schwellenwert muss zwischen 0.1 und 99.9 liegen',
+    assignMismatchTitle: 'Material stimmt nicht überein',
+    assignMismatchMessage: 'Das ausgewählte Spulenmaterial ({{spoolMaterial}}) stimmt nicht mit dem AMS-Profil ({{trayMaterial}}) für {{location}} überein. Trotzdem zuweisen?',
+    assignMismatchConfirm: 'Trotzdem zuweisen',
   },
 
   // Timelapse

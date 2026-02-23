@@ -121,6 +121,8 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
   const handleConfirmMismatch = () => {
     if (!pendingAssignId) return;
     assignMutation.mutate(pendingAssignId);
+    setShowMismatchConfirm(false);
+    setPendingAssignId(null);
   };
 
   return (
@@ -260,6 +262,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
           </div>
         )}
 
+        {/* Material mismatch confirmation modal */}
         {showMismatchConfirm && trayInfo && selectedSpoolId && (
           <ConfirmModal
             title={t('inventory.assignMismatchTitle')}

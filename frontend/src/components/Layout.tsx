@@ -190,13 +190,13 @@ export function Layout() {
   const extLinksMap = useMemo(() => new Map((externalLinks || []).map(link => [`ext-${link.id}`, link])), [externalLinks]);
 
   // Compute the ordered sidebar: include stored order + any new items
-  // Filter out 'settings' for users with 'user' role
+  // Filter out 'settings' for users without admin role
   const orderedSidebarIds = (() => {
     const result: string[] = [];
     const seen = new Set<string>();
 
-    // Determine if settings should be hidden (user role and auth enabled)
-    const hideSettings = authEnabled && user?.role === 'user';
+    // Determine if settings should be hidden (check for settings:read permission)
+    const hideSettings = authEnabled && !hasPermission('settings:read');
     // Hide inventory when Spoolman mode is active
     const hideInventory = spoolmanSettings?.spoolman_enabled === 'true';
 

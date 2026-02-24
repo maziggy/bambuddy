@@ -440,6 +440,18 @@ function InventoryPage() {
     },
   });
 
+  // Low stock threshold state
+  const [lowStockThreshold, setLowStockThreshold] = useState(() => {
+    try {
+      const stored = localStorage.getItem('bambuddy-low-stock-threshold');
+      if (stored) return parseFloat(stored);
+    } catch {}
+    return 20;
+  });
+
+  const [showThresholdInput, setShowThresholdInput] = useState(false);
+  const [thresholdInput, setThresholdInput] = useState(lowStockThreshold.toString());
+
   // Stats calculation (active spools only)
   const stats = useMemo(() => {
     if (!spools) return null;
@@ -455,14 +467,14 @@ function InventoryPage() {
       totalWeight += remaining;
       totalConsumed += s.weight_used;
       const pct = s.label_weight > 0 ? (remaining / s.label_weight) * 100 : 0;
-      if (pct < 20) lowStock++;
+      if (pct < lowStockThreshold) lowStock++;
       const mat = s.material || 'Unknown';
       if (!byMaterial[mat]) byMaterial[mat] = { count: 0, weight: 0 };
       byMaterial[mat].count++;
       byMaterial[mat].weight += remaining;
     }
     return { totalWeight, totalConsumed, lowStock, byMaterial, totalSpools: activeCount };
-  }, [spools]);
+  }, [spools, lowStockThreshold]);
 
   const inPrinterCount = assignments?.length ?? 0;
 
@@ -745,7 +757,50 @@ function InventoryPage() {
               <span className="text-xs text-bambu-gray font-medium uppercase tracking-wide">{t('inventory.lowStock')}</span>
             </div>
             <div className={`text-xl font-bold ${stats.lowStock > 0 ? 'text-yellow-400' : 'text-white'}`}>{stats.lowStock}</div>
-            <div className="text-xs text-bambu-gray mt-1">{t('inventory.lowStockThreshold')}</div>
+            <div className="text-xs text-bambu-gray mt-1 flex items-center gap-2">
+              {showThresholdInput ? (
+                <form
+                  onSubmit={e => {
+                    e.preventDefault();
+                    const val = parseFloat(thresholdInput);
+                    if (!isNaN(val) && val >= 0.1 && val <= 99.9) {
+                      setLowStockThreshold(val);
+                      localStorage.setItem('bambuddy-low-stock-threshold', val.toString());
+                      setShowThresholdInput(false);
+                    }
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <span className="text-xs text-bambu-gray">{'<'}</span>
+                  <input
+                    type="number"
+                    min="0.1"
+                    max="99.9"
+                    step="0.1"
+                    value={thresholdInput}
+                    onChange={e => setThresholdInput(e.target.value)}
+                    className="px-2 py-1 rounded border border-bambu-dark-tertiary text-xs text-white bg-bambu-dark-secondary focus:outline-none focus:border-bambu-green w-20"
+                  />
+                  <span className="text-xs text-bambu-gray">%</span>
+                  <Button type="submit" size="sm">{t('common.save')}</Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setShowThresholdInput(false)}>{t('common.cancel')}</Button>
+                </form>
+              ) : (
+                <>
+                  <span className="text-bambu-gray">{'< '}{lowStockThreshold}%</span>
+                  <button
+                    className="p-1.5 text-bambu-gray hover:text-white rounded transition-colors"
+                    title={t('inventory.editSpool')}
+                    onClick={() => {
+                      setThresholdInput(lowStockThreshold.toString());
+                      setShowThresholdInput(true);
+                    }}
+                  >
+                    <Edit2 className="w-4 h-4" />
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}

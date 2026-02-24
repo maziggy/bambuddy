@@ -11,6 +11,9 @@ from pathlib import Path
 # Add scripts/ to sys.path so hardware drivers (read_tag, scale_diag) are importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
+# Add scripts/ to sys.path so hardware drivers (read_tag, scale_diag) are importable
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+
 from . import __version__
 from .api_client import APIClient
 from .config import Config

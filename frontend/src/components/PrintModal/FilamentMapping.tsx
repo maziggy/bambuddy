@@ -222,11 +222,11 @@ export function FilamentMapping({
                         })
                       : '';
                     return (
-                  <option key={f.globalTrayId} value={f.globalTrayId} className="bg-bambu-dark text-white">
-                    {f.label}: {f.type} ({f.colorName}){remainingLabel}
-                  </option>
+                      <option key={f.globalTrayId} value={f.globalTrayId} className="bg-bambu-dark text-white">
+                        {f.label}: {f.type} ({f.colorName}){remainingLabel}
+                      </option>
                     );
-                  })}
+                })}
               </select>
               {/* Status icon */}
               {item.status === 'match' ? (

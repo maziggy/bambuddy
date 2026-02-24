@@ -31,41 +31,16 @@ class NFCReader:
             from read_tag import PN5180
 
             self._nfc = PN5180()
-            self._init_rf()
+            self._nfc.reset()
+            self._nfc.load_rf_config(0x00, 0x80)
+            time.sleep(0.010)
+            self._nfc.rf_on()
+            time.sleep(0.030)
+            self._nfc.set_transceive_mode()
             self._ok = True
             logger.info("NFC reader initialized")
         except Exception as e:
-            logger.warning("NFC not available: %s", e)
-
-    def _init_rf(self):
-        """Full RF initialization sequence."""
-        self._nfc.reset()
-        self._nfc.load_rf_config(0x00, 0x80)
-        time.sleep(0.010)
-        self._nfc.rf_on()
-        time.sleep(0.030)
-        self._nfc.set_transceive_mode()
-
-    def _full_reset(self):
-        """Full hardware reset + RF init to recover from stuck state."""
-        try:
-            self._init_rf()
-            self._error_count = 0
-            logger.info("NFC reader recovered after full reset")
-            return True
-        except Exception as e:
-            logger.warning("NFC full reset failed: %s", e)
-            return False
-
-    @property
-    def reader_type(self) -> str:
-        """Return NFC reader hardware type."""
-        return "PN5180" if self._nfc is not None else "Unknown"
-
-    @property
-    def connection(self) -> str:
-        """Return NFC reader connection type."""
-        return "SPI" if self._nfc is not None else "None"
+            logger.error("NFC init failed: %s", e)
 
     @property
     def ok(self) -> bool:

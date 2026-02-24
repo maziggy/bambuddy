@@ -36,7 +36,7 @@ class NFCReader:
             self._ok = True
             logger.info("NFC reader initialized")
         except Exception as e:
-            logger.error("NFC init failed: %s", e)
+            logger.info("NFC not available: %s", e)
 
     @property
     def ok(self) -> bool:

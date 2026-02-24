@@ -27,7 +27,7 @@ class ScaleReader:
             self._ok = True
             logger.info("Scale initialized (tare=%d, cal=%.6f)", tare_offset, calibration_factor)
         except Exception as e:
-            logger.error("Scale init failed: %s", e)
+            logger.info("Scale not available: %s", e)
 
     @property
     def ok(self) -> bool:

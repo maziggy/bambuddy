@@ -2,6 +2,19 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
+## [0.2.2b1] - Unreleased
+
+### New Features
+- **SpoolBuddy AMS Page: External Slots & Slot Configuration** — The SpoolBuddy AMS page (`/spoolbuddy/ams`) now displays external spool slots (single nozzle: "Ext", dual nozzle: "Ext-L"/"Ext-R") and AMS-HT units in a compact horizontal row below the regular AMS grid, fitting within the 1024×600 kiosk display without scrolling. Clicking any AMS, AMS-HT, or external slot opens the `ConfigureAmsSlotModal` to configure filament type and color — the same modal used on the main Printers page. Dual-nozzle printers show L/R nozzle badges on each AMS unit. Temperature and humidity are displayed with threshold-colored SVG icons (green/gold/red) matching the Bambu Lab style on the main printer cards, using the configured AMS humidity and temperature thresholds from settings.
+- **SpoolBuddy Dashboard Redesign** — Redesigned the SpoolBuddy dashboard with a two-column layout: left column shows device connection status (scale and NFC with state-colored icons — green when device is online, gray when offline) and a compact printers list with live status indicators; right column shows the current spool card. Cards use a dashed border style for a cleaner look. The large weight display card was removed in favor of the inline scale reading in the device card.
+
+### Fixed
+- **SpoolBuddy Daemon Can't Find Hardware Drivers** — The daemon's `nfc_reader.py` and `scale_reader.py` import `read_tag` and `scale_diag` as bare modules, but these files live in `spoolbuddy/scripts/` which isn't on Python's module search path. The systemd service sets `WorkingDirectory` to `spoolbuddy/` and runs `python -m daemon.main`, so only the `spoolbuddy/` and `daemon/` directories are on `sys.path`. Added `scripts/` to `sys.path` at daemon startup, resolved relative to the module file so it works regardless of install path. Also moved the `read_tag` import inside `NFCReader.__init__`'s try/except block — it was previously outside, so a missing module crashed the entire daemon instead of gracefully skipping NFC polling. Demoted hardware-not-available log messages from ERROR to INFO since missing modules are expected when hardware isn't connected.
+
+### Improved
+- **SpoolBuddy Scale Value Stabilization** — The SpoolBuddy daemon now suppresses redundant scale weight reports: only sends updates when the weight changes by ≥2g. Previously every 1-second report interval sent a reading regardless of change, and stability state flips (stable ↔ unstable) also triggered reports — when ADC noise kept the spread hovering around the 2g stability threshold, the flag toggled every cycle, forcing a report with a slightly different weight each time. Removed stability flipping as a report trigger (the stable flag is still included in each report for consumers). Also increased the NAU7802 moving average window from 5 to 20 samples (500ms → 2s) to smooth ADC noise. The frontend also applies a 3g display threshold as defense-in-depth.
+- **SpoolBuddy TopBar: Online Printer Selection** — The printer selector in the SpoolBuddy top bar now only shows online printers and auto-selects the first online printer. If the currently selected printer goes offline, it automatically switches to the next available online printer. Also replaced the placeholder icon with the SpoolBuddy logo.
+
 ## [0.2.1b4] - Unreleased
 
 ### Fixed

@@ -52,6 +52,21 @@ export function FilamentMapping({
     return map;
   }, [assignments]);
 
+  const trayRemainingWeightMap = useMemo(() => {
+    const map = new Map<number, number | null>();
+    for (const assignment of assignments || []) {
+      const isExternal = assignment.ams_id === 255;
+      const globalTrayId = getGlobalTrayId(assignment.ams_id, assignment.tray_id, isExternal);
+      const spool = assignment.spool;
+      if (!spool) {
+        map.set(globalTrayId, null);
+        continue;
+      }
+      map.set(globalTrayId, Math.max(0, Math.round((spool.label_weight ?? 0) - (spool.weight_used ?? 0))));
+    }
+    return map;
+  }, [assignments]);
+
   const totalCost = useMemo(() => {
     let total = 0;
     for (const item of filamentComparison) {
@@ -198,11 +213,20 @@ export function FilamentMapping({
                 </option>
                 {loadedFilaments
                   .filter((f) => item.nozzle_id == null || f.extruderId === item.nozzle_id)
-                  .map((f) => (
-                  <option key={f.globalTrayId} value={f.globalTrayId} className="bg-bambu-dark text-white">
-                    {f.label}: {f.type} ({f.colorName})
-                  </option>
-                ))}
+                  .map((f) => {
+                    const remainingWeight = trayRemainingWeightMap.get(f.globalTrayId);
+                    const remainingLabel = remainingWeight != null
+                      ? t('printModal.slotRemainingShort', {
+                          grams: remainingWeight,
+                          defaultValue: ` - ${remainingWeight}g left`,
+                        })
+                      : '';
+                    return (
+                      <option key={f.globalTrayId} value={f.globalTrayId} className="bg-bambu-dark text-white">
+                        {f.label}: {f.type} ({f.colorName}){remainingLabel}
+                      </option>
+                    );
+                })}
               </select>
               {/* Status icon */}
               {item.status === 'match' ? (

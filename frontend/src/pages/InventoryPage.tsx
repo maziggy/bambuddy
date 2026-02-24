@@ -368,7 +368,7 @@ function InventoryPage() {
 
   // Filter state
   const [archiveFilter, setArchiveFilter] = useState<ArchiveFilter>('active');
-  const [usageFilter, setUsageFilter] = useState<UsageFilter>('all');
+  const [usageFilter, setUsageFilter] = useState<UsageFilter | 'lowstock'>('all');
   const [materialFilter, setMaterialFilter] = useState('');
   const [brandFilter, setBrandFilter] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'stock' | 'configured'>('all');
@@ -513,6 +513,12 @@ function InventoryPage() {
       filtered = filtered.filter((s) => s.weight_used > 0);
     } else if (usageFilter === 'new') {
       filtered = filtered.filter((s) => s.weight_used === 0);
+    } else if (usageFilter === 'lowstock') {
+      filtered = filtered.filter((s) => {
+        const remaining = Math.max(0, s.label_weight - s.weight_used);
+        const pct = s.label_weight > 0 ? (remaining / s.label_weight) * 100 : 0;
+        return pct < lowStockThreshold;
+      });
     }
 
     // Material dropdown
@@ -546,7 +552,7 @@ function InventoryPage() {
     }
 
     return filtered;
-  }, [spools, archiveFilter, usageFilter, materialFilter, brandFilter, stockFilter, search]);
+  }, [spools, archiveFilter, usageFilter, materialFilter, brandFilter, stockFilter, search, lowStockThreshold]);
 
   // Reset page on filter changes
   const resetPage = () => setPageIndex(0);
@@ -941,6 +947,17 @@ function InventoryPage() {
             }`}
           >
             {t('inventory.new')}
+          </button>
+          <button
+            onClick={() => { setUsageFilter('lowstock'); resetPage(); }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+              usageFilter === 'lowstock'
+                ? 'bg-yellow-500/20 text-yellow-400'
+                : 'text-bambu-gray hover:bg-bambu-dark-tertiary'
+            }`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5" />
+            {t('inventory.lowStock')}
           </button>
         </div>
 

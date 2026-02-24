@@ -47,7 +47,7 @@ import {
 
 import { useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi } from '../api/client';
-import { formatDateOnly, formatETA, formatDuration } from '../utils/date';
+import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
 import type { Printer, PrinterCreate, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, Automation } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
@@ -1877,7 +1877,7 @@ function PrinterCard({
     try {
       const data = await api.getAutomations(printer.id);
       const record = Array.isArray(data) && data.length > 0 ? data[0] : null;
-      setPlateAutomationInitial(record as any);
+      setPlateAutomationInitial(record);
       setShowPlateAutomationModal(true);
     } catch (error) {
       showToast(error instanceof Error ? error.message : t('printers.toast.failedToLoadAutomation'), 'error');

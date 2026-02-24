@@ -113,12 +113,6 @@ export default {
     right: 'Direita',
   },
 
-
-    // insufficientFilamentTitle: 'Filamento insuficiente',
-    // insufficientFilamentMessage: 'Alguns dos carretéis atribuídos têm menos filamento restante do que o necessário para esta impressão:',
-    // insufficientFilamentLine: '{{printer}} - {{slot}}: necessário {{required}}g, restante {{remaining}}g',
-    // printAnyway: 'Imprimir mesmo assim',
-
   // Printers page
   printers: {
     title: 'Impressoras',
@@ -3020,6 +3014,7 @@ export default {
     insufficientFilamentTitle: 'Filamento insuficiente',
     insufficientFilamentMessage: 'Alguns dos carretéis atribuídos têm menos filamento restante do que o necessário para esta impressão:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: necessário {{required}}g, restante {{remaining}}g',
+    printAnyway: 'Imprimir mesmo assim',
   },
 
   // Backup

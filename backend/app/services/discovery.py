@@ -17,7 +17,7 @@ import re
 import socket
 import struct
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -304,7 +304,7 @@ class PrinterDiscoveryService:
             name=name,
             ip_address=ip_address,
             model=model,
-            discovered_at=datetime.now().isoformat(),
+            discovered_at=datetime.now(timezone.utc).isoformat(),
         )
 
         self._discovered[serial] = printer
@@ -414,7 +414,7 @@ class SubnetScanner:
             name=name or f"Printer at {ip}",
             ip_address=ip,
             model=model,
-            discovered_at=datetime.now().isoformat(),
+            discovered_at=datetime.now(timezone.utc).isoformat(),
         )
         self._discovered[ip] = printer
 
@@ -609,7 +609,7 @@ class TasmotaScanner:
                             "name": f"Tasmota ({ip})",
                             "module": None,
                             "state": "UNKNOWN",
-                            "discovered_at": datetime.now().isoformat(),
+                            "discovered_at": datetime.now(timezone.utc).isoformat(),
                         }
                         self._discovered[ip] = device
                         return
@@ -627,7 +627,7 @@ class TasmotaScanner:
                             "name": f"Tasmota ({ip})",
                             "module": None,
                             "state": "UNKNOWN",
-                            "discovered_at": datetime.now().isoformat(),
+                            "discovered_at": datetime.now(timezone.utc).isoformat(),
                         }
                         self._discovered[ip] = device
                         return
@@ -668,7 +668,7 @@ class TasmotaScanner:
                     "name": device_name,
                     "module": module,
                     "state": power_state,
-                    "discovered_at": datetime.now().isoformat(),
+                    "discovered_at": datetime.now(timezone.utc).isoformat(),
                 }
 
                 self._discovered[ip] = device

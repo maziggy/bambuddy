@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
@@ -112,7 +112,7 @@ class SmartPlugManager:
                         success = await service.turn_on(plug)
                         if success:
                             plug.last_state = "ON"
-                            plug.last_checked = datetime.utcnow()
+                            plug.last_checked = datetime.now(timezone.utc)
                             self._last_schedule_check[plug.id] = f"on:{current_time}"
 
                 # Check if we should turn off
@@ -123,7 +123,7 @@ class SmartPlugManager:
                         success = await service.turn_off(plug)
                         if success:
                             plug.last_state = "OFF"
-                            plug.last_checked = datetime.utcnow()
+                            plug.last_checked = datetime.now(timezone.utc)
                             self._last_schedule_check[plug.id] = f"off:{current_time}"
                             # Mark printer offline if linked
                             if plug.printer_id:
@@ -164,7 +164,7 @@ class SmartPlugManager:
         if success:
             # Update last state and reset auto_off_executed
             plug.last_state = "ON"
-            plug.last_checked = datetime.utcnow()
+            plug.last_checked = datetime.now(timezone.utc)
             plug.auto_off_executed = False  # Reset flag when turning on
             await db.commit()
 
@@ -391,7 +391,7 @@ class SmartPlugManager:
                 plug = result.scalar_one_or_none()
                 if plug:
                     plug.auto_off_pending = pending
-                    plug.auto_off_pending_since = datetime.utcnow() if pending else None
+                    plug.auto_off_pending_since = datetime.now(timezone.utc) if pending else None
                     await db.commit()
                     logger.debug("Marked plug %s auto_off_pending=%s", plug_id, pending)
         except Exception as e:
@@ -412,7 +412,7 @@ class SmartPlugManager:
                     plug.auto_off_pending = False  # Clear pending state
                     plug.auto_off_pending_since = None
                     plug.last_state = "OFF"
-                    plug.last_checked = datetime.utcnow()
+                    plug.last_checked = datetime.now(timezone.utc)
                     await db.commit()
                     logger.info("Auto-off executed and disabled for plug %s", plug_id)
         except Exception as e:
@@ -455,7 +455,7 @@ class SmartPlugManager:
                 for plug in pending_plugs:
                     # Check how long it's been pending (timeout after 2 hours)
                     if plug.auto_off_pending_since:
-                        elapsed = (datetime.utcnow() - plug.auto_off_pending_since).total_seconds()
+                        elapsed = (datetime.now(timezone.utc) - plug.auto_off_pending_since).total_seconds()
                         if elapsed > 7200:  # 2 hours
                             logger.warning(
                                 f"Auto-off for plug '{plug.name}' was pending for {elapsed / 60:.0f} minutes, "

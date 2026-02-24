@@ -1868,7 +1868,7 @@ function PrinterCard({
 
   // Toggle plate automation enabled/disabled
   const handleTogglePlateAutomation = () => {
-    plateAutomationMutation.mutate(!((printer as any).plate_automation_enabled));
+    plateAutomationMutation.mutate(!(printer.plate_automation_enabled));
   };
 
   // Open plate automation modal (load existing automation config)
@@ -3824,7 +3824,7 @@ function PrinterCard({
                         )}
                         {/* Timestamp */}
                         <p className="text-[10px] text-bambu-gray/60">
-                          {ref.timestamp ? new Date(ref.timestamp).toLocaleDateString() : ''}
+                          {ref.timestamp ? parseUTCDate(ref.timestamp)?.toLocaleDateString() ?? '' : ''}
                         </p>
                       </div>
                     ))}

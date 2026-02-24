@@ -1,7 +1,7 @@
 """Maintenance tracking API routes."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -303,7 +303,7 @@ async def _get_printer_maintenance_internal(
     due_count = 0
     warning_count = 0
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     for maint_type in all_types:
         # Skip system types that don't apply to this printer model
@@ -591,7 +591,7 @@ async def perform_maintenance(
     db.add(history)
 
     # Update item
-    item.last_performed_at = datetime.utcnow()
+    item.last_performed_at = datetime.now(timezone.utc)
     item.last_performed_hours = current_hours
 
     await db.commit()

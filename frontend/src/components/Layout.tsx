@@ -12,6 +12,7 @@ import { useIsSidebarCompact } from '../hooks/useIsSidebarCompact';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { Card, CardHeader, CardContent } from './Card';
+import { parseUTCDate } from '../utils/date';
 import { Button } from './Button';
 
 interface NavItem {
@@ -201,7 +202,7 @@ export function Layout() {
       setDebugDuration(null);
       return;
     }
-    const enabledAt = new Date(debugLoggingState.enabled_at).getTime();
+    const enabledAt = parseUTCDate(debugLoggingState.enabled_at)?.getTime() ?? Date.now();
     const updateDuration = () => {
       setDebugDuration(Math.floor((Date.now() - enabledAt) / 1000));
     };
@@ -220,8 +221,8 @@ export function Layout() {
     const result: string[] = [];
     const seen = new Set<string>();
 
-    // Determine if settings should be hidden (user role and auth enabled)
-    const hideSettings = authEnabled && user?.role === 'user';
+    // Determine if settings should be hidden (no settings:read permission)
+    const hideSettings = authEnabled && !hasPermission('settings:read');
     // Add items in stored order
     for (const id of sidebarOrder) {
       if (hideSettings && id === 'settings') continue;

@@ -1,7 +1,7 @@
 """API routes for smart plug management."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
@@ -605,7 +605,7 @@ async def control_smart_plug(
         elif expected_state == "OFF" and plug.printer_id:
             # Mark printer offline immediately for faster UI update
             printer_manager.mark_printer_offline(plug.printer_id)
-    plug.last_checked = datetime.utcnow()
+    plug.last_checked = datetime.now(timezone.utc)
     await db.commit()
 
     # Trigger associated scripts if this is a main (non-script) plug
@@ -692,7 +692,7 @@ async def get_plug_status(
             # Update last state in database
             if is_reachable and data.state:
                 plug.last_state = data.state
-                plug.last_checked = datetime.utcnow()
+                plug.last_checked = datetime.now(timezone.utc)
                 await db.commit()
 
             energy_data = None
@@ -727,7 +727,7 @@ async def get_plug_status(
     # Update last state in database
     if status["reachable"]:
         plug.last_state = status["state"]
-        plug.last_checked = datetime.utcnow()
+        plug.last_checked = datetime.now(timezone.utc)
         await db.commit()
 
     # Fetch energy data if device is reachable
@@ -756,7 +756,7 @@ async def check_power_alerts(plug: SmartPlug, current_power: float | None, db: A
     # Cooldown: don't alert more than once per 5 minutes
     cooldown_minutes = 5
     if plug.power_alert_last_triggered:
-        time_since_last = datetime.utcnow() - plug.power_alert_last_triggered
+        time_since_last = datetime.now(timezone.utc) - plug.power_alert_last_triggered
         if time_since_last < timedelta(minutes=cooldown_minutes):
             return
 
@@ -777,7 +777,7 @@ async def check_power_alerts(plug: SmartPlug, current_power: float | None, db: A
         threshold = plug.power_alert_low
 
     if alert_triggered:
-        plug.power_alert_last_triggered = datetime.utcnow()
+        plug.power_alert_last_triggered = datetime.now(timezone.utc)
         await db.commit()
 
         # Send notification

@@ -1263,7 +1263,7 @@ async def on_print_start(printer_id: int, data: dict):
             if archive:
                 # Update archive status to printing
                 archive.status = "printing"
-                archive.started_at = datetime.now()
+                archive.started_at = datetime.now(timezone.utc)
                 await db.commit()
 
                 # Track as active print
@@ -1562,7 +1562,7 @@ async def on_print_start(printer_id: int, data: dict):
                     file_size=0,
                     print_name=print_name,
                     status="printing",
-                    started_at=datetime.now(),
+                    started_at=datetime.now(timezone.utc),
                     extra_data={"no_3mf_available": True, "original_subtask": subtask_name, "_print_data": data},
                 )
 
@@ -2213,7 +2213,7 @@ async def on_print_complete(printer_id: int, data: dict):
             if queue_item:
                 queue_status = data.get("status", "completed")
                 queue_item.status = queue_status
-                queue_item.completed_at = datetime.now()
+                queue_item.completed_at = datetime.now(timezone.utc)
                 await db.commit()
                 logger.info("Updated queue item %s status to %s", queue_item.id, queue_status)
 
@@ -2240,7 +2240,7 @@ async def on_print_complete(printer_id: int, data: dict):
                     pending_count = count_result.scalar() or 0
 
                     if pending_count == 0:
-                        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
                         completed_result = await db.execute(
                             select(sa_func.count(PrintQueueItem.id)).where(
                                 PrintQueueItem.status.in_(["completed", "failed", "skipped"]),
@@ -2409,7 +2409,7 @@ async def on_print_complete(printer_id: int, data: dict):
             await service.update_archive_status(
                 archive_id,
                 status=status,
-                completed_at=datetime.now() if status in ("completed", "failed", "aborted") else None,
+                completed_at=datetime.now(timezone.utc) if status in ("completed", "failed", "aborted") else None,
                 failure_reason=failure_reason,
             )
             logger.info(
@@ -2999,7 +2999,7 @@ async def record_ams_history():
                         if humidity is not None and humidity > humidity_threshold:
                             cooldown_key = f"{printer.id}:{ams_id}:humidity"
                             last_alarm = _ams_alarm_cooldown.get(cooldown_key)
-                            now = datetime.now()
+                            now = datetime.now(timezone.utc)
                             if (
                                 last_alarm is None
                                 or (now - last_alarm).total_seconds() >= AMS_ALARM_COOLDOWN_MINUTES * 60
@@ -3025,7 +3025,7 @@ async def record_ams_history():
                         if temperature is not None and temperature > temp_threshold:
                             cooldown_key = f"{printer.id}:{ams_id}:temperature"
                             last_alarm = _ams_alarm_cooldown.get(cooldown_key)
-                            now = datetime.now()
+                            now = datetime.now(timezone.utc)
                             if (
                                 last_alarm is None
                                 or (now - last_alarm).total_seconds() >= AMS_ALARM_COOLDOWN_MINUTES * 60
@@ -3063,7 +3063,7 @@ async def record_ams_history():
                     setting = result.scalar_one_or_none()
                     retention_days = int(setting.value) if setting else AMS_HISTORY_RETENTION_DAYS
 
-                    cutoff = datetime.now() - timedelta(days=retention_days)
+                    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
                     result = await db.execute(delete(AMSSensorHistory).where(AMSSensorHistory.recorded_at < cutoff))
                     await db.commit()
                     if result.rowcount > 0:
@@ -3119,7 +3119,7 @@ async def track_printer_runtime():
                 result = await db.execute(select(Printer).where(Printer.is_active.is_(True)))
                 printers = result.scalars().all()
 
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 updated_count = 0
 
                 needs_commit = False

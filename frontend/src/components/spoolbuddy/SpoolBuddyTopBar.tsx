@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect, useMemo } from 'react';
+import { useQuery, useQueries } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { WifiOff } from 'lucide-react';
 import { api, type Printer } from '../../api/client';
@@ -19,12 +19,26 @@ export function SpoolBuddyTopBar({ selectedPrinterId, onPrinterChange, deviceOnl
     queryFn: () => api.getPrinters(),
   });
 
-  // Auto-select first printer
+  // Fetch status for each printer to determine which are online
+  const statusQueries = useQueries({
+    queries: printers.map((printer: Printer) => ({
+      queryKey: ['printerStatus', printer.id],
+      queryFn: () => api.getPrinterStatus(printer.id),
+      refetchInterval: 10000,
+    })),
+  });
+
+  const onlinePrinters = useMemo(() => {
+    return printers.filter((_: Printer, i: number) => statusQueries[i]?.data?.connected);
+  }, [printers, statusQueries]);
+
+  // Auto-select first online printer
   useEffect(() => {
-    if (!selectedPrinterId && printers.length > 0) {
-      onPrinterChange(printers[0].id);
+    const currentStillOnline = onlinePrinters.some((p: Printer) => p.id === selectedPrinterId);
+    if ((!selectedPrinterId || !currentStillOnline) && onlinePrinters.length > 0) {
+      onPrinterChange(onlinePrinters[0].id);
     }
-  }, [printers, selectedPrinterId, onPrinterChange]);
+  }, [onlinePrinters, selectedPrinterId, onPrinterChange]);
 
   // Clock - update every second for kiosk display
   useEffect(() => {
@@ -38,13 +52,8 @@ export function SpoolBuddyTopBar({ selectedPrinterId, onPrinterChange, deviceOnl
   return (
     <div className="h-11 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary flex items-center px-3 gap-4 shrink-0">
       {/* Logo */}
-      <div className="flex items-center gap-2 shrink-0">
-        <div className="w-6 h-6 rounded bg-bambu-green flex items-center justify-center">
-          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-          </svg>
-        </div>
-        <span className="text-white font-semibold text-sm">SpoolBuddy</span>
+      <div className="flex items-center shrink-0">
+        <img src="/img/spoolbuddy_logo_dark.png" alt="SpoolBuddy" className="h-7" />
       </div>
 
       {/* Printer selector - centered */}
@@ -54,10 +63,10 @@ export function SpoolBuddyTopBar({ selectedPrinterId, onPrinterChange, deviceOnl
           onChange={(e) => onPrinterChange(Number(e.target.value))}
           className="bg-bambu-dark text-white text-sm px-3 py-1.5 rounded border border-bambu-dark-tertiary focus:outline-none focus:border-bambu-green min-w-[150px]"
         >
-          {printers.length === 0 ? (
-            <option value="">{t('spoolbuddy.status.noPrinters', 'No printers')}</option>
+          {onlinePrinters.length === 0 ? (
+            <option value="">{t('spoolbuddy.status.noPrinters', 'No printers online')}</option>
           ) : (
-            printers.map((printer: Printer) => (
+            onlinePrinters.map((printer: Printer) => (
               <option key={printer.id} value={printer.id}>
                 {printer.name}
               </option>

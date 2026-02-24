@@ -23,6 +23,7 @@ export function ScheduleOptionsPanel({
   onChange,
   dateFormat = 'system',
   timeFormat = 'system',
+  canControlPrinter = true,
 }: ScheduleOptionsProps) {
   const [dateValue, setDateValue] = useState('');
   const [timeValue, setTimeValue] = useState('');
@@ -237,9 +238,10 @@ export function ScheduleOptionsPanel({
           id="autoOffAfter"
           checked={options.autoOffAfter}
           onChange={(e) => onChange({ ...options, autoOffAfter: e.target.checked })}
-          className="rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
+          disabled={!canControlPrinter}
+          className="rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green disabled:opacity-50"
         />
-        <label htmlFor="autoOffAfter" className="text-sm text-bambu-gray flex items-center gap-1">
+        <label htmlFor="autoOffAfter" className={`text-sm flex items-center gap-1 ${canControlPrinter ? 'text-bambu-gray' : 'text-bambu-gray/50'}`}>
           <Power className="w-3.5 h-3.5" />
           Power off printer when done
         </label>

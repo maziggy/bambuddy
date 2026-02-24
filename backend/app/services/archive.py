@@ -4,7 +4,7 @@ import logging
 import re
 import shutil
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from defusedxml import ElementTree as ET
@@ -893,8 +893,8 @@ class ArchiveService:
 
         # Determine status and timestamps
         status = print_data.get("status", "completed") if print_data else "archived"
-        started_at = datetime.now() if status == "printing" else None
-        completed_at = datetime.now() if status in ("completed", "failed", "archived") else None
+        started_at = datetime.now(timezone.utc) if status == "printing" else None
+        completed_at = datetime.now(timezone.utc) if status in ("completed", "failed", "archived") else None
 
         # Calculate cost based on filament usage and type
         cost = None

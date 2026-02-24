@@ -1438,11 +1438,11 @@ async def scan_timelapse(
     # Strategy 4: If only one timelapse exists and archive was recently completed, use it
     # This handles cases where printer clock is wrong or timezone issues exist
     if not matching_file and len(video_files) == 1:
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
 
         archive_completed = archive.completed_at or archive.created_at
         if archive_completed:
-            time_since_completion = datetime.now() - archive_completed
+            time_since_completion = datetime.now(timezone.utc) - archive_completed
             # If archive was completed within the last hour, assume the single timelapse is for it
             if time_since_completion < timedelta(hours=1):
                 matching_file = video_files[0]

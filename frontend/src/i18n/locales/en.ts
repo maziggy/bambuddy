@@ -2758,6 +2758,7 @@ export default {
     selectPlate: 'Select Plate',
     filamentMapping: 'Filament Mapping',
     totalCost: 'Total cost:',
+    slotRemainingShort: ' - {{grams}}g left',
     printSettings: 'Print Settings',
     bedLeveling: 'Bed Leveling',
     flowCalibration: 'Flow Calibration',

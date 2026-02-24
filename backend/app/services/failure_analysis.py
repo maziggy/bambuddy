@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,7 +30,7 @@ class FailureAnalysisService:
         Returns:
             Dictionary with failure analysis results
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
         # Build base query
         base_filter = [PrintArchive.created_at >= cutoff_date]
@@ -142,7 +142,7 @@ class FailureAnalysisService:
         # Failure rate trend (by week)
         trend_data = []
         for i in range(min(days // 7, 12)):  # Up to 12 weeks
-            week_end = datetime.utcnow() - timedelta(weeks=i)
+            week_end = datetime.now(timezone.utc) - timedelta(weeks=i)
             week_start = week_end - timedelta(weeks=1)
 
             week_filter = base_filter.copy()

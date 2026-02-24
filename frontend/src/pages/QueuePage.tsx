@@ -50,7 +50,7 @@ import {
   Weight,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { type TimeFormat, formatETA, formatDuration, formatRelativeTime } from '../utils/date';
+import { type TimeFormat, formatETA, formatDuration, formatRelativeTime, parseUTCDate } from '../utils/date';
 import type { PrintQueueItem, PrintQueueBulkUpdate, Permission } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
@@ -111,6 +111,7 @@ function BulkEditModal({
   onSave,
   onClose,
   isSaving,
+  canControlPrinter,
   t,
 }: {
   selectedCount: number;
@@ -118,6 +119,7 @@ function BulkEditModal({
   onSave: (data: Partial<PrintQueueBulkUpdate>) => void;
   onClose: () => void;
   isSaving: boolean;
+  canControlPrinter: boolean;
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   const [printerId, setPrinterId] = useState<number | null | 'unchanged'>('unchanged');
@@ -193,7 +195,7 @@ function BulkEditModal({
             <label className="block text-sm font-medium text-white mb-2">{t('queue.bulkEdit.queueOptions')}</label>
             <div className="space-y-2">
               <TriStateToggle label={t('queue.bulkEdit.staged')} value={manualStart} onChange={setManualStart} t={t} />
-              <TriStateToggle label={t('queue.bulkEdit.autoPowerOff')} value={autoOffAfter} onChange={setAutoOffAfter} t={t} />
+              <TriStateToggle label={t('queue.bulkEdit.autoPowerOff')} value={autoOffAfter} onChange={setAutoOffAfter} disabled={!canControlPrinter} t={t} />
               <TriStateToggle label={t('queue.bulkEdit.requirePrevious')} value={requirePreviousSuccess} onChange={setRequirePreviousSuccess} t={t} />
             </div>
           </div>
@@ -231,32 +233,37 @@ function TriStateToggle({
   label,
   value,
   onChange,
+  disabled,
   t,
 }: {
   label: string;
   value: boolean | 'unchanged';
   onChange: (val: boolean | 'unchanged') => void;
+  disabled?: boolean;
   t: (key: string) => string;
 }) {
   return (
-    <div className="flex items-center justify-between py-1">
+    <div className={`flex items-center justify-between py-1 ${disabled ? 'opacity-50' : ''}`}>
       <span className="text-sm text-bambu-gray">{label}</span>
       <div className="flex items-center gap-1 bg-bambu-dark rounded-lg p-0.5">
         <button
           onClick={() => onChange('unchanged')}
-          className={`px-2 py-1 text-xs rounded ${value === 'unchanged' ? 'bg-bambu-dark-tertiary text-white' : 'text-bambu-gray hover:text-white'}`}
+          disabled={disabled}
+          className={`px-2 py-1 text-xs rounded ${value === 'unchanged' ? 'bg-bambu-dark-tertiary text-white' : 'text-bambu-gray hover:text-white'} disabled:cursor-not-allowed`}
         >
           —
         </button>
         <button
           onClick={() => onChange(false)}
-          className={`px-2 py-1 text-xs rounded ${value === false ? 'bg-red-500/20 text-red-400' : 'text-bambu-gray hover:text-white'}`}
+          disabled={disabled}
+          className={`px-2 py-1 text-xs rounded ${value === false ? 'bg-red-500/20 text-red-400' : 'text-bambu-gray hover:text-white'} disabled:cursor-not-allowed`}
         >
           {t('common.off')}
         </button>
         <button
           onClick={() => onChange(true)}
-          className={`px-2 py-1 text-xs rounded ${value === true ? 'bg-bambu-green/20 text-bambu-green' : 'text-bambu-gray hover:text-white'}`}
+          disabled={disabled}
+          className={`px-2 py-1 text-xs rounded ${value === true ? 'bg-bambu-green/20 text-bambu-green' : 'text-bambu-gray hover:text-white'} disabled:cursor-not-allowed`}
         >
           {t('common.on')}
         </button>
@@ -494,7 +501,7 @@ function SortableQueueItem({
               <span className="flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5" />
                 {item.scheduled_time
-                  ? (new Date(item.scheduled_time).getTime() - Date.now() < -60000
+                  ? ((parseUTCDate(item.scheduled_time)?.getTime() ?? 0) - Date.now() < -60000
                       ? t?.('queue.time.overdue') ?? 'Overdue'
                       : formatRelativeTime(item.scheduled_time, timeFormat, t))
                   : t?.('queue.time.asap') ?? 'ASAP'}
@@ -862,7 +869,7 @@ export function QueuePage() {
     // Helper to get scheduled time as timestamp (ASAP/placeholder = 0 for earliest)
     const getScheduledTime = (item: PrintQueueItem): number => {
       if (!item.scheduled_time) return 0;
-      const time = new Date(item.scheduled_time).getTime();
+      const time = parseUTCDate(item.scheduled_time)?.getTime() ?? 0;
       // Placeholder dates (> 6 months out) are treated as ASAP
       const sixMonthsFromNow = Date.now() + (180 * 24 * 60 * 60 * 1000);
       return time > sixMonthsFromNow ? 0 : time;
@@ -948,7 +955,7 @@ export function QueuePage() {
         cmp = (a.printer_name || '').localeCompare(b.printer_name || '');
       } else {
         // Default: by date - most recent first (desc) is the natural order
-        cmp = new Date(b.completed_at || b.created_at).getTime() - new Date(a.completed_at || a.created_at).getTime();
+        cmp = (parseUTCDate(b.completed_at || b.created_at)?.getTime() ?? 0) - (parseUTCDate(a.completed_at || a.created_at)?.getTime() ?? 0);
       }
       return historySortAsc ? -cmp : cmp;
     });
@@ -1431,6 +1438,7 @@ export function QueuePage() {
           }}
           onClose={() => setShowBulkEditModal(false)}
           isSaving={bulkUpdateMutation.isPending}
+          canControlPrinter={hasPermission('printers:control')}
           t={t}
         />
       )}

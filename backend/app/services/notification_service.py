@@ -5,7 +5,7 @@ import json
 import logging
 import re
 import smtplib
-from datetime import datetime
+from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any
@@ -501,10 +501,10 @@ class NotificationService:
         provider = result.scalar_one_or_none()
         if provider:
             if success:
-                provider.last_success = datetime.utcnow()
+                provider.last_success = datetime.now(timezone.utc)
             else:
                 provider.last_error = error
-                provider.last_error_at = datetime.utcnow()
+                provider.last_error_at = datetime.now(timezone.utc)
             await db.commit()
 
     async def _get_providers_for_event(

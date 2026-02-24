@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
 
@@ -108,7 +108,7 @@ SLICER_TOKEN_EXPIRE_MINUTES = 5
 def create_slicer_download_token(resource_type: str, resource_id: int) -> str:
     """Create a short-lived download token for slicer protocol handlers."""
     # Cleanup expired tokens
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     expired = [k for k, (_, exp) in _slicer_tokens.items() if exp < now]
     for k in expired:
         del _slicer_tokens[k]
@@ -125,7 +125,7 @@ def verify_slicer_download_token(token: str, resource_type: str, resource_id: in
     if not entry:
         return False
     resource_key, expiry = entry
-    if datetime.utcnow() > expiry:
+    if datetime.now(timezone.utc) > expiry:
         del _slicer_tokens[token]
         return False
     expected_key = f"{resource_type}:{resource_id}"
@@ -156,9 +156,9 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     """Create a JWT access token."""
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -235,10 +235,10 @@ async def _validate_api_key(db: AsyncSession, api_key_value: str) -> APIKey | No
         for api_key in api_keys:
             if verify_password(api_key_value, api_key.key_hash):
                 # Check expiration
-                if api_key.expires_at and api_key.expires_at < datetime.now():
+                if api_key.expires_at and api_key.expires_at < datetime.now(timezone.utc):
                     return None  # Expired
                 # Update last_used timestamp
-                api_key.last_used = datetime.now()
+                api_key.last_used = datetime.now(timezone.utc)
                 await db.commit()
                 return api_key
     except Exception as e:
@@ -451,13 +451,13 @@ async def get_api_key(
         # Check if key matches (verify against hash)
         if verify_password(api_key_value, api_key.key_hash):
             # Check expiration
-            if api_key.expires_at and api_key.expires_at < datetime.now():
+            if api_key.expires_at and api_key.expires_at < datetime.now(timezone.utc):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="API key has expired",
                 )
             # Update last_used timestamp
-            api_key.last_used = datetime.now()
+            api_key.last_used = datetime.now(timezone.utc)
             await db.commit()
             return api_key
 

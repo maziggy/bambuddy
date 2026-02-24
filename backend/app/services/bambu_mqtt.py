@@ -16,7 +16,7 @@ import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
 
@@ -460,7 +460,7 @@ class BambuMQTTClient:
             if self._logging_enabled:
                 self._message_log.append(
                     MQTTLogEntry(
-                        timestamp=datetime.now().isoformat(),
+                        timestamp=datetime.now(timezone.utc).isoformat(),
                         topic=msg.topic,
                         direction="in",
                         payload=payload,
@@ -2678,7 +2678,7 @@ class BambuMQTTClient:
             if self._logging_enabled:
                 self._message_log.append(
                     MQTTLogEntry(
-                        timestamp=datetime.now().isoformat(),
+                        timestamp=datetime.now(timezone.utc).isoformat(),
                         topic=self.topic_publish,
                         direction="out",
                         payload=command,

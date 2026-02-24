@@ -5,7 +5,7 @@ Handles authentication and profile management with Bambu Lab's cloud services.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -42,7 +42,7 @@ class BambuCloudService:
         """Check if we have a valid token."""
         if not self.access_token:
             return False
-        return not (self.token_expiry and datetime.now() > self.token_expiry)
+        return not (self.token_expiry and datetime.now(timezone.utc) > self.token_expiry)
 
     def _get_headers(self) -> dict:
         """Get headers for authenticated requests."""
@@ -200,9 +200,9 @@ class BambuCloudService:
             if response.status_code == 200 and access_token:
                 self.access_token = access_token
                 self.refresh_token = data.get("refreshToken")
-                from datetime import datetime, timedelta
+                from datetime import datetime, timedelta, timezone
 
-                self.token_expiry = datetime.now() + timedelta(days=30)
+                self.token_expiry = datetime.now(timezone.utc) + timedelta(days=30)
                 return {"success": True, "message": "Login successful"}
 
             # Provide helpful error message
@@ -224,12 +224,12 @@ class BambuCloudService:
         self.access_token = data.get("accessToken")
         self.refresh_token = data.get("refreshToken")
         # Token typically valid for ~3 months, but we'll refresh more often
-        self.token_expiry = datetime.now() + timedelta(days=30)
+        self.token_expiry = datetime.now(timezone.utc) + timedelta(days=30)
 
     def set_token(self, access_token: str):
         """Set access token directly (for stored tokens)."""
         self.access_token = access_token
-        self.token_expiry = datetime.now() + timedelta(days=30)
+        self.token_expiry = datetime.now(timezone.utc) + timedelta(days=30)
 
     def logout(self):
         """Clear authentication state."""

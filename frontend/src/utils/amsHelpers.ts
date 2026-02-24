@@ -3,6 +3,7 @@
  * These functions handle color normalization, slot labeling, and tray ID calculations
  * for AMS, AMS-HT, and external spool configurations.
  */
+import { parseUTCDate } from './date';
 
 /**
  * Normalize color format from various sources.
@@ -111,5 +112,5 @@ export function getMinDateTime(): string {
 export function isPlaceholderDate(scheduledTime: string | null | undefined): boolean {
   if (!scheduledTime) return false;
   const sixMonthsFromNow = Date.now() + 180 * 24 * 60 * 60 * 1000;
-  return new Date(scheduledTime).getTime() > sixMonthsFromNow;
+  return (parseUTCDate(scheduledTime)?.getTime() ?? 0) > sixMonthsFromNow;
 }

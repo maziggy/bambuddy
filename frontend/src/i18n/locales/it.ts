@@ -2467,6 +2467,7 @@ export default {
     selectPlate: 'Seleziona piatto',
     filamentMapping: 'Mappatura filamento',
     totalCost: 'Costo totale:',
+    slotRemainingShort: ' - {{grams}}g rim.',
     printSettings: 'Impostazioni stampa',
     bedLeveling: 'Livellamento piatto',
     flowCalibration: 'Calibrazione flusso',

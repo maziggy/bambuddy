@@ -2752,6 +2752,7 @@ export default {
     selectPlate: 'Selecionar Placa',
     filamentMapping: 'Mapeamento de Filamento',
     totalCost: 'Custo total:',
+    slotRemainingShort: ' - {{grams}}g rest.',
     printSettings: 'Configurações de Impressão',
     bedLeveling: 'Nivelamento da Mesa',
     flowCalibration: 'Calibração de Fluxo',

@@ -194,4 +194,6 @@ export interface ScheduleOptionsProps {
   dateFormat?: 'system' | 'us' | 'eu' | 'iso';
   /** Time format setting from user preferences */
   timeFormat?: 'system' | '12h' | '24h';
+  /** Whether the user has permission to control printers (for auto power off) */
+  canControlPrinter?: boolean;
 }

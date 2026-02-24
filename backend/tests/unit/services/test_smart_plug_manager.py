@@ -4,7 +4,7 @@ These tests specifically target the auto-off behavior and toggle functionality
 that were identified as common regression points.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -354,7 +354,7 @@ class TestScheduleLoop:
             mock_now = MagicMock()
             mock_now.strftime.return_value = "08:00"
             mock_datetime.now.return_value = mock_now
-            mock_datetime.utcnow.return_value = datetime.utcnow()
+            mock_datetime.utcnow.return_value = datetime.now(timezone.utc)
 
             # Set up async session mock
             mock_db = AsyncMock()
@@ -395,7 +395,7 @@ class TestScheduleLoop:
             mock_now = MagicMock()
             mock_now.strftime.return_value = "22:00"
             mock_datetime.now.return_value = mock_now
-            mock_datetime.utcnow.return_value = datetime.utcnow()
+            mock_datetime.utcnow.return_value = datetime.now(timezone.utc)
 
             # Set up async session mock
             mock_db = AsyncMock()
@@ -466,7 +466,7 @@ class TestPendingAutoOffPersistence:
         mock_plug.password = None
         mock_plug.printer_id = 1
         mock_plug.auto_off_pending = True
-        mock_plug.auto_off_pending_since = datetime.utcnow()
+        mock_plug.auto_off_pending_since = datetime.now(timezone.utc)
         mock_plug.off_delay_mode = "temperature"
         mock_plug.off_temp_threshold = 70
 
@@ -497,7 +497,7 @@ class TestPendingAutoOffPersistence:
         mock_plug.password = None
         mock_plug.printer_id = 1
         mock_plug.auto_off_pending = True
-        mock_plug.auto_off_pending_since = datetime.utcnow()
+        mock_plug.auto_off_pending_since = datetime.now(timezone.utc)
         mock_plug.off_delay_mode = "time"
 
         with (

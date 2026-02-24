@@ -3,7 +3,7 @@
 import json
 import logging
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import defusedxml.ElementTree as ET
@@ -732,7 +732,7 @@ async def cancel_queue_item(
         raise HTTPException(400, f"Cannot cancel item with status '{item.status}'")
 
     item.status = "cancelled"
-    item.completed_at = datetime.now()
+    item.completed_at = datetime.now(timezone.utc)
     await db.commit()
 
     logger.info("Cancelled queue item %s", item_id)
@@ -775,7 +775,7 @@ async def stop_queue_item(
 
     # Update queue item status regardless - if printer is off, print is already stopped
     item.status = "cancelled"
-    item.completed_at = datetime.now()
+    item.completed_at = datetime.now(timezone.utc)
     item.error_message = "Stopped by user" if stop_sent else "Stopped by user (printer was offline)"
     await db.commit()
 

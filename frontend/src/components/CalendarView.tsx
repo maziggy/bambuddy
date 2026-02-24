@@ -185,7 +185,7 @@ export function CalendarView({ archives, onArchiveClick, highlightedArchiveId }:
             <div>
               <div className="text-2xl font-bold text-white">
                 {archives.filter(a => {
-                  const d = new Date(a.completed_at || a.created_at);
+                  const d = parseUTCDate(a.completed_at || a.created_at) || new Date();
                   return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
                 }).length}
               </div>
@@ -194,7 +194,7 @@ export function CalendarView({ archives, onArchiveClick, highlightedArchiveId }:
             <div>
               <div className="text-2xl font-bold text-green-400">
                 {archives.filter(a => {
-                  const d = new Date(a.completed_at || a.created_at);
+                  const d = parseUTCDate(a.completed_at || a.created_at) || new Date();
                   return d.getMonth() === currentMonth && d.getFullYear() === currentYear && a.status === 'completed';
                 }).length}
               </div>
@@ -203,7 +203,7 @@ export function CalendarView({ archives, onArchiveClick, highlightedArchiveId }:
             <div>
               <div className="text-2xl font-bold text-red-400">
                 {archives.filter(a => {
-                  const d = new Date(a.completed_at || a.created_at);
+                  const d = parseUTCDate(a.completed_at || a.created_at) || new Date();
                   return d.getMonth() === currentMonth && d.getFullYear() === currentYear && a.status === 'failed';
                 }).length}
               </div>

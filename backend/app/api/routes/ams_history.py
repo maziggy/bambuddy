@@ -1,6 +1,6 @@
 """API routes for AMS sensor history."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -44,7 +44,7 @@ async def get_ams_history(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AMS_HISTORY_READ),
 ):
     """Get AMS sensor history for a specific printer and AMS unit."""
-    since = datetime.now() - timedelta(hours=hours)
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
 
     # Get data points
     result = await db.execute(
@@ -108,7 +108,7 @@ async def delete_old_history(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.AMS_HISTORY_READ),
 ):
     """Delete old AMS history data for a printer."""
-    cutoff = datetime.now() - timedelta(days=days)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
     result = await db.execute(
         select(func.count(AMSSensorHistory.id)).where(

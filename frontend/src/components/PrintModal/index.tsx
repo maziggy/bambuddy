@@ -396,10 +396,11 @@ export function PrintModal({
     const map = new Map<number, Map<number, SpoolAssignment>>();
     if (!spoolAssignments) return map;
     spoolAssignments.forEach((assignment) => {
+      const isExternal = assignment.ams_id === 255;
       const globalTrayId = getGlobalTrayId(
         assignment.ams_id,
         assignment.tray_id,
-        assignment.ams_id < 0
+        isExternal
       );
       const printerMap = map.get(assignment.printer_id) ?? new Map();
       printerMap.set(globalTrayId, assignment);

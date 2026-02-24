@@ -6,7 +6,7 @@ from collections import deque
 
 logger = logging.getLogger(__name__)
 
-MOVING_AVG_SIZE = 5
+MOVING_AVG_SIZE = 20
 
 
 class ScaleReader:

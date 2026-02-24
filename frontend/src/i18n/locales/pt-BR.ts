@@ -1279,6 +1279,8 @@ export default {
     // Filament Tracking Mode
     filamentTracking: 'Rastreamento de Filamento',
     filamentTrackingDesc: 'Escolha como rastrear seus rolos de filamento. Você pode usar o inventário interno ou conectar a um servidor Spoolman externo.',
+    disableFilamentWarnings: 'Desativar avisos de filamento',
+    disableFilamentWarningsDesc: 'Não mostrar avisos sobre filamento insuficiente ao imprimir ou adicionar à fila',
     trackingModeBuiltIn: 'Inventário Interno',
     trackingModeBuiltInDesc: 'Correspondência automática de RFID e rastreamento de uso incluídos',
     trackingModeSpoolmanDesc: 'Servidor de gerenciamento de filamento externo',

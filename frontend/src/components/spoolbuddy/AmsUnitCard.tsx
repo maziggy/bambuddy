@@ -91,8 +91,8 @@ function HumidityIndicator({ humidity, goodThreshold = 40, fairThreshold = 60 }:
 
   return (
     <div className="flex items-center gap-0.5">
-      <DropComponent className="w-3 h-3.5" />
-      <span className="font-medium tabular-nums text-xs" style={{ color: textColor }}>{humidity}%</span>
+      <DropComponent className="w-2.5 h-3" />
+      <span className="font-medium tabular-nums text-[10px]" style={{ color: textColor }}>{humidity}%</span>
     </div>
   );
 }
@@ -114,8 +114,8 @@ function TemperatureIndicator({ temp, goodThreshold = 28, fairThreshold = 35 }: 
 
   return (
     <div className="flex items-center gap-0.5">
-      <ThermoComponent className="w-3 h-3.5" />
-      <span className="font-medium tabular-nums text-xs" style={{ color: textColor }}>{temp}°C</span>
+      <ThermoComponent className="w-2.5 h-3" />
+      <span className="font-medium tabular-nums text-[10px]" style={{ color: textColor }}>{temp}°C</span>
     </div>
   );
 }
@@ -125,7 +125,7 @@ function TemperatureIndicator({ temp, goodThreshold = 28, fairThreshold = 35 }: 
 function NozzleBadge({ side }: { side: 'L' | 'R' }) {
   return (
     <span
-      className="inline-flex items-center justify-center w-4 h-4 text-[9px] font-bold rounded"
+      className="inline-flex items-center justify-center w-3.5 h-3.5 text-[8px] font-bold rounded"
       style={{ backgroundColor: '#1a4d2e', color: '#00ae42' }}
     >
       {side}
@@ -139,11 +139,10 @@ interface SpoolSlotProps {
   tray: AMSTray;
   slotIndex: number;
   isActive: boolean;
-  fillOverride?: number | null;
   onClick?: () => void;
 }
 
-function SpoolSlot({ tray, slotIndex, isActive, fillOverride, onClick }: SpoolSlotProps) {
+function SpoolSlot({ tray, slotIndex, isActive, onClick }: SpoolSlotProps) {
   const isEmpty = isTrayEmpty(tray);
   const color = trayColorToCSS(tray.tray_color);
   const amsFill = tray.remain !== null && tray.remain !== undefined && tray.remain >= 0 ? tray.remain : null;
@@ -151,7 +150,7 @@ function SpoolSlot({ tray, slotIndex, isActive, fillOverride, onClick }: SpoolSl
 
   return (
     <div
-      className={`relative flex flex-col items-center p-2.5 rounded-lg transition-all ${isActive ? 'ring-2 ring-bambu-green' : ''} ${onClick ? 'cursor-pointer hover:bg-white/5' : ''}`}
+      className={`relative flex flex-col items-center p-2 rounded-lg transition-all ${isActive ? 'ring-2 ring-bambu-green' : ''} ${onClick ? 'cursor-pointer hover:bg-white/5' : ''}`}
       onClick={onClick}
     >
       {/* Spool visualization */}
@@ -212,10 +211,9 @@ interface AmsUnitCardProps {
   isDualNozzle?: boolean;
   nozzleSide?: 'L' | 'R' | null;
   thresholds?: AmsThresholds;
-  fillOverrides?: Record<string, number>;
 }
 
-export function AmsUnitCard({ unit, activeSlot, onConfigureSlot, isDualNozzle, nozzleSide, thresholds, fillOverrides }: AmsUnitCardProps) {
+export function AmsUnitCard({ unit, activeSlot, onConfigureSlot, isDualNozzle, nozzleSide, thresholds }: AmsUnitCardProps) {
   const trays = unit.tray || [];
   const isHt = unit.is_ams_ht;
   const slotCount = isHt ? 1 : 4;
@@ -225,7 +223,7 @@ export function AmsUnitCard({ unit, activeSlot, onConfigureSlot, isDualNozzle, n
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-1.5">
-          <span className="text-white font-medium text-base">{getAmsName(unit.id)}</span>
+          <span className="text-white font-medium text-sm">{getAmsName(unit.id)}</span>
           {isDualNozzle && nozzleSide && (
             <NozzleBadge side={nozzleSide} />
           )}
@@ -272,7 +270,6 @@ export function AmsUnitCard({ unit, activeSlot, onConfigureSlot, isDualNozzle, n
               tray={tray}
               slotIndex={i}
               isActive={activeSlot === i}
-              fillOverride={fillOverrides?.[`${unit.id}-${i}`] ?? null}
               onClick={onConfigureSlot ? () => onConfigureSlot(unit.id, i, isTrayEmpty(tray) ? null : tray) : undefined}
             />
           );

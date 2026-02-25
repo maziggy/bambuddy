@@ -524,7 +524,65 @@ class BackgroundDispatchService:
             "recent_event": recent_event,
         }
 
+    async def _maybe_apply_automation(
+        self,
+        file_path: Path,
+        printer_id: int,
+    ) -> Path:
+        """
+        Check if automation should apply to a file, create temp modified file if needed.
+        
+        This is a safe wrapper that handles errors gracefully and falls back to
+        original file if automation application fails.
+        
+        Args:
+            file_path: Original file path (.gcode or .3mf)
+            printer_id: Target printer ID
+            
+        Returns:
+            - Path to modified temp file if automation applied
+            - Original file_path if no modifications needed or on error
+            
+        Note:
+            - Does NOT cleanup the temporary file (caller responsibility)
+            - Logs warnings but doesn't raise exceptions (graceful degradation)
+        """
+        from backend.app.services.automation import (
+            create_temp_gcode_with_automation,
+            needs_gcode_modification,
+        )
+
+        try:
+            if not await needs_gcode_modification(printer_id):
+                logger.debug(
+                    "No automation configured for printer %d, using original file",
+                    printer_id,
+                )
+                return file_path
+
+            logger.info(
+                "Applying automation for printer %d to file: %s",
+                printer_id,
+                file_path.name,
+            )
+            modified_path, _, _ = await create_temp_gcode_with_automation(
+                file_path, printer_id
+            )
+            logger.info("Automation applied, using modified temp file: %s", modified_path)
+            return modified_path
+
+        except Exception as e:
+            logger.warning(
+                "Failed to apply automation for printer %d: %s. "
+                "Continuing with original file.",
+                printer_id,
+                e,
+                exc_info=True,
+            )
+            return file_path
+
     async def _process_job(self, job: PrintDispatchJob):
+
         if job.kind == "reprint_archive":
             await self._run_reprint_archive(job)
             return
@@ -535,6 +593,7 @@ class BackgroundDispatchService:
 
     async def _run_reprint_archive(self, job: PrintDispatchJob):
         from backend.app.main import register_expected_print
+        from backend.app.services.automation import cleanup_temp_file
 
         async with async_session() as db:
             service = ArchiveService(db)
@@ -558,6 +617,33 @@ class BackgroundDispatchService:
             file_path = settings.base_dir / archive.file_path
             if not file_path.exists():
                 raise RuntimeError("Archive file not found")
+
+            # === NEW: Check if automation should be applied ===
+            modified_file_path = file_path
+            was_modified = False
+            try:
+                if printer.plate_automation_enabled:
+                    await self._set_active_message(
+                        job,
+                        f"Checking automation configuration for {printer_name}...",
+                    )
+                    modified_file_path = await self._maybe_apply_automation(
+                        file_path=file_path,
+                        printer_id=job.printer_id,
+                    )
+                    was_modified = modified_file_path != file_path
+                    if was_modified:
+                        await self._set_active_message(
+                            job,
+                            f"Automation applied - modified G-code for {printer_name}",
+                        )
+            except Exception as e:
+                logger.exception(
+                    "Unexpected error checking automation for archive %d on printer %d",
+                    job.source_id,
+                    job.printer_id,
+                )
+                # Continue with original file (fail safe)
 
             base_name = archive.filename
             if base_name.endswith(".gcode.3mf"):
@@ -609,7 +695,7 @@ class BackgroundDispatchService:
                         upload_file_async,
                         printer_ip,
                         printer_access_code,
-                        file_path,
+                        modified_file_path,
                         remote_path,
                         progress_callback=upload_progress_callback,
                         socket_timeout=ftp_timeout,
@@ -623,7 +709,7 @@ class BackgroundDispatchService:
                     uploaded = await upload_file_async(
                         printer_ip,
                         printer_access_code,
-                        file_path,
+                        modified_file_path,
                         remote_path,
                         progress_callback=upload_progress_callback,
                         socket_timeout=ftp_timeout,
@@ -645,7 +731,7 @@ class BackgroundDispatchService:
                     ams_mapping=job.options.get("ams_mapping"),
                 )
 
-                plate_id = self._resolve_plate_id(file_path, job.options.get("plate_id"))
+                plate_id = self._resolve_plate_id(modified_file_path, job.options.get("plate_id"))
 
                 self._raise_if_cancel_requested(job)
 
@@ -678,12 +764,29 @@ class BackgroundDispatchService:
                         job.requested_by_user_id,
                         job.requested_by_username,
                     )
+                    
+                logger.info(
+                    "Archive reprint initiated: archive_id=%s, printer=%s, "
+                    "automation_applied=%s",
+                    job.source_id,
+                    printer_name,
+                    was_modified,
+                )
+                
             except DispatchJobCancelled:
                 await self._set_active_message(job, f"Cancelled upload on {printer_name}.")
                 raise
+            finally:
+                # === NEW: Cleanup modified temp file ===
+                if was_modified:
+                    cleanup_temp_file(modified_file_path)
+                    logger.debug(
+                        "Cleaned up automation temp file for archive %d", job.source_id
+                    )
 
     async def _run_print_library_file(self, job: PrintDispatchJob):
         from backend.app.main import register_expected_print
+        from backend.app.services.automation import cleanup_temp_file
 
         async with async_session() as db:
             lib_file = await db.scalar(select(LibraryFile).where(LibraryFile.id == job.source_id))
@@ -720,6 +823,33 @@ class BackgroundDispatchService:
                 raise RuntimeError("Failed to create archive")
 
             await db.flush()
+
+            # === NEW: Check if automation should be applied ===
+            modified_file_path = file_path
+            was_modified = False
+            try:
+                if printer.plate_automation_enabled:
+                    await self._set_active_message(
+                        job,
+                        f"Checking automation configuration for {printer_name}...",
+                    )
+                    modified_file_path = await self._maybe_apply_automation(
+                        file_path=file_path,
+                        printer_id=job.printer_id,
+                    )
+                    was_modified = modified_file_path != file_path
+                    if was_modified:
+                        await self._set_active_message(
+                            job,
+                            f"Automation applied - modified G-code for {printer_name}",
+                        )
+            except Exception as e:
+                logger.exception(
+                    "Unexpected error checking automation for library file %d on printer %d",
+                    job.source_id,
+                    job.printer_id,
+                )
+                # Continue with original file
 
             base_name = lib_file.filename
             if base_name.endswith(".gcode.3mf"):
@@ -771,7 +901,7 @@ class BackgroundDispatchService:
                         upload_file_async,
                         printer_ip,
                         printer_access_code,
-                        file_path,
+                        modified_file_path,
                         remote_path,
                         progress_callback=upload_progress_callback,
                         socket_timeout=ftp_timeout,
@@ -785,7 +915,7 @@ class BackgroundDispatchService:
                     uploaded = await upload_file_async(
                         printer_ip,
                         printer_access_code,
-                        file_path,
+                        modified_file_path,
                         remote_path,
                         progress_callback=upload_progress_callback,
                         socket_timeout=ftp_timeout,
@@ -808,7 +938,7 @@ class BackgroundDispatchService:
                     ams_mapping=job.options.get("ams_mapping"),
                 )
 
-                plate_id = self._resolve_plate_id(file_path, job.options.get("plate_id"))
+                plate_id = self._resolve_plate_id(modified_file_path, job.options.get("plate_id"))
 
                 self._raise_if_cancel_requested(job)
 
@@ -837,10 +967,28 @@ class BackgroundDispatchService:
                     raise RuntimeError("Failed to start print")
 
                 await db.commit()
+                
+                logger.info(
+                    "Library file print initiated: file_id=%s, archive_id=%s, "
+                    "printer=%s, automation_applied=%s",
+                    job.source_id,
+                    archive.id,
+                    printer_name,
+                    was_modified,
+                )
+                
             except DispatchJobCancelled:
                 await db.rollback()
                 await self._set_active_message(job, f"Cancelled upload on {printer_name}.")
                 raise
+            finally:
+                # === NEW: Cleanup modified temp file ===
+                if was_modified:
+                    cleanup_temp_file(modified_file_path)
+                    logger.debug(
+                        "Cleaned up automation temp file for library file %d",
+                        job.source_id,
+                    )
 
     @staticmethod
     async def _cleanup_sd_card_file(

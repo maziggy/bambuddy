@@ -2940,8 +2940,10 @@ export default {
     historyCleared: 'Histórico de uso limpo',
     fillSourceLabel: '(Inv)',
     assignMismatchTitle: 'Incompatibilidade de material',
-    assignMismatchMessage: 'O material do carretel selecionado ({{spoolMaterial}}) não corresponde ao perfil AMS ({{trayMaterial}}) para {{location}}. Atribuir mesmo assim?',
+    assignMismatchMessage: 'O material do carretel selecionado "{{spoolMaterial}}" não corresponde ao material da bandeja "{{trayMaterial}}" para {{location}}. Atribuir mesmo assim?',
     assignMismatchConfirm: 'Atribuir mesmo assim',
+    assignPartialMismatchMessage: 'O material do carretel "{{spoolMaterial}}" é semelhante, mas não corresponde exatamente a "{{trayMaterial}}" em {{location}}. Deseja prosseguir?',
+    assignProfileMismatchMessage: 'O perfil do carretel "{{spoolProfile}}" não corresponde ao perfil da bandeja "{{trayProfile}}" em {{location}}. Deseja prosseguir?',
   },
 
   // Timelapse

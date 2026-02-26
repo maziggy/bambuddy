@@ -2941,8 +2941,10 @@ export default {
     historyCleared: 'Historique effacé',
     fillSourceLabel: '(Inv)',
     assignMismatchTitle: 'Incompatibilité de matériau',
-    assignMismatchMessage: 'Le matériau de la bobine sélectionnée ({{spoolMaterial}}) ne correspond pas au profil AMS ({{trayMaterial}}) pour {{location}}. Assigner quand même ?',
+    assignMismatchMessage: 'Le matériau de la bobine sélectionnée "{{spoolMaterial}}" ne correspond pas au matériau du plateau "{{trayMaterial}}" pour {{location}}. Assigner quand même ?',
     assignMismatchConfirm: 'Assigner quand même',
+    assignPartialMismatchMessage: 'Le mat�riau de la bobine \"{{spoolMaterial}}\" est similaire mais ne correspond pas exactement � \"{{trayMaterial}}\" dans {{location}}. Voulez-vous continuer ?',
+    assignProfileMismatchMessage: 'Le profil de la bobine \"{{spoolProfile}}\" ne correspond pas au profil du plateau \"{{trayProfile}}\" dans {{location}}. Voulez-vous continuer ?',
   },
 
   // Timelapse

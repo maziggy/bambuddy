@@ -2950,8 +2950,10 @@ export default {
     historyCleared: 'Verbrauchshistorie gelöscht',
     fillSourceLabel: '(Inv)',
     assignMismatchTitle: 'Material stimmt nicht überein',
-    assignMismatchMessage: 'Das ausgewählte Spulenmaterial ({{spoolMaterial}}) stimmt nicht mit dem AMS-Profil ({{trayMaterial}}) für {{location}} überein. Trotzdem zuweisen?',
+    assignMismatchMessage: 'Das ausgewählte Spulenmaterial "{{spoolMaterial}}" stimmt nicht mit dem Tray-Material "{{trayMaterial}}" für {{location}} überein. Trotzdem zuweisen?',
     assignMismatchConfirm: 'Trotzdem zuweisen',
+    assignPartialMismatchMessage: 'Das Spulenmaterial "{{spoolMaterial}}" ist ähnlich, stimmt aber nicht genau mit "{{trayMaterial}}" in {{location}} überein. Möchten Sie fortfahren?',
+    assignProfileMismatchMessage: 'Das Spulenprofil "{{spoolProfile}}" stimmt nicht mit dem Fachprofil "{{trayProfile}}" in {{location}} überein. Möchten Sie fortfahren?',
   },
 
   // Timelapse

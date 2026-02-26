@@ -2411,6 +2411,7 @@ export default {
     spoolRestored: 'Bobina ripristinata',
     deleteConfirm: 'Sei sicuro di voler eliminare questa bobina? Questa azione non può essere annullata.',
     advancedSettings: 'Impostazioni Avanzate',
+    lowStockThresholdError: 'La soglia deve essere tra 0.1 e 99.9',
   },
 
   // Timelapse

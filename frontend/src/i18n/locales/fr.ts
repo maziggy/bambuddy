@@ -2686,6 +2686,7 @@ export default {
     clearHistory: 'Effacer',
     historyCleared: 'Historique effacé',
     fillSourceLabel: '(Inv)',
+    lowStockThresholdError: 'Le seuil doit être compris entre 0.1 et 99.9',
   },
 
   // Timelapse

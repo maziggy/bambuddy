@@ -2622,6 +2622,7 @@ export default {
     clearHistory: 'クリア',
     historyCleared: '使用履歴がクリアされました',
     fillSourceLabel: '(Inv)',
+    lowStockThresholdError: 'しきい値は0.1から99.9の間でなければなりません',
   },
   timelapse: {
     download: 'ダウンロード',

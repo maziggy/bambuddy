@@ -2698,6 +2698,7 @@ export default {
     clearHistory: 'Löschen',
     historyCleared: 'Verbrauchshistorie gelöscht',
     fillSourceLabel: '(Inv)',
+    lowStockThresholdError: 'Der Schwellenwert muss zwischen 0.1 und 99.9 liegen',
   },
 
   // Timelapse

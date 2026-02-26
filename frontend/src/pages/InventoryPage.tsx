@@ -773,20 +773,36 @@ function InventoryPage() {
                       setLowStockThreshold(val);
                       localStorage.setItem('bambuddy-low-stock-threshold', val.toString());
                       setShowThresholdInput(false);
+                    } else {
+                      showToast(t('inventory.lowStockThresholdError') || 'Threshold must be between 0.1 and 99.9', 'error');
                     }
                   }}
                   className="flex items-center gap-2"
                 >
                   <span className="text-xs text-bambu-gray">{'<'}</span>
                   <input
-                    type="number"
-                    min="0.1"
-                    max="99.9"
-                    step="0.1"
+                    type="text"
+                    inputMode="decimal"
+                    pattern="^\d{0,2}(\.\d?)?$"
+                    maxLength={4}
                     value={thresholdInput}
-                    onChange={e => setThresholdInput(e.target.value)}
-                    className="px-2 py-1 rounded border border-bambu-dark-tertiary text-xs text-white bg-bambu-dark-secondary focus:outline-none focus:border-bambu-green w-20"
+                    onChange={e => {
+                      // Only allow up to 2 digits before decimal and 1 after
+                      const val = e.target.value.replace(/[^\d.]/g, '');
+                      if (/^\d{0,2}(\.\d?)?$/.test(val)) {
+                        setThresholdInput(val);
+                      }
+                    }}
+                    className="px-1.5 py-1 rounded border border-bambu-dark-tertiary text-xs text-white bg-bambu-dark-secondary focus:outline-none focus:border-bambu-green w-14 text-center"
+                    style={{ MozAppearance: 'textfield' }}
+                    onWheel={e => e.currentTarget.blur()}
                   />
+                  <style>{`
+                    input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button {
+                      -webkit-appearance: none;
+                      margin: 0;
+                    }
+                  `}</style>
                   <span className="text-xs text-bambu-gray">%</span>
                   <Button type="submit" size="sm">{t('common.save')}</Button>
                   <Button type="button" size="sm" variant="ghost" onClick={() => setShowThresholdInput(false)}>{t('common.cancel')}</Button>

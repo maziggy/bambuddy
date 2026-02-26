@@ -2698,6 +2698,7 @@ export default {
     clearHistory: 'Limpar',
     historyCleared: 'Histórico de uso limpo',
     fillSourceLabel: '(Inv)',
+    lowStockThresholdError: 'O limite deve estar entre 0.1 e 99.9',
   },
 
   // Timelapse

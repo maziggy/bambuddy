@@ -2974,7 +2974,7 @@ function PrinterCard({
                                               trayInfo: {
                                                 type: filamentData.profile,
                                                 material: tray?.tray_type ?? undefined,
-                                                color: filamentData.colorHex ?? undefined,
+                                                color: filamentData.colorHex ?? '',
                                                 location: `${getAmsLabel(ams.id, ams.tray.length)} Slot ${slotIdx + 1}`,
                                               },
                                             }) : undefined,
@@ -3210,7 +3210,7 @@ function PrinterCard({
                                           trayInfo: {
                                             type: filamentData.profile,
                                             material: tray?.tray_type ?? undefined,
-                                            color: filamentData.colorHex ?? undefined,
+                                            color: filamentData.colorHex ?? '',
                                             location: getAmsLabel(ams.id, ams.tray.length),
                                           },
                                         }) : undefined,
@@ -3405,7 +3405,7 @@ function PrinterCard({
                                             trayInfo: {
                                               type: extFilamentData.profile,
                                               material: extTray.tray_type ?? undefined,
-                                              color: extFilamentData.colorHex ?? undefined,
+                                              color: extFilamentData.colorHex ?? '',
                                               location: extLabel || t('printers.external'),
                                             },
                                           }),

@@ -2469,8 +2469,10 @@ export default {
     lastWeighed: 'Ultima pesatura',
     neverWeighed: 'Mai pesato',
     assignMismatchTitle: 'Materiale non corrispondente',
-    assignMismatchMessage: 'Il materiale della bobina selezionata ({{spoolMaterial}}) non corrisponde al profilo AMS ({{trayMaterial}}) per {{location}}. Assegnare comunque?',
+    assignMismatchMessage: 'Il materiale della bobina selezionata "{{spoolMaterial}}" non corrisponde al materiale del vassoio "{{trayMaterial}}" per {{location}}. Assegnare comunque?',
     assignMismatchConfirm: 'Assegna comunque',
+    assignPartialMismatchMessage: 'Il materiale della bobina "{{spoolMaterial}}" è simile ma non corrisponde esattamente a "{{trayMaterial}}" in {{location}}. Vuoi procedere?',
+    assignProfileMismatchMessage: 'Il profilo della bobina "{{spoolProfile}}" non corrisponde al profilo del vassoio "{{trayProfile}}" in {{location}}. Vuoi procedere?',
   },
 
   // Timelapse

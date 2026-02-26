@@ -2751,8 +2751,10 @@ export default {
     historyCleared: 'Usage history cleared',
     fillSourceLabel: '(Inv)',
     assignMismatchTitle: 'Material mismatch',
-    assignMismatchMessage: 'The selected spool material ({{spoolMaterial}}) does not match the AMS profile ({{trayMaterial}}) for {{location}}. Assign anyway?',
+    assignMismatchMessage: 'The selected spool material "{{spoolMaterial}}" does not match the tray material "{{trayMaterial}}" for {{location}}. Assign anyway?',
     assignMismatchConfirm: 'Assign Anyway',
+    assignPartialMismatchMessage: 'The spool material "{{spoolMaterial}}" is similar to but not exactly matching "{{trayMaterial}}" in {{location}}. Do you want to proceed?',
+    assignProfileMismatchMessage: 'The spool profile "{{spoolProfile}}" does not match the tray profile "{{trayProfile}}" in {{location}}. Do you want to proceed?',
   },
 
   // Timelapse

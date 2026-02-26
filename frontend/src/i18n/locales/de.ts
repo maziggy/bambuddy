@@ -276,6 +276,8 @@ export default {
       failedToSaveDetectionArea: 'Erkennungsbereich konnte nicht gespeichert werden',
       plateCheckEnabled: 'Plattenprüfung aktiviert',
       plateCheckDisabled: 'Plattenprüfung deaktiviert',
+      automationEnabled: 'Automatisierung aktiviert',
+      automationDisabled: 'Automatisierung deaktiviert',
       calibrationSaved: 'Kalibrierung gespeichert!',
       calibrationFailed: 'Kalibrierung fehlgeschlagen',
       rfidRereadInitiated: 'RFID-Neueinlesen gestartet',
@@ -417,6 +419,13 @@ export default {
       labelPlaceholder: 'Bezeichnung...',
       clickToEdit: '{{label}} - Zum Bearbeiten klicken',
       clickToAddLabel: 'Zum Hinzufügen einer Bezeichnung klicken',
+    },
+    // Automation
+    plateAutomation: {
+      noPermission: 'Sie haben keine Berechtigung, Drucker zu aktualisieren',
+      enabledClick: 'Automatisierung aktiviert - Klicken zum Deaktivieren',
+      disabledClick: 'Automatisierung deaktiviert - Klicken zum Aktivieren',
+      manageCustomization: 'Plattenautomations-GCODE verwalten',
     },
     // Fans
     fans: {
@@ -752,6 +761,7 @@ export default {
     clearPlateSuccess: 'Druckplatte freigegeben — bereit für nächsten Druck',
     plateReady: 'Druckplatte freigegeben — bereit für nächsten Druck',
     plateNumber: 'Platte {{index}}',
+    automated: 'Automatisiert',
     // Sections
     sections: {
       currentlyPrinting: 'Aktuell druckend',
@@ -2744,6 +2754,7 @@ export default {
     selectPlate: 'Platte auswählen',
     filamentMapping: 'Filamentzuordnung',
     totalCost: 'Gesamtkosten:',
+    slotRemainingShort: ' - {{grams}}g übrig',
     printSettings: 'Druckeinstellungen',
     bedLeveling: 'Bett-Nivellierung',
     flowCalibration: 'Fluss-Kalibrierung',

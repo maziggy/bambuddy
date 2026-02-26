@@ -276,6 +276,8 @@ export default {
       failedToSaveDetectionArea: 'Falha ao salvar área de detecção',
       plateCheckEnabled: 'Verificação da placa ativada',
       plateCheckDisabled: 'Verificação da placa desativada',
+      automationEnabled: 'Automação ativada',
+      automationDisabled: 'Automação desativada',
       calibrationSaved: 'Calibração salva!',
       calibrationFailed: 'Falha na calibração',
       rfidRereadInitiated: 'Releitura de RFID iniciada',
@@ -417,6 +419,13 @@ export default {
       labelPlaceholder: 'Etiqueta...',
       clickToEdit: '{{label}} - Clique para editar',
       clickToAddLabel: 'Clique para adicionar etiqueta',
+    },
+    // Automation
+    plateAutomation: {
+      noPermission: 'Você não tem permissão para atualizar impressoras',
+      enabledClick: 'Automação ativada - Clique para desativar',
+      disabledClick: 'Automação desativada - Clique para ativar',
+      manageCustomization: 'Gerenciar GCODE personalizado para automação da mesa',
     },
     // Fans
     fans: {
@@ -752,6 +761,7 @@ export default {
     clearPlateSuccess: 'Placa limpa — pronta para a próxima impressão',
     plateReady: 'Placa limpa — pronta para a próxima impressão',
     plateNumber: 'Placa {{index}}',
+    automated: 'Automatizado',
     // Sections
     sections: {
       currentlyPrinting: 'Imprimindo Atualmente',
@@ -2742,6 +2752,7 @@ export default {
     selectPlate: 'Selecionar Placa',
     filamentMapping: 'Mapeamento de Filamento',
     totalCost: 'Custo total:',
+    slotRemainingShort: ' - {{grams}}g rest.',
     printSettings: 'Configurações de Impressão',
     bedLeveling: 'Nivelamento da Mesa',
     flowCalibration: 'Calibração de Fluxo',

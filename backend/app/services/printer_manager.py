@@ -106,6 +106,7 @@ class PrinterManager:
         self._current_print_user: dict[int, dict] = {}  # {printer_id: {"user_id": int, "username": str}}
         # Track plate-cleared acknowledgments for queue flow
         self._plate_cleared: set[int] = set()  # printer_ids where user confirmed plate is cleared
+        self._plate_automation: set[int] = set() # printer_ids where automation is enabled (for conditional logic in callbacks)
 
     def get_printer(self, printer_id: int) -> PrinterInfo | None:
         """Get printer info by ID."""
@@ -123,9 +124,18 @@ class PrinterManager:
         """Clear the current print user when print completes (Issue #206)."""
         self._current_print_user.pop(printer_id, None)
 
-    def set_plate_cleared(self, printer_id: int):
-        """Mark that user has cleared the build plate for this printer."""
-        self._plate_cleared.add(printer_id)
+    def set_plate_automation(self, printer_id: int, enabled: bool = False):
+        """Mark that user has enabled automation for this printer."""
+        if enabled:
+            logger.info("Enabling automation for printer %s based on database setting", printer_id)
+            self._plate_automation.add(printer_id)
+        else:
+            logger.info("Disabling automation for printer %s based on database setting", printer_id)
+            self._plate_automation.discard(printer_id)
+
+    def is_plate_automation(self, printer_id: int) -> bool:
+        """Check if user has enabled automation for this printer."""
+        return printer_id in self._plate_automation
 
     def is_plate_cleared(self, printer_id: int) -> bool:
         """Check if user has confirmed the plate is cleared."""
@@ -134,6 +144,10 @@ class PrinterManager:
     def consume_plate_cleared(self, printer_id: int):
         """Clear the plate-cleared flag (called when scheduler starts next print)."""
         self._plate_cleared.discard(printer_id)
+
+    def set_plate_cleared(self, printer_id: int):
+        """Mark that user has cleared the build plate for this printer."""
+        self._plate_cleared.add(printer_id)
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop):
         """Set the event loop for async callbacks."""
@@ -194,9 +208,32 @@ class PrinterManager:
             if self._on_print_start:
                 self._schedule_async(self._on_print_start(printer_id, data))
 
-        def on_print_complete(data: dict):
+        async def on_print_complete_async(data: dict):
+            """Async handler for print complete events."""
+            # Check if automation is enabled and print completed successfully
+            if self.is_plate_automation(printer_id) and data["status"] == "completed":
+                # Check if there's a next plate queued for this printer (lazy import to avoid circular dependency)
+                from backend.app.services.print_scheduler import scheduler
+
+                has_next_plate = await scheduler.has_pending_items(printer_id)
+                if has_next_plate:
+                    # Automatically clear plate if there's a next job waiting
+                    self.set_plate_cleared(printer_id)
+                    logger.info(
+                        "Print complete on printer %s with next plate queued - auto-clearing plate for queue flow",
+                        printer_id,
+                    )
+                else:
+                    # No next plate, still clear if automation is enabled
+                    self.set_plate_cleared(printer_id)
+
+            # Trigger the completion callback
             if self._on_print_complete:
-                self._schedule_async(self._on_print_complete(printer_id, data))
+                await self._on_print_complete(printer_id, data)
+
+        def on_print_complete(data: dict):
+            """Sync wrapper for print complete callback."""
+            self._schedule_async(on_print_complete_async(data))
 
         def on_ams_change(ams_data: list):
             if self._on_ams_change:
@@ -222,7 +259,8 @@ class PrinterManager:
         self._clients[printer_id] = client
         self._models[printer_id] = printer.model  # Cache model for feature detection
         self._printer_info[printer_id] = PrinterInfo(printer.name, printer.serial_number)
-
+        self.set_plate_automation(printer_id, printer.plate_automation_enabled)  # Set automation based on database setting
+        
         # Wait a moment for connection
         await asyncio.sleep(1)
         return client.state.connected
@@ -234,6 +272,7 @@ class PrinterManager:
             del self._clients[printer_id]
         self._models.pop(printer_id, None)  # Clean up model cache
         self._printer_info.pop(printer_id, None)  # Clean up printer info cache
+        self._plate_automation.discard(printer_id)  # Clean up automation tracking
 
     def disconnect_all(self, timeout: float = 0):
         """Disconnect from all printers."""

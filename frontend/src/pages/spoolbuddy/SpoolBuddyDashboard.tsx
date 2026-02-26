@@ -1,9 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
-import { api, spoolbuddyApi, type InventorySpool } from '../../api/client';
+import { api, spoolbuddyApi, type InventorySpool, type PrinterStatus } from '../../api/client';
 import { SpoolIcon } from '../../components/spoolbuddy/SpoolIcon';
 import { SpoolInfoCard, UnknownTagCard } from '../../components/spoolbuddy/SpoolInfoCard';
 import { LinkSpoolModal } from '../../components/spoolbuddy/LinkSpoolModal';
@@ -90,7 +90,7 @@ function DeviceOfflineState() {
           {t('spoolbuddy.status.deviceOffline', 'Device Offline')}
         </p>
         <p className="text-sm text-zinc-600">
-          {t('spoolbuddy.status.waitingConnection', 'Waiting for device connection...')}
+          {t('spoolbuddy.status.connectDisplay', 'Connect the SpoolBuddy display to scan spools')}
         </p>
       </div>
 
@@ -105,14 +105,60 @@ function DeviceOfflineState() {
 }
 
 // --- Main Dashboard ---
+// Helper to get printer status label
+function getPrinterStateLabel(state: string | null, connected: boolean): string {
+  if (!connected) return 'Offline';
+  if (!state || state === 'IDLE') return 'Idle';
+  if (state === 'RUNNING') return 'Printing';
+  if (state === 'PAUSE') return 'Paused';
+  if (state === 'FINISH') return 'Finished';
+  if (state === 'FAILED') return 'Failed';
+  return state;
+}
+
+function getPrinterStateColor(state: string | null, connected: boolean): string {
+  if (!connected) return 'bg-zinc-500';
+  if (!state || state === 'IDLE') return 'bg-bambu-green';
+  if (state === 'RUNNING') return 'bg-bambu-green animate-pulse';
+  if (state === 'PAUSE') return 'bg-amber-500';
+  if (state === 'FINISH') return 'bg-bambu-green';
+  if (state === 'FAILED') return 'bg-red-500';
+  return 'bg-zinc-500';
+}
+
 export function SpoolBuddyDashboard() {
-  const { sbState } = useOutletContext<SpoolBuddyOutletContext>();
+  const { sbState, selectedPrinterId, setSelectedPrinterId } = useOutletContext<SpoolBuddyOutletContext>();
   const { t } = useTranslation();
 
   // Fetch spools for stats, tag lookup, and untagged list
   const { data: spools = [], refetch: refetchSpools } = useQuery({
     queryKey: ['inventory-spools'],
     queryFn: () => api.getSpools(false),
+  });
+
+  // Fetch printers list
+  const { data: printers = [] } = useQuery({
+    queryKey: ['printers'],
+    queryFn: () => api.getPrinters(),
+    staleTime: 30 * 1000,
+  });
+
+  // Fetch status for each printer
+  const printerStatuses = useQuery({
+    queryKey: ['printerStatuses', printers.map(p => p.id).join(',')],
+    queryFn: async () => {
+      const statuses: Record<number, PrinterStatus> = {};
+      await Promise.all(
+        printers.map(async (p) => {
+          try {
+            statuses[p.id] = await api.getPrinterStatus(p.id);
+          } catch { /* ignore */ }
+        })
+      );
+      return statuses;
+    },
+    enabled: printers.length > 0,
+    staleTime: 30 * 1000,
   });
 
   // Current Spool card state - persists until user closes or new tag detected
@@ -125,6 +171,16 @@ export function SpoolBuddyDashboard() {
   const currentTagId = sbState.matchedSpool?.tag_uid ?? sbState.unknownTagUid ?? null;
   const currentWeight = sbState.weight;
   const weightStable = sbState.weightStable;
+
+  // Stabilized scale display: only update when change exceeds threshold to prevent bouncing
+  const stableDisplayWeight = useRef<number | null>(null);
+  const WEIGHT_THRESHOLD = 3; // grams - ignore changes smaller than this
+  if (currentWeight === null) {
+    stableDisplayWeight.current = null;
+  } else if (stableDisplayWeight.current === null || Math.abs(currentWeight - stableDisplayWeight.current) >= WEIGHT_THRESHOLD || weightStable) {
+    stableDisplayWeight.current = currentWeight;
+  }
+  const scaleDisplayValue = stableDisplayWeight.current;
 
   // Find spool by tag_id in the loaded spools list
   const displayedSpool = useMemo(() => {
@@ -215,10 +271,12 @@ export function SpoolBuddyDashboard() {
   const materials = new Set(spools.map((s) => s.material)).size;
   const brands = new Set(spools.filter((s) => s.brand).map((s) => s.brand)).size;
 
+  const statuses = printerStatuses.data ?? {};
+
   return (
     <div className="h-full flex flex-col p-4">
       {/* Compact stats bar */}
-      <div className="flex items-center gap-6 px-4 py-2 bg-zinc-800 rounded-xl border border-zinc-700 mb-4 shrink-0">
+      <div className="flex items-center gap-6 px-4 py-2 bg-zinc-800/50 rounded-xl border border-zinc-700/50 mb-4 shrink-0">
         <div className="flex items-center gap-2">
           <span className="text-2xl font-bold text-zinc-100">{totalSpools}</span>
           <span className="text-sm text-zinc-500">{t('spoolbuddy.inventory.spools', 'Spools')}</span>
@@ -235,46 +293,42 @@ export function SpoolBuddyDashboard() {
         </div>
       </div>
 
-      {/* Main content: Device status (left) + Hero spool card (right) */}
+      {/* Main content: Device + Printers (left) + Current Spool (right) */}
       <div className="flex-1 flex gap-4 min-h-0">
-        {/* Left column: Device Status */}
-        <div className="w-1/3 flex flex-col gap-3">
-          <div className="bg-zinc-800 rounded-lg p-4">
+        {/* Left column */}
+        <div className="w-5/12 flex flex-col gap-4 min-h-0">
+          {/* Device card */}
+          <div className="border border-dashed border-zinc-700/50 rounded-xl p-4 shrink-0">
             <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-3">
               {t('spoolbuddy.dashboard.device', 'Device')}
             </h2>
 
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               {/* Connection status */}
               <div className="flex items-center gap-3">
                 <div className={`w-2.5 h-2.5 rounded-full ${sbState.deviceOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
                 <span className="text-sm text-zinc-400">
-                  {sbState.deviceOnline ? t('spoolbuddy.status.online', 'Online') : t('spoolbuddy.status.offline', 'Offline')}
+                  {sbState.deviceOnline ? t('spoolbuddy.status.online', 'Online') : t('spoolbuddy.status.offline', 'Disconnected')}
                 </span>
               </div>
 
               {/* Scale weight */}
-              <div className="flex items-center justify-between p-3 bg-zinc-900 rounded-lg">
+              <div className="flex items-center justify-between p-3 bg-zinc-800/50 rounded-lg">
                 <div className="flex items-center gap-2">
-                  <svg className="w-4 h-4 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className={`w-4 h-4 ${sbState.deviceOnline ? 'text-green-500' : 'text-zinc-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
                   </svg>
                   <span className="text-xs text-zinc-500">{t('spoolbuddy.spool.scaleWeight', 'Scale')}</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-lg font-mono font-semibold text-zinc-100">
-                    {currentWeight !== null ? `${Math.abs(currentWeight) <= 20 ? 0 : Math.round(Math.max(0, currentWeight))}g` : '\u2014'}
-                  </span>
-                  {weightStable && currentWeight !== null && (
-                    <span className="w-2 h-2 rounded-full bg-green-500" title={t('spoolbuddy.weight.stable', 'Stable')} />
-                  )}
-                </div>
+                <span className="text-lg font-mono font-semibold text-zinc-100">
+                  {scaleDisplayValue !== null ? `${Math.abs(scaleDisplayValue) <= 20 ? 0 : Math.round(Math.max(0, scaleDisplayValue))}g` : '\u2014'}
+                </span>
               </div>
 
               {/* NFC status */}
-              <div className="flex items-center justify-between p-3 bg-zinc-900 rounded-lg">
+              <div className="flex items-center justify-between p-3 bg-zinc-800/50 rounded-lg">
                 <div className="flex items-center gap-2">
-                  <svg className="w-4 h-4 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className={`w-4 h-4 ${sbState.deviceOnline ? 'text-green-500' : 'text-zinc-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
                   </svg>
                   <span className="text-xs text-zinc-500">NFC</span>
@@ -286,63 +340,80 @@ export function SpoolBuddyDashboard() {
             </div>
           </div>
 
-          {/* Weight display */}
-          <div className="bg-zinc-800 rounded-lg p-4 flex flex-col items-center">
-            <span className="text-4xl font-light tabular-nums text-zinc-100">
-              {currentWeight !== null ? currentWeight.toFixed(1) : '--.-'}
-            </span>
-            <span className="text-lg text-zinc-500">g</span>
-            <div className="flex items-center gap-2 mt-2">
-              <div className={`w-2 h-2 rounded-full ${
-                !sbState.deviceOnline
-                  ? 'bg-zinc-600'
-                  : weightStable
-                  ? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]'
-                  : 'bg-amber-500 animate-pulse'
-              }`} />
-              <span className="text-xs text-zinc-400">
-                {!sbState.deviceOnline
-                  ? t('spoolbuddy.weight.noReading', 'No reading')
-                  : weightStable
-                  ? t('spoolbuddy.weight.stable', 'Stable')
-                  : t('spoolbuddy.weight.measuring', 'Measuring...')}
-              </span>
+          {/* Printers card */}
+          <div className="border border-dashed border-zinc-700/50 rounded-xl p-4 flex-1 min-h-0 flex flex-col">
+            <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-2">
+              {t('spoolbuddy.dashboard.printers', 'Printers')}
+            </h2>
+            <div className="space-y-1.5 overflow-y-auto flex-1 min-h-0">
+              {printers.length === 0 ? (
+                <p className="text-sm text-zinc-600">{t('spoolbuddy.dashboard.noPrinters', 'No printers configured')}</p>
+              ) : (
+                printers.map((p) => {
+                  const st = statuses[p.id];
+                  const stateLabel = getPrinterStateLabel(st?.state ?? null, st?.connected ?? false);
+                  const stateColor = getPrinterStateColor(st?.state ?? null, st?.connected ?? false);
+                  const isSelected = selectedPrinterId === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => setSelectedPrinterId(p.id)}
+                      className={`w-full text-left py-1.5 px-3 bg-zinc-800/50 rounded-lg border-l-2 transition-colors hover:bg-zinc-800 ${
+                        isSelected ? 'border-l-bambu-green' : 'border-l-bambu-green/40'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-zinc-200">{p.name}</span>
+                        <div className="flex items-center gap-1.5">
+                          <div className={`w-1.5 h-1.5 rounded-full ${stateColor}`} />
+                          <span className="text-xs text-zinc-500">{stateLabel}</span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
 
-        {/* Right column: Hero Spool Card */}
-        <div className="w-2/3">
-          <div className="bg-zinc-800 rounded-lg p-6 h-full flex items-center justify-center">
-            {showCard && isMatchedSpool && displayedSpool ? (
-              <SpoolInfoCard
-                spool={{
-                  id: displayedSpool.id,
-                  tag_uid: displayedTagId!,
-                  material: displayedSpool.material,
-                  subtype: displayedSpool.subtype,
-                  color_name: displayedSpool.color_name,
-                  rgba: displayedSpool.rgba,
-                  brand: displayedSpool.brand,
-                  label_weight: displayedSpool.label_weight,
-                  core_weight: displayedSpool.core_weight,
-                  weight_used: displayedSpool.weight_used,
-                }}
-                scaleWeight={liveWeight}
-                weightStable={weightStable}
-                onClose={handleCloseSpoolCard}
-                onSyncWeight={() => refetchSpools()}
-              />
-            ) : showCard && isUnknownTag ? (
-              <UnknownTagCard
-                tagUid={displayedTagId!}
-                scaleWeight={liveWeight ?? (displayedWeight !== null ? displayedWeight : null)}
-                onLinkSpool={untaggedSpools.length > 0 ? () => setShowLinkModal(true) : undefined}
-                onClose={handleCloseSpoolCard}
-              />
-            ) : (
-              sbState.deviceOnline ? <ColorCyclingSpool /> : <DeviceOfflineState />
-            )}
+        {/* Right column: Current Spool */}
+        <div className="w-7/12 min-h-0">
+          <div className="border border-dashed border-zinc-700/50 rounded-xl p-6 h-full flex flex-col">
+            <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-4 shrink-0">
+              {t('spoolbuddy.dashboard.currentSpool', 'Current Spool')}
+            </h2>
+            <div className="flex-1 flex items-center justify-center min-h-0">
+              {showCard && isMatchedSpool && displayedSpool ? (
+                <SpoolInfoCard
+                  spool={{
+                    id: displayedSpool.id,
+                    tag_uid: displayedTagId!,
+                    material: displayedSpool.material,
+                    subtype: displayedSpool.subtype,
+                    color_name: displayedSpool.color_name,
+                    rgba: displayedSpool.rgba,
+                    brand: displayedSpool.brand,
+                    label_weight: displayedSpool.label_weight,
+                    core_weight: displayedSpool.core_weight,
+                    weight_used: displayedSpool.weight_used,
+                  }}
+                  scaleWeight={liveWeight}
+                  weightStable={weightStable}
+                  onClose={handleCloseSpoolCard}
+                  onSyncWeight={() => refetchSpools()}
+                />
+              ) : showCard && isUnknownTag ? (
+                <UnknownTagCard
+                  tagUid={displayedTagId!}
+                  scaleWeight={liveWeight ?? (displayedWeight !== null ? displayedWeight : null)}
+                  onLinkSpool={untaggedSpools.length > 0 ? () => setShowLinkModal(true) : undefined}
+                  onClose={handleCloseSpoolCard}
+                />
+              ) : (
+                sbState.deviceOnline ? <ColorCyclingSpool /> : <DeviceOfflineState />
+              )}
+            </div>
           </div>
         </div>
       </div>

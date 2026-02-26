@@ -105,6 +105,7 @@ async def init_db():
         spoolbuddy_device,
         user,
         virtual_printer,
+        automation,
     )
 
     async with engine.begin() as conn:
@@ -180,6 +181,13 @@ async def run_migrations(conn):
     # Migration: Add location column to printers for grouping
     try:
         await conn.execute(text("ALTER TABLE printers ADD COLUMN location VARCHAR(100)"))
+    except OperationalError:
+        # Column already exists
+        pass
+
+    # Migration: Add plate_automation_enabled column to printers
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN plate_automation_enabled BOOLEAN DEFAULT 0"))
     except OperationalError:
         # Column already exists
         pass

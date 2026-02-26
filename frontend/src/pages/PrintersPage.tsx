@@ -3182,8 +3182,8 @@ function PrinterCard({
                                               trayId: slotIdx,
                                               trayInfo: {
                                                 type: filamentData.profile,
-                                                material: tray?.tray_type,
-                                                color: filamentData.colorHex || '',
+                                                material: tray?.tray_type ?? undefined,
+                                                color: filamentData.colorHex ?? undefined,
                                                 location: `${getAmsLabel(ams.id, ams.tray.length)} Slot ${slotIdx + 1}`,
                                               },
                                             }) : undefined,
@@ -3427,8 +3427,8 @@ function PrinterCard({
                                           trayId: htSlotId,
                                           trayInfo: {
                                             type: filamentData.profile,
-                                            material: tray?.tray_type,
-                                            color: filamentData.colorHex || '',
+                                            material: tray?.tray_type ?? undefined,
+                                            color: filamentData.colorHex ?? undefined,
                                             location: getAmsLabel(ams.id, ams.tray.length),
                                           },
                                         }) : undefined,
@@ -3621,8 +3621,8 @@ function PrinterCard({
                                             trayId: slotTrayId,
                                             trayInfo: {
                                               type: extFilamentData.profile,
-                                              material: extTray.tray_type,
-                                              color: extFilamentData.colorHex || '',
+                                              material: extTray.tray_type ?? undefined,
+                                              color: extFilamentData.colorHex ?? undefined,
                                               location: extLabel || t('printers.external'),
                                             },
                                           }),

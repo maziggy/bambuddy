@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -96,14 +96,14 @@ export function SpoolBuddyAmsPage() {
     ? status.ams_extruder_map
     : cachedAmsExtruderMap.current;
 
-  const getNozzleSide = (amsId: number): 'L' | 'R' | null => {
+  const getNozzleSide = useCallback((amsId: number): 'L' | 'R' | null => {
     if (!isDualNozzle) return null;
     const mappedExtruderId = amsExtruderMap[String(amsId)];
     const normalizedId = amsId >= 128 ? amsId - 128 : amsId;
     const extruderId = mappedExtruderId !== undefined ? mappedExtruderId : normalizedId;
     // extruder 0 = right, 1 = left
     return extruderId === 1 ? 'L' : 'R';
-  };
+  }, [isDualNozzle, amsExtruderMap]);
 
   const [configureSlotModal, setConfigureSlotModal] = useState<{
     amsId: number;
@@ -118,7 +118,7 @@ export function SpoolBuddyAmsPage() {
     savedPresetId?: string;
   } | null>(null);
 
-  const getActiveSlotForAms = (amsId: number): number | null => {
+  const getActiveSlotForAms = useCallback((amsId: number): number | null => {
     if (trayNow === 255 || trayNow === 254) return null;
     if (amsId <= 3) {
       const activeAmsId = Math.floor(trayNow / 4);
@@ -129,9 +129,9 @@ export function SpoolBuddyAmsPage() {
       if (trayNow === 16 + htIndex) return 0;
     }
     return null;
-  };
+  }, [trayNow]);
 
-  const handleAmsSlotClick = (amsId: number, trayId: number, tray: AMSTray | null) => {
+  const handleAmsSlotClick = useCallback((amsId: number, trayId: number, tray: AMSTray | null) => {
     const globalTrayId = amsId >= 128 ? (amsId - 128) * 4 + trayId + 64 : amsId * 4 + trayId;
     const slotPreset = slotPresets?.[globalTrayId];
     const mappedExtruderId = amsExtruderMap[String(amsId)];
@@ -149,9 +149,9 @@ export function SpoolBuddyAmsPage() {
       caliIdx: tray?.cali_idx,
       savedPresetId: slotPreset?.preset_id,
     });
-  };
+  }, [slotPresets, amsExtruderMap, isDualNozzle]);
 
-  const handleExtSlotClick = (extTray: AMSTray) => {
+  const handleExtSlotClick = useCallback((extTray: AMSTray) => {
     const extTrayId = extTray.id ?? 254;
     const slotTrayId = extTrayId - 254;
     const extSlotPreset = slotPresets?.[255 * 4 + slotTrayId];
@@ -167,7 +167,7 @@ export function SpoolBuddyAmsPage() {
       caliIdx: extTray.cali_idx,
       savedPresetId: extSlotPreset?.preset_id,
     });
-  };
+  }, [slotPresets, isDualNozzle]);
 
   // Set alert for low filament in status bar
   useEffect(() => {
@@ -236,7 +236,7 @@ export function SpoolBuddyAmsPage() {
     }
 
     return items;
-  }, [htAms, vtTrays, isDualNozzle, trayNow, status?.active_extruder, slotPresets, amsExtruderMap, t]);
+  }, [htAms, vtTrays, isDualNozzle, trayNow, status?.active_extruder, t, getActiveSlotForAms, getNozzleSide, handleAmsSlotClick, handleExtSlotClick]);
 
   return (
     <div className="h-full flex flex-col p-3">

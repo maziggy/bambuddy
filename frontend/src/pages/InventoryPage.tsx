@@ -20,7 +20,7 @@ import { formatDateInput, parseUTCDate, type DateFormat } from '../utils/date';
 import { formatSlotLabel } from '../utils/amsHelpers';
 
 type ArchiveFilter = 'active' | 'archived';
-type UsageFilter = 'all' | 'used' | 'new';
+type UsageFilter = 'all' | 'used' | 'new' | 'lowstock';
 type ViewMode = 'table' | 'cards';
 type SortDirection = 'asc' | 'desc';
 type SortState = { column: string; direction: SortDirection } | null;
@@ -771,10 +771,14 @@ function InventoryPage() {
                     const val = parseFloat(thresholdInput);
                     if (!isNaN(val) && val >= 0.1 && val <= 99.9) {
                       setLowStockThreshold(val);
-                      localStorage.setItem('bambuddy-low-stock-threshold', val.toString());
+                      try {
+                        localStorage.setItem('bambuddy-low-stock-threshold', val.toString());
+                      } catch {
+                        // Ignore errors (e.g., private browsing)
+                      }
                       setShowThresholdInput(false);
                     } else {
-                      showToast(t('inventory.lowStockThresholdError') || 'Threshold must be between 0.1 and 99.9', 'error');
+                      showToast(t('inventory.lowStockThresholdError'), 'error');
                     }
                   }}
                   className="flex items-center gap-2"
@@ -794,15 +798,9 @@ function InventoryPage() {
                       }
                     }}
                     className="px-1.5 py-1 rounded border border-bambu-dark-tertiary text-xs text-white bg-bambu-dark-secondary focus:outline-none focus:border-bambu-green w-14 text-center"
-                    style={{ MozAppearance: 'textfield' }}
                     onWheel={e => e.currentTarget.blur()}
                   />
-                  <style>{`
-                    input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button {
-                      -webkit-appearance: none;
-                      margin: 0;
-                    }
-                  `}</style>
+
                   <span className="text-xs text-bambu-gray">%</span>
                   <Button type="submit" size="sm">{t('common.save')}</Button>
                   <Button type="button" size="sm" variant="ghost" onClick={() => setShowThresholdInput(false)}>{t('common.cancel')}</Button>
@@ -812,7 +810,7 @@ function InventoryPage() {
                   <span className="text-bambu-gray">{'< '}{lowStockThreshold}%</span>
                   <button
                     className="p-1.5 text-bambu-gray hover:text-white rounded transition-colors"
-                    title={t('inventory.editSpool')}
+                    title={t('common.edit')}
                     onClick={() => {
                       setThresholdInput(lowStockThreshold.toString());
                       setShowThresholdInput(true);
@@ -1553,7 +1551,7 @@ function SpoolTableRow({
       ))}
       <td className="py-3 px-4">
         <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-          <button onClick={onEdit} className="p-1.5 text-bambu-gray hover:text-white rounded transition-colors" title={t('inventory.editSpool')}>
+          <button onClick={onEdit} className="p-1.5 text-bambu-gray hover:text-white rounded transition-colors" title={t('common.edit')}>
             <Edit2 className="w-4 h-4" />
           </button>
           {spool.archived_at ? (

@@ -1,6 +1,8 @@
 from datetime import timedelta
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -8,8 +10,11 @@ from sqlalchemy.orm import selectinload
 from backend.app.api.routes.settings import get_external_login_url
 from backend.app.core.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
+    ALGORITHM,
+    SECRET_KEY,
     Permission,
     RequirePermissionIfAuthEnabled,
+    _validate_api_key,
     authenticate_user,
     authenticate_user_by_email,
     create_access_token,
@@ -17,8 +22,10 @@ from backend.app.core.auth import (
     get_password_hash,
     get_user_by_email,
     get_user_by_username,
+    security,
 )
 from backend.app.core.database import get_db
+from backend.app.core.permissions import ALL_PERMISSIONS
 from backend.app.models.group import Group
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
@@ -58,6 +65,21 @@ def _user_to_response(user: User) -> UserResponse:
         groups=[GroupBrief(id=g.id, name=g.name) for g in user.groups],
         permissions=sorted(user.get_permissions()),
         created_at=user.created_at.isoformat(),
+    )
+
+
+def _api_key_to_user_response(api_key) -> UserResponse:
+    """Create a synthetic admin UserResponse for a valid API key."""
+    return UserResponse(
+        id=0,
+        username=f"api-key:{api_key.key_prefix}",
+        email=None,
+        role="admin",
+        is_active=True,
+        is_admin=True,
+        groups=[],
+        permissions=sorted(ALL_PERMISSIONS),
+        created_at=api_key.created_at.isoformat(),
     )
 
 
@@ -308,14 +330,74 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(
-    current_user: User = Depends(get_current_active_user),
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get current user information."""
-    # Reload user with groups for proper permission calculation
-    result = await db.execute(select(User).where(User.id == current_user.id).options(selectinload(User.groups)))
-    user = result.scalar_one()
-    return _user_to_response(user)
+    """Get current user information.
+
+    Accepts JWT tokens (via Authorization: Bearer header) and API keys
+    (via X-API-Key header or Authorization: Bearer bb_xxx).
+    API keys return a synthetic admin user with all permissions.
+    """
+    import jwt
+    from jwt.exceptions import PyJWTError as JWTError
+
+    # Check for API key via X-API-Key header
+    if x_api_key:
+        api_key = await _validate_api_key(db, x_api_key)
+        if api_key:
+            return _api_key_to_user_response(api_key)
+
+    # Check for Bearer token (could be JWT or API key)
+    if credentials is not None:
+        token = credentials.credentials
+        # Check if it's an API key (starts with bb_)
+        if token.startswith("bb_"):
+            api_key = await _validate_api_key(db, token)
+            if api_key:
+                return _api_key_to_user_response(api_key)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid API key",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Otherwise treat as JWT
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            username: str = payload.get("sub")
+            if username is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Could not validate credentials",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        except JWTError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        user = await get_user_by_username(db, username)
+        if user is None or not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        # Reload with groups for proper permission calculation
+        result = await db.execute(select(User).where(User.id == user.id).options(selectinload(User.groups)))
+        user = result.scalar_one()
+        return _user_to_response(user)
+
+    # No credentials provided
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 @router.post("/logout")

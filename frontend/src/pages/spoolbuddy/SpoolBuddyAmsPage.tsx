@@ -239,7 +239,7 @@ export function SpoolBuddyAmsPage() {
   }, [htAms, vtTrays, isDualNozzle, trayNow, status?.active_extruder, t, getActiveSlotForAms, getNozzleSide, handleAmsSlotClick, handleExtSlotClick]);
 
   return (
-    <div className="h-full flex flex-col p-3">
+    <div className="h-full flex flex-col p-4">
       <div className="flex-1 min-h-0">
         {!selectedPrinterId ? (
           <div className="flex-1 flex items-center justify-center h-full">
@@ -287,11 +287,11 @@ export function SpoolBuddyAmsPage() {
                   return (
                     <div
                       key={key}
-                      className={`bg-bambu-dark-secondary rounded-lg px-2 py-1.5 cursor-pointer hover:bg-bambu-dark-secondary/80 transition-all flex items-center gap-2 ${isActive ? 'ring-2 ring-bambu-green' : ''}`}
+                      className={`bg-bambu-dark-secondary rounded-lg px-3 py-2 cursor-pointer hover:bg-bambu-dark-secondary/80 transition-all flex items-center gap-2 ${isActive ? 'ring-2 ring-bambu-green' : ''}`}
                       onClick={onClick}
                     >
                       {/* Spool */}
-                      <div className="relative w-8 h-8 flex-shrink-0">
+                      <div className="relative w-10 h-10 flex-shrink-0">
                         {isEmpty ? (
                           <div className="w-full h-full rounded-full border-2 border-dashed border-gray-500 flex items-center justify-center">
                             <div className="w-1.5 h-1.5 rounded-full bg-gray-600" />
@@ -312,10 +312,10 @@ export function SpoolBuddyAmsPage() {
                       {/* Info */}
                       <div className="min-w-0">
                         <div className="flex items-center gap-1">
-                          <span className="text-[10px] text-white/50 font-medium truncate">{label}</span>
+                          <span className="text-xs text-white/50 font-medium truncate">{label}</span>
                           {nozzleSide && <NozzleBadge side={nozzleSide} />}
                         </div>
-                        <div className="text-xs text-white/80 truncate">
+                        <div className="text-sm text-white/80 truncate">
                           {isEmpty ? 'Empty' : tray.tray_type || '?'}
                         </div>
                         {(temp != null || humidity != null) && (
@@ -339,7 +339,7 @@ export function SpoolBuddyAmsPage() {
                       </div>
                       {/* Fill bar */}
                       {!isEmpty && tray.remain != null && tray.remain >= 0 && (
-                        <div className="w-1 h-6 bg-bambu-dark-tertiary rounded-full overflow-hidden flex-shrink-0 flex flex-col-reverse">
+                        <div className="w-1.5 h-8 bg-bambu-dark-tertiary rounded-full overflow-hidden flex-shrink-0 flex flex-col-reverse">
                           <div
                             className="w-full rounded-full"
                             style={{
@@ -365,6 +365,7 @@ export function SpoolBuddyAmsPage() {
           printerId={selectedPrinterId}
           slotInfo={configureSlotModal}
           printerModel={mapModelCode(printer?.model ?? null) || undefined}
+          fullScreen
           onSuccess={() => {
             queryClient.invalidateQueries({ queryKey: ['slotPresets', selectedPrinterId] });
             queryClient.invalidateQueries({ queryKey: ['printerStatus', selectedPrinterId] });

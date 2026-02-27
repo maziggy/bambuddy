@@ -180,6 +180,68 @@ class TestAuthMeAPI:
         assert result["role"] == "admin"
         assert result["is_active"] is True
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_me_with_api_key_bearer(self, async_client: AsyncClient, db_session):
+        """Verify /me returns synthetic admin user when using API key via Bearer token."""
+        from backend.app.core.auth import generate_api_key
+        from backend.app.models.api_key import APIKey
+
+        # Create an API key directly in the database
+        full_key, key_hash, key_prefix = generate_api_key()
+        api_key = APIKey(name="test-kiosk", key_hash=key_hash, key_prefix=key_prefix, enabled=True)
+        db_session.add(api_key)
+        await db_session.commit()
+
+        # Call /me with the API key as Bearer token
+        response = await async_client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {full_key}"},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["id"] == 0
+        assert result["username"].startswith("api-key:")
+        assert result["role"] == "admin"
+        assert result["is_admin"] is True
+        assert result["is_active"] is True
+        assert len(result["permissions"]) > 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_me_with_api_key_header(self, async_client: AsyncClient, db_session):
+        """Verify /me returns synthetic admin user when using X-API-Key header."""
+        from backend.app.core.auth import generate_api_key
+        from backend.app.models.api_key import APIKey
+
+        full_key, key_hash, key_prefix = generate_api_key()
+        api_key = APIKey(name="test-kiosk-header", key_hash=key_hash, key_prefix=key_prefix, enabled=True)
+        db_session.add(api_key)
+        await db_session.commit()
+
+        response = await async_client.get(
+            "/api/v1/auth/me",
+            headers={"X-API-Key": full_key},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["id"] == 0
+        assert result["username"].startswith("api-key:")
+        assert result["is_admin"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_me_with_invalid_api_key(self, async_client: AsyncClient):
+        """Verify /me rejects invalid API key."""
+        response = await async_client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": "Bearer bb_invalid_key_value"},
+        )
+
+        assert response.status_code == 401
+
 
 class TestUsersAPI:
     """Integration tests for /api/v1/users/ endpoints."""

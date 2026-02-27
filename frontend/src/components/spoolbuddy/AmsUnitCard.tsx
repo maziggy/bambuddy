@@ -91,8 +91,8 @@ function HumidityIndicator({ humidity, goodThreshold = 40, fairThreshold = 60 }:
 
   return (
     <div className="flex items-center gap-0.5">
-      <DropComponent className="w-2.5 h-3" />
-      <span className="font-medium tabular-nums text-[10px]" style={{ color: textColor }}>{humidity}%</span>
+      <DropComponent className="w-3 h-3.5" />
+      <span className="font-medium tabular-nums text-xs" style={{ color: textColor }}>{humidity}%</span>
     </div>
   );
 }
@@ -114,8 +114,8 @@ function TemperatureIndicator({ temp, goodThreshold = 28, fairThreshold = 35 }: 
 
   return (
     <div className="flex items-center gap-0.5">
-      <ThermoComponent className="w-2.5 h-3" />
-      <span className="font-medium tabular-nums text-[10px]" style={{ color: textColor }}>{temp}°C</span>
+      <ThermoComponent className="w-3 h-3.5" />
+      <span className="font-medium tabular-nums text-xs" style={{ color: textColor }}>{temp}°C</span>
     </div>
   );
 }
@@ -125,7 +125,7 @@ function TemperatureIndicator({ temp, goodThreshold = 28, fairThreshold = 35 }: 
 function NozzleBadge({ side }: { side: 'L' | 'R' }) {
   return (
     <span
-      className="inline-flex items-center justify-center w-3.5 h-3.5 text-[8px] font-bold rounded"
+      className="inline-flex items-center justify-center w-4 h-4 text-[9px] font-bold rounded"
       style={{ backgroundColor: '#1a4d2e', color: '#00ae42' }}
     >
       {side}
@@ -148,11 +148,11 @@ function SpoolSlot({ tray, slotIndex, isActive, onClick }: SpoolSlotProps) {
 
   return (
     <div
-      className={`relative flex flex-col items-center p-2 rounded-lg transition-all ${isActive ? 'ring-2 ring-bambu-green' : ''} ${onClick ? 'cursor-pointer hover:bg-white/5' : ''}`}
+      className={`relative flex flex-col items-center p-2.5 rounded-lg transition-all ${isActive ? 'ring-2 ring-bambu-green' : ''} ${onClick ? 'cursor-pointer hover:bg-white/5' : ''}`}
       onClick={onClick}
     >
       {/* Spool visualization */}
-      <div className="relative w-14 h-14 mb-1">
+      <div className="relative w-16 h-16 mb-1">
         {isEmpty ? (
           <div className="w-full h-full rounded-full border-2 border-dashed border-gray-500 flex items-center justify-center">
             <div className="w-3 h-3 rounded-full bg-gray-600" />
@@ -167,12 +167,12 @@ function SpoolSlot({ tray, slotIndex, isActive, onClick }: SpoolSlotProps) {
           </svg>
         )}
         {isActive && (
-          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-bambu-green rounded-full" />
+          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2.5 h-2.5 bg-bambu-green rounded-full" />
         )}
       </div>
 
       {/* Material type */}
-      <span className="text-xs text-white/70 truncate max-w-full">
+      <span className="text-sm text-white/70 truncate max-w-full">
         {isEmpty ? 'Empty' : tray.tray_type || 'Unknown'}
       </span>
 
@@ -190,7 +190,7 @@ function SpoolSlot({ tray, slotIndex, isActive, onClick }: SpoolSlotProps) {
       )}
 
       {/* Slot number */}
-      <span className="absolute top-1 right-1 text-[10px] text-white/30">{slotIndex + 1}</span>
+      <span className="absolute top-1 right-1 text-xs text-white/30">{slotIndex + 1}</span>
     </div>
   );
 }
@@ -221,7 +221,7 @@ export function AmsUnitCard({ unit, activeSlot, onConfigureSlot, isDualNozzle, n
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-1.5">
-          <span className="text-white font-medium text-sm">{getAmsName(unit.id)}</span>
+          <span className="text-white font-medium text-base">{getAmsName(unit.id)}</span>
           {isDualNozzle && nozzleSide && (
             <NozzleBadge side={nozzleSide} />
           )}

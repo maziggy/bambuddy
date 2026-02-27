@@ -276,6 +276,8 @@ export default {
       failedToSaveDetectionArea: 'Échec enregistrement zone',
       plateCheckEnabled: 'Vérification plateau activée',
       plateCheckDisabled: 'Vérification plateau désactivée',
+      automationEnabled: 'Automatisation activée',
+      automationDisabled: 'Automatisation désactivée',
       calibrationSaved: 'Calibration enregistrée !',
       calibrationFailed: 'Échec de la calibration',
       rfidRereadInitiated: 'Lecture RFID initiée',
@@ -417,6 +419,13 @@ export default {
       labelPlaceholder: 'Étiquette...',
       clickToEdit: '{{label}} - Modifier',
       clickToAddLabel: 'Ajouter une étiquette',
+    },
+    // Automation
+    plateAutomation: {
+      noPermission: 'Vous n\'avez pas la permission de mettre à jour les imprimantes',
+      enabledClick: 'Automatisation activée - Cliquez pour désactiver',
+      disabledClick: 'Automatisation désactivée - Cliquez pour activer',
+      manageCustomization: 'Gérer le GCODE personnalisé pour l\'automatisation du plateau',
     },
     // Fans
     fans: {
@@ -744,6 +753,7 @@ export default {
     clearPlateSuccess: 'Plateau vidé — prêt pour l\'impression suivante',
     plateReady: 'Plateau vidé — prêt pour l\'impression suivante',
     plateNumber: 'Plateau {{index}}',
+    automated: 'Automatisé',
     // Sections
     sections: {
       currentlyPrinting: 'En cours',
@@ -2732,6 +2742,7 @@ export default {
     selectPlate: 'Choisir le plateau',
     filamentMapping: 'Mapping Filament',
     totalCost: 'Coût total :',
+    slotRemainingShort: ' - {{grams}}g rest.',
     printSettings: 'Réglages d\'impression',
     bedLeveling: 'Nivellement plateau',
     flowCalibration: 'Calibration débit',

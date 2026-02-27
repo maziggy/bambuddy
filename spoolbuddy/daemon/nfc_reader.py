@@ -16,9 +16,7 @@ class NFCState(Enum):
 
 class NFCReader:
     def __init__(self):
-        from read_tag import PN5180
-
-        self._nfc = PN5180()
+        self._nfc = None
         self._state = NFCState.IDLE
         self._current_uid: str | None = None
         self._current_sak: int | None = None
@@ -26,6 +24,9 @@ class NFCReader:
         self._ok = False
 
         try:
+            from read_tag import PN5180
+
+            self._nfc = PN5180()
             self._nfc.reset()
             self._nfc.load_rf_config(0x00, 0x80)
             time.sleep(0.010)
@@ -35,7 +36,7 @@ class NFCReader:
             self._ok = True
             logger.info("NFC reader initialized")
         except Exception as e:
-            logger.error("NFC reader init failed: %s", e)
+            logger.info("NFC not available: %s", e)
 
     @property
     def ok(self) -> bool:

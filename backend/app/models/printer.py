@@ -30,6 +30,8 @@ class Printer(Base):
     external_camera_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     # Plate detection - check if build plate is empty before starting print
     plate_detection_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Plate automation - simple enabled/disabled flag for automation feature
+    plate_automation_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     # ROI for plate detection (percentages: 0.0-1.0)
     plate_detection_roi_x: Mapped[float | None] = mapped_column(Float, nullable=True)  # X start %
     plate_detection_roi_y: Mapped[float | None] = mapped_column(Float, nullable=True)  # Y start %
@@ -47,6 +49,8 @@ class Printer(Base):
     )
     kprofile_notes: Mapped[list["KProfileNote"]] = relationship(back_populates="printer", cascade="all, delete-orphan")
     ams_history: Mapped[list["AMSSensorHistory"]] = relationship(back_populates="printer", cascade="all, delete-orphan")
+    # Automation entries for this printer
+    automation: Mapped[list["Automation"]] = relationship(back_populates="printer", cascade="all, delete-orphan")
 
 
 from backend.app.models.ams_history import AMSSensorHistory  # noqa: E402
@@ -55,3 +59,4 @@ from backend.app.models.kprofile_note import KProfileNote  # noqa: E402
 from backend.app.models.maintenance import PrinterMaintenance  # noqa: E402
 from backend.app.models.notification import NotificationProvider  # noqa: E402
 from backend.app.models.smart_plug import SmartPlug  # noqa: E402
+from backend.app.models.automation import Automation  # noqa: E402

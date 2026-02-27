@@ -941,6 +941,27 @@ class PrintScheduler:
         result = await db.execute(select(Printer).where(Printer.id == printer_id))
         return result.scalar_one_or_none()
 
+    async def has_pending_items(self, printer_id: int) -> bool:
+        """Check if there are pending queue items for a printer.
+
+        This is a public method that can be called from other services
+        to check if a printer has queued jobs waiting.
+
+        Args:
+            printer_id: The printer ID to check
+
+        Returns:
+            True if there are pending items, False otherwise
+        """
+        async with async_session() as db:
+            result = await db.execute(
+                select(PrintQueueItem)
+                .where(PrintQueueItem.printer_id == printer_id)
+                .where(PrintQueueItem.status == "pending")
+                .limit(1)
+            )
+            return result.scalar_one_or_none() is not None
+
     async def _start_print(self, db: AsyncSession, item: PrintQueueItem):
         """Upload file and start print for a queue item.
 

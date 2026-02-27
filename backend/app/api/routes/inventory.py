@@ -514,7 +514,12 @@ async def update_spool(
     if not spool:
         raise HTTPException(404, "Spool not found")
 
-    for field, value in spool_data.model_dump(exclude_unset=True).items():
+    update_data = spool_data.model_dump(exclude_unset=True)
+    # Auto-lock weight when user explicitly sets weight_used
+    if "weight_used" in update_data and "weight_locked" not in update_data:
+        update_data["weight_locked"] = True
+
+    for field, value in update_data.items():
         setattr(spool, field, value)
 
     await db.commit()
@@ -1049,6 +1054,11 @@ async def sync_weights_from_ams(
         spool = assignment.spool
         if not spool:
             logger.debug("AMS weight sync: assignment %d has no spool", assignment.id)
+            skipped += 1
+            continue
+
+        if spool.weight_locked:
+            logger.debug("AMS weight sync: spool %d is weight-locked, skipping", spool.id)
             skipped += 1
             continue
 

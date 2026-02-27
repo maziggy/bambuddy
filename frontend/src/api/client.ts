@@ -2808,12 +2808,17 @@ export const api = {
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
   },
-  getSource3mfForSlicer: (archiveId: number, filename: string) =>
-    `${API_BASE}/archives/${archiveId}/source/${encodeURIComponent(filename.endsWith('.3mf') ? filename : filename + '.3mf')}`,
+  getSource3mfForSlicer: (archiveId: number, filename: string) => {
+    // Sanitize: slicers url_decode() the entire URL, so / \ ? # in filenames break path routing
+    const safe = filename.replace(/[/\\?#]/g, '_');
+    return `${API_BASE}/archives/${archiveId}/source/${encodeURIComponent(safe.endsWith('.3mf') ? safe : safe + '.3mf')}`;
+  },
   createSourceSlicerToken: (archiveId: number) =>
     request<{ token: string }>(`/archives/${archiveId}/source-slicer-token`, { method: 'POST' }),
-  getSourceSlicerDownloadUrl: (archiveId: number, token: string, filename: string) =>
-    `${API_BASE}/archives/${archiveId}/source-dl/${token}/${encodeURIComponent(filename.endsWith('.3mf') ? filename : filename + '.3mf')}`,
+  getSourceSlicerDownloadUrl: (archiveId: number, token: string, filename: string) => {
+    const safe = filename.replace(/[/\\?#]/g, '_');
+    return `${API_BASE}/archives/${archiveId}/source-dl/${token}/${encodeURIComponent(safe.endsWith('.3mf') ? safe : safe + '.3mf')}`;
+  },
   uploadSource3mf: async (archiveId: number, file: File): Promise<{ status: string; filename: string }> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -2934,12 +2939,16 @@ export const api = {
     }),
   getArchiveProjectImageUrl: (archiveId: number, imagePath: string) =>
     `${API_BASE}/archives/${archiveId}/project-image/${encodeURIComponent(imagePath)}`,
-  getArchiveForSlicer: (id: number, filename: string) =>
-    `${API_BASE}/archives/${id}/file/${encodeURIComponent(filename.endsWith('.3mf') ? filename : filename + '.3mf')}`,
+  getArchiveForSlicer: (id: number, filename: string) => {
+    const safe = filename.replace(/[/\\?#]/g, '_');
+    return `${API_BASE}/archives/${id}/file/${encodeURIComponent(safe.endsWith('.3mf') ? safe : safe + '.3mf')}`;
+  },
   createArchiveSlicerToken: (archiveId: number) =>
     request<{ token: string }>(`/archives/${archiveId}/slicer-token`, { method: 'POST' }),
-  getArchiveSlicerDownloadUrl: (archiveId: number, token: string, filename: string) =>
-    `${API_BASE}/archives/${archiveId}/dl/${token}/${encodeURIComponent(filename.endsWith('.3mf') ? filename : filename + '.3mf')}`,
+  getArchiveSlicerDownloadUrl: (archiveId: number, token: string, filename: string) => {
+    const safe = filename.replace(/[/\\?#]/g, '_');
+    return `${API_BASE}/archives/${archiveId}/dl/${token}/${encodeURIComponent(safe.endsWith('.3mf') ? safe : safe + '.3mf')}`;
+  },
   getArchivePlates: (archiveId: number) =>
     request<ArchivePlatesResponse>(`/archives/${archiveId}/plates`),
   getArchiveFilamentRequirements: (archiveId: number, plateId?: number) =>

@@ -166,15 +166,14 @@ export function FilamentSection({
                     <button
                       key={option.code}
                       type="button"
-                      className={`w-full px-3 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex justify-between items-center ${
+                      className={`w-full px-3 py-2 text-left text-sm hover:bg-bambu-dark-tertiary truncate ${
                         selectedPresetOption?.code === option.code
                           ? 'bg-bambu-green/10 text-bambu-green'
                           : 'text-white'
                       }`}
                       onClick={() => handlePresetSelect(option)}
                     >
-                      <span className="truncate">{option.displayName}</span>
-                      <span className="font-mono text-xs text-bambu-gray ml-2 shrink-0">{option.code}</span>
+                      {option.displayName}
                     </button>
                   ))
                 )}

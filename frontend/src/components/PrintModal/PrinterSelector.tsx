@@ -389,28 +389,30 @@ export function PrinterSelector({
       {/* Model selection and location filter (when in model mode) */}
       {assignmentMode === 'model' && modelAssignmentAvailable && (
         <div className="space-y-3 mb-4">
-          {/* Model selector */}
-          <div>
-            <label className="block text-xs text-bambu-gray mb-1">Target Model</label>
-            <select
-              value={targetModel || ''}
-              onChange={(e) => {
-                onTargetModelChange!(e.target.value || null);
-                // Clear location when model changes
-                if (onTargetLocationChange) {
-                  onTargetLocationChange(null);
-                }
-              }}
-              className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none text-sm"
-            >
-              <option value="">Select a model...</option>
-              {uniqueModels.map((model) => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Model selector — only show when sliced model is unknown */}
+          {!slicedForModel && (
+            <div>
+              <label className="block text-xs text-bambu-gray mb-1">Target Model</label>
+              <select
+                value={targetModel || ''}
+                onChange={(e) => {
+                  onTargetModelChange!(e.target.value || null);
+                  // Clear location when model changes
+                  if (onTargetLocationChange) {
+                    onTargetLocationChange(null);
+                  }
+                }}
+                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none text-sm"
+              >
+                <option value="">Select a model...</option>
+                {uniqueModels.map((model) => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Location filter (only show when target model is selected and locations exist) */}
           {targetModel && uniqueLocations.length > 0 && onTargetLocationChange && (

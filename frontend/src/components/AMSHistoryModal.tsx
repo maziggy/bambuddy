@@ -87,20 +87,29 @@ export function AMSHistoryModal({
   if (!isOpen) return null;
 
   // Format data for chart
-  const chartData = data?.data.map(point => {
+  const rawPoints = data?.data.map(point => {
     const date = parseUTCDate(point.recorded_at) || new Date();
-    const timeOptions: Intl.DateTimeFormatOptions = {
-      hour: '2-digit',
-      minute: '2-digit',
-      ...(hours > 24 ? { day: 'numeric', month: 'short' } : {}),
-    };
     return {
       time: date.getTime(),
       humidity: point.humidity,
       temperature: point.temperature,
-      timeLabel: date.toLocaleTimeString([], applyTimeFormat(timeOptions, timeFormat)),
     };
   }) || [];
+
+  // Pad edges so the line extends across the full time window
+  const domainStart = Date.now() - hours * 60 * 60 * 1000;
+  const domainEnd = Date.now();
+  const chartData = [...rawPoints];
+  if (chartData.length > 0) {
+    const first = chartData[0];
+    if (first.time > domainStart) {
+      chartData.unshift({ ...first, time: domainStart });
+    }
+    const last = chartData[chartData.length - 1];
+    if (last.time < domainEnd) {
+      chartData.push({ ...last, time: domainEnd });
+    }
+  }
 
   // Get thresholds
   const humidityGood = thresholds?.humidityGood || 40;
@@ -313,7 +322,7 @@ export function AMSHistoryModal({
                   <XAxis
                     dataKey="time"
                     type="number"
-                    domain={['dataMin', 'dataMax']}
+                    domain={[Date.now() - hours * 60 * 60 * 1000, Date.now()]}
                     tickFormatter={(ts) => {
                       const date = new Date(ts);
                       if (hours > 24) {
@@ -372,6 +381,7 @@ export function AMSHistoryModal({
                     strokeWidth={2}
                     dot={false}
                     activeDot={{ r: 4 }}
+                    connectNulls={true}
                   />
                 </LineChart>
               </ResponsiveContainer>

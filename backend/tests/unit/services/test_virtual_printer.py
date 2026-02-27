@@ -104,7 +104,7 @@ class TestVirtualPrinterInstance:
 
     def test_get_status_returns_correct_format(self, instance):
         """Verify get_status returns expected fields."""
-        instance._pending_files = {"file1.3mf": Path("/tmp/file1.3mf")}
+        instance._pending_files = {"file1.3mf": Path("/tmp/file1.3mf")}  # nosec B108
         mock_task = MagicMock(done=MagicMock(return_value=False))
         instance._tasks = [mock_task]
 
@@ -149,10 +149,10 @@ class TestVirtualPrinterInstance:
     async def test_archive_file_skips_non_3mf(self, instance):
         """Verify non-3MF files are skipped and cleaned up."""
         instance._session_factory = MagicMock()
-        instance._pending_files["verify_job"] = Path("/tmp/verify_job")
+        instance._pending_files["verify_job"] = Path("/tmp/verify_job")  # nosec B108
 
         with patch("pathlib.Path.unlink"):
-            await instance._archive_file(Path("/tmp/verify_job"), "192.168.1.100")
+            await instance._archive_file(Path("/tmp/verify_job"), "192.168.1.100")  # nosec B108
 
             assert "verify_job" not in instance._pending_files
 
@@ -255,7 +255,7 @@ class TestVirtualPrinterManager:
         )
         mock_task = MagicMock(done=MagicMock(return_value=False))
         inst._tasks = [mock_task]
-        inst._pending_files = {"file1.3mf": Path("/tmp/file1.3mf")}
+        inst._pending_files = {"file1.3mf": Path("/tmp/file1.3mf")}  # nosec B108
         manager._instances[1] = inst
 
         status = manager.get_status()
@@ -1020,7 +1020,7 @@ class TestVirtualPrinterInstanceIPOverride:
             patch.object(
                 instance_with_remote_ip._cert_service,
                 "generate_certificates",
-                return_value=(Path("/tmp/cert.pem"), Path("/tmp/key.pem")),
+                return_value=(Path("/tmp/cert.pem"), Path("/tmp/key.pem")),  # nosec B108
             ) as mock_gen,
         ):
             instance_with_remote_ip.generate_certificates()
@@ -1046,7 +1046,7 @@ class TestVirtualPrinterInstanceIPOverride:
             patch.object(
                 inst._cert_service,
                 "generate_certificates",
-                return_value=(Path("/tmp/cert.pem"), Path("/tmp/key.pem")),
+                return_value=(Path("/tmp/cert.pem"), Path("/tmp/key.pem")),  # nosec B108
             ) as mock_gen,
         ):
             inst.generate_certificates()
@@ -1071,7 +1071,7 @@ class TestVirtualPrinterInstanceIPOverride:
             patch.object(
                 inst._cert_service,
                 "generate_certificates",
-                return_value=(Path("/tmp/cert.pem"), Path("/tmp/key.pem")),
+                return_value=(Path("/tmp/cert.pem"), Path("/tmp/key.pem")),  # nosec B108
             ) as mock_gen,
         ):
             inst.generate_certificates()

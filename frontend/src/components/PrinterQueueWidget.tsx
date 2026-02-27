@@ -12,9 +12,11 @@ interface PrinterQueueWidgetProps {
   printerModel?: string | null;
   printerState?: string | null;
   plateCleared?: boolean;
+  loadedFilamentTypes?: Set<string>;
+  loadedFilaments?: Set<string>;  // "TYPE:rrggbb" pairs for filament override color matching
 }
 
-export function PrinterQueueWidget({ printerId, printerModel, printerState, plateCleared }: PrinterQueueWidgetProps) {
+export function PrinterQueueWidget({ printerId, printerModel, printerState, plateCleared, loadedFilamentTypes, loadedFilaments }: PrinterQueueWidgetProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -37,8 +39,29 @@ export function PrinterQueueWidget({ printerId, printerModel, printerState, plat
     },
   });
 
-  const nextItem = queue?.[0];
-  const totalPending = queue?.length || 0;
+  // Filter queue to items this printer can actually print (filament type + color check)
+  const compatibleQueue = queue?.filter(item => {
+    // Type check: all required filament types must be loaded
+    if (item.required_filament_types?.length && loadedFilamentTypes?.size) {
+      if (!item.required_filament_types.every((t: string) => loadedFilamentTypes.has(t.toUpperCase()))) {
+        return false;
+      }
+    }
+    // Color check: if filament overrides specify colors, at least one must match
+    // Mirrors backend _count_override_color_matches() logic
+    if (item.filament_overrides?.length && loadedFilaments?.size) {
+      const hasColorMatch = item.filament_overrides.some(o => {
+        const oType = (o.type || '').toUpperCase();
+        const oColor = (o.color || '').replace('#', '').toLowerCase().slice(0, 6);
+        return loadedFilaments.has(`${oType}:${oColor}`);
+      });
+      if (!hasColorMatch) return false;
+    }
+    return true;
+  });
+
+  const nextItem = compatibleQueue?.[0];
+  const totalPending = compatibleQueue?.length || 0;
 
   if (totalPending === 0) {
     return null;

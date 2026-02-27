@@ -654,9 +654,11 @@ export function SettingsPage() {
     mutationFn: api.updateSettings,
     onSuccess: (data) => {
       queryClient.setQueryData(['settings'], data);
-      // Sync localSettings with the saved data to prevent re-triggering saves
-      setLocalSettings(data);
-      // Invalidate archive stats to reflect energy tracking mode change
+      // Don't call setLocalSettings(data) here — it would overwrite in-progress
+      // user input (e.g. typing a hostname) with the stale saved snapshot,
+      // causing the text field to reset mid-typing. Instead, let the useEffect
+      // re-compare the updated `settings` with current `localSettings` and
+      // debounce-save any remaining differences.
       queryClient.invalidateQueries({ queryKey: ['archiveStats'] });
       showToast(t('settings.toast.settingsSaved'), 'success');
     },

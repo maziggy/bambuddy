@@ -1224,6 +1224,12 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already applied
 
+    # Migration: Add weight_locked flag to spool table (skip AMS auto-sync for manually-entered weights)
+    try:
+        await conn.execute(text("ALTER TABLE spool ADD COLUMN weight_locked BOOLEAN DEFAULT 0"))
+    except OperationalError:
+        pass  # Already applied
+
     # Migration: Add cost tracking fields to spool table
     try:
         await conn.execute(text("ALTER TABLE spool ADD COLUMN cost_per_kg REAL"))

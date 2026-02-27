@@ -101,6 +101,11 @@ class PrintQueueItemResponse(BaseModel):
     printer_name: str | None = None
     print_time_seconds: int | None = None  # Estimated print time from archive or library file
     filament_used_grams: float | None = None  # Estimated print weight from archive or library file
+    filament_type: str | None = None  # e.g. "PLA", "PETG" (from archive/library file)
+    filament_color: str | None = None  # e.g. "#FFFFFF" (from archive/library file)
+    layer_height: float | None = None  # e.g. 0.2 (from archive/library file)
+    nozzle_diameter: float | None = None  # e.g. 0.4 (from archive/library file)
+    sliced_for_model: str | None = None  # e.g. "P1S" (from archive/library file)
 
     # User tracking (Issue #206)
     created_by_id: int | None = None

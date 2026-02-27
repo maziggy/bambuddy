@@ -376,9 +376,13 @@ download_spoolbuddy() {
         cd "$INSTALL_PATH"
         run_with_progress "Fetching updates" git fetch origin
         git reset --hard origin/main > /dev/null 2>&1
+	cd "$INSTALL_PATH"
+        git checkout 0.2.2b1
     else
         mkdir -p "$INSTALL_PATH"
         run_with_progress "Cloning repository" git clone "$GITHUB_REPO" "$INSTALL_PATH"
+        cd "$INSTALL_PATH"
+        git checkout 0.2.2b1
     fi
 
     chown -R "$SPOOLBUDDY_SERVICE_USER:$SPOOLBUDDY_SERVICE_USER" "$INSTALL_PATH"
@@ -573,6 +577,7 @@ strip_services() {
 
     local services=(
         bluetooth.service
+        lightdm.service
         cloud-init-local.service
         cloud-init.service
         cloud-init-network.service
@@ -593,7 +598,7 @@ strip_services() {
     for svc in "${services[@]}"; do
         if systemctl is-enabled "$svc" &>/dev/null; then
             systemctl disable "$svc" 2>/dev/null || true
-            (( disabled++ ))
+            (( ++disabled ))
         fi
     done
 
@@ -635,7 +640,7 @@ strip_packages() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Kiosk Setup (labwc + Chromium + squeekboard + Plymouth splash)
+# Kiosk Setup (labwc + Chromium + wvkbd + Plymouth splash)
 # ─────────────────────────────────────────────────────────────────────────────
 
 setup_kiosk() {
@@ -651,7 +656,7 @@ setup_kiosk() {
     info "Kiosk URL:  $KIOSK_URL"
 
     # ── Install kiosk packages ────────────────────────────────────────────
-    run_with_progress "Installing kiosk packages" apt-get install -y labwc chromium squeekboard plymouth wlr-randr
+    run_with_progress "Installing kiosk packages" apt-get install -y labwc chromium wvkbd plymouth wlr-randr
 
     # ── config.txt tweaks ─────────────────────────────────────────────────
     local boot_config="/boot/firmware/config.txt"
@@ -809,13 +814,8 @@ EOF
 # Force 1024x600 (panel doesn't advertise this natively)
 wlr-randr --output HDMI-A-1 --custom-mode 1024x600@60 &
 
-# Enable on-screen keyboard (squeekboard auto-shows on text focus)
-gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true &
-
-# Start squeekboard and move it to overlay layer (layer 3) so it renders above fullscreen
-squeekboard &
-sleep 1
-dbus-send --type=method_call --dest=sm.puri.OSK0 /sm/puri/OSK0 sm.puri.OSK0.SetLayer int32:3 &
+# On-screen keyboard (wvkbd uses wlr-layer-shell, renders above fullscreen)
+wvkbd-mobintl --hidden &
 
 # Launch Chromium in kiosk mode (fullscreen)
 chromium --kiosk --no-first-run --disable-infobars \\
@@ -1047,13 +1047,13 @@ main() {
     strip_packages
     echo ""
 
-    # ── Step 2c: Kiosk setup (labwc + Chromium + squeekboard + Plymouth) ──
-    setup_kiosk
-    echo ""
-
     # ── Step 3: Download source code ──────────────────────────────────────
     create_spoolbuddy_user
     download_spoolbuddy
+    echo ""
+
+    # ── Step 3b: Kiosk setup (labwc + Chromium + squeekboard + Plymouth) ──
+    setup_kiosk
     echo ""
 
     # ── Step 4: SpoolBuddy setup ──────────────────────────────────────────

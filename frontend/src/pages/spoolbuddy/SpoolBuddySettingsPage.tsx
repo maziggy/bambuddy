@@ -67,7 +67,7 @@ function ScaleCalibration({ device, weight, weightStable, rawAdc }: {
 
   return (
     <div className="bg-zinc-800 rounded-lg p-4">
-      <h3 className="text-sm font-semibold text-zinc-100 mb-4">
+      <h3 className="text-base font-semibold text-zinc-100 mb-4">
         {t('spoolbuddy.settings.scaleCalibration', 'Scale Calibration')}
       </h3>
 
@@ -126,7 +126,7 @@ function ScaleCalibration({ device, weight, weightStable, rawAdc }: {
                 type="number"
                 value={knownWeight}
                 onChange={(e) => setKnownWeight(Number(e.target.value))}
-                className="w-24 px-2 py-1.5 bg-zinc-900 border border-zinc-600 rounded text-sm text-zinc-100 focus:outline-none focus:border-green-500"
+                className="w-24 px-2 py-2 bg-zinc-900 border border-zinc-600 rounded text-sm text-zinc-100 focus:outline-none focus:border-green-500 min-h-[44px]"
                 min={1}
               />
             </div>
@@ -158,7 +158,7 @@ function DeviceInfoCard({ device }: { device: SpoolBuddyDevice }) {
 
   return (
     <div className="bg-zinc-800 rounded-lg p-4">
-      <h3 className="text-sm font-semibold text-zinc-100 mb-4">
+      <h3 className="text-base font-semibold text-zinc-100 mb-4">
         {t('spoolbuddy.settings.deviceInfo', 'Device Info')}
       </h3>
 
@@ -223,7 +223,7 @@ export function SpoolBuddySettingsPage() {
 
   return (
     <div className="h-full flex flex-col p-4">
-      <h1 className="text-lg font-semibold text-zinc-100 mb-4">
+      <h1 className="text-xl font-semibold text-zinc-100 mb-4">
         {t('spoolbuddy.nav.settings', 'Settings')}
       </h1>
 

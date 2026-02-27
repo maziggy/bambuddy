@@ -131,7 +131,7 @@ export function SpoolInfoCard({ spool, scaleWeight, weightStable, onClose, onSyn
       </div>
 
       {/* Details grid */}
-      <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm bg-zinc-800 rounded-lg p-3 w-full">
+      <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm bg-zinc-800 rounded-lg p-4 w-full">
         <div className="flex justify-between">
           <span className="text-zinc-500">{t('spoolbuddy.dashboard.grossWeight', 'Gross weight')}</span>
           <span className="font-mono text-zinc-300">{grossWeight !== null ? `${grossWeight}g` : '\u2014'}</span>
@@ -150,16 +150,16 @@ export function SpoolInfoCard({ spool, scaleWeight, weightStable, onClose, onSyn
             <span className={`flex items-center gap-1 font-mono ${isMatch ? 'text-green-500' : 'text-yellow-500'}`}>
               {grossWeight}g
               {isMatch ? (
-                <Check className="w-3 h-3" />
+                <Check className="w-3.5 h-3.5" />
               ) : (
                 <>
-                  <AlertTriangle className="w-3 h-3" />
+                  <AlertTriangle className="w-3.5 h-3.5" />
                   <button
                     onClick={handleSyncWeight}
                     className="p-1 hover:bg-green-500/20 rounded transition-colors text-green-500"
                     title={t('spoolbuddy.dashboard.syncWeight', 'Sync Weight')}
                   >
-                    <RefreshCw className="w-3.5 h-3.5" />
+                    <RefreshCw className="w-4 h-4" />
                   </button>
                 </>
               )}

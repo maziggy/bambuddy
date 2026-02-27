@@ -29,9 +29,9 @@ export function SpoolBuddyStatusBar({ alert }: SpoolBuddyStatusBarProps) {
     : 'border-bambu-dark-tertiary';
 
   return (
-    <div className={`h-8 bg-bambu-dark-secondary border-t-2 ${borderColor} flex items-center px-3 gap-3 shrink-0`}>
+    <div className={`h-9 bg-bambu-dark-secondary border-t-2 ${borderColor} flex items-center px-3 gap-3 shrink-0`}>
       {/* Status LED */}
-      <div className={`w-3 h-3 rounded-full ${statusColor} animate-pulse`} />
+      <div className={`w-3.5 h-3.5 rounded-full ${statusColor} animate-pulse`} />
 
       {/* Status message */}
       <div className="flex-1 text-sm text-white/50 truncate">

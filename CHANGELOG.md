@@ -4,6 +4,9 @@ All notable changes to Bambuddy will be documented in this file.
 
 ## [0.2.2b1] - Unrelased
 
+### Improved
+- **SpoolBuddy Touch-Friendly UI** — Enlarged all interactive elements across the SpoolBuddy kiosk UI for comfortable finger use on the 1024×600 RPi touchscreen. Bottom nav icons and labels increased (20→24px icons, 10→12px labels, 48→56px bar height). Top bar printer selector and clock enlarged. Dashboard stats bar compacted, printers card removed (printer selection via top bar is sufficient), section headers and device status text bumped up. AMS page single-slot cards, spool visualizations, and fill bars enlarged. AMS unit cards get larger spool previews (56→64px), bigger material/slot text, and larger humidity/temperature indicators. Inventory spool cards, settings page headers, and calibration inputs all sized up to meet 44px minimum tap targets. The AMS slot configuration modal now renders in a two-column full-screen layout on the kiosk display (filament list on left, K-profile and color picker on right) instead of the standard centered dialog, eliminating scrolling.
+
 ### New Features
 - **SpoolBuddy Kiosk Auth Bypass via API Key** — When Bambuddy auth is enabled, the SpoolBuddy kiosk (Chromium on RPi) was redirected to the login page because the `ProtectedRoute` requires a user object from `GET /auth/me`, which only accepted JWT tokens. The `/auth/me` endpoint now also accepts API keys (via `Authorization: Bearer bb_xxx` or `X-API-Key` header) and returns a synthetic admin user with all permissions. The frontend's `AuthContext` reads an optional `?token=` URL parameter on first load, stores it in localStorage, and strips it from the URL to prevent leakage via browser history or referrer. The install script now includes the API key in the kiosk URL (`/spoolbuddy?token=${API_KEY}`), so the device authenticates automatically on boot without manual login.
 

@@ -55,7 +55,7 @@ BAMBUDDY_PORT="8000"
 NON_INTERACTIVE="false"
 REBOOT_NEEDED="false"
 KIOSK_USER=""            # auto-detected from $SUDO_USER
-KIOSK_URL=""             # derived from $BAMBUDDY_URL/spoolbuddy
+KIOSK_URL=""             # derived from $BAMBUDDY_URL/spoolbuddy?token=$API_KEY
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -648,7 +648,7 @@ setup_kiosk() {
 
     # Detect kiosk user (the human user who ran sudo)
     KIOSK_USER="${SUDO_USER:-$(logname 2>/dev/null || echo pi)}"
-    KIOSK_URL="${BAMBUDDY_URL}/spoolbuddy"
+    KIOSK_URL="${BAMBUDDY_URL}/spoolbuddy?token=${API_KEY}"
     local KIOSK_HOME
     KIOSK_HOME=$(eval echo "~$KIOSK_USER")
 

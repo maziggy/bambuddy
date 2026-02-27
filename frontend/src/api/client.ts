@@ -100,7 +100,21 @@ export interface Printer {
   external_camera_type: string | null;  // "mjpeg", "rtsp", "snapshot"
   external_camera_enabled: boolean;
   plate_detection_enabled: boolean;  // Check plate before print
+  plate_automation_enabled?: boolean; // Automation enabled flag
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Automation {
+  id: number;
+  printer_id: number;
+  start_code: string | null;
+  start_code_detect: string | null;
+  start_code_after: string | null;
+  end_code: string | null;
+  end_code_detect: string | null;
+  end_code_after: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -268,6 +282,7 @@ export interface PrinterCreate {
   external_camera_type?: string | null;
   external_camera_enabled?: boolean;
   plate_detection_enabled?: boolean;
+  plate_automation_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
 }
 
@@ -2352,6 +2367,23 @@ export const api = {
       method: 'POST',
     }),
 
+  // Plate Automation CRUD
+  getAutomations: (printerId: number) => request<Automation[]>(`/printers/${printerId}/automation`),
+  createAutomation: (printerId: number, data: Partial<Automation>) =>
+    request<Automation>(`/printers/${printerId}/automation`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateAutomation: (automationId: number, data: Partial<Automation>) =>
+    request<Automation>(`/automation/${automationId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteAutomation: (automationId: number) =>
+    request<void>(`/automation/${automationId}`, {
+      method: 'DELETE',
+    }),
+
   // Skip Objects
   getPrintableObjects: (printerId: number) =>
     request<{
@@ -2808,12 +2840,17 @@ export const api = {
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
   },
-  getSource3mfForSlicer: (archiveId: number, filename: string) =>
-    `${API_BASE}/archives/${archiveId}/source/${encodeURIComponent(filename.endsWith('.3mf') ? filename : filename + '.3mf')}`,
+  getSource3mfForSlicer: (archiveId: number, filename: string) => {
+    // Sanitize: slicers url_decode() the entire URL, so / \ ? # in filenames break path routing
+    const safe = filename.replace(/[/\\?#]/g, '_');
+    return `${API_BASE}/archives/${archiveId}/source/${encodeURIComponent(safe.endsWith('.3mf') ? safe : safe + '.3mf')}`;
+  },
   createSourceSlicerToken: (archiveId: number) =>
     request<{ token: string }>(`/archives/${archiveId}/source-slicer-token`, { method: 'POST' }),
-  getSourceSlicerDownloadUrl: (archiveId: number, token: string, filename: string) =>
-    `${API_BASE}/archives/${archiveId}/source-dl/${token}/${encodeURIComponent(filename.endsWith('.3mf') ? filename : filename + '.3mf')}`,
+  getSourceSlicerDownloadUrl: (archiveId: number, token: string, filename: string) => {
+    const safe = filename.replace(/[/\\?#]/g, '_');
+    return `${API_BASE}/archives/${archiveId}/source-dl/${token}/${encodeURIComponent(safe.endsWith('.3mf') ? safe : safe + '.3mf')}`;
+  },
   uploadSource3mf: async (archiveId: number, file: File): Promise<{ status: string; filename: string }> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -2934,12 +2971,16 @@ export const api = {
     }),
   getArchiveProjectImageUrl: (archiveId: number, imagePath: string) =>
     `${API_BASE}/archives/${archiveId}/project-image/${encodeURIComponent(imagePath)}`,
-  getArchiveForSlicer: (id: number, filename: string) =>
-    `${API_BASE}/archives/${id}/file/${encodeURIComponent(filename.endsWith('.3mf') ? filename : filename + '.3mf')}`,
+  getArchiveForSlicer: (id: number, filename: string) => {
+    const safe = filename.replace(/[/\\?#]/g, '_');
+    return `${API_BASE}/archives/${id}/file/${encodeURIComponent(safe.endsWith('.3mf') ? safe : safe + '.3mf')}`;
+  },
   createArchiveSlicerToken: (archiveId: number) =>
     request<{ token: string }>(`/archives/${archiveId}/slicer-token`, { method: 'POST' }),
-  getArchiveSlicerDownloadUrl: (archiveId: number, token: string, filename: string) =>
-    `${API_BASE}/archives/${archiveId}/dl/${token}/${encodeURIComponent(filename.endsWith('.3mf') ? filename : filename + '.3mf')}`,
+  getArchiveSlicerDownloadUrl: (archiveId: number, token: string, filename: string) => {
+    const safe = filename.replace(/[/\\?#]/g, '_');
+    return `${API_BASE}/archives/${archiveId}/dl/${token}/${encodeURIComponent(safe.endsWith('.3mf') ? safe : safe + '.3mf')}`;
+  },
   getArchivePlates: (archiveId: number) =>
     request<ArchivePlatesResponse>(`/archives/${archiveId}/plates`),
   getArchiveFilamentRequirements: (archiveId: number, plateId?: number) =>

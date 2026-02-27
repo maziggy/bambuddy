@@ -388,15 +388,15 @@ export function ConfigureAmsSlotModal({
           tempMin = 240;
           tempMax = 280;
         } else if (material.includes('TPU')) {
-        tempMin = 200;
-        tempMax = 240;
-      } else if (material === 'PCTG') {
-        tempMin = 220;
-        tempMax = 260;
-      } else if (material.includes('PC')) {
-        tempMin = 260;
-        tempMax = 300;
-      } else if (material.includes('PA') || material.includes('NYLON')) {
+          tempMin = 200;
+          tempMax = 240;
+        } else if (material === 'PCTG') {
+          tempMin = 220;
+          tempMax = 260;
+        } else if (material.includes('PC')) {
+          tempMin = 260;
+          tempMax = 300;
+        } else if (material.includes('PA') || material.includes('NYLON')) {
           tempMin = 250;
           tempMax = 290;
         }

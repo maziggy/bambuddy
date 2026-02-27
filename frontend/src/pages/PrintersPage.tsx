@@ -38,6 +38,7 @@ import {
   AirVent,
   Download,
   ScanSearch,
+  Recycle,
   CheckCircle,
   XCircle,
   User,
@@ -47,7 +48,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi } from '../api/client';
 import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
-import type { Printer, PrinterCreate, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment } from '../api/client';
+import type { Printer, PrinterCreate, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, Automation } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -61,6 +62,7 @@ import { FilamentHoverCard, EmptySlotHoverCard } from '../components/FilamentHov
 import { LinkSpoolModal } from '../components/LinkSpoolModal';
 import { AssignSpoolModal } from '../components/AssignSpoolModal';
 import { ConfigureAmsSlotModal } from '../components/ConfigureAmsSlotModal';
+import { PlateAutomationModal } from '../components/PlateAutomationModal';
 import { useToast } from '../contexts/ToastContext';
 import { ChamberLight } from '../components/icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';
@@ -1495,10 +1497,15 @@ function PrinterCard({
     roi?: { x: number; y: number; w: number; h: number };
   } | null>(null);
   const [isCheckingPlate, setIsCheckingPlate] = useState(false);
+  const [isAutomation, setIsAutomation] = useState(false);
   const [isCalibrating, setIsCalibrating] = useState(false);
   const [editingRoi, setEditingRoi] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [isSavingRoi, setIsSavingRoi] = useState(false);
   const [plateCheckLightWasOff, setPlateCheckLightWasOff] = useState(false);
+  const [showPlateAutomationModal, setShowPlateAutomationModal] = useState(false);
+  const [plateAutomationInitial, setPlateAutomationInitial] = useState<Automation | null>(null);
+
+  // Plate automation: only a simple enabled/disabled toggle is supported
 
   const { data: status } = useQuery({
     queryKey: ['printerStatus', printer.id],
@@ -1539,6 +1546,45 @@ function PrinterCard({
     }
     return Array.from(ids);
   }, [status?.ams, status?.vt_tray, status?.nozzle_rack]);
+
+  // Collect loaded filament types for queue widget filtering
+  const loadedFilamentTypes = useMemo(() => {
+    const types = new Set<string>();
+    if (status?.ams) {
+      for (const ams of status.ams) {
+        for (const tray of ams.tray || []) {
+          if (tray.tray_type) types.add(tray.tray_type.toUpperCase());
+        }
+      }
+    }
+    for (const vt of status?.vt_tray ?? []) {
+      if (vt.tray_type) types.add(vt.tray_type.toUpperCase());
+    }
+    return types;
+  }, [status?.ams, status?.vt_tray]);
+
+  // Collect loaded filament type+color pairs for queue widget override matching
+  // Format: "TYPE:rrggbb" (e.g., "PETG:ffffff") — mirrors backend _count_override_color_matches()
+  const loadedFilaments = useMemo(() => {
+    const filaments = new Set<string>();
+    if (status?.ams) {
+      for (const ams of status.ams) {
+        for (const tray of ams.tray || []) {
+          if (tray.tray_type && tray.tray_color) {
+            const color = tray.tray_color.replace('#', '').toLowerCase().slice(0, 6);
+            filaments.add(`${tray.tray_type.toUpperCase()}:${color}`);
+          }
+        }
+      }
+    }
+    for (const vt of status?.vt_tray ?? []) {
+      if (vt.tray_type && vt.tray_color) {
+        const color = vt.tray_color.replace('#', '').toLowerCase().slice(0, 6);
+        filaments.add(`${vt.tray_type.toUpperCase()}:${color}`);
+      }
+    }
+    return filaments;
+  }, [status?.ams, status?.vt_tray]);
 
   // Fetch cloud filament info for tooltips (name includes color, also has K value)
   const { data: filamentInfo } = useQuery({
@@ -1774,6 +1820,16 @@ function PrinterCard({
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToUpdateSetting'), 'error'),
   });
 
+  // Plate automation setting mutation (scaffold)
+  const plateAutomationMutation = useMutation({
+    mutationFn: (enabled: boolean) => api.updatePrinter(printer.id, { plate_automation_enabled: enabled }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['printers'] });
+      showToast(plateAutomationMutation.variables ? t('printers.toast.automationEnabled') : t('printers.toast.automationDisabled'));
+    },
+    onError: (error: Error) => showToast(error.message || t('printers.toast.failedToUpdateSetting'), 'error'),
+  });
+
   // Query for printable objects (for skip functionality)
   // Fetch when printing with 2+ objects OR when modal is open
   const isPrintingWithObjects = (status?.state === 'RUNNING' || status?.state === 'PAUSE') && (status?.printable_objects_count ?? 0) >= 2;
@@ -1847,6 +1903,26 @@ function PrinterCard({
   // Toggle plate detection enabled/disabled
   const handleTogglePlateDetection = () => {
     plateDetectionMutation.mutate(!printer.plate_detection_enabled);
+  };
+
+  // Toggle plate automation enabled/disabled
+  const handleTogglePlateAutomation = () => {
+    plateAutomationMutation.mutate(!(printer.plate_automation_enabled));
+  };
+
+  // Open plate automation modal (load existing automation config)
+  const handleOpenPlateAutomation = async () => {
+    setIsAutomation(true);
+    try {
+      const data = await api.getAutomations(printer.id);
+      const record = Array.isArray(data) && data.length > 0 ? data[0] : null;
+      setPlateAutomationInitial(record);
+      setShowPlateAutomationModal(true);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : t('printers.toast.failedToLoadAutomation'), 'error');
+    } finally {
+      setIsAutomation(false);
+    }
   };
 
   // Open plate detection management modal (for calibration/references)
@@ -1953,6 +2029,7 @@ function PrinterCard({
       setIsSavingRoi(false);
     }
   };
+  
 
   // Close plate check modal on Escape key
   useEffect(() => {
@@ -2473,7 +2550,7 @@ function PrinterCard({
                 </div>
 
                 {/* Queue Widget - always visible when there are pending items */}
-                <PrinterQueueWidget printerId={printer.id} printerModel={printer.model} printerState={status.state} plateCleared={status.plate_cleared} />
+                <PrinterQueueWidget printerId={printer.id} printerModel={printer.model} printerState={status.state} plateCleared={status.plate_cleared} plateAutomation={printer.plate_automation_enabled} loadedFilamentTypes={loadedFilamentTypes} loadedFilaments={loadedFilaments} />
               </>
             )}
 
@@ -3586,6 +3663,39 @@ function PrinterCard({
                   )}
                 </Button>
               </div>
+              
+              {/* Plate automation toggle (simple on/off) */}
+              <div className={`inline-flex rounded-md ${printer.plate_automation_enabled ? 'ring-1 ring-green-500' : ''} ml-2`}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleTogglePlateAutomation}
+                  disabled={!status?.connected || plateAutomationMutation.isPending || !hasPermission('printers:update')}
+                  title={!hasPermission('printers:update') ? t('printers.plateAutomation.noPermission') : (printer.plate_automation_enabled ? t('printers.plateAutomation.enabledClick') : t('printers.plateAutomation.disabledClick'))}
+                  className={`!rounded-r-none !border-r-0 ${printer.plate_automation_enabled ? "!border-green-500 !text-green-400 hover:!bg-green-500/20" : ""}`}
+                >
+                  {plateAutomationMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Recycle className="w-4 h-4" />
+                  )}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleOpenPlateAutomation}
+                  disabled={!status?.connected || isAutomation || !hasPermission('printers:update')}
+                  title={!hasPermission('printers:update') ? t('printers.plateAutomation.noPermission') : t('printers.plateAutomation.manageCustomization')}
+                  className={`!rounded-l-none !px-1.5 ${printer.plate_automation_enabled ? "!border-green-500 !text-green-400 hover:!bg-green-500/20" : ""}`}
+                >
+                  {isAutomation ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3" />
+                  )}
+                </Button>
+              </div>
+
               <Button
                 variant="secondary"
                 size="sm"
@@ -3616,6 +3726,20 @@ function PrinterCard({
           printerId={printer.id}
           printerName={printer.name}
           onClose={() => setShowMQTTDebug(false)}
+        />
+      )}
+
+      {/* Plate Automation Modal */}
+      {showPlateAutomationModal && (
+        <PlateAutomationModal
+          isOpen={showPlateAutomationModal}
+          onClose={() => setShowPlateAutomationModal(false)}
+          printerId={printer.id}
+          initial={plateAutomationInitial}
+            onSaved={() => {
+            queryClient.invalidateQueries({ queryKey: ['printers'] });
+            queryClient.invalidateQueries({ queryKey: ['printer', printer.id] });
+          }}
         />
       )}
 

@@ -12,9 +12,12 @@ interface PrinterQueueWidgetProps {
   printerModel?: string | null;
   printerState?: string | null;
   plateCleared?: boolean;
+  plateAutomation?: boolean;
+  loadedFilamentTypes?: Set<string>;
+  loadedFilaments?: Set<string>;  // "TYPE:rrggbb" pairs for filament override color matching
 }
 
-export function PrinterQueueWidget({ printerId, printerModel, printerState, plateCleared }: PrinterQueueWidgetProps) {
+export function PrinterQueueWidget({ printerId, printerModel, printerState, plateCleared, plateAutomation, loadedFilamentTypes, loadedFilaments }: PrinterQueueWidgetProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -37,14 +40,35 @@ export function PrinterQueueWidget({ printerId, printerModel, printerState, plat
     },
   });
 
-  const nextItem = queue?.[0];
-  const totalPending = queue?.length || 0;
+  // Filter queue to items this printer can actually print (filament type + color check)
+  const compatibleQueue = queue?.filter(item => {
+    // Type check: all required filament types must be loaded
+    if (item.required_filament_types?.length && loadedFilamentTypes?.size) {
+      if (!item.required_filament_types.every((t: string) => loadedFilamentTypes.has(t.toUpperCase()))) {
+        return false;
+      }
+    }
+    // Color check: if filament overrides specify colors, at least one must match
+    // Mirrors backend _count_override_color_matches() logic
+    if (item.filament_overrides?.length && loadedFilaments?.size) {
+      const hasColorMatch = item.filament_overrides.some(o => {
+        const oType = (o.type || '').toUpperCase();
+        const oColor = (o.color || '').replace('#', '').toLowerCase().slice(0, 6);
+        return loadedFilaments.has(`${oType}:${oColor}`);
+      });
+      if (!hasColorMatch) return false;
+    }
+    return true;
+  });
+
+  const nextItem = compatibleQueue?.[0];
+  const totalPending = compatibleQueue?.length || 0;
 
   if (totalPending === 0) {
     return null;
   }
 
-  const needsClearPlate = (printerState === 'FINISH' || printerState === 'FAILED') && !plateCleared;
+  const needsClearPlate = (printerState === 'FINISH' || printerState === 'FAILED') && !plateCleared && (!plateAutomation || printerState === 'FAILED');
 
   if (needsClearPlate) {
     return (
@@ -101,6 +125,11 @@ export function PrinterQueueWidget({ printerId, printerModel, printerState, plat
             </p>
           </div>
         </div>
+        { plateAutomation ? (
+           <span className="text-xs px-1.5 py-0.5 bg-green-400/20 text-green-400 rounded flex-shrink-0">
+              {t('queue.automated')}
+            </span>
+        ) : null }
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-xs text-bambu-gray flex items-center gap-1">
             <Clock className="w-3 h-3" />

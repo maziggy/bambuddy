@@ -140,6 +140,16 @@ class PrintScheduler:
                             )
                             continue
 
+                    # Compute AMS mapping if not already set
+                    if not item.ams_mapping:
+                        computed_mapping = await self._compute_ams_mapping_for_printer(db, item.printer_id, item)
+                        if computed_mapping:
+                            item.ams_mapping = json.dumps(computed_mapping)
+                            logger.info(
+                                f"Queue item {item.id}: Computed AMS mapping for printer {item.printer_id}: {computed_mapping}"
+                            )
+                            await db.commit()
+
                     # Start the print
                     await self._start_print(db, item)
                     busy_printers.add(item.printer_id)
@@ -320,10 +330,16 @@ class PrintScheduler:
                     logger.debug("Skipping printer %s (%s) - missing filaments: %s", printer.id, printer.name, missing)
                     continue
 
-            # If filament overrides with colors, prefer printers with exact color matches
+            # If filament overrides with colors, only consider printers that have at least one color match
             if filament_overrides:
                 color_matches = self._count_override_color_matches(printer.id, filament_overrides)
-                candidates.append((printer.id, color_matches))
+                if color_matches > 0:
+                    candidates.append((printer.id, color_matches))
+                else:
+                    override_colors = [f"{o.get('type', '?')} ({o.get('color', '?')})" for o in filament_overrides]
+                    printers_missing_filament.append((printer.name, override_colors))
+                    logger.debug("Skipping printer %s (%s) - no matching override colors", printer.id, printer.name)
+                    continue
             else:
                 # No overrides - take first available (existing behavior)
                 return printer.id, None
@@ -423,8 +439,8 @@ class PrintScheduler:
     ) -> list[int] | None:
         """Compute AMS mapping for a printer based on filament requirements.
 
-        This is called for model-based queue items after a printer is assigned,
-        to compute the correct AMS slot mapping for that specific printer's hardware.
+        Called when a queue item has no ams_mapping set — either for model-based
+        items after printer assignment, or printer-specific items (e.g. from VP).
 
         Args:
             db: Database session
@@ -924,6 +940,27 @@ class PrintScheduler:
         """Get printer by ID."""
         result = await db.execute(select(Printer).where(Printer.id == printer_id))
         return result.scalar_one_or_none()
+
+    async def has_pending_items(self, printer_id: int) -> bool:
+        """Check if there are pending queue items for a printer.
+
+        This is a public method that can be called from other services
+        to check if a printer has queued jobs waiting.
+
+        Args:
+            printer_id: The printer ID to check
+
+        Returns:
+            True if there are pending items, False otherwise
+        """
+        async with async_session() as db:
+            result = await db.execute(
+                select(PrintQueueItem)
+                .where(PrintQueueItem.printer_id == printer_id)
+                .where(PrintQueueItem.status == "pending")
+                .limit(1)
+            )
+            return result.scalar_one_or_none() is not None
 
     async def _start_print(self, db: AsyncSession, item: PrintQueueItem):
         """Upload file and start print for a queue item.

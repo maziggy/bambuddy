@@ -23,7 +23,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
+    libcap2-bin \
     && rm -rf /var/lib/apt/lists/*
+
+# Allow binding to privileged ports (e.g. 990/FTPS) as non-root user.
+# File capabilities are more reliable than Docker cap_add with user: directive,
+# which depends on ambient capability support in the container runtime.
+RUN setcap cap_net_bind_service=+ep "$(readlink -f /usr/local/bin/python3)"
 
 # Install Python dependencies with cache mount
 COPY requirements.txt ./

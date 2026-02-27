@@ -23,6 +23,7 @@ class SpoolBase(BaseModel):
     data_origin: str | None = None
     tag_type: str | None = None
     cost_per_kg: float | None = Field(default=None, ge=0)
+    weight_locked: bool = False
 
 
 class SpoolCreate(SpoolBase):
@@ -54,6 +55,7 @@ class SpoolUpdate(BaseModel):
     data_origin: str | None = None
     tag_type: str | None = None
     cost_per_kg: float | None = Field(default=None, ge=0)
+    weight_locked: bool | None = None
 
 
 class SpoolKProfileBase(BaseModel):

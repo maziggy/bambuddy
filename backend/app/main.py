@@ -8,7 +8,7 @@ from logging.handlers import RotatingFileHandler
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, or_, select, text
 
 from backend.app.api.routes import (
     ams_history,
@@ -24,6 +24,7 @@ from backend.app.api.routes import (
     firmware,
     github_backup,
     groups,
+    automation,
     inventory,
     kprofiles,
     library,
@@ -52,7 +53,7 @@ from backend.app.api.routes import (
 from backend.app.api.routes.maintenance import _get_printer_maintenance_internal, ensure_default_types
 from backend.app.api.routes.support import init_debug_logging
 from backend.app.core.config import APP_VERSION, settings as app_settings
-from backend.app.core.database import async_session, init_db
+from backend.app.core.database import async_session, engine, init_db
 from backend.app.core.websocket import ws_manager
 from backend.app.models.smart_plug import SmartPlug
 from backend.app.services.archive import ArchiveService
@@ -252,9 +253,6 @@ _expected_prints: dict[tuple[int, str], int] = {}
 
 # Track starting energy for prints: {archive_id: starting_kwh}
 _print_energy_start: dict[int, float] = {}
-
-# Track reprints to add costs on completion: {archive_id}
-_reprint_archives: set[int] = set()
 
 # Track AMS mapping for prints: {archive_id: [global_tray_id_per_slot]}
 # Used by usage tracker to map 3MF slots to physical AMS trays
@@ -737,7 +735,11 @@ async def on_ams_change(printer_id: int, ams_data: list):
                             # The AMS remain% is low-resolution (integer %, i.e. 10g steps for 1kg spool)
                             # and must not overwrite precise values from the usage tracker (3MF/G-code).
                             remain_raw = tray.get("remain")
-                            if remain_raw is not None and existing_assignment.spool:
+                            if (
+                                remain_raw is not None
+                                and existing_assignment.spool
+                                and not existing_assignment.spool.weight_locked
+                            ):
                                 try:
                                     remain_val = int(remain_raw)
                                 except (TypeError, ValueError):
@@ -1269,10 +1271,6 @@ async def on_print_start(printer_id: int, data: dict):
                 _active_prints[(printer_id, archive.filename)] = archive.id
                 if subtask_name:
                     _active_prints[(printer_id, f"{subtask_name}.3mf")] = archive.id
-
-                # Mark as reprint so we add cost on completion
-                _reprint_archives.add(archive.id)
-                logger.info("Marked archive %s as reprint for cost addition on completion", archive.id)
 
                 # Set up energy tracking
                 try:
@@ -2415,15 +2413,6 @@ async def on_print_complete(printer_id: int, data: dict):
                 "[ARCHIVE] Archive %s status updated to %s, failure_reason=%s", archive_id, status, failure_reason
             )
 
-            # Add cost for reprints (first prints have cost set in archive_print())
-            if status == "completed" and archive_id in _reprint_archives:
-                _reprint_archives.discard(archive_id)
-                try:
-                    await service.add_reprint_cost(archive_id)
-                    logger.info("[ARCHIVE] Added reprint cost for archive %s", archive_id)
-                except Exception as e:
-                    logger.warning("[ARCHIVE] Failed to add reprint cost for archive %s: %s", archive_id, e)
-
             await ws_manager.send_archive_updated(
                 {
                     "id": archive_id,
@@ -3366,6 +3355,15 @@ async def lifespan(app: FastAPI):
 
     await mqtt_relay.disconnect(timeout=2)
 
+    # Checkpoint WAL and close all database connections
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+        logging.info("WAL checkpoint completed")
+    except Exception as e:
+        logging.warning("WAL checkpoint failed: %s", e)
+    await engine.dispose()
+
 
 app = FastAPI(
     title=app_settings.app_name,
@@ -3528,6 +3526,7 @@ app.include_router(auth.router, prefix=app_settings.api_prefix)
 app.include_router(users.router, prefix=app_settings.api_prefix)
 app.include_router(groups.router, prefix=app_settings.api_prefix)
 app.include_router(printers.router, prefix=app_settings.api_prefix)
+app.include_router(automation.router, prefix=app_settings.api_prefix)
 app.include_router(archives.router, prefix=app_settings.api_prefix)
 app.include_router(filaments.router, prefix=app_settings.api_prefix)
 app.include_router(inventory.router, prefix=app_settings.api_prefix)

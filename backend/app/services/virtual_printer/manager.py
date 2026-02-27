@@ -99,6 +99,7 @@ class VirtualPrinterInstance:
         serial_suffix: str,
         target_printer_ip: str = "",
         target_printer_serial: str = "",
+        target_printer_id: int | None = None,
         bind_ip: str = "",
         remote_interface_ip: str = "",
         base_dir: Path,
@@ -112,6 +113,7 @@ class VirtualPrinterInstance:
         self.serial_suffix = serial_suffix
         self.target_printer_ip = target_printer_ip
         self.target_printer_serial = target_printer_serial
+        self.target_printer_id = target_printer_id
         self.bind_ip = bind_ip
         self.remote_interface_ip = remote_interface_ip
         self._session_factory = session_factory
@@ -274,7 +276,7 @@ class VirtualPrinterInstance:
             logger.error("Error queueing file: %s", e)
 
     async def _add_to_print_queue(self, file_path: Path, source_ip: str) -> None:
-        """Archive file and add to print queue (unassigned)."""
+        """Archive file and add to print queue, assigned to target printer or model."""
         if not self._session_factory:
             logger.error("Cannot add to print queue: no database session factory configured")
             return
@@ -304,9 +306,16 @@ class VirtualPrinterInstance:
                 )
                 if archive:
                     logger.info("[VP %s] Archived: %s - %s", self.name, archive.id, archive.print_name)
+                    # Assign to specific printer if configured, otherwise use model for "Any X" scheduling
+                    target_model = None
+                    if not self.target_printer_id and self.model:
+                        target_model = VIRTUAL_PRINTER_MODELS.get(self.model)
+                    plate_id = self._extract_plate_id(file_path)
                     queue_item = PrintQueueItem(
-                        printer_id=None,
+                        printer_id=self.target_printer_id,
+                        target_model=target_model,
                         archive_id=archive.id,
+                        plate_id=plate_id,
                         position=1,
                         status="pending",
                     )
@@ -322,6 +331,26 @@ class VirtualPrinterInstance:
                     logger.error("Failed to archive file: %s", file_path.name)
         except Exception as e:
             logger.error("Error adding to print queue: %s", e)
+
+    @staticmethod
+    def _extract_plate_id(file_path: Path) -> int | None:
+        """Extract plate index from 3MF slice_info.config."""
+        try:
+            import xml.etree.ElementTree as ET
+            import zipfile
+
+            with zipfile.ZipFile(file_path, "r") as zf:
+                if "Metadata/slice_info.config" in zf.namelist():
+                    content = zf.read("Metadata/slice_info.config").decode()
+                    root = ET.fromstring(content)  # noqa: S314  # nosec B314
+                    plate = root.find(".//plate")
+                    if plate is not None:
+                        for meta in plate.findall("metadata"):
+                            if meta.get("key") == "index" and meta.get("value"):
+                                return int(meta.get("value"))
+        except Exception:
+            return None
+        return None
 
     # -- Service lifecycle --
 
@@ -631,6 +660,7 @@ class VirtualPrinterManager:
                     model=vp.model or DEFAULT_VIRTUAL_PRINTER_MODEL,
                     access_code=vp.access_code or "",
                     serial_suffix=vp.serial_suffix,
+                    target_printer_id=vp.target_printer_id,
                     bind_ip=vp.bind_ip or "",
                     remote_interface_ip=vp.remote_interface_ip or "",
                     base_dir=self._base_dir,

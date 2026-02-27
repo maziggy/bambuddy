@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Integer, String, func
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -23,6 +23,7 @@ class Spool(Base):
         Integer
     )  # Reference to spool_catalog entry for core weight
     weight_used: Mapped[float] = mapped_column(Float, default=0)  # Consumed grams
+    weight_locked: Mapped[bool] = mapped_column(Boolean, default=False)  # Lock weight from AMS auto-sync
     slicer_filament: Mapped[str | None] = mapped_column(String(50))  # Preset ID (e.g. "GFL99")
     slicer_filament_name: Mapped[str | None] = mapped_column(String(100))  # Preset name for slicer
     nozzle_temp_min: Mapped[int | None] = mapped_column()  # Override min temp

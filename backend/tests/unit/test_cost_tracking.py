@@ -556,12 +556,8 @@ class TestCostAggregation:
         responses.append(("scalar_one_or_none", assignment))
         # 4. select(Spool) → spool
         responses.append(("scalar_one_or_none", spool))
-        # 5. cost aggregation: coalesce(sum(cost)) → 0 (no costs)
-        responses.append(("scalar", 0))
-        # 6. select(PrintArchive) → archive (for the guard check)
+        # 5. cost aggregation: select archive to update cost
         responses.append(("scalar_one_or_none", archive))
-        # 7. legacy fallback: coalesce(sum(cost)) → 0
-        responses.append(("scalar", 0))
 
         db = AsyncMock()
         call_count = [0]
@@ -646,9 +642,7 @@ class TestCostAggregation:
         responses.append(("scalar_one_or_none", None))  # queue item
         responses.append(("scalar_one_or_none", assignment))
         responses.append(("scalar_one_or_none", spool))
-        # cost aggregation: sum returns 0.50
-        responses.append(("scalar", expected_cost))
-        # select archive for guard
+        # cost aggregation: select archive to update cost
         responses.append(("scalar_one_or_none", archive))
 
         db = AsyncMock()

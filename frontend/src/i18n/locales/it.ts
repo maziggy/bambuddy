@@ -267,6 +267,8 @@ export default {
       failedToSaveDetectionArea: 'Impossibile salvare area rilevamento',
       plateCheckEnabled: 'Controllo piatto abilitato',
       plateCheckDisabled: 'Controllo piatto disabilitato',
+      automationEnabled: 'Automazione abilitata',
+      automationDisabled: 'Automazione disabilitata',
       calibrationSaved: 'Calibrazione salvata!',
       calibrationFailed: 'Calibrazione non riuscita',
       rfidRereadInitiated: 'Rilettura RFID avviata',
@@ -408,6 +410,13 @@ export default {
       labelPlaceholder: 'Etichetta...',
       clickToEdit: '{{label}} - Clicca per modificare',
       clickToAddLabel: 'Clicca per aggiungere etichetta',
+    },
+    // Automation
+    plateAutomation: {
+      noPermission: "Non hai l'autorizzazione per aggiornare le stampanti",
+      enabledClick: 'Automazione attivata - Clicca per disattivare',
+      disabledClick: 'Automazione disattivata - Clicca per attivare',
+      manageCustomization: 'Gestisci GCODE personalizzato per l\'automazione del piatto',
     },
     // Fans
     fans: {
@@ -731,6 +740,7 @@ export default {
     reorderHint: 'La posizione influisce solo sugli elementi ASAP. Quelli programmati partono all\'orario.',
     addedBy: 'Aggiunto da {{name}}',
     plateNumber: 'Piatto {{index}}',
+    automated: 'Automatico',
     // Sections
     sections: {
       currentlyPrinting: 'In stampa',

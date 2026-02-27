@@ -216,6 +216,11 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         response.archive_thumbnail = item.archive.thumbnail_path
         response.print_time_seconds = item.archive.print_time_seconds
         response.filament_used_grams = item.archive.filament_used_grams
+        response.filament_type = item.archive.filament_type
+        response.filament_color = item.archive.filament_color
+        response.layer_height = item.archive.layer_height
+        response.nozzle_diameter = item.archive.nozzle_diameter
+        response.sliced_for_model = item.archive.sliced_for_model
         if item.plate_id:
             archive_path = settings.base_dir / item.archive.file_path
             if archive_path.exists():
@@ -232,10 +237,15 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         if not response.library_file_name:
             response.library_file_name = item.library_file.filename
         response.library_file_thumbnail = item.library_file.thumbnail_path
-        # Get print time from library file metadata if no archive
+        # Get metadata from library file if no archive
         if not item.archive and item.library_file.file_metadata:
             response.print_time_seconds = item.library_file.file_metadata.get("print_time_seconds")
             response.filament_used_grams = item.library_file.file_metadata.get("filament_used_grams")
+            response.filament_type = item.library_file.file_metadata.get("filament_type")
+            response.filament_color = item.library_file.file_metadata.get("filament_color")
+            response.layer_height = item.library_file.file_metadata.get("layer_height")
+            response.nozzle_diameter = item.library_file.file_metadata.get("nozzle_diameter")
+            response.sliced_for_model = item.library_file.file_metadata.get("sliced_for_model")
         if item.plate_id:
             lib_path = Path(item.library_file.file_path)
             library_file_path = lib_path if lib_path.is_absolute() else settings.base_dir / item.library_file.file_path

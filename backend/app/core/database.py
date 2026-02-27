@@ -105,6 +105,7 @@ async def init_db():
         spoolbuddy_device,
         user,
         virtual_printer,
+        automation,
     )
 
     async with engine.begin() as conn:
@@ -180,6 +181,13 @@ async def run_migrations(conn):
     # Migration: Add location column to printers for grouping
     try:
         await conn.execute(text("ALTER TABLE printers ADD COLUMN location VARCHAR(100)"))
+    except OperationalError:
+        # Column already exists
+        pass
+
+    # Migration: Add plate_automation_enabled column to printers
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN plate_automation_enabled BOOLEAN DEFAULT 0"))
     except OperationalError:
         # Column already exists
         pass
@@ -1221,6 +1229,12 @@ async def run_migrations(conn):
     # Migration: Add bed cooled notification column to notification_providers
     try:
         await conn.execute(text("ALTER TABLE notification_providers ADD COLUMN on_bed_cooled BOOLEAN DEFAULT 0"))
+    except OperationalError:
+        pass  # Already applied
+
+    # Migration: Add weight_locked flag to spool table (skip AMS auto-sync for manually-entered weights)
+    try:
+        await conn.execute(text("ALTER TABLE spool ADD COLUMN weight_locked BOOLEAN DEFAULT 0"))
     except OperationalError:
         pass  # Already applied
 

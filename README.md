@@ -358,6 +358,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 ### Requirements
 - Python 3.10+ (3.11/3.12 recommended)
 - Bambu Lab printer with **Developer Mode** enabled (see below)
+- **"Store sent files on external storage"** enabled in Bambu Studio/OrcaSlicer
 - Same local network as printer
 
 ### Installation
@@ -524,6 +525,14 @@ Developer Mode allows third-party software like Bambuddy to control your printer
 5. Find Serial Number in device info
 
 > **Note:** Developer Mode disables cloud features but provides full local control. Standard LAN Mode (without Developer Mode) only allows read-only monitoring.
+
+### Slicer Settings
+
+In Bambu Studio or OrcaSlicer, enable **"Store sent files on external storage"** so that print files (3MF) are saved to the printer's SD card. Bambuddy needs these files to extract thumbnails and 3D model previews.
+
+1. Open **Bambu Studio** or **OrcaSlicer**
+2. Go to the **Device** tab for your printer
+3. Enable **"Store sent files on external storage"**
 
 ---
 

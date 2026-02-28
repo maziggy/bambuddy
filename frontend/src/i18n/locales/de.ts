@@ -305,6 +305,7 @@ export default {
       noFiles: 'Sie haben keine Berechtigung, auf Druckerdateien zuzugreifen',
       noAmsRfid: 'Sie haben keine Berechtigung, AMS-RFID erneut zu lesen',
       noSmartPlugControl: 'Sie haben keine Berechtigung, Smart Plugs zu steuern',
+      noCamera: 'Sie haben keine Berechtigung, Kameras anzuzeigen',
     },
     // Add/Edit modal
     modal: {

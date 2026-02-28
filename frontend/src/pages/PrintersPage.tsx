@@ -3610,8 +3610,8 @@ function PrinterCard({
                     window.open(`/camera/${printer.id}`, `camera-${printer.id}`, features);
                   }
                 }}
-                disabled={!status?.connected}
-                title={cameraViewMode === 'embedded' ? t('printers.openCameraOverlay') : t('printers.openCameraWindow')}
+                disabled={!status?.connected || !hasPermission('camera:view')}
+                title={!hasPermission('camera:view') ? t('printers.permission.noCamera') : (cameraViewMode === 'embedded' ? t('printers.openCameraOverlay') : t('printers.openCameraWindow'))}
               >
                 <Video className="w-4 h-4" />
               </Button>

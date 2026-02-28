@@ -296,6 +296,7 @@ export default {
       noFiles: 'Non hai il permesso di accedere ai file stampante',
       noAmsRfid: 'Non hai il permesso di rileggere AMS RFID',
       noSmartPlugControl: 'Non hai il permesso di controllare smart plug',
+      noCamera: 'Non hai il permesso di visualizzare le telecamere',
     },
     // Add/Edit modal
     modal: {

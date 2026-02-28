@@ -305,6 +305,7 @@ export default {
       noFiles: 'Você não tem permissão para acessar arquivos de impressora',
       noAmsRfid: 'Você não tem permissão para reler RFID AMS',
       noSmartPlugControl: 'Você não tem permissão para controlar tomadas inteligentes',
+      noCamera: 'Você não tem permissão para visualizar câmeras',
     },
     // Add/Edit modal
     modal: {

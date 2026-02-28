@@ -305,6 +305,7 @@ export default {
       noFiles: 'You do not have permission to access printer files',
       noAmsRfid: 'You do not have permission to re-read AMS RFID',
       noSmartPlugControl: 'You do not have permission to control smart plugs',
+      noCamera: 'You do not have permission to view cameras',
     },
     // Add/Edit modal
     modal: {

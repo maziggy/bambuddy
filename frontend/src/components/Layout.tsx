@@ -6,7 +6,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
 import { SwitchbarPopover } from './SwitchbarPopover';
 import { useQuery, useQueries } from '@tanstack/react-query';
-import { api, supportApi, pendingUploadsApi } from '../api/client';
+import { api, supportApi, pendingUploadsApi, type Permission } from '../api/client';
 import { getIconByName } from './IconPicker';
 import { useIsSidebarCompact } from '../hooks/useIsSidebarCompact';
 import { useAuth } from '../contexts/AuthContext';
@@ -216,16 +216,30 @@ export function Layout() {
   const extLinksMap = useMemo(() => new Map((externalLinks || []).map(link => [`ext-${link.id}`, link])), [externalLinks]);
 
   // Compute the ordered sidebar: include stored order + any new items
-  // Filter out 'settings' for users with 'user' role
+  // Hide nav items the user doesn't have read permission for
   const orderedSidebarIds = (() => {
     const result: string[] = [];
     const seen = new Set<string>();
 
-    // Determine if settings should be hidden (no settings:read permission)
-    const hideSettings = authEnabled && !hasPermission('settings:read');
+    // Map nav item IDs to the permission required to see them
+    const navPermissions: Record<string, Permission> = {
+      archives: 'archives:read',
+      queue: 'queue:read',
+      stats: 'stats:read',
+      profiles: 'kprofiles:read',
+      maintenance: 'maintenance:read',
+      projects: 'projects:read',
+      inventory: 'inventory:read',
+      files: 'library:read',
+      settings: 'settings:read',
+    };
+
+    const isHidden = (id: string) =>
+      authEnabled && id in navPermissions && !hasPermission(navPermissions[id]);
+
     // Add items in stored order
     for (const id of sidebarOrder) {
-      if (hideSettings && id === 'settings') continue;
+      if (isHidden(id)) continue;
       if (navItemsMap.has(id) || extLinksMap.has(id)) {
         result.push(id);
         seen.add(id);
@@ -234,7 +248,7 @@ export function Layout() {
 
     // Add any new internal nav items not in stored order
     for (const item of defaultNavItems) {
-      if (hideSettings && item.id === 'settings') continue;
+      if (isHidden(item.id)) continue;
       if (!seen.has(item.id)) {
         result.push(item.id);
         seen.add(item.id);

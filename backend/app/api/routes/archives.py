@@ -1442,6 +1442,8 @@ async def scan_timelapse(
 
         archive_completed = archive.completed_at or archive.created_at
         if archive_completed:
+            if archive_completed.tzinfo is None:
+                archive_completed = archive_completed.replace(tzinfo=timezone.utc)
             time_since_completion = datetime.now(timezone.utc) - archive_completed
             # If archive was completed within the last hour, assume the single timelapse is for it
             if time_since_completion < timedelta(hours=1):

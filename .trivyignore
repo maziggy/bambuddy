@@ -1,3 +1,13 @@
 # Dockerfile USER directive (DS-0002): Bambuddy runs as a single-host
 # Docker container where root is needed for device access and FFmpeg.
 DS-0002
+
+# util-linux hostname canonicalization (LOW, no fix available in Debian bookworm).
+# Affects mount, login, libuuid1, libsmartcols1, etc. — not exploitable in container context.
+CVE-2026-3184
+
+# libtiff denial-of-service bugs (pulled in by ffmpeg, not directly used).
+# No fix available in Debian bookworm.
+CVE-2025-61143
+CVE-2025-61144
+CVE-2025-61145

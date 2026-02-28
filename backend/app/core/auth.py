@@ -235,8 +235,12 @@ async def _validate_api_key(db: AsyncSession, api_key_value: str) -> APIKey | No
         for api_key in api_keys:
             if verify_password(api_key_value, api_key.key_hash):
                 # Check expiration
-                if api_key.expires_at and api_key.expires_at < datetime.now(timezone.utc):
-                    return None  # Expired
+                if api_key.expires_at:
+                    expires = api_key.expires_at
+                    if expires.tzinfo is None:
+                        expires = expires.replace(tzinfo=timezone.utc)
+                    if expires < datetime.now(timezone.utc):
+                        return None  # Expired
                 # Update last_used timestamp
                 api_key.last_used = datetime.now(timezone.utc)
                 await db.commit()
@@ -451,11 +455,15 @@ async def get_api_key(
         # Check if key matches (verify against hash)
         if verify_password(api_key_value, api_key.key_hash):
             # Check expiration
-            if api_key.expires_at and api_key.expires_at < datetime.now(timezone.utc):
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="API key has expired",
-                )
+            if api_key.expires_at:
+                expires = api_key.expires_at
+                if expires.tzinfo is None:
+                    expires = expires.replace(tzinfo=timezone.utc)
+                if expires < datetime.now(timezone.utc):
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="API key has expired",
+                    )
             # Update last_used timestamp
             api_key.last_used = datetime.now(timezone.utc)
             await db.commit()

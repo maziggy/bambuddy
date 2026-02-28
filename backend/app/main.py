@@ -3125,7 +3125,10 @@ async def track_printer_runtime():
                     if state.state in ("RUNNING", "PAUSE"):
                         # Calculate time since last update
                         if printer.last_runtime_update:
-                            elapsed = (now - printer.last_runtime_update).total_seconds()
+                            last_update = printer.last_runtime_update
+                            if last_update.tzinfo is None:
+                                last_update = last_update.replace(tzinfo=timezone.utc)
+                            elapsed = (now - last_update).total_seconds()
                             if elapsed > 0:
                                 printer.runtime_seconds += int(elapsed)
                                 updated_count += 1

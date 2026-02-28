@@ -14,31 +14,6 @@ function getAmsName(amsId: number): string {
   return `AMS ${amsId}`;
 }
 
-<<<<<<< HEAD
-=======
-function mapModelCode(ssdpModel: string | null): string {
-  if (!ssdpModel) return '';
-  const modelMap: Record<string, string> = {
-    'O1D': 'H2D', 'O1E': 'H2D Pro', 'O2D': 'H2D Pro', 'O1C': 'H2C', 'O1C2': 'H2C', 'O1S': 'H2S',
-    'BL-P001': 'X1C', 'BL-P002': 'X1', 'BL-P003': 'X1E',
-    'C11': 'P1S', 'C12': 'P1P', 'C13': 'P2S',
-    'N2S': 'A1', 'N1': 'A1 Mini',
-    'X1C': 'X1C', 'X1': 'X1', 'X1E': 'X1E', 'P1S': 'P1S', 'P1P': 'P1P', 'P2S': 'P2S',
-    'A1': 'A1', 'A1 Mini': 'A1 Mini', 'H2D': 'H2D', 'H2D Pro': 'H2D Pro', 'H2C': 'H2C', 'H2S': 'H2S',
-  };
-  return modelMap[ssdpModel] || ssdpModel;
-}
-
-function isTrayEmpty(tray: AMSTray): boolean {
-  return !tray.tray_type || tray.tray_type === '';
-}
-
-function trayColorToCSS(color: string | null): string {
-  if (!color) return '#808080';
-  return `#${color.slice(0, 6)}`;
-}
-
->>>>>>> ce97a47 (  Add H2C dual nozzle variant O1C2 model support (#489))
 export function SpoolBuddyAmsPage() {
   const { selectedPrinterId, setAlert } = useOutletContext<SpoolBuddyOutletContext>();
   const { t } = useTranslation();

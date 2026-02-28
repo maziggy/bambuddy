@@ -1363,6 +1363,7 @@ function mapModelCode(ssdpModel: string | null): string {
     'O1E': 'H2D Pro',
     'O2D': 'H2D Pro',
     'O1C': 'H2C',
+    'O1C2': 'H2C',
     'O1S': 'H2S',
     // X1 Series
     'BL-P001': 'X1C',

@@ -33,11 +33,12 @@ def _get_ip() -> str:
         return "unknown"
 
 
-async def nfc_poll_loop(config: Config, api: APIClient):
+async def nfc_poll_loop(config: Config, api: APIClient, shared: dict):
     """Continuous NFC polling loop — runs in asyncio with blocking reads offloaded."""
     from .nfc_reader import NFCReader
 
     nfc = NFCReader()
+    shared["nfc"] = nfc
     if not nfc.ok:
         logger.warning("NFC reader not available, skipping NFC polling")
         return
@@ -65,7 +66,7 @@ async def nfc_poll_loop(config: Config, api: APIClient):
         nfc.close()
 
 
-async def scale_poll_loop(config: Config, api: APIClient):
+async def scale_poll_loop(config: Config, api: APIClient, shared: dict):
     """Continuous scale reading loop — reads at 100ms, reports at 1s intervals."""
     from .scale_reader import ScaleReader
 
@@ -73,6 +74,7 @@ async def scale_poll_loop(config: Config, api: APIClient):
         tare_offset=config.tare_offset,
         calibration_factor=config.calibration_factor,
     )
+    shared["scale"] = scale
     if not scale.ok:
         logger.warning("Scale not available, skipping scale polling")
         return
@@ -107,7 +109,7 @@ async def scale_poll_loop(config: Config, api: APIClient):
         scale.close()
 
 
-async def heartbeat_loop(config: Config, api: APIClient, start_time: float):
+async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shared: dict):
     """Periodic heartbeat to keep device registered and pick up commands."""
 
     ip = _get_ip()
@@ -115,11 +117,13 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float):
     while True:
         await asyncio.sleep(config.heartbeat_interval)
 
+        nfc = shared.get("nfc")
+        scale = shared.get("scale")
         uptime = int(time.monotonic() - start_time)
         result = await api.heartbeat(
             device_id=config.device_id,
-            nfc_ok=True,
-            scale_ok=True,
+            nfc_ok=nfc.ok if nfc else False,
+            scale_ok=scale.ok if scale else False,
             uptime_s=uptime,
             ip_address=ip,
         )
@@ -127,14 +131,25 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float):
         if result:
             cmd = result.get("pending_command")
             if cmd == "tare":
-                logger.info("Tare command received from backend")
-                # Tare is handled by scale_reader — need cross-task communication
-                # For now, update calibration from backend response
+                scale = shared.get("scale")
+                if scale and scale.ok:
+                    new_offset = await asyncio.to_thread(scale.tare)
+                    logger.info("Tare executed: offset=%d", new_offset)
+                    await api.update_tare(config.device_id, new_offset)
+                    config.tare_offset = new_offset
+                else:
+                    logger.warning("Tare command received but scale not available")
+                # Skip calibration sync — this heartbeat response predates the tare
+                continue
+
             tare = result.get("tare_offset", config.tare_offset)
             cal = result.get("calibration_factor", config.calibration_factor)
             if tare != config.tare_offset or cal != config.calibration_factor:
                 config.tare_offset = tare
                 config.calibration_factor = cal
+                scale = shared.get("scale")
+                if scale:
+                    scale.update_calibration(tare, cal)
                 logger.info("Calibration updated from backend: tare=%d, factor=%.6f", tare, cal)
 
 
@@ -164,11 +179,12 @@ async def main():
 
     logger.info("Device registered, starting poll loops")
 
+    shared: dict = {}
     try:
         await asyncio.gather(
-            nfc_poll_loop(config, api),
-            scale_poll_loop(config, api),
-            heartbeat_loop(config, api, start_time),
+            nfc_poll_loop(config, api, shared),
+            scale_poll_loop(config, api, shared),
+            heartbeat_loop(config, api, start_time, shared),
         )
     except KeyboardInterrupt:
         logger.info("Shutting down")

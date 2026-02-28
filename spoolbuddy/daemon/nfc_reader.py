@@ -7,6 +7,7 @@ from enum import Enum, auto
 logger = logging.getLogger(__name__)
 
 MISS_THRESHOLD = 3  # Consecutive misses before declaring tag removed
+ERROR_RECOVERY_THRESHOLD = 10  # Consecutive errors before attempting RF reset
 
 
 class NFCState(Enum):
@@ -22,21 +23,39 @@ class NFCReader:
         self._current_sak: int | None = None
         self._miss_count = 0
         self._ok = False
+        self._error_count = 0
+        self._poll_count = 0
+        self._last_status_log = 0.0
 
         try:
             from read_tag import PN5180
 
             self._nfc = PN5180()
-            self._nfc.reset()
-            self._nfc.load_rf_config(0x00, 0x80)
-            time.sleep(0.010)
-            self._nfc.rf_on()
-            time.sleep(0.030)
-            self._nfc.set_transceive_mode()
+            self._init_rf()
             self._ok = True
             logger.info("NFC reader initialized")
         except Exception as e:
-            logger.info("NFC not available: %s", e)
+            logger.warning("NFC not available: %s", e)
+
+    def _init_rf(self):
+        """Full RF initialization sequence."""
+        self._nfc.reset()
+        self._nfc.load_rf_config(0x00, 0x80)
+        time.sleep(0.010)
+        self._nfc.rf_on()
+        time.sleep(0.030)
+        self._nfc.set_transceive_mode()
+
+    def _full_reset(self):
+        """Full hardware reset + RF init to recover from stuck state."""
+        try:
+            self._init_rf()
+            self._error_count = 0
+            logger.info("NFC reader recovered after full reset")
+            return True
+        except Exception as e:
+            logger.warning("NFC full reset failed: %s", e)
+            return False
 
     @property
     def ok(self) -> bool:
@@ -62,13 +81,68 @@ class NFCReader:
 
         event_type: "none", "tag_detected", "tag_removed"
         """
+        self._poll_count += 1
+
+        # Periodic status log (every 60s)
+        now = time.monotonic()
+        if now - self._last_status_log >= 60.0:
+            logger.info(
+                "NFC status: state=%s, polls=%d, errors=%d, ok=%s",
+                self._state.name,
+                self._poll_count,
+                self._error_count,
+                self._ok,
+            )
+            self._last_status_log = now
+
+        if self._state == NFCState.IDLE:
+            # Full hardware reset before every idle poll. Each activate_type_a()
+            # call that returns None corrupts the PN5180 state — subsequent calls
+            # silently fail even when a tag is present. Only a full RST pin toggle
+            # recovers the reader. ~240ms overhead per poll, giving ~1.8 Hz poll
+            # rate which is fine for a spool tag reader.
+            try:
+                self._init_rf()
+            except Exception as e:
+                logger.warning("NFC pre-poll reset failed: %s", e)
+        else:
+            # Tag present: light RF cycle to reset card from ACTIVE back to IDLE
+            # state after previous SELECT, so it responds to the next WUPA/REQA.
+            try:
+                self._nfc.rf_off()
+                time.sleep(0.003)
+                self._nfc.rf_on()
+                time.sleep(0.010)
+            except Exception:
+                pass  # Will be caught by activate_type_a() error handling below
+
         try:
             result = self._nfc.activate_type_a()
         except Exception as e:
-            logger.debug("NFC poll error: %s", e)
+            self._error_count += 1
             self._ok = False
+
+            if self._error_count == 1:
+                logger.warning("NFC poll error: %s", e)
+            elif self._error_count == ERROR_RECOVERY_THRESHOLD:
+                logger.warning(
+                    "NFC reader stuck (%d consecutive errors), attempting recovery...",
+                    self._error_count,
+                )
+                if self._full_reset():
+                    return "none", None
+                # Reset failed — will keep trying on next threshold
+                self._error_count = 0
+            elif self._error_count % ERROR_RECOVERY_THRESHOLD == 0:
+                logger.warning("NFC recovery attempt #%d", self._error_count // ERROR_RECOVERY_THRESHOLD)
+                self._full_reset()
+
             return "none", None
 
+        # Successful poll — clear error streak
+        if self._error_count > 0:
+            logger.info("NFC reader recovered after %d errors", self._error_count)
+        self._error_count = 0
         self._ok = True
 
         if result is not None:
@@ -90,7 +164,7 @@ class NFCReader:
                     if blocks:
                         tray_uuid = _extract_tray_uuid(blocks)
 
-                logger.info("Tag detected: %s (SAK=0x%02X)", uid_hex, sak)
+                logger.info("Tag detected: %s (SAK=0x%02X, type=%s)", uid_hex, sak, tag_type)
                 return "tag_detected", {
                     "tag_uid": uid_hex,
                     "sak": sak,

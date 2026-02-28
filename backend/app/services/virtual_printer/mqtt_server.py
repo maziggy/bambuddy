@@ -28,6 +28,7 @@ MODEL_PRODUCT_NAMES = {
     "N1": "A1 mini",
     "O1D": "H2D",
     "O1C": "H2C",
+    "O1C2": "H2C",
     "O1S": "H2S",
 }
 

@@ -4849,10 +4849,10 @@ export const spoolbuddyApi = {
   getCalibration: (deviceId: string) =>
     request<{ tare_offset: number; calibration_factor: number }>(`/spoolbuddy/devices/${deviceId}/calibration`),
 
-  setCalibrationFactor: (deviceId: string, knownWeightGrams: number, rawAdc: number) =>
+  setCalibrationFactor: (deviceId: string, knownWeightGrams: number, rawAdc: number, tareRawAdc?: number) =>
     request<{ tare_offset: number; calibration_factor: number }>(`/spoolbuddy/devices/${deviceId}/calibration/set-factor`, {
       method: 'POST',
-      body: JSON.stringify({ known_weight_grams: knownWeightGrams, raw_adc: rawAdc }),
+      body: JSON.stringify({ known_weight_grams: knownWeightGrams, raw_adc: rawAdc, tare_raw_adc: tareRawAdc }),
     }),
 
   updateSpoolWeight: (spoolId: number, weightGrams: number) =>

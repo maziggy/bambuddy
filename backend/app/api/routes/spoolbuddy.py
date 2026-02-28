@@ -21,6 +21,7 @@ from backend.app.schemas.spoolbuddy import (
     HeartbeatResponse,
     ScaleReadingRequest,
     SetCalibrationFactorRequest,
+    SetTareRequest,
     TagRemovedRequest,
     TagScannedRequest,
     UpdateSpoolWeightRequest,
@@ -305,6 +306,29 @@ async def tare_scale(
     return {"status": "ok", "message": "Tare command queued"}
 
 
+@router.post("/devices/{device_id}/calibration/set-tare")
+async def set_tare_offset(
+    device_id: str,
+    req: SetTareRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Store tare offset reported by the daemon after executing a tare."""
+    result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
+    device = result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not registered")
+
+    device.tare_offset = req.tare_offset
+    await db.commit()
+
+    logger.info("SpoolBuddy %s tare offset set to %d", device_id, req.tare_offset)
+    return CalibrationResponse(
+        tare_offset=device.tare_offset,
+        calibration_factor=device.calibration_factor,
+    )
+
+
 @router.post("/devices/{device_id}/calibration/set-factor")
 async def set_calibration_factor(
     device_id: str,
@@ -318,11 +342,14 @@ async def set_calibration_factor(
     if not device:
         raise HTTPException(status_code=404, detail="Device not registered")
 
-    raw_delta = req.raw_adc - device.tare_offset
+    tare = req.tare_raw_adc if req.tare_raw_adc is not None else device.tare_offset
+    raw_delta = req.raw_adc - tare
     if raw_delta == 0:
         raise HTTPException(status_code=400, detail="Raw ADC value equals tare offset — place weight on scale")
 
     device.calibration_factor = req.known_weight_grams / raw_delta
+    if req.tare_raw_adc is not None:
+        device.tare_offset = tare
     await db.commit()
 
     logger.info(
@@ -331,7 +358,7 @@ async def set_calibration_factor(
         device.calibration_factor,
         req.known_weight_grams,
         req.raw_adc,
-        device.tare_offset,
+        tare,
     )
     return CalibrationResponse(
         tare_offset=device.tare_offset,

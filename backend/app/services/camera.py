@@ -72,7 +72,7 @@ def supports_rtsp(model: str | None) -> bool:
       - BL-P001: X1/X1C
       - C13: X1E
       - O1D: H2D
-      - O1C: H2C
+      - O1C, O1C2: H2C
       - O1S: H2S
       - O1E, O2D: H2D Pro
       - N7: P2S
@@ -83,7 +83,7 @@ def supports_rtsp(model: str | None) -> bool:
         if model_upper.startswith(("X1", "H2", "P2")):
             return True
         # Internal codes for RTSP models
-        if model_upper in ("BL-P001", "C13", "O1D", "O1C", "O1S", "O1E", "O2D", "N7"):
+        if model_upper in ("BL-P001", "C13", "O1D", "O1C", "O1C2", "O1S", "O1E", "O2D", "N7"):
             return True
     # A1/P1 and unknown models use chamber image protocol
     return False

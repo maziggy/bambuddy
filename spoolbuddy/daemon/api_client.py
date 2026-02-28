@@ -133,6 +133,12 @@ class APIClient:
             },
         )
 
+    async def update_tare(self, device_id: str, tare_offset: int) -> dict | None:
+        return await self._post(
+            f"/devices/{device_id}/calibration/set-tare",
+            {"tare_offset": tare_offset},
+        )
+
     async def scale_reading(
         self, device_id: str, weight_grams: float, stable: bool, raw_adc: int | None = None
     ) -> dict | None:

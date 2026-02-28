@@ -19,7 +19,7 @@ function getAmsName(amsId: number): string {
 function mapModelCode(ssdpModel: string | null): string {
   if (!ssdpModel) return '';
   const modelMap: Record<string, string> = {
-    'O1D': 'H2D', 'O1E': 'H2D Pro', 'O2D': 'H2D Pro', 'O1C': 'H2C', 'O1S': 'H2S',
+    'O1D': 'H2D', 'O1E': 'H2D Pro', 'O2D': 'H2D Pro', 'O1C': 'H2C', 'O1C2': 'H2C', 'O1S': 'H2S',
     'BL-P001': 'X1C', 'BL-P002': 'X1', 'BL-P003': 'X1E',
     'C11': 'P1S', 'C12': 'P1P', 'C13': 'P2S',
     'N2S': 'A1', 'N1': 'A1 Mini',

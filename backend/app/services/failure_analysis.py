@@ -160,7 +160,7 @@ class FailureAnalysisService:
 
         # Failure rate trend (by week)
         trend_data = []
-        num_weeks = min(effective_days // 7, 12)
+        num_weeks = max(effective_days // 7, 1)
         for i in range(num_weeks):
             week_end = datetime.now(timezone.utc) - timedelta(weeks=i)
             week_start = week_end - timedelta(weeks=1)

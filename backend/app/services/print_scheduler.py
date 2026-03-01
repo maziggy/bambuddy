@@ -80,8 +80,12 @@ class PrintScheduler:
 
             for item in items:
                 # Check scheduled time first (scheduled_time is stored in UTC from ISO string)
-                if item.scheduled_time and item.scheduled_time > datetime.now(timezone.utc):
-                    continue
+                if item.scheduled_time:
+                    sched = item.scheduled_time
+                    if sched.tzinfo is None:
+                        sched = sched.replace(tzinfo=timezone.utc)
+                    if sched > datetime.now(timezone.utc):
+                        continue
 
                 # Skip items that require manual start
                 if item.manual_start:

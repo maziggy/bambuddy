@@ -3126,7 +3126,10 @@ async def track_printer_runtime():
                     if state.state in ("RUNNING", "PAUSE"):
                         # Calculate time since last update
                         if printer.last_runtime_update:
-                            elapsed = (now - printer.last_runtime_update).total_seconds()
+                            last_update = printer.last_runtime_update
+                            if last_update.tzinfo is None:
+                                last_update = last_update.replace(tzinfo=timezone.utc)
+                            elapsed = (now - last_update).total_seconds()
                             if elapsed > 0:
                                 printer.runtime_seconds += int(elapsed)
                                 updated_count += 1
@@ -3213,6 +3216,40 @@ def stop_spoolbuddy_watchdog():
         _spoolbuddy_watchdog_task.cancel()
         _spoolbuddy_watchdog_task = None
         logging.getLogger(__name__).info("SpoolBuddy watchdog stopped")
+
+
+# Camera stream orphan cleanup
+_camera_cleanup_task: asyncio.Task | None = None
+CAMERA_CLEANUP_INTERVAL = 60
+
+
+async def _camera_cleanup_loop():
+    """Periodically clean up orphaned ffmpeg processes."""
+    from backend.app.api.routes.camera import cleanup_orphaned_streams
+
+    while True:
+        try:
+            await cleanup_orphaned_streams()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logging.getLogger(__name__).warning("Camera stream cleanup failed: %s", e)
+        await asyncio.sleep(CAMERA_CLEANUP_INTERVAL)
+
+
+def start_camera_cleanup():
+    global _camera_cleanup_task
+    if _camera_cleanup_task is None:
+        _camera_cleanup_task = asyncio.create_task(_camera_cleanup_loop())
+        logging.getLogger(__name__).info("Camera stream cleanup started")
+
+
+def stop_camera_cleanup():
+    global _camera_cleanup_task
+    if _camera_cleanup_task:
+        _camera_cleanup_task.cancel()
+        _camera_cleanup_task = None
+        logging.getLogger(__name__).info("Camera stream cleanup stopped")
 
 
 @asynccontextmanager
@@ -3324,6 +3361,9 @@ async def lifespan(app: FastAPI):
     # Start SpoolBuddy device watchdog
     start_spoolbuddy_watchdog()
 
+    # Start camera stream orphan cleanup
+    start_camera_cleanup()
+
     # Initialize virtual printer manager and sync from DB
     from backend.app.services.virtual_printer import virtual_printer_manager
 
@@ -3345,6 +3385,7 @@ async def lifespan(app: FastAPI):
     stop_ams_history_recording()
     stop_runtime_tracking()
     stop_spoolbuddy_watchdog()
+    stop_camera_cleanup()
     printer_manager.disconnect_all()
     await close_spoolman_client()
 

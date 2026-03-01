@@ -442,7 +442,19 @@ class BambuMQTTClient:
 
     def _on_message(self, client, userdata, msg):
         try:
-            payload = json.loads(msg.payload.decode())
+            try:
+                raw = msg.payload.decode()
+            except UnicodeDecodeError:
+                # Some firmware versions (e.g. A1 Mini 01.07.02.00) send payloads
+                # with non-UTF-8 bytes. Replace invalid bytes to keep JSON parseable.
+                raw = msg.payload.decode(errors="replace")
+                logger.warning(
+                    "[%s] MQTT payload contained non-UTF-8 bytes (topic=%s, len=%d)",
+                    self.serial_number,
+                    msg.topic,
+                    len(msg.payload),
+                )
+            payload = json.loads(raw)
             # Track last message time - receiving a message proves we're connected
             self._last_message_time = time.time()
             self.state.connected = True

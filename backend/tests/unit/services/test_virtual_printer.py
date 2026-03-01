@@ -127,7 +127,7 @@ class TestVirtualPrinterInstance:
         """Verify received file is added to pending list in review mode."""
         instance.mode = "review"
 
-        file_path = Path("/tmp/test.3mf")
+        file_path = Path("/tmp/test.3mf")  # nosec B108
 
         with patch.object(instance, "_queue_file", new_callable=AsyncMock) as mock_queue:
             await instance.on_file_received(file_path, "192.168.1.100")
@@ -138,7 +138,7 @@ class TestVirtualPrinterInstance:
     @pytest.mark.asyncio
     async def test_on_file_received_archives_immediately(self, instance):
         """Verify file is archived in immediate mode."""
-        file_path = Path("/tmp/test.3mf")
+        file_path = Path("/tmp/test.3mf")  # nosec B108
 
         with patch.object(instance, "_archive_file", new_callable=AsyncMock) as mock_archive:
             await instance.on_file_received(file_path, "192.168.1.100")

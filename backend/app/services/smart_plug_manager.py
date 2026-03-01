@@ -455,7 +455,10 @@ class SmartPlugManager:
                 for plug in pending_plugs:
                     # Check how long it's been pending (timeout after 2 hours)
                     if plug.auto_off_pending_since:
-                        elapsed = (datetime.now(timezone.utc) - plug.auto_off_pending_since).total_seconds()
+                        pending_since = plug.auto_off_pending_since
+                        if pending_since.tzinfo is None:
+                            pending_since = pending_since.replace(tzinfo=timezone.utc)
+                        elapsed = (datetime.now(timezone.utc) - pending_since).total_seconds()
                         if elapsed > 7200:  # 2 hours
                             logger.warning(
                                 f"Auto-off for plug '{plug.name}' was pending for {elapsed / 60:.0f} minutes, "

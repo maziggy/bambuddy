@@ -307,6 +307,7 @@ export default {
       noFiles: 'Pas d\'autorisation pour les fichiers',
       noAmsRfid: 'Pas d\'autorisation pour le RFID',
       noSmartPlugControl: 'Pas d\'autorisation pour les prises',
+      noCamera: 'Pas d\'autorisation pour les caméras',
     },
     // Add/Edit modal
     modal: {

@@ -31,6 +31,7 @@ CHAMBER_TEMP_SUPPORTED_MODELS = frozenset(
         "C13",  # X1E
         "O1D",  # H2D
         "O1C",  # H2C
+        "O1C2",  # H2C (dual nozzle variant)
         "O1S",  # H2S
         "O1E",  # H2D Pro
         "O2D",  # H2D Pro (alternate code)

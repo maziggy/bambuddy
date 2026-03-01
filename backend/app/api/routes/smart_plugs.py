@@ -756,7 +756,10 @@ async def check_power_alerts(plug: SmartPlug, current_power: float | None, db: A
     # Cooldown: don't alert more than once per 5 minutes
     cooldown_minutes = 5
     if plug.power_alert_last_triggered:
-        time_since_last = datetime.now(timezone.utc) - plug.power_alert_last_triggered
+        last_triggered = plug.power_alert_last_triggered
+        if last_triggered.tzinfo is None:
+            last_triggered = last_triggered.replace(tzinfo=timezone.utc)
+        time_since_last = datetime.now(timezone.utc) - last_triggered
         if time_since_last < timedelta(minutes=cooldown_minutes):
             return
 

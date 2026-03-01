@@ -44,6 +44,7 @@ PRINTER_MODEL_ID_MAP = {
     "O1E": "H2D Pro",  # Some devices report O1E
     "O2D": "H2D Pro",  # Some devices report O2D
     "O1C": "H2C",
+    "O1C2": "H2C",
     "O1S": "H2S",
 }
 
@@ -88,6 +89,7 @@ LINEAR_RAIL_MODELS = frozenset(
         "O1E",  # H2D Pro
         "O2D",  # H2D Pro (alternate)
         "O1C",  # H2C
+        "O1C2",  # H2C (dual nozzle variant)
         "O1S",  # H2S
     ]
 )

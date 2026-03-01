@@ -271,6 +271,7 @@ export default {
       noControl: 'プリンターを制御する権限がありません',
       noAmsRfid: 'AMS RFIDを再読み取りする権限がありません',
       noSmartPlugControl: 'スマートプラグを制御する権限がありません',
+      noCamera: 'カメラを表示する権限がありません',
     },
     modal: {
       selectModel: 'モデルを選択...',

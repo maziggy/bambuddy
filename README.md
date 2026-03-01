@@ -532,7 +532,7 @@ In Bambu Studio or OrcaSlicer, enable **"Store sent files on external storage"**
 
 1. Open **Bambu Studio** or **OrcaSlicer**
 2. Go to the **Device** tab for your printer
-3. Enable **"Store sent files on external storage"**
+3. In **Print Options**, enable **Store Sent Files on External Storage**
 
 ---
 

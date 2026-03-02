@@ -2384,6 +2384,9 @@ export function ArchivesPage() {
   const [hideFailed, setHideFailed] = useState(() =>
     localStorage.getItem('archiveHideFailed') === 'true'
   );
+  const [hideDuplicates, setHideDuplicates] = useState(() =>
+    localStorage.getItem('archiveHideDuplicates') === 'true'
+  );
   const [filterTag, setFilterTag] = useState<string | null>(() =>
     localStorage.getItem('archiveFilterTag')
   );
@@ -2562,6 +2565,10 @@ export function ArchivesPage() {
   }, [hideFailed]);
 
   useEffect(() => {
+    localStorage.setItem('archiveHideDuplicates', hideDuplicates.toString());
+  }, [hideDuplicates]);
+
+  useEffect(() => {
     if (filterTag) {
       localStorage.setItem('archiveFilterTag', filterTag);
     } else {
@@ -2689,6 +2696,9 @@ export function ArchivesPage() {
       // Hide failed filter (don't apply when viewing failed collection)
       const matchesHideFailed = collection === 'failed' || !hideFailed || (a.status !== 'failed' && a.status !== 'aborted');
 
+      // Hide duplicates filter (don't apply when viewing duplicates collection)
+      const matchesHideDuplicates = collection === 'duplicates' || !hideDuplicates || a.duplicate_count === 0;
+
       // Tag filter
       const archiveTags = a.tags?.split(',').map(t => t.trim()) || [];
       const matchesTag = !filterTag || archiveTags.includes(filterTag);
@@ -2699,7 +2709,7 @@ export function ArchivesPage() {
         (filterFileType === 'gcode' && isGcodeFile) ||
         (filterFileType === 'source' && !isGcodeFile);
 
-      return matchesCollection && matchesSearch && matchesMaterial && matchesColor && matchesFavorites && matchesHideFailed && matchesTag && matchesFileType;
+      return matchesCollection && matchesSearch && matchesMaterial && matchesColor && matchesFavorites && matchesHideFailed && matchesHideDuplicates && matchesTag && matchesFileType;
     })
     .sort((a, b) => {
       switch (sortBy) {
@@ -2767,11 +2777,12 @@ export function ArchivesPage() {
     setFilterMaterial(null);
     setFilterFavorites(false);
     setHideFailed(false);
+    setHideDuplicates(false);
     setFilterTag(null);
     setFilterFileType('all');
   };
 
-  const hasTopFilters = search || filterPrinter || filterMaterial || filterFavorites || hideFailed || filterTag || filterFileType !== 'all';
+  const hasTopFilters = search || filterPrinter || filterMaterial || filterFavorites || hideFailed || hideDuplicates || filterTag || filterFileType !== 'all';
 
   // Drag & drop handlers for page-wide upload
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -3169,6 +3180,18 @@ export function ArchivesPage() {
             >
               <AlertCircle className={`w-4 h-4 ${hideFailed ? '' : ''}`} />
               <span className="text-sm hidden md:inline">Hide Failed</span>
+            </button>
+            <button
+              onClick={() => setHideDuplicates(!hideDuplicates)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors flex-shrink-0 ${
+                hideDuplicates
+                  ? 'bg-purple-500/20 border-purple-500 text-purple-400'
+                  : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:text-white'
+              }`}
+              title={hideDuplicates ? 'Show Duplicates' : 'Hide Duplicates'}
+            >
+              <Copy className="w-4 h-4" />
+              <span className="text-sm hidden md:inline">Hide Duplicates</span>
             </button>
             {uniqueTags.length > 0 && (
               <div className="flex items-center gap-2 flex-shrink-0">

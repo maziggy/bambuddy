@@ -2161,6 +2161,7 @@ function PrinterCard({
       const slicedFor = (result.metadata as Record<string, unknown>)?.sliced_for_model as string | undefined;
       const printerModel = mapModelCode(printer.model);
       if (slicedFor && printerModel && slicedFor.toLowerCase() !== printerModel.toLowerCase()) {
+        await api.deleteLibraryFile(result.id).catch(() => {});
         showToast(
           t('printers.incompatibleFile', 'This file was sliced for {{slicedFor}}, but this printer is a {{printerModel}}', { slicedFor, printerModel }),
           'error'
@@ -3769,7 +3770,7 @@ function PrinterCard({
                   size="sm"
                   onClick={() => setShowUploadForPrint(true)}
                   disabled={!hasPermission('printers:control')}
-                  title={!hasPermission('printers:control') ? t('printers.permission.noControl') : t('printers.print')}
+                  title={!hasPermission('printers:control') ? t('printers.permission.noControl') : t('common.print')}
                   className="!bg-bambu-green hover:!bg-bambu-green/80 !text-white"
                 >
                   <PrinterIcon className="w-4 h-4" />
@@ -3797,21 +3798,22 @@ function PrinterCard({
           onClose={() => setShowUploadForPrint(false)}
           onUploadComplete={() => {}}
           autoUpload
-          accept=".gcode,.gcode.3mf"
+          accept=".gcode,.3mf"
           validateFile={(file) => {
             const lower = file.name.toLowerCase();
             if (!lower.endsWith('.gcode') && !lower.includes('.gcode.')) {
               return t('printers.dropNotPrintable', 'Only .gcode and .gcode.3mf files can be printed');
             }
           }}
-          onFileUploaded={(file) => {
+          onFileUploaded={(uploadedFile) => {
             // Check printer compatibility if sliced_for_model is available in metadata
-            const slicedFor = (file.metadata as Record<string, unknown>)?.sliced_for_model as string | undefined;
+            const slicedFor = (uploadedFile.metadata as Record<string, unknown>)?.sliced_for_model as string | undefined;
             const printerModel = mapModelCode(printer.model);
             if (slicedFor && printerModel && slicedFor.toLowerCase() !== printerModel.toLowerCase()) {
+              api.deleteLibraryFile(uploadedFile.id).catch(() => {});
               return t('printers.incompatibleFile', 'This file was sliced for {{slicedFor}}, but this printer is a {{printerModel}}', { slicedFor, printerModel });
             }
-            setPrintAfterUpload({ id: file.id, filename: file.filename });
+            setPrintAfterUpload({ id: uploadedFile.id, filename: uploadedFile.filename });
           }}
         />
       )}

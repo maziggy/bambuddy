@@ -2695,7 +2695,6 @@ export default {
     sinceTracking: 'Since tracking started',
     loadedInAms: 'Loaded in AMS/Ext',
     remaining: 'Remaining',
-    lowStockThreshold: '<20% remaining',
     weightCheck: 'Weight Check',
     lastWeighed: 'Last weighed',
     neverWeighed: 'Never weighed',

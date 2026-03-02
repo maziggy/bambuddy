@@ -2691,7 +2691,6 @@ export default {
     sinceTracking: 'Seit Beginn der Erfassung',
     loadedInAms: 'Im AMS/Ext geladen',
     remaining: 'Verbleibend',
-    lowStockThreshold: '<20% verbleibend',
     weightCheck: 'Gewichtskontrolle',
     lastWeighed: 'Zuletzt gewogen',
     neverWeighed: 'Nie gewogen',

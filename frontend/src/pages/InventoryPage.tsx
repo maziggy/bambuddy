@@ -1,4 +1,4 @@
-import { useState, useMemo, type ReactNode } from 'react';
+import { useState, useMemo, useEffect, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -517,6 +517,13 @@ function InventoryPage() {
   const lowStockThreshold = settings?.low_stock_threshold ?? 20;
   const [showThresholdInput, setShowThresholdInput] = useState(false);
   const [thresholdInput, setThresholdInput] = useState(lowStockThreshold.toString());
+
+  // Sync thresholdInput when lowStockThreshold changes and input is not shown
+  useEffect(() => {
+    if (!showThresholdInput) {
+      setThresholdInput(lowStockThreshold.toString());
+    }
+  }, [lowStockThreshold, showThresholdInput]);
 
   const updateThresholdMutation = useMutation({
     mutationFn: (threshold: number) => api.updateSettings({ low_stock_threshold: threshold }),

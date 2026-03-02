@@ -2695,7 +2695,6 @@ export default {
     sinceTracking: 'Desde o início do rastreamento',
     loadedInAms: 'Carregado no AMS/Ext',
     remaining: 'Restante',
-    lowStockThreshold: '<20% restante',
     weightCheck: 'Verificação de Peso',
     lastWeighed: 'Última pesagem',
     neverWeighed: 'Nunca pesado',

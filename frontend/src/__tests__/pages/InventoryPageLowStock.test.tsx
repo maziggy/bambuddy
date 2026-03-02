@@ -292,6 +292,16 @@ describe('InventoryPage - Low Stock Threshold', () => {
 
     it('validates threshold input range', async () => {
       const user = userEvent.setup();
+      let updatedSettings: Partial<typeof mockSettings> | null = null;
+
+      server.use(
+        http.put('/api/v1/settings/', async ({ request }) => {
+          const body = (await request.json()) as Partial<typeof mockSettings>;
+          updatedSettings = body;
+          return HttpResponse.json({ ...mockSettings, ...body });
+        })
+      );
+
       render(<InventoryPageRouter />);
 
       await waitFor(() => {
@@ -312,8 +322,10 @@ describe('InventoryPage - Low Stock Threshold', () => {
       const saveButton = screen.getByRole('button', { name: /save/i });
       await user.click(saveButton);
 
-      // Should show error (implementation depends on toast system)
-      // The value should not be saved
+      // Should show error and NOT call the PUT endpoint
+      await waitFor(() => {
+        expect(updatedSettings).toBeNull();
+      });
     });
 
     it('allows canceling threshold edit', async () => {

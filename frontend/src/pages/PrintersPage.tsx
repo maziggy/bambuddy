@@ -42,6 +42,7 @@ import {
   XCircle,
   User,
   Home,
+  Printer as PrinterIcon,
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
@@ -64,6 +65,8 @@ import { ConfigureAmsSlotModal } from '../components/ConfigureAmsSlotModal';
 import { useToast } from '../contexts/ToastContext';
 import { ChamberLight } from '../components/icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';
+import { LibraryUploadModal } from '../components/LibraryUploadModal';
+import { PrintModal } from '../components/PrintModal';
 import { getGlobalTrayId } from '../utils/amsHelpers';
 
 // Complete Bambu Lab filament color mapping by tray_id_name
@@ -1452,6 +1455,11 @@ function PrinterCard({
   const [showPauseConfirm, setShowPauseConfirm] = useState(false);
   const [showResumeConfirm, setShowResumeConfirm] = useState(false);
   const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
+  const [showUploadForPrint, setShowUploadForPrint] = useState(false);
+  const [printAfterUpload, setPrintAfterUpload] = useState<{ id: number; filename: string } | null>(null);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [isDropUploading, setIsDropUploading] = useState(false);
+  const dragCounterRef = useRef(0);
   const [amsHistoryModal, setAmsHistoryModal] = useState<{
     amsId: number;
     amsLabel: string;
@@ -2108,8 +2116,93 @@ function PrinterCard({
     }
   };
 
+  const canDrop = status?.state !== 'RUNNING' && status?.state !== 'PAUSE' && hasPermission('printers:control');
+
+  const handleCardDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current++;
+    if (dragCounterRef.current === 1) setIsDraggingFile(true);
+  };
+
+  const handleCardDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = canDrop ? 'copy' : 'none';
+  };
+
+  const handleCardDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current--;
+    if (dragCounterRef.current === 0) setIsDraggingFile(false);
+  };
+
+  const handleCardDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setIsDraggingFile(false);
+
+    if (!canDrop) return;
+
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    const file = droppedFiles[0];
+    if (!file) return;
+
+    // Only accept sliced/printable files (.gcode, .gcode.3mf, etc.)
+    const lower = file.name.toLowerCase();
+    if (!lower.endsWith('.gcode') && !lower.includes('.gcode.')) {
+      showToast(t('printers.dropNotPrintable', 'Only .gcode and .gcode.3mf files can be printed'), 'error');
+      return;
+    }
+
+    setIsDropUploading(true);
+    try {
+      const result = await api.uploadLibraryFile(file, null);
+      setPrintAfterUpload({ id: result.id, filename: result.filename });
+    } catch {
+      showToast(t('common.uploadFailed', 'Upload failed'), 'error');
+    } finally {
+      setIsDropUploading(false);
+    }
+  };
+
   return (
-    <Card className="relative">
+    <Card
+      className="relative"
+      onDragEnter={handleCardDragEnter}
+      onDragOver={handleCardDragOver}
+      onDragLeave={handleCardDragLeave}
+      onDrop={handleCardDrop}
+    >
+      {/* Drop zone overlay */}
+      {(isDraggingFile || isDropUploading) && (
+        <div
+          className={`absolute inset-0 z-10 rounded-xl border-2 border-dashed flex items-center justify-center transition-colors ${
+            isDropUploading
+              ? 'bg-bambu-green/10 border-bambu-green/50'
+              : canDrop
+                ? 'bg-bambu-green/10 border-bambu-green'
+                : 'bg-red-500/10 border-red-500/50'
+          }`}
+        >
+          <div className="text-center">
+            {isDropUploading ? (
+              <>
+                <Loader2 className="w-8 h-8 mx-auto mb-2 text-bambu-green animate-spin" />
+                <p className="text-sm font-medium text-bambu-green">{t('common.uploading', 'Uploading...')}</p>
+              </>
+            ) : canDrop ? (
+              <>
+                <PrinterIcon className="w-8 h-8 mx-auto mb-2 text-bambu-green" />
+                <p className="text-sm font-medium text-bambu-green">{t('printers.dropToPrint', 'Drop to print')}</p>
+              </>
+            ) : (
+              <>
+                <X className="w-8 h-8 mx-auto mb-2 text-red-400" />
+                <p className="text-sm font-medium text-red-400">{t('printers.cannotPrint', 'Printer busy')}</p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       <CardContent className={cardSize >= 3 ? 'p-5' : ''}>
         {/* Header */}
         <div className={getSpacing()}>
@@ -2687,6 +2780,20 @@ function PrinterCard({
                           {chamberFan ?? 0}%
                         </span>
                       </div>
+
+                      {/* Chamber Light */}
+                      <button
+                        onClick={() => chamberLightMutation.mutate(!status?.chamber_light)}
+                        disabled={!status?.connected || chamberLightMutation.isPending || !hasPermission('printers:control')}
+                        title={!hasPermission('printers:control') ? t('printers.permission.noControl') : (status?.chamber_light ? t('printers.chamberLightOff') : t('printers.chamberLightOn'))}
+                        className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors ${
+                          status?.chamber_light
+                            ? 'bg-yellow-500/10 hover:bg-yellow-500/20'
+                            : 'bg-bambu-dark hover:bg-bambu-dark-tertiary'
+                        } ${(!status?.connected || !hasPermission('printers:control')) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                      >
+                        <ChamberLight on={status?.chamber_light ?? false} className={`w-3.5 h-3.5 ${status?.chamber_light ? 'text-yellow-400' : 'text-bambu-gray/50'}`} />
+                      </button>
                     </div>
 
                     {/* Right: Print Control Buttons */}
@@ -3578,17 +3685,6 @@ function PrinterCard({
               <p className="truncate">{printer.serial_number}</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Chamber Light Toggle */}
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => chamberLightMutation.mutate(!status?.chamber_light)}
-                disabled={!status?.connected || chamberLightMutation.isPending || !hasPermission('printers:control')}
-                title={!hasPermission('printers:control') ? t('printers.permission.noControl') : (status?.chamber_light ? t('printers.chamberLightOff') : t('printers.chamberLightOn'))}
-                className={status?.chamber_light ? 'bg-yellow-500/20 hover:bg-yellow-500/30 border-yellow-500/30' : ''}
-              >
-                <ChamberLight on={status?.chamber_light ?? false} className="w-4 h-4" />
-              </Button>
               {/* Camera Button */}
               <Button
                 variant="secondary"
@@ -3656,6 +3752,18 @@ function PrinterCard({
                 <HardDrive className="w-4 h-4" />
                 Files
               </Button>
+              {status?.state !== 'RUNNING' && status?.state !== 'PAUSE' && (
+                <Button
+                  size="sm"
+                  onClick={() => setShowUploadForPrint(true)}
+                  disabled={!hasPermission('printers:control')}
+                  title={!hasPermission('printers:control') ? t('printers.permission.noControl') : t('printers.print')}
+                  className="!bg-bambu-green hover:!bg-bambu-green/80 !text-white"
+                >
+                  <PrinterIcon className="w-4 h-4" />
+                  Print
+                </Button>
+              )}
             </div>
           </div>
         )}
@@ -3667,6 +3775,32 @@ function PrinterCard({
           printerId={printer.id}
           printerName={printer.name}
           onClose={() => setShowFileManager(false)}
+        />
+      )}
+
+      {/* Upload for Print Modal */}
+      {showUploadForPrint && (
+        <LibraryUploadModal
+          folderId={null}
+          onClose={() => setShowUploadForPrint(false)}
+          onUploadComplete={() => {}}
+          autoUpload
+          onFileUploaded={(file) => {
+            setShowUploadForPrint(false);
+            setPrintAfterUpload({ id: file.id, filename: file.filename });
+          }}
+        />
+      )}
+
+      {/* Print Modal (after upload) */}
+      {printAfterUpload && (
+        <PrintModal
+          mode="reprint"
+          libraryFileId={printAfterUpload.id}
+          archiveName={printAfterUpload.filename}
+          initialSelectedPrinterIds={[printer.id]}
+          onClose={() => setPrintAfterUpload(null)}
+          onSuccess={() => setPrintAfterUpload(null)}
         />
       )}
 

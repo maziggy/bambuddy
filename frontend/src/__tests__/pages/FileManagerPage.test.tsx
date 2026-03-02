@@ -569,8 +569,8 @@ describe('FileManagerPage', () => {
     });
   });
 
-  describe('upload modal with advanced 3MF support', () => {
-    it('opens upload modal', async () => {
+  describe('upload modal (LibraryUploadModal)', () => {
+    it('opens upload modal when Upload button is clicked', async () => {
       const user = userEvent.setup();
       render(<FileManagerPage />);
 
@@ -583,6 +583,27 @@ describe('FileManagerPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Upload Files')).toBeInTheDocument();
         expect(screen.getByText(/Drag & drop/)).toBeInTheDocument();
+      });
+    });
+
+    it('closes upload modal when Cancel is clicked', async () => {
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Upload')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Upload'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Upload Files')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      await waitFor(() => {
+        expect(screen.queryByText('Upload Files')).not.toBeInTheDocument();
       });
     });
 
@@ -600,17 +621,12 @@ describe('FileManagerPage', () => {
         expect(screen.getByText('Upload Files')).toBeInTheDocument();
       });
 
-      // Create a mock 3MF file
       const threemfFile = new File(['content'], 'model.gcode.3mf', { type: 'application/octet-stream' });
-
-      // Get the hidden file input
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
       expect(fileInput).toBeInTheDocument();
 
-      // Simulate file selection
       await user.upload(fileInput, threemfFile);
 
-      // 3MF extraction info should appear
       await waitFor(() => {
         expect(screen.getByText('3MF files detected')).toBeInTheDocument();
         expect(screen.getByText(/Printer model.*will be automatically extracted/i)).toBeInTheDocument();
@@ -631,20 +647,104 @@ describe('FileManagerPage', () => {
         expect(screen.getByText('Upload Files')).toBeInTheDocument();
       });
 
-      // Create a mock STL file
       const stlFile = new File(['solid test'], 'model.stl', { type: 'application/sla' });
-
-      // Get the hidden file input
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
       expect(fileInput).toBeInTheDocument();
 
-      // Simulate file selection
       await user.upload(fileInput, stlFile);
 
-      // STL thumbnail option should appear
       await waitFor(() => {
         expect(screen.getByText('STL thumbnail generation')).toBeInTheDocument();
         expect(screen.getByText(/Thumbnails can be generated/i)).toBeInTheDocument();
+      });
+    });
+
+    it('shows ZIP options when ZIP file is added', async () => {
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Upload')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Upload'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Upload Files')).toBeInTheDocument();
+      });
+
+      const zipFile = new File(['pk'], 'models.zip', { type: 'application/zip' });
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      await user.upload(fileInput, zipFile);
+
+      await waitFor(() => {
+        expect(screen.getByText('ZIP files detected')).toBeInTheDocument();
+        expect(screen.getByText(/Preserve folder structure/)).toBeInTheDocument();
+      });
+    });
+
+    it('can add a file via the file input', async () => {
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Upload')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Upload'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Upload Files')).toBeInTheDocument();
+      });
+
+      const file = new File(['content'], 'model.3mf', { type: 'application/octet-stream' });
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      await user.upload(fileInput, file);
+
+      await waitFor(() => {
+        expect(screen.getByText('model.3mf')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Upload \(1\)/i })).toBeInTheDocument();
+      });
+    });
+
+    it('uploads file and refreshes file list', async () => {
+      server.use(
+        http.post('/api/v1/library/files', () => {
+          return HttpResponse.json({
+            id: 10,
+            filename: 'uploaded.3mf',
+            file_type: '3mf',
+            file_size: 1024,
+            thumbnail_path: null,
+            duplicate_of: null,
+            metadata: null,
+          });
+        })
+      );
+
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Upload')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Upload'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Upload Files')).toBeInTheDocument();
+      });
+
+      const file = new File(['content'], 'uploaded.3mf', { type: 'application/octet-stream' });
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      await user.upload(fileInput, file);
+
+      const uploadButton = screen.getByRole('button', { name: /Upload \(1\)/i });
+      await user.click(uploadButton);
+
+      // Upload should complete
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
       });
     });
   });

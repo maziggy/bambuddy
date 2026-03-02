@@ -26,6 +26,8 @@ export interface PrintModalProps {
   archiveName: string;
   /** Existing queue item (only for edit-queue-item mode) */
   queueItem?: PrintQueueItem;
+  /** Pre-select specific printers when opening the modal */
+  initialSelectedPrinterIds?: number[];
   /** Handler for closing the modal */
   onClose: () => void;
   /** Handler for successful operation */

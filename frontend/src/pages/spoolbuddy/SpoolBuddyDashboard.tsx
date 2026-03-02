@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useOutletContext, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useOutletContext } from 'react-router-dom';
+import { useQuery, useQueries } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
-import { api, spoolbuddyApi, type InventorySpool } from '../../api/client';
+import { api, type InventorySpool, type Printer } from '../../api/client';
 import { SpoolIcon } from '../../components/spoolbuddy/SpoolIcon';
-import { TagDetectedModal } from '../../components/spoolbuddy/TagDetectedModal';
+import { SpoolInfoCard, UnknownTagCard } from '../../components/spoolbuddy/SpoolInfoCard';
 import { AssignToAmsModal } from '../../components/spoolbuddy/AssignToAmsModal';
 import { LinkSpoolModal } from '../../components/spoolbuddy/LinkSpoolModal';
 
@@ -109,7 +109,6 @@ function DeviceOfflineState() {
 export function SpoolBuddyDashboard() {
   const { sbState, selectedPrinterId } = useOutletContext<SpoolBuddyOutletContext>();
   const { t } = useTranslation();
-  const navigate = useNavigate();
 
   // Fetch spools for stats, tag lookup, and untagged list
   const { data: spools = [], refetch: refetchSpools } = useQuery({
@@ -117,13 +116,28 @@ export function SpoolBuddyDashboard() {
     queryFn: () => api.getSpools(false),
   });
 
+  // Fetch printers and their statuses for the status badges
+  const { data: printers = [] } = useQuery({
+    queryKey: ['printers'],
+    queryFn: () => api.getPrinters(),
+  });
+
+  const statusQueries = useQueries({
+    queries: printers.map((printer: Printer) => ({
+      queryKey: ['printerStatus', printer.id],
+      queryFn: () => api.getPrinterStatus(printer.id),
+      refetchInterval: 10000,
+    })),
+  });
+
   // Current Spool card state - persists until user closes or new tag detected
   const [displayedTagId, setDisplayedTagId] = useState<string | null>(null);
   const [displayedWeight, setDisplayedWeight] = useState<number | null>(null);
   const [hiddenTagId, setHiddenTagId] = useState<string | null>(null);
   const [showLinkModal, setShowLinkModal] = useState(false);
-  const [showTagModal, setShowTagModal] = useState(false);
   const [showAssignAmsModal, setShowAssignAmsModal] = useState(false);
+  const [showQuickAddModal, setShowQuickAddModal] = useState(false);
+  const [quickAddBusy, setQuickAddBusy] = useState(false);
 
   // Track current tag from state
   const currentTagId = sbState.matchedSpool?.tag_uid ?? sbState.unknownTagUid ?? null;
@@ -161,7 +175,6 @@ export function SpoolBuddyDashboard() {
         setDisplayedTagId(currentTagId);
         setDisplayedWeight(null);
         setHiddenTagId(null);
-        setShowTagModal(true);
       }
 
       // Update weight when stable and card is visible
@@ -179,40 +192,63 @@ export function SpoolBuddyDashboard() {
   }, [currentTagId, currentWeight, weightStable, displayedTagId, hiddenTagId]);
 
   // Auto-sync weight once when known spool first detected
-  const [weightUpdatedForSpool, setWeightUpdatedForSpool] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (displayedSpool?.id !== weightUpdatedForSpool) {
-      setWeightUpdatedForSpool(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displayedSpool?.id]);
-
-  useEffect(() => {
-    if (displayedSpool && currentTagId && weightStable && weightUpdatedForSpool !== displayedSpool.id) {
-      setWeightUpdatedForSpool(displayedSpool.id);
-      const newWeight = currentWeight !== null ? Math.round(Math.max(0, currentWeight)) : null;
-      if (newWeight !== null) {
-        spoolbuddyApi.updateSpoolWeight(displayedSpool.id, newWeight)
-          .catch((err) => console.error('Failed to update spool weight:', err));
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displayedSpool?.id, currentTagId, weightStable]);
 
   const handleCloseSpoolCard = () => {
     setHiddenTagId(displayedTagId);
-    setShowTagModal(false);
   };
 
   const handleLinkTagToSpool = async (spool: InventorySpool) => {
     if (!displayedTagId) return;
     try {
-      await api.updateSpool(spool.id, { tag_uid: displayedTagId });
+      await api.linkTagToSpool(spool.id, {
+        tag_uid: displayedTagId,
+        tag_type: 'generic',
+        data_origin: 'nfc_link',
+      });
       setShowLinkModal(false);
       refetchSpools();
     } catch (e) {
       console.error('Failed to link tag:', e);
+    }
+  };
+
+  const handleQuickAddToInventory = async () => {
+    if (!displayedTagId) return;
+    setQuickAddBusy(true);
+    try {
+      const weight = liveWeight ?? displayedWeight;
+      await api.createSpool({
+        material: 'PLA',
+        subtype: null,
+        color_name: null,
+        rgba: null,
+        brand: null,
+        label_weight: 1000,
+        core_weight: 250,
+        core_weight_catalog_id: null,
+        weight_used: 0,
+        slicer_filament: null,
+        slicer_filament_name: null,
+        nozzle_temp_min: null,
+        nozzle_temp_max: null,
+        note: null,
+        added_full: null,
+        last_used: null,
+        encode_time: null,
+        tag_uid: displayedTagId,
+        tray_uuid: null,
+        data_origin: 'spoolbuddy',
+        tag_type: 'generic',
+        cost_per_kg: null,
+        last_scale_weight: weight,
+        last_weighed_at: weight !== null ? new Date().toISOString() : null,
+      });
+      setShowQuickAddModal(false);
+      refetchSpools();
+    } catch (e) {
+      console.error('Failed to quick-add spool:', e);
+    } finally {
+      setQuickAddBusy(false);
     }
   };
 
@@ -292,6 +328,30 @@ export function SpoolBuddyDashboard() {
               </div>
             </div>
           </div>
+
+          {/* Printer status badges */}
+          {printers.length > 0 && (
+            <div className="mt-3 border border-dashed border-zinc-700/50 rounded-xl p-4">
+              <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wide mb-2.5">
+                {t('spoolbuddy.dashboard.printers', 'Printers')}
+              </h2>
+              <div className="flex flex-wrap gap-2 overflow-hidden">
+                {printers.map((printer: Printer, i: number) => {
+                  const isOnline = statusQueries[i]?.data?.connected ?? false;
+                  return (
+                    <div
+                      key={printer.id}
+                      className="flex items-center gap-1.5 px-2.5 py-1 bg-zinc-800/50 rounded-lg"
+                      title={`${printer.name} — ${isOnline ? 'Online' : 'Offline'}`}
+                    >
+                      <div className={`w-2 h-2 rounded-full shrink-0 ${isOnline ? 'bg-green-500' : 'bg-zinc-600'}`} />
+                      <span className="text-xs text-zinc-400 truncate max-w-[100px]">{printer.name}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right column: Current Spool */}
@@ -301,54 +361,49 @@ export function SpoolBuddyDashboard() {
               {t('spoolbuddy.dashboard.currentSpool', 'Current Spool')}
             </h2>
             <div className="flex-1 flex items-center justify-center min-h-0">
-              {sbState.deviceOnline ? <ColorCyclingSpool /> : <DeviceOfflineState />}
+              {!sbState.deviceOnline ? (
+                <DeviceOfflineState />
+              ) : displayedSpool && displayedTagId && hiddenTagId !== displayedTagId ? (
+                <SpoolInfoCard
+                  spool={{
+                    id: displayedSpool.id,
+                    tag_uid: displayedTagId,
+                    material: displayedSpool.material,
+                    subtype: displayedSpool.subtype,
+                    color_name: displayedSpool.color_name,
+                    rgba: displayedSpool.rgba,
+                    brand: displayedSpool.brand,
+                    label_weight: displayedSpool.label_weight,
+                    core_weight: displayedSpool.core_weight,
+                    weight_used: displayedSpool.weight_used,
+                  }}
+                  scaleWeight={liveWeight ?? displayedWeight}
+                  onSyncWeight={() => refetchSpools()}
+                  onAssignToAms={() => setShowAssignAmsModal(true)}
+                  onClose={handleCloseSpoolCard}
+                />
+              ) : displayedTagId && !displayedSpool && hiddenTagId !== displayedTagId ? (
+                <UnknownTagCard
+                  tagUid={displayedTagId}
+                  scaleWeight={liveWeight ?? displayedWeight}
+                  onLinkSpool={untaggedSpools.length > 0 ? () => setShowLinkModal(true) : undefined}
+                  onAddToInventory={() => setShowQuickAddModal(true)}
+                  onClose={handleCloseSpoolCard}
+                />
+              ) : (
+                <ColorCyclingSpool />
+              )}
             </div>
           </div>
         </div>
       </div>
-
-      {/* Tag Detected Modal */}
-      <TagDetectedModal
-        isOpen={showTagModal && !!displayedTagId}
-        onClose={handleCloseSpoolCard}
-        spool={displayedSpool ? {
-          id: displayedSpool.id,
-          tag_uid: displayedTagId!,
-          material: displayedSpool.material,
-          subtype: displayedSpool.subtype,
-          color_name: displayedSpool.color_name,
-          rgba: displayedSpool.rgba,
-          brand: displayedSpool.brand,
-          label_weight: displayedSpool.label_weight,
-          core_weight: displayedSpool.core_weight,
-          weight_used: displayedSpool.weight_used,
-        } : null}
-        tagUid={displayedTagId}
-        scaleWeight={liveWeight ?? displayedWeight}
-        weightStable={weightStable}
-        onSyncWeight={() => refetchSpools()}
-        onAssignToAms={() => setShowAssignAmsModal(true)}
-        onLinkSpool={untaggedSpools.length > 0 ? () => setShowLinkModal(true) : undefined}
-        onAddToInventory={() => navigate(`/spoolbuddy/inventory?new=true&tag_uid=${displayedTagId}`)}
-      />
 
       {/* Assign to AMS Modal */}
       {displayedSpool && displayedTagId && (
         <AssignToAmsModal
           isOpen={showAssignAmsModal}
           onClose={() => setShowAssignAmsModal(false)}
-          spool={{
-            id: displayedSpool.id,
-            tag_uid: displayedTagId,
-            material: displayedSpool.material,
-            subtype: displayedSpool.subtype,
-            color_name: displayedSpool.color_name,
-            rgba: displayedSpool.rgba,
-            brand: displayedSpool.brand,
-            label_weight: displayedSpool.label_weight,
-            core_weight: displayedSpool.core_weight,
-            weight_used: displayedSpool.weight_used,
-          }}
+          spool={displayedSpool}
           printerId={selectedPrinterId}
         />
       )}
@@ -362,6 +417,48 @@ export function SpoolBuddyDashboard() {
           untaggedSpools={untaggedSpools}
           onLink={handleLinkTagToSpool}
         />
+      )}
+
+      {/* Quick-add to Inventory Modal */}
+      {showQuickAddModal && displayedTagId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-zinc-800 rounded-2xl p-6 mx-4 max-w-sm w-full border border-zinc-700">
+            <h3 className="text-lg font-semibold text-zinc-100 mb-3">
+              {t('spoolbuddy.modal.addToInventory', 'Add to Inventory')}
+            </h3>
+
+            {/* Hint */}
+            <div className="flex gap-2.5 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg mb-4">
+              <svg className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-sm text-amber-200/80">
+                {t('spoolbuddy.modal.quickAddHint', 'For best results, add the spool in the Bambuddy web interface first (with material, color, brand), then use "Link to Spool" here to assign the NFC tag.')}
+              </p>
+            </div>
+
+            <p className="text-sm text-zinc-400 mb-1">
+              {t('spoolbuddy.modal.quickAddDesc', 'This will create a basic PLA spool entry with this NFC tag. You can edit the details later in Bambuddy.')}
+            </p>
+            <p className="text-xs text-zinc-500 font-mono mb-5">{displayedTagId}</p>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowQuickAddModal(false)}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-zinc-700 text-zinc-300 hover:bg-zinc-600 transition-colors min-h-[44px]"
+              >
+                {t('common.cancel', 'Cancel')}
+              </button>
+              <button
+                onClick={handleQuickAddToInventory}
+                disabled={quickAddBusy}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors min-h-[44px]"
+              >
+                {quickAddBusy ? t('common.saving', 'Saving...') : t('spoolbuddy.modal.addAnyway', 'Add Anyway')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

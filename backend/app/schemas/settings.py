@@ -38,6 +38,7 @@ class AppSettings(BaseModel):
     include_beta_updates: bool = Field(default=False, description="Include beta/prerelease versions in update checks")
 
     # Language
+    language: str = Field(default="en", description="UI language (en, de, fr, ja, it, pt-BR)")
     notification_language: str = Field(default="en", description="Language for push notifications (en, de)")
 
     # Bed cooled notification threshold
@@ -167,6 +168,7 @@ class AppSettingsUpdate(BaseModel):
     check_updates: bool | None = None
     check_printer_firmware: bool | None = None
     include_beta_updates: bool | None = None
+    language: str | None = None
     notification_language: str | None = None
     bed_cooled_threshold: float | None = None
     ams_humidity_good: int | None = None

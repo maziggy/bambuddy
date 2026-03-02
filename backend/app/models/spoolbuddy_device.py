@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, func
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.core.database import Base
@@ -20,8 +20,15 @@ class SpoolBuddyDevice(Base):
     has_scale: Mapped[bool] = mapped_column(Boolean, default=True)
     tare_offset: Mapped[int] = mapped_column(Integer, default=0)
     calibration_factor: Mapped[float] = mapped_column(Float, default=1.0)
+    nfc_reader_type: Mapped[str | None] = mapped_column(String(20))
+    nfc_connection: Mapped[str | None] = mapped_column(String(20))
+    display_brightness: Mapped[int] = mapped_column(Integer, default=100)
+    display_blank_timeout: Mapped[int] = mapped_column(Integer, default=0)
+    has_backlight: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_calibrated_at: Mapped[datetime | None] = mapped_column(DateTime)
     last_seen: Mapped[datetime | None] = mapped_column(DateTime)
     pending_command: Mapped[str | None] = mapped_column(String(50))
+    pending_write_payload: Mapped[str | None] = mapped_column(Text, nullable=True)
     nfc_ok: Mapped[bool] = mapped_column(Boolean, default=False)
     scale_ok: Mapped[bool] = mapped_column(Boolean, default=False)
     uptime_s: Mapped[int] = mapped_column(Integer, default=0)

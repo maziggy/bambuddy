@@ -1230,6 +1230,16 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already applied
 
+    # Migration: Add SpoolBuddy scale weight tracking columns to spool table
+    try:
+        await conn.execute(text("ALTER TABLE spool ADD COLUMN last_scale_weight INTEGER"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE spool ADD COLUMN last_weighed_at DATETIME"))
+    except OperationalError:
+        pass  # Already applied
+
     # Migration: Add cost tracking fields to spool table
     try:
         await conn.execute(text("ALTER TABLE spool ADD COLUMN cost_per_kg REAL"))
@@ -1315,6 +1325,38 @@ async def run_migrations(conn):
     # Migration: Add filament_overrides column to print_queue for filament override in model-based assignment
     try:
         await conn.execute(text("ALTER TABLE print_queue ADD COLUMN filament_overrides TEXT"))
+    except OperationalError:
+        pass  # Already applied
+
+    # Migration: Add NFC reader and display control columns to spoolbuddy_devices
+    try:
+        await conn.execute(text("ALTER TABLE spoolbuddy_devices ADD COLUMN nfc_reader_type VARCHAR(20)"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE spoolbuddy_devices ADD COLUMN nfc_connection VARCHAR(20)"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE spoolbuddy_devices ADD COLUMN display_brightness INTEGER DEFAULT 100"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE spoolbuddy_devices ADD COLUMN display_blank_timeout INTEGER DEFAULT 0"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE spoolbuddy_devices ADD COLUMN has_backlight BOOLEAN DEFAULT 0"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE spoolbuddy_devices ADD COLUMN last_calibrated_at DATETIME"))
+    except OperationalError:
+        pass  # Already applied
+
+    # Migration: Add NFC tag write payload column to spoolbuddy_devices
+    try:
+        await conn.execute(text("ALTER TABLE spoolbuddy_devices ADD COLUMN pending_write_payload TEXT"))
     except OperationalError:
         pass  # Already applied
 

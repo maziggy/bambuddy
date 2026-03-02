@@ -58,6 +58,16 @@ class NFCReader:
             return False
 
     @property
+    def reader_type(self) -> str:
+        """Return NFC reader hardware type."""
+        return "PN5180" if self._nfc is not None else "Unknown"
+
+    @property
+    def connection(self) -> str:
+        """Return NFC reader connection type."""
+        return "SPI" if self._nfc is not None else "None"
+
+    @property
     def ok(self) -> bool:
         return self._ok
 
@@ -75,6 +85,44 @@ class NFCReader:
             self._nfc.close()
         except Exception:
             pass
+
+    @property
+    def current_sak(self) -> int | None:
+        return self._current_sak
+
+    def write_ntag(self, data: bytes) -> tuple[bool, str]:
+        """Write raw NDEF bytes to currently present NTAG tag.
+
+        Requires tag in TAG_PRESENT state with SAK=0x00.
+        Returns (success, message).
+        """
+        if self._state != NFCState.TAG_PRESENT:
+            return False, "No tag present"
+        if self._current_sak != 0x00:
+            return False, f"Not an NTAG (SAK=0x{self._current_sak:02X})"
+        if not self._nfc:
+            return False, "NFC reader not available"
+
+        try:
+            # Reactivate card before writing
+            result = self._nfc.reactivate_card()
+            if result is None:
+                return False, "Failed to reactivate card for write"
+
+            uid_bytes, sak = result
+            if uid_bytes.hex().upper() != self._current_uid:
+                return False, "Tag UID changed during write"
+
+            # Write starting at page 4
+            success = self._nfc.ntag_write_pages(start_page=4, data=data)
+            if success:
+                logger.info("NTAG write successful: %d bytes to tag %s", len(data), self._current_uid)
+                return True, "Write successful"
+            else:
+                return False, "Write or verification failed"
+        except Exception as e:
+            logger.error("NTAG write error: %s", e)
+            return False, f"Write error: {e}"
 
     def poll(self) -> tuple[str, dict | None]:
         """Poll for tag. Returns (event_type, event_data).

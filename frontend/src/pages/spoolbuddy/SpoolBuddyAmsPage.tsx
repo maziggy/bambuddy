@@ -70,6 +70,28 @@ export function SpoolBuddyAmsPage() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const { data: assignments } = useQuery({
+    queryKey: ['spool-assignments', selectedPrinterId],
+    queryFn: () => api.getAssignments(selectedPrinterId!),
+    enabled: selectedPrinterId !== null,
+    staleTime: 30 * 1000,
+  });
+
+  // Build fill-level override map from inventory assignments
+  // Key: "amsId-trayId", Value: fill percentage (0-100)
+  const fillOverrides = useMemo(() => {
+    const map: Record<string, number> = {};
+    if (!assignments) return map;
+    for (const a of assignments) {
+      const sp = a.spool;
+      if (sp && sp.label_weight > 0 && sp.weight_used != null) {
+        const fill = Math.round(Math.max(0, sp.label_weight - sp.weight_used) / sp.label_weight * 100);
+        map[`${a.ams_id}-${a.tray_id}`] = fill;
+      }
+    }
+    return map;
+  }, [assignments]);
+
   const isConnected = status?.connected ?? false;
   const amsUnits = useMemo(() => status?.ams ?? [], [status?.ams]);
   const regularAms = useMemo(() => amsUnits.filter(u => !u.is_ams_ht), [amsUnits]);
@@ -194,6 +216,7 @@ export function SpoolBuddyAmsPage() {
     const items: {
       key: string; label: string; tray: AMSTray; isEmpty: boolean; isActive: boolean;
       temp?: number | null; humidity?: number | null; nozzleSide?: 'L' | 'R' | null;
+      effectiveFill: number | null;
       onClick: () => void;
     }[] = [];
 
@@ -203,6 +226,8 @@ export function SpoolBuddyAmsPage() {
         tray_id_name: null, tray_info_idx: null, remain: -1, k: null,
         cali_idx: null, tag_uid: null, tray_uuid: null, nozzle_temp_min: null, nozzle_temp_max: null,
       };
+      const invFill = fillOverrides[`${unit.id}-0`] ?? null;
+      const amsFill = tray.remain != null && tray.remain >= 0 ? tray.remain : null;
       items.push({
         key: `ht-${unit.id}`,
         label: getAmsName(unit.id),
@@ -212,16 +237,22 @@ export function SpoolBuddyAmsPage() {
         temp: unit.temp,
         humidity: unit.humidity,
         nozzleSide: getNozzleSide(unit.id),
+        effectiveFill: invFill ?? amsFill,
         onClick: () => handleAmsSlotClick(unit.id, 0, isTrayEmpty(tray) ? null : tray),
       });
     }
 
     for (const extTray of vtTrays) {
       const extTrayId = extTray.id ?? 254;
-      const isExtActive = isDualNozzle && trayNow === 254
-        ? (extTrayId === 254 && status?.active_extruder === 1) ||
-          (extTrayId === 255 && status?.active_extruder === 0)
-        : trayNow === extTrayId;
+      // tray_now=255 means "no tray loaded" (idle) — never active
+      const isExtActive = trayNow === 255 ? false
+        : isDualNozzle && trayNow === 254
+          ? (extTrayId === 254 && status?.active_extruder === 1) ||
+            (extTrayId === 255 && status?.active_extruder === 0)
+          : trayNow === extTrayId;
+      const extSlotTrayId = extTrayId - 254;
+      const extInvFill = fillOverrides[`255-${extSlotTrayId}`] ?? null;
+      const extAmsFill = extTray.remain != null && extTray.remain >= 0 ? extTray.remain : null;
       items.push({
         key: `ext-${extTrayId}`,
         label: isDualNozzle
@@ -230,13 +261,14 @@ export function SpoolBuddyAmsPage() {
         tray: extTray,
         isEmpty: isTrayEmpty(extTray),
         isActive: isExtActive,
-        nozzleSide: isDualNozzle ? (extTrayId === 254 ? 'L' : 'R') : null,
+        nozzleSide: null,
+        effectiveFill: extInvFill ?? extAmsFill,
         onClick: () => handleExtSlotClick(extTray),
       });
     }
 
     return items;
-  }, [htAms, vtTrays, isDualNozzle, trayNow, status?.active_extruder, t, getActiveSlotForAms, getNozzleSide, handleAmsSlotClick, handleExtSlotClick]);
+  }, [htAms, vtTrays, isDualNozzle, trayNow, status?.active_extruder, t, getActiveSlotForAms, getNozzleSide, handleAmsSlotClick, handleExtSlotClick, fillOverrides]);
 
   return (
     <div className="h-full flex flex-col p-4">
@@ -265,7 +297,7 @@ export function SpoolBuddyAmsPage() {
         ) : (
           <div className="flex flex-col gap-3 h-full">
             {/* Regular AMS cards — 4-slot, 2-col grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1 min-h-0">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {regularAms.map((unit) => (
                 <AmsUnitCard
                   key={unit.id}
@@ -275,19 +307,20 @@ export function SpoolBuddyAmsPage() {
                   isDualNozzle={isDualNozzle}
                   nozzleSide={getNozzleSide(unit.id)}
                   thresholds={amsThresholds}
+                  fillOverrides={fillOverrides}
                 />
               ))}
             </div>
 
-            {/* Third row: single-slot cards (AMS-HT + External) */}
+            {/* Third row: single-slot cards (AMS-HT + External) — half-width to align with AMS cards */}
             {singleSlots.length > 0 && (
-              <div className="flex gap-2 flex-shrink-0">
-                {singleSlots.map(({ key, label, tray, isEmpty, isActive, temp, humidity, nozzleSide, onClick }) => {
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {singleSlots.map(({ key, label, tray, isEmpty, isActive, temp, humidity, nozzleSide, effectiveFill, onClick }) => {
                   const color = trayColorToCSS(tray.tray_color);
                   return (
                     <div
                       key={key}
-                      className={`bg-bambu-dark-secondary rounded-lg px-3 py-2 cursor-pointer hover:bg-bambu-dark-secondary/80 transition-all flex items-center gap-2 ${isActive ? 'ring-2 ring-bambu-green' : ''}`}
+                      className={`bg-bambu-dark-secondary rounded-lg px-3 py-2 cursor-pointer hover:bg-bambu-dark-secondary/80 transition-all flex items-center gap-3 ${isActive ? 'ring-2 ring-bambu-green' : ''}`}
                       onClick={onClick}
                     >
                       {/* Spool */}
@@ -338,13 +371,13 @@ export function SpoolBuddyAmsPage() {
                         )}
                       </div>
                       {/* Fill bar */}
-                      {!isEmpty && tray.remain != null && tray.remain >= 0 && (
+                      {!isEmpty && effectiveFill != null && effectiveFill >= 0 && (
                         <div className="w-1.5 h-8 bg-bambu-dark-tertiary rounded-full overflow-hidden flex-shrink-0 flex flex-col-reverse">
                           <div
                             className="w-full rounded-full"
                             style={{
-                              height: `${tray.remain}%`,
-                              backgroundColor: tray.remain > 50 ? '#22c55e' : tray.remain > 20 ? '#f59e0b' : '#ef4444',
+                              height: `${effectiveFill}%`,
+                              backgroundColor: effectiveFill > 50 ? '#22c55e' : effectiveFill > 20 ? '#f59e0b' : '#ef4444',
                             }}
                           />
                         </div>

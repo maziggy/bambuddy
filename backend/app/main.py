@@ -2208,6 +2208,10 @@ async def on_print_complete(printer_id: int, data: dict):
             queue_item = printing_items[0] if printing_items else None
             if queue_item:
                 queue_status = data.get("status", "completed")
+                # MQTT sends "aborted" for cancelled prints; normalise to
+                # "cancelled" so it matches the queue schema Literal.
+                if queue_status == "aborted":
+                    queue_status = "cancelled"
                 queue_item.status = queue_status
                 queue_item.completed_at = datetime.now(timezone.utc)
                 await db.commit()
@@ -3255,6 +3259,22 @@ def stop_camera_cleanup():
 async def lifespan(app: FastAPI):
     # Startup
     await init_db()
+
+    # Fix queue items stuck with invalid "aborted" status (should be "cancelled").
+    # This can happen when a print was cancelled mid-print on versions before this fix.
+    try:
+        async with async_session() as db:
+            from backend.app.models.print_queue import PrintQueueItem
+
+            result = await db.execute(select(PrintQueueItem).where(PrintQueueItem.status == "aborted"))
+            aborted_items = result.scalars().all()
+            if aborted_items:
+                for item in aborted_items:
+                    item.status = "cancelled"
+                await db.commit()
+                logging.info("Fixed %d queue item(s) with invalid 'aborted' status → 'cancelled'", len(aborted_items))
+    except Exception as e:
+        logging.warning("Failed to fix aborted queue items: %s", e)
 
     # Restore debug logging state from previous session
     await init_debug_logging()

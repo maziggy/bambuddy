@@ -207,7 +207,7 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
     const slotLabel = formatSlotLabel(assignment.ams_id, assignment.tray_id, isHt, isExternal);
     return (
       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-500/20 text-purple-400">
-        {printerLabel} {slotLabel}
+        {printerLabel} {slotLabel}{assignment.ams_label ? ` (${assignment.ams_label})` : ''}
       </span>
     );
   },
@@ -303,7 +303,8 @@ const columnSortValues: Record<string, (spool: InventorySpool, assignmentMap: Re
     if (!a) return '';
     const isExt = a.ams_id === 254 || a.ams_id === 255;
     const isHt = !isExt && a.ams_id >= 128;
-    return `${a.printer_name || ''} ${formatSlotLabel(a.ams_id, a.tray_id, isHt, isExt)}`;
+    const label = a.ams_label ? ` (${a.ams_label})` : '';
+    return `${a.printer_name || ''} ${formatSlotLabel(a.ams_id, a.tray_id, isHt, isExt)}${label}`;
   },
   label_weight: (s) => s.label_weight,
   net: (s) => Math.max(0, s.label_weight - s.weight_used),

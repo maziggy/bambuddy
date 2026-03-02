@@ -1858,6 +1858,7 @@ export interface SpoolAssignment {
   spool?: InventorySpool | null;
   configured: boolean;
   created_at: string;
+  ams_label?: string | null;  // User-defined friendly name for the AMS unit
 }
 
 // Update types
@@ -3311,13 +3312,13 @@ export const api = {
   // AMS Labels (user-defined friendly names)
   getAmsLabels: (printerId: number) =>
     request<Record<number, string>>(`/printers/${printerId}/ams-labels`),
-  saveAmsLabel: (printerId: number, amsId: number, label: string) =>
+  saveAmsLabel: (printerId: number, amsId: number, label: string, amsSerial = '') =>
     request<{ ams_id: number; label: string }>(
-      `/printers/${printerId}/ams-labels/${amsId}?label=${encodeURIComponent(label)}`,
+      `/printers/${printerId}/ams-labels/${amsId}?label=${encodeURIComponent(label)}&ams_serial=${encodeURIComponent(amsSerial)}`,
       { method: 'PUT' }
     ),
-  deleteAmsLabel: (printerId: number, amsId: number) =>
-    request<{ success: boolean }>(`/printers/${printerId}/ams-labels/${amsId}`, {
+  deleteAmsLabel: (printerId: number, amsId: number, amsSerial = '') =>
+    request<{ success: boolean }>(`/printers/${printerId}/ams-labels/${amsId}?ams_serial=${encodeURIComponent(amsSerial)}`, {
       method: 'DELETE',
     }),
 

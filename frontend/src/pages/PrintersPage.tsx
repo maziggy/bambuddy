@@ -1459,9 +1459,9 @@ function AmsNameHoverCard({
     try {
       const trimmed = editValue.trim();
       if (trimmed) {
-        await api.saveAmsLabel(printerId, ams.id, trimmed);
+        await api.saveAmsLabel(printerId, ams.id, trimmed, ams.serial_number);
       } else {
-        await api.deleteAmsLabel(printerId, ams.id);
+        await api.deleteAmsLabel(printerId, ams.id, ams.serial_number);
       }
       onSaved();
       setIsVisible(false);

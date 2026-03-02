@@ -12,10 +12,9 @@ from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.models.ams_label import AmsLabel
 from backend.app.models.printer import Printer
 from backend.app.models.slot_preset import SlotPresetMapping
-from backend.app.models.ams_label import AmsLabel
-
 from backend.app.schemas.printer import (
     AMSTray,
     AMSUnit,
@@ -1967,10 +1966,49 @@ async def get_ams_labels(
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get all user-defined AMS labels for a printer, keyed by AMS unit ID."""
-    result = await db.execute(select(AmsLabel).where(AmsLabel.printer_id == printer_id))
-    labels = result.scalars().all()
-    return {lbl.ams_id: lbl.label for lbl in labels}
+    """Get all user-defined AMS labels for a printer, keyed by AMS unit ID.
+
+    Labels are stored by AMS serial number.  This endpoint resolves the current
+    serial-to-ams_id mapping from the live printer state so the response is still
+    keyed by ams_id for UI compatibility.
+    """
+    # Build serial -> ams_id map from live printer state
+    serial_to_ams_id: dict[str, int] = {}
+    state = printer_manager.get_status(printer_id)
+    if state and state.raw_data:
+        for ams_unit in state.raw_data.get("ams", []):
+            sn = str(ams_unit.get("sn") or ams_unit.get("serial_number") or "")
+            if sn:
+                serial_to_ams_id[sn] = int(ams_unit.get("id", 0))
+
+    # Collect all known serials for this printer (live + synthetic fallback keys)
+    serials_to_query = set(serial_to_ams_id.keys())
+
+    # Fetch labels for all known serials
+    labels: dict[int, str] = {}
+    if serials_to_query:
+        result = await db.execute(
+            select(AmsLabel).where(AmsLabel.ams_serial_number.in_(serials_to_query))
+        )
+        for lbl in result.scalars().all():
+            aid = serial_to_ams_id.get(lbl.ams_serial_number)
+            if aid is not None:
+                labels[aid] = lbl.label
+
+    # Also fetch labels stored under synthetic keys for this printer (backward compat)
+    if state and state.raw_data:
+        for ams_unit in state.raw_data.get("ams", []):
+            aid = int(ams_unit.get("id", 0))
+            if aid not in labels:
+                synthetic = f"p{printer_id}a{aid}"
+                result = await db.execute(
+                    select(AmsLabel).where(AmsLabel.ams_serial_number == synthetic)
+                )
+                row = result.scalar_one_or_none()
+                if row:
+                    labels[aid] = row.label
+
+    return labels
 
 
 @router.put("/{printer_id}/ams-labels/{ams_id}")
@@ -1978,27 +2016,35 @@ async def save_ams_label(
     printer_id: int,
     ams_id: int,
     label: str = Query(..., max_length=100),
+    ams_serial: str = Query(default="", max_length=50),
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ):
-    """Create or update the friendly name for a specific AMS unit."""
+    """Create or update the friendly name for a specific AMS unit.
+
+    When ``ams_serial`` is provided the label is stored under that serial number so
+    it survives the AMS being moved to a different printer.  When it is absent (e.g.
+    older firmware that does not report a serial) a synthetic key based on the
+    printer_id and ams_id is used as a fallback.
+    """
     # Verify printer exists
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     if not result.scalar_one_or_none():
         raise HTTPException(404, "Printer not found")
 
+    # Determine the serial key to store under
+    serial_key = ams_serial.strip() if ams_serial else f"p{printer_id}a{ams_id}"
+
     result = await db.execute(
-        select(AmsLabel).where(
-            AmsLabel.printer_id == printer_id,
-            AmsLabel.ams_id == ams_id,
-        )
+        select(AmsLabel).where(AmsLabel.ams_serial_number == serial_key)
     )
     existing = result.scalar_one_or_none()
 
     if existing:
         existing.label = label
+        existing.ams_id = ams_id
     else:
-        db.add(AmsLabel(printer_id=printer_id, ams_id=ams_id, label=label))
+        db.add(AmsLabel(ams_serial_number=serial_key, ams_id=ams_id, label=label))
 
     await db.commit()
     return {"ams_id": ams_id, "label": label}
@@ -2008,15 +2054,15 @@ async def save_ams_label(
 async def delete_ams_label(
     printer_id: int,
     ams_id: int,
+    ams_serial: str = Query(default="", max_length=50),
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete the friendly name for a specific AMS unit, reverting to the auto label."""
+    serial_key = ams_serial.strip() if ams_serial else f"p{printer_id}a{ams_id}"
+
     result = await db.execute(
-        select(AmsLabel).where(
-            AmsLabel.printer_id == printer_id,
-            AmsLabel.ams_id == ams_id,
-        )
+        select(AmsLabel).where(AmsLabel.ams_serial_number == serial_key)
     )
     existing = result.scalar_one_or_none()
 
@@ -2025,6 +2071,7 @@ async def delete_ams_label(
         await db.commit()
 
     return {"success": True}
+
 
 @router.post("/{printer_id}/debug/simulate-print-complete")
 async def debug_simulate_print_complete(

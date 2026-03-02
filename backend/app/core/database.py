@@ -1319,6 +1319,44 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already applied
 
+    # Migration: Convert ams_labels table from (printer_id, ams_id) key to ams_serial_number key
+    # Labels are now keyed by AMS serial number so they persist when the AMS is moved to another printer.
+    try:
+        result = await conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='ams_labels'"))
+        row = result.fetchone()
+        if row and "printer_id" in (row[0] or ""):
+            # Old schema: rebuild the table with ams_serial_number as the unique key.
+            # Existing rows get a synthetic serial "p{printer_id}a{ams_id}" so data is preserved.
+            await conn.execute(
+                text("""
+                CREATE TABLE ams_labels_new (
+                    id INTEGER PRIMARY KEY,
+                    ams_serial_number VARCHAR(50) NOT NULL,
+                    ams_id INTEGER,
+                    label VARCHAR(100) NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT uq_ams_label_serial UNIQUE (ams_serial_number)
+                )
+            """)
+            )
+            await conn.execute(
+                text("""
+                INSERT INTO ams_labels_new (id, ams_serial_number, ams_id, label, created_at, updated_at)
+                SELECT id,
+                       'p' || CAST(printer_id AS TEXT) || 'a' || CAST(ams_id AS TEXT),
+                       ams_id,
+                       label,
+                       created_at,
+                       updated_at
+                FROM ams_labels
+            """)
+            )
+            await conn.execute(text("DROP TABLE ams_labels"))
+            await conn.execute(text("ALTER TABLE ams_labels_new RENAME TO ams_labels"))
+    except OperationalError:
+        pass  # Already migrated or table does not exist yet
+
 
 async def seed_notification_templates():
     """Seed default notification templates if they don't exist."""

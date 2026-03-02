@@ -115,6 +115,7 @@ class SpoolAssignmentResponse(BaseModel):
     created_at: datetime
     spool: SpoolResponse | None = None
     configured: bool = False
+    ams_label: str | None = None  # User-defined friendly name for the AMS unit
 
     class Config:
         from_attributes = True

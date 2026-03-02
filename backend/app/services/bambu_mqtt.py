@@ -22,6 +22,13 @@ import paho.mqtt.client as mqtt
 
 logger = logging.getLogger(__name__)
 
+# AMS module name prefixes used in get_version responses.
+# The numeric suffix after '/' is the AMS unit ID as reported in push_status.
+#   "ams/<id>"  – original AMS (X1C, X1E, P1S, …)
+#   "n3f/<id>"  – AMS 2 Pro (H2D Pro and similar)
+#   "n3s/<id>"  – AMS HT (H2D Pro and similar; IDs typically start at 128)
+_AMS_MODULE_PREFIXES = ("ams/", "n3f/", "n3s/")
+
 
 @dataclass
 class MQTTLogEntry:
@@ -657,9 +664,14 @@ class BambuMQTTClient:
         """Handle version info response from get_version command.
 
         Parses firmware version from the 'ota' module in the module list.
-        Also extracts AMS unit firmware versions from 'ams/<id>' modules and
-        stores them on the corresponding AMS unit in raw_data so the status
-        route can expose them to the frontend.
+        Also extracts AMS unit firmware versions from AMS modules and stores
+        them on the corresponding AMS unit in raw_data so the status route can
+        expose them to the frontend.
+
+        AMS module naming conventions (numeric suffix is the AMS unit ID):
+        - ``ams/<id>``  – original AMS
+        - ``n3f/<id>``  – AMS 2 Pro (H2D Pro and similar)
+        - ``n3s/<id>``  – AMS HT (H2D Pro and similar)
 
         Message format:
         {
@@ -668,6 +680,8 @@ class BambuMQTTClient:
                 {"name": "ota", "sw_ver": "01.08.05.00"},
                 {"name": "rv1126", "sw_ver": "00.00.14.74"},
                 {"name": "ams/0", "sw_ver": "00.00.06.96", "sn": "ABC123"},
+                {"name": "n3f/0", "sw_ver": "03.00.21.29", "sn": "19C06A552504488"},
+                {"name": "n3s/128", "sw_ver": "03.00.21.29", "sn": "19F06A561801096"},
                 ...
             ]
         }
@@ -676,6 +690,7 @@ class BambuMQTTClient:
         if not isinstance(modules, list):
             return
 
+        state_changed = False
         for module in modules:
             if not isinstance(module, dict):
                 continue
@@ -686,13 +701,11 @@ class BambuMQTTClient:
                     self.state.firmware_version = version
                     if old_version != version:
                         logger.info("[%s] Firmware version: %s", self.serial_number, version)
-                    # Trigger state change callback
-                    if self.on_state_change:
-                        self.on_state_change(self.state)
+                    state_changed = True
                 break
 
-        # Extract AMS unit firmware versions from ams/<id> modules (e.g. "ams/0")
-        # and store them on the corresponding raw AMS unit for the status route.
+        # Extract AMS unit firmware versions from AMS modules.
+        # See module-level _AMS_MODULE_PREFIXES for supported naming conventions.
         # Always cache regardless of whether AMS data has arrived yet — get_version
         # often arrives before the first push_status, so caching must be unconditional.
         ams_raw = self.state.raw_data.get("ams")
@@ -700,7 +713,7 @@ class BambuMQTTClient:
             if not isinstance(module, dict):
                 continue
             name = module.get("name", "")
-            if not name.startswith("ams/"):
+            if not any(name.startswith(prefix) for prefix in _AMS_MODULE_PREFIXES):
                 continue
             try:
                 ams_id = int(name.split("/", 1)[1])
@@ -711,7 +724,7 @@ class BambuMQTTClient:
 
             # Always cache so _apply_ams_version_cache can apply it when AMS data arrives
             if sw_ver or sn:
-                self._ams_version_cache[ams_id] = {'sw_ver': sw_ver, 'sn': sn}
+                self._ams_version_cache[ams_id] = {"sw_ver": sw_ver, "sn": sn}
 
             # Also directly update any AMS unit already present in raw_data
             if ams_raw and isinstance(ams_raw, list):
@@ -725,13 +738,16 @@ class BambuMQTTClient:
                     if unit_id == ams_id:
                         if sw_ver:
                             ams_unit["sw_ver"] = sw_ver
-                            logger.debug(
-                                "[%s] AMS %s firmware: %s", self.serial_number, ams_id, sw_ver
-                            )
+                            logger.debug("[%s] AMS %s firmware: %s", self.serial_number, ams_id, sw_ver)
                         # Only set sn from version info if not already present in AMS data
                         if sn and not ams_unit.get("sn"):
                             ams_unit["sn"] = sn
                         break
+
+        # Trigger state change callback AFTER both loops so AMS sn/sw_ver are
+        # included in the broadcast (not just the printer firmware version).
+        if state_changed and self.on_state_change:
+            self.on_state_change(self.state)
 
         # Warn if any AMS unit is still missing serial number or firmware version
         # after processing the version info response.
@@ -768,7 +784,7 @@ class BambuMQTTClient:
         for unit in ams_list:
             if not isinstance(unit, dict):
                 continue
-            raw_id = unit.get('id')
+            raw_id = unit.get("id")
             try:
                 unit_id = int(raw_id) if raw_id is not None else None
             except (ValueError, TypeError):
@@ -778,14 +794,13 @@ class BambuMQTTClient:
             cached = cache.get(unit_id)
             if not cached:
                 continue
-            sw_ver = cached.get('sw_ver') or ''
-            sn = cached.get('sn') or ''
-            if sw_ver and not unit.get('sw_ver'):
-                unit['sw_ver'] = sw_ver
+            sw_ver = cached.get("sw_ver") or ""
+            sn = cached.get("sn") or ""
+            if sw_ver and not unit.get("sw_ver"):
+                unit["sw_ver"] = sw_ver
             # Only set sn if not already present in AMS data
-            if sn and not unit.get('sn') and not unit.get('serial_number'):
-                unit['sn'] = sn
-
+            if sn and not unit.get("sn") and not unit.get("serial_number"):
+                unit["sn"] = sn
 
     def _parse_xcam_data(self, xcam_data):
         """Parse xcam data for camera settings and AI detection options."""
@@ -1333,6 +1348,10 @@ class BambuMQTTClient:
                             merged_trays.append(new_tray)
                     # Update ams_unit with merged trays
                     ams_unit = {**ams_unit, "tray": merged_trays}
+                elif existing_unit:
+                    # Partial update without tray data: merge new fields into existing
+                    # unit to preserve tray, sn, sw_ver, and other accumulated data.
+                    ams_unit = {**existing_unit, **ams_unit}
                 existing_by_id[ams_id] = ams_unit
 
         # Convert back to list, sorted by ID for consistent ordering
@@ -1380,8 +1399,6 @@ class BambuMQTTClient:
                 logger.debug("[%s] Could not parse tray_exist_bits: %s", self.serial_number, e)
 
         self.state.raw_data["ams"] = merged_ams
-
-        
 
         # Apply cached AMS firmware/SN from get_version (handles ordering and id type mismatches)
         self._apply_ams_version_cache(merged_ams)

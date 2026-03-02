@@ -320,32 +320,24 @@ ${CHANGELOG_NOTES}
 EOF
     )
 
-    # Check if release already exists
+    # Delete existing release so the new one gets today's date
+    # (gh release edit only updates title/notes, not the creation timestamp)
     if gh release view "v${VERSION}" >/dev/null 2>&1; then
-        echo "  Updating existing release v${VERSION}..."
-        gh release edit "v${VERSION}" \
-            --title "Daily Beta Build v${VERSION} (${TODAY})" \
-            --prerelease \
-            --notes "$RELEASE_BODY"
-        echo -e "${GREEN}  Updated GitHub release: v${VERSION}${NC}"
-    else
-        echo "  Creating new release v${VERSION}..."
-
-        # Ensure the tag exists on remote
-        if ! git ls-remote --tags origin "v${VERSION}" | grep -q "v${VERSION}"; then
-            echo "  Creating and pushing tag v${VERSION}..."
-            if ! git rev-parse "v${VERSION}" >/dev/null 2>&1; then
-                git tag "v${VERSION}"
-            fi
-            git push origin "v${VERSION}"
-        fi
-
-        gh release create "v${VERSION}" \
-            --title "Daily Beta Build v${VERSION} (${TODAY})" \
-            --prerelease \
-            --notes "$RELEASE_BODY"
-        echo -e "${GREEN}  Created GitHub release: v${VERSION}${NC}"
+        echo "  Deleting old release v${VERSION} (will recreate with today's date)..."
+        gh release delete "v${VERSION}" --yes --cleanup-tag
     fi
+
+    # Create/move tag to current HEAD and push
+    echo "  Tagging current HEAD as v${VERSION}..."
+    git tag -f "v${VERSION}"
+    git push origin "v${VERSION}" --force
+
+    echo "  Creating release v${VERSION}..."
+    gh release create "v${VERSION}" \
+        --title "Daily Beta Build v${VERSION} (${TODAY})" \
+        --prerelease \
+        --notes "$RELEASE_BODY"
+    echo -e "${GREEN}  Created GitHub release: v${VERSION}${NC}"
 fi
 
 # ============================================================

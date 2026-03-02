@@ -852,6 +852,9 @@ function ArchiveCard({
       </div>
 
       <CardContent className="p-4 flex-1 flex flex-col">
+        {/* Archive ID */}
+        <p className="text-[10px] text-bambu-gray/70 mb-1">#{archive.id}</p>
+
         {/* Title */}
         <div className="flex items-center justify-between gap-2 mb-1">
           <h3 className="min-w-0 font-medium text-white truncate">

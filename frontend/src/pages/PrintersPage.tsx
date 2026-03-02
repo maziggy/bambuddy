@@ -43,6 +43,7 @@ import {
   User,
   Home,
   Printer as PrinterIcon,
+  Info,
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
@@ -67,6 +68,7 @@ import { ChamberLight } from '../components/icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';
 import { FileUploadModal } from '../components/FileUploadModal';
 import { PrintModal } from '../components/PrintModal';
+import { PrinterInfoModal } from '../components/PrinterInfoModal';
 import { getGlobalTrayId } from '../utils/amsHelpers';
 
 // Complete Bambu Lab filament color mapping by tray_id_name
@@ -1456,6 +1458,8 @@ function PrinterCard({
   const [showResumeConfirm, setShowResumeConfirm] = useState(false);
   const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
   const [showUploadForPrint, setShowUploadForPrint] = useState(false);
+  const [showPrinterInfo, setShowPrinterInfo] = useState(false);
+  const closePrinterInfo = useCallback(() => setShowPrinterInfo(false), []);
   const [printAfterUpload, setPrintAfterUpload] = useState<{ id: number; filename: string } | null>(null);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [isDropUploading, setIsDropUploading] = useState(false);
@@ -2116,7 +2120,7 @@ function PrinterCard({
     }
   };
 
-  const canDrop = status?.state !== 'RUNNING' && status?.state !== 'PAUSE' && hasPermission('printers:control');
+  const canDrop = isConnected && status?.state !== 'RUNNING' && status?.state !== 'PAUSE' && hasPermission('printers:control');
 
   const handleCardDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
@@ -2284,6 +2288,16 @@ function PrinterCard({
                   >
                     <Pencil className="w-4 h-4" />
                     {t('common.edit')}
+                  </button>
+                  <button
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
+                    onClick={() => {
+                      setShowPrinterInfo(true);
+                      setShowMenu(false);
+                    }}
+                  >
+                    <Info className="w-4 h-4" />
+                    {t('printers.printerInformation')}
                   </button>
                   <button
                     className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
@@ -2794,19 +2808,6 @@ function PrinterCard({
                         </span>
                       </div>
 
-                      {/* Chamber Light */}
-                      <button
-                        onClick={() => chamberLightMutation.mutate(!status?.chamber_light)}
-                        disabled={!status?.connected || chamberLightMutation.isPending || !hasPermission('printers:control')}
-                        title={!hasPermission('printers:control') ? t('printers.permission.noControl') : (status?.chamber_light ? t('printers.chamberLightOff') : t('printers.chamberLightOn'))}
-                        className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors ${
-                          status?.chamber_light
-                            ? 'bg-yellow-500/10 hover:bg-yellow-500/20'
-                            : 'bg-bambu-dark hover:bg-bambu-dark-tertiary'
-                        } ${(!status?.connected || !hasPermission('printers:control')) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                      >
-                        <ChamberLight on={status?.chamber_light ?? false} className={`w-3.5 h-3.5 ${status?.chamber_light ? 'text-yellow-400' : 'text-bambu-gray/50'}`} />
-                      </button>
                     </div>
 
                     {/* Right: Print Control Buttons */}
@@ -3692,12 +3693,18 @@ function PrinterCard({
 
         {/* Connection Info & Actions - hidden in compact mode */}
         {viewMode === 'expanded' && (
-          <div className="mt-4 pt-4 border-t border-bambu-dark-tertiary flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="text-xs text-bambu-gray">
-              <p>{printer.ip_address}</p>
-              <p className="truncate">{printer.serial_number}</p>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
+          <div className="mt-4 pt-4 border-t border-bambu-dark-tertiary flex items-center justify-end gap-2 flex-wrap">
+              {/* Chamber Light */}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => chamberLightMutation.mutate(!status?.chamber_light)}
+                disabled={!status?.connected || chamberLightMutation.isPending || !hasPermission('printers:control')}
+                title={!hasPermission('printers:control') ? t('printers.permission.noControl') : (status?.chamber_light ? t('printers.chamberLightOff') : t('printers.chamberLightOn'))}
+                className={status?.chamber_light ? '!border-yellow-500 !text-yellow-400 hover:!bg-yellow-500/20' : ''}
+              >
+                <ChamberLight on={status?.chamber_light ?? false} className={`w-4 h-4 ${status?.chamber_light ? 'text-yellow-400' : ''}`} />
+              </Button>
               {/* Camera Button */}
               <Button
                 variant="secondary"
@@ -3759,13 +3766,13 @@ function PrinterCard({
                 variant="secondary"
                 size="sm"
                 onClick={() => setShowFileManager(true)}
-                disabled={!hasPermission('printers:files')}
+                disabled={!isConnected || !hasPermission('printers:files')}
                 title={!hasPermission('printers:files') ? t('printers.permission.noFiles') : t('printers.browseFiles')}
               >
                 <HardDrive className="w-4 h-4" />
-                Files
+                {t('printers.files')}
               </Button>
-              {status?.state !== 'RUNNING' && status?.state !== 'PAUSE' && (
+              {isConnected && status?.state !== 'RUNNING' && status?.state !== 'PAUSE' && (
                 <Button
                   size="sm"
                   onClick={() => setShowUploadForPrint(true)}
@@ -3774,10 +3781,9 @@ function PrinterCard({
                   className="!bg-bambu-green hover:!bg-bambu-green/80 !text-white"
                 >
                   <PrinterIcon className="w-4 h-4" />
-                  Print
+                  {t('common.print')}
                 </Button>
               )}
-            </div>
           </div>
         )}
       </CardContent>
@@ -3836,6 +3842,15 @@ function PrinterCard({
           printerId={printer.id}
           printerName={printer.name}
           onClose={() => setShowMQTTDebug(false)}
+        />
+      )}
+
+      {showPrinterInfo && (
+        <PrinterInfoModal
+          printer={printer}
+          status={status}
+          totalPrintHours={maintenanceInfo?.total_print_hours}
+          onClose={closePrinterInfo}
         />
       )}
 

@@ -888,6 +888,15 @@ function ArchiveCard({
           >
             {isSlicedFile(archive) ? t('archives.card.gcode') : t('archives.card.source')}
           </span>
+          {/* File hash badge */}
+          {archive.content_hash && (
+            <span
+              className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-bambu-dark-tertiary/50 text-bambu-gray-light"
+              title={`SHA256: ${archive.content_hash}`}
+            >
+            {archive.content_hash.slice(0, 8).toUpperCase()}
+            </span>
+          )}
           {archive.project_name && (
             <span
               className="text-xs px-1.5 py-0.5 rounded-full truncate max-w-[120px]"

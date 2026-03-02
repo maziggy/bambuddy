@@ -2156,6 +2156,18 @@ function PrinterCard({
     setIsDropUploading(true);
     try {
       const result = await api.uploadLibraryFile(file, null);
+
+      // Check printer compatibility if sliced_for_model is available in metadata
+      const slicedFor = (result.metadata as Record<string, unknown>)?.sliced_for_model as string | undefined;
+      const printerModel = mapModelCode(printer.model);
+      if (slicedFor && printerModel && slicedFor.toLowerCase() !== printerModel.toLowerCase()) {
+        showToast(
+          t('printers.incompatibleFile', 'This file was sliced for {{slicedFor}}, but this printer is a {{printerModel}}', { slicedFor, printerModel }),
+          'error'
+        );
+        return;
+      }
+
       setPrintAfterUpload({ id: result.id, filename: result.filename });
     } catch {
       showToast(t('common.uploadFailed', 'Upload failed'), 'error');
@@ -3786,6 +3798,17 @@ function PrinterCard({
           onUploadComplete={() => {}}
           autoUpload
           onFileUploaded={(file) => {
+            // Check printer compatibility if sliced_for_model is available in metadata
+            const slicedFor = (file.metadata as Record<string, unknown>)?.sliced_for_model as string | undefined;
+            const printerModel = mapModelCode(printer.model);
+            if (slicedFor && printerModel && slicedFor.toLowerCase() !== printerModel.toLowerCase()) {
+              showToast(
+                t('printers.incompatibleFile', 'This file was sliced for {{slicedFor}}, but this printer is a {{printerModel}}', { slicedFor, printerModel }),
+                'error'
+              );
+              setShowUploadForPrint(false);
+              return;
+            }
             setShowUploadForPrint(false);
             setPrintAfterUpload({ id: file.id, filename: file.filename });
           }}

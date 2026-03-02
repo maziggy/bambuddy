@@ -149,6 +149,11 @@ class AppSettings(BaseModel):
         default="", description="Bearer token for Prometheus metrics authentication (optional)"
     )
 
+    # Inventory low stock threshold
+    low_stock_threshold: float = Field(
+        default=20.0, description="Low stock threshold percentage (%) for inventory filtering and display"
+    )
+
 
 class AppSettingsUpdate(BaseModel):
     """Schema for updating settings (all fields optional)."""
@@ -198,6 +203,7 @@ class AppSettingsUpdate(BaseModel):
     mqtt_port: int | None = None
     mqtt_username: str | None = None
     mqtt_password: str | None = None
+    low_stock_threshold: float | None = None
     mqtt_topic_prefix: str | None = None
     mqtt_use_tls: bool | None = None
     external_url: str | None = None

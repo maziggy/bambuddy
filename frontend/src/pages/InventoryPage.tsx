@@ -501,17 +501,6 @@ function InventoryPage() {
     },
   });
 
-  // Low stock threshold state
-  const [lowStockThreshold, setLowStockThreshold] = useState(() => {
-    try {
-      const stored = localStorage.getItem('bambuddy-low-stock-threshold');
-      if (stored) return parseFloat(stored);
-    } catch {}
-    return 20;
-  });
-
-  const [showThresholdInput, setShowThresholdInput] = useState(false);
-  const [thresholdInput, setThresholdInput] = useState(lowStockThreshold.toString());
   const handleSyncWeight = async (spool: InventorySpool) => {
     if (spool.last_scale_weight == null) return;
     try {
@@ -523,6 +512,23 @@ function InventoryPage() {
       showToast('Failed to sync weight', 'error');
     }
   };
+
+  // Low stock threshold from backend settings
+  const lowStockThreshold = settings?.low_stock_threshold ?? 20;
+  const [showThresholdInput, setShowThresholdInput] = useState(false);
+  const [thresholdInput, setThresholdInput] = useState(lowStockThreshold.toString());
+
+  const updateThresholdMutation = useMutation({
+    mutationFn: (threshold: number) => api.updateSettings({ low_stock_threshold: threshold }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      showToast(t('common.saved'), 'success');
+      setShowThresholdInput(false);
+    },
+    onError: () => {
+      showToast(t('inventory.lowStockThresholdError'), 'error');
+    },
+  });
 
   // Stats calculation (active spools only)
   const stats = useMemo(() => {
@@ -842,13 +848,7 @@ function InventoryPage() {
                     e.preventDefault();
                     const val = parseFloat(thresholdInput);
                     if (!isNaN(val) && val >= 0.1 && val <= 99.9) {
-                      setLowStockThreshold(val);
-                      try {
-                        localStorage.setItem('bambuddy-low-stock-threshold', val.toString());
-                      } catch {
-                        // Ignore errors (e.g., private browsing)
-                      }
-                      setShowThresholdInput(false);
+                      updateThresholdMutation.mutate(val);
                     } else {
                       showToast(t('inventory.lowStockThresholdError'), 'error');
                     }
@@ -871,11 +871,12 @@ function InventoryPage() {
                     }}
                     className="px-1.5 py-1 rounded border border-bambu-dark-tertiary text-xs text-white bg-bambu-dark-secondary focus:outline-none focus:border-bambu-green w-14 text-center"
                     onWheel={e => e.currentTarget.blur()}
+                    disabled={updateThresholdMutation.isPending}
                   />
 
                   <span className="text-xs text-bambu-gray">%</span>
-                  <Button type="submit" size="sm">{t('common.save')}</Button>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => setShowThresholdInput(false)}>{t('common.cancel')}</Button>
+                  <Button type="submit" size="sm" disabled={updateThresholdMutation.isPending}>{t('common.save')}</Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setShowThresholdInput(false)} disabled={updateThresholdMutation.isPending}>{t('common.cancel')}</Button>
                 </form>
               ) : (
                 <>

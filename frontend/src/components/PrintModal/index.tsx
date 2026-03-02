@@ -12,7 +12,8 @@ import { buildLoadedFilaments, useFilamentMapping } from '../../hooks/useFilamen
 import { useMultiPrinterFilamentMapping, type PerPrinterConfig } from '../../hooks/useMultiPrinterFilamentMapping';
 import { isPlaceholderDate, getGlobalTrayId } from '../../utils/amsHelpers';
 import { getCurrencySymbol } from '../../utils/currency';
-import { toDateTimeLocalValue } from '../../utils/date';
+import { toDateTimeLocalValue, parseUTCDate } from '../../utils/date';
+import { useAuth } from '../../contexts/AuthContext';
 import { FilamentMapping } from './FilamentMapping';
 import { FilamentOverride } from './FilamentOverride';
 import { PlateSelector } from './PlateSelector';
@@ -226,8 +227,7 @@ export function PrintModal({
     queryKey: ['spool-assignments'],
     queryFn: () => api.getAssignments(),
     staleTime: 30 * 1000,
-    enabled: (mode === 'reprint' || mode === 'add-to-queue') && assignmentMode === 'printer',
-    enabled: isLibraryFile && mode === 'reprint',
+    enabled: ((mode === 'reprint' || mode === 'add-to-queue') && assignmentMode === 'printer') || (isLibraryFile && mode === 'reprint'),
   });
 
   // Fetch archive details to get sliced_for_model

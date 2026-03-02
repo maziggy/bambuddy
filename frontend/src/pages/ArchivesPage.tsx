@@ -151,6 +151,7 @@ function ArchiveCard({
   preferredSlicer = 'bambu_studio',
   currency,
   t,
+  onNavigateToArchive,
 }: {
   archive: Archive;
   printerName: string;
@@ -163,6 +164,7 @@ function ArchiveCard({
   preferredSlicer?: SlicerType;
   currency: string;
   t: TFunction;
+  onNavigateToArchive?: (archiveId: number) => void;
 }) {
   // Debug: log when card is highlighted
   if (isHighlighted) {
@@ -201,6 +203,34 @@ function ArchiveCard({
     enabled: showPlateNav, // Only fetch when user hovers to see navigation
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
+
+  // Fetch duplicates to determine sequence number
+  const { data: duplicatesData } = useQuery({
+    queryKey: ['archive-duplicates', archive.id],
+    queryFn: () => api.getArchiveDuplicates(archive.id),
+    enabled: archive.duplicate_count > 0, // Only fetch if there are duplicates
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+
+  // Calculate duplicate sequence number (0 for original, 1+ for duplicates)
+  let duplicateSequence = 0;
+  let originalArchiveId: number | null = null;
+  if (archive.duplicate_count > 0 && duplicatesData?.duplicates) {
+    // Combine current archive with duplicates and sort by created_at
+    const allCopies = [
+      { id: archive.id, created_at: archive.created_at },
+      ...duplicatesData.duplicates.map(d => ({ id: d.id, created_at: d.created_at }))
+    ].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+    // Find the index of the current archive (excluding the first/original)
+    const currentIndex = allCopies.findIndex(a => a.id === archive.id);
+    duplicateSequence = currentIndex > 0 ? currentIndex : 0;
+
+    // Store the original archive ID (the first one chronologically)
+    if (allCopies.length > 0) {
+      originalArchiveId = allCopies[0].id;
+    }
+  }
 
   const plates = platesData?.plates ?? [];
   const isMultiPlate = platesData?.is_multi_plate ?? false;
@@ -755,14 +785,18 @@ function ArchiveCard({
           </div>
         )}
         {/* Duplicate badge */}
-        {archive.duplicate_count > 0 && (
-          <div
-            className="absolute top-2 right-12 px-2 py-1 rounded text-xs bg-purple-500/80 text-white flex items-center gap-1"
-            title={t('archives.card.duplicateTitle')}
+        {archive.duplicate_count > 0 && duplicateSequence > 0 && originalArchiveId && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onNavigateToArchive?.(originalArchiveId);
+            }}
+            className="absolute top-2 right-12 px-2 py-1 rounded text-xs bg-purple-500/80 hover:bg-purple-600/90 text-white flex items-center gap-1 transition-colors cursor-pointer"
+            title={`Click to view original print (#${archive.id})`}
           >
             <Copy className="w-3 h-3" />
-            {t('archives.card.duplicate')}
-          </div>
+            #{duplicateSequence}
+          </button>
         )}
         {/* Source 3MF badge */}
         {archive.source_3mf_path && (
@@ -1408,6 +1442,7 @@ function ArchiveListRow({
   isHighlighted,
   preferredSlicer = 'bambu_studio',
   t,
+  onNavigateToArchive,
 }: {
   archive: Archive;
   printerName: string;
@@ -1418,6 +1453,7 @@ function ArchiveListRow({
   isHighlighted?: boolean;
   preferredSlicer?: SlicerType;
   t: TFunction;
+  onNavigateToArchive?: (archiveId: number) => void;
 }) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -1440,6 +1476,34 @@ function ArchiveListRow({
   const source3mfInputRef = useRef<HTMLInputElement>(null);
   const f3dInputRef = useRef<HTMLInputElement>(null);
   const timelapseInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch duplicates to determine sequence number
+  const { data: duplicatesData } = useQuery({
+    queryKey: ['archive-duplicates', archive.id],
+    queryFn: () => api.getArchiveDuplicates(archive.id),
+    enabled: archive.duplicate_count > 0, // Only fetch if there are duplicates
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+
+  // Calculate duplicate sequence number (0 for original, 1+ for duplicates)
+  let duplicateSequence = 0;
+  let originalArchiveId: number | null = null;
+  if (archive.duplicate_count > 0 && duplicatesData?.duplicates) {
+    // Combine current archive with duplicates and sort by created_at
+    const allCopies = [
+      { id: archive.id, created_at: archive.created_at },
+      ...duplicatesData.duplicates.map(d => ({ id: d.id, created_at: d.created_at }))
+    ].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+    // Find the index of the current archive (excluding the first/original)
+    const currentIndex = allCopies.findIndex(a => a.id === archive.id);
+    duplicateSequence = currentIndex > 0 ? currentIndex : 0;
+
+    // Store the original archive ID (the first one chronologically)
+    if (allCopies.length > 0) {
+      originalArchiveId = allCopies[0].id;
+    }
+  }
 
   const timelapseDeleteMutation = useMutation({
     mutationFn: () => api.deleteArchiveTimelapse(archive.id),
@@ -1878,6 +1942,19 @@ function ArchiveListRow({
               <span className="px-1.5 py-0.5 rounded text-[10px] leading-tight bg-status-error/80 text-white flex-shrink-0">
                 {archive.status === 'aborted' ? t('archives.card.cancelled') : t('archives.card.failed')}
               </span>
+            )}
+            {archive.duplicate_count > 0 && duplicateSequence > 0 && originalArchiveId && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onNavigateToArchive?.(originalArchiveId);
+                }}
+                className="px-1.5 py-0.5 rounded text-[10px] leading-tight bg-purple-500/80 hover:bg-purple-600/90 text-white flex-shrink-0 transition-colors flex items-center gap-1"
+                title={`Click to view original print (#${archive.id})`}
+              >
+                <Copy className="w-3 h-3" />
+                #{duplicateSequence}
+              </button>
             )}
             {archive.timelapse_path && (
               <span title={t('archives.list.hasTimelapse')}>
@@ -3237,6 +3314,7 @@ export function ArchivesPage() {
               preferredSlicer={preferredSlicer}
               currency={currency}
               t={t}
+              onNavigateToArchive={setHighlightedArchiveId}
             />
           ))}
         </div>
@@ -3265,6 +3343,7 @@ export function ArchivesPage() {
                 isHighlighted={archive.id === highlightedArchiveId}
                 preferredSlicer={preferredSlicer}
                 t={t}
+                onNavigateToArchive={setHighlightedArchiveId}
               />
             ))}
           </div>

@@ -2754,7 +2754,7 @@ export function ArchivesPage() {
 
   return (
     <div
-      className="p-4 md:p-8 relative min-h-full"
+      className="p-4 md:p-8 relative"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}

@@ -462,6 +462,8 @@ export default {
     },
     developerModeWarning: 'Developer LAN mode is not enabled on: {{names}}. Some features may not work.',
     howToEnable: 'How to enable',
+    incompatibleFile: 'This file was sliced for {{slicedFor}}, but this printer is a {{printerModel}}',
+    dropNotPrintable: 'Only .gcode and .gcode.3mf files can be printed',
   },
 
   // Archives page
@@ -2241,7 +2243,8 @@ export default {
     willBeExtracted: 'Will be extracted',
     filesExtracted: '{{count}} files extracted',
     uploadComplete: 'Upload complete: {{succeeded}} succeeded',
-    uploadFailed: '{{count}} failed',
+    uploadFailed: 'Upload failed',
+    zipFilesFailed: '{{count}} files failed',
     uploading: 'Uploading...',
     changeLink: 'Change Link...',
     linkTo: 'Link to...',

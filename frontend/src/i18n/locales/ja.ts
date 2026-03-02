@@ -469,6 +469,8 @@ export default {
     clickToViewHmsErrors: 'クリックしてHMSエラーを表示',
     developerModeWarning: '開発者LANモードが有効になっていません: {{names}}。一部の機能が動作しない可能性があります。',
     howToEnable: '有効化方法',
+    incompatibleFile: 'このファイルは{{slicedFor}}用にスライスされていますが、このプリンターは{{printerModel}}です',
+    dropNotPrintable: '.gcodeおよび.gcode.3mfファイルのみ印刷できます',
   },
   archives: {
     title: '印刷アーカイブ',
@@ -2172,6 +2174,7 @@ export default {
     filesExtracted: '• {{count}}個のファイルを展開済み',
     uploadComplete: 'アップロード完了: {{count}}個成功',
     uploadFailed: 'アップロード失敗',
+    zipFilesFailed: '{{count}}個のファイルが失敗',
     uploading: 'アップロード中...',
     changeLink: 'リンクを変更...',
     linkTo: 'リンク先...',

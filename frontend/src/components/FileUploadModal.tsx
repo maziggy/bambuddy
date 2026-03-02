@@ -24,17 +24,21 @@ interface UploadFile {
   extractedCount?: number;
 }
 
-interface LibraryUploadModalProps {
+interface FileUploadModalProps {
   folderId: number | null;
   onClose: () => void;
   onUploadComplete: () => void;
-  /** Called after each file is successfully uploaded with its response data */
-  onFileUploaded?: (file: LibraryFileUploadResponse) => void;
+  /** Called after each file is successfully uploaded with its response data. Return a string to show an error and prevent modal from closing. */
+  onFileUploaded?: (file: LibraryFileUploadResponse) => string | void;
   /** When true, automatically uploads the file as soon as it's added and closes the modal */
   autoUpload?: boolean;
+  /** Validate files before adding. Return a string to reject with an error message. */
+  validateFile?: (file: File) => string | undefined;
+  /** Restrict file picker to specific file types (e.g. ".gcode,.gcode.3mf") */
+  accept?: string;
 }
 
-export function LibraryUploadModal({ folderId, onClose, onUploadComplete, onFileUploaded, autoUpload }: LibraryUploadModalProps) {
+export function FileUploadModal({ folderId, onClose, onUploadComplete, onFileUploaded, autoUpload, validateFile, accept }: FileUploadModalProps) {
   const { t } = useTranslation();
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -42,6 +46,7 @@ export function LibraryUploadModal({ folderId, onClose, onUploadComplete, onFile
   const [preserveZipStructure, setPreserveZipStructure] = useState(true);
   const [createFolderFromZip, setCreateFolderFromZip] = useState(false);
   const [generateStlThumbnails, setGenerateStlThumbnails] = useState(true);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
@@ -84,27 +89,43 @@ export function LibraryUploadModal({ folderId, onClose, onUploadComplete, onFile
           updateFileStatus(uf.file, {
             status: result.errors.length > 0 && result.extracted === 0 ? 'error' : 'success',
             extractedCount: result.extracted,
-            error: result.errors.length > 0 ? `${result.errors.length} files failed` : undefined,
+            error: result.errors.length > 0 ? t('fileManager.zipFilesFailed', '{{count}} files failed', { count: result.errors.length }) : undefined,
           });
         } else {
           const result = await api.uploadLibraryFile(uf.file, folderId, generateStlThumbnails);
           updateFileStatus(uf.file, { status: 'success' });
-          onFileUploaded?.(result);
+          const error = onFileUploaded?.(result);
+          if (error) {
+            setUploadError(error);
+            setFiles([]);
+            setIsUploading(false);
+            return;
+          }
         }
       } catch (err) {
         updateFileStatus(uf.file, {
           status: 'error',
-          error: err instanceof Error ? err.message : 'Upload failed',
+          error: err instanceof Error ? err.message : t('fileManager.uploadFailed', 'Upload failed'),
         });
       }
     }
 
     setIsUploading(false);
     onUploadComplete();
-    if (autoUpload) onClose();
+    onClose();
   };
 
   const addFiles = (newFiles: File[]) => {
+    setUploadError(null);
+    if (validateFile) {
+      for (const file of newFiles) {
+        const error = validateFile(file);
+        if (error) {
+          setUploadError(error);
+          return;
+        }
+      }
+    }
     const toUpload: UploadFile[] = newFiles.map((file) => ({
       file,
       status: 'pending' as const,
@@ -126,8 +147,6 @@ export function LibraryUploadModal({ folderId, onClose, onUploadComplete, onFile
   const hasStlFiles = files.some((f) => f.file.name.toLowerCase().endsWith('.stl') && f.status === 'pending');
   const has3mfFiles = files.some((f) => f.is3mf && f.status === 'pending');
   const pendingCount = files.filter((f) => f.status === 'pending').length;
-  const successCount = files.filter((f) => f.status === 'success').length;
-  const errorCount = files.filter((f) => f.status === 'error').length;
   const allDone = files.length > 0 && pendingCount === 0 && !isUploading;
 
   return (
@@ -165,6 +184,7 @@ export function LibraryUploadModal({ folderId, onClose, onUploadComplete, onFile
             ref={fileInputRef}
             type="file"
             multiple
+            accept={accept}
             className="hidden"
             onChange={handleFileSelect}
           />
@@ -292,20 +312,20 @@ export function LibraryUploadModal({ folderId, onClose, onUploadComplete, onFile
             </div>
           )}
 
-          {/* Summary */}
-          {allDone && (
-            <div className="p-3 bg-bambu-dark rounded-lg">
-              <p className="text-sm text-white">
-                {t('fileManager.uploadComplete', { succeeded: successCount })}
-                {errorCount > 0 && <span className="text-red-400">, {t('fileManager.uploadFailed', { count: errorCount })}</span>}
-              </p>
+          {/* Compatibility Error */}
+          {uploadError && (
+            <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+              <div className="flex items-start gap-3">
+                <XCircle className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
+                <p className="text-sm text-red-300">{uploadError}</p>
+              </div>
             </div>
           )}
         </div>
 
         <div className="p-4 border-t border-bambu-dark-tertiary flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>
-            {allDone ? t('common.close') : t('common.cancel')}
+            {t('common.cancel')}
           </Button>
           {!allDone && (
             <Button

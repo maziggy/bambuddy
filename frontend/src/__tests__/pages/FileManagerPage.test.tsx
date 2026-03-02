@@ -569,7 +569,7 @@ describe('FileManagerPage', () => {
     });
   });
 
-  describe('upload modal (LibraryUploadModal)', () => {
+  describe('upload modal (FileUploadModal)', () => {
     it('opens upload modal when Upload button is clicked', async () => {
       const user = userEvent.setup();
       render(<FileManagerPage />);
@@ -742,9 +742,9 @@ describe('FileManagerPage', () => {
       const uploadButton = screen.getByRole('button', { name: /Upload \(1\)/i });
       await user.click(uploadButton);
 
-      // Upload should complete
+      // Modal should auto-close after upload completes
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+        expect(screen.queryByText('Upload Files')).not.toBeInTheDocument();
       });
     });
   });

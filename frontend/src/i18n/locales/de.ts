@@ -462,6 +462,8 @@ export default {
     },
     developerModeWarning: 'Der Entwickler-LAN-Modus ist nicht aktiviert auf: {{names}}. Einige Funktionen funktionieren möglicherweise nicht.',
     howToEnable: 'Aktivieren',
+    incompatibleFile: 'Diese Datei wurde für {{slicedFor}} geslicet, aber dieser Drucker ist ein {{printerModel}}',
+    dropNotPrintable: 'Nur .gcode- und .gcode.3mf-Dateien können gedruckt werden',
   },
 
   // Archives page
@@ -2241,7 +2243,8 @@ export default {
     willBeExtracted: 'Wird extrahiert',
     filesExtracted: '{{count}} Dateien extrahiert',
     uploadComplete: 'Upload abgeschlossen: {{succeeded}} erfolgreich',
-    uploadFailed: '{{count}} fehlgeschlagen',
+    uploadFailed: 'Hochladen fehlgeschlagen',
+    zipFilesFailed: '{{count}} Dateien fehlgeschlagen',
     uploading: 'Hochladen...',
     changeLink: 'Verknüpfung ändern...',
     linkTo: 'Verknüpfen mit...',

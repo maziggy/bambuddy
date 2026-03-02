@@ -65,7 +65,7 @@ import { ConfigureAmsSlotModal } from '../components/ConfigureAmsSlotModal';
 import { useToast } from '../contexts/ToastContext';
 import { ChamberLight } from '../components/icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';
-import { LibraryUploadModal } from '../components/LibraryUploadModal';
+import { FileUploadModal } from '../components/FileUploadModal';
 import { PrintModal } from '../components/PrintModal';
 import { getGlobalTrayId } from '../utils/amsHelpers';
 
@@ -3792,24 +3792,25 @@ function PrinterCard({
 
       {/* Upload for Print Modal */}
       {showUploadForPrint && (
-        <LibraryUploadModal
+        <FileUploadModal
           folderId={null}
           onClose={() => setShowUploadForPrint(false)}
           onUploadComplete={() => {}}
           autoUpload
+          accept=".gcode,.gcode.3mf"
+          validateFile={(file) => {
+            const lower = file.name.toLowerCase();
+            if (!lower.endsWith('.gcode') && !lower.includes('.gcode.')) {
+              return t('printers.dropNotPrintable', 'Only .gcode and .gcode.3mf files can be printed');
+            }
+          }}
           onFileUploaded={(file) => {
             // Check printer compatibility if sliced_for_model is available in metadata
             const slicedFor = (file.metadata as Record<string, unknown>)?.sliced_for_model as string | undefined;
             const printerModel = mapModelCode(printer.model);
             if (slicedFor && printerModel && slicedFor.toLowerCase() !== printerModel.toLowerCase()) {
-              showToast(
-                t('printers.incompatibleFile', 'This file was sliced for {{slicedFor}}, but this printer is a {{printerModel}}', { slicedFor, printerModel }),
-                'error'
-              );
-              setShowUploadForPrint(false);
-              return;
+              return t('printers.incompatibleFile', 'This file was sliced for {{slicedFor}}, but this printer is a {{printerModel}}', { slicedFor, printerModel });
             }
-            setShowUploadForPrint(false);
             setPrintAfterUpload({ id: file.id, filename: file.filename });
           }}
         />

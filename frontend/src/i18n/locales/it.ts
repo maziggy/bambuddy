@@ -453,6 +453,8 @@ export default {
     },
     developerModeWarning: 'La modalità sviluppatore LAN non è attivata su: {{names}}. Alcune funzionalità potrebbero non funzionare.',
     howToEnable: 'Come attivare',
+    incompatibleFile: 'Questo file è stato preparato per {{slicedFor}}, ma questa stampante è una {{printerModel}}',
+    dropNotPrintable: 'Solo i file .gcode e .gcode.3mf possono essere stampati',
   },
 
   // Archives page
@@ -2046,7 +2048,8 @@ export default {
     willBeExtracted: 'Sara estratto',
     filesExtracted: '{{count}} file estratti',
     uploadComplete: 'Caricamento completato: {{succeeded}} riusciti',
-    uploadFailed: '{{count}} falliti',
+    uploadFailed: 'Caricamento fallito',
+    zipFilesFailed: '{{count}} file falliti',
     uploading: 'Caricamento...',
     changeLink: 'Cambia collegamento...',
     linkTo: 'Collega a...',

@@ -52,7 +52,7 @@ import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { PrintModal } from '../components/PrintModal';
 import { ModelViewerModal } from '../components/ModelViewerModal';
-import { LibraryUploadModal } from '../components/LibraryUploadModal';
+import { FileUploadModal } from '../components/FileUploadModal';
 import { useToast } from '../contexts/ToastContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useAuth } from '../contexts/AuthContext';
@@ -1901,7 +1901,7 @@ export function FileManagerPage() {
       )}
 
       {showUploadModal && (
-        <LibraryUploadModal
+        <FileUploadModal
           folderId={selectedFolderId}
           onClose={() => setShowUploadModal(false)}
           onUploadComplete={handleUploadComplete}

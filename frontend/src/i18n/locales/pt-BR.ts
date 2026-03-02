@@ -462,6 +462,8 @@ export default {
     },
     developerModeWarning: 'O modo desenvolvedor LAN não está ativado em: {{names}}. Alguns recursos podem não funcionar.',
     howToEnable: 'Como ativar',
+    incompatibleFile: 'Este arquivo foi fatiado para {{slicedFor}}, mas esta impressora é uma {{printerModel}}',
+    dropNotPrintable: 'Apenas arquivos .gcode e .gcode.3mf podem ser impressos',
   },
 
   // Archives page
@@ -2241,7 +2243,8 @@ export default {
     willBeExtracted: 'Será extraído',
     filesExtracted: '{{count}} arquivos extraídos',
     uploadComplete: 'Upload concluído: {{succeeded}} bem-sucedidos',
-    uploadFailed: '{{count}} falhou',
+    uploadFailed: 'Falha no envio',
+    zipFilesFailed: '{{count}} arquivos falharam',
     uploading: 'Enviando...',
     changeLink: 'Alterar link...',
     linkTo: 'Vincular a...',

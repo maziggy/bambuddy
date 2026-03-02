@@ -565,8 +565,12 @@ export function ConfigureAmsSlotModal({
     } else if (cloudSettings?.filament) {
       const cp = cloudSettings.filament.find(p => p.setting_id === selectedPresetId);
       presetName = cp?.name || null;
+    } else {
+      // No cloud settings available
     }
-    if (!presetName) return null;
+    if (!presetName) {
+      return null;
+    }
 
     // Remove printer/nozzle suffix (e.g., "@BBL X1C" or "@0.4 nozzle")
     let nameWithoutSuffix = presetName.replace(/@.+$/, '').trim();

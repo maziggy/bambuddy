@@ -360,13 +360,13 @@ create_spoolbuddy_user() {
         success "Service user created"
     fi
 
-    # Add to hardware access groups (gpio, spi, i2c)
-    for group in gpio spi i2c; do
+    # Add to hardware access groups (gpio, spi, i2c, video for backlight)
+    for group in gpio spi i2c video; do
         if getent group "$group" &>/dev/null; then
             usermod -aG "$group" "$SPOOLBUDDY_SERVICE_USER" 2>/dev/null || true
         fi
     done
-    success "User added to gpio, spi, i2c groups"
+    success "User added to gpio, spi, i2c, video groups"
 }
 
 download_spoolbuddy() {
@@ -640,7 +640,7 @@ strip_packages() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Kiosk Setup (labwc + Chromium + wvkbd + Plymouth splash)
+# Kiosk Setup (labwc + Chromium + Plymouth splash)
 # ─────────────────────────────────────────────────────────────────────────────
 
 setup_kiosk() {
@@ -656,7 +656,7 @@ setup_kiosk() {
     info "Kiosk URL:  $KIOSK_URL"
 
     # ── Install kiosk packages ────────────────────────────────────────────
-    run_with_progress "Installing kiosk packages" apt-get install -y labwc chromium wvkbd plymouth wlr-randr
+    run_with_progress "Installing kiosk packages" apt-get install -y labwc chromium plymouth wlr-randr
 
     # ── config.txt tweaks ─────────────────────────────────────────────────
     local boot_config="/boot/firmware/config.txt"
@@ -814,14 +814,12 @@ EOF
 # Force 1024x600 (panel doesn't advertise this natively)
 wlr-randr --output HDMI-A-1 --custom-mode 1024x600@60 &
 
-# On-screen keyboard (wvkbd uses wlr-layer-shell, renders above fullscreen)
-wvkbd-mobintl --hidden &
-
-# Launch Chromium in kiosk mode (fullscreen)
+# Launch Chromium in kiosk mode (virtual keyboard is embedded in the web app)
 chromium --kiosk --no-first-run --disable-infobars \\
   --disable-session-crashed-bubble --disable-features=TranslateUI \\
   --noerrdialogs --disable-component-update \\
-  --ozone-platform=wayland --enable-wayland-ime \\
+  --overscroll-history-navigation=0 \\
+  --ozone-platform=wayland \\
   $KIOSK_URL &
 EOF
 

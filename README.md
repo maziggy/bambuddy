@@ -417,6 +417,21 @@ docker compose pull && docker compose up -d
 cd bambuddy && git pull && docker compose up -d --build
 ```
 
+**Daily Beta Builds:**
+
+Beta builds with the latest fixes are pushed regularly to the same beta version tag:
+
+```bash
+# Pull the current beta
+docker pull ghcr.io/maziggy/bambuddy:0.2.2b1
+# or from Docker Hub
+docker pull maziggy/bambuddy:0.2.2b1
+```
+
+Use [Watchtower](https://containrrr.dev/watchtower/) to automatically update when new daily builds are pushed.
+
+> **Note:** Beta builds use version tags like `0.2.2b1` — they are never tagged as `latest`. Your stable installation won't auto-update to a beta unless you explicitly pull a beta tag.
+
 **Useful Commands:**
 
 ```bash
@@ -532,7 +547,7 @@ In Bambu Studio or OrcaSlicer, enable **"Store sent files on external storage"**
 
 1. Open **Bambu Studio** or **OrcaSlicer**
 2. Go to the **Device** tab for your printer
-3. Enable **"Store sent files on external storage"**
+3. In **Print Options**, enable **Store Sent Files on External Storage**
 
 ---
 

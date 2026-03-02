@@ -31,7 +31,7 @@ from backend.app.schemas.spool import (
     SpoolUpdate,
 )
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
-from backend.app.services.printer_manager import printer_manager
+from backend.app.utils.filament_ids import normalize_slicer_filament
 
 logger = logging.getLogger(__name__)
 
@@ -776,18 +776,15 @@ async def assign_spool(
         if client:
             # Build filament setting from spool data
             tray_type = spool.material
-            tray_sub_brands = f"{spool.material} {spool.subtype}" if spool.subtype else spool.material
+            tray_sub_brands = (
+                f"{spool.brand} {spool.material} {spool.subtype}".strip()
+                if spool.brand
+                else f"{spool.material} {spool.subtype}"
+                if spool.subtype
+                else spool.material
+            )
             tray_color = spool.rgba or "FFFFFFFF"
-            tray_info_idx = spool.slicer_filament or ""
-            setting_id = ""
 
-            # Resolve tray_info_idx for the MQTT command.
-            # Priority:
-            #   1. Use the spool's own slicer_filament if set (including
-            #      cloud-synced custom presets like PFUS* / P*).
-            #   2. Reuse the slot's existing tray_info_idx if it's a specific
-            #      (non-generic) preset for the same material.
-            #   3. Fall back to a generic Bambu filament ID.
             _GENERIC_IDS = {
                 "PLA": "GFL99",
                 "PETG": "GFG99",
@@ -806,26 +803,108 @@ async def assign_spool(
             }
             _GENERIC_ID_VALUES = set(_GENERIC_IDS.values())
 
-            if tray_info_idx:
-                logger.info("Spool assign: using spool's slicer_filament=%r", tray_info_idx)
-            elif (
-                current_tray_info_idx
-                and current_tray_info_idx not in _GENERIC_ID_VALUES
-                and fingerprint_type
-                and fingerprint_type.upper() == tray_type.upper()
-            ):
-                logger.info(
-                    "Spool assign: reusing slot's existing tray_info_idx=%r (same material %r)",
-                    current_tray_info_idx,
-                    tray_type,
-                )
-                tray_info_idx = current_tray_info_idx
-            elif tray_type:
-                material = tray_type.upper().strip()
-                generic = _GENERIC_IDS.get(material) or _GENERIC_IDS.get(material.split("-")[0].split(" ")[0]) or ""
-                if generic:
-                    logger.info("Spool assign: falling back to generic %r for material %r", generic, tray_type)
-                    tray_info_idx = generic
+            # Resolve tray_info_idx + setting_id for the MQTT command.
+            # Three sources in priority order:
+            #   1. Cloud profile (if cloud connected) — resolve filament_id
+            #      from setting_id via cloud API
+            #   2. Local profile — use generic filament ID for material
+            #   3. Hard-coded fallback — generic Bambu filament IDs
+            tray_info_idx = ""
+            setting_id = ""
+            sf = spool.slicer_filament or ""
+
+            if sf:
+                # Check if it's a cloud preset (GFS*, PFUS*, or GF* official)
+                base_sf = sf.split("_")[0] if "_" in sf else sf
+                if base_sf.startswith("GFS") or base_sf.startswith("PFUS"):
+                    # Cloud setting_id — need to resolve real filament_id
+                    # Use base_sf (version suffix stripped) for cloud API + MQTT
+                    setting_id = base_sf
+                    try:
+                        from backend.app.services.bambu_cloud import get_cloud_service
+
+                        cloud = get_cloud_service()
+                        if cloud.is_authenticated:
+                            detail = await cloud.get_setting_detail(base_sf)
+                            if detail.get("filament_id"):
+                                tray_info_idx = detail["filament_id"]
+                                logger.info(
+                                    "Spool assign: resolved filament_id=%r from cloud for setting_id=%r",
+                                    tray_info_idx,
+                                    sf,
+                                )
+                                # Use cloud preset name for tray_sub_brands if available
+                                cloud_name = detail.get("name", "")
+                                if cloud_name:
+                                    tray_sub_brands = cloud_name.replace(r"@.*$", "").split("@")[0].strip()
+                            elif detail.get("base_id"):
+                                # Derive from base_id (e.g. "GFSL05" → "GFL05")
+                                bid = detail["base_id"].split("_")[0]
+                                if bid.startswith("GFS") and len(bid) >= 5:
+                                    tray_info_idx = f"GF{bid[3:]}"
+                                else:
+                                    tray_info_idx = bid
+                                logger.info(
+                                    "Spool assign: derived filament_id=%r from base_id=%r",
+                                    tray_info_idx,
+                                    detail["base_id"],
+                                )
+                    except Exception as e:
+                        logger.warning("Spool assign: cloud lookup failed for %r: %s", sf, e)
+
+                    if not tray_info_idx:
+                        # Cloud lookup failed — use normalize as fallback
+                        tray_info_idx, setting_id = normalize_slicer_filament(sf)
+                elif base_sf.startswith("GF"):
+                    # Official Bambu filament_id (e.g. "GFL05")
+                    tray_info_idx, setting_id = normalize_slicer_filament(sf)
+                    logger.info("Spool assign: using official filament_id=%r", tray_info_idx)
+                else:
+                    # Could be a local preset ID or material type — try local DB
+                    try:
+                        local_id = int(sf)
+                        from backend.app.models.local_preset import LocalPreset as LP
+
+                        lp_result = await db.execute(select(LP).where(LP.id == local_id, LP.preset_type == "filament"))
+                        lp = lp_result.scalar_one_or_none()
+                        if lp:
+                            mat = (lp.filament_type or spool.material or "").upper().strip()
+                            tray_info_idx = (
+                                _GENERIC_IDS.get(mat) or _GENERIC_IDS.get(mat.split("-")[0].split(" ")[0]) or ""
+                            )
+                            # Use local preset name for tray_sub_brands
+                            if lp.name:
+                                tray_sub_brands = lp.name.split("@")[0].strip()
+                            logger.info(
+                                "Spool assign: local preset %d, material=%r, tray_info_idx=%r",
+                                local_id,
+                                mat,
+                                tray_info_idx,
+                            )
+                    except (ValueError, TypeError):
+                        # Not a numeric ID — treat as material type string
+                        tray_info_idx, setting_id = normalize_slicer_filament(sf)
+
+            if not tray_info_idx:
+                # Fallback: reuse slot's existing tray_info_idx or generic ID
+                if (
+                    current_tray_info_idx
+                    and current_tray_info_idx not in _GENERIC_ID_VALUES
+                    and fingerprint_type
+                    and fingerprint_type.upper() == tray_type.upper()
+                ):
+                    logger.info(
+                        "Spool assign: reusing slot's existing tray_info_idx=%r (same material %r)",
+                        current_tray_info_idx,
+                        tray_type,
+                    )
+                    tray_info_idx = current_tray_info_idx
+                elif tray_type:
+                    material = tray_type.upper().strip()
+                    generic = _GENERIC_IDS.get(material) or _GENERIC_IDS.get(material.split("-")[0].split(" ")[0]) or ""
+                    if generic:
+                        logger.info("Spool assign: falling back to generic %r for material %r", generic, tray_type)
+                        tray_info_idx = generic
 
             # Temperature: use spool overrides if set, else material defaults
             temp_min, temp_max = MATERIAL_TEMPS.get(spool.material.upper(), (200, 240))

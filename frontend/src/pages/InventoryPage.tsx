@@ -5,9 +5,9 @@ import {
   Plus, Loader2, Trash2, Archive, RotateCcw, Edit2, Package,
   Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   TrendingDown, Layers, Printer, AlertTriangle, X, Clock, LayoutGrid, TableProperties, Columns,
-  ArrowUp, ArrowDown, ArrowUpDown, Group, ChevronDown,
+  ArrowUp, ArrowDown, ArrowUpDown, Group, ChevronDown, Check, RefreshCw,
 } from 'lucide-react';
-import { api } from '../api/client';
+import { api, spoolbuddyApi } from '../api/client';
 import type { InventorySpool, SpoolAssignment } from '../api/client';
 import { Button } from '../components/Button';
 import { SpoolFormModal } from '../components/SpoolFormModal';
@@ -63,6 +63,7 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'stock', label: 'Stock', visible: false },
   { id: 'remaining', label: 'Remaining', visible: true },
   { id: 'cost_per_kg', label: 'Cost/kg', visible: false },
+  { id: 'weight_check', label: 'Weight Check', visible: false },
 ];
 
 function loadColumnConfig(): ColumnConfig[] {
@@ -126,6 +127,7 @@ type CellCtx = {
   currencySymbol: string;
   dateFormat: DateFormat;
   t: TFn;
+  onSyncWeight?: (spool: InventorySpool) => void;
 };
 
 // Column header labels (25 columns — matching SpoolBuddy exactly)
@@ -156,6 +158,7 @@ const columnHeaders: Record<string, (t: TFn) => string> = {
   stock: (t) => t('inventory.stock'),
   remaining: (t) => t('inventory.remaining'),
   cost_per_kg: (t) => t('inventory.costPerKg'),
+  weight_check: (t) => t('inventory.weightCheck'),
 };
 
 // Column cell renderers (25 columns — matching SpoolBuddy exactly)
@@ -285,6 +288,59 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
       {spool.cost_per_kg != null ? `${currencySymbol}${spool.cost_per_kg.toFixed(2)}` : '-'}
     </span>
   ),
+  weight_check: ({ spool, onSyncWeight }) => {
+    const scaleWeight = spool.last_scale_weight;
+    if (scaleWeight == null) return <span className="text-sm text-bambu-gray/50" title="No scale measurement">-</span>;
+
+    const coreWeight = spool.core_weight || 0;
+    const calculatedWeight = Math.max(0, spool.label_weight - spool.weight_used) + coreWeight;
+
+    // Edge case: scale < core_weight means spool is empty or not on scale — treat as match
+    let difference: number;
+    let isMatch: boolean;
+    if (scaleWeight < coreWeight) {
+      difference = scaleWeight - coreWeight;
+      isMatch = true;
+    } else {
+      difference = scaleWeight - calculatedWeight;
+      isMatch = Math.abs(difference) <= 50;
+    }
+
+    const diffStr = difference > 0 ? `+${Math.round(difference)}` : `${Math.round(difference)}`;
+    const tooltip = isMatch
+      ? `Scale: ${Math.round(scaleWeight)}g\nCalculated: ${Math.round(calculatedWeight)}g\nDifference: ${diffStr}g (within tolerance)`
+      : `Scale: ${Math.round(scaleWeight)}g\nCalculated: ${Math.round(calculatedWeight)}g\nDifference: ${diffStr}g (mismatch!)`;
+
+    return (
+      <div
+        className={`flex items-center gap-1 text-sm font-medium ${isMatch ? 'text-green-400' : 'text-yellow-400'}`}
+        title={tooltip}
+      >
+        <span>{Math.round(scaleWeight)}g</span>
+        {isMatch ? (
+          <Check className="w-3 h-3" />
+        ) : (
+          <>
+            <AlertTriangle className="w-3 h-3" />
+            {onSyncWeight && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  onSyncWeight(spool);
+                }}
+                className="p-1 hover:bg-bambu-green/20 rounded transition-colors text-bambu-green"
+                title="Sync: trust scale weight and reset tracking"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    );
+  },
 };
 
 // Sort value extractors — return a comparable value for each sortable column
@@ -316,6 +372,11 @@ const columnSortValues: Record<string, (spool: InventorySpool, assignmentMap: Re
   tag_type: (s) => (s.tag_type || '').toLowerCase(),
   stock: (s) => s.slicer_filament ? 1 : 0,
   cost_per_kg: (s) => s.cost_per_kg ?? 0,
+  weight_check: (s) => {
+    if (s.last_scale_weight == null) return -1;
+    const expectedGross = Math.max(0, s.label_weight - s.weight_used) + s.core_weight;
+    return Math.abs(s.last_scale_weight - expectedGross);
+  },
 };
 
 const SORT_STATE_KEY = 'bambuddy-inventory-sort';
@@ -440,6 +501,18 @@ function InventoryPage() {
       showToast(t('inventory.spoolRestored'), 'success');
     },
   });
+
+  const handleSyncWeight = async (spool: InventorySpool) => {
+    if (spool.last_scale_weight == null) return;
+    try {
+      await spoolbuddyApi.updateSpoolWeight(spool.id, spool.last_scale_weight);
+      queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
+      const spoolName = [spool.brand, spool.material, spool.color_name].filter(Boolean).join(' ');
+      showToast(`Synced "${spoolName}" to scale weight`, 'success');
+    } catch {
+      showToast('Failed to sync weight', 'error');
+    }
+  };
 
   // Stats calculation (active spools only)
   const stats = useMemo(() => {
@@ -1140,6 +1213,7 @@ function InventoryPage() {
                           currencySymbol={currencySymbol}
                           dateFormat={dateFormat}
                           t={t}
+                          onSyncWeight={handleSyncWeight}
                         />
                       );
                     }
@@ -1161,6 +1235,7 @@ function InventoryPage() {
                         currencySymbol={currencySymbol}
                         dateFormat={dateFormat}
                         t={t}
+                        onSyncWeight={handleSyncWeight}
                       />
                     );
                   })}
@@ -1437,7 +1512,7 @@ function SpoolCard({
 /* Single spool row for table view */
 function SpoolTableRow({
   spool, remaining, pct, onEdit, onRestore, onArchive, onDelete,
-  visibleColumns, assignmentMap, currencySymbol, dateFormat, t,
+  visibleColumns, assignmentMap, currencySymbol, dateFormat, t, onSyncWeight,
 }: {
   spool: InventorySpool;
   remaining: number;
@@ -1451,6 +1526,7 @@ function SpoolTableRow({
   currencySymbol: string;
   dateFormat: DateFormat;
   t: TFn;
+  onSyncWeight?: (spool: InventorySpool) => void;
 }) {
   return (
     <tr
@@ -1461,7 +1537,7 @@ function SpoolTableRow({
     >
       {visibleColumns.map((colId) => (
         <td key={colId} className="py-3 px-4">
-          {columnCells[colId]?.({ spool, remaining, pct, assignmentMap, currencySymbol, dateFormat, t })}
+          {columnCells[colId]?.({ spool, remaining, pct, assignmentMap, currencySymbol, dateFormat, t, onSyncWeight })}
         </td>
       ))}
       <td className="py-3 px-4">
@@ -1491,7 +1567,7 @@ function SpoolTableRow({
 function SpoolTableGroup({
   spools, representative, remaining, pct, isExpanded, onToggle,
   onEdit, onArchive, onDelete,
-  visibleColumns, assignmentMap, currencySymbol, dateFormat, t,
+  visibleColumns, assignmentMap, currencySymbol, dateFormat, t, onSyncWeight,
 }: {
   spools: InventorySpool[];
   representative: InventorySpool;
@@ -1507,6 +1583,7 @@ function SpoolTableGroup({
   currencySymbol: string;
   dateFormat: DateFormat;
   t: TFn;
+  onSyncWeight?: (spool: InventorySpool) => void;
 }) {
   return (
     <>
@@ -1520,14 +1597,14 @@ function SpoolTableGroup({
             {idx === 0 ? (
               <div className="flex items-center gap-2">
                 <ChevronDown className={`w-4 h-4 text-bambu-gray transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
-                {columnCells[colId]?.({ spool: representative, remaining, pct, assignmentMap, currencySymbol, dateFormat, t })}
+                {columnCells[colId]?.({ spool: representative, remaining, pct, assignmentMap, currencySymbol, dateFormat, t, onSyncWeight })}
               </div>
             ) : colId === 'id' ? (
               <span className="text-xs font-medium bg-bambu-green/20 text-bambu-green px-2 py-0.5 rounded-full">
                 {t('inventory.groupedSpools', { count: spools.length })}
               </span>
             ) : (
-              columnCells[colId]?.({ spool: representative, remaining, pct, assignmentMap, currencySymbol, dateFormat, t })
+              columnCells[colId]?.({ spool: representative, remaining, pct, assignmentMap, currencySymbol, dateFormat, t, onSyncWeight })
             )}
           </td>
         ))}
@@ -1556,6 +1633,7 @@ function SpoolTableGroup({
             currencySymbol={currencySymbol}
             dateFormat={dateFormat}
             t={t}
+            onSyncWeight={onSyncWeight}
           />
         );
       })}

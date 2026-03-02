@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { X, Loader2, Save, Beaker, Palette, Zap } from 'lucide-react';
+import { X, Loader2, Save, Beaker, Palette, Zap, Tag } from 'lucide-react';
 import { api } from '../api/client';
 import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset } from '../api/client';
 import { Button } from './Button';
@@ -360,6 +360,19 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
     },
   });
 
+  const deleteTagMutation = useMutation({
+    mutationFn: () =>
+      api.updateSpool(spool!.id, { tag_uid: null } as Parameters<typeof api.updateSpool>[1]),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
+      showToast(t('inventory.tagDeleted', 'Tag removed'), 'success');
+      onClose();
+    },
+    onError: (error: Error) => {
+      showToast(error.message, 'error');
+    },
+  });
+
   // Save K-profiles for selected calibrations
   const saveKProfiles = async (spoolId: number) => {
     if (selectedProfiles.size === 0) {
@@ -464,7 +477,7 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
     }
   };
 
-  const isPending = createMutation.isPending || bulkCreateMutation.isPending || updateMutation.isPending;
+  const isPending = createMutation.isPending || bulkCreateMutation.isPending || updateMutation.isPending || deleteTagMutation.isPending;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -621,7 +634,19 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-2 p-4 border-t border-bambu-dark-tertiary flex-shrink-0">
+        <div className="flex gap-2 p-4 border-t border-bambu-dark-tertiary flex-shrink-0">
+          {isEditing && (
+            <Button
+              variant="secondary"
+              onClick={() => deleteTagMutation.mutate()}
+              disabled={isPending || !spool?.tag_uid}
+              className="mr-auto"
+            >
+              <Tag className="w-4 h-4" />
+              {t('inventory.deleteTag', 'Delete Tag')}
+            </Button>
+          )}
+          <div className="flex gap-2 ml-auto">
           <Button variant="secondary" onClick={onClose}>
             {t('common.cancel')}
           </Button>
@@ -641,6 +666,7 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
               </>
             )}
           </Button>
+          </div>
         </div>
       </div>
     </div>

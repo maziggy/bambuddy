@@ -88,6 +88,19 @@ volumes:
 docker compose pull && docker compose up -d
 ```
 
+## Daily Beta Builds
+
+Beta builds with the latest fixes are pushed regularly to the same beta version tag:
+
+```bash
+# Pull the current beta
+docker pull maziggy/bambuddy:0.2.2b1
+```
+
+Use [Watchtower](https://containrrr.dev/watchtower/) to automatically update when new daily builds are pushed.
+
+> **Note:** Beta builds use version tags like `0.2.2b1` — they are never tagged as `latest`. Your stable installation won't auto-update to a beta unless you explicitly pull a beta tag.
+
 ## Supported Printers
 
 | Series | Models | Status |

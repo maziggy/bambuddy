@@ -11,8 +11,12 @@ from pathlib import Path
 # Add scripts/ to sys.path so hardware drivers (read_tag, scale_diag) are importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
+from . import __version__
 from .api_client import APIClient
 from .config import Config
+from .display_control import DisplayControl
+from .nfc_reader import NFCReader, NFCState
+from .scale_reader import ScaleReader
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,10 +39,8 @@ def _get_ip() -> str:
 
 async def nfc_poll_loop(config: Config, api: APIClient, shared: dict):
     """Continuous NFC polling loop — runs in asyncio with blocking reads offloaded."""
-    from .nfc_reader import NFCReader
-
-    nfc = NFCReader()
-    shared["nfc"] = nfc
+    nfc: NFCReader = shared["nfc"]
+    display: DisplayControl = shared["display"]
     if not nfc.ok:
         logger.warning("NFC reader not available, skipping NFC polling")
         return
@@ -48,6 +50,7 @@ async def nfc_poll_loop(config: Config, api: APIClient, shared: dict):
             event_type, event_data = await asyncio.to_thread(nfc.poll)
 
             if event_type == "tag_detected":
+                display.wake()
                 await api.tag_scanned(
                     device_id=config.device_id,
                     tag_uid=event_data["tag_uid"],
@@ -61,6 +64,20 @@ async def nfc_poll_loop(config: Config, api: APIClient, shared: dict):
                     tag_uid=event_data["tag_uid"],
                 )
 
+            # Check for pending write command
+            pending = shared.get("pending_write")
+            if pending and nfc.state == NFCState.TAG_PRESENT and nfc.current_sak == 0x00:
+                logger.info("Executing pending tag write for spool %d", pending["spool_id"])
+                success, msg = await asyncio.to_thread(nfc.write_ntag, pending["ndef_data"])
+                await api.write_tag_result(
+                    device_id=config.device_id,
+                    spool_id=pending["spool_id"],
+                    tag_uid=nfc.current_uid or "",
+                    success=success,
+                    message=msg,
+                )
+                shared.pop("pending_write", None)
+
             await asyncio.sleep(config.nfc_poll_interval)
     finally:
         nfc.close()
@@ -68,13 +85,8 @@ async def nfc_poll_loop(config: Config, api: APIClient, shared: dict):
 
 async def scale_poll_loop(config: Config, api: APIClient, shared: dict):
     """Continuous scale reading loop — reads at 100ms, reports at 1s intervals."""
-    from .scale_reader import ScaleReader
-
-    scale = ScaleReader(
-        tare_offset=config.tare_offset,
-        calibration_factor=config.calibration_factor,
-    )
-    shared["scale"] = scale
+    scale: ScaleReader = shared["scale"]
+    display: DisplayControl = shared["display"]
     if not scale.ok:
         logger.warning("Scale not available, skipping scale polling")
         return
@@ -95,6 +107,7 @@ async def scale_poll_loop(config: Config, api: APIClient, shared: dict):
                     weight_changed = last_reported_grams is None or abs(grams - last_reported_grams) >= REPORT_THRESHOLD
 
                     if weight_changed:
+                        display.wake()
                         await api.scale_reading(
                             device_id=config.device_id,
                             weight_grams=grams,
@@ -111,7 +124,7 @@ async def scale_poll_loop(config: Config, api: APIClient, shared: dict):
 
 async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shared: dict):
     """Periodic heartbeat to keep device registered and pick up commands."""
-
+    display: DisplayControl = shared["display"]
     ip = _get_ip()
 
     while True:
@@ -126,6 +139,9 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
             scale_ok=scale.ok if scale else False,
             uptime_s=uptime,
             ip_address=ip,
+            firmware_version=__version__,
+            nfc_reader_type=nfc.reader_type if nfc else None,
+            nfc_connection=nfc.connection if nfc else None,
         )
 
         if result:
@@ -141,6 +157,14 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
                     logger.warning("Tare command received but scale not available")
                 # Skip calibration sync — this heartbeat response predates the tare
                 continue
+            elif cmd == "write_tag":
+                write_payload = result.get("pending_write_payload")
+                if write_payload:
+                    shared["pending_write"] = {
+                        "spool_id": write_payload["spool_id"],
+                        "ndef_data": bytes.fromhex(write_payload["ndef_data_hex"]),
+                    }
+                    logger.info("Write tag command received for spool %d", write_payload["spool_id"])
 
             tare = result.get("tare_offset", config.tare_offset)
             cal = result.get("calibration_factor", config.calibration_factor)
@@ -152,34 +176,59 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
                     scale.update_calibration(tare, cal)
                 logger.info("Calibration updated from backend: tare=%d, factor=%.6f", tare, cal)
 
+            # Apply display settings from backend
+            brightness = result.get("display_brightness")
+            blank_timeout = result.get("display_blank_timeout")
+            if brightness is not None:
+                display.set_brightness(brightness)
+            if blank_timeout is not None:
+                display.set_blank_timeout(blank_timeout)
+
+        display.tick()
+
 
 async def main():
     config = Config.load()
-    logger.info("SpoolBuddy daemon starting (device=%s, backend=%s)", config.device_id, config.backend_url)
+    logger.info(
+        "SpoolBuddy daemon v%s starting (device=%s, backend=%s)", __version__, config.device_id, config.backend_url
+    )
 
     api = APIClient(config.backend_url, config.api_key)
     ip = _get_ip()
     start_time = time.monotonic()
+
+    # Initialize hardware before registration so we can report capabilities
+    nfc = NFCReader()
+    scale = ScaleReader(
+        tare_offset=config.tare_offset,
+        calibration_factor=config.calibration_factor,
+    )
+    display = DisplayControl()
 
     # Register with backend (retries until success)
     reg = await api.register_device(
         device_id=config.device_id,
         hostname=config.hostname,
         ip_address=ip,
+        firmware_version=__version__,
         has_nfc=True,
         has_scale=True,
         tare_offset=config.tare_offset,
         calibration_factor=config.calibration_factor,
+        nfc_reader_type=nfc.reader_type,
+        nfc_connection=nfc.connection,
+        has_backlight=display.has_backlight,
     )
 
     # Use server-side calibration if available
     if reg:
         config.tare_offset = reg.get("tare_offset", config.tare_offset)
         config.calibration_factor = reg.get("calibration_factor", config.calibration_factor)
+        scale.update_calibration(config.tare_offset, config.calibration_factor)
 
     logger.info("Device registered, starting poll loops")
 
-    shared: dict = {}
+    shared: dict = {"nfc": nfc, "scale": scale, "display": display}
     try:
         await asyncio.gather(
             nfc_poll_loop(config, api, shared),

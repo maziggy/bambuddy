@@ -1,4 +1,4 @@
-import { useState, useMemo, type ReactNode } from 'react';
+import { useState, useMemo, useEffect, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -20,7 +20,7 @@ import { formatDateInput, parseUTCDate, type DateFormat } from '../utils/date';
 import { formatSlotLabel } from '../utils/amsHelpers';
 
 type ArchiveFilter = 'active' | 'archived';
-type UsageFilter = 'all' | 'used' | 'new';
+type UsageFilter = 'all' | 'used' | 'new' | 'lowstock';
 type ViewMode = 'table' | 'cards';
 type SortDirection = 'asc' | 'desc';
 type SortState = { column: string; direction: SortDirection } | null;
@@ -514,6 +514,30 @@ function InventoryPage() {
     }
   };
 
+  // Low stock threshold from backend settings
+  const lowStockThreshold = settings?.low_stock_threshold ?? 20;
+  const [showThresholdInput, setShowThresholdInput] = useState(false);
+  const [thresholdInput, setThresholdInput] = useState(lowStockThreshold.toString());
+
+  // Sync thresholdInput when lowStockThreshold changes and input is not shown
+  useEffect(() => {
+    if (!showThresholdInput) {
+      setThresholdInput(lowStockThreshold.toString());
+    }
+  }, [lowStockThreshold, showThresholdInput]);
+
+  const updateThresholdMutation = useMutation({
+    mutationFn: (threshold: number) => api.updateSettings({ low_stock_threshold: threshold }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      showToast(t('common.saved'), 'success');
+      setShowThresholdInput(false);
+    },
+    onError: () => {
+      showToast(t('inventory.lowStockThresholdError'), 'error');
+    },
+  });
+
   // Stats calculation (active spools only)
   const stats = useMemo(() => {
     if (!spools) return null;
@@ -529,14 +553,14 @@ function InventoryPage() {
       totalWeight += remaining;
       totalConsumed += s.weight_used;
       const pct = s.label_weight > 0 ? (remaining / s.label_weight) * 100 : 0;
-      if (pct < 20) lowStock++;
+      if (pct < lowStockThreshold) lowStock++;
       const mat = s.material || 'Unknown';
       if (!byMaterial[mat]) byMaterial[mat] = { count: 0, weight: 0 };
       byMaterial[mat].count++;
       byMaterial[mat].weight += remaining;
     }
     return { totalWeight, totalConsumed, lowStock, byMaterial, totalSpools: activeCount };
-  }, [spools]);
+  }, [spools, lowStockThreshold]);
 
   const inPrinterCount = assignments?.length ?? 0;
 
@@ -575,6 +599,12 @@ function InventoryPage() {
       filtered = filtered.filter((s) => s.weight_used > 0);
     } else if (usageFilter === 'new') {
       filtered = filtered.filter((s) => s.weight_used === 0);
+    } else if (usageFilter === 'lowstock') {
+      filtered = filtered.filter((s) => {
+        const remaining = Math.max(0, s.label_weight - s.weight_used);
+        const pct = s.label_weight > 0 ? (remaining / s.label_weight) * 100 : 0;
+        return pct < lowStockThreshold;
+      });
     }
 
     // Material dropdown
@@ -608,7 +638,7 @@ function InventoryPage() {
     }
 
     return filtered;
-  }, [spools, archiveFilter, usageFilter, materialFilter, brandFilter, stockFilter, search]);
+  }, [spools, archiveFilter, usageFilter, materialFilter, brandFilter, stockFilter, search, lowStockThreshold]);
 
   // Reset page on filter changes
   const resetPage = () => setPageIndex(0);
@@ -819,7 +849,59 @@ function InventoryPage() {
               <span className="text-xs text-bambu-gray font-medium uppercase tracking-wide">{t('inventory.lowStock')}</span>
             </div>
             <div className={`text-xl font-bold ${stats.lowStock > 0 ? 'text-yellow-400' : 'text-white'}`}>{stats.lowStock}</div>
-            <div className="text-xs text-bambu-gray mt-1">{t('inventory.lowStockThreshold')}</div>
+            <div className="text-xs text-bambu-gray mt-1 flex items-center gap-2">
+              {showThresholdInput ? (
+                <form
+                  onSubmit={e => {
+                    e.preventDefault();
+                    const val = parseFloat(thresholdInput);
+                    if (!isNaN(val) && val >= 0.1 && val <= 99.9) {
+                      updateThresholdMutation.mutate(val);
+                    } else {
+                      showToast(t('inventory.lowStockThresholdError'), 'error');
+                    }
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <span className="text-xs text-bambu-gray">{'<'}</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    pattern="^\d{0,2}(\.\d?)?$"
+                    maxLength={4}
+                    value={thresholdInput}
+                    onChange={e => {
+                      // Only allow up to 2 digits before decimal and 1 after
+                      const val = e.target.value.replace(/[^\d.]/g, '');
+                      if (/^\d{0,2}(\.\d?)?$/.test(val)) {
+                        setThresholdInput(val);
+                      }
+                    }}
+                    className="px-1.5 py-1 rounded border border-bambu-dark-tertiary text-xs text-white bg-bambu-dark-secondary focus:outline-none focus:border-bambu-green w-14 text-center"
+                    onWheel={e => e.currentTarget.blur()}
+                    disabled={updateThresholdMutation.isPending}
+                  />
+
+                  <span className="text-xs text-bambu-gray">%</span>
+                  <Button type="submit" size="sm" disabled={updateThresholdMutation.isPending}>{t('common.save')}</Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setShowThresholdInput(false)} disabled={updateThresholdMutation.isPending}>{t('common.cancel')}</Button>
+                </form>
+              ) : (
+                <>
+                  <span className="text-bambu-gray">{'< '}{lowStockThreshold}%</span>
+                  <button
+                    className="p-1.5 text-bambu-gray hover:text-white rounded transition-colors"
+                    title={t('common.edit')}
+                    onClick={() => {
+                      setThresholdInput(lowStockThreshold.toString());
+                      setShowThresholdInput(true);
+                    }}
+                  >
+                    <Edit2 className="w-4 h-4" />
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -960,6 +1042,17 @@ function InventoryPage() {
             }`}
           >
             {t('inventory.new')}
+          </button>
+          <button
+            onClick={() => { setUsageFilter('lowstock'); resetPage(); }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+              usageFilter === 'lowstock'
+                ? 'bg-yellow-500/20 text-yellow-400'
+                : 'text-bambu-gray hover:bg-bambu-dark-tertiary'
+            }`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5" />
+            {t('inventory.lowStock')}
           </button>
         </div>
 
@@ -1542,7 +1635,7 @@ function SpoolTableRow({
       ))}
       <td className="py-3 px-4">
         <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-          <button onClick={onEdit} className="p-1.5 text-bambu-gray hover:text-white rounded transition-colors" title={t('inventory.editSpool')}>
+          <button onClick={onEdit} className="p-1.5 text-bambu-gray hover:text-white rounded transition-colors" title={t('common.edit')}>
             <Edit2 className="w-4 h-4" />
           </button>
           {spool.archived_at ? (

@@ -54,6 +54,8 @@ export default {
     refresh: 'Refresh',
     download: 'Download',
     upload: 'Upload',
+    uploading: 'Uploading...',
+    uploadFailed: 'Upload failed',
     actions: 'Actions',
     status: 'Status',
     name: 'Name',
@@ -478,6 +480,8 @@ export default {
     howToEnable: 'How to enable',
     incompatibleFile: 'This file was sliced for {{slicedFor}}, but this printer is a {{printerModel}}',
     dropNotPrintable: 'Only .gcode and .gcode.3mf files can be printed',
+    dropToPrint: 'Drop to print',
+    cannotPrint: 'Printer busy',
   },
 
   // Archives page

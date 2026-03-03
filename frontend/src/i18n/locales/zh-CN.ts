@@ -54,6 +54,8 @@ export default {
     refresh: '刷新',
     download: '下载',
     upload: '上传',
+    uploading: '上传中...',
+    uploadFailed: '上传失败',
     actions: '操作',
     status: '状态',
     name: '名称',
@@ -462,6 +464,8 @@ export default {
     },
     developerModeWarning: '以下打印机未启用开发者局域网模式：{{names}}。某些功能可能无法使用。',
     howToEnable: '如何启用',
+    dropToPrint: '拖放以打印',
+    cannotPrint: '打印机忙碌',
   },
 
   // Archives page

@@ -53,6 +53,8 @@ export default {
     refresh: 'Aggiorna',
     download: 'Scarica',
     upload: 'Carica',
+    uploading: 'Caricamento...',
+    uploadFailed: 'Caricamento fallito',
     actions: 'Azioni',
     status: 'Stato',
     name: 'Nome',
@@ -469,6 +471,8 @@ export default {
     howToEnable: 'Come attivare',
     incompatibleFile: 'Questo file è stato preparato per {{slicedFor}}, ma questa stampante è una {{printerModel}}',
     dropNotPrintable: 'Solo i file .gcode e .gcode.3mf possono essere stampati',
+    dropToPrint: 'Rilascia per stampare',
+    cannotPrint: 'Stampante occupata',
   },
 
   // Archives page

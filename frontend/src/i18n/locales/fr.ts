@@ -54,6 +54,8 @@ export default {
     refresh: 'Actualiser',
     download: 'Télécharger',
     upload: 'Téléverser',
+    uploading: 'Téléversement...',
+    uploadFailed: 'Échec du téléversement',
     actions: 'Actions',
     status: 'Statut',
     name: 'Nom',
@@ -478,6 +480,8 @@ export default {
     howToEnable: 'Comment activer',
     incompatibleFile: 'Ce fichier a été tranché pour {{slicedFor}}, mais cette imprimante est une {{printerModel}}',
     dropNotPrintable: 'Seuls les fichiers .gcode et .gcode.3mf peuvent être imprimés',
+    dropToPrint: 'Déposer pour imprimer',
+    cannotPrint: 'Imprimante occupée',
   },
 
   // Archives page

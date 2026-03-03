@@ -54,6 +54,8 @@ export default {
     refresh: 'Atualizar',
     download: 'Baixar',
     upload: 'Enviar',
+    uploading: 'Enviando...',
+    uploadFailed: 'Falha no envio',
     actions: 'Ações',
     status: 'Status',
     name: 'Nome',
@@ -478,6 +480,8 @@ export default {
     howToEnable: 'Como ativar',
     incompatibleFile: 'Este arquivo foi fatiado para {{slicedFor}}, mas esta impressora é uma {{printerModel}}',
     dropNotPrintable: 'Apenas arquivos .gcode e .gcode.3mf podem ser impressos',
+    dropToPrint: 'Solte para imprimir',
+    cannotPrint: 'Impressora ocupada',
   },
 
   // Archives page

@@ -51,6 +51,8 @@ export default {
     refresh: '更新',
     download: 'ダウンロード',
     upload: 'アップロード',
+    uploading: 'アップロード中...',
+    uploadFailed: 'アップロード失敗',
     actions: '操作',
     status: 'ステータス',
     name: '名前',
@@ -485,6 +487,8 @@ export default {
     howToEnable: '有効化方法',
     incompatibleFile: 'このファイルは{{slicedFor}}用にスライスされていますが、このプリンターは{{printerModel}}です',
     dropNotPrintable: '.gcodeおよび.gcode.3mfファイルのみ印刷できます',
+    dropToPrint: 'ドロップして印刷',
+    cannotPrint: 'プリンター使用中',
   },
   archives: {
     title: '印刷アーカイブ',

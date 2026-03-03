@@ -1875,32 +1875,38 @@ class BambuMQTTClient:
                 module = (print_error >> 16) & 0xFFFF  # High 16 bits (e.g., 0x0500)
                 error = print_error & 0xFFFF  # Low 16 bits (e.g., 0x8061)
 
-                # Store in a format that matches the community error database
-                # attr stores the full 32-bit value for reconstruction
-                # code stores the short format string for lookup
-                short_code = f"{module:04X}_{error:04X}"
+                # Values below 0x4000 are status/phase indicators, not real errors.
+                # All known HMS errors use 0x4xxx (fatal), 0x8xxx (warning), 0xCxxx (prompt).
+                # Some firmware sends low values like 0x0002 during normal printing.
+                if error < 0x4000:
+                    pass  # Skip — not a real error
+                else:
+                    # Store in a format that matches the community error database
+                    # attr stores the full 32-bit value for reconstruction
+                    # code stores the short format string for lookup
+                    short_code = f"{module:04X}_{error:04X}"
 
-                logger.debug(
-                    f"[{self.serial_number}] print_error: {print_error} (0x{print_error:08x}) -> short_code={short_code}"
-                )
-
-                # Only add if not already in HMS errors (avoid duplicates)
-                existing_short_codes = set()
-                for e in self.state.hms_errors:
-                    # Extract short code from existing errors
-                    e_module = (e.attr >> 16) & 0xFFFF
-                    e_error = int(e.code.replace("0x", ""), 16) if e.code else 0
-                    existing_short_codes.add(f"{e_module:04X}_{e_error:04X}")
-
-                if short_code not in existing_short_codes:
-                    self.state.hms_errors.append(
-                        HMSError(
-                            code=f"0x{error:x}",
-                            attr=print_error,  # Store full value for display
-                            module=module >> 8,  # High byte of module (e.g., 0x05)
-                            severity=3,  # Warning level for print_error
-                        )
+                    logger.debug(
+                        f"[{self.serial_number}] print_error: {print_error} (0x{print_error:08x}) -> short_code={short_code}"
                     )
+
+                    # Only add if not already in HMS errors (avoid duplicates)
+                    existing_short_codes = set()
+                    for e in self.state.hms_errors:
+                        # Extract short code from existing errors
+                        e_module = (e.attr >> 16) & 0xFFFF
+                        e_error = int(e.code.replace("0x", ""), 16) if e.code else 0
+                        existing_short_codes.add(f"{e_module:04X}_{e_error:04X}")
+
+                    if short_code not in existing_short_codes:
+                        self.state.hms_errors.append(
+                            HMSError(
+                                code=f"0x{error:x}",
+                                attr=print_error,  # Store full value for display
+                                module=module >> 8,  # High byte of module (e.g., 0x05)
+                                severity=3,  # Warning level for print_error
+                            )
+                        )
 
         # Parse SD card status
         if "sdcard" in data:

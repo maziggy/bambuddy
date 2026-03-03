@@ -41,6 +41,8 @@ import {
   XCircle,
   User,
   Home,
+  Printer as PrinterIcon,
+  Info,
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
@@ -63,6 +65,358 @@ import { AMSUnitCard } from '../components/AMSUnitCard';
 import { useToast } from '../contexts/ToastContext';
 import { ChamberLight } from '../components/icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';
+import { FileUploadModal } from '../components/FileUploadModal';
+import { PrintModal } from '../components/PrintModal';
+import { PrinterInfoModal } from '../components/PrinterInfoModal';
+import { getGlobalTrayId } from '../utils/amsHelpers';
+import { getPrinterImage, getWifiStrength } from '../utils/printer';
+
+// Complete Bambu Lab filament color mapping by tray_id_name
+// Source: https://github.com/queengooborg/Bambu-Lab-RFID-Library
+const BAMBU_FILAMENT_COLORS: Record<string, string> = {
+  // PLA Basic (A00)
+  'A00-W1': 'Jade White',
+  'A00-P0': 'Beige',
+  'A00-D2': 'Light Gray',
+  'A00-Y0': 'Yellow',
+  'A00-Y2': 'Sunflower Yellow',
+  'A00-A1': 'Pumpkin Orange',
+  'A00-A0': 'Orange',
+  'A00-Y4': 'Gold',
+  'A00-G3': 'Bright Green',
+  'A00-G1': 'Bambu Green',
+  'A00-G2': 'Mistletoe Green',
+  'A00-R3': 'Hot Pink',
+  'A00-P6': 'Magenta',
+  'A00-R0': 'Red',
+  'A00-R2': 'Maroon Red',
+  'A00-P5': 'Purple',
+  'A00-P2': 'Indigo Purple',
+  'A00-B5': 'Turquoise',
+  'A00-B8': 'Cyan',
+  'A00-B3': 'Cobalt Blue',
+  'A00-N0': 'Brown',
+  'A00-N1': 'Cocoa Brown',
+  'A00-Y3': 'Bronze',
+  'A00-D0': 'Gray',
+  'A00-D1': 'Silver',
+  'A00-B1': 'Blue Grey',
+  'A00-D3': 'Dark Gray',
+  'A00-K0': 'Black',
+  // PLA Basic Gradient (A00-M*)
+  'A00-M3': 'Pink Citrus',
+  'A00-M6': 'Dusk Glare',
+  'A00-M0': 'Arctic Whisper',
+  'A00-M1': 'Solar Breeze',
+  'A00-M5': 'Blueberry Bubblegum',
+  'A00-M4': 'Mint Lime',
+  'A00-M2': 'Ocean to Meadow',
+  'A00-M7': 'Cotton Candy Cloud',
+  // PLA Lite (A18)
+  'A18-K0': 'Black',
+  'A18-D0': 'Gray',
+  'A18-W0': 'White',
+  'A18-R0': 'Red',
+  'A18-Y0': 'Yellow',
+  'A18-B0': 'Cyan',
+  'A18-B1': 'Blue',
+  'A18-P0': 'Matte Beige',
+  // PLA Matte (A01)
+  'A01-W2': 'Ivory White',
+  'A01-W3': 'Bone White',
+  'A01-Y2': 'Lemon Yellow',
+  'A01-A2': 'Mandarin Orange',
+  'A01-P3': 'Sakura Pink',
+  'A01-P4': 'Lilac Purple',
+  'A01-R3': 'Plum',
+  'A01-R1': 'Scarlet Red',
+  'A01-R4': 'Dark Red',
+  'A01-G0': 'Apple Green',
+  'A01-G1': 'Grass Green',
+  'A01-G7': 'Dark Green',
+  'A01-B4': 'Ice Blue',
+  'A01-B0': 'Sky Blue',
+  'A01-B3': 'Marine Blue',
+  'A01-B6': 'Dark Blue',
+  'A01-Y3': 'Desert Tan',
+  'A01-N1': 'Latte Brown',
+  'A01-N3': 'Caramel',
+  'A01-R2': 'Terracotta',
+  'A01-N2': 'Dark Brown',
+  'A01-N0': 'Dark Chocolate',
+  'A01-D3': 'Ash Gray',
+  'A01-D0': 'Nardo Gray',
+  'A01-K1': 'Charcoal',
+  // PLA Glow (A12)
+  'A12-G0': 'Green',
+  'A12-R0': 'Pink',
+  'A12-A0': 'Orange',
+  'A12-Y0': 'Yellow',
+  'A12-B0': 'Blue',
+  // PLA Marble (A07)
+  'A07-R5': 'Red Granite',
+  'A07-D4': 'White Marble',
+  // PLA Aero (A11)
+  'A11-W0': 'White',
+  'A11-K0': 'Black',
+  // PLA Sparkle (A08)
+  'A08-G3': 'Alpine Green Sparkle',
+  'A08-D5': 'Slate Gray Sparkle',
+  'A08-B7': 'Royal Purple Sparkle',
+  'A08-R2': 'Crimson Red Sparkle',
+  'A08-K2': 'Onyx Black Sparkle',
+  'A08-Y1': 'Classic Gold Sparkle',
+  // PLA Metal (A02)
+  'A02-B2': 'Cobalt Blue Metallic',
+  'A02-G2': 'Oxide Green Metallic',
+  'A02-Y1': 'Iridium Gold Metallic',
+  'A02-D2': 'Iron Gray Metallic',
+  // PLA Translucent (A17)
+  'A17-B1': 'Blue',
+  'A17-A0': 'Orange',
+  'A17-P0': 'Purple',
+  // PLA Silk+ (A06)
+  'A06-Y1': 'Gold',
+  'A06-D0': 'Titan Gray',
+  'A06-D1': 'Silver',
+  'A06-W0': 'White',
+  'A06-R0': 'Candy Red',
+  'A06-G0': 'Candy Green',
+  'A06-G1': 'Mint',
+  'A06-B1': 'Blue',
+  'A06-B0': 'Baby Blue',
+  'A06-P0': 'Purple',
+  'A06-R1': 'Rose Gold',
+  'A06-R2': 'Pink',
+  'A06-Y0': 'Champagne',
+  // PLA Silk Multi-Color (A05)
+  'A05-M8': 'Dawn Radiance',
+  'A05-M4': 'Aurora Purple',
+  'A05-M1': 'South Beach',
+  'A05-T3': 'Neon City',
+  'A05-T2': 'Midnight Blaze',
+  'A05-T1': 'Gilded Rose',
+  'A05-T4': 'Blue Hawaii',
+  'A05-T5': 'Velvet Eclipse',
+  // PLA Galaxy (A15)
+  'A15-B0': 'Purple',
+  'A15-G0': 'Green',
+  'A15-G1': 'Nebulae',
+  'A15-R0': 'Brown',
+  // PLA Wood (A16)
+  'A16-K0': 'Black Walnut',
+  'A16-R0': 'Rosewood',
+  'A16-N0': 'Clay Brown',
+  'A16-G0': 'Classic Birch',
+  'A16-W0': 'White Oak',
+  'A16-Y0': 'Ochre Yellow',
+  // PLA-CF (A50)
+  'A50-D6': 'Lava Gray',
+  'A50-K0': 'Black',
+  'A50-B6': 'Royal Blue',
+  // PLA Tough+ (A10)
+  'A10-W0': 'White',
+  'A10-D0': 'Gray',
+  // PLA Tough (A09)
+  'A09-B5': 'Lavender Blue',
+  'A09-B4': 'Light Blue',
+  'A09-A0': 'Orange',
+  'A09-D1': 'Silver',
+  'A09-R3': 'Vermilion Red',
+  'A09-Y0': 'Yellow',
+  // PETG HF (G02)
+  'G02-K0': 'Black',
+  'G02-W0': 'White',
+  'G02-R0': 'Red',
+  'G02-D0': 'Gray',
+  'G02-D1': 'Dark Gray',
+  'G02-Y1': 'Cream',
+  'G02-Y0': 'Yellow',
+  'G02-A0': 'Orange',
+  'G02-N1': 'Peanut Brown',
+  'G02-G1': 'Lime Green',
+  'G02-G0': 'Green',
+  'G02-G2': 'Forest Green',
+  'G02-B1': 'Lake Blue',
+  'G02-B0': 'Blue',
+  // PETG Translucent (G01)
+  'G01-G1': 'Translucent Teal',
+  'G01-B0': 'Translucent Light Blue',
+  'G01-C0': 'Clear',
+  'G01-D0': 'Translucent Gray',
+  'G01-G0': 'Translucent Olive',
+  'G01-N0': 'Translucent Brown',
+  'G01-A0': 'Translucent Orange',
+  'G01-P1': 'Translucent Pink',
+  'G01-P0': 'Translucent Purple',
+  // PETG-CF (G50)
+  'G50-P7': 'Violet Purple',
+  'G50-K0': 'Black',
+  // ABS (B00)
+  'B00-D1': 'Silver',
+  'B00-K0': 'Black',
+  'B00-W0': 'White',
+  'B00-G6': 'Bambu Green',
+  'B00-G7': 'Olive',
+  'B00-Y1': 'Tangerine Yellow',
+  'B00-A0': 'Orange',
+  'B00-R0': 'Red',
+  'B00-B4': 'Azure',
+  'B00-B0': 'Blue',
+  'B00-B6': 'Navy Blue',
+  // ABS-GF (B50)
+  'B50-A0': 'Orange',
+  'B50-K0': 'Black',
+  // ASA (B01)
+  'B01-W0': 'White',
+  'B01-K0': 'Black',
+  'B01-D0': 'Gray',
+  // ASA Aero (B02)
+  'B02-W0': 'White',
+  // PC (C00)
+  'C00-C1': 'Transparent',
+  'C00-C0': 'Clear Black',
+  'C00-K0': 'Black',
+  'C00-W0': 'White',
+  // PC FR (C01)
+  'C01-K0': 'Black',
+  // TPU for AMS (U02)
+  'U02-B0': 'Blue',
+  'U02-D0': 'Gray',
+  'U02-K0': 'Black',
+  // PAHT-CF (N04)
+  'N04-K0': 'Black',
+  // PA6-GF (N08)
+  'N08-K0': 'Black',
+  // Support for PLA/PETG (S02, S05)
+  'S02-W0': 'Nature',
+  'S02-W1': 'White',
+  'S05-C0': 'Black',
+  // Support for ABS (S06)
+  'S06-W0': 'White',
+  // Support for PA/PET (S03)
+  'S03-G1': 'Green',
+  // PVA (S04)
+  'S04-Y0': 'Clear',
+};
+
+// Fallback color codes for unknown material prefixes
+const BAMBU_COLOR_CODE_FALLBACK: Record<string, string> = {
+  'W0': 'White', 'W1': 'Jade White', 'W2': 'Ivory White', 'W3': 'Bone White',
+  'Y0': 'Yellow', 'Y1': 'Gold', 'Y2': 'Sunflower Yellow', 'Y3': 'Bronze', 'Y4': 'Gold',
+  'A0': 'Orange', 'A1': 'Pumpkin Orange', 'A2': 'Mandarin Orange',
+  'R0': 'Red', 'R1': 'Scarlet Red', 'R2': 'Maroon Red', 'R3': 'Hot Pink', 'R4': 'Dark Red', 'R5': 'Red Granite',
+  'P0': 'Beige', 'P1': 'Pink', 'P2': 'Indigo Purple', 'P3': 'Sakura Pink', 'P4': 'Lilac Purple', 'P5': 'Purple', 'P6': 'Magenta', 'P7': 'Violet Purple',
+  'B0': 'Blue', 'B1': 'Blue Grey', 'B2': 'Cobalt Blue', 'B3': 'Cobalt Blue', 'B4': 'Ice Blue', 'B5': 'Turquoise', 'B6': 'Navy Blue', 'B7': 'Royal Purple', 'B8': 'Cyan',
+  'G0': 'Green', 'G1': 'Grass Green', 'G2': 'Mistletoe Green', 'G3': 'Bright Green', 'G6': 'Bambu Green', 'G7': 'Dark Green',
+  'N0': 'Brown', 'N1': 'Peanut Brown', 'N2': 'Dark Brown', 'N3': 'Caramel',
+  'D0': 'Gray', 'D1': 'Silver', 'D2': 'Light Gray', 'D3': 'Dark Gray', 'D4': 'White Marble', 'D5': 'Slate Gray', 'D6': 'Lava Gray',
+  'K0': 'Black', 'K1': 'Charcoal', 'K2': 'Onyx Black',
+  'C0': 'Clear Black', 'C1': 'Transparent',
+  'M0': 'Arctic Whisper', 'M1': 'Solar Breeze', 'M2': 'Ocean to Meadow', 'M3': 'Pink Citrus', 'M4': 'Aurora Purple', 'M5': 'Blueberry Bubblegum', 'M6': 'Dusk Glare', 'M7': 'Cotton Candy Cloud', 'M8': 'Dawn Radiance',
+  'T1': 'Gilded Rose', 'T2': 'Midnight Blaze', 'T3': 'Neon City', 'T4': 'Blue Hawaii', 'T5': 'Velvet Eclipse',
+};
+
+// Get color name from Bambu Lab tray_id_name (e.g., "A00-Y2" -> "Sunflower Yellow")
+function getBambuColorName(trayIdName: string | null | undefined): string | null {
+  if (!trayIdName) return null;
+
+  // First try exact match with full tray_id_name
+  if (BAMBU_FILAMENT_COLORS[trayIdName]) {
+    return BAMBU_FILAMENT_COLORS[trayIdName];
+  }
+
+  // Fall back to color code suffix lookup for unknown material prefixes
+  const parts = trayIdName.split('-');
+  if (parts.length < 2) return null;
+  const colorCode = parts[1];
+  return BAMBU_COLOR_CODE_FALLBACK[colorCode] || null;
+}
+
+// Convert hex color to basic color name
+function hexToBasicColorName(hex: string | null | undefined): string {
+  if (!hex || hex.length < 6) return 'Unknown';
+
+  // Parse RGB from hex (format: RRGGBBAA or RRGGBB)
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+
+  // Calculate HSL for better color classification
+  const max = Math.max(r, g, b) / 255;
+  const min = Math.min(r, g, b) / 255;
+  const l = (max + min) / 2;
+
+  let h = 0;
+  let s = 0;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+
+    const rNorm = r / 255;
+    const gNorm = g / 255;
+    const bNorm = b / 255;
+
+    if (max === rNorm) {
+      h = ((gNorm - bNorm) / d + (gNorm < bNorm ? 6 : 0)) / 6;
+    } else if (max === gNorm) {
+      h = ((bNorm - rNorm) / d + 2) / 6;
+    } else {
+      h = ((rNorm - gNorm) / d + 4) / 6;
+    }
+  }
+
+  // Convert to degrees
+  h = h * 360;
+
+  // Classify by lightness first
+  if (l < 0.15) return 'Black';
+  if (l > 0.85) return 'White';
+
+  // Low saturation = gray
+  if (s < 0.15) {
+    if (l < 0.4) return 'Dark Gray';
+    if (l > 0.6) return 'Light Gray';
+    return 'Gray';
+  }
+
+  // Classify by hue
+  // Brown is orange/yellow hue with lower lightness
+  if (h >= 15 && h < 45 && l < 0.45) return 'Brown';
+  if (h >= 45 && h < 70 && l < 0.40) return 'Brown';
+
+  if (h < 15 || h >= 345) return 'Red';
+  if (h < 45) return 'Orange';
+  if (h < 70) return 'Yellow';
+  if (h < 150) return 'Green';
+  if (h < 200) return 'Cyan';
+  if (h < 260) return 'Blue';
+  if (h < 290) return 'Purple';
+  return 'Pink';
+}
+
+// Format K value with 3 decimal places, default to 0.020 if null
+function formatKValue(k: number | null | undefined): string {
+  const value = k ?? 0.020;
+  return value.toFixed(3);
+}
+
+// Nozzle side indicators (Bambu Lab style - square badge with L/R)
+function NozzleBadge({ side }: { side: 'L' | 'R' }) {
+  const { mode } = useTheme();
+  // Light mode: #e7f5e9 (light green), Dark mode: #1a4d2e (dark green)
+  const bgColor = mode === 'dark' ? '#1a4d2e' : '#e7f5e9';
+  return (
+    <span
+      className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold rounded"
+      style={{ backgroundColor: bgColor, color: '#00ae42' }}
+    >
+      {side}
+    </span>
+  );
+}
+
 import React from 'react';
 // Parse RGBA hex to CSS color (skip if empty or all zeros)
 function parseFilamentColor(rgba: string): string | null {
@@ -541,35 +895,157 @@ function HeaterThermometer({ className, color, isHeating }: HeaterThermometerPro
 }
 
 
-function getPrinterImage(model: string | null | undefined): string {
-  if (!model) return '/img/printers/default.png';
+function HumidityIndicator({ humidity, goodThreshold = 40, fairThreshold = 60, onClick, compact }: HumidityIndicatorProps) {
+  const humidityValue = typeof humidity === 'string' ? parseInt(humidity, 10) : humidity;
+  const good = typeof goodThreshold === 'number' ? goodThreshold : 40;
+  const fair = typeof fairThreshold === 'number' ? fairThreshold : 60;
 
-  const modelLower = model.toLowerCase().replace(/\s+/g, '');
+  // Status thresholds (configurable via settings)
+  // Good: ≤goodThreshold (green #22a352), Fair: ≤fairThreshold (gold #d4a017), Bad: >fairThreshold (red #c62828)
+  let textColor: string;
+  let statusText: string;
 
-  // Map model names to image files
-  if (modelLower.includes('x1e')) return '/img/printers/x1e.png';
-  if (modelLower.includes('x1c') || modelLower.includes('x1carbon')) return '/img/printers/x1c.png';
-  if (modelLower.includes('x1')) return '/img/printers/x1c.png';
-  if (modelLower.includes('h2dpro') || modelLower.includes('h2d-pro')) return '/img/printers/h2dpro.png';
-  if (modelLower.includes('h2d')) return '/img/printers/h2d.png';
-  if (modelLower.includes('h2c')) return '/img/printers/h2c.png';
-  if (modelLower.includes('h2s')) return '/img/printers/h2d.png';
-  if (modelLower.includes('p2s')) return '/img/printers/p1s.png';
-  if (modelLower.includes('p1s')) return '/img/printers/p1s.png';
-  if (modelLower.includes('p1p')) return '/img/printers/p1p.png';
-  if (modelLower.includes('a1mini')) return '/img/printers/a1mini.png';
-  if (modelLower.includes('a1')) return '/img/printers/a1.png';
+  if (isNaN(humidityValue)) {
+    textColor = '#C3C2C1';
+    statusText = 'Unknown';
+  } else if (humidityValue <= good) {
+    textColor = '#22a352'; // Green - Good
+    statusText = 'Good';
+  } else if (humidityValue <= fair) {
+    textColor = '#d4a017'; // Gold - Fair
+    statusText = 'Fair';
+  } else {
+    textColor = '#c62828'; // Red - Bad
+    statusText = 'Bad';
+  }
 
-  return '/img/printers/default.png';
+  // Fill level based on status: Good=Empty (dry), Fair=Half, Bad=Full (wet)
+  let DropComponent: React.FC<{ className?: string }>;
+  if (isNaN(humidityValue)) {
+    DropComponent = WaterDropEmpty;
+  } else if (humidityValue <= good) {
+    DropComponent = WaterDropEmpty; // Good - empty drop (dry)
+  } else if (humidityValue <= fair) {
+    DropComponent = WaterDropHalf; // Fair - half filled
+  } else {
+    DropComponent = WaterDropFull; // Bad - full (too humid)
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-1 ${onClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+      title={`Humidity: ${humidityValue}% - ${statusText}${onClick ? ' (click for history)' : ''}`}
+    >
+      <DropComponent className={compact ? "w-2.5 h-3" : "w-3 h-4"} />
+      <span className={`font-medium tabular-nums ${compact ? 'text-[10px]' : 'text-xs'}`} style={{ color: textColor }}>{humidityValue}%</span>
+    </button>
+  );
 }
 
-function getWifiStrength(rssi: number): { labelKey: string; color: string; bars: number } {
-  if (rssi >= -50) return { labelKey: 'printers.wifiSignal.excellent', color: 'text-bambu-green', bars: 4 };
-  if (rssi >= -60) return { labelKey: 'printers.wifiSignal.good', color: 'text-bambu-green', bars: 3 };
-  if (rssi >= -70) return { labelKey: 'printers.wifiSignal.fair', color: 'text-yellow-400', bars: 2 };
-  if (rssi >= -80) return { labelKey: 'printers.wifiSignal.weak', color: 'text-orange-400', bars: 1 };
-  return { labelKey: 'printers.wifiSignal.veryWeak', color: 'text-red-400', bars: 1 };
+// Temperature indicator with dynamic icon and coloring
+interface TemperatureIndicatorProps {
+  temp: number;
+  goodThreshold?: number;  // <= this is blue
+  fairThreshold?: number;  // <= this is orange, > is red
+  onClick?: () => void;
+  compact?: boolean;  // Smaller version for grid layout
 }
+
+function TemperatureIndicator({ temp, goodThreshold = 28, fairThreshold = 35, onClick, compact }: TemperatureIndicatorProps) {
+  // Ensure thresholds are numbers
+  const good = typeof goodThreshold === 'number' ? goodThreshold : 28;
+  const fair = typeof fairThreshold === 'number' ? fairThreshold : 35;
+
+  let textColor: string;
+  let statusText: string;
+  let ThermoComponent: React.FC<{ className?: string }>;
+
+  if (temp <= good) {
+    textColor = '#22a352'; // Green - good (same as humidity)
+    statusText = 'Good';
+    ThermoComponent = ThermometerEmpty;
+  } else if (temp <= fair) {
+    textColor = '#d4a017'; // Gold - fair (same as humidity)
+    statusText = 'Fair';
+    ThermoComponent = ThermometerHalf;
+  } else {
+    textColor = '#c62828'; // Red - bad (same as humidity)
+    statusText = 'Bad';
+    ThermoComponent = ThermometerFull;
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-1 ${onClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+      title={`Temperature: ${temp}°C - ${statusText}${onClick ? ' (click for history)' : ''}`}
+    >
+      <ThermoComponent className={compact ? "w-2.5 h-3" : "w-3 h-4"} />
+      <span className={`tabular-nums text-right ${compact ? 'text-[10px] w-8' : 'w-12'}`} style={{ color: textColor }}>{temp}°C</span>
+    </button>
+  );
+}
+
+// Get AMS label: AMS-A/B/C/D for regular AMS, HT-A/B for AMS-HT (single spool)
+// Always use tray count as the source of truth (1 tray = AMS-HT, 4 trays = regular AMS)
+// AMS-HT uses IDs 128+ while regular AMS uses 0-3
+function getAmsLabel(amsId: number | string, trayCount: number): string {
+  // Ensure amsId is a number (backend might send string)
+  const id = typeof amsId === 'string' ? parseInt(amsId, 10) : amsId;
+  const safeId = isNaN(id) ? 0 : id;
+  const isHt = trayCount === 1;
+  // AMS-HT uses IDs starting at 128, regular AMS uses 0-3
+  const normalizedId = safeId >= 128 ? safeId - 128 : safeId;
+  const letter = String.fromCharCode(65 + normalizedId); // 0=A, 1=B, 2=C, 3=D
+  return isHt ? `HT-${letter}` : `AMS-${letter}`;
+}
+
+// Get fill bar color based on spool fill level
+function getFillBarColor(fillLevel: number): string {
+  if (fillLevel > 50) return '#00ae42'; // Green - good
+  if (fillLevel >= 15) return '#f59e0b'; // Amber - warning (<= 50%)
+  return '#ef4444'; // Red - critical (< 15%)
+}
+
+// Calculate fill level from Spoolman weight data (used as fallback when AMS reports 0%)
+function getSpoolmanFillLevel(
+  linkedSpool: LinkedSpoolInfo | undefined
+): number | null {
+  if (!linkedSpool?.remaining_weight || !linkedSpool?.filament_weight
+      || linkedSpool.filament_weight <= 0) return null;
+  return Math.min(100, Math.round(
+    (linkedSpool.remaining_weight / linkedSpool.filament_weight) * 100
+  ));
+}
+
+/**
+ * Check if a tray contains a Bambu Lab spool (RFID-tagged).
+ * Only checks hardware identifiers (tray_uuid, tag_uid) — NOT tray_info_idx,
+ * which is a filament profile/preset ID that third-party spools also get when
+ * the user selects a generic Bambu preset (e.g. "GFA00" for Generic PLA).
+ */
+function isBambuLabSpool(tray: {
+  tray_uuid?: string | null;
+  tag_uid?: string | null;
+} | null | undefined): boolean {
+  if (!tray) return false;
+
+  // Check tray_uuid (32 hex chars, non-zero)
+  if (tray.tray_uuid && tray.tray_uuid !== '00000000000000000000000000000000') {
+    return true;
+  }
+
+  // Check tag_uid (16 hex chars, non-zero)
+  if (tray.tag_uid && tray.tag_uid !== '0000000000000000') {
+    return true;
+  }
+
+  return false;
+}
+
 
 function CoverImage({ url, printName }: { url: string | null; printName?: string }) {
   const { t } = useTranslation();
@@ -880,6 +1356,13 @@ function PrinterCard({
   const [showPauseConfirm, setShowPauseConfirm] = useState(false);
   const [showResumeConfirm, setShowResumeConfirm] = useState(false);
   const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
+  const [showUploadForPrint, setShowUploadForPrint] = useState(false);
+  const [showPrinterInfo, setShowPrinterInfo] = useState(false);
+  const closePrinterInfo = useCallback(() => setShowPrinterInfo(false), []);
+  const [printAfterUpload, setPrintAfterUpload] = useState<{ id: number; filename: string } | null>(null);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [isDropUploading, setIsDropUploading] = useState(false);
+  const dragCounterRef = useRef(0);
   const [amsHistoryModal, setAmsHistoryModal] = useState<{
     amsId: number;
     amsLabel: string;
@@ -1536,9 +2019,107 @@ function PrinterCard({
     }
   };
 
+  const canDrop = isConnected && status?.state !== 'RUNNING' && status?.state !== 'PAUSE' && hasPermission('printers:control');
+
+  const handleCardDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current++;
+    if (dragCounterRef.current === 1) setIsDraggingFile(true);
+  };
+
+  const handleCardDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = canDrop ? 'copy' : 'none';
+  };
+
+  const handleCardDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current--;
+    if (dragCounterRef.current === 0) setIsDraggingFile(false);
+  };
+
+  const handleCardDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setIsDraggingFile(false);
+
+    if (!canDrop) return;
+
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    const file = droppedFiles[0];
+    if (!file) return;
+
+    // Only accept sliced/printable files (.gcode, .gcode.3mf, etc.)
+    const lower = file.name.toLowerCase();
+    if (!lower.endsWith('.gcode') && !lower.includes('.gcode.')) {
+      showToast(t('printers.dropNotPrintable', 'Only .gcode and .gcode.3mf files can be printed'), 'error');
+      return;
+    }
+
+    setIsDropUploading(true);
+    try {
+      const result = await api.uploadLibraryFile(file, null);
+
+      // Check printer compatibility if sliced_for_model is available in metadata
+      const slicedFor = (result.metadata as Record<string, unknown>)?.sliced_for_model as string | undefined;
+      const printerModel = mapModelCode(printer.model);
+      if (slicedFor && printerModel && slicedFor.toLowerCase() !== printerModel.toLowerCase()) {
+        await api.deleteLibraryFile(result.id).catch(() => {});
+        showToast(
+          t('printers.incompatibleFile', 'This file was sliced for {{slicedFor}}, but this printer is a {{printerModel}}', { slicedFor, printerModel }),
+          'error'
+        );
+        return;
+      }
+
+      setPrintAfterUpload({ id: result.id, filename: result.filename });
+    } catch {
+      showToast(t('common.uploadFailed', 'Upload failed'), 'error');
+    } finally {
+      setIsDropUploading(false);
+    }
+  };
+
   return (
-    <Card className="relative">
-      <CardContent className={`flex flex-col h-full gap-2 lg:p-6 ${cardSize >= 3 ? 'p-5' : 'p-3'}`}>
+    <Card
+      className="relative"
+      onDragEnter={handleCardDragEnter}
+      onDragOver={handleCardDragOver}
+      onDragLeave={handleCardDragLeave}
+      onDrop={handleCardDrop}
+    >
+      {/* Drop zone overlay */}
+      {(isDraggingFile || isDropUploading) && (
+        <div
+          className={`absolute inset-0 z-10 rounded-xl border-2 border-dashed flex items-center justify-center transition-colors ${
+            isDropUploading
+              ? 'bg-bambu-green/10 border-bambu-green/50'
+              : canDrop
+                ? 'bg-bambu-green/10 border-bambu-green'
+                : 'bg-red-500/10 border-red-500/50'
+          }`}
+        >
+          <div className="text-center">
+            {isDropUploading ? (
+              <>
+                <Loader2 className="w-8 h-8 mx-auto mb-2 text-bambu-green animate-spin" />
+                <p className="text-sm font-medium text-bambu-green">{t('common.uploading', 'Uploading...')}</p>
+              </>
+            ) : canDrop ? (
+              <>
+                <PrinterIcon className="w-8 h-8 mx-auto mb-2 text-bambu-green" />
+                <p className="text-sm font-medium text-bambu-green">{t('printers.dropToPrint', 'Drop to print')}</p>
+              </>
+            ) : (
+              <>
+                <X className="w-8 h-8 mx-auto mb-2 text-red-400" />
+                <p className="text-sm font-medium text-red-400">{t('printers.cannotPrint', 'Printer busy')}</p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      <CardContent className={cardSize >= 3 ? 'p-5' : ''}>
         {/* Header */}
         <div className={getSpacing()}>
           {/* Top row: Image, Name, Menu */}
@@ -1604,6 +2185,16 @@ function PrinterCard({
                   >
                     <Pencil className="w-4 h-4" />
                     {t('common.edit')}
+                  </button>
+                  <button
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
+                    onClick={() => {
+                      setShowPrinterInfo(true);
+                      setShowMenu(false);
+                    }}
+                  >
+                    <Info className="w-4 h-4" />
+                    {t('printers.printerInformation')}
                   </button>
                   <button
                     className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
@@ -2107,6 +2698,7 @@ function PrinterCard({
                           {chamberFan ?? 0}%
                         </span>
                       </div>
+
                     </div>
 
                     {/* Right: Print Control Buttons */}
@@ -2351,22 +2943,17 @@ function PrinterCard({
 
         {/* Connection Info & Actions - hidden in compact mode */}
         {viewMode === 'expanded' && (
-          <div className="mt-auto pt-4 border-t border-bambu-dark-tertiary flex flex-col gap-2 lg:flex-row lg:justify-between">
-            <div className="flex justify-between text-xs text-bambu-gray lg:flex-col">
-              <p>{printer.ip_address}</p>
-              <p className="truncate">{printer.serial_number}</p>
-            </div>
-            <div className="flex justify-end items-center gap-2 flex-wrap lg:justify-start">
-              {/* Chamber Light Toggle */}
+          <div className="mt-4 pt-4 border-t border-bambu-dark-tertiary flex items-center justify-end gap-2 flex-wrap">
+              {/* Chamber Light */}
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={() => chamberLightMutation.mutate(!status?.chamber_light)}
                 disabled={!status?.connected || chamberLightMutation.isPending || !hasPermission('printers:control')}
                 title={!hasPermission('printers:control') ? t('printers.permission.noControl') : (status?.chamber_light ? t('printers.chamberLightOff') : t('printers.chamberLightOn'))}
-                className={status?.chamber_light ? 'bg-yellow-500/20 hover:bg-yellow-500/30 border-yellow-500/30' : ''}
+                className={status?.chamber_light ? '!border-yellow-500 !text-yellow-400 hover:!bg-yellow-500/20' : ''}
               >
-                <ChamberLight on={status?.chamber_light ?? false} className="w-4 h-4" />
+                <ChamberLight on={status?.chamber_light ?? false} className={`w-4 h-4 ${status?.chamber_light ? 'text-yellow-400' : ''}`} />
               </Button>
               {/* Camera Button */}
               <Button
@@ -2429,13 +3016,24 @@ function PrinterCard({
                 variant="secondary"
                 size="sm"
                 onClick={() => setShowFileManager(true)}
-                disabled={!hasPermission('printers:files')}
+                disabled={!isConnected || !hasPermission('printers:files')}
                 title={!hasPermission('printers:files') ? t('printers.permission.noFiles') : t('printers.browseFiles')}
               >
                 <HardDrive className="w-4 h-4" />
-                Files
+                {t('printers.files')}
               </Button>
-            </div>
+              {isConnected && status?.state !== 'RUNNING' && status?.state !== 'PAUSE' && (
+                <Button
+                  size="sm"
+                  onClick={() => setShowUploadForPrint(true)}
+                  disabled={!hasPermission('printers:control')}
+                  title={!hasPermission('printers:control') ? t('printers.permission.noControl') : t('common.print')}
+                  className="!bg-bambu-green hover:!bg-bambu-green/80 !text-white"
+                >
+                  <PrinterIcon className="w-4 h-4" />
+                  {t('common.print')}
+                </Button>
+              )}
           </div>
         )}
       </CardContent>
@@ -2449,12 +3047,60 @@ function PrinterCard({
         />
       )}
 
+      {/* Upload for Print Modal */}
+      {showUploadForPrint && (
+        <FileUploadModal
+          folderId={null}
+          onClose={() => setShowUploadForPrint(false)}
+          onUploadComplete={() => {}}
+          autoUpload
+          accept=".gcode,.3mf"
+          validateFile={(file) => {
+            const lower = file.name.toLowerCase();
+            if (!lower.endsWith('.gcode') && !lower.includes('.gcode.')) {
+              return t('printers.dropNotPrintable', 'Only .gcode and .gcode.3mf files can be printed');
+            }
+          }}
+          onFileUploaded={(uploadedFile) => {
+            // Check printer compatibility if sliced_for_model is available in metadata
+            const slicedFor = (uploadedFile.metadata as Record<string, unknown>)?.sliced_for_model as string | undefined;
+            const printerModel = mapModelCode(printer.model);
+            if (slicedFor && printerModel && slicedFor.toLowerCase() !== printerModel.toLowerCase()) {
+              api.deleteLibraryFile(uploadedFile.id).catch(() => {});
+              return t('printers.incompatibleFile', 'This file was sliced for {{slicedFor}}, but this printer is a {{printerModel}}', { slicedFor, printerModel });
+            }
+            setPrintAfterUpload({ id: uploadedFile.id, filename: uploadedFile.filename });
+          }}
+        />
+      )}
+
+      {/* Print Modal (after upload) */}
+      {printAfterUpload && (
+        <PrintModal
+          mode="reprint"
+          libraryFileId={printAfterUpload.id}
+          archiveName={printAfterUpload.filename}
+          initialSelectedPrinterIds={[printer.id]}
+          onClose={() => setPrintAfterUpload(null)}
+          onSuccess={() => setPrintAfterUpload(null)}
+        />
+      )}
+
       {/* MQTT Debug Modal */}
       {showMQTTDebug && (
         <MQTTDebugModal
           printerId={printer.id}
           printerName={printer.name}
           onClose={() => setShowMQTTDebug(false)}
+        />
+      )}
+
+      {showPrinterInfo && (
+        <PrinterInfoModal
+          printer={printer}
+          status={status}
+          totalPrintHours={maintenanceInfo?.total_print_hours}
+          onClose={closePrinterInfo}
         />
       )}
 

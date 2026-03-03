@@ -780,6 +780,7 @@ export interface AppSettings {
   check_updates: boolean;
   check_printer_firmware: boolean;
   include_beta_updates: boolean;
+  language: string;
   notification_language: string;
   // AMS threshold settings
   ams_humidity_good: number;  // <= this is green
@@ -836,6 +837,8 @@ export interface AppSettings {
   prometheus_token: string;
   // Bed cooled threshold
   bed_cooled_threshold: number;
+  // Inventory low stock threshold
+  low_stock_threshold: number;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
@@ -1820,6 +1823,8 @@ export interface InventorySpool {
   created_at: string;
   updated_at: string;
   cost_per_kg: number | null;
+  last_scale_weight: number | null;
+  last_weighed_at: string | null;
   k_profiles?: SpoolKProfile[];
 }
 
@@ -4862,12 +4867,25 @@ export interface SpoolBuddyDevice {
   has_scale: boolean;
   tare_offset: number;
   calibration_factor: number;
+  nfc_reader_type: string | null;
+  nfc_connection: string | null;
+  display_brightness: number;
+  display_blank_timeout: number;
+  has_backlight: boolean;
+  last_calibrated_at: string | null;
   last_seen: string | null;
   pending_command: string | null;
   nfc_ok: boolean;
   scale_ok: boolean;
   uptime_s: number;
   online: boolean;
+}
+
+export interface DaemonUpdateCheck {
+  current_version: string;
+  latest_version: string | null;
+  update_available: boolean;
+  release_url: string | null;
 }
 
 // SpoolBuddy API
@@ -4894,5 +4912,26 @@ export const spoolbuddyApi = {
     request<{ status: string; weight_used: number }>('/spoolbuddy/scale/update-spool-weight', {
       method: 'POST',
       body: JSON.stringify({ spool_id: spoolId, weight_grams: weightGrams }),
+    }),
+
+  updateDisplay: (deviceId: string, brightness: number, blankTimeout: number) =>
+    request<{ status: string }>(`/spoolbuddy/devices/${deviceId}/display`, {
+      method: 'PUT',
+      body: JSON.stringify({ brightness, blank_timeout: blankTimeout }),
+    }),
+
+  checkDaemonUpdate: (deviceId: string, includeBeta?: boolean) =>
+    request<DaemonUpdateCheck>(`/spoolbuddy/devices/${deviceId}/update-check?include_beta=${includeBeta ?? false}`),
+
+  writeTag: (deviceId: string, spoolId: number) =>
+    request<{ status: string }>('/spoolbuddy/nfc/write-tag', {
+      method: 'POST',
+      body: JSON.stringify({ device_id: deviceId, spool_id: spoolId }),
+    }),
+
+  cancelWrite: (deviceId: string) =>
+    request<{ status: string }>(`/spoolbuddy/devices/${deviceId}/cancel-write`, {
+      method: 'POST',
+      body: '{}',
     }),
 };

@@ -24,6 +24,8 @@ class Spool(Base):
     )  # Reference to spool_catalog entry for core weight
     weight_used: Mapped[float] = mapped_column(Float, default=0)  # Consumed grams
     weight_locked: Mapped[bool] = mapped_column(Boolean, default=False)  # Lock weight from AMS auto-sync
+    last_scale_weight: Mapped[int | None] = mapped_column(Integer)  # Last gross weight from scale (g)
+    last_weighed_at: Mapped[datetime | None] = mapped_column(DateTime)  # When last weighed
     slicer_filament: Mapped[str | None] = mapped_column(String(50))  # Preset ID (e.g. "GFL99")
     slicer_filament_name: Mapped[str | None] = mapped_column(String(100))  # Preset name for slicer
     nozzle_temp_min: Mapped[int | None] = mapped_column()  # Override min temp

@@ -309,6 +309,258 @@ class TestNfcEndpoints:
 
 
 # ============================================================================
+# NFC write-tag endpoints
+# ============================================================================
+
+
+class TestWriteTagEndpoints:
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_write_tag_queues_command(self, async_client: AsyncClient, device_factory, spool_factory):
+        device = await device_factory(device_id="sb-wt")
+        spool = await spool_factory(material="PLA", brand="Polymaker", color_name="Red", rgba="FF0000FF")
+
+        resp = await async_client.post(
+            f"{API}/nfc/write-tag",
+            json={"device_id": device.device_id, "spool_id": spool.id},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "queued"
+
+        # Verify heartbeat returns write_tag command with payload
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            hb = await async_client.post(
+                f"{API}/devices/{device.device_id}/heartbeat",
+                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 10},
+            )
+
+        hb_data = hb.json()
+        assert hb_data["pending_command"] == "write_tag"
+        assert hb_data["pending_write_payload"] is not None
+        assert hb_data["pending_write_payload"]["spool_id"] == spool.id
+        assert "ndef_data_hex" in hb_data["pending_write_payload"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_write_tag_heartbeat_not_cleared(self, async_client: AsyncClient, device_factory, spool_factory):
+        """write_tag command persists across heartbeats until write-result clears it."""
+        device = await device_factory(device_id="sb-wt-persist")
+        spool = await spool_factory(material="PETG")
+
+        await async_client.post(
+            f"{API}/nfc/write-tag",
+            json={"device_id": device.device_id, "spool_id": spool.id},
+        )
+
+        # First heartbeat — command present
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            hb1 = await async_client.post(
+                f"{API}/devices/{device.device_id}/heartbeat",
+                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 10},
+            )
+        assert hb1.json()["pending_command"] == "write_tag"
+
+        # Second heartbeat — should still be present (not cleared like tare)
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            hb2 = await async_client.post(
+                f"{API}/devices/{device.device_id}/heartbeat",
+                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 20},
+            )
+        assert hb2.json()["pending_command"] == "write_tag"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_write_tag_missing_spool_404(self, async_client: AsyncClient, device_factory):
+        device = await device_factory(device_id="sb-wt-nospool")
+
+        resp = await async_client.post(
+            f"{API}/nfc/write-tag",
+            json={"device_id": device.device_id, "spool_id": 99999},
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_write_tag_missing_device_404(self, async_client: AsyncClient, spool_factory):
+        spool = await spool_factory()
+
+        resp = await async_client.post(
+            f"{API}/nfc/write-tag",
+            json={"device_id": "nonexistent", "spool_id": spool.id},
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_write_result_success_links_tag(self, async_client: AsyncClient, device_factory, spool_factory):
+        device = await device_factory(device_id="sb-wr", pending_command="write_tag")
+        spool = await spool_factory(material="PLA", tag_uid=None)
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                f"{API}/nfc/write-result",
+                json={
+                    "device_id": device.device_id,
+                    "spool_id": spool.id,
+                    "tag_uid": "04AABB11223344",
+                    "success": True,
+                },
+            )
+
+        assert resp.status_code == 200
+        msg = mock_ws.broadcast.call_args[0][0]
+        assert msg["type"] == "spoolbuddy_tag_written"
+        assert msg["spool_id"] == spool.id
+        assert msg["tag_uid"] == "04AABB11223344"
+
+        # Verify spool got tag linked
+        spool_resp = await async_client.get(f"/api/v1/inventory/spools/{spool.id}")
+        spool_data = spool_resp.json()
+        assert spool_data["tag_uid"] == "04AABB11223344"
+        assert spool_data["tag_type"] == "ntag"
+        assert spool_data["data_origin"] == "opentag3d"
+        assert spool_data["encode_time"] is not None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_write_result_failure_broadcasts_error(
+        self, async_client: AsyncClient, device_factory, spool_factory
+    ):
+        device = await device_factory(device_id="sb-wr-fail", pending_command="write_tag")
+        spool = await spool_factory(material="PLA", tag_uid=None)
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                f"{API}/nfc/write-result",
+                json={
+                    "device_id": device.device_id,
+                    "spool_id": spool.id,
+                    "tag_uid": "04AABB",
+                    "success": False,
+                    "message": "Write or verification failed",
+                },
+            )
+
+        assert resp.status_code == 200
+        msg = mock_ws.broadcast.call_args[0][0]
+        assert msg["type"] == "spoolbuddy_tag_write_failed"
+        assert msg["message"] == "Write or verification failed"
+
+        # Verify spool NOT linked
+        spool_resp = await async_client.get(f"/api/v1/inventory/spools/{spool.id}")
+        assert spool_resp.json()["tag_uid"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_write_result_clears_pending_command(self, async_client: AsyncClient, device_factory, spool_factory):
+        device = await device_factory(
+            device_id="sb-wr-clear",
+            pending_command="write_tag",
+            pending_write_payload='{"spool_id": 1, "ndef_data_hex": "E110120003"}',
+        )
+        spool = await spool_factory()
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            await async_client.post(
+                f"{API}/nfc/write-result",
+                json={
+                    "device_id": device.device_id,
+                    "spool_id": spool.id,
+                    "tag_uid": "AABB",
+                    "success": True,
+                },
+            )
+
+        # Heartbeat should have no pending command
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            hb = await async_client.post(
+                f"{API}/devices/{device.device_id}/heartbeat",
+                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 30},
+            )
+        assert hb.json()["pending_command"] is None
+        assert hb.json()["pending_write_payload"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_cancel_write(self, async_client: AsyncClient, device_factory, spool_factory):
+        device = await device_factory(device_id="sb-cancel")
+        spool = await spool_factory()
+
+        # Queue a write
+        await async_client.post(
+            f"{API}/nfc/write-tag",
+            json={"device_id": device.device_id, "spool_id": spool.id},
+        )
+
+        # Cancel it
+        resp = await async_client.post(f"{API}/devices/{device.device_id}/cancel-write", json={})
+        assert resp.status_code == 200
+
+        # Heartbeat should have no pending command
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            hb = await async_client.post(
+                f"{API}/devices/{device.device_id}/heartbeat",
+                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 10},
+            )
+        assert hb.json()["pending_command"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_cancel_write_unknown_device_404(self, async_client: AsyncClient):
+        resp = await async_client.post(f"{API}/devices/ghost/cancel-write", json={})
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_write_tag_ndef_data_is_valid(self, async_client: AsyncClient, device_factory, spool_factory):
+        """Verify the NDEF data in the heartbeat is a valid OpenTag3D message."""
+        device = await device_factory(device_id="sb-wt-ndef")
+        spool = await spool_factory(
+            material="PLA",
+            brand="Polymaker",
+            color_name="White",
+            rgba="FFFFFFFF",
+            label_weight=1000,
+        )
+
+        await async_client.post(
+            f"{API}/nfc/write-tag",
+            json={"device_id": device.device_id, "spool_id": spool.id},
+        )
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            hb = await async_client.post(
+                f"{API}/devices/{device.device_id}/heartbeat",
+                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 10},
+            )
+
+        payload = hb.json()["pending_write_payload"]
+        ndef_bytes = bytes.fromhex(payload["ndef_data_hex"])
+
+        # CC bytes
+        assert ndef_bytes[:4] == bytes([0xE1, 0x10, 0x12, 0x00])
+        # TLV type
+        assert ndef_bytes[4] == 0x03
+        # NDEF record: TNF=MIME, type=application/opentag3d
+        assert ndef_bytes[6] == 0xD2
+        assert ndef_bytes[9:30] == b"application/opentag3d"
+        # Terminator
+        assert ndef_bytes[-1] == 0xFE
+        # Total size fits NTAG213
+        assert len(ndef_bytes) <= 144
+
+
+# ============================================================================
 # Scale endpoints
 # ============================================================================
 
@@ -370,6 +622,25 @@ class TestScaleEndpoints:
         assert resp.status_code == 200
         data = resp.json()
         assert data["weight_used"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_spool_weight_stores_scale_reading(self, async_client: AsyncClient, spool_factory):
+        """Verify last_scale_weight and last_weighed_at are stored after weight sync."""
+        spool = await spool_factory(label_weight=1000, core_weight=250, weight_used=0)
+
+        resp = await async_client.post(
+            f"{API}/scale/update-spool-weight",
+            json={"spool_id": spool.id, "weight_grams": 750},
+        )
+        assert resp.status_code == 200
+
+        # Fetch the spool via inventory API to verify stored fields
+        spool_resp = await async_client.get(f"/api/v1/inventory/spools/{spool.id}")
+        assert spool_resp.status_code == 200
+        spool_data = spool_resp.json()
+        assert spool_data["last_scale_weight"] == 750
+        assert spool_data["last_weighed_at"] is not None
 
     @pytest.mark.asyncio
     @pytest.mark.integration

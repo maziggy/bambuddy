@@ -3,6 +3,7 @@ import { useQuery, useQueries } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { WifiOff } from 'lucide-react';
 import { api, type Printer } from '../../api/client';
+import { formatTimeOnly } from '../../utils/date';
 
 interface SpoolBuddyTopBarProps {
   selectedPrinterId: number | null;
@@ -40,14 +41,16 @@ export function SpoolBuddyTopBar({ selectedPrinterId, onPrinterChange, deviceOnl
     }
   }, [onlinePrinters, selectedPrinterId, onPrinterChange]);
 
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: api.getSettings,
+  });
+
   // Clock - update every second for kiosk display
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
-
-  const formatTime = (date: Date) =>
-    date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   return (
     <div className="h-12 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary flex items-center px-3 gap-4 shrink-0">
@@ -102,7 +105,7 @@ export function SpoolBuddyTopBar({ selectedPrinterId, onPrinterChange, deviceOnl
 
         {/* Clock */}
         <span className="text-white/50 text-base font-mono min-w-[50px] text-right">
-          {formatTime(currentTime)}
+          {formatTimeOnly(currentTime, settings?.time_format || 'system')}
         </span>
       </div>
     </div>

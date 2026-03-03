@@ -1,14 +1,52 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Outlet } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { SpoolBuddyTopBar } from './SpoolBuddyTopBar';
 import { SpoolBuddyBottomNav } from './SpoolBuddyBottomNav';
 import { SpoolBuddyStatusBar } from './SpoolBuddyStatusBar';
 import { useSpoolBuddyState } from '../../hooks/useSpoolBuddyState';
+import { api, spoolbuddyApi } from '../../api/client';
+import { VirtualKeyboard } from '../VirtualKeyboard';
 
 export function SpoolBuddyLayout() {
   const [selectedPrinterId, setSelectedPrinterId] = useState<number | null>(null);
   const [alert, setAlert] = useState<{ type: 'warning' | 'error' | 'info'; message: string } | null>(null);
+  const [blanked, setBlanked] = useState(false);
+  const [displayBrightness, setDisplayBrightness] = useState(100);
+  const [displayBlankTimeout, setDisplayBlankTimeout] = useState(0);
+  const lastActivityRef = useRef(Date.now());
+  const { i18n } = useTranslation();
   const sbState = useSpoolBuddyState();
+
+  // Sync language from backend settings (kiosk has its own browser with empty localStorage)
+  const { data: appSettings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: api.getSettings,
+  });
+  useEffect(() => {
+    if (appSettings?.language && appSettings.language !== i18n.language) {
+      i18n.changeLanguage(appSettings.language);
+    }
+  }, [appSettings?.language, i18n]);
+
+  // Query device data to initialize display settings on any page
+  const { data: devices = [] } = useQuery({
+    queryKey: ['spoolbuddy-devices'],
+    queryFn: () => spoolbuddyApi.getDevices(),
+    refetchInterval: 30000,
+  });
+  const device = devices[0];
+
+  // Sync display settings from device on initial load
+  const initializedRef = useRef(false);
+  useEffect(() => {
+    if (device && !initializedRef.current) {
+      setDisplayBrightness(device.display_brightness);
+      setDisplayBlankTimeout(device.display_blank_timeout);
+      initializedRef.current = true;
+    }
+  }, [device]);
 
   // Force dark theme on mount, restore on unmount
   useEffect(() => {
@@ -29,21 +67,70 @@ export function SpoolBuddyLayout() {
     }
   }, [sbState.deviceOnline]);
 
+  // Track user activity for screen blank
+  const resetActivity = useCallback(() => {
+    lastActivityRef.current = Date.now();
+    setBlanked(false);
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener('pointerdown', resetActivity);
+    window.addEventListener('keydown', resetActivity);
+    return () => {
+      window.removeEventListener('pointerdown', resetActivity);
+      window.removeEventListener('keydown', resetActivity);
+    };
+  }, [resetActivity]);
+
+  // Screen blank timer
+  useEffect(() => {
+    if (displayBlankTimeout <= 0) return;
+    const interval = setInterval(() => {
+      if (Date.now() - lastActivityRef.current >= displayBlankTimeout * 1000) {
+        setBlanked(true);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [displayBlankTimeout]);
+
+  // CSS brightness filter (software dimming)
+  const brightnessStyle = displayBrightness < 100
+    ? { filter: `brightness(${displayBrightness / 100})` } as const
+    : undefined;
+
   return (
-    <div className="w-screen h-screen bg-bambu-dark text-white flex flex-col overflow-hidden">
-      <SpoolBuddyTopBar
-        selectedPrinterId={selectedPrinterId}
-        onPrinterChange={setSelectedPrinterId}
-        deviceOnline={sbState.deviceOnline}
-      />
+    <>
+      <div
+        className="w-screen h-screen bg-bambu-dark text-white flex flex-col overflow-hidden"
+        style={brightnessStyle}
+      >
+        <SpoolBuddyTopBar
+          selectedPrinterId={selectedPrinterId}
+          onPrinterChange={setSelectedPrinterId}
+          deviceOnline={sbState.deviceOnline}
+        />
 
-      <main className="flex-1 overflow-y-auto">
-        <Outlet context={{ selectedPrinterId, setSelectedPrinterId, sbState, setAlert }} />
-      </main>
+        <main className="flex-1 overflow-y-auto">
+          <Outlet context={{
+            selectedPrinterId, setSelectedPrinterId, sbState, setAlert,
+            displayBrightness, setDisplayBrightness,
+            displayBlankTimeout, setDisplayBlankTimeout,
+          }} />
+        </main>
 
-      <SpoolBuddyStatusBar alert={alert} />
-      <SpoolBuddyBottomNav />
-    </div>
+        <SpoolBuddyStatusBar alert={alert} />
+        <SpoolBuddyBottomNav />
+        <VirtualKeyboard />
+      </div>
+
+      {/* Screen blank overlay — touch to wake */}
+      {blanked && (
+        <div
+          className="fixed inset-0 bg-black z-[9999]"
+          onPointerDown={(e) => { e.stopPropagation(); resetActivity(); }}
+        />
+      )}
+    </>
   );
 }
 
@@ -53,4 +140,8 @@ export interface SpoolBuddyOutletContext {
   setSelectedPrinterId: (id: number) => void;
   sbState: ReturnType<typeof useSpoolBuddyState>;
   setAlert: (alert: { type: 'warning' | 'error' | 'info'; message: string } | null) => void;
+  displayBrightness: number;
+  setDisplayBrightness: (brightness: number) => void;
+  displayBlankTimeout: number;
+  setDisplayBlankTimeout: (timeout: number) => void;
 }

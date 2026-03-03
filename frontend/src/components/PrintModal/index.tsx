@@ -43,6 +43,7 @@ export function PrintModal({
   libraryFileId,
   archiveName,
   queueItem,
+  initialSelectedPrinterIds,
   onClose,
   onSuccess,
 }: PrintModalProps) {
@@ -59,6 +60,9 @@ export function PrintModal({
     // Initialize with the queue item's printer if editing
     if (mode === 'edit-queue-item' && queueItem?.printer_id) {
       return [queueItem.printer_id];
+    }
+    if (initialSelectedPrinterIds?.length) {
+      return initialSelectedPrinterIds;
     }
     return [];
   });
@@ -653,7 +657,7 @@ export function PrintModal({
       onClick={isSubmitting ? undefined : onClose}
     >
       <Card
-        className="w-full max-w-lg max-h-[90vh] overflow-y-auto"
+        className="w-full max-w-2xl max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <CardContent className={mode === 'reprint' ? '' : 'p-0'}>
@@ -677,7 +681,10 @@ export function PrintModal({
             <p className={`text-sm text-bambu-gray ${mode === 'reprint' ? 'mb-4' : ''}`}>
               {mode === 'reprint' ? (
                 <>
-                  Send <span className="text-white">{archiveName}</span> to printer(s)
+                  Send <span className="text-white">{archiveName}</span> to{' '}
+                  {initialSelectedPrinterIds?.length === 1 && printers
+                    ? <span className="text-white">{printers.find(p => p.id === initialSelectedPrinterIds[0])?.name ?? 'printer(s)'}</span>
+                    : 'printer(s)'}
                 </>
               ) : (
                 <>
@@ -695,26 +702,28 @@ export function PrintModal({
               onSelect={setSelectedPlate}
             />
 
-            {/* Printer selection with per-printer mapping */}
-            <PrinterSelector
-              printers={printers || []}
-              selectedPrinterIds={selectedPrinters}
-              onMultiSelect={setSelectedPrinters}
-              isLoading={loadingPrinters}
-              allowMultiple={true}
-              showInactive={mode === 'edit-queue-item'}
-              printerMappingResults={multiPrinterMapping.printerResults}
-              filamentReqs={effectiveFilamentReqs}
-              onAutoConfigurePrinter={multiPrinterMapping.autoConfigurePrinter}
-              onUpdatePrinterConfig={multiPrinterMapping.updatePrinterConfig}
-              assignmentMode={mode === 'reprint' ? 'printer' : assignmentMode}
-              onAssignmentModeChange={mode !== 'reprint' ? setAssignmentMode : undefined}
-              targetModel={targetModel}
-              onTargetModelChange={mode !== 'reprint' ? setTargetModel : undefined}
-              targetLocation={targetLocation}
-              onTargetLocationChange={mode !== 'reprint' ? setTargetLocation : undefined}
-              slicedForModel={slicedForModel}
-            />
+            {/* Printer selection with per-printer mapping — hidden when printer is pre-selected via props */}
+            {!initialSelectedPrinterIds?.length && (
+              <PrinterSelector
+                printers={printers || []}
+                selectedPrinterIds={selectedPrinters}
+                onMultiSelect={setSelectedPrinters}
+                isLoading={loadingPrinters}
+                allowMultiple={true}
+                showInactive={mode === 'edit-queue-item'}
+                printerMappingResults={multiPrinterMapping.printerResults}
+                filamentReqs={effectiveFilamentReqs}
+                onAutoConfigurePrinter={multiPrinterMapping.autoConfigurePrinter}
+                onUpdatePrinterConfig={multiPrinterMapping.updatePrinterConfig}
+                assignmentMode={mode === 'reprint' ? 'printer' : assignmentMode}
+                onAssignmentModeChange={mode !== 'reprint' ? setAssignmentMode : undefined}
+                targetModel={targetModel}
+                onTargetModelChange={mode !== 'reprint' ? setTargetModel : undefined}
+                targetLocation={targetLocation}
+                onTargetLocationChange={mode !== 'reprint' ? setTargetLocation : undefined}
+                slicedForModel={slicedForModel}
+              />
+            )}
 
             {/* Filament override - shown in model mode when filament requirements are available */}
             {assignmentMode === 'model' && targetModel && effectiveFilamentReqs && availableFilaments && availableFilaments.length > 0 && (
@@ -759,7 +768,7 @@ export function PrintModal({
                 filamentReqs={effectiveFilamentReqs}
                 manualMappings={manualMappings}
                 onManualMappingChange={setManualMappings}
-                defaultExpanded={settings?.per_printer_mapping_expanded ?? false}
+                defaultExpanded={!!initialSelectedPrinterIds?.length || (settings?.per_printer_mapping_expanded ?? false)}
                 currencySymbol={currencySymbol}
                 defaultCostPerKg={defaultCostPerKg}
               />
@@ -767,7 +776,7 @@ export function PrintModal({
 
             {/* Print options */}
             {(mode === 'reprint' || effectivePrinterCount > 0 || (assignmentMode === 'model' && targetModel)) && (
-              <PrintOptionsPanel options={printOptions} onChange={setPrintOptions} />
+              <PrintOptionsPanel options={printOptions} onChange={setPrintOptions} defaultExpanded={!!initialSelectedPrinterIds?.length} />
             )}
 
             {/* Schedule options - only for queue modes */}

@@ -139,12 +139,15 @@ interface SpoolSlotProps {
   tray: AMSTray;
   slotIndex: number;
   isActive: boolean;
+  fillOverride?: number | null;
   onClick?: () => void;
 }
 
-function SpoolSlot({ tray, slotIndex, isActive, onClick }: SpoolSlotProps) {
+function SpoolSlot({ tray, slotIndex, isActive, fillOverride, onClick }: SpoolSlotProps) {
   const isEmpty = isTrayEmpty(tray);
   const color = trayColorToCSS(tray.tray_color);
+  const amsFill = tray.remain !== null && tray.remain !== undefined && tray.remain >= 0 ? tray.remain : null;
+  const effectiveFill = fillOverride ?? amsFill;
 
   return (
     <div
@@ -177,13 +180,13 @@ function SpoolSlot({ tray, slotIndex, isActive, onClick }: SpoolSlotProps) {
       </span>
 
       {/* Fill level bar */}
-      {!isEmpty && tray.remain !== null && tray.remain !== undefined && tray.remain >= 0 && (
+      {!isEmpty && effectiveFill !== null && effectiveFill >= 0 && (
         <div className="w-full h-1 bg-bambu-dark-tertiary rounded-full overflow-hidden mt-1">
           <div
             className="h-full rounded-full transition-all"
             style={{
-              width: `${tray.remain}%`,
-              backgroundColor: tray.remain > 50 ? '#22c55e' : tray.remain > 20 ? '#f59e0b' : '#ef4444',
+              width: `${effectiveFill}%`,
+              backgroundColor: effectiveFill > 50 ? '#22c55e' : effectiveFill > 20 ? '#f59e0b' : '#ef4444',
             }}
           />
         </div>
@@ -209,9 +212,10 @@ interface AmsUnitCardProps {
   isDualNozzle?: boolean;
   nozzleSide?: 'L' | 'R' | null;
   thresholds?: AmsThresholds;
+  fillOverrides?: Record<string, number>;
 }
 
-export function AmsUnitCard({ unit, activeSlot, onConfigureSlot, isDualNozzle, nozzleSide, thresholds }: AmsUnitCardProps) {
+export function AmsUnitCard({ unit, activeSlot, onConfigureSlot, isDualNozzle, nozzleSide, thresholds, fillOverrides }: AmsUnitCardProps) {
   const trays = unit.tray || [];
   const isHt = unit.is_ams_ht;
   const slotCount = isHt ? 1 : 4;
@@ -268,6 +272,7 @@ export function AmsUnitCard({ unit, activeSlot, onConfigureSlot, isDualNozzle, n
               tray={tray}
               slotIndex={i}
               isActive={activeSlot === i}
+              fillOverride={fillOverrides?.[`${unit.id}-${i}`] ?? null}
               onClick={onConfigureSlot ? () => onConfigureSlot(unit.id, i, isTrayEmpty(tray) ? null : tray) : undefined}
             />
           );

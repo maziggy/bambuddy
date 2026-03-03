@@ -4,6 +4,7 @@ import logging
 import os
 import socket
 import ssl
+import time
 from collections.abc import Awaitable, Callable
 from ftplib import FTP, FTP_TLS  # nosec B402
 from io import BytesIO
@@ -81,11 +82,10 @@ class BambuFTPClient:
     # Models that may need SSL mode fallback (try prot_p first, fall back to prot_c)
     # These models have varying FTP SSL behavior depending on firmware version
     A1_MODELS = ("A1", "A1 Mini")
-    # Chunk size for manual upload transfer (1MB)
-    # Larger chunks reduce overhead and work better with A1 printers
-    CHUNK_SIZE = 1024 * 1024
-    # Per-chunk data socket timeout during upload.
-    UPLOAD_CHUNK_TIMEOUT = 120
+    # Chunk size for manual upload transfer (64KB)
+    # Smaller chunks provide smoother progress reporting — at typical printer FTP
+    # speeds (~50-100KB/s) this gives a progress update roughly every second.
+    CHUNK_SIZE = 64 * 1024
 
     # Cache for working FTP modes per printer IP
     # Maps IP -> "prot_p" or "prot_c"
@@ -368,11 +368,16 @@ class BambuFTPClient:
             # A1 printers have issues with storbinary's voidresp() hanging after transfer
             with open(local_path, "rb") as f:
                 logger.debug("FTP STOR command starting for %s", remote_path)
+                t0 = time.monotonic()
                 conn = self._ftp.transfercmd(f"STOR {remote_path}")
+                logger.info(
+                    "FTP data channel ready in %.1fs (PASV + TLS handshake)",
+                    time.monotonic() - t0,
+                )
 
                 # Set explicit socket options for reliable transfer
                 conn.setblocking(True)
-                conn.settimeout(self.UPLOAD_CHUNK_TIMEOUT)
+                conn.settimeout(self.timeout)
 
                 try:
                     while True:
@@ -408,14 +413,11 @@ class BambuFTPClient:
                     except OSError:
                         pass
 
-            # Skip voidresp() for A1 models — they hang after transfercmd uploads
-            if self.printer_model not in self.A1_MODELS:
-                try:
-                    self._ftp.voidresp()
-                except (OSError, ftplib.Error) as e:
-                    # Data transfer already completed — voidresp() failure is just a noisy
-                    # 226 acknowledgment issue, not an actual upload failure. Log and continue.
-                    logger.warning("FTP upload response for %s was not clean (data already sent): %s", remote_path, e)
+            # Skip voidresp() for all models — the data transfer is already complete.
+            # A1 models hang indefinitely on voidresp(). H2D printers (vsFTPd) delay
+            # the 226 response by 30+ seconds after data is fully sent. Even X1C/P1S
+            # gain nothing from waiting — the file is on the SD card once sendall() returns.
+            # Verified via direct curl upload: 226 arrives ~32s after data channel closes.
 
             if callback_exception is not None:
                 cleanup_ok = False
@@ -432,7 +434,15 @@ class BambuFTPClient:
                     f"Upload cancelled but failed to remove partial file {remote_path} from printer"
                 ) from callback_exception
 
-            logger.info("FTP upload complete: %s", remote_path)
+            elapsed = time.monotonic() - t0
+            speed_kbs = (file_size / 1024) / elapsed if elapsed > 0 else 0
+            logger.info(
+                "FTP upload complete: %s (%s bytes in %.1fs, %.0f KB/s)",
+                remote_path,
+                file_size,
+                elapsed,
+                speed_kbs,
+            )
             return True
         except ftplib.error_perm as e:
             # Permanent FTP error (4xx/5xx response)
@@ -462,7 +472,7 @@ class BambuFTPClient:
             # Use manual transfer instead of storbinary() for A1 compatibility
             conn = self._ftp.transfercmd(f"STOR {remote_path}")
             conn.setblocking(True)
-            conn.settimeout(self.UPLOAD_CHUNK_TIMEOUT)
+            conn.settimeout(self.timeout)
 
             try:
                 # Send data in chunks

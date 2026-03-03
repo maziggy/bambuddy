@@ -792,7 +792,7 @@ function ArchiveCard({
               onNavigateToArchive?.(originalArchiveId);
             }}
             className="absolute top-2 right-12 px-2 py-1 rounded text-xs bg-purple-500/80 hover:bg-purple-600/90 text-white flex items-center gap-1 transition-colors cursor-pointer"
-            title={`Click to view original print (#${originalArchiveId})`}
+            title={t('archives.viewOriginalPrint', { id: originalArchiveId })}
           >
             <Copy className="w-3 h-3" />
             #{duplicateSequence}
@@ -1950,7 +1950,7 @@ function ArchiveListRow({
                   onNavigateToArchive?.(originalArchiveId);
                 }}
                 className="px-1.5 py-0.5 rounded text-[10px] leading-tight bg-purple-500/80 hover:bg-purple-600/90 text-white flex-shrink-0 transition-colors flex items-center gap-1"
-                title={`Click to view original print (#${originalArchiveId})`}
+                title={t('archives.viewOriginalPrint', { id: originalArchiveId })}
               >
                 <Copy className="w-3 h-3" />
                 #{duplicateSequence}

@@ -536,6 +536,7 @@ export default {
     manageTags: 'Gerenciar etiquetas',
     showFailedPrints: 'Mostrar impressões falhas',
     hideFailedPrints: 'Ocultar impressões falhas',
+    hideDuplicates: 'Ocultar duplicados',
     printTime: 'Tempo de impressão',
     filamentUsed: 'Filamento usado',
     cost: 'Custo',

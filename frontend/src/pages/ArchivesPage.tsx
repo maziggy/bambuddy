@@ -3188,10 +3188,10 @@ export function ArchivesPage() {
                   ? 'bg-purple-500/20 border-purple-500 text-purple-400'
                   : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:text-white'
               }`}
-              title={hideDuplicates ? 'Show Duplicates' : 'Hide Duplicates'}
+              title={t('archives.hideDuplicates')}
             >
               <Copy className="w-4 h-4" />
-              <span className="text-sm hidden md:inline">Hide Duplicates</span>
+              <span className="text-sm hidden md:inline">{t('archives.hideDuplicates')}</span>
             </button>
             {uniqueTags.length > 0 && (
               <div className="flex items-center gap-2 flex-shrink-0">

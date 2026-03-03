@@ -536,6 +536,7 @@ export default {
     manageTags: 'Gestisci tag',
     showFailedPrints: 'Mostra stampe fallite',
     hideFailedPrints: 'Nascondi stampe fallite',
+    hideDuplicates: 'Nascondi duplicati',
     printTime: 'Tempo di stampa',
     filamentUsed: 'Filamento usato',
     cost: 'Costo',

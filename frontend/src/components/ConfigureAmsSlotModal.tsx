@@ -719,6 +719,21 @@ export function ConfigureAmsSlotModal({
         if (currentPreset) {
           setSelectedPresetId(currentPreset.setting_id);
         }
+      } else if (slotInfo.trayInfoIdx && filteredPresets.length > 0) {
+        // Last resort: match trayInfoIdx against the full preset list (includes builtins)
+        const trayIdx = slotInfo.trayInfoIdx;
+        const match = filteredPresets.find(p => {
+          if (p.source === 'cloud') {
+            return p.id === trayIdx || convertToTrayInfoIdx(p.id) === trayIdx;
+          }
+          if (p.source === 'builtin') {
+            return p.id === `builtin_${trayIdx}`;
+          }
+          return false;
+        });
+        if (match) {
+          setSelectedPresetId(match.id);
+        }
       }
 
       // Pre-populate color from current slot (black is valid — empty slots don't pass trayColor)
@@ -738,7 +753,7 @@ export function ConfigureAmsSlotModal({
       setShowSuccess(false);
       scrolledToRef.current = '';
     }
-  }, [isOpen, slotInfo.savedPresetId, slotInfo.trayInfoIdx, slotInfo.trayColor, cloudSettings?.filament]);
+  }, [isOpen, slotInfo.savedPresetId, slotInfo.trayInfoIdx, slotInfo.trayColor, cloudSettings?.filament, filteredPresets]);
 
   // Auto-select best matching K profile when preset changes
   useEffect(() => {
@@ -772,20 +787,25 @@ export function ConfigureAmsSlotModal({
     }
   }, [isOpen, handleKeyDown]);
 
-  // Scroll selected preset into view only when the selection changes (not on every render).
-  // Inline callback refs cause scrollIntoView to fire every render, which on Windows
-  // creates an infinite scroll loop due to scroll → re-render → scrollIntoView cycles.
+  const isLoading = (settingsLoading && !cloudError) || localLoading || builtinLoading || kprofilesLoading;
+
+  // Scroll selected preset into view when data finishes loading or the selection changes.
+  // Uses a ref guard so scrollIntoView only fires once per selection, preventing the
+  // infinite scroll loop that occurred on Windows with inline callback refs.
   useEffect(() => {
-    if (selectedPresetId && selectedPresetId !== scrolledToRef.current) {
-      scrolledToRef.current = selectedPresetId;
-      const el = document.querySelector(`[data-preset-id="${CSS.escape(selectedPresetId)}"]`);
-      el?.scrollIntoView({ block: 'nearest' });
+    if (!isLoading && selectedPresetId && selectedPresetId !== scrolledToRef.current) {
+      const raf = requestAnimationFrame(() => {
+        const el = document.querySelector(`[data-preset-id="${CSS.escape(selectedPresetId)}"]`);
+        if (el) {
+          scrolledToRef.current = selectedPresetId;
+          el.scrollIntoView({ block: 'center' });
+        }
+      });
+      return () => cancelAnimationFrame(raf);
     }
-  }, [selectedPresetId]);
+  }, [selectedPresetId, isLoading]);
 
   if (!isOpen) return null;
-
-  const isLoading = (settingsLoading && !cloudError) || localLoading || builtinLoading || kprofilesLoading;
   const canSave = selectedPresetId && !configureMutation.isPending;
 
   // Get display color (custom or slot default)

@@ -2708,7 +2708,6 @@ export default {
     sinceTracking: 'Seit Beginn der Erfassung',
     loadedInAms: 'Im AMS/Ext geladen',
     remaining: 'Verbleibend',
-    lowStockThreshold: '<20% verbleibend',
     weightCheck: 'Gewichtskontrolle',
     lastWeighed: 'Zuletzt gewogen',
     neverWeighed: 'Nie gewogen',
@@ -2761,6 +2760,7 @@ export default {
     clearHistory: 'Löschen',
     historyCleared: 'Verbrauchshistorie gelöscht',
     fillSourceLabel: '(Inv)',
+    lowStockThresholdError: 'Der Schwellenwert muss zwischen 0.1 und 99.9 liegen',
   },
 
   // Timelapse

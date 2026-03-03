@@ -2634,7 +2634,6 @@ export default {
     sinceTracking: '追跡開始以降',
     loadedInAms: 'AMS/Extに装填中',
     remaining: '残り',
-    lowStockThreshold: '残り20%未満',
     weightCheck: '重量チェック',
     lastWeighed: '最終計量',
     neverWeighed: '未計量',
@@ -2685,6 +2684,7 @@ export default {
     clearHistory: 'クリア',
     historyCleared: '使用履歴がクリアされました',
     fillSourceLabel: '(Inv)',
+    lowStockThresholdError: 'しきい値は0.1から99.9の間でなければなりません',
   },
   timelapse: {
     download: 'ダウンロード',

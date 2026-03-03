@@ -837,6 +837,8 @@ export interface AppSettings {
   prometheus_token: string;
   // Bed cooled threshold
   bed_cooled_threshold: number;
+  // Inventory low stock threshold
+  low_stock_threshold: number;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;

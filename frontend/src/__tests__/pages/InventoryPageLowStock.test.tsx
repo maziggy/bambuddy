@@ -317,7 +317,7 @@ describe('InventoryPage - Low Stock Threshold', () => {
 
       // Too high
       await user.clear(input);
-      await user.type(input, '150');
+      await user.type(input, '0');
 
       const saveButton = screen.getByRole('button', { name: /save/i });
       await user.click(saveButton);

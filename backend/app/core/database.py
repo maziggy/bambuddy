@@ -1399,6 +1399,11 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already migrated or table does not exist yet
 
+    # Cleanup: Remove obsolete settings keys that are no longer used
+    obsolete_keys = ["slicer_binary_path"]
+    for key in obsolete_keys:
+        await conn.execute(text("DELETE FROM settings WHERE key = :key"), {"key": key})
+
 
 async def seed_notification_templates():
     """Seed default notification templates if they don't exist."""

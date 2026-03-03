@@ -149,6 +149,14 @@ class AppSettings(BaseModel):
         default="", description="Bearer token for Prometheus metrics authentication (optional)"
     )
 
+    # Inventory low stock threshold
+    low_stock_threshold: float = Field(
+        default=20.0,
+        ge=0.1,
+        le=99.9,
+        description="Low stock threshold percentage (%) for inventory filtering and display",
+    )
+
 
 class AppSettingsUpdate(BaseModel):
     """Schema for updating settings (all fields optional)."""
@@ -210,3 +218,4 @@ class AppSettingsUpdate(BaseModel):
     preferred_slicer: str | None = None
     prometheus_enabled: bool | None = None
     prometheus_token: str | None = None
+    low_stock_threshold: float | None = Field(default=None, ge=0.1, le=99.9)

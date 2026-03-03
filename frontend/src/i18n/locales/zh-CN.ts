@@ -1315,6 +1315,7 @@ export default {
     // Filament Tracking Mode
     filamentTracking: '耗材追踪',
     filamentTrackingDesc: '选择如何追踪您的耗材。您可以使用内置库存或连接外部 Spoolman 服务器。',
+    filamentChecks: '耗材检查',
     trackingModeBuiltIn: '内置库存',
     trackingModeBuiltInDesc: '包含 RFID 自动匹配和用量追踪',
     trackingModeSpoolmanDesc: '外部耗材管理服务器',

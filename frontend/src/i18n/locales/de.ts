@@ -1315,6 +1315,7 @@ export default {
     // Filament Tracking Mode
     filamentTracking: 'Filament-Verfolgung',
     filamentTrackingDesc: 'Wählen Sie, wie Sie Ihre Filamentspulen verfolgen möchten. Sie können das integrierte Inventar oder einen externen Spoolman-Server verwenden.',
+    filamentChecks: 'Filament-Prüfungen',
     disableFilamentWarnings: 'Filament-Warnungen deaktivieren',
     disableFilamentWarningsDesc: 'Keine Warnungen über unzureichendes Filament beim Drucken oder Einreihen anzeigen',
     trackingModeBuiltIn: 'Integriertes Inventar',

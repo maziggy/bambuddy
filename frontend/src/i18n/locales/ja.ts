@@ -1313,6 +1313,7 @@ export default {
     // Filament Tracking Mode
     filamentTracking: 'フィラメント追跡',
     filamentTrackingDesc: 'フィラメントスプールの追跡方法を選択してください。内蔵インベントリまたは外部Spoolmanサーバーを使用できます。',
+    filamentChecks: 'フィラメントチェック',
     disableFilamentWarnings: 'フィラメント警告を無効化',
     disableFilamentWarningsDesc: '印刷またはキュー追加時にフィラメント不足の警告を表示しない',
     trackingModeBuiltIn: '内蔵インベントリ',

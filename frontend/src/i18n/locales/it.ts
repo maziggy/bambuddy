@@ -1315,6 +1315,7 @@ export default {
     // Filament Tracking Mode
     filamentTracking: 'Tracciamento filamento',
     filamentTrackingDesc: 'Scegli come tracciare le tue bobine di filamento. Puoi utilizzare l\'inventario integrato o collegare un server Spoolman esterno.',
+    filamentChecks: 'Controlli filamento',
     disableFilamentWarnings: 'Disabilita avvisi filamento',
     disableFilamentWarningsDesc: 'Non mostrare avvisi per filamento insufficiente durante la stampa o l\'accodamento',
     trackingModeBuiltIn: 'Inventario integrato',

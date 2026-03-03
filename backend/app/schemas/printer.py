@@ -162,6 +162,11 @@ class NozzleRackSlot(BaseModel):
     filament_type: str = ""  # Material type (e.g. "PLA", "PETG")
 
 
+class AmsLabelBody(BaseModel):
+    label: str = Field(..., min_length=1, max_length=100)
+    ams_serial: str = Field(default="", max_length=50)
+
+
 class PrintOptionsResponse(BaseModel):
     """AI detection and print options from xcam data."""
 

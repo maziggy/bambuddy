@@ -725,6 +725,7 @@ class BambuMQTTClient:
             # Always cache so _apply_ams_version_cache can apply it when AMS data arrives
             if sw_ver or sn:
                 self._ams_version_cache[ams_id] = {"sw_ver": sw_ver, "sn": sn}
+                state_changed = True
 
             # Also directly update any AMS unit already present in raw_data
             if ams_raw and isinstance(ams_raw, list):

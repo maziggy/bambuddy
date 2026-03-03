@@ -1527,12 +1527,7 @@ function AmsNameHoverCard({
                 onChange={(e) => canEdit && setEditValue(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSave()}
                 onFocus={() => setIsInputFocused(true)}
-                onBlur={() => {
-                  setIsInputFocused(false);
-                  if (!triggerRef.current?.matches(':hover') && !cardRef.current?.matches(':hover')) {
-                    timeoutRef.current = setTimeout(() => setIsVisible(false), 200);
-                  }
-                }}
+                onBlur={() => setIsInputFocused(false)}
                 placeholder={canEdit ? t('printers.amsPopup.friendlyNamePlaceholder') : (amsLabels?.[ams.id] || '—')}
                 disabled={!canEdit}
                 title={!canEdit ? t('printers.amsPopup.noEditPermission') : undefined}

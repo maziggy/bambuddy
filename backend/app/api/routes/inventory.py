@@ -639,6 +639,8 @@ async def list_assignments(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ):
     """List spool assignments, optionally filtered by printer."""
+    from backend.app.services.printer_manager import printer_manager
+
     query = select(SpoolAssignment).options(
         selectinload(SpoolAssignment.spool).selectinload(Spool.k_profiles),
         selectinload(SpoolAssignment.printer),

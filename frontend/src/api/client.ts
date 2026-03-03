@@ -3314,8 +3314,11 @@ export const api = {
     request<Record<number, string>>(`/printers/${printerId}/ams-labels`),
   saveAmsLabel: (printerId: number, amsId: number, label: string, amsSerial = '') =>
     request<{ ams_id: number; label: string }>(
-      `/printers/${printerId}/ams-labels/${amsId}?label=${encodeURIComponent(label)}&ams_serial=${encodeURIComponent(amsSerial)}`,
-      { method: 'PUT' }
+      `/printers/${printerId}/ams-labels/${amsId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ label, ams_serial: amsSerial }),
+      }
     ),
   deleteAmsLabel: (printerId: number, amsId: number, amsSerial = '') =>
     request<{ success: boolean }>(`/printers/${printerId}/ams-labels/${amsId}?ams_serial=${encodeURIComponent(amsSerial)}`, {

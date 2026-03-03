@@ -2649,7 +2649,8 @@ export function ArchivesPage() {
       const matchesHideFailed = collection === 'failed' || !hideFailed || (a.status !== 'failed' && a.status !== 'aborted');
 
       // Hide duplicates filter (don't apply when viewing duplicates collection)
-      const matchesHideDuplicates = collection === 'duplicates' || !hideDuplicates || a.duplicate_count === 0;
+      const matchesHideDuplicates =
+        collection === 'duplicates' || !hideDuplicates || a.duplicate_count === 0 || a.duplicate_sequence === 0;
 
       // Tag filter
       const archiveTags = a.tags?.split(',').map(t => t.trim()) || [];

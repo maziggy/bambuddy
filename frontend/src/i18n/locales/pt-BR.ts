@@ -283,6 +283,8 @@ export default {
       failedToPausePrint: 'Falha ao pausar impressão',
       failedToResumePrint: 'Falha ao retomar impressão',
       failedToControlChamberLight: 'Falha ao controlar a luz da câmara',
+      speedSet: 'Velocidade de impressão definida para {{speed}}',
+      failedToSetSpeed: 'Falha ao definir velocidade de impressão',
       failedToUpdateSetting: 'Falha ao atualizar configuração',
       failedToSkipObjects: 'Falha ao ignorar objetos',
       failedToRereadRfid: 'Falha ao reler RFID',
@@ -440,6 +442,12 @@ export default {
       partCooling: 'Ventilador de resfriamento da peça',
       auxiliary: 'Ventilador auxiliar',
       chamber: 'Ventilador da câmara',
+    },
+    speed: {
+      silent: 'Silencioso',
+      standard: 'Padrão',
+      sport: 'Esporte',
+      ludicrous: 'Ludicrous',
     },
     // HMS errors
     clickToViewHmsErrors: 'Clique para ver erros do HMS',

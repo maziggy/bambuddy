@@ -283,6 +283,8 @@ export default {
       failedToPausePrint: 'Druck konnte nicht pausiert werden',
       failedToResumePrint: 'Druck konnte nicht fortgesetzt werden',
       failedToControlChamberLight: 'Kammerbeleuchtung konnte nicht gesteuert werden',
+      speedSet: 'Druckgeschwindigkeit auf {{speed}} gesetzt',
+      failedToSetSpeed: 'Druckgeschwindigkeit konnte nicht gesetzt werden',
       failedToUpdateSetting: 'Einstellung konnte nicht aktualisiert werden',
       failedToSkipObjects: 'Objekte konnten nicht übersprungen werden',
       failedToRereadRfid: 'RFID konnte nicht erneut gelesen werden',
@@ -440,6 +442,12 @@ export default {
       partCooling: 'Bauteilkühlung',
       auxiliary: 'Hilfsventilator',
       chamber: 'Kammerventilator',
+    },
+    speed: {
+      silent: 'Leise',
+      standard: 'Standard',
+      sport: 'Sport',
+      ludicrous: 'Ludicrous',
     },
     // HMS errors
     clickToViewHmsErrors: 'Klicken, um HMS-Fehler anzuzeigen',

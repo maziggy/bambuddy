@@ -269,6 +269,8 @@ export default {
       failedToPausePrint: '暂停打印失败',
       failedToResumePrint: '继续打印失败',
       failedToControlChamberLight: '控制腔室灯失败',
+      speedSet: '打印速度已设置为{{speed}}',
+      failedToSetSpeed: '设置打印速度失败',
       failedToUpdateSetting: '更新设置失败',
       failedToSkipObjects: '跳过对象失败',
       failedToRereadRfid: '重新读取 RFID 失败',
@@ -426,6 +428,12 @@ export default {
       partCooling: '零件冷却风扇',
       auxiliary: '辅助风扇',
       chamber: '腔室风扇',
+    },
+    speed: {
+      silent: '静音',
+      standard: '标准',
+      sport: '运动',
+      ludicrous: '疯狂',
     },
     // HMS errors
     clickToViewHmsErrors: '点击查看 HMS 错误',

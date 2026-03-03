@@ -283,6 +283,8 @@ export default {
       failedToPausePrint: 'Failed to pause print',
       failedToResumePrint: 'Failed to resume print',
       failedToControlChamberLight: 'Failed to control chamber light',
+      speedSet: 'Print speed set to {{speed}}',
+      failedToSetSpeed: 'Failed to set print speed',
       failedToUpdateSetting: 'Failed to update setting',
       failedToSkipObjects: 'Failed to skip objects',
       failedToRereadRfid: 'Failed to re-read RFID',
@@ -440,6 +442,12 @@ export default {
       partCooling: 'Part Cooling Fan',
       auxiliary: 'Auxiliary Fan',
       chamber: 'Chamber Fan',
+    },
+    speed: {
+      silent: 'Silent',
+      standard: 'Standard',
+      sport: 'Sport',
+      ludicrous: 'Ludicrous',
     },
     // HMS errors
     clickToViewHmsErrors: 'Click to view HMS errors',

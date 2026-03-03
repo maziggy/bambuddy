@@ -2374,6 +2374,12 @@ export const api = {
       method: 'POST',
     }),
 
+  // Print Speed Control
+  setPrintSpeed: (printerId: number, mode: number) =>
+    request<{ success: boolean; message: string }>(`/printers/${printerId}/speed?mode=${mode}`, {
+      method: 'POST',
+    }),
+
   // Skip Objects
   getPrintableObjects: (printerId: number) =>
     request<{

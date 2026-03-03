@@ -1113,6 +1113,136 @@ class TestChamberLightAPI:
             assert "failed" in response.json()["detail"].lower()
 
 
+class TestPrintSpeedAPI:
+    """Integration tests for print speed control endpoint."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_set_speed_not_found(self, async_client: AsyncClient):
+        """Verify 404 for non-existent printer."""
+        response = await async_client.post("/api/v1/printers/99999/speed?mode=1")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_set_speed_not_connected(self, async_client: AsyncClient, printer_factory):
+        """Verify error when printer is not connected."""
+        printer = await printer_factory(name="Disconnected Printer")
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = None
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/speed?mode=1")
+
+            assert response.status_code == 400
+            assert "not connected" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_set_speed_invalid_mode(self, async_client: AsyncClient, printer_factory):
+        """Verify validation rejects mode outside 1-4."""
+        printer = await printer_factory(name="Test Printer")
+        response = await async_client.post(f"/api/v1/printers/{printer.id}/speed?mode=5")
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_set_speed_silent(self, async_client: AsyncClient, printer_factory):
+        """Verify successful silent speed (mode=1) request."""
+        printer = await printer_factory(name="Test Printer")
+
+        mock_client = MagicMock()
+        mock_client.set_print_speed.return_value = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/speed?mode=1")
+
+            assert response.status_code == 200
+            result = response.json()
+            assert result["success"] is True
+            assert "silent" in result["message"].lower()
+            mock_client.set_print_speed.assert_called_once_with(1)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_set_speed_standard(self, async_client: AsyncClient, printer_factory):
+        """Verify successful standard speed (mode=2) request."""
+        printer = await printer_factory(name="Test Printer")
+
+        mock_client = MagicMock()
+        mock_client.set_print_speed.return_value = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/speed?mode=2")
+
+            assert response.status_code == 200
+            result = response.json()
+            assert result["success"] is True
+            assert "standard" in result["message"].lower()
+            mock_client.set_print_speed.assert_called_once_with(2)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_set_speed_sport(self, async_client: AsyncClient, printer_factory):
+        """Verify successful sport speed (mode=3) request."""
+        printer = await printer_factory(name="Test Printer")
+
+        mock_client = MagicMock()
+        mock_client.set_print_speed.return_value = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/speed?mode=3")
+
+            assert response.status_code == 200
+            result = response.json()
+            assert result["success"] is True
+            assert "sport" in result["message"].lower()
+            mock_client.set_print_speed.assert_called_once_with(3)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_set_speed_ludicrous(self, async_client: AsyncClient, printer_factory):
+        """Verify successful ludicrous speed (mode=4) request."""
+        printer = await printer_factory(name="Test Printer")
+
+        mock_client = MagicMock()
+        mock_client.set_print_speed.return_value = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/speed?mode=4")
+
+            assert response.status_code == 200
+            result = response.json()
+            assert result["success"] is True
+            assert "ludicrous" in result["message"].lower()
+            mock_client.set_print_speed.assert_called_once_with(4)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_set_speed_failure(self, async_client: AsyncClient, printer_factory):
+        """Verify error handling when speed control fails."""
+        printer = await printer_factory(name="Test Printer")
+
+        mock_client = MagicMock()
+        mock_client.set_print_speed.return_value = False
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/speed?mode=1")
+
+            assert response.status_code == 500
+            assert "failed" in response.json()["detail"].lower()
+
+
 class TestClearHMSErrorsAPI:
     """Integration tests for clear HMS errors endpoint."""
 

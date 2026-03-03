@@ -283,6 +283,8 @@ export default {
       failedToPausePrint: 'Échec de la mise en pause',
       failedToResumePrint: 'Échec de la reprise',
       failedToControlChamberLight: 'Échec du contrôle de la lumière',
+      speedSet: 'Vitesse d\'impression réglée sur {{speed}}',
+      failedToSetSpeed: 'Échec du réglage de la vitesse d\'impression',
       failedToUpdateSetting: 'Échec de mise à jour du paramètre',
       failedToSkipObjects: 'Échec du saut d\'objets',
       failedToRereadRfid: 'Échec lecture RFID',
@@ -440,6 +442,12 @@ export default {
       partCooling: 'Ventilateur pièce',
       auxiliary: 'Ventilateur auxiliaire',
       chamber: 'Ventilateur chambre',
+    },
+    speed: {
+      silent: 'Silencieux',
+      standard: 'Standard',
+      sport: 'Sport',
+      ludicrous: 'Ludicrous',
     },
     // HMS errors
     clickToViewHmsErrors: 'Cliquez pour voir les erreurs HMS',

@@ -36,6 +36,7 @@ import {
   Fan,
   Wind,
   AirVent,
+  Gauge,
   Download,
   ScanSearch,
   CheckCircle,
@@ -1369,6 +1370,77 @@ function mapModelCode(ssdpModel: string | null): string {
   return modelMap[ssdpModel] || ssdpModel;
 }
 
+function SpeedDropdown({
+  speedLevel,
+  isPrinting,
+  hasControl,
+  showDropdown,
+  setShowDropdown,
+  onSelect,
+  speedPresets,
+}: {
+  speedLevel: number | undefined;
+  isPrinting: boolean;
+  hasControl: boolean;
+  showDropdown: boolean;
+  setShowDropdown: (v: boolean) => void;
+  onSelect: (mode: number) => void;
+  speedPresets: readonly { mode: number; label: string; pct: string }[];
+}) {
+  const canControl = isPrinting && hasControl;
+  const activePreset = speedPresets.find(p => p.mode === speedLevel) ?? speedPresets[1];
+
+  useEffect(() => {
+    if (!canControl) setShowDropdown(false);
+  }, [canControl, setShowDropdown]);
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => canControl && setShowDropdown(!showDropdown)}
+        disabled={!canControl}
+        className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors ${
+          canControl
+            ? 'bg-orange-500/10 text-orange-400 hover:bg-orange-500/20'
+            : 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
+        }`}
+        title={`${activePreset.label} - ${activePreset.pct}`}
+      >
+        <Gauge className="w-3.5 h-3.5" />
+        <span className="text-[10px]">{activePreset.pct}</span>
+        <ChevronDown className="w-3 h-3" />
+      </button>
+      {showDropdown && canControl && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setShowDropdown(false)} onWheel={() => setShowDropdown(false)} />
+          <div className="absolute top-full left-0 mt-1 w-40 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl z-20 py-1">
+            {speedPresets.map(({ mode, label, pct }) => {
+              const isActive = speedLevel === mode;
+              return (
+                <button
+                  key={mode}
+                  onClick={() => {
+                    onSelect(mode);
+                    setShowDropdown(false);
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-1.5 text-xs transition-colors ${
+                    isActive
+                      ? 'bg-orange-500/10 text-orange-400'
+                      : 'text-bambu-gray hover:bg-bambu-dark-tertiary/50'
+                  }`}
+                >
+                  <span>{label}</span>
+                  <span className="text-[10px] opacity-60">{pct}</span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function PrinterCard({
   printer,
   hideIfDisconnected,
@@ -1465,6 +1537,7 @@ function PrinterCard({
     caliIdx?: number | null;
     savedPresetId?: string;
   } | null>(null);
+  const [showSpeedDropdown, setShowSpeedDropdown] = useState(false);
   const [showFirmwareModal, setShowFirmwareModal] = useState(false);
   const [plateCheckResult, setPlateCheckResult] = useState<{
     is_empty: boolean;
@@ -1804,6 +1877,37 @@ function PrinterCard({
         queryClient.setQueryData(['printerStatus', printer.id], context.previousStatus);
       }
       showToast(error.message || t('printers.toast.failedToControlChamberLight'), 'error');
+    },
+  });
+
+  // Print speed mutation with optimistic update
+  const SPEED_PRESETS = [
+    { mode: 1, label: t('printers.speed.silent'), pct: '50%' },
+    { mode: 2, label: t('printers.speed.standard'), pct: '100%' },
+    { mode: 3, label: t('printers.speed.sport'), pct: '124%' },
+    { mode: 4, label: t('printers.speed.ludicrous'), pct: '166%' },
+  ] as const;
+
+  const printSpeedMutation = useMutation({
+    mutationFn: (mode: number) => api.setPrintSpeed(printer.id, mode),
+    onMutate: async (mode) => {
+      await queryClient.cancelQueries({ queryKey: ['printerStatus', printer.id] });
+      const previousStatus = queryClient.getQueryData(['printerStatus', printer.id]);
+      queryClient.setQueryData(['printerStatus', printer.id], (old: typeof status) => ({
+        ...old,
+        speed_level: mode,
+      }));
+      return { previousStatus };
+    },
+    onSuccess: (_, mode) => {
+      const preset = SPEED_PRESETS.find(p => p.mode === mode);
+      showToast(t('printers.toast.speedSet', { speed: preset?.label ?? String(mode) }));
+    },
+    onError: (error: Error, _, context) => {
+      if (context?.previousStatus) {
+        queryClient.setQueryData(['printerStatus', printer.id], context.previousStatus);
+      }
+      showToast(error.message || t('printers.toast.failedToSetSpeed'), 'error');
     },
   });
 
@@ -2744,8 +2848,8 @@ function PrinterCard({
                   </div>
 
                   <div className="flex items-center justify-between gap-2 max-[550px]:items-start">
-                    {/* Left: Fan Status - always visible, dynamic coloring */}
-                    <div className="flex items-center gap-2 min-w-0 max-[550px]:flex-wrap max-[550px]:items-start max-[550px]:gap-1.5">
+                    {/* Left: Fan Status + Speed Dropdown */}
+                    <div className="flex items-center gap-2 flex-wrap min-w-0 max-[550px]:gap-1.5">
                       {/* Part Cooling Fan */}
                       <div
                         className={`flex items-center gap-1 px-1.5 py-1 rounded ${partFan && partFan > 0 ? 'bg-cyan-500/10' : 'bg-bambu-dark'}`}
@@ -2779,6 +2883,19 @@ function PrinterCard({
                         </span>
                       </div>
 
+                      {/* Divider */}
+                      <div className="w-px h-4 bg-bambu-dark-tertiary/50" />
+
+                      {/* Speed Preset Dropdown */}
+                      <SpeedDropdown
+                        speedLevel={status?.speed_level}
+                        isPrinting={isPrinting}
+                        hasControl={hasPermission('printers:control')}
+                        showDropdown={showSpeedDropdown}
+                        setShowDropdown={setShowSpeedDropdown}
+                        onSelect={(mode) => printSpeedMutation.mutate(mode)}
+                        speedPresets={SPEED_PRESETS}
+                      />
                     </div>
 
                     {/* Right: Print Control Buttons */}

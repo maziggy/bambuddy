@@ -2132,6 +2132,33 @@ async def set_chamber_light(
     return {"success": True, "message": f"Chamber light {'on' if on else 'off'}"}
 
 
+SPEED_MODE_NAMES = {1: "Silent", 2: "Standard", 3: "Sport", 4: "Ludicrous"}
+
+
+@router.post("/{printer_id}/speed")
+async def set_print_speed(
+    printer_id: int,
+    mode: int = Query(..., ge=1, le=4, description="Speed mode: 1=Silent, 2=Standard, 3=Sport, 4=Ludicrous"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set the print speed preset."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    success = client.set_print_speed(mode)
+    if not success:
+        raise HTTPException(500, "Failed to set print speed")
+
+    return {"success": True, "message": f"Speed set to {SPEED_MODE_NAMES.get(mode, mode)}"}
+
+
 @router.post("/{printer_id}/hms/clear")
 async def clear_hms_errors(
     printer_id: int,

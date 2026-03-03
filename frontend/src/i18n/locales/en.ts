@@ -512,6 +512,7 @@ export default {
     manageTags: 'Manage Tags',
     showFailedPrints: 'Show failed prints',
     hideFailedPrints: 'Hide failed prints',
+    hideDuplicates: 'Hide Duplicates',
     printTime: 'Print Time',
     filamentUsed: 'Filament Used',
     cost: 'Cost',

@@ -511,6 +511,7 @@ export default {
     logView: '印刷ログ',
     showFailedPrints: '失敗した印刷を表示',
     hideFailedPrints: '失敗した印刷を非表示',
+    hideDuplicates: '重複を非表示',
     printTime: '印刷時間',
     filamentUsed: 'フィラメント使用量',
     cost: 'コスト',

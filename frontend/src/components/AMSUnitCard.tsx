@@ -703,26 +703,8 @@ export function AMSUnitCard({
       : (hasFillLevel && tray.remain > 0
         ? tray.remain
         : (spoolmanFill ?? inventoryFill ?? (hasFillLevel ? tray.remain : null)));
-
-    // Fill level fallback chain: AMS remain → Spoolman → Inventory spool
-    const htTrayTag = tray?.tray_uuid?.toUpperCase();
-    const htLinkedSpool = htTrayTag ? linkedSpools?.[htTrayTag] : undefined;
-    const htSpoolmanFill = getSpoolmanFillLevel(htLinkedSpool);
-    const htTraySlotId = tray?.id ?? 0;
-    const htInventoryAssignment = onGetAssignment?.(printerId, ams.id, htTraySlotId);
-    const htInventoryFill = (() => {
-      const sp = htInventoryAssignment?.spool;
-      if (sp && sp.label_weight > 0 && sp.weight_used > 0) {
-        return Math.round(Math.max(0, sp.label_weight - sp.weight_used) / sp.label_weight * 100);
-      }
-      return null;
-    })();
-
-    const htEffectiveFill = hasFillLevel && tray.remain > 0
-      ? tray.remain
-      : (htSpoolmanFill ?? htInventoryFill ?? (hasFillLevel ? tray.remain : null));
-    const htFillSource = (hasFillLevel && tray.remain === 0 && (htSpoolmanFill !== null || htInventoryFill !== null))
-      ? (htSpoolmanFill !== null ? 'spoolman' as const : 'inventory' as const)
+    const fillSource = (hasFillLevel && tray.remain === 0 && (spoolmanFill !== null || inventoryFill !== null))
+      ? (spoolmanFill !== null ? 'spoolman' as const : 'inventory' as const)
       : 'ams' as const;
 
     // Build filament data for hover card
@@ -732,10 +714,10 @@ export function AMSUnitCard({
       colorName: getBambuColorName(tray.tray_id_name) || hexToBasicColorName(tray.tray_color),
       colorHex: tray.tray_color || null,
       kFactor: formatKValue(tray.k),
-      fillLevel: htEffectiveFill,
+      fillLevel: effectiveFill,
       trayUuid: tray.tray_uuid || null,
       tagUid: tray.tag_uid || null,
-      fillSource: htFillSource,
+      fillSource,
     } : null;
 
     // For external empty trays, filamentData is set but we need to know it's truly empty

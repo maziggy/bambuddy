@@ -7,7 +7,7 @@ import {
   Trash2,
   Clock,
   Package,
-  Disc3,
+  Coins,
   Layers,
   Search,
   Filter,
@@ -928,14 +928,16 @@ function ArchiveCard({
             <div className="flex items-center gap-3 text-bambu-gray">
               {archive.cost != null && (
                 <div className="flex items-center gap-1.5">
-                  <Disc3 className="w-3 h-3" />
+                  <Coins className="w-3 h-3" />
                   {currency}{archive.cost.toFixed(2)}
                 </div>
               )}
-              <div className="flex items-center gap-1.5" title={`${t('stats.energyUsed')}: ${archive.energy_kwh?.toFixed(3) || 'N/A'} kWh`}>
-                <Zap className="w-3 h-3" />
-                {currency}{(archive.energy_cost ?? 0).toFixed(2)}
-              </div>
+                {archive.energy_cost != null && (
+                  <div className="flex items-center gap-1.5" title={`${t('stats.energyUsed')}: ${archive.energy_kwh?.toFixed(3) || 'N/A'} kWh`}>
+                    <Zap className="w-3 h-3" />
+                    {currency}{archive.energy_cost.toFixed(2)}
+                  </div>
+                )}
             </div>
           )}
           {(archive.layer_height || archive.total_layers) && (

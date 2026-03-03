@@ -2589,7 +2589,7 @@ function PrinterCard({
             {/* Compact: Simple status bar */}
             {viewMode === 'compact' ? (
               <div className="mt-2">
-                {status.state === 'RUNNING' ? (
+                {(status.state === 'RUNNING' || status.state === 'PAUSE') ? (
                   <div className="flex items-center gap-2">
                     <div className="flex-1 bg-bambu-dark-tertiary rounded-full h-1.5">
                       <div
@@ -2638,14 +2638,14 @@ function PrinterCard({
                   <div className="flex gap-3">
                     {/* Cover Image */}
                     <CoverImage
-                      url={status.state === 'RUNNING' ? status.cover_url : null}
-                      printName={status.state === 'RUNNING' ? (status.subtask_name || status.current_print || undefined) : undefined}
+                      url={(status.state === 'RUNNING' || status.state === 'PAUSE') ? status.cover_url : null}
+                      printName={(status.state === 'RUNNING' || status.state === 'PAUSE') ? (status.subtask_name || status.current_print || undefined) : undefined}
                     />
                     {/* Print Info */}
                     <div className="flex-1 min-w-0">
-                      {status.current_print && status.state === 'RUNNING' ? (
+                      {status.current_print && (status.state === 'RUNNING' || status.state === 'PAUSE') ? (
                         <>
-                          <p className="text-sm text-bambu-gray mb-1">{status.stg_cur_name || 'Printing'}</p>
+                          <p className="text-sm text-bambu-gray mb-1">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
                           <p className="text-white text-sm mb-2 truncate">
                             {status.subtask_name || status.current_print}
                           </p>

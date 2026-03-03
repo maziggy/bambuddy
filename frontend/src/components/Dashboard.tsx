@@ -157,6 +157,14 @@ export function Dashboard({ widgets, storageKey, columns = 4, stackBelow, hideCo
         // Ensure sizes exist (for backwards compatibility)
         if (!parsed.sizes) {
           parsed.sizes = getDefaultSizes();
+        } else {
+          // Merge in default sizes for any new widgets not in saved layout
+          const defaults = getDefaultSizes();
+          for (const id in defaults) {
+            if (!(id in parsed.sizes)) {
+              parsed.sizes[id] = defaults[id];
+            }
+          }
         }
         return parsed;
       } catch {

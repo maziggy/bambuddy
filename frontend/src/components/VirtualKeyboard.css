@@ -1,0 +1,82 @@
+/*
+ * Dark theme for react-simple-keyboard — matches bambu-dark / bambu-green palette.
+ * Tailwind v4 preflight resets button display/flex, so we must explicitly
+ * restore the layout that react-simple-keyboard expects.
+ */
+
+.simple-keyboard.vkb-theme {
+  background: #1a1a1a;
+  border-top: 1px solid #333;
+  padding: 8px 4px;
+  font-family: inherit;
+}
+
+/* Row layout — Tailwind preflight strips flex from generic elements */
+.simple-keyboard.vkb-theme .hg-row {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.simple-keyboard.vkb-theme .hg-row:last-child {
+  margin-bottom: 0;
+}
+
+/* Key buttons — must restore inline-flex sizing */
+.simple-keyboard.vkb-theme .hg-button {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: auto;
+  background: #2d2d2d;
+  color: #e0e0e0;
+  border: none;
+  border-radius: 6px;
+  height: 44px;
+  font-size: 16px;
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: background 0.1s;
+  cursor: pointer;
+  padding: 0 2px;
+  min-width: 0;
+}
+
+.simple-keyboard.vkb-theme .hg-button:active {
+  background: #00ae42;
+  color: #fff;
+}
+
+/* Functional keys */
+.simple-keyboard.vkb-theme .hg-button-bksp,
+.simple-keyboard.vkb-theme .hg-button-shift,
+.simple-keyboard.vkb-theme .hg-button-lock {
+  background: #3a3a3a;
+  color: #aaa;
+  flex-grow: 1.5;
+}
+
+.simple-keyboard.vkb-theme .hg-button-close {
+  background: #3a3a3a;
+  color: #aaa;
+  flex-grow: 2;
+  font-weight: 600;
+}
+
+.simple-keyboard.vkb-theme .hg-button-close:active {
+  background: #555;
+}
+
+.simple-keyboard.vkb-theme .hg-button-space {
+  flex-grow: 7;
+}
+
+/* Active shift/caps indicator */
+.simple-keyboard.vkb-theme .hg-activeButton {
+  background: #00ae42;
+  color: #fff;
+}

@@ -325,6 +325,37 @@ def _sanitize_path(path: str) -> str:
     return path
 
 
+def _detect_docker_network_mode() -> str:
+    """Detect Docker network mode by checking for host-level interfaces.
+
+    In host mode the container shares the host network namespace, so Docker
+    infrastructure interfaces (docker0, br-*, veth*) are visible.  In bridge
+    mode the container is isolated and only sees its own veth (named eth0).
+    """
+    try:
+        import socket
+
+        for _idx, name in socket.if_nameindex():
+            if name.startswith(("docker", "br-", "veth", "virbr")):
+                return "host"
+    except Exception:
+        pass
+    return "bridge"
+
+
+def _mask_subnet(subnet: str) -> str:
+    """Mask the first two octets of a subnet string. e.g. '192.168.1.0/24' -> 'x.x.1.0/24'."""
+    try:
+        parts = subnet.split(".")
+        if len(parts) >= 4:
+            parts[0] = "x"
+            parts[1] = "x"
+            return ".".join(parts)
+    except Exception:
+        pass
+    return subnet
+
+
 def _anonymize_mqtt_broker(broker: str) -> str:
     """Anonymize MQTT broker address. IPs become [IP], hostnames become *.domain."""
     if not broker:
@@ -418,11 +449,10 @@ async def _collect_support_info() -> dict:
     if in_docker:
         try:
             mem_limit = _get_container_memory_limit()
-            interfaces = get_network_interfaces()
             info["docker"] = {
                 "container_memory_limit_bytes": mem_limit,
                 "container_memory_limit_formatted": _format_bytes(mem_limit) if mem_limit else None,
-                "network_mode_hint": "host" if len(interfaces) > 2 else "bridge",
+                "network_mode_hint": _detect_docker_network_mode(),
             }
         except Exception:
             logger.debug("Failed to collect Docker info", exc_info=True)
@@ -499,6 +529,34 @@ async def _collect_support_info() -> dict:
                     "nozzle_rack_count": len(state.nozzle_rack) if state else 0,
                 }
             )
+
+        # Virtual printers
+        try:
+            from backend.app.models.virtual_printer import VirtualPrinter
+            from backend.app.services.virtual_printer import VIRTUAL_PRINTER_MODELS, virtual_printer_manager
+
+            result = await db.execute(select(VirtualPrinter).order_by(VirtualPrinter.id))
+            vps = result.scalars().all()
+            info["virtual_printers"] = []
+            for vp in vps:
+                instance = virtual_printer_manager.get_instance(vp.id)
+                status = instance.get_status() if instance else None
+                model_code = vp.model or "C12"
+                info["virtual_printers"].append(
+                    {
+                        "index": vp.id,
+                        "enabled": vp.enabled,
+                        "mode": vp.mode,
+                        "model": model_code,
+                        "model_name": VIRTUAL_PRINTER_MODELS.get(model_code, model_code),
+                        "has_target_printer": vp.target_printer_id is not None,
+                        "has_bind_ip": bool(vp.bind_ip),
+                        "running": status.get("running", False) if status else False,
+                        "pending_files": status.get("pending_files", 0) if status else 0,
+                    }
+                )
+        except Exception:
+            logger.debug("Failed to collect virtual printer info", exc_info=True)
 
         # Non-sensitive settings
         result = await db.execute(select(Settings))
@@ -642,12 +700,12 @@ async def _collect_support_info() -> dict:
     except Exception:
         logger.debug("Failed to collect log file info", exc_info=True)
 
-    # Network interfaces (subnets only — already anonymized)
+    # Network interfaces (subnets with first two octets masked)
     try:
         interfaces = get_network_interfaces()
         info["network"] = {
             "interface_count": len(interfaces),
-            "interfaces": [{"name": iface["name"], "subnet": iface["subnet"]} for iface in interfaces],
+            "interfaces": [{"name": iface["name"], "subnet": _mask_subnet(iface["subnet"])} for iface in interfaces],
         }
     except Exception:
         logger.debug("Failed to collect network info", exc_info=True)

@@ -41,8 +41,70 @@ const mockPrinters = [
 ];
 
 const mockArchives = [
-  { id: 1, created_at: '2024-01-01T00:00:00Z', print_name: 'Test Print 1' },
-  { id: 2, created_at: '2024-01-02T00:00:00Z', print_name: 'Test Print 2' },
+  {
+    id: 1,
+    created_at: '2024-01-01T10:00:00Z',
+    started_at: '2024-01-01T10:00:00Z',
+    completed_at: '2024-01-01T14:30:00Z',
+    print_name: 'Benchy',
+    status: 'completed',
+    printer_id: 1,
+    filament_type: 'PLA',
+    filament_color: '#00FF00',
+    filament_used_grams: 25,
+    actual_time_seconds: 16200,
+    print_time_seconds: 15000,
+    cost: 0.75,
+    quantity: 1,
+  },
+  {
+    id: 2,
+    created_at: '2024-01-02T14:00:00Z',
+    started_at: '2024-01-02T14:00:00Z',
+    completed_at: '2024-01-02T22:00:00Z',
+    print_name: 'Large Vase',
+    status: 'completed',
+    printer_id: 1,
+    filament_type: 'PETG',
+    filament_color: '#FF0000',
+    filament_used_grams: 180,
+    actual_time_seconds: 28800,
+    print_time_seconds: 27000,
+    cost: 5.40,
+    quantity: 1,
+  },
+  {
+    id: 3,
+    created_at: '2024-01-03T08:00:00Z',
+    started_at: '2024-01-03T08:00:00Z',
+    completed_at: null,
+    print_name: 'Failed Bracket',
+    status: 'failed',
+    printer_id: 2,
+    filament_type: 'ABS',
+    filament_color: '#0000FF',
+    filament_used_grams: 10,
+    actual_time_seconds: 3600,
+    print_time_seconds: 7200,
+    cost: 0.30,
+    quantity: 1,
+  },
+  {
+    id: 4,
+    created_at: '2024-01-03T20:00:00Z',
+    started_at: '2024-01-03T20:00:00Z',
+    completed_at: '2024-01-04T02:00:00Z',
+    print_name: 'Phone Stand',
+    status: 'completed',
+    printer_id: 2,
+    filament_type: 'PLA',
+    filament_color: '#00FF00',
+    filament_used_grams: 45,
+    actual_time_seconds: 21600,
+    print_time_seconds: 20000,
+    cost: 1.35,
+    quantity: 1,
+  },
 ];
 
 const mockSettings = {
@@ -60,9 +122,19 @@ const mockFailureAnalysis = {
     'First layer adhesion': 3,
     'Filament runout': 2,
   },
+  failures_by_filament: {
+    'ABS': 3,
+    'PLA': 2,
+  },
+  failures_by_printer: {
+    '1': 2,
+    '2': 3,
+  },
+  failures_by_hour: {},
+  recent_failures: [],
   trend: [
-    { week: '2024-W01', failure_rate: 6.0 },
-    { week: '2024-W02', failure_rate: 5.0 },
+    { week_start: '2024-01-01', total_prints: 50, failed_prints: 3, failure_rate: 6.0 },
+    { week_start: '2024-01-08', total_prints: 50, failed_prints: 2, failure_rate: 5.0 },
   ],
 };
 
@@ -75,13 +147,13 @@ describe('StatsPage', () => {
       http.get('/api/v1/printers/', () => {
         return HttpResponse.json(mockPrinters);
       }),
-      http.get('/api/v1/archives/', () => {
+      http.get('/api/v1/archives/slim', () => {
         return HttpResponse.json(mockArchives);
       }),
       http.get('/api/v1/settings/', () => {
         return HttpResponse.json(mockSettings);
       }),
-      http.get('/api/v1/stats/failure-analysis', () => {
+      http.get('/api/v1/archives/analysis/failures', () => {
         return HttpResponse.json(mockFailureAnalysis);
       })
     );
@@ -127,7 +199,7 @@ describe('StatsPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Filament Used')).toBeInTheDocument();
-        expect(screen.getByText('5.50kg')).toBeInTheDocument();
+        expect(screen.getByText('5.5kg')).toBeInTheDocument();
       });
     });
   });
@@ -138,7 +210,7 @@ describe('StatsPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Success Rate')).toBeInTheDocument();
-        // Success rate should be calculated: 140/150 = 93%
+        // Success rate: 140/(140+10) = 93%
         expect(screen.getByText('93%')).toBeInTheDocument();
       });
     });
@@ -163,14 +235,6 @@ describe('StatsPage', () => {
   });
 
   describe('widgets', () => {
-    it('shows filament types widget', async () => {
-      render(<StatsPage />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Filament Types')).toBeInTheDocument();
-      });
-    });
-
     it('shows time accuracy widget', async () => {
       render(<StatsPage />);
 
@@ -184,6 +248,132 @@ describe('StatsPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Print Activity')).toBeInTheDocument();
+      });
+    });
+
+    it('shows failure analysis widget', async () => {
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Failure Analysis')).toBeInTheDocument();
+      });
+    });
+
+    it('shows printer stats widget', async () => {
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Printer Stats')).toBeInTheDocument();
+      });
+    });
+
+    it('shows filament trends widget', async () => {
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Filament Trends')).toBeInTheDocument();
+      });
+    });
+
+    it('shows records widget', async () => {
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Records')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('printer stats sub-cards', () => {
+    it('shows prints by printer section', async () => {
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Prints by Printer')).toBeInTheDocument();
+      });
+    });
+
+    it('shows print duration section', async () => {
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Print Duration')).toBeInTheDocument();
+      });
+    });
+
+    it('shows print habits section', async () => {
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Print Habits')).toBeInTheDocument();
+      });
+    });
+
+    it('shows print time of day section', async () => {
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Print Time of Day')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('filament trends sub-cards', () => {
+    it('shows by material section', async () => {
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('By Material')).toBeInTheDocument();
+      });
+    });
+
+    it('shows success by material section', async () => {
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Success by Material')).toBeInTheDocument();
+      });
+    });
+
+    it('shows color distribution section', async () => {
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Color Distribution')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('records widget', () => {
+    it('shows longest print record', async () => {
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Longest Print')).toBeInTheDocument();
+      });
+    });
+
+    it('shows heaviest print record', async () => {
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Heaviest Print')).toBeInTheDocument();
+      });
+    });
+
+    it('shows most expensive record', async () => {
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Most Expensive')).toBeInTheDocument();
+      });
+    });
+
+    it('shows success streak record', async () => {
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Success Streak')).toBeInTheDocument();
       });
     });
   });

@@ -375,6 +375,22 @@ export interface Archive {
   created_by_username: string | null;
 }
 
+export interface ArchiveSlim {
+  printer_id: number | null;
+  print_name: string | null;
+  print_time_seconds: number | null;
+  actual_time_seconds: number | null;
+  filament_used_grams: number | null;
+  filament_type: string | null;
+  filament_color: string | null;
+  status: string;
+  started_at: string | null;
+  completed_at: string | null;
+  cost: number | null;
+  quantity: number;
+  created_at: string;
+}
+
 export interface PrintLogEntry {
   id: number;
   print_name: string | null;
@@ -766,6 +782,7 @@ export interface AppSettings {
   check_updates: boolean;
   check_printer_firmware: boolean;
   include_beta_updates: boolean;
+  language: string;
   notification_language: string;
   // AMS threshold settings
   ams_humidity_good: number;  // <= this is green
@@ -1806,6 +1823,8 @@ export interface InventorySpool {
   created_at: string;
   updated_at: string;
   cost_per_kg: number | null;
+  last_scale_weight: number | null;
+  last_weighed_at: string | null;
   k_profiles?: SpoolKProfile[];
 }
 
@@ -2492,13 +2511,22 @@ export const api = {
     request<{ used_bytes: number | null; free_bytes: number | null }>(`/printers/${printerId}/storage`),
 
   // Archives
-  getArchives: (printerId?: number, projectId?: number, limit = 50, offset = 0) => {
+  getArchives: (printerId?: number, projectId?: number, limit = 50, offset = 0, dateFrom?: string, dateTo?: string) => {
     const params = new URLSearchParams();
     if (printerId) params.set('printer_id', String(printerId));
     if (projectId) params.set('project_id', String(projectId));
     params.set('limit', String(limit));
     params.set('offset', String(offset));
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
     return request<Archive[]>(`/archives/?${params}`);
+  },
+  getArchivesSlim: (dateFrom?: string, dateTo?: string) => {
+    const params = new URLSearchParams();
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+    const qs = params.toString();
+    return request<ArchiveSlim[]>(`/archives/slim${qs ? `?${qs}` : ''}`);
   },
   getArchive: (id: number) => request<Archive>(`/archives/${id}`),
   searchArchives: (query: string, options?: {
@@ -2539,7 +2567,13 @@ export const api = {
     request<Archive>(`/archives/${id}/favorite`, { method: 'POST' }),
   deleteArchive: (id: number) =>
     request<void>(`/archives/${id}`, { method: 'DELETE' }),
-  getArchiveStats: () => request<ArchiveStats>('/archives/stats'),
+  getArchiveStats: (options?: { dateFrom?: string; dateTo?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.dateFrom) params.set('date_from', options.dateFrom);
+    if (options?.dateTo) params.set('date_to', options.dateTo);
+    const qs = params.toString();
+    return request<ArchiveStats>(`/archives/stats${qs ? `?${qs}` : ''}`);
+  },
   // Tag management
   getTags: () => request<TagInfo[]>('/archives/tags'),
   renameTag: (oldName: string, newName: string) =>
@@ -2553,12 +2587,15 @@ export const api = {
     }),
   recalculateCosts: () =>
     request<{ message: string; updated: number }>('/archives/recalculate-costs', { method: 'POST' }),
-  getFailureAnalysis: (options?: { days?: number; printerId?: number; projectId?: number }) => {
+  getFailureAnalysis: (options?: { days?: number; dateFrom?: string; dateTo?: string; printerId?: number; projectId?: number }) => {
     const params = new URLSearchParams();
     if (options?.days) params.set('days', String(options.days));
+    if (options?.dateFrom) params.set('date_from', options.dateFrom);
+    if (options?.dateTo) params.set('date_to', options.dateTo);
     if (options?.printerId) params.set('printer_id', String(options.printerId));
     if (options?.projectId) params.set('project_id', String(options.projectId));
-    return request<FailureAnalysis>(`/archives/analysis/failures?${params}`);
+    const qs = params.toString();
+    return request<FailureAnalysis>(`/archives/analysis/failures${qs ? `?${qs}` : ''}`);
   },
   compareArchives: (archiveIds: number[]) =>
     request<ArchiveComparison>(`/archives/compare?archive_ids=${archiveIds.join(',')}`),
@@ -4848,12 +4885,25 @@ export interface SpoolBuddyDevice {
   has_scale: boolean;
   tare_offset: number;
   calibration_factor: number;
+  nfc_reader_type: string | null;
+  nfc_connection: string | null;
+  display_brightness: number;
+  display_blank_timeout: number;
+  has_backlight: boolean;
+  last_calibrated_at: string | null;
   last_seen: string | null;
   pending_command: string | null;
   nfc_ok: boolean;
   scale_ok: boolean;
   uptime_s: number;
   online: boolean;
+}
+
+export interface DaemonUpdateCheck {
+  current_version: string;
+  latest_version: string | null;
+  update_available: boolean;
+  release_url: string | null;
 }
 
 // SpoolBuddy API
@@ -4880,5 +4930,26 @@ export const spoolbuddyApi = {
     request<{ status: string; weight_used: number }>('/spoolbuddy/scale/update-spool-weight', {
       method: 'POST',
       body: JSON.stringify({ spool_id: spoolId, weight_grams: weightGrams }),
+    }),
+
+  updateDisplay: (deviceId: string, brightness: number, blankTimeout: number) =>
+    request<{ status: string }>(`/spoolbuddy/devices/${deviceId}/display`, {
+      method: 'PUT',
+      body: JSON.stringify({ brightness, blank_timeout: blankTimeout }),
+    }),
+
+  checkDaemonUpdate: (deviceId: string, includeBeta?: boolean) =>
+    request<DaemonUpdateCheck>(`/spoolbuddy/devices/${deviceId}/update-check?include_beta=${includeBeta ?? false}`),
+
+  writeTag: (deviceId: string, spoolId: number) =>
+    request<{ status: string }>('/spoolbuddy/nfc/write-tag', {
+      method: 'POST',
+      body: JSON.stringify({ device_id: deviceId, spool_id: spoolId }),
+    }),
+
+  cancelWrite: (deviceId: string) =>
+    request<{ status: string }>(`/spoolbuddy/devices/${deviceId}/cancel-write`, {
+      method: 'POST',
+      body: '{}',
     }),
 };

@@ -1042,7 +1042,7 @@ export function SettingsPage() {
                 <div className="relative">
                   <select
                     value={i18n.language}
-                    onChange={(e) => { i18n.changeLanguage(e.target.value); showToast(t('settings.toast.settingsSaved'), 'success'); }}
+                    onChange={(e) => { i18n.changeLanguage(e.target.value); api.updateSettings({ language: e.target.value }); showToast(t('settings.toast.settingsSaved'), 'success'); }}
                     className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
                   >
                     {availableLanguages.map((lang) => (
@@ -1624,23 +1624,7 @@ export function SettingsPage() {
               <h2 className="text-lg font-semibold text-white">Updates</h2>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-white">{t('settings.checkForUpdatesLabel')}</p>
-                  <p className="text-sm text-bambu-gray">
-                    Automatically check for new versions on startup
-                  </p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={localSettings.check_updates}
-                    onChange={(e) => updateSetting('check_updates', e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
-                </label>
-              </div>
+              <p className="text-xs font-medium text-bambu-gray uppercase tracking-wider">Printer Firmware</p>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-white">{t('settings.checkPrinterFirmware')}</p>
@@ -1653,6 +1637,26 @@ export function SettingsPage() {
                     type="checkbox"
                     checked={localSettings.check_printer_firmware ?? true}
                     onChange={(e) => updateSetting('check_printer_firmware', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
+              <div className="border-t border-bambu-dark-tertiary pt-4">
+                <p className="text-xs font-medium text-bambu-gray uppercase tracking-wider mb-4">Bambuddy Software</p>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-white">{t('settings.checkForUpdatesLabel')}</p>
+                  <p className="text-sm text-bambu-gray">
+                    Automatically check for new versions on startup
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.check_updates}
+                    onChange={(e) => updateSetting('check_updates', e.target.checked)}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
@@ -1676,7 +1680,7 @@ export function SettingsPage() {
                   <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
                 </label>
               </div>
-              <div className="border-t border-bambu-dark-tertiary pt-4">
+              <div>
                 <div className="flex items-center justify-between mb-2">
                   <div>
                     <p className="text-white">{t('settings.currentVersion')}</p>

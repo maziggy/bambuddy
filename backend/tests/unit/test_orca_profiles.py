@@ -194,6 +194,14 @@ class TestParseMaterialFromName:
         assert _parse_material_from_name("Fiberlogy PA12+CF15") is None
         assert _parse_material_from_name("Fiberlogy PA @BBL X1C") == "PA"
 
+    def test_support_for_pattern(self):
+        from backend.app.services.orca_profiles import _parse_material_from_name
+
+        # "PLA Support for PETG" — filament type is PETG, not PLA
+        assert _parse_material_from_name("PLA Support for PETG PETG Basic @Bambu Lab H2D 0.4 nozzle") == "PETG"
+        assert _parse_material_from_name("PLA Support for ABS @BBL X1C") == "ABS"
+        assert _parse_material_from_name("PVA Support for PLA @BBL X1C") == "PLA"
+
 
 class TestParseVendorFromName:
     """Tests for _parse_vendor_from_name()."""

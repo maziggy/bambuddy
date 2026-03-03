@@ -824,7 +824,7 @@ async def assign_spool(
                         lp_result = await db.execute(select(LP).where(LP.id == local_id, LP.preset_type == "filament"))
                         lp = lp_result.scalar_one_or_none()
                         if lp:
-                            mat = (lp.filament_type or spool.material or "").upper().strip()
+                            mat = (spool.material or lp.filament_type or "").upper().strip()
                             tray_info_idx = (
                                 _GENERIC_IDS.get(mat) or _GENERIC_IDS.get(mat.split("-")[0].split(" ")[0]) or ""
                             )

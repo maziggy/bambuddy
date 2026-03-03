@@ -7,6 +7,7 @@ import {
   Trash2,
   Clock,
   Package,
+  Coins,
   Layers,
   Search,
   Filter,
@@ -48,7 +49,7 @@ import {
   User,
   Play,
   ClipboardList,
-  Coins,
+  Zap,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { openInSlicer, type SlicerType } from '../utils/slicer';
@@ -923,10 +924,20 @@ function ArchiveCard({
               {archive.filament_used_grams.toFixed(1)}g
             </div>
           )}
-          {archive.cost != null && (
-            <div className="flex items-center gap-1.5 text-bambu-gray">
-              <Coins className="w-3 h-3" />
-              {currency}{archive.cost.toFixed(2)}
+          {(archive.cost != null || archive.energy_cost != null) && (
+            <div className="flex items-center gap-3 text-bambu-gray">
+              {archive.cost != null && (
+                <div className="flex items-center gap-1.5">
+                  <Coins className="w-3 h-3" />
+                  {currency}{archive.cost.toFixed(2)}
+                </div>
+              )}
+                {archive.energy_cost != null && (
+                  <div className="flex items-center gap-1.5" title={`${t('stats.energyUsed')}: ${archive.energy_kwh?.toFixed(3) || 'N/A'} kWh`}>
+                    <Zap className="w-3 h-3" />
+                    {currency}{archive.energy_cost.toFixed(2)}
+                  </div>
+                )}
             </div>
           )}
           {(archive.layer_height || archive.total_layers) && (

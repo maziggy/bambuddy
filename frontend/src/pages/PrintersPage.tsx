@@ -42,6 +42,8 @@ import {
   XCircle,
   User,
   Home,
+  Printer as PrinterIcon,
+  Info,
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
@@ -64,7 +66,11 @@ import { ConfigureAmsSlotModal } from '../components/ConfigureAmsSlotModal';
 import { useToast } from '../contexts/ToastContext';
 import { ChamberLight } from '../components/icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';
+import { FileUploadModal } from '../components/FileUploadModal';
+import { PrintModal } from '../components/PrintModal';
+import { PrinterInfoModal } from '../components/PrinterInfoModal';
 import { getGlobalTrayId } from '../utils/amsHelpers';
+import { getPrinterImage, getWifiStrength } from '../utils/printer';
 
 // Complete Bambu Lab filament color mapping by tray_id_name
 // Source: https://github.com/queengooborg/Bambu-Lab-RFID-Library
@@ -1088,36 +1094,6 @@ function getSpoolmanFillLevel(
   ));
 }
 
-function getPrinterImage(model: string | null | undefined): string {
-  if (!model) return '/img/printers/default.png';
-
-  const modelLower = model.toLowerCase().replace(/\s+/g, '');
-
-  // Map model names to image files
-  if (modelLower.includes('x1e')) return '/img/printers/x1e.png';
-  if (modelLower.includes('x1c') || modelLower.includes('x1carbon')) return '/img/printers/x1c.png';
-  if (modelLower.includes('x1')) return '/img/printers/x1c.png';
-  if (modelLower.includes('h2dpro') || modelLower.includes('h2d-pro')) return '/img/printers/h2dpro.png';
-  if (modelLower.includes('h2d')) return '/img/printers/h2d.png';
-  if (modelLower.includes('h2c')) return '/img/printers/h2c.png';
-  if (modelLower.includes('h2s')) return '/img/printers/h2d.png';
-  if (modelLower.includes('p2s')) return '/img/printers/p1s.png';
-  if (modelLower.includes('p1s')) return '/img/printers/p1s.png';
-  if (modelLower.includes('p1p')) return '/img/printers/p1p.png';
-  if (modelLower.includes('a1mini')) return '/img/printers/a1mini.png';
-  if (modelLower.includes('a1')) return '/img/printers/a1.png';
-
-  return '/img/printers/default.png';
-}
-
-function getWifiStrength(rssi: number): { labelKey: string; color: string; bars: number } {
-  if (rssi >= -50) return { labelKey: 'printers.wifiSignal.excellent', color: 'text-bambu-green', bars: 4 };
-  if (rssi >= -60) return { labelKey: 'printers.wifiSignal.good', color: 'text-bambu-green', bars: 3 };
-  if (rssi >= -70) return { labelKey: 'printers.wifiSignal.fair', color: 'text-yellow-400', bars: 2 };
-  if (rssi >= -80) return { labelKey: 'printers.wifiSignal.weak', color: 'text-orange-400', bars: 1 };
-  return { labelKey: 'printers.wifiSignal.veryWeak', color: 'text-red-400', bars: 1 };
-}
-
 /**
  * Check if a tray contains a Bambu Lab spool (RFID-tagged).
  * Only checks hardware identifiers (tray_uuid, tag_uid) — NOT tray_info_idx,
@@ -1627,6 +1603,13 @@ function PrinterCard({
   const [showPauseConfirm, setShowPauseConfirm] = useState(false);
   const [showResumeConfirm, setShowResumeConfirm] = useState(false);
   const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
+  const [showUploadForPrint, setShowUploadForPrint] = useState(false);
+  const [showPrinterInfo, setShowPrinterInfo] = useState(false);
+  const closePrinterInfo = useCallback(() => setShowPrinterInfo(false), []);
+  const [printAfterUpload, setPrintAfterUpload] = useState<{ id: number; filename: string } | null>(null);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [isDropUploading, setIsDropUploading] = useState(false);
+  const dragCounterRef = useRef(0);
   const [amsHistoryModal, setAmsHistoryModal] = useState<{
     amsId: number;
     amsLabel: string;
@@ -2290,8 +2273,106 @@ function PrinterCard({
     }
   };
 
+  const canDrop = isConnected && status?.state !== 'RUNNING' && status?.state !== 'PAUSE' && hasPermission('printers:control');
+
+  const handleCardDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current++;
+    if (dragCounterRef.current === 1) setIsDraggingFile(true);
+  };
+
+  const handleCardDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = canDrop ? 'copy' : 'none';
+  };
+
+  const handleCardDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current--;
+    if (dragCounterRef.current === 0) setIsDraggingFile(false);
+  };
+
+  const handleCardDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setIsDraggingFile(false);
+
+    if (!canDrop) return;
+
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    const file = droppedFiles[0];
+    if (!file) return;
+
+    // Only accept sliced/printable files (.gcode, .gcode.3mf, etc.)
+    const lower = file.name.toLowerCase();
+    if (!lower.endsWith('.gcode') && !lower.includes('.gcode.')) {
+      showToast(t('printers.dropNotPrintable', 'Only .gcode and .gcode.3mf files can be printed'), 'error');
+      return;
+    }
+
+    setIsDropUploading(true);
+    try {
+      const result = await api.uploadLibraryFile(file, null);
+
+      // Check printer compatibility if sliced_for_model is available in metadata
+      const slicedFor = (result.metadata as Record<string, unknown>)?.sliced_for_model as string | undefined;
+      const printerModel = mapModelCode(printer.model);
+      if (slicedFor && printerModel && slicedFor.toLowerCase() !== printerModel.toLowerCase()) {
+        await api.deleteLibraryFile(result.id).catch(() => {});
+        showToast(
+          t('printers.incompatibleFile', 'This file was sliced for {{slicedFor}}, but this printer is a {{printerModel}}', { slicedFor, printerModel }),
+          'error'
+        );
+        return;
+      }
+
+      setPrintAfterUpload({ id: result.id, filename: result.filename });
+    } catch {
+      showToast(t('common.uploadFailed', 'Upload failed'), 'error');
+    } finally {
+      setIsDropUploading(false);
+    }
+  };
+
   return (
-    <Card className="relative">
+    <Card
+      className="relative"
+      onDragEnter={handleCardDragEnter}
+      onDragOver={handleCardDragOver}
+      onDragLeave={handleCardDragLeave}
+      onDrop={handleCardDrop}
+    >
+      {/* Drop zone overlay */}
+      {(isDraggingFile || isDropUploading) && (
+        <div
+          className={`absolute inset-0 z-10 rounded-xl border-2 border-dashed flex items-center justify-center transition-colors ${
+            isDropUploading
+              ? 'bg-bambu-green/10 border-bambu-green/50'
+              : canDrop
+                ? 'bg-bambu-green/10 border-bambu-green'
+                : 'bg-red-500/10 border-red-500/50'
+          }`}
+        >
+          <div className="text-center">
+            {isDropUploading ? (
+              <>
+                <Loader2 className="w-8 h-8 mx-auto mb-2 text-bambu-green animate-spin" />
+                <p className="text-sm font-medium text-bambu-green">{t('common.uploading', 'Uploading...')}</p>
+              </>
+            ) : canDrop ? (
+              <>
+                <PrinterIcon className="w-8 h-8 mx-auto mb-2 text-bambu-green" />
+                <p className="text-sm font-medium text-bambu-green">{t('printers.dropToPrint', 'Drop to print')}</p>
+              </>
+            ) : (
+              <>
+                <X className="w-8 h-8 mx-auto mb-2 text-red-400" />
+                <p className="text-sm font-medium text-red-400">{t('printers.cannotPrint', 'Printer busy')}</p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       <CardContent className={cardSize >= 3 ? 'p-5' : ''}>
         {/* Header */}
         <div className={getSpacing()}>
@@ -2360,6 +2441,16 @@ function PrinterCard({
                   >
                     <Pencil className="w-4 h-4" />
                     {t('common.edit')}
+                  </button>
+                  <button
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
+                    onClick={() => {
+                      setShowPrinterInfo(true);
+                      setShowMenu(false);
+                    }}
+                  >
+                    <Info className="w-4 h-4" />
+                    {t('printers.printerInformation')}
                   </button>
                   <button
                     className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
@@ -2869,6 +2960,7 @@ function PrinterCard({
                           {chamberFan ?? 0}%
                         </span>
                       </div>
+
                     </div>
 
                     {/* Right: Print Control Buttons */}
@@ -3801,22 +3893,17 @@ function PrinterCard({
 
         {/* Connection Info & Actions - hidden in compact mode */}
         {viewMode === 'expanded' && (
-          <div className="mt-4 pt-4 border-t border-bambu-dark-tertiary flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="text-xs text-bambu-gray">
-              <p>{printer.ip_address}</p>
-              <p className="truncate">{printer.serial_number}</p>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Chamber Light Toggle */}
+          <div className="mt-4 pt-4 border-t border-bambu-dark-tertiary flex items-center justify-end gap-2 flex-wrap">
+              {/* Chamber Light */}
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={() => chamberLightMutation.mutate(!status?.chamber_light)}
                 disabled={!status?.connected || chamberLightMutation.isPending || !hasPermission('printers:control')}
                 title={!hasPermission('printers:control') ? t('printers.permission.noControl') : (status?.chamber_light ? t('printers.chamberLightOff') : t('printers.chamberLightOn'))}
-                className={status?.chamber_light ? 'bg-yellow-500/20 hover:bg-yellow-500/30 border-yellow-500/30' : ''}
+                className={status?.chamber_light ? '!border-yellow-500 !text-yellow-400 hover:!bg-yellow-500/20' : ''}
               >
-                <ChamberLight on={status?.chamber_light ?? false} className="w-4 h-4" />
+                <ChamberLight on={status?.chamber_light ?? false} className={`w-4 h-4 ${status?.chamber_light ? 'text-yellow-400' : ''}`} />
               </Button>
               {/* Camera Button */}
               <Button
@@ -3879,13 +3966,24 @@ function PrinterCard({
                 variant="secondary"
                 size="sm"
                 onClick={() => setShowFileManager(true)}
-                disabled={!hasPermission('printers:files')}
+                disabled={!isConnected || !hasPermission('printers:files')}
                 title={!hasPermission('printers:files') ? t('printers.permission.noFiles') : t('printers.browseFiles')}
               >
                 <HardDrive className="w-4 h-4" />
-                Files
+                {t('printers.files')}
               </Button>
-            </div>
+              {isConnected && status?.state !== 'RUNNING' && status?.state !== 'PAUSE' && (
+                <Button
+                  size="sm"
+                  onClick={() => setShowUploadForPrint(true)}
+                  disabled={!hasPermission('printers:control')}
+                  title={!hasPermission('printers:control') ? t('printers.permission.noControl') : t('common.print')}
+                  className="!bg-bambu-green hover:!bg-bambu-green/80 !text-white"
+                >
+                  <PrinterIcon className="w-4 h-4" />
+                  {t('common.print')}
+                </Button>
+              )}
           </div>
         )}
       </CardContent>
@@ -3899,12 +3997,60 @@ function PrinterCard({
         />
       )}
 
+      {/* Upload for Print Modal */}
+      {showUploadForPrint && (
+        <FileUploadModal
+          folderId={null}
+          onClose={() => setShowUploadForPrint(false)}
+          onUploadComplete={() => {}}
+          autoUpload
+          accept=".gcode,.3mf"
+          validateFile={(file) => {
+            const lower = file.name.toLowerCase();
+            if (!lower.endsWith('.gcode') && !lower.includes('.gcode.')) {
+              return t('printers.dropNotPrintable', 'Only .gcode and .gcode.3mf files can be printed');
+            }
+          }}
+          onFileUploaded={(uploadedFile) => {
+            // Check printer compatibility if sliced_for_model is available in metadata
+            const slicedFor = (uploadedFile.metadata as Record<string, unknown>)?.sliced_for_model as string | undefined;
+            const printerModel = mapModelCode(printer.model);
+            if (slicedFor && printerModel && slicedFor.toLowerCase() !== printerModel.toLowerCase()) {
+              api.deleteLibraryFile(uploadedFile.id).catch(() => {});
+              return t('printers.incompatibleFile', 'This file was sliced for {{slicedFor}}, but this printer is a {{printerModel}}', { slicedFor, printerModel });
+            }
+            setPrintAfterUpload({ id: uploadedFile.id, filename: uploadedFile.filename });
+          }}
+        />
+      )}
+
+      {/* Print Modal (after upload) */}
+      {printAfterUpload && (
+        <PrintModal
+          mode="reprint"
+          libraryFileId={printAfterUpload.id}
+          archiveName={printAfterUpload.filename}
+          initialSelectedPrinterIds={[printer.id]}
+          onClose={() => setPrintAfterUpload(null)}
+          onSuccess={() => setPrintAfterUpload(null)}
+        />
+      )}
+
       {/* MQTT Debug Modal */}
       {showMQTTDebug && (
         <MQTTDebugModal
           printerId={printer.id}
           printerName={printer.name}
           onClose={() => setShowMQTTDebug(false)}
+        />
+      )}
+
+      {showPrinterInfo && (
+        <PrinterInfoModal
+          printer={printer}
+          status={status}
+          totalPrintHours={maintenanceInfo?.total_print_hours}
+          onClose={closePrinterInfo}
         />
       )}
 

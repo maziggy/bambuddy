@@ -24,6 +24,7 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   ZAR: 'R',
   TRY: '₺',
   RUB: '₽',
+  HUF: 'Ft',
 };
 
 export function getCurrencySymbol(currencyCode: string): string {
@@ -56,4 +57,5 @@ export const SUPPORTED_CURRENCIES = [
   { code: 'ZAR', label: 'ZAR (R)' },
   { code: 'TRY', label: 'TRY (₺)' },
   { code: 'RUB', label: 'RUB (₽)' },
+  { code: 'HUF', label: 'HUF (Ft)' },
 ] as const;

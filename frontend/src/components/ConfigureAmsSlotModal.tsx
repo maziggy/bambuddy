@@ -87,9 +87,23 @@ const MATERIAL_TYPES = ['PLA', 'PETG', 'PCTG', 'ABS', 'ASA', 'TPU', 'PC', 'PA', 
 function parsePresetName(name: string): { material: string; brand: string; variant: string } {
   // Remove printer/nozzle suffix first
   const withoutSuffix = name.replace(/@.+$/, '').trim();
+  const upperName = withoutSuffix.toUpperCase();
+
+  // Handle "X Support for Y" pattern: the filament type is Y, not X.
+  // e.g. "PLA Support for PETG PETG Basic" → material is PETG
+  const supportMatch = upperName.match(/\bSUPPORT\s+FOR\s+/);
+  if (supportMatch) {
+    const afterSupport = upperName.slice(supportMatch.index! + supportMatch[0].length);
+    for (const mat of MATERIAL_TYPES) {
+      const regex = new RegExp(`\\b${mat}\\b`);
+      if (regex.test(afterSupport)) {
+        const brand = withoutSuffix.slice(0, supportMatch.index).trim();
+        return { material: mat, brand, variant: 'Support' };
+      }
+    }
+  }
 
   // Try to find a known material type in the name
-  const upperName = withoutSuffix.toUpperCase();
   for (const mat of MATERIAL_TYPES) {
     // Use word boundary to match whole words only
     const regex = new RegExp(`\\b${mat}\\b`, 'i');
@@ -323,11 +337,15 @@ export function ConfigureAmsSlotModal({
       let trayInfoIdx: string;
       let settingId: string;
 
+      // Parsed material from preset name — handles "Support for" patterns correctly.
+      // Prefer this over stored filament_type which may have been parsed with old logic.
+      const parsedMat = parsed.material.toUpperCase();
+
       if (isLocal) {
         // Local presets have no Bambu Cloud setting_id, but need a valid
         // tray_info_idx for the printer to recognize the filament type.
         // Map the material type to the closest generic Bambu filament ID.
-        const material = (localPreset?.filament_type || parsed.material || '').toUpperCase();
+        const material = (MATERIAL_TYPES.includes(parsedMat) ? parsedMat : localPreset?.filament_type || parsed.material || '').toUpperCase();
         const GENERIC_IDS: Record<string, string> = {
           'PLA': 'GFL99', 'PLA-CF': 'GFL98', 'PLA SILK': 'GFL96', 'PLA HIGH SPEED': 'GFL95',
           'PETG': 'GFG99', 'PETG HF': 'GFG96', 'PETG-CF': 'GFG98', 'PCTG': 'GFG97',
@@ -375,8 +393,10 @@ export function ConfigureAmsSlotModal({
       let tempMax = isLocal && localPreset?.nozzle_temp_max ? localPreset.nozzle_temp_max : 230;
 
       if (!isLocal || isBuiltin || (!localPreset?.nozzle_temp_min && !localPreset?.nozzle_temp_max)) {
-        // Fall back to material-based defaults
-        const material = (isLocal ? (localPreset?.filament_type || parsed.material) : parsed.material).toUpperCase();
+        // Fall back to material-based defaults (prefer parsed material for "Support for" handling)
+        const material = (isLocal
+          ? (MATERIAL_TYPES.includes(parsedMat) ? parsedMat : localPreset?.filament_type || parsed.material || '')
+          : parsed.material).toUpperCase();
         if (material.includes('PLA')) {
           tempMin = 190;
           tempMax = 230;
@@ -407,9 +427,10 @@ export function ConfigureAmsSlotModal({
       // Parse K value from selected profile
       const kValue = selectedKProfile?.k_value ? parseFloat(selectedKProfile.k_value) : 0;
 
-      // Determine tray_type: use local preset's filament_type or parsed material
+      // Determine tray_type: prefer parsed material from preset name (handles "Support for"
+      // patterns correctly) over stored filament_type which may have been parsed with old logic.
       const trayType = isLocal
-        ? (localPreset?.filament_type || parsed.material || 'PLA')
+        ? (MATERIAL_TYPES.includes(parsedMat) ? parsedMat : localPreset?.filament_type || parsed.material || 'PLA')
         : (parsed.material || 'PLA');
 
       // Configure the slot via MQTT

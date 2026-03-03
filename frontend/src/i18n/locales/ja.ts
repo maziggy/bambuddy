@@ -512,6 +512,7 @@ export default {
     showFailedPrints: '失敗した印刷を表示',
     hideFailedPrints: '失敗した印刷を非表示',
     hideDuplicates: '重複を非表示',
+    viewOriginalPrint: 'クリックして元の印刷を表示 (#{{id}})',
     printTime: '印刷時間',
     filamentUsed: 'フィラメント使用量',
     cost: 'コスト',

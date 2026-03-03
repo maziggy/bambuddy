@@ -497,6 +497,7 @@ export default {
     showFailedPrints: '显示失败的打印',
     hideFailedPrints: '隐藏失败的打印',
     hideDuplicates: '隐藏重复项',
+    viewOriginalPrint: '点击查看原始打印 (#{{id}})',
     printTime: '打印时间',
     filamentUsed: '耗材用量',
     cost: '成本',

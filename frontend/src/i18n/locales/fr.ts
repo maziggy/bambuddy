@@ -513,6 +513,7 @@ export default {
     showFailedPrints: 'Afficher les échecs',
     hideFailedPrints: 'Masquer les échecs',
     hideDuplicates: 'Masquer les doublons',
+    viewOriginalPrint: 'Cliquez pour afficher l\'impression originale (#{{id}})',
     printTime: 'Temps d\'impression',
     filamentUsed: 'Filament utilisé',
     cost: 'Coût',

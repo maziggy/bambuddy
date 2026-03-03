@@ -62,6 +62,8 @@ def archive_to_response(
     archive: PrintArchive,
     duplicates: list[dict] | None = None,
     duplicate_count: int = 0,
+    duplicate_sequence: int = 0,
+    original_archive_id: int | None = None,
 ) -> dict:
     """Convert archive model to response dict with computed fields."""
     data = {
@@ -79,6 +81,8 @@ def archive_to_response(
         "f3d_path": archive.f3d_path,
         "duplicates": duplicates,
         "duplicate_count": duplicate_count if duplicates is None else len(duplicates),
+        "duplicate_sequence": duplicate_sequence,
+        "original_archive_id": original_archive_id,
         "print_name": archive.print_name,
         "print_time_seconds": archive.print_time_seconds,
         "filament_used_grams": archive.filament_used_grams,
@@ -144,7 +148,7 @@ async def list_archives(
     # Get sets of duplicate hashes and duplicate (name, hash) pairs (efficient single queries)
     duplicate_hashes, duplicate_name_hash_pairs = await service.get_duplicate_hashes_and_names()
 
-    # Mark archives that have duplicates (by hash or exact name/hash pair)
+    # Build response with duplicate sequence and original archive ID pre-computed
     result = []
     for a in archives:
         has_hash_dup = a.content_hash in duplicate_hashes if a.content_hash else False
@@ -153,7 +157,42 @@ async def list_archives(
             and (a.print_name.lower(), a.content_hash) in duplicate_name_hash_pairs
         )
         has_duplicate = has_hash_dup or has_name_dup
-        result.append(archive_to_response(a, duplicate_count=1 if has_duplicate else 0))
+
+        # Pre-compute duplicate sequence and original archive ID
+        duplicate_sequence = 0
+        original_archive_id: int | None = None
+
+        if has_duplicate:
+            # Fetch duplicates for this archive to compute sequence
+            duplicates = await service.find_duplicates(
+                archive_id=a.id,
+                content_hash=a.content_hash if has_hash_dup else None,
+                print_name=a.print_name if has_name_dup else None,
+            )
+
+            if duplicates:
+                # Combine current archive with duplicates and sort by created_at
+                all_copies = [
+                    {"id": a.id, "created_at": a.created_at},
+                    *[{"id": d["id"], "created_at": d["created_at"]} for d in duplicates],
+                ]
+                all_copies.sort(key=lambda x: x["created_at"])
+
+                # Find the index of the current archive (0 = original, 1+ = duplicate)
+                current_index = next((i for i, item in enumerate(all_copies) if item["id"] == a.id), 0)
+                duplicate_sequence = current_index
+
+                # Store the original archive ID (the first one chronologically)
+                original_archive_id = all_copies[0]["id"]
+
+        result.append(
+            archive_to_response(
+                a,
+                duplicate_count=1 if has_duplicate else 0,
+                duplicate_sequence=duplicate_sequence,
+                original_archive_id=original_archive_id,
+            )
+        )
     return result
 
 

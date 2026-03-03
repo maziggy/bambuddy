@@ -204,33 +204,9 @@ function ArchiveCard({
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 
-  // Fetch duplicates to determine sequence number
-  const { data: duplicatesData } = useQuery({
-    queryKey: ['archive-duplicates', archive.id],
-    queryFn: () => api.getArchiveDuplicates(archive.id),
-    enabled: archive.duplicate_count > 0, // Only fetch if there are duplicates
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
-  });
-
-  // Calculate duplicate sequence number (0 for original, 1+ for duplicates)
-  let duplicateSequence = 0;
-  let originalArchiveId: number | null = null;
-  if (archive.duplicate_count > 0 && duplicatesData?.duplicates) {
-    // Combine current archive with duplicates and sort by created_at
-    const allCopies = [
-      { id: archive.id, created_at: archive.created_at },
-      ...duplicatesData.duplicates.map(d => ({ id: d.id, created_at: d.created_at }))
-    ].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-
-    // Find the index of the current archive (excluding the first/original)
-    const currentIndex = allCopies.findIndex(a => a.id === archive.id);
-    duplicateSequence = currentIndex > 0 ? currentIndex : 0;
-
-    // Store the original archive ID (the first one chronologically)
-    if (allCopies.length > 0) {
-      originalArchiveId = allCopies[0].id;
-    }
-  }
+  // Use pre-computed duplicate sequence and original archive ID from list response
+  const duplicateSequence = archive.duplicate_sequence ?? 0;
+  const originalArchiveId = archive.original_archive_id ?? null;
 
   const plates = platesData?.plates ?? [];
   const isMultiPlate = platesData?.is_multi_plate ?? false;
@@ -1477,33 +1453,9 @@ function ArchiveListRow({
   const f3dInputRef = useRef<HTMLInputElement>(null);
   const timelapseInputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch duplicates to determine sequence number
-  const { data: duplicatesData } = useQuery({
-    queryKey: ['archive-duplicates', archive.id],
-    queryFn: () => api.getArchiveDuplicates(archive.id),
-    enabled: archive.duplicate_count > 0, // Only fetch if there are duplicates
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
-  });
-
-  // Calculate duplicate sequence number (0 for original, 1+ for duplicates)
-  let duplicateSequence = 0;
-  let originalArchiveId: number | null = null;
-  if (archive.duplicate_count > 0 && duplicatesData?.duplicates) {
-    // Combine current archive with duplicates and sort by created_at
-    const allCopies = [
-      { id: archive.id, created_at: archive.created_at },
-      ...duplicatesData.duplicates.map(d => ({ id: d.id, created_at: d.created_at }))
-    ].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-
-    // Find the index of the current archive (excluding the first/original)
-    const currentIndex = allCopies.findIndex(a => a.id === archive.id);
-    duplicateSequence = currentIndex > 0 ? currentIndex : 0;
-
-    // Store the original archive ID (the first one chronologically)
-    if (allCopies.length > 0) {
-      originalArchiveId = allCopies[0].id;
-    }
-  }
+  // Use pre-computed duplicate sequence and original archive ID from list response
+  const duplicateSequence = archive.duplicate_sequence ?? 0;
+  const originalArchiveId = archive.original_archive_id ?? null;
 
   const timelapseDeleteMutation = useMutation({
     mutationFn: () => api.deleteArchiveTimelapse(archive.id),

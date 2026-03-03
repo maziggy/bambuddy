@@ -71,6 +71,7 @@ import { PrintModal } from '../components/PrintModal';
 import { PrinterInfoModal } from '../components/PrinterInfoModal';
 import { getGlobalTrayId } from '../utils/amsHelpers';
 import { getPrinterImage, getWifiStrength } from '../utils/printer';
+import { FilamentSlotCircle } from '../components/FilamentSlotCircle';
 
 // Complete Bambu Lab filament color mapping by tray_id_name
 // Source: https://github.com/queengooborg/Bambu-Lab-RFID-Library
@@ -1374,7 +1375,7 @@ function mapModelCode(ssdpModel: string | null): string {
 //  • User-defined friendly name (editable, protected by printers:update)
 //  • AMS serial number
 //  • AMS firmware version
-function AmsNameHoverCard({
+export function AmsNameHoverCard({
   ams,
   printerId,
   label,
@@ -1448,6 +1449,21 @@ function AmsNameHoverCard({
     }
   };
 
+  const handleClear = async () => {
+    if (!canEdit) return;
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      await api.deleteAmsLabel(printerId, ams.id, ams.serial_number);
+      onSaved();
+      setIsVisible(false);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div
       ref={triggerRef}
@@ -1503,7 +1519,10 @@ function AmsNameHoverCard({
                 onChange={(e) => canEdit && setEditValue(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSave()}
                 onFocus={() => setIsInputFocused(true)}
-                onBlur={() => setIsInputFocused(false)}
+                onBlur={() => {
+                  setIsInputFocused(false);
+                  timeoutRef.current = setTimeout(() => setIsVisible(false), 200);
+                }}
                 placeholder={canEdit ? t('printers.amsPopup.friendlyNamePlaceholder') : (amsLabels?.[ams.id] || '—')}
                 disabled={!canEdit}
                 title={!canEdit ? t('printers.amsPopup.noEditPermission') : undefined}
@@ -1525,7 +1544,7 @@ function AmsNameHoverCard({
                     </button>
                     {amsLabels?.[ams.id] && (
                       <button
-                        onClick={() => { setEditValue(''); setSaveError(null); }}
+                        onClick={handleClear}
                         disabled={isSaving}
                         className="px-2 py-0.5 text-[10px] bg-bambu-dark-tertiary text-bambu-gray rounded hover:bg-bambu-dark-tertiary/70 disabled:opacity-50"
                       >
@@ -3148,22 +3167,12 @@ function PrinterCard({
                                     className={`bg-bambu-dark-tertiary rounded p-1 text-center ${isEmpty ? 'opacity-50' : ''} ${isActive ? 'ring-2 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}
                                   >
                                     {/* Filament color circle with 1-based slot number centered inside */}
-                                    <div
-                                      className="w-3.5 h-3.5 rounded-full mx-auto mb-0.5 border-2 flex items-center justify-center"
-                                      style={{
-                                        backgroundColor: tray?.tray_color ? `#${tray.tray_color}` : (tray?.tray_type ? '#333' : 'transparent'),
-                                        borderColor: isEmpty ? '#666' : 'rgba(255,255,255,0.1)',
-                                        borderStyle: isEmpty ? 'dashed' : 'solid',
-                                      }}
-                                    >
-                                      {/* Slot number: font color is inverted relative to filament color */}
-                                      <span
-                                        className="text-[6px] font-bold leading-none select-none"
-                                        style={{ color: tray?.tray_color && isLightFilamentColor(tray.tray_color) ? '#000' : '#fff' }}
-                                      >
-                                        {slotIdx + 1}
-                                      </span>
-                                    </div>
+                                    <FilamentSlotCircle
+                                      trayColor={tray?.tray_color}
+                                      trayType={tray?.tray_type}
+                                      isEmpty={isEmpty}
+                                      slotNumber={slotIdx + 1}
+                                    />
                                     <div className="text-[9px] text-white font-bold truncate">
                                       {tray?.tray_type || '—'}
                                     </div>
@@ -3380,22 +3389,12 @@ function PrinterCard({
                             className={`bg-bambu-dark-tertiary rounded p-1 text-center ${isEmpty ? 'opacity-50' : ''} ${isActive ? 'ring-2 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}
                           >
                             {/* Filament color circle with 1-based slot number centered inside */}
-                            <div
-                              className="w-3.5 h-3.5 rounded-full mx-auto mb-0.5 border-2 flex items-center justify-center"
-                              style={{
-                                backgroundColor: tray?.tray_color ? `#${tray.tray_color}` : (tray?.tray_type ? '#333' : 'transparent'),
-                                borderColor: isEmpty ? '#666' : 'rgba(255,255,255,0.1)',
-                                borderStyle: isEmpty ? 'dashed' : 'solid',
-                              }}
-                            >
-                              {/* Slot number: font color is inverted relative to filament color */}
-                              <span
-                                className="text-[6px] font-bold leading-none select-none"
-                                style={{ color: tray?.tray_color && isLightFilamentColor(tray.tray_color) ? '#000' : '#fff' }}
-                              >
-                                1
-                              </span>
-                            </div>
+                            <FilamentSlotCircle
+                              trayColor={tray?.tray_color}
+                              trayType={tray?.tray_type}
+                              isEmpty={isEmpty}
+                              slotNumber={1}
+                            />
                             <div className="text-[9px] text-white font-bold truncate">
                               {tray?.tray_type || '—'}
                             </div>
@@ -3653,22 +3652,12 @@ function PrinterCard({
                               const extSlotContent = (
                                 <div className={`bg-bambu-dark-tertiary rounded p-1 text-center ${isEmpty ? 'opacity-50' : ''} ${isExtActive ? 'ring-2 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}>
                                   {/* Filament color circle with 1-based slot number centered inside */}
-                                  <div
-                                    className="w-3.5 h-3.5 rounded-full mx-auto mb-0.5 border-2 flex items-center justify-center"
-                                    style={{
-                                      backgroundColor: extTray.tray_color ? `#${extTray.tray_color}` : (extTray.tray_type ? '#333' : 'transparent'),
-                                      borderColor: isEmpty ? '#666' : 'rgba(255,255,255,0.1)',
-                                      borderStyle: isEmpty ? 'dashed' : 'solid',
-                                    }}
-                                  >
-                                    {/* Slot number: font color is inverted relative to filament color */}
-                                    <span
-                                      className="text-[6px] font-bold leading-none select-none"
-                                      style={{ color: extTray.tray_color && isLightFilamentColor(extTray.tray_color) ? '#000' : '#fff' }}
-                                    >
-                                      {slotTrayId + 1}
-                                    </span>
-                                  </div>
+                                  <FilamentSlotCircle
+                                    trayColor={extTray.tray_color}
+                                    trayType={extTray.tray_type}
+                                    isEmpty={isEmpty}
+                                    slotNumber={slotTrayId + 1}
+                                  />
                                   <div className={`text-[9px] font-bold truncate ${isEmpty ? 'text-white/40' : 'text-white'}`}>
                                     {extTray.tray_type || '—'}
                                   </div>

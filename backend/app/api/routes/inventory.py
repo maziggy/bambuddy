@@ -650,11 +650,13 @@ async def list_assignments(
     result = await db.execute(query)
     assignments = list(result.scalars().all())
 
-    # Build (printer_id, ams_id) -> ams_serial map from live printer states
+    # Build (printer_id, ams_id) -> ams_serial map from live printer states.
+    # Fetch all statuses in one call rather than one get_status() call per printer.
     serial_map: dict[tuple[int, int], str] = {}
     seen_printer_ids: set[int] = {a.printer_id for a in assignments}
+    all_statuses = printer_manager.get_all_statuses()
     for pid in seen_printer_ids:
-        state = printer_manager.get_status(pid)
+        state = all_statuses.get(pid)
         if state and state.raw_data:
             for ams_unit in state.raw_data.get("ams", []):
                 sn = str(ams_unit.get("sn") or ams_unit.get("serial_number") or "")

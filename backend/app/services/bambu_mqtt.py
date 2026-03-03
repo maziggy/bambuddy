@@ -307,6 +307,10 @@ class BambuMQTTClient:
         # Key: ams_id (int). Value: {'sw_ver': str, 'sn': str}
         self._ams_version_cache: dict[int, dict[str, str]] = {}
 
+        # Track which (ams_id, field) warnings have already been emitted this connection
+        # so that missing-serial / missing-firmware warnings fire only once per connection.
+        self._ams_version_warned: set[tuple[int | str, str]] = set()
+
         # K-profile command tracking
         self._sequence_id: int = 0
         self._pending_kprofile_response: asyncio.Event | None = None
@@ -366,6 +370,8 @@ class BambuMQTTClient:
     def _on_connect(self, client, userdata, flags, rc, properties=None):
         if rc == 0:
             self.state.connected = True
+            # Reset per-connection warning state so warnings fire once per (re)connection
+            self._ams_version_warned = set()
             client.subscribe(self.topic_subscribe)
             # Subscribe to request topic for ams_mapping capture (if supported by broker)
             if self._request_topic_supported:
@@ -761,24 +767,31 @@ class BambuMQTTClient:
             self.on_state_change(self.state)
 
         # Warn if any AMS unit is still missing serial number or firmware version
-        # after processing the version info response.
+        # after processing the version info response. Warn only once per connection
+        # to avoid repeated noise on older firmware that doesn't report these fields.
         if ams_raw and isinstance(ams_raw, list):
             for ams_unit in ams_raw:
                 if not isinstance(ams_unit, dict):
                     continue
                 ams_id = ams_unit.get("id", "?")
                 if not ams_unit.get("sn") and not ams_unit.get("serial_number"):
-                    logger.warning(
-                        "[%s] AMS unit %s: serial number not available in version info",
-                        self.serial_number,
-                        ams_id,
-                    )
+                    key = (ams_id, "sn")
+                    if key not in self._ams_version_warned:
+                        self._ams_version_warned.add(key)
+                        logger.warning(
+                            "[%s] AMS unit %s: serial number not available in version info",
+                            self.serial_number,
+                            ams_id,
+                        )
                 if not ams_unit.get("sw_ver"):
-                    logger.warning(
-                        "[%s] AMS unit %s: firmware version not available in version info",
-                        self.serial_number,
-                        ams_id,
-                    )
+                    key = (ams_id, "sw_ver")
+                    if key not in self._ams_version_warned:
+                        self._ams_version_warned.add(key)
+                        logger.warning(
+                            "[%s] AMS unit %s: firmware version not available in version info",
+                            self.serial_number,
+                            ams_id,
+                        )
 
     def _apply_ams_version_cache(self, ams_list: list) -> None:
         """Apply cached AMS firmware/SN (from get_version) onto an AMS list in-place.

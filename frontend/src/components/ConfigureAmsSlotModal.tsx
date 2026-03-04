@@ -808,10 +808,11 @@ export function ConfigureAmsSlotModal({
   useEffect(() => {
     if (!isLoading && selectedPresetId && selectedPresetId !== scrolledToRef.current) {
       const raf = requestAnimationFrame(() => {
-        const el = document.querySelector(`[data-preset-id="${CSS.escape(selectedPresetId)}"]`);
+          const modal = document.querySelector('[class*="fixed inset-0 z-50"]');
+          const el = modal?.querySelector(`[data-preset-id="${CSS.escape(selectedPresetId)}"]`);
         if (el) {
           scrolledToRef.current = selectedPresetId;
-          el.scrollIntoView({ block: 'center' });
+          el.scrollIntoView({ block: 'nearest' });
         }
       });
       return () => cancelAnimationFrame(raf);

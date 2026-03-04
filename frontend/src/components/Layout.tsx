@@ -16,7 +16,6 @@ import { parseUTCDate } from '../utils/date';
 import { Button } from './Button';
 import { BugReportBubble } from './BugReportBubble';
 
-
 interface NavItem {
   id: string;
   to: string;

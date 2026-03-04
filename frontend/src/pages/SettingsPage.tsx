@@ -1082,7 +1082,7 @@ export function SettingsPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm text-bambu-gray mb-1">
-                    {t('settings.dateFormat')}
+                    Date Format
                   </label>
                   <div className="relative">
                     <select
@@ -1091,16 +1091,16 @@ export function SettingsPage() {
                       className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
                     >
                       <option value="system">{t('settings.systemDefault')}</option>
-                      <option value="us">{t('settings.dateFormatUs')}</option>
-                      <option value="eu">{t('settings.dateFormatEu')}</option>
-                      <option value="iso">{t('settings.dateFormatIso')}</option>
+                      <option value="us">US (MM/DD/YYYY)</option>
+                      <option value="eu">EU (DD/MM/YYYY)</option>
+                      <option value="iso">ISO (YYYY-MM-DD)</option>
                     </select>
                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
                   </div>
                 </div>
                 <div>
                   <label className="block text-sm text-bambu-gray mb-1">
-                    {t('settings.timeFormat')}
+                    Time Format
                   </label>
                   <div className="relative">
                     <select
@@ -1109,8 +1109,8 @@ export function SettingsPage() {
                       className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
                     >
                       <option value="system">{t('settings.systemDefault')}</option>
-                      <option value="12h">{t('settings.timeFormat12')}</option>
-                      <option value="24h">{t('settings.timeFormat24')}</option>
+                      <option value="12h">12-hour (3:30 PM)</option>
+                      <option value="24h">24-hour (15:30)</option>
                     </select>
                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
                   </div>
@@ -1118,7 +1118,7 @@ export function SettingsPage() {
               </div>
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
-                  {t('settings.defaultPrinter')}
+                  Default Printer
                 </label>
                 <div className="relative">
                   <select
@@ -1136,7 +1136,7 @@ export function SettingsPage() {
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
                 </div>
                 <p className="text-xs text-bambu-gray mt-1">
-                  {t('settings.defaultPrinterDescription')}
+                  Pre-select this printer for uploads, reprints, and other operations.
                 </p>
               </div>
               <div>
@@ -1149,8 +1149,8 @@ export function SettingsPage() {
                     onChange={(e) => updateSetting('preferred_slicer', e.target.value as 'bambu_studio' | 'orcaslicer')}
                     className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
                   >
-                    <option value="bambu_studio">{t('settings.slicerBambuStudio')}</option>
-                    <option value="orcaslicer">{t('settings.slicerOrcaSlicer')}</option>
+                    <option value="bambu_studio">Bambu Studio</option>
+                    <option value="orcaslicer">OrcaSlicer</option>
                   </select>
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
                 </div>
@@ -1162,7 +1162,7 @@ export function SettingsPage() {
                 <div>
                   <p className="text-white">{t('settings.sidebarOrder')}</p>
                   <p className="text-sm text-bambu-gray">
-                    {t('settings.sidebarOrderDescription')}
+                    Drag items in the sidebar to reorder. Reset to default order here.
                   </p>
                 </div>
                 <Button
@@ -1171,7 +1171,7 @@ export function SettingsPage() {
                   onClick={handleResetSidebarOrder}
                 >
                   <RotateCcw className="w-4 h-4" />
-                  {t('settings.reset')}
+                  Reset
                 </Button>
               </div>
             </CardContent>
@@ -1181,57 +1181,57 @@ export function SettingsPage() {
             <CardHeader>
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                 <Palette className="w-5 h-5" />
-                {t('settings.appearance')}
+                Appearance
               </h2>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Dark Mode Settings */}
               <div className={`space-y-3 p-4 rounded-lg border ${mode === 'dark' ? 'border-bambu-green bg-bambu-green/5' : 'border-bambu-dark-tertiary'}`}>
                 <h3 className="text-sm font-medium text-white flex items-center gap-2">
-                  {t('settings.darkMode')}
-                  {mode === 'dark' && <span className="text-xs text-bambu-green">{t('settings.active')}</span>}
+                  Dark Mode
+                  {mode === 'dark' && <span className="text-xs text-bambu-green">(active)</span>}
                 </h3>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-xs text-bambu-gray mb-1">{t('settings.background')}</label>
+                    <label className="block text-xs text-bambu-gray mb-1">Background</label>
                     <select
                       value={darkBackground}
                       onChange={(e) => { setDarkBackground(e.target.value as DarkBackground); showToast(t('settings.toast.settingsSaved'), 'success'); }}
                       className="w-full px-2 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     >
-                      <option value="neutral">{t('settings.bgNeutral')}</option>
-                      <option value="warm">{t('settings.bgWarm')}</option>
-                      <option value="cool">{t('settings.bgCool')}</option>
-                      <option value="oled">{t('settings.bgOled')}</option>
-                      <option value="slate">{t('settings.bgSlate')}</option>
-                      <option value="forest">{t('settings.bgForest')}</option>
+                      <option value="neutral">Neutral</option>
+                      <option value="warm">Warm</option>
+                      <option value="cool">Cool</option>
+                      <option value="oled">OLED Black</option>
+                      <option value="slate">Slate Blue</option>
+                      <option value="forest">Forest Green</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs text-bambu-gray mb-1">{t('settings.accent')}</label>
+                    <label className="block text-xs text-bambu-gray mb-1">Accent</label>
                     <select
                       value={darkAccent}
                       onChange={(e) => { setDarkAccent(e.target.value as ThemeAccent); showToast(t('settings.toast.settingsSaved'), 'success'); }}
                       className="w-full px-2 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     >
-                      <option value="green">{t('settings.accentGreen')}</option>
-                      <option value="teal">{t('settings.accentTeal')}</option>
-                      <option value="blue">{t('settings.accentBlue')}</option>
-                      <option value="orange">{t('settings.accentOrange')}</option>
-                      <option value="purple">{t('settings.accentPurple')}</option>
-                      <option value="red">{t('settings.accentRed')}</option>
+                      <option value="green">Green</option>
+                      <option value="teal">Teal</option>
+                      <option value="blue">Blue</option>
+                      <option value="orange">Orange</option>
+                      <option value="purple">Purple</option>
+                      <option value="red">Red</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs text-bambu-gray mb-1">{t('settings.style')}</label>
+                    <label className="block text-xs text-bambu-gray mb-1">Style</label>
                     <select
                       value={darkStyle}
                       onChange={(e) => { setDarkStyle(e.target.value as ThemeStyle); showToast(t('settings.toast.settingsSaved'), 'success'); }}
                       className="w-full px-2 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     >
-                      <option value="classic">{t('settings.styleClassic')}</option>
-                      <option value="glow">{t('settings.styleGlow')}</option>
-                      <option value="vibrant">{t('settings.styleVibrant')}</option>
+                      <option value="classic">Classic</option>
+                      <option value="glow">Glow</option>
+                      <option value="vibrant">Vibrant</option>
                     </select>
                   </div>
                 </div>
@@ -1240,54 +1240,54 @@ export function SettingsPage() {
               {/* Light Mode Settings */}
               <div className={`space-y-3 p-4 rounded-lg border ${mode === 'light' ? 'border-bambu-green bg-bambu-green/5' : 'border-bambu-dark-tertiary'}`}>
                 <h3 className="text-sm font-medium text-white flex items-center gap-2">
-                  {t('settings.lightMode')}
-                  {mode === 'light' && <span className="text-xs text-bambu-green">{t('settings.active')}</span>}
+                  Light Mode
+                  {mode === 'light' && <span className="text-xs text-bambu-green">(active)</span>}
                 </h3>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-xs text-bambu-gray mb-1">{t('settings.background')}</label>
+                    <label className="block text-xs text-bambu-gray mb-1">Background</label>
                     <select
                       value={lightBackground}
                       onChange={(e) => { setLightBackground(e.target.value as LightBackground); showToast(t('settings.toast.settingsSaved'), 'success'); }}
                       className="w-full px-2 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     >
-                      <option value="neutral">{t('settings.bgNeutral')}</option>
-                      <option value="warm">{t('settings.bgWarm')}</option>
-                      <option value="cool">{t('settings.bgCool')}</option>
+                      <option value="neutral">Neutral</option>
+                      <option value="warm">Warm</option>
+                      <option value="cool">Cool</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs text-bambu-gray mb-1">{t('settings.accent')}</label>
+                    <label className="block text-xs text-bambu-gray mb-1">Accent</label>
                     <select
                       value={lightAccent}
                       onChange={(e) => { setLightAccent(e.target.value as ThemeAccent); showToast(t('settings.toast.settingsSaved'), 'success'); }}
                       className="w-full px-2 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     >
-                      <option value="green">{t('settings.accentGreen')}</option>
-                      <option value="teal">{t('settings.accentTeal')}</option>
-                      <option value="blue">{t('settings.accentBlue')}</option>
-                      <option value="orange">{t('settings.accentOrange')}</option>
-                      <option value="purple">{t('settings.accentPurple')}</option>
-                      <option value="red">{t('settings.accentRed')}</option>
+                      <option value="green">Green</option>
+                      <option value="teal">Teal</option>
+                      <option value="blue">Blue</option>
+                      <option value="orange">Orange</option>
+                      <option value="purple">Purple</option>
+                      <option value="red">Red</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs text-bambu-gray mb-1">{t('settings.style')}</label>
+                    <label className="block text-xs text-bambu-gray mb-1">Style</label>
                     <select
                       value={lightStyle}
                       onChange={(e) => { setLightStyle(e.target.value as ThemeStyle); showToast(t('settings.toast.settingsSaved'), 'success'); }}
                       className="w-full px-2 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     >
-                      <option value="classic">{t('settings.styleClassic')}</option>
-                      <option value="glow">{t('settings.styleGlow')}</option>
-                      <option value="vibrant">{t('settings.styleVibrant')}</option>
+                      <option value="classic">Classic</option>
+                      <option value="glow">Glow</option>
+                      <option value="vibrant">Vibrant</option>
                     </select>
                   </div>
                 </div>
               </div>
 
               <p className="text-xs text-bambu-gray">
-                {t('settings.themeToggleHint')}
+                Toggle between dark and light mode using the sun/moon icon in the sidebar.
               </p>
             </CardContent>
           </Card>
@@ -1299,9 +1299,9 @@ export function SettingsPage() {
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-white">{t('settings.autoArchivePrints')}</p>
+                  <p className="text-white">Auto-archive prints</p>
                   <p className="text-sm text-bambu-gray">
-                    {t('settings.autoArchiveDescription')}
+                    Automatically save 3MF files when prints complete
                   </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -1318,7 +1318,7 @@ export function SettingsPage() {
                 <div>
                   <p className="text-white">{t('settings.saveThumbnails')}</p>
                   <p className="text-sm text-bambu-gray">
-                    {t('settings.saveThumbnailsDescription')}
+                    Extract and save preview images from 3MF files
                   </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -1335,7 +1335,7 @@ export function SettingsPage() {
                 <div>
                   <p className="text-white">{t('settings.captureFinishPhoto')}</p>
                   <p className="text-sm text-bambu-gray">
-                    {t('settings.captureFinishPhotoDescription')}
+                    Take a photo from printer camera when print completes
                   </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -1352,9 +1352,11 @@ export function SettingsPage() {
                 <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                   <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />
                   <div className="text-sm">
-                    <p className="text-yellow-500 font-medium">{t('settings.ffmpegNotInstalled')}</p>
+                    <p className="text-yellow-500 font-medium">ffmpeg not installed</p>
                     <p className="text-bambu-gray mt-1">
-                      {t('settings.ffmpegRequired')}
+                      Camera capture requires ffmpeg. Install it via{' '}
+                      <code className="bg-bambu-dark-tertiary px-1 rounded">brew install ffmpeg</code> (macOS) or{' '}
+                      <code className="bg-bambu-dark-tertiary px-1 rounded">apt install ffmpeg</code> (Linux).
                     </p>
                   </div>
                 </div>
@@ -1371,13 +1373,13 @@ export function SettingsPage() {
             <CardHeader>
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                 <Video className="w-5 h-5 text-bambu-green" />
-                {t('settings.camera')}
+                Camera
               </h2>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
-                  {t('settings.cameraViewMode')}
+                  Camera View Mode
                 </label>
                 <select
                   value={localSettings.camera_view_mode ?? 'window'}
@@ -1389,8 +1391,8 @@ export function SettingsPage() {
                 </select>
                 <p className="text-xs text-bambu-gray mt-1">
                   {localSettings.camera_view_mode === 'embedded'
-                    ? t('settings.cameraOverlayDescription')
-                    : t('settings.cameraWindowDescription')}
+                    ? 'Camera opens in a resizable overlay on the main screen'
+                    : 'Camera opens in a separate browser window'}
                 </p>
               </div>
 
@@ -1398,7 +1400,7 @@ export function SettingsPage() {
               <div className="border-t border-bambu-dark-tertiary pt-4 mt-4">
                 <h3 className="text-sm font-medium text-white mb-2">{t('settings.externalCameras')}</h3>
                 <p className="text-xs text-bambu-gray mb-3">
-                  {t('settings.externalCamerasDescription')}
+                  Configure external cameras to replace the built-in printer camera. Supports MJPEG streams, RTSP, HTTP snapshots, and USB cameras (V4L2). When enabled, the external camera is used for live view and finish photos.
                 </p>
 
                 {printers && printers.length > 0 ? (
@@ -1422,7 +1424,7 @@ export function SettingsPage() {
                           <div className="space-y-2 mt-2">
                             <input
                               type="text"
-                              placeholder={printer.external_camera_type === 'usb' ? t('settings.cameraPlaceholderUsb') : t('settings.cameraPlaceholderUrl')}
+                              placeholder={printer.external_camera_type === 'usb' ? 'Device path (/dev/video0)' : 'Camera URL (rtsp://... or http://...)'}
                               value={localCameraUrls[printer.id] ?? printer.external_camera_url ?? ''}
                               onChange={(e) => handleCameraUrlChange(printer.id, e.target.value)}
                               className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
@@ -1433,10 +1435,10 @@ export function SettingsPage() {
                                 onChange={(e) => handleUpdatePrinterCamera(printer.id, { type: e.target.value })}
                                 className="flex-1 px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
                               >
-                                <option value="mjpeg">{t('settings.cameraTypeMjpeg')}</option>
-                                <option value="rtsp">{t('settings.cameraTypeRtsp')}</option>
-                                <option value="snapshot">{t('settings.cameraTypeSnapshot')}</option>
-                                <option value="usb">{t('settings.cameraTypeUsb')}</option>
+                                <option value="mjpeg">MJPEG Stream</option>
+                                <option value="rtsp">RTSP Stream</option>
+                                <option value="snapshot">HTTP Snapshot</option>
+                                <option value="usb">USB Camera (V4L2)</option>
                               </select>
                               <Button
                                 size="sm"
@@ -1447,7 +1449,7 @@ export function SettingsPage() {
                                 {extCameraTestLoading[printer.id] ? (
                                   <Loader2 className="w-4 h-4 animate-spin" />
                                 ) : (
-                                  t('settings.test')
+                                  'Test'
                                 )}
                               </Button>
                             </div>
@@ -1456,7 +1458,7 @@ export function SettingsPage() {
                                 {extCameraTestResults[printer.id]?.success ? (
                                   <>
                                     <CheckCircle className="w-3 h-3" />
-                                    {t('settings.connected')}{extCameraTestResults[printer.id]?.resolution && ` (${extCameraTestResults[printer.id]?.resolution})`}
+                                    Connected{extCameraTestResults[printer.id]?.resolution && ` (${extCameraTestResults[printer.id]?.resolution})`}
                                   </>
                                 ) : (
                                   <>
@@ -1485,7 +1487,7 @@ export function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <label className="block text-sm text-bambu-gray mb-1">{t('settings.currency')}</label>
+                <label className="block text-sm text-bambu-gray mb-1">Currency</label>
                 <select
                   value={localSettings.currency}
                   onChange={(e) => updateSetting('currency', e.target.value)}
@@ -1498,7 +1500,7 @@ export function SettingsPage() {
               </div>
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
-                  {t('settings.defaultFilamentCost')}
+                  Default filament cost (per kg)
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-bambu-gray text-sm pointer-events-none">
@@ -1519,7 +1521,7 @@ export function SettingsPage() {
               </div>
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
-                  {t('settings.electricityCost')}
+                  Electricity cost per kWh
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-bambu-gray text-sm pointer-events-none">
@@ -1540,7 +1542,7 @@ export function SettingsPage() {
               </div>
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
-                  {t('settings.energyDisplayMode')}
+                  Energy display mode
                 </label>
                 <select
                   value={localSettings.energy_tracking_mode || 'total'}
@@ -1552,8 +1554,8 @@ export function SettingsPage() {
                 </select>
                 <p className="text-xs text-bambu-gray mt-1">
                   {localSettings.energy_tracking_mode === 'print'
-                    ? t('settings.energyModePrintDescription')
-                    : t('settings.energyModeTotalDescription')}
+                    ? 'Dashboard shows sum of energy used during prints'
+                    : 'Dashboard shows lifetime energy from smart plugs'}
                 </p>
               </div>
             </CardContent>
@@ -1564,14 +1566,14 @@ export function SettingsPage() {
             <CardHeader>
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                 <FileText className="w-5 h-5 text-bambu-green" />
-                {t('settings.fileManager')}
+                File Manager
               </h2>
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Archive Mode */}
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
-                  {t('settings.createArchiveEntry')}
+                  Create Archive Entry When Printing
                 </label>
                 <select
                   value={localSettings.library_archive_mode ?? 'ask'}
@@ -1583,14 +1585,14 @@ export function SettingsPage() {
                   <option value="ask">{t('settings.archiveMode.ask')}</option>
                 </select>
                 <p className="text-xs text-bambu-gray mt-1">
-                  {t('settings.createArchiveEntryDescription')}
+                  When printing from File Manager, optionally create an archive entry
                 </p>
               </div>
 
               {/* Disk Space Warning Threshold */}
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
-                  {t('settings.lowDiskSpaceWarning')}
+                  Low Disk Space Warning
                 </label>
                 <div className="flex items-center gap-2">
                   <input
@@ -1605,7 +1607,7 @@ export function SettingsPage() {
                   <span className="text-bambu-gray">GB</span>
                 </div>
                 <p className="text-xs text-bambu-gray mt-1">
-                  {t('settings.lowDiskSpaceDescription')}
+                  Show warning when free disk space falls below this threshold
                 </p>
               </div>
             </CardContent>
@@ -1619,15 +1621,15 @@ export function SettingsPage() {
 
           <Card>
             <CardHeader>
-              <h2 className="text-lg font-semibold text-white">{t('settings.updates')}</h2>
+              <h2 className="text-lg font-semibold text-white">Updates</h2>
             </CardHeader>
             <CardContent className="space-y-4">
-              <p className="text-xs font-medium text-bambu-gray uppercase tracking-wider">{t('settings.printerFirmware')}</p>
+              <p className="text-xs font-medium text-bambu-gray uppercase tracking-wider">Printer Firmware</p>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-white">{t('settings.checkPrinterFirmware')}</p>
                   <p className="text-sm text-bambu-gray">
-                    {t('settings.checkFirmwareDescription')}
+                    Check for printer firmware updates from Bambu Lab
                   </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -1641,13 +1643,13 @@ export function SettingsPage() {
                 </label>
               </div>
               <div className="border-t border-bambu-dark-tertiary pt-4">
-                <p className="text-xs font-medium text-bambu-gray uppercase tracking-wider mb-4">{t('settings.bambuddySoftware')}</p>
+                <p className="text-xs font-medium text-bambu-gray uppercase tracking-wider mb-4">Bambuddy Software</p>
               </div>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-white">{t('settings.checkForUpdatesLabel')}</p>
                   <p className="text-sm text-bambu-gray">
-                    {t('settings.autoCheckDescription')}
+                    Automatically check for new versions on startup
                   </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -1695,7 +1697,7 @@ export function SettingsPage() {
                     ) : (
                       <RefreshCw className="w-4 h-4" />
                     )}
-                    {t('settings.checkNow')}
+                    Check now
                   </Button>
                 </div>
 
@@ -1716,7 +1718,7 @@ export function SettingsPage() {
                             onClick={() => setShowReleaseNotes(true)}
                             className="text-bambu-gray hover:text-white transition-colors text-sm underline"
                           >
-                            {t('settings.releaseNotes')}
+                            Release Notes
                           </button>
                         )}
                         {updateCheck.release_url && (
@@ -1757,7 +1759,7 @@ export function SettingsPage() {
                     ) : updateCheck?.is_docker ? (
                       <div className="mt-3 p-3 bg-bambu-dark-tertiary rounded-lg">
                         <p className="text-sm text-bambu-gray mb-2">
-                          {t('settings.updateViaDocker')}
+                          Update via Docker Compose:
                         </p>
                         <code className="block text-xs bg-bambu-dark p-2 rounded text-bambu-green font-mono">
                           docker compose pull && docker compose up -d
@@ -1774,17 +1776,17 @@ export function SettingsPage() {
                         ) : (
                           <Download className="w-4 h-4" />
                         )}
-                        {t('settings.installUpdate')}
+                        Install Update
                       </Button>
                     )}
                   </div>
                 ) : updateCheck?.error ? (
                   <div className="mt-2 p-2 bg-red-500/10 border border-red-500/30 rounded text-sm text-red-400">
-                    {t('settings.failedToCheckUpdates', { error: updateCheck.error })}
+                    Failed to check for updates: {updateCheck.error}
                   </div>
                 ) : updateCheck && !updateCheck.update_available ? (
                   <p className="mt-2 text-sm text-bambu-gray">
-                    {t('settings.latestVersionRunning')}
+                    You're running the latest version
                   </p>
                 ) : null}
               </div>
@@ -1826,7 +1828,7 @@ export function SettingsPage() {
                   onClick={() => setShowClearStorageConfirm(true)}
                 >
                   <Trash2 className="w-4 h-4" />
-                  {t('settings.reset')}
+                  Reset
                 </Button>
               </div>
               <div className="pt-4 border-t border-bambu-dark-tertiary">
@@ -1932,9 +1934,9 @@ export function SettingsPage() {
               </div>
               <div className="flex items-center justify-between pt-4 border-t border-bambu-dark-tertiary">
                 <div>
-                  <p className="text-white">{t('settings.backupRestore')}</p>
+                  <p className="text-white">Backup & Restore</p>
                   <p className="text-sm text-bambu-gray">
-                    {t('settings.backupRestoreDescription')}
+                    Export/import settings and configure GitHub backup
                   </p>
                 </div>
                 <Button
@@ -1943,7 +1945,7 @@ export function SettingsPage() {
                   onClick={() => handleTabChange('backup')}
                 >
                   <Database className="w-4 h-4" />
-                  {t('settings.goToBackup')}
+                  Go to Backup
                 </Button>
               </div>
             </CardContent>
@@ -1962,16 +1964,16 @@ export function SettingsPage() {
             <CardHeader>
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                 <Globe className="w-5 h-5 text-blue-400" />
-                {t('settings.externalUrl')}
+                External URL
               </h2>
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-bambu-gray">
-                {t('settings.externalUrlDescription')}
+                The external URL where Bambuddy is accessible. Used for notification images and external integrations.
               </p>
               <div>
                 <label className="block text-sm text-bambu-gray mb-1">
-                  {t('settings.bambuddyUrl')}
+                  Bambuddy URL
                 </label>
                 <input
                   type="text"
@@ -1981,7 +1983,7 @@ export function SettingsPage() {
                   className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 />
                 <p className="text-xs text-bambu-gray mt-1">
-                  {t('settings.externalUrlHint')}
+                  Include protocol and port (e.g., http://192.168.1.100:8000)
                 </p>
               </div>
             </CardContent>
@@ -1991,19 +1993,19 @@ export function SettingsPage() {
             <CardHeader>
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                 <RefreshCw className="w-5 h-5 text-blue-400" />
-                {t('settings.ftpRetry')}
+                FTP Retry
               </h2>
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-bambu-gray">
-                {t('settings.ftpRetryDescription')}
+                Retry FTP operations when printer WiFi is unreliable. Applies to 3MF downloads, print uploads, timelapse downloads, and firmware updates.
               </p>
 
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-white">{t('settings.enableRetry')}</p>
                   <p className="text-sm text-bambu-gray">
-                    {t('settings.autoRetryDescription')}
+                    Automatically retry failed FTP operations
                   </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -2021,7 +2023,7 @@ export function SettingsPage() {
                 <div className="space-y-4 pt-2 border-t border-bambu-dark-tertiary">
                   <div>
                     <label className="block text-sm text-bambu-gray mb-1">
-                      {t('settings.retryAttempts')}
+                      Retry attempts
                     </label>
                     <div className="relative w-44">
                       <select
@@ -2030,7 +2032,7 @@ export function SettingsPage() {
                         className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
                       >
                         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
-                          <option key={n} value={n}>{t('settings.time', { count: n })}</option>
+                          <option key={n} value={n}>{n} {n === 1 ? 'time' : 'times'}</option>
                         ))}
                       </select>
                       <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
@@ -2039,7 +2041,7 @@ export function SettingsPage() {
 
                   <div>
                     <label className="block text-sm text-bambu-gray mb-1">
-                      {t('settings.retryDelay')}
+                      Retry delay
                     </label>
                     <div className="relative w-44">
                       <select
@@ -2048,7 +2050,7 @@ export function SettingsPage() {
                         className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
                       >
                         {[1, 2, 3, 5, 10, 15, 20, 30].map(n => (
-                          <option key={n} value={n}>{t('settings.second', { count: n })}</option>
+                          <option key={n} value={n}>{n} {n === 1 ? 'second' : 'seconds'}</option>
                         ))}
                       </select>
                       <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
@@ -2056,7 +2058,7 @@ export function SettingsPage() {
                   </div>
                   <div>
                     <label className="block text-sm text-bambu-gray mb-1">
-                      {t('settings.connectionTimeout')}
+                      Connection timeout
                     </label>
                     <div className="relative w-44">
                       <select
@@ -2065,13 +2067,13 @@ export function SettingsPage() {
                         className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
                       >
                         {[10, 15, 20, 30, 45, 60, 90, 120].map(n => (
-                          <option key={n} value={n}>{t('settings.nSeconds', { count: n })}</option>
+                          <option key={n} value={n}>{n} seconds</option>
                         ))}
                       </select>
                       <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
                     </div>
                     <p className="text-xs text-bambu-gray mt-1">
-                      {t('settings.increaseForWeakWifi')}
+                      Increase for printers with weak WiFi
                     </p>
                   </div>
                 </div>
@@ -2089,13 +2091,13 @@ export function SettingsPage() {
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                   <Home className="w-5 h-5 text-bambu-green" />
-                  {t('settings.homeAssistant')}
+                  Home Assistant
                 </h2>
                 {localSettings.ha_enabled && haTestResult && (
                   <div className="flex items-center gap-2">
                     <span className={`w-2.5 h-2.5 rounded-full ${haTestResult.success ? 'bg-green-400' : 'bg-red-400'}`} />
                     <span className={`text-sm ${haTestResult.success ? 'text-green-400' : 'text-red-400'}`}>
-                      {haTestResult.success ? t('settings.connected') : t('settings.disconnected')}
+                      {haTestResult.success ? 'Connected' : 'Disconnected'}
                     </span>
                   </div>
                 )}
@@ -2103,7 +2105,7 @@ export function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-bambu-gray">
-                {t('settings.homeAssistantFullDescription')}
+                Connect to Home Assistant to control smart plugs via HA's REST API. Supports switch, light, input_boolean, and script entities.
               </p>
 
               <div className="flex items-center justify-between">
@@ -2137,7 +2139,7 @@ export function SettingsPage() {
                 <>
                   <div>
                     <label className="block text-sm text-bambu-gray mb-1">
-                      {t('settings.homeAssistantUrl')}
+                      Home Assistant URL
                       {localSettings.ha_url_from_env && (
                         <span className="ml-2 text-xs text-bambu-green">
                           {t('settings.environmentManagedLabel')}
@@ -2168,7 +2170,7 @@ export function SettingsPage() {
 
                   <div>
                     <label className="block text-sm text-bambu-gray mb-1">
-                      {t('settings.longLivedAccessToken')}
+                      Long-Lived Access Token
                       {localSettings.ha_token_from_env && (
                         <span className="ml-2 text-xs text-bambu-green">
                           {t('settings.environmentManagedLabel')}
@@ -2196,7 +2198,7 @@ export function SettingsPage() {
                       </p>
                     ) : (
                       <p className="text-xs text-bambu-gray mt-1">
-                        {t('settings.haTokenHint')}
+                        Create a token in HA: Profile → Long-Lived Access Tokens → Create Token
                       </p>
                     )}
                   </div>
@@ -2236,13 +2238,13 @@ export function SettingsPage() {
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                   <Wifi className="w-5 h-5 text-blue-400" />
-                  {t('settings.mqttPublishing')}
+                  MQTT Publishing
                 </h2>
                 {mqttStatus?.enabled && (
                   <div className="flex items-center gap-2">
                     <span className={`w-2.5 h-2.5 rounded-full ${mqttStatus.connected ? 'bg-green-400' : 'bg-red-400'}`} />
                     <span className={`text-sm ${mqttStatus.connected ? 'text-green-400' : 'text-red-400'}`}>
-                      {mqttStatus.connected ? t('settings.connected') : t('settings.disconnected')}
+                      {mqttStatus.connected ? 'Connected' : 'Disconnected'}
                     </span>
                   </div>
                 )}
@@ -2250,14 +2252,14 @@ export function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-bambu-gray">
-                {t('settings.mqttDescription')}
+                Publish BamBuddy events to an external MQTT broker for integration with Node-RED, Home Assistant, and other automation systems.
               </p>
 
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-white">{t('settings.enableMqtt')}</p>
                   <p className="text-sm text-bambu-gray">
-                    {t('settings.mqttEnableDescription')}
+                    Publish events to external MQTT broker
                   </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -2275,7 +2277,7 @@ export function SettingsPage() {
                 <div className="space-y-4 pt-2 border-t border-bambu-dark-tertiary">
                   <div>
                     <label className="block text-sm text-bambu-gray mb-1">
-                      {t('settings.brokerHostname')}
+                      Broker hostname
                     </label>
                     <input
                       type="text"
@@ -2289,7 +2291,7 @@ export function SettingsPage() {
                   <div className="flex items-end gap-4">
                     <div className="flex-1">
                       <label className="block text-sm text-bambu-gray mb-1">
-                        {t('settings.port')}
+                        Port
                       </label>
                       <input
                         type="number"
@@ -2326,7 +2328,7 @@ export function SettingsPage() {
 
                   <div>
                     <label className="block text-sm text-bambu-gray mb-1">
-                      {t('settings.usernameOptional')}
+                      Username (optional)
                     </label>
                     <input
                       type="text"
@@ -2339,7 +2341,7 @@ export function SettingsPage() {
 
                   <div>
                     <label className="block text-sm text-bambu-gray mb-1">
-                      {t('settings.passwordOptional')}
+                      Password (optional)
                     </label>
                     <input
                       type="password"
@@ -2352,7 +2354,7 @@ export function SettingsPage() {
 
                   <div>
                     <label className="block text-sm text-bambu-gray mb-1">
-                      {t('settings.topicPrefix')}
+                      Topic prefix
                     </label>
                     <input
                       type="text"
@@ -2362,7 +2364,7 @@ export function SettingsPage() {
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     />
                     <p className="text-xs text-bambu-gray mt-1">
-                      {t('settings.topicPrefixHint', { prefix: localSettings.mqtt_topic_prefix || 'bambuddy' })}
+                      Topics will be: {localSettings.mqtt_topic_prefix || 'bambuddy'}/printers/&lt;serial&gt;/status, etc.
                     </p>
                   </div>
 
@@ -2393,12 +2395,12 @@ export function SettingsPage() {
             <CardHeader>
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                 <TrendingUp className="w-5 h-5 text-orange-400" />
-                {t('settings.prometheusMetrics')}
+                Prometheus Metrics
               </h2>
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-bambu-gray">
-                {t('settings.prometheusEndpointDescription')}
+                Expose printer metrics at <code className="bg-bambu-dark px-1 rounded">/api/v1/metrics</code> for Prometheus/Grafana monitoring.
               </p>
 
               <div className="flex items-center justify-between">
@@ -2421,7 +2423,7 @@ export function SettingsPage() {
                 <div className="space-y-4 pt-2 border-t border-bambu-dark-tertiary">
                   <div>
                     <label className="block text-sm text-bambu-gray mb-1">
-                      {t('settings.bearerTokenOptional')}
+                      Bearer Token (optional)
                     </label>
                     <input
                       type="password"
@@ -2431,20 +2433,20 @@ export function SettingsPage() {
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     />
                     <p className="text-xs text-bambu-gray mt-1">
-                      {t('settings.bearerTokenHint')}
+                      If set, requests must include <code className="bg-bambu-dark px-1 rounded">Authorization: Bearer &lt;token&gt;</code>
                     </p>
                   </div>
 
                   <div className="pt-2 border-t border-bambu-dark-tertiary">
                     <p className="text-sm text-white mb-2">{t('settings.availableMetrics')}</p>
                     <div className="text-xs text-bambu-gray space-y-1">
-                      <p><code className="text-orange-400">bambuddy_printer_connected</code> - {t('settings.metricsConnectionStatus')}</p>
-                      <p><code className="text-orange-400">bambuddy_printer_state</code> - {t('settings.metricsPrinterState')}</p>
-                      <p><code className="text-orange-400">bambuddy_print_progress</code> - {t('settings.metricsPrintProgress')}</p>
-                      <p><code className="text-orange-400">bambuddy_bed_temp_celsius</code> - {t('settings.metricsBedTemp')}</p>
-                      <p><code className="text-orange-400">bambuddy_nozzle_temp_celsius</code> - {t('settings.metricsNozzleTemp')}</p>
-                      <p><code className="text-orange-400">bambuddy_prints_total</code> - {t('settings.metricsPrintsTotal')}</p>
-                      <p className="text-bambu-gray/70 italic">{t('settings.metricsMore')}</p>
+                      <p><code className="text-orange-400">bambuddy_printer_connected</code> - Connection status</p>
+                      <p><code className="text-orange-400">bambuddy_printer_state</code> - Printer state (idle/printing/etc)</p>
+                      <p><code className="text-orange-400">bambuddy_print_progress</code> - Print progress 0-100%</p>
+                      <p><code className="text-orange-400">bambuddy_bed_temp_celsius</code> - Bed temperature</p>
+                      <p><code className="text-orange-400">bambuddy_nozzle_temp_celsius</code> - Nozzle temperature</p>
+                      <p><code className="text-orange-400">bambuddy_prints_total</code> - Total prints by result</p>
+                      <p className="text-bambu-gray/70 italic">...and more (layers, fans, queue, filament usage)</p>
                     </div>
                   </div>
                 </div>
@@ -2466,20 +2468,20 @@ export function SettingsPage() {
                 <XCircle className="w-8 h-8 text-red-400" />
               )}
               <h3 className="text-lg font-medium text-white">
-                {haTestResult.success ? t('settings.connectionSuccessful') : t('settings.connectionFailed')}
+                {haTestResult.success ? 'Connection Successful' : 'Connection Failed'}
               </h3>
             </div>
             <p className="text-bambu-gray mb-6">
               {haTestResult.success
-                ? haTestResult.message || t('settings.haConnectionSuccess')
-                : haTestResult.error || t('settings.haConnectionFailed')}
+                ? haTestResult.message || 'Successfully connected to Home Assistant.'
+                : haTestResult.error || 'Failed to connect to Home Assistant.'}
             </p>
             <div className="flex justify-end">
               <Button
                 variant="primary"
                 onClick={() => setHaTestResult(null)}
               >
-                {t('settings.ok')}
+                OK
               </Button>
             </div>
           </div>
@@ -2493,10 +2495,10 @@ export function SettingsPage() {
             <div>
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                 <Plug className="w-5 h-5 text-bambu-green" />
-                {t('settings.smartPlugs')}
+                Smart Plugs
               </h2>
               <p className="text-sm text-bambu-gray mt-1">
-                {t('settings.smartPlugsDescription')}
+                Connect smart plugs (Tasmota or Home Assistant) to automate power control and track energy usage for your printers.
               </p>
             </div>
             <div className="flex items-center gap-2 pt-1 shrink-0">
@@ -2515,7 +2517,7 @@ export function SettingsPage() {
                     ) : (
                       <Power className="w-4 h-4 text-bambu-green" />
                     )}
-                    {t('settings.allOn')}
+                    All On
                   </Button>
                   <Button
                     variant="secondary"
@@ -2530,7 +2532,7 @@ export function SettingsPage() {
                     ) : (
                       <PowerOff className="w-4 h-4 text-red-400" />
                     )}
-                    {t('settings.allOff')}
+                    All Off
                   </Button>
                 </>
               )}
@@ -2542,7 +2544,7 @@ export function SettingsPage() {
                 }}
               >
                 <Plus className="w-4 h-4" />
-                {t('settings.addSmartPlug')}
+                Add Smart Plug
               </Button>
             </div>
           </div>
@@ -2553,7 +2555,7 @@ export function SettingsPage() {
               <CardHeader>
                 <h3 className="text-base font-semibold text-white flex items-center gap-2">
                   <Zap className="w-4 h-4 text-yellow-400" />
-                  {t('settings.energySummary')}
+                  Energy Summary
                   {energyLoading && (
                     <Loader2 className="w-4 h-4 animate-spin text-bambu-gray ml-2" />
                   )}
@@ -2566,14 +2568,14 @@ export function SettingsPage() {
                     <div className="bg-bambu-dark rounded-lg p-3">
                       <div className="flex items-center gap-2 text-bambu-gray text-xs mb-1">
                         <Zap className="w-3 h-3" />
-                        {t('settings.currentPower')}
+                        Current Power
                       </div>
                       <div className="text-xl font-bold text-white">
                         {plugEnergySummary.totalPower.toFixed(1)}
                         <span className="text-sm font-normal text-bambu-gray ml-1">W</span>
                       </div>
                       <div className="text-xs text-bambu-gray mt-1">
-                        {t('settings.plugsOnline', { reachable: plugEnergySummary.reachableCount, total: plugEnergySummary.totalPlugs })}
+                        {plugEnergySummary.reachableCount}/{plugEnergySummary.totalPlugs} plugs online
                       </div>
                     </div>
 
@@ -2581,7 +2583,7 @@ export function SettingsPage() {
                     <div className="bg-bambu-dark rounded-lg p-3">
                       <div className="flex items-center gap-2 text-bambu-gray text-xs mb-1">
                         <Calendar className="w-3 h-3" />
-                        {t('settings.today')}
+                        Today
                       </div>
                       <div className="text-xl font-bold text-white">
                         {plugEnergySummary.totalToday.toFixed(3)}
@@ -2598,7 +2600,7 @@ export function SettingsPage() {
                     <div className="bg-bambu-dark rounded-lg p-3">
                       <div className="flex items-center gap-2 text-bambu-gray text-xs mb-1">
                         <TrendingUp className="w-3 h-3" />
-                        {t('settings.yesterday')}
+                        Yesterday
                       </div>
                       <div className="text-xl font-bold text-white">
                         {plugEnergySummary.totalYesterday.toFixed(3)}
@@ -2615,7 +2617,7 @@ export function SettingsPage() {
                     <div className="bg-bambu-dark rounded-lg p-3">
                       <div className="flex items-center gap-2 text-bambu-gray text-xs mb-1">
                         <DollarSign className="w-3 h-3" />
-                        {t('settings.total')}
+                        Total
                       </div>
                       <div className="text-xl font-bold text-white">
                         {plugEnergySummary.totalLifetime.toFixed(1)}
@@ -2630,7 +2632,7 @@ export function SettingsPage() {
                   </div>
                 ) : !energyLoading ? (
                   <p className="text-sm text-bambu-gray">
-                    {t('settings.enablePlugsForSummary')}
+                    Enable plugs to see energy summary
                   </p>
                 ) : null}
               </CardContent>
@@ -2722,7 +2724,7 @@ export function SettingsPage() {
                   }}
                 >
                   <Plus className="w-4 h-4" />
-                  {t('settings.addNotificationProvider')}
+                  Add
                 </Button>
               </div>
             </div>
@@ -3979,7 +3981,7 @@ export function SettingsPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-white mb-2">{t('settings.groups')}</label>
+                  <label className="block text-sm font-medium text-white mb-2">Groups</label>
                   <div className="space-y-2 max-h-40 overflow-y-auto p-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
                     {groupsData.map(group => (
                       <label
@@ -3994,7 +3996,7 @@ export function SettingsPage() {
                         />
                         <span className="text-sm text-white">{group.name}</span>
                         {group.is_system && (
-                          <span className="text-xs text-yellow-400">{t('settings.systemBadge')}</span>
+                          <span className="text-xs text-yellow-400">(System)</span>
                         )}
                       </label>
                     ))}
@@ -4012,7 +4014,7 @@ export function SettingsPage() {
                     setUserFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
                   }}
                 >
-                  {t('common.cancel')}
+                  Cancel
                 </Button>
                 <Button
                   onClick={handleCreateUser}
@@ -4021,12 +4023,12 @@ export function SettingsPage() {
                   {createUserMutation.isPending ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      {t('settings.creating')}
+                      Creating...
                     </>
                   ) : (
                     <>
                       <Plus className="w-4 h-4" />
-                      {t('settings.createUser')}
+                      Create User
                     </>
                   )}
                 </Button>
@@ -4294,7 +4296,7 @@ export function SettingsPage() {
                       disabled={deleteUserMutation.isPending}
                       className="justify-center"
                     >
-                      {t('settings.deleteUserAndItems')}
+                      Delete user AND their items
                     </Button>
                     <Button
                       variant="secondary"
@@ -4302,7 +4304,7 @@ export function SettingsPage() {
                       disabled={deleteUserMutation.isPending}
                       className="justify-center"
                     >
-                      {t('settings.deleteUserKeepItems')}
+                      Delete user, keep items (become ownerless)
                     </Button>
                     <Button
                       variant="ghost"
@@ -4313,7 +4315,7 @@ export function SettingsPage() {
                       disabled={deleteUserMutation.isPending}
                       className="justify-center"
                     >
-                      {t('common.cancel')}
+                      Cancel
                     </Button>
                   </div>
                 </>
@@ -4330,14 +4332,14 @@ export function SettingsPage() {
                       }}
                       disabled={deleteUserMutation.isPending}
                     >
-                      {t('common.cancel')}
+                      Cancel
                     </Button>
                     <Button
                       variant="danger"
                       onClick={() => deleteUserMutation.mutate({ id: deleteUserId, deleteItems: false })}
                       disabled={deleteUserMutation.isPending}
                     >
-                      {t('settings.deleteUserTitle')}
+                      Delete User
                     </Button>
                   </div>
                 </>
@@ -4481,7 +4483,7 @@ export function SettingsPage() {
                     setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
                   }}
                 >
-                  {t('common.cancel')}
+                  Cancel
                 </Button>
                 <Button
                   onClick={async () => {
@@ -4511,12 +4513,12 @@ export function SettingsPage() {
                   {changePasswordLoading ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      {t('settings.changing')}
+                      Changing...
                     </>
                   ) : (
                     <>
                       <Key className="w-4 h-4" />
-                      {t('settings.changePassword')}
+                      Change Password
                     </>
                   )}
                 </Button>

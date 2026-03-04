@@ -153,6 +153,10 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     db.add(spool)
     await db.flush()
 
+    # Eagerly set k_profiles so callers (auto_assign_spool) don't trigger
+    # a lazy load in async context (greenlet_spawn error).
+    spool.k_profiles = []
+
     logger.info(
         "Auto-created spool %d from AMS tray data: %s %s %s (tag=%s uuid=%s)",
         spool.id,

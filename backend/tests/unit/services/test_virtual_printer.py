@@ -156,127 +156,6 @@ class TestVirtualPrinterInstance:
 
             assert "verify_job" not in instance._pending_files
 
-    # ========================================================================
-    # Tests for auto_dispatch
-    # ========================================================================
-
-    def test_auto_dispatch_defaults_to_true(self, tmp_path):
-        """Verify auto_dispatch defaults to True when not specified."""
-        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
-
-        inst = VirtualPrinterInstance(
-            vp_id=10,
-            name="DefaultDispatch",
-            mode="print_queue",
-            model="C11",
-            access_code="12345678",
-            serial_suffix="391800010",
-            base_dir=tmp_path,
-        )
-        assert inst.auto_dispatch is True
-
-    @pytest.mark.asyncio
-    async def test_add_to_print_queue_with_auto_dispatch_on(self, tmp_path):
-        """Verify queue items have manual_start=False when auto_dispatch=True."""
-        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
-
-        mock_db = AsyncMock()
-        added_items = []
-
-        def capture_add(item):
-            added_items.append(item)
-
-        mock_db.add = MagicMock(side_effect=capture_add)
-        mock_db.commit = AsyncMock()
-
-        mock_session_factory = MagicMock()
-        mock_session_ctx = AsyncMock()
-        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
-        mock_session_factory.return_value = mock_session_ctx
-
-        inst = VirtualPrinterInstance(
-            vp_id=11,
-            name="AutoDispatchOn",
-            mode="print_queue",
-            model="C11",
-            access_code="12345678",
-            serial_suffix="391800011",
-            auto_dispatch=True,
-            base_dir=tmp_path,
-            session_factory=mock_session_factory,
-        )
-
-        # Create a temp 3mf file
-        file_path = tmp_path / "test.3mf"
-        file_path.write_bytes(b"fake3mf")
-
-        mock_archive = MagicMock()
-        mock_archive.id = 1
-        mock_archive.print_name = "test"
-
-        with patch(
-            "backend.app.services.archive.ArchiveService.archive_print",
-            new_callable=AsyncMock,
-            return_value=mock_archive,
-        ):
-            await inst._add_to_print_queue(file_path, "192.168.1.100")
-
-        assert len(added_items) == 1
-        queue_item = added_items[0]
-        assert queue_item.manual_start is False
-
-    @pytest.mark.asyncio
-    async def test_add_to_print_queue_with_auto_dispatch_off(self, tmp_path):
-        """Verify queue items have manual_start=True when auto_dispatch=False."""
-        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
-
-        mock_db = AsyncMock()
-        added_items = []
-
-        def capture_add(item):
-            added_items.append(item)
-
-        mock_db.add = MagicMock(side_effect=capture_add)
-        mock_db.commit = AsyncMock()
-
-        mock_session_factory = MagicMock()
-        mock_session_ctx = AsyncMock()
-        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
-        mock_session_factory.return_value = mock_session_ctx
-
-        inst = VirtualPrinterInstance(
-            vp_id=12,
-            name="AutoDispatchOff",
-            mode="print_queue",
-            model="C11",
-            access_code="12345678",
-            serial_suffix="391800012",
-            auto_dispatch=False,
-            base_dir=tmp_path,
-            session_factory=mock_session_factory,
-        )
-
-        # Create a temp 3mf file
-        file_path = tmp_path / "test.3mf"
-        file_path.write_bytes(b"fake3mf")
-
-        mock_archive = MagicMock()
-        mock_archive.id = 1
-        mock_archive.print_name = "test"
-
-        with patch(
-            "backend.app.services.archive.ArchiveService.archive_print",
-            new_callable=AsyncMock,
-            return_value=mock_archive,
-        ):
-            await inst._add_to_print_queue(file_path, "192.168.1.100")
-
-        assert len(added_items) == 1
-        queue_item = added_items[0]
-        assert queue_item.manual_start is True
-
 
 class TestVirtualPrinterManager:
     """Tests for VirtualPrinterManager orchestrator."""
@@ -448,7 +327,6 @@ class TestVirtualPrinterManager:
             "bind_ip": "",
             "remote_interface_ip": "",
             "target_printer_id": None,
-            "auto_dispatch": True,
             "position": 0,
         }
         defaults.update(overrides)

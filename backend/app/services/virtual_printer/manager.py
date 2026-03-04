@@ -102,7 +102,6 @@ class VirtualPrinterInstance:
         target_printer_ip: str = "",
         target_printer_serial: str = "",
         target_printer_id: int | None = None,
-        auto_dispatch: bool = True,
         bind_ip: str = "",
         remote_interface_ip: str = "",
         base_dir: Path,
@@ -117,7 +116,6 @@ class VirtualPrinterInstance:
         self.target_printer_ip = target_printer_ip
         self.target_printer_serial = target_printer_serial
         self.target_printer_id = target_printer_id
-        self.auto_dispatch = auto_dispatch
         self.bind_ip = bind_ip
         self.remote_interface_ip = remote_interface_ip
         self._session_factory = session_factory
@@ -322,7 +320,6 @@ class VirtualPrinterInstance:
                         plate_id=plate_id,
                         position=1,
                         status="pending",
-                        manual_start=not self.auto_dispatch,
                     )
                     db.add(queue_item)
                     await db.commit()
@@ -644,7 +641,6 @@ class VirtualPrinterManager:
                 or instance.bind_ip != (vp.bind_ip or "")
                 or instance.remote_interface_ip != (vp.remote_interface_ip or "")
                 or instance.target_printer_id != vp.target_printer_id
-                or instance.auto_dispatch != vp.auto_dispatch
             )
 
             if changed:
@@ -676,7 +672,6 @@ class VirtualPrinterManager:
                     serial_suffix=vp.serial_suffix,
                     target_printer_ip=target_ip,
                     target_printer_serial=target_serial,
-                    auto_dispatch=vp.auto_dispatch,
                     bind_ip=vp.bind_ip or "",
                     remote_interface_ip=vp.remote_interface_ip or "",
                     base_dir=self._base_dir,
@@ -694,7 +689,6 @@ class VirtualPrinterManager:
                     access_code=vp.access_code or "",
                     serial_suffix=vp.serial_suffix,
                     target_printer_id=vp.target_printer_id,
-                    auto_dispatch=vp.auto_dispatch,
                     bind_ip=vp.bind_ip or "",
                     remote_interface_ip=vp.remote_interface_ip or "",
                     base_dir=self._base_dir,

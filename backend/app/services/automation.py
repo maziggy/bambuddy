@@ -177,8 +177,8 @@ async def create_temp_gcode_with_automation(
                         )
                         zf_write.writestr(item, altered.encode("utf-8"))
                         
-                        # Compute MD5 for altered gcode
-                        md5 = hashlib.md5(altered.encode("utf-8")).hexdigest()
+                        # Compute MD5 for altered gcode (file checksum, not cryptographic use)
+                        md5 = hashlib.md5(altered.encode("utf-8"), usedforsecurity=False).hexdigest()
                         gcode_md5s[item] = md5
                         
                         # Write .gcode.md5 file
@@ -221,7 +221,8 @@ async def create_temp_gcode_with_automation(
             raise RuntimeError(f"Failed to process GCODE file: {e}") from e
             
         file_hash = compute_file_hash(tmp_path)
-        md5 = hashlib.md5(altered.encode("utf-8")).hexdigest()
+        # MD5 used for file checksum (content verification), not cryptographic security
+        md5 = hashlib.md5(altered.encode("utf-8"), usedforsecurity=False).hexdigest()
         logger.info(
             "Created modified GCODE temp file for printer %d: %s (hash: %s)",
             printer_id,

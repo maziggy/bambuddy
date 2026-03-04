@@ -779,6 +779,45 @@ def _get_log_content(max_bytes: int = 10 * 1024 * 1024, sensitive_strings: dict[
     return content.encode("utf-8")
 
 
+async def _get_recent_sanitized_logs(max_lines: int = 200) -> str:
+    """Get recent log lines, sanitized for inclusion in bug reports."""
+    # Collect sensitive strings from DB for redaction
+    sensitive_strings: dict[str, str] = {}
+    async with async_session() as db:
+        result = await db.execute(select(Printer.name, Printer.serial_number, Printer.ip_address))
+        for name, serial, ip_address in result.all():
+            if name:
+                sensitive_strings[name] = "[PRINTER]"
+            if serial:
+                sensitive_strings[serial] = "[SERIAL]"
+            if ip_address:
+                sensitive_strings[ip_address] = "[IP]"
+
+        result = await db.execute(select(User.username))
+        for (username,) in result.all():
+            if username:
+                sensitive_strings[username] = "[USER]"
+
+        result = await db.execute(select(Settings.value).where(Settings.key == "bambu_cloud_email"))
+        cloud_email = result.scalar_one_or_none()
+        if cloud_email:
+            sensitive_strings[cloud_email] = "[EMAIL]"
+
+    log_file = settings.log_dir / "bambuddy.log"
+    if not log_file.exists():
+        return ""
+
+    # Read last portion of log file
+    try:
+        content = log_file.read_text(encoding="utf-8", errors="replace")
+        lines = content.splitlines()
+        recent = "\n".join(lines[-max_lines:])
+        return _sanitize_log_content(recent, sensitive_strings)
+    except Exception:
+        logger.debug("Failed to read logs for bug report", exc_info=True)
+        return ""
+
+
 @router.get("/bundle")
 async def generate_support_bundle(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),

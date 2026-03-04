@@ -4936,3 +4936,25 @@ export const spoolbuddyApi = {
       body: '{}',
     }),
 };
+
+export interface BugReportRequest {
+  description: string;
+  email?: string;
+  screenshot_base64?: string;
+  include_support_info?: boolean;
+}
+
+export interface BugReportResponse {
+  success: boolean;
+  message: string;
+  issue_url?: string;
+  issue_number?: number;
+}
+
+export const bugReportApi = {
+  submit: (data: BugReportRequest) =>
+    request<BugReportResponse>('/bug-report/submit', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+};

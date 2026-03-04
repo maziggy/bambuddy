@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Loader2, Settings2, ChevronDown, CheckCircle2, RotateCcw } from 'lucide-react';
@@ -256,6 +256,7 @@ export function ConfigureAmsSlotModal({
   const [searchQuery, setSearchQuery] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [showExtendedColors, setShowExtendedColors] = useState(false);
+  const scrolledToRef = useRef<string>('');
 
   // Fetch cloud settings (gracefully handle 401 when logged out)
   const { data: cloudSettings, isLoading: settingsLoading, isError: cloudError } = useQuery({
@@ -739,6 +740,13 @@ export function ConfigureAmsSlotModal({
         if (currentPreset) {
           setSelectedPresetId(currentPreset.setting_id);
         }
+      } else if (slotInfo.trayInfoIdx && builtinFilaments?.length) {
+        // Last resort: match trayInfoIdx against builtin presets
+        const trayIdx = slotInfo.trayInfoIdx;
+        const match = builtinFilaments.find(bf => bf.filament_id === trayIdx);
+        if (match) {
+          setSelectedPresetId(`builtin_${match.filament_id}`);
+        }
       }
 
       // Pre-populate color from current slot (black is valid — empty slots don't pass trayColor)
@@ -756,8 +764,9 @@ export function ConfigureAmsSlotModal({
       setColorInput('');
       setSearchQuery('');
       setShowSuccess(false);
+      scrolledToRef.current = '';
     }
-  }, [isOpen, slotInfo.savedPresetId, slotInfo.trayInfoIdx, slotInfo.trayColor, cloudSettings?.filament]);
+  }, [isOpen, slotInfo.savedPresetId, slotInfo.trayInfoIdx, slotInfo.trayColor, cloudSettings?.filament, builtinFilaments]);
 
   // Auto-select best matching K profile when preset changes
   useEffect(() => {
@@ -791,9 +800,26 @@ export function ConfigureAmsSlotModal({
     }
   }, [isOpen, handleKeyDown]);
 
-  if (!isOpen) return null;
-
   const isLoading = (settingsLoading && !cloudError) || localLoading || builtinLoading || kprofilesLoading;
+
+  // Scroll selected preset into view when data finishes loading or the selection changes.
+  // Uses a ref guard so scrollIntoView only fires once per selection, preventing the
+  // infinite scroll loop that occurred on Windows with inline callback refs.
+  useEffect(() => {
+    if (!isLoading && selectedPresetId && selectedPresetId !== scrolledToRef.current) {
+      const raf = requestAnimationFrame(() => {
+          const modal = document.querySelector('[class*="fixed inset-0 z-50"]');
+          const el = modal?.querySelector(`[data-preset-id="${CSS.escape(selectedPresetId)}"]`);
+        if (el) {
+          scrolledToRef.current = selectedPresetId;
+          el.scrollIntoView({ block: 'nearest' });
+        }
+      });
+      return () => cancelAnimationFrame(raf);
+    }
+  }, [selectedPresetId, isLoading]);
+
+  if (!isOpen) return null;
   const canSave = selectedPresetId && !configureMutation.isPending;
 
   // Get display color (custom or slot default)
@@ -910,9 +936,7 @@ export function ConfigureAmsSlotModal({
                     filteredPresets.map((preset) => (
                       <button
                         key={preset.id}
-                        ref={selectedPresetId === preset.id ? (el) => {
-                          el?.scrollIntoView({ block: 'nearest' });
-                        } : undefined}
+                        data-preset-id={preset.id}
                         onClick={() => setSelectedPresetId(preset.id)}
                         className={`w-full p-2 rounded-lg border text-left transition-colors ${
                           selectedPresetId === preset.id
@@ -1147,9 +1171,7 @@ export function ConfigureAmsSlotModal({
                       filteredPresets.map((preset) => (
                         <button
                           key={preset.id}
-                          ref={selectedPresetId === preset.id ? (el) => {
-                            el?.scrollIntoView({ block: 'nearest' });
-                          } : undefined}
+                          data-preset-id={preset.id}
                           onClick={() => setSelectedPresetId(preset.id)}
                           className={`w-full p-2 rounded-lg border text-left transition-colors ${
                             selectedPresetId === preset.id

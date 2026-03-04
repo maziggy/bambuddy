@@ -740,20 +740,12 @@ export function ConfigureAmsSlotModal({
         if (currentPreset) {
           setSelectedPresetId(currentPreset.setting_id);
         }
-      } else if (slotInfo.trayInfoIdx && filteredPresets.length > 0) {
-        // Last resort: match trayInfoIdx against the full preset list (includes builtins)
+      } else if (slotInfo.trayInfoIdx && builtinFilaments?.length) {
+        // Last resort: match trayInfoIdx against builtin presets
         const trayIdx = slotInfo.trayInfoIdx;
-        const match = filteredPresets.find(p => {
-          if (p.source === 'cloud') {
-            return p.id === trayIdx || convertToTrayInfoIdx(p.id) === trayIdx;
-          }
-          if (p.source === 'builtin') {
-            return p.id === `builtin_${trayIdx}`;
-          }
-          return false;
-        });
+        const match = builtinFilaments.find(bf => bf.filament_id === trayIdx);
         if (match) {
-          setSelectedPresetId(match.id);
+          setSelectedPresetId(`builtin_${match.filament_id}`);
         }
       }
 
@@ -774,7 +766,7 @@ export function ConfigureAmsSlotModal({
       setShowSuccess(false);
       scrolledToRef.current = '';
     }
-  }, [isOpen, slotInfo.savedPresetId, slotInfo.trayInfoIdx, slotInfo.trayColor, cloudSettings?.filament, filteredPresets]);
+  }, [isOpen, slotInfo.savedPresetId, slotInfo.trayInfoIdx, slotInfo.trayColor, cloudSettings?.filament, builtinFilaments]);
 
   // Auto-select best matching K profile when preset changes
   useEffect(() => {
@@ -943,9 +935,7 @@ export function ConfigureAmsSlotModal({
                     filteredPresets.map((preset) => (
                       <button
                         key={preset.id}
-                        ref={selectedPresetId === preset.id ? (el) => {
-                          el?.scrollIntoView({ block: 'nearest' });
-                        } : undefined}
+                        data-preset-id={preset.id}
                         onClick={() => setSelectedPresetId(preset.id)}
                         className={`w-full p-2 rounded-lg border text-left transition-colors ${
                           selectedPresetId === preset.id
@@ -1180,9 +1170,7 @@ export function ConfigureAmsSlotModal({
                       filteredPresets.map((preset) => (
                         <button
                           key={preset.id}
-                          ref={selectedPresetId === preset.id ? (el) => {
-                            el?.scrollIntoView({ block: 'nearest' });
-                          } : undefined}
+                          data-preset-id={preset.id}
                           onClick={() => setSelectedPresetId(preset.id)}
                           className={`w-full p-2 rounded-lg border text-left transition-colors ${
                             selectedPresetId === preset.id

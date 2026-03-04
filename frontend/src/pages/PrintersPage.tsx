@@ -44,6 +44,7 @@ import {
   Home,
   Printer as PrinterIcon,
   Info,
+  Cable,
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
@@ -72,6 +73,7 @@ import { PrinterInfoModal } from '../components/PrinterInfoModal';
 import { getGlobalTrayId } from '../utils/amsHelpers';
 import { getPrinterImage, getWifiStrength } from '../utils/printer';
 import { FilamentSlotCircle } from '../components/FilamentSlotCircle';
+import { hexToColorName, parseFilamentColor, isLightColor } from '../utils/colors';
 
 // Complete Bambu Lab filament color mapping by tray_id_name
 // Source: https://github.com/queengooborg/Bambu-Lab-RFID-Library
@@ -335,69 +337,6 @@ function getBambuColorName(trayIdName: string | null | undefined): string | null
   return BAMBU_COLOR_CODE_FALLBACK[colorCode] || null;
 }
 
-// Convert hex color to basic color name
-function hexToBasicColorName(hex: string | null | undefined): string {
-  if (!hex || hex.length < 6) return 'Unknown';
-
-  // Parse RGB from hex (format: RRGGBBAA or RRGGBB)
-  const r = parseInt(hex.substring(0, 2), 16);
-  const g = parseInt(hex.substring(2, 4), 16);
-  const b = parseInt(hex.substring(4, 6), 16);
-
-  // Calculate HSL for better color classification
-  const max = Math.max(r, g, b) / 255;
-  const min = Math.min(r, g, b) / 255;
-  const l = (max + min) / 2;
-
-  let h = 0;
-  let s = 0;
-
-  if (max !== min) {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-
-    const rNorm = r / 255;
-    const gNorm = g / 255;
-    const bNorm = b / 255;
-
-    if (max === rNorm) {
-      h = ((gNorm - bNorm) / d + (gNorm < bNorm ? 6 : 0)) / 6;
-    } else if (max === gNorm) {
-      h = ((bNorm - rNorm) / d + 2) / 6;
-    } else {
-      h = ((rNorm - gNorm) / d + 4) / 6;
-    }
-  }
-
-  // Convert to degrees
-  h = h * 360;
-
-  // Classify by lightness first
-  if (l < 0.15) return 'Black';
-  if (l > 0.85) return 'White';
-
-  // Low saturation = gray
-  if (s < 0.15) {
-    if (l < 0.4) return 'Dark Gray';
-    if (l > 0.6) return 'Light Gray';
-    return 'Gray';
-  }
-
-  // Classify by hue
-  // Brown is orange/yellow hue with lower lightness
-  if (h >= 15 && h < 45 && l < 0.45) return 'Brown';
-  if (h >= 45 && h < 70 && l < 0.40) return 'Brown';
-
-  if (h < 15 || h >= 345) return 'Red';
-  if (h < 45) return 'Orange';
-  if (h < 70) return 'Yellow';
-  if (h < 150) return 'Green';
-  if (h < 200) return 'Cyan';
-  if (h < 260) return 'Blue';
-  if (h < 290) return 'Purple';
-  return 'Pink';
-}
-
 // Format K value with 3 decimal places, default to 0.020 if null
 function formatKValue(k: number | null | undefined): string {
   const value = k ?? 0.020;
@@ -417,25 +356,6 @@ function NozzleBadge({ side }: { side: 'L' | 'R' }) {
       {side}
     </span>
   );
-}
-
-// Parse RGBA hex to CSS color (skip if empty or all zeros)
-function parseFilamentColor(rgba: string): string | null {
-  if (!rgba || rgba === '00000000' || rgba.length < 6) return null;
-  const r = rgba.slice(0, 2);
-  const g = rgba.slice(2, 4);
-  const b = rgba.slice(4, 6);
-  const a = rgba.length >= 8 ? parseInt(rgba.slice(6, 8), 16) / 255 : 1;
-  if (a === 0) return null;
-  return `rgba(${parseInt(r, 16)}, ${parseInt(g, 16)}, ${parseInt(b, 16)}, ${a})`;
-}
-
-function isLightFilamentColor(rgba: string): boolean {
-  if (!rgba || rgba.length < 6) return false;
-  const r = parseInt(rgba.slice(0, 2), 16);
-  const g = parseInt(rgba.slice(2, 4), 16);
-  const b = parseInt(rgba.slice(4, 6), 16);
-  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6;
 }
 
 // Expand nozzle type codes to material names
@@ -831,7 +751,7 @@ function NozzleRackCard({ slots, filamentInfo }: { slots: import('../api/client'
         {rackSlots.map((slot, i) => {
           const isEmpty = !slot.nozzle_diameter && !slot.nozzle_type;
           const filamentBg = !isEmpty ? parseFilamentColor(slot.filament_color) : null;
-          const lightBg = filamentBg ? isLightFilamentColor(slot.filament_color) : false;
+          const lightBg = filamentBg ? isLightColor(slot.filament_color) : false;
 
           return (
             <NozzleSlotHoverCard key={slot.id >= 0 ? slot.id : `empty-${i}`} slot={slot} index={i} filamentName={slot.filament_id ? filamentInfo?.[slot.filament_id]?.name : undefined}>
@@ -2530,8 +2450,17 @@ function PrinterCard({
                 )}
                 {status?.connected ? t('printers.connection.connected') : t('printers.connection.offline')}
               </span>
-              {/* WiFi signal strength indicator */}
-              {status?.connected && wifiSignal != null && (
+              {/* Network connection indicator */}
+              {status?.connected && status?.wired_network && (
+                <span
+                  className="flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-status-ok/20 text-status-ok"
+                  title={t('printers.connection.ethernet', 'Ethernet')}
+                >
+                  <Cable className="w-3 h-3" />
+                  {t('printers.connection.ethernet', 'Ethernet')}
+                </span>
+              )}
+              {status?.connected && !status?.wired_network && wifiSignal != null && (
                 <span
                   className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
                     wifiSignal >= -50
@@ -3148,7 +3077,7 @@ function PrinterCard({
                                 const filamentData = tray?.tray_type ? {
                                   vendor: (isBambuLabSpool(tray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
                                   profile: cloudInfo?.name || slotPreset?.preset_name || tray.tray_sub_brands || tray.tray_type,
-                                  colorName: getBambuColorName(tray.tray_id_name) || hexToBasicColorName(tray.tray_color),
+                                  colorName: getBambuColorName(tray.tray_id_name) || hexToColorName(tray.tray_color),
                                   colorHex: tray.tray_color || null,
                                   kFactor: formatKValue(tray.k),
                                   fillLevel: effectiveFill,
@@ -3369,7 +3298,7 @@ function PrinterCard({
                         const filamentData = tray?.tray_type ? {
                           vendor: (isBambuLabSpool(tray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
                           profile: cloudInfo?.name || slotPreset?.preset_name || tray.tray_sub_brands || tray.tray_type,
-                          colorName: getBambuColorName(tray.tray_id_name) || hexToBasicColorName(tray.tray_color),
+                          colorName: getBambuColorName(tray.tray_id_name) || hexToColorName(tray.tray_color),
                           colorHex: tray.tray_color || null,
                           kFactor: formatKValue(tray.k),
                           fillLevel: htEffectiveFill,
@@ -3639,7 +3568,7 @@ function PrinterCard({
                               const extFilamentData = {
                                 vendor: (isBambuLabSpool(extTray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
                                 profile: extCloudInfo?.name || extSlotPreset?.preset_name || extTray.tray_sub_brands || extTray.tray_type || 'Unknown',
-                                colorName: getBambuColorName(extTray.tray_id_name) || hexToBasicColorName(extTray.tray_color),
+                                colorName: getBambuColorName(extTray.tray_id_name) || hexToColorName(extTray.tray_color),
                                 colorHex: extTray.tray_color || null,
                                 kFactor: formatKValue(extTray.k),
                                 fillLevel: extEffectiveFill,

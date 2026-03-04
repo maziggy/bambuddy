@@ -247,7 +247,6 @@ function formatStorageSize(bytes: number): string {
   return `${mb.toFixed(0)} MB`;
 }
 
-
 function getFileIcon(filename: string, isDirectory: boolean) {
   if (isDirectory) return Folder;
 

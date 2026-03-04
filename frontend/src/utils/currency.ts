@@ -31,31 +31,7 @@ export function getCurrencySymbol(currencyCode: string): string {
   return CURRENCY_SYMBOLS[currencyCode.toUpperCase()] || currencyCode;
 }
 
-export const SUPPORTED_CURRENCIES = [
-  { code: 'USD', label: 'USD ($)' },
-  { code: 'EUR', label: 'EUR (€)' },
-  { code: 'GBP', label: 'GBP (£)' },
-  { code: 'CHF', label: 'CHF (Fr.)' },
-  { code: 'JPY', label: 'JPY (¥)' },
-  { code: 'CNY', label: 'CNY (¥)' },
-  { code: 'CAD', label: 'CAD ($)' },
-  { code: 'AUD', label: 'AUD ($)' },
-  { code: 'INR', label: 'INR (₹)' },
-  { code: 'HKD', label: 'HKD (HK$)' },
-  { code: 'KRW', label: 'KRW (₩)' },
-  { code: 'SEK', label: 'SEK (kr)' },
-  { code: 'NOK', label: 'NOK (kr)' },
-  { code: 'DKK', label: 'DKK (kr)' },
-  { code: 'PLN', label: 'PLN (zł)' },
-  { code: 'BRL', label: 'BRL (R$)' },
-  { code: 'TWD', label: 'TWD (NT$)' },
-  { code: 'SGD', label: 'SGD (S$)' },
-  { code: 'NZD', label: 'NZD (NZ$)' },
-  { code: 'MXN', label: 'MXN (MX$)' },
-  { code: 'CZK', label: 'CZK (Kč)' },
-  { code: 'THB', label: 'THB (฿)' },
-  { code: 'ZAR', label: 'ZAR (R)' },
-  { code: 'TRY', label: 'TRY (₺)' },
-  { code: 'RUB', label: 'RUB (₽)' },
-  { code: 'HUF', label: 'HUF (Ft)' },
-] as const;
+export const SUPPORTED_CURRENCIES = Object.entries(CURRENCY_SYMBOLS).map(([code, symbol]) => ({
+  code,
+  label: `${code} (${symbol})`,
+}));

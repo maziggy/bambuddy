@@ -37,6 +37,12 @@ import { ConfirmModal } from './ConfirmModal';
 import { useToast } from '../contexts/ToastContext';
 import { formatRelativeTime } from '../utils/date';
 
+function formatDateTime(dateStr: string | null): string {
+  if (!dateStr) return '-';
+  const date = new Date(dateStr);
+  return date.toLocaleString();
+}
+
 interface StatusBadgeProps {
   status: string | null;
 }
@@ -64,12 +70,6 @@ function StatusBadge({ status }: StatusBadgeProps) {
       {status.charAt(0).toUpperCase() + status.slice(1)}
     </span>
   );
-}
-
-function formatDateTime(dateStr: string | null): string {
-  if (!dateStr) return '-';
-  const date = new Date(dateStr);
-  return date.toLocaleString();
 }
 
 export function GitHubBackupSettings() {

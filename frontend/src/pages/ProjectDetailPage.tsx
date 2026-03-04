@@ -32,7 +32,7 @@ import {
   Pencil,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { parseUTCDate, formatDateOnly, formatDateTime, type TimeFormat } from '../utils/date';
+import { parseUTCDate, formatDateOnly, formatDateTime, formatDurationFromHours, type TimeFormat } from '../utils/date';
 import type { Archive, ProjectUpdate, BOMItem, BOMItemCreate, BOMItemUpdate } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
@@ -44,15 +44,6 @@ import { ConfirmModal } from '../components/ConfirmModal';
 // Project edit modal (reused from ProjectsPage)
 import { ProjectModal } from './ProjectsPage';
 import { getCurrencySymbol } from '../utils/currency';
-
-function formatDuration(hours: number): string {
-  if (hours < 1) {
-    return `${Math.round(hours * 60)}m`;
-  }
-  const h = Math.floor(hours);
-  const m = Math.round((hours - h) * 60);
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
-}
 
 function formatFilament(grams: number): string {
   if (grams >= 1000) {
@@ -184,11 +175,6 @@ function PriorityBadge({ priority, t }: { priority: string; t: TFunction }) {
       {label}
     </span>
   );
-}
-
-function formatDate(dateString: string | null): string {
-  if (!dateString) return '';
-  return formatDateOnly(dateString, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 function getDueDateStatus(dateString: string | null, t: TFunction): { color: string; label: string } | null {
@@ -610,7 +596,7 @@ export function ProjectDetailPage() {
           <StatCard
             icon={Clock}
             label={t('projectDetail.stats.printTime')}
-            value={formatDuration(stats.total_print_time_hours)}
+            value={formatDurationFromHours(stats.total_print_time_hours)}
             color="text-yellow-400"
           />
           <StatCard
@@ -738,7 +724,7 @@ export function ProjectDetailPage() {
           {project.due_date && (
             <div className="flex items-center gap-2">
               <Calendar className="w-4 h-4 text-bambu-gray" />
-              <span className="text-sm text-white">{formatDate(project.due_date)}</span>
+              <span className="text-sm text-white">{formatDateOnly(project.due_date, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
               {getDueDateStatus(project.due_date, t) && (
                 <span className={`text-xs ${getDueDateStatus(project.due_date, t)!.color}`}>
                   ({getDueDateStatus(project.due_date, t)!.label})

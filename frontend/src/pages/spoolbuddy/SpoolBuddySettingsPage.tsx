@@ -4,7 +4,6 @@ import { useOutletContext } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 import { spoolbuddyApi, type SpoolBuddyDevice, type DaemonUpdateCheck } from '../../api/client';
-
 function formatUptime(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;

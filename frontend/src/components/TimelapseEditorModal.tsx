@@ -18,6 +18,7 @@ import {
 import { Button } from './Button';
 import { api } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
+import { formatMediaTime } from '../utils/date';
 
 interface TimelapseEditorModalProps {
   archiveId: number;
@@ -27,12 +28,6 @@ interface TimelapseEditorModalProps {
 }
 
 const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4];
-
-function formatTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
 
 export function TimelapseEditorModal({
   archiveId,
@@ -321,7 +316,7 @@ export function TimelapseEditorModal({
               <Scissors className="w-4 h-4" />
               <span>Trim</span>
               <span className="ml-auto">
-                {formatTime(trimStart)} - {formatTime(trimEnd)} ({formatTime(trimmedDuration)})
+                {formatMediaTime(trimStart)} - {formatMediaTime(trimEnd)} ({formatMediaTime(trimmedDuration)})
               </span>
             </div>
 
@@ -435,7 +430,7 @@ export function TimelapseEditorModal({
             <div className="flex items-center gap-2 text-sm text-bambu-gray">
               <Gauge className="w-4 h-4" />
               <span>Speed</span>
-              <span className="ml-auto">{speed}x (output: {formatTime(outputDuration)})</span>
+              <span className="ml-auto">{speed}x (output: {formatMediaTime(outputDuration)})</span>
             </div>
             <div className="flex gap-1">
               {SPEED_OPTIONS.map((s) => (
@@ -523,10 +518,10 @@ export function TimelapseEditorModal({
           {/* Summary */}
           <div className="p-3 bg-bambu-dark rounded-lg text-sm space-y-1">
             <p className="text-bambu-gray">
-              <span className="text-white">Original:</span> {formatTime(duration)} @ {videoInfo?.width}x{videoInfo?.height}
+              <span className="text-white">Original:</span> {formatMediaTime(duration)} @ {videoInfo?.width}x{videoInfo?.height}
             </p>
             <p className="text-bambu-gray">
-              <span className="text-white">Output:</span> {formatTime(outputDuration)} @ {speed}x speed
+              <span className="text-white">Output:</span> {formatMediaTime(outputDuration)} @ {speed}x speed
               {audioFile && ` + music overlay`}
             </p>
           </div>

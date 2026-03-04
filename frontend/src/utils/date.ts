@@ -13,22 +13,12 @@ export type DateFormat = 'system' | 'us' | 'eu' | 'iso';
  * Get the date input placeholder based on format setting.
  */
 export function getDatePlaceholder(dateFormat: DateFormat = 'system'): string {
-  switch (dateFormat) {
-    case 'us':
-      return 'MM/DD/YYYY';
-    case 'eu':
-      return 'DD/MM/YYYY';
-    case 'iso':
-      return 'YYYY-MM-DD';
-    case 'system':
-    default: {
-      // Try to detect system format
-      const testDate = new Date(2000, 11, 31); // Dec 31, 2000
-      const formatted = testDate.toLocaleDateString();
-      if (formatted.startsWith('12')) return 'MM/DD/YYYY';
-      if (formatted.startsWith('31')) return 'DD/MM/YYYY';
-      return 'YYYY-MM-DD';
-    }
+  const resolved = dateFormat === 'system' ? detectSystemDateFormat() : dateFormat;
+  switch (resolved) {
+    case 'us': return 'MM/DD/YYYY';
+    case 'eu': return 'DD/MM/YYYY';
+    case 'iso': return 'YYYY-MM-DD';
+    default: return resolved satisfies never;
   }
 }
 
@@ -98,12 +88,18 @@ export function formatTimeInput(date: Date, timeFormat: TimeFormat = 'system'): 
  * Split a date string by common separators (/, ., -).
  */
 function splitDateParts(value: string): string[] | null {
-  // Try common separators: /, ., -
   for (const sep of ['/', '.', '-']) {
     const parts = value.split(sep);
     if (parts.length === 3) return parts;
   }
   return null;
+}
+
+function detectSystemDateFormat(): 'us' | 'eu' | 'iso' {
+  const formatted = new Date(2000, 11, 31).toLocaleDateString();
+  if (formatted.startsWith('12')) return 'us';
+  if (formatted.startsWith('31')) return 'eu';
+  return 'iso';
 }
 
 /**
@@ -114,77 +110,36 @@ function splitDateParts(value: string): string[] | null {
 export function parseDateInput(value: string, dateFormat: DateFormat = 'system'): Date | null {
   if (!value) return null;
 
+  const parts = splitDateParts(value);
+  if (!parts) return null;
+
+  const resolved = dateFormat === 'system' ? detectSystemDateFormat() : dateFormat;
   let day: number, month: number, year: number;
 
-  try {
-    switch (dateFormat) {
-      case 'us': {
-        // MM/DD/YYYY (also accepts . and - separators)
-        const parts = splitDateParts(value);
-        if (!parts) return null;
-        month = parseInt(parts[0], 10);
-        day = parseInt(parts[1], 10);
-        year = parseInt(parts[2], 10);
-        break;
-      }
-      case 'eu': {
-        // DD/MM/YYYY (also accepts . and - separators)
-        const parts = splitDateParts(value);
-        if (!parts) return null;
-        day = parseInt(parts[0], 10);
-        month = parseInt(parts[1], 10);
-        year = parseInt(parts[2], 10);
-        break;
-      }
-      case 'iso': {
-        // YYYY-MM-DD (also accepts . and / separators)
-        const parts = splitDateParts(value);
-        if (!parts) return null;
-        year = parseInt(parts[0], 10);
-        month = parseInt(parts[1], 10);
-        day = parseInt(parts[2], 10);
-        break;
-      }
-      case 'system':
-      default: {
-        // Detect system format and parse accordingly
-        const testDate = new Date(2000, 11, 31); // Dec 31, 2000
-        const formatted = testDate.toLocaleDateString();
-        const parts = splitDateParts(value);
-
-        if (parts) {
-          // Detect format from system locale
-          if (formatted.startsWith('12')) {
-            // US format: MM/DD/YYYY
-            month = parseInt(parts[0], 10);
-            day = parseInt(parts[1], 10);
-            year = parseInt(parts[2], 10);
-          } else if (formatted.startsWith('31')) {
-            // EU format: DD/MM/YYYY
-            day = parseInt(parts[0], 10);
-            month = parseInt(parts[1], 10);
-            year = parseInt(parts[2], 10);
-          } else {
-            // ISO format: YYYY-MM-DD
-            year = parseInt(parts[0], 10);
-            month = parseInt(parts[1], 10);
-            day = parseInt(parts[2], 10);
-          }
-          break;
-        }
-        return null;
-      }
-    }
-
-    if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
-    if (month < 1 || month > 12) return null;
-    if (day < 1 || day > 31) return null;
-    if (year < 1900 || year > 2100) return null;
-
-    return new Date(year, month - 1, day);
-  } catch {
-    return null;
+  switch (resolved) {
+    case 'us':
+      month = parseInt(parts[0], 10);
+      day = parseInt(parts[1], 10);
+      year = parseInt(parts[2], 10);
+      break;
+    case 'eu':
+      day = parseInt(parts[0], 10);
+      month = parseInt(parts[1], 10);
+      year = parseInt(parts[2], 10);
+      break;
+    case 'iso':
+      year = parseInt(parts[0], 10);
+      month = parseInt(parts[1], 10);
+      day = parseInt(parts[2], 10);
+      break;
   }
+
+  if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
+  if (month < 1 || month > 12) return null;
+  if (day < 1 || day > 31) return null;
+  if (year < 1900 || year > 2100) return null;
+
+  return new Date(year, month - 1, day);
 }
 
 /**
@@ -194,41 +149,22 @@ export function parseDateInput(value: string, dateFormat: DateFormat = 'system')
 export function parseTimeInput(value: string): { hours: number; minutes: number } | null {
   if (!value) return null;
 
-  try {
-    const trimmed = value.trim().toUpperCase();
+  const trimmed = value.trim();
 
-    // Check for 12h format with AM/PM
-    const ampmMatch = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
-    if (ampmMatch) {
-      let hours = parseInt(ampmMatch[1], 10);
-      const minutes = parseInt(ampmMatch[2], 10);
-      const ampm = ampmMatch[3]?.toUpperCase();
+  const match = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+  if (!match) return null;
 
-      if (ampm === 'PM' && hours < 12) hours += 12;
-      if (ampm === 'AM' && hours === 12) hours = 0;
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const ampm = match[3]?.toUpperCase();
 
-      if (hours < 0 || hours > 23) return null;
-      if (minutes < 0 || minutes > 59) return null;
+  if (ampm === 'PM' && hours < 12) hours += 12;
+  if (ampm === 'AM' && hours === 12) hours = 0;
 
-      return { hours, minutes };
-    }
+  if (hours < 0 || hours > 23) return null;
+  if (minutes < 0 || minutes > 59) return null;
 
-    // Try 24h format HH:MM
-    const match24 = trimmed.match(/^(\d{1,2}):(\d{2})$/);
-    if (match24) {
-      const hours = parseInt(match24[1], 10);
-      const minutes = parseInt(match24[2], 10);
-
-      if (hours < 0 || hours > 23) return null;
-      if (minutes < 0 || minutes > 59) return null;
-
-      return { hours, minutes };
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
+  return { hours, minutes };
 }
 
 /**
@@ -387,21 +323,18 @@ export function formatTimeOnly(
  */
 export function formatETA(
   remainingMinutes: number,
-  timeFormat: 'system' | '12h' | '24h' = 'system',
+  timeFormat: TimeFormat = 'system',
   t?: (key: string) => string
 ): string {
   const now = new Date();
   const eta = new Date(now.getTime() + remainingMinutes * 60 * 1000);
 
-  const today = new Date();
+  const today = new Date(now);
   today.setHours(0, 0, 0, 0);
   const etaDay = new Date(eta);
   etaDay.setHours(0, 0, 0, 0);
 
-  const timeOptions: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
-  if (timeFormat === '12h') timeOptions.hour12 = true;
-  else if (timeFormat === '24h') timeOptions.hour12 = false;
-
+  const timeOptions = applyTimeFormat({ hour: '2-digit', minute: '2-digit' }, timeFormat);
   const timeStr = eta.toLocaleTimeString([], timeOptions);
   const dayDiff = Math.floor((etaDay.getTime() - today.getTime()) / 86400000);
 
@@ -484,4 +417,29 @@ export function formatRelativeTime(
 
   // Older than 7 days
   return formatDateTime(dateStr, timeFormat);
+}
+
+/**
+ * Format seconds as MM:SS for media/video player display.
+ *
+ * @param seconds - Total seconds
+ * @returns Formatted string (e.g., "2:05", "0:30")
+ */
+export function formatMediaTime(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Format a duration given in hours to a human-readable string.
+ *
+ * @param hours - Duration in hours (e.g., 2.5)
+ * @returns Formatted string (e.g., "2h 30m", "45m", "3h")
+ */
+export function formatDurationFromHours(hours: number): string {
+  if (hours < 1) return `${Math.round(hours * 60)}m`;
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }

@@ -38,7 +38,6 @@ from backend.app.services.bambu_cloud import (
     BambuCloudError,
     get_cloud_service,
 )
-from backend.app.utils.filament_ids import filament_id_to_setting_id
 
 logger = logging.getLogger(__name__)
 
@@ -504,8 +503,32 @@ async def _enrich_from_local_presets(
     return result
 
 
-# _filament_id_to_setting_id is now imported from backend.app.utils.filament_ids
-_filament_id_to_setting_id = filament_id_to_setting_id
+def _filament_id_to_setting_id(filament_id: str) -> str:
+    """
+    Convert filament_id to setting_id format for Bambu Cloud API.
+
+    Printers report filament_id (e.g., GFA00, GFG02) but the API expects
+    setting_id format which has an "S" inserted after "GF" (e.g., GFSA00, GFSG02).
+
+    User presets (starting with "P") and already-correct IDs are returned unchanged.
+    """
+    if not filament_id:
+        return filament_id
+
+    # User presets start with "P" - leave unchanged
+    if filament_id.startswith("P"):
+        return filament_id
+
+    # Official Bambu presets: GFx## -> GFSx##
+    # Check if it matches the filament_id pattern (GF followed by letter and digits)
+    if filament_id.startswith("GF") and len(filament_id) >= 4:
+        # Check if it's already a setting_id (has S after GF)
+        if filament_id[2] == "S":
+            return filament_id
+        # Insert "S" after "GF": GFA00 -> GFSA00
+        return f"GFS{filament_id[2:]}"
+
+    return filament_id
 
 
 @router.post("/filament-info")

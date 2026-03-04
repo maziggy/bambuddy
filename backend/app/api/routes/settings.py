@@ -105,7 +105,6 @@ async def get_settings(
                 "ams_temp_good",
                 "ams_temp_fair",
                 "library_disk_warning_gb",
-                "low_stock_threshold",
             ]:
                 settings_dict[setting.key] = float(setting.value)
             elif setting.key in [

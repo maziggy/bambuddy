@@ -6,7 +6,7 @@ from collections import deque
 
 logger = logging.getLogger(__name__)
 
-MOVING_AVG_SIZE = 20
+MOVING_AVG_SIZE = 5
 
 
 class ScaleReader:
@@ -27,7 +27,7 @@ class ScaleReader:
             self._ok = True
             logger.info("Scale initialized (tare=%d, cal=%.6f)", tare_offset, calibration_factor)
         except Exception as e:
-            logger.info("Scale not available: %s", e)
+            logger.error("Scale init failed: %s", e)
 
     @property
     def ok(self) -> bool:

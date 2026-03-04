@@ -1,13 +1,13 @@
-import { useState, useMemo, useEffect, type ReactNode } from 'react';
+import { useState, useMemo, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   Plus, Loader2, Trash2, Archive, RotateCcw, Edit2, Package,
   Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   TrendingDown, Layers, Printer, AlertTriangle, X, Clock, LayoutGrid, TableProperties, Columns,
-  ArrowUp, ArrowDown, ArrowUpDown, Group, ChevronDown, Check, RefreshCw,
+  ArrowUp, ArrowDown, ArrowUpDown, Group, ChevronDown,
 } from 'lucide-react';
-import { api, spoolbuddyApi } from '../api/client';
+import { api } from '../api/client';
 import type { InventorySpool, SpoolAssignment } from '../api/client';
 import { Button } from '../components/Button';
 import { SpoolFormModal } from '../components/SpoolFormModal';
@@ -20,7 +20,7 @@ import { formatDateInput, parseUTCDate, type DateFormat } from '../utils/date';
 import { formatSlotLabel } from '../utils/amsHelpers';
 
 type ArchiveFilter = 'active' | 'archived';
-type UsageFilter = 'all' | 'used' | 'new' | 'lowstock';
+type UsageFilter = 'all' | 'used' | 'new';
 type ViewMode = 'table' | 'cards';
 type SortDirection = 'asc' | 'desc';
 type SortState = { column: string; direction: SortDirection } | null;
@@ -63,7 +63,6 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'stock', label: 'Stock', visible: false },
   { id: 'remaining', label: 'Remaining', visible: true },
   { id: 'cost_per_kg', label: 'Cost/kg', visible: false },
-  { id: 'weight_check', label: 'Weight Check', visible: false },
 ];
 
 function loadColumnConfig(): ColumnConfig[] {
@@ -127,7 +126,6 @@ type CellCtx = {
   currencySymbol: string;
   dateFormat: DateFormat;
   t: TFn;
-  onSyncWeight?: (spool: InventorySpool) => void;
 };
 
 // Column header labels (25 columns — matching SpoolBuddy exactly)
@@ -158,7 +156,6 @@ const columnHeaders: Record<string, (t: TFn) => string> = {
   stock: (t) => t('inventory.stock'),
   remaining: (t) => t('inventory.remaining'),
   cost_per_kg: (t) => t('inventory.costPerKg'),
-  weight_check: (t) => t('inventory.weightCheck'),
 };
 
 // Column cell renderers (25 columns — matching SpoolBuddy exactly)
@@ -288,59 +285,6 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
       {spool.cost_per_kg != null ? `${currencySymbol}${spool.cost_per_kg.toFixed(2)}` : '-'}
     </span>
   ),
-  weight_check: ({ spool, onSyncWeight }) => {
-    const scaleWeight = spool.last_scale_weight;
-    if (scaleWeight == null) return <span className="text-sm text-bambu-gray/50" title="No scale measurement">-</span>;
-
-    const coreWeight = spool.core_weight || 0;
-    const calculatedWeight = Math.max(0, spool.label_weight - spool.weight_used) + coreWeight;
-
-    // Edge case: scale < core_weight means spool is empty or not on scale — treat as match
-    let difference: number;
-    let isMatch: boolean;
-    if (scaleWeight < coreWeight) {
-      difference = scaleWeight - coreWeight;
-      isMatch = true;
-    } else {
-      difference = scaleWeight - calculatedWeight;
-      isMatch = Math.abs(difference) <= 50;
-    }
-
-    const diffStr = difference > 0 ? `+${Math.round(difference)}` : `${Math.round(difference)}`;
-    const tooltip = isMatch
-      ? `Scale: ${Math.round(scaleWeight)}g\nCalculated: ${Math.round(calculatedWeight)}g\nDifference: ${diffStr}g (within tolerance)`
-      : `Scale: ${Math.round(scaleWeight)}g\nCalculated: ${Math.round(calculatedWeight)}g\nDifference: ${diffStr}g (mismatch!)`;
-
-    return (
-      <div
-        className={`flex items-center gap-1 text-sm font-medium ${isMatch ? 'text-green-400' : 'text-yellow-400'}`}
-        title={tooltip}
-      >
-        <span>{Math.round(scaleWeight)}g</span>
-        {isMatch ? (
-          <Check className="w-3 h-3" />
-        ) : (
-          <>
-            <AlertTriangle className="w-3 h-3" />
-            {onSyncWeight && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  onSyncWeight(spool);
-                }}
-                className="p-1 hover:bg-bambu-green/20 rounded transition-colors text-bambu-green"
-                title="Sync: trust scale weight and reset tracking"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </>
-        )}
-      </div>
-    );
-  },
 };
 
 // Sort value extractors — return a comparable value for each sortable column
@@ -371,11 +315,6 @@ const columnSortValues: Record<string, (spool: InventorySpool, assignmentMap: Re
   tag_type: (s) => (s.tag_type || '').toLowerCase(),
   stock: (s) => s.slicer_filament ? 1 : 0,
   cost_per_kg: (s) => s.cost_per_kg ?? 0,
-  weight_check: (s) => {
-    if (s.last_scale_weight == null) return -1;
-    const expectedGross = Math.max(0, s.label_weight - s.weight_used) + s.core_weight;
-    return Math.abs(s.last_scale_weight - expectedGross);
-  },
 };
 
 const SORT_STATE_KEY = 'bambuddy-inventory-sort';
@@ -501,42 +440,6 @@ function InventoryPage() {
     },
   });
 
-  const handleSyncWeight = async (spool: InventorySpool) => {
-    if (spool.last_scale_weight == null) return;
-    try {
-      await spoolbuddyApi.updateSpoolWeight(spool.id, spool.last_scale_weight);
-      queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
-      const spoolName = [spool.brand, spool.material, spool.color_name].filter(Boolean).join(' ');
-      showToast(`Synced "${spoolName}" to scale weight`, 'success');
-    } catch {
-      showToast('Failed to sync weight', 'error');
-    }
-  };
-
-  // Low stock threshold from backend settings
-  const lowStockThreshold = settings?.low_stock_threshold ?? 20;
-  const [showThresholdInput, setShowThresholdInput] = useState(false);
-  const [thresholdInput, setThresholdInput] = useState(lowStockThreshold.toString());
-
-  // Sync thresholdInput when lowStockThreshold changes and input is not shown
-  useEffect(() => {
-    if (!showThresholdInput) {
-      setThresholdInput(lowStockThreshold.toString());
-    }
-  }, [lowStockThreshold, showThresholdInput]);
-
-  const updateThresholdMutation = useMutation({
-    mutationFn: (threshold: number) => api.updateSettings({ low_stock_threshold: threshold }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['settings'] });
-      showToast(t('common.saved'), 'success');
-      setShowThresholdInput(false);
-    },
-    onError: () => {
-      showToast(t('inventory.lowStockThresholdError'), 'error');
-    },
-  });
-
   // Stats calculation (active spools only)
   const stats = useMemo(() => {
     if (!spools) return null;
@@ -552,14 +455,14 @@ function InventoryPage() {
       totalWeight += remaining;
       totalConsumed += s.weight_used;
       const pct = s.label_weight > 0 ? (remaining / s.label_weight) * 100 : 0;
-      if (pct < lowStockThreshold) lowStock++;
+      if (pct < 20) lowStock++;
       const mat = s.material || 'Unknown';
       if (!byMaterial[mat]) byMaterial[mat] = { count: 0, weight: 0 };
       byMaterial[mat].count++;
       byMaterial[mat].weight += remaining;
     }
     return { totalWeight, totalConsumed, lowStock, byMaterial, totalSpools: activeCount };
-  }, [spools, lowStockThreshold]);
+  }, [spools]);
 
   const inPrinterCount = assignments?.length ?? 0;
 
@@ -598,12 +501,6 @@ function InventoryPage() {
       filtered = filtered.filter((s) => s.weight_used > 0);
     } else if (usageFilter === 'new') {
       filtered = filtered.filter((s) => s.weight_used === 0);
-    } else if (usageFilter === 'lowstock') {
-      filtered = filtered.filter((s) => {
-        const remaining = Math.max(0, s.label_weight - s.weight_used);
-        const pct = s.label_weight > 0 ? (remaining / s.label_weight) * 100 : 0;
-        return pct < lowStockThreshold;
-      });
     }
 
     // Material dropdown
@@ -637,7 +534,7 @@ function InventoryPage() {
     }
 
     return filtered;
-  }, [spools, archiveFilter, usageFilter, materialFilter, brandFilter, stockFilter, search, lowStockThreshold]);
+  }, [spools, archiveFilter, usageFilter, materialFilter, brandFilter, stockFilter, search]);
 
   // Reset page on filter changes
   const resetPage = () => setPageIndex(0);
@@ -848,59 +745,7 @@ function InventoryPage() {
               <span className="text-xs text-bambu-gray font-medium uppercase tracking-wide">{t('inventory.lowStock')}</span>
             </div>
             <div className={`text-xl font-bold ${stats.lowStock > 0 ? 'text-yellow-400' : 'text-white'}`}>{stats.lowStock}</div>
-            <div className="text-xs text-bambu-gray mt-1 flex items-center gap-2">
-              {showThresholdInput ? (
-                <form
-                  onSubmit={e => {
-                    e.preventDefault();
-                    const val = parseFloat(thresholdInput);
-                    if (!isNaN(val) && val >= 0.1 && val <= 99.9) {
-                      updateThresholdMutation.mutate(val);
-                    } else {
-                      showToast(t('inventory.lowStockThresholdError'), 'error');
-                    }
-                  }}
-                  className="flex items-center gap-2"
-                >
-                  <span className="text-xs text-bambu-gray">{'<'}</span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    pattern="^\d{0,2}(\.\d?)?$"
-                    maxLength={4}
-                    value={thresholdInput}
-                    onChange={e => {
-                      // Only allow up to 2 digits before decimal and 1 after
-                      const val = e.target.value.replace(/[^\d.]/g, '');
-                      if (/^\d{0,2}(\.\d?)?$/.test(val)) {
-                        setThresholdInput(val);
-                      }
-                    }}
-                    className="px-1.5 py-1 rounded border border-bambu-dark-tertiary text-xs text-white bg-bambu-dark-secondary focus:outline-none focus:border-bambu-green w-14 text-center"
-                    onWheel={e => e.currentTarget.blur()}
-                    disabled={updateThresholdMutation.isPending}
-                  />
-
-                  <span className="text-xs text-bambu-gray">%</span>
-                  <Button type="submit" size="sm" disabled={updateThresholdMutation.isPending}>{t('common.save')}</Button>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => setShowThresholdInput(false)} disabled={updateThresholdMutation.isPending}>{t('common.cancel')}</Button>
-                </form>
-              ) : (
-                <>
-                  <span className="text-bambu-gray">{'< '}{lowStockThreshold}%</span>
-                  <button
-                    className="p-1.5 text-bambu-gray hover:text-white rounded transition-colors"
-                    title={t('common.edit')}
-                    onClick={() => {
-                      setThresholdInput(lowStockThreshold.toString());
-                      setShowThresholdInput(true);
-                    }}
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                </>
-              )}
-            </div>
+            <div className="text-xs text-bambu-gray mt-1">{t('inventory.lowStockThreshold')}</div>
           </div>
         </div>
       )}
@@ -1041,17 +886,6 @@ function InventoryPage() {
             }`}
           >
             {t('inventory.new')}
-          </button>
-          <button
-            onClick={() => { setUsageFilter('lowstock'); resetPage(); }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
-              usageFilter === 'lowstock'
-                ? 'bg-yellow-500/20 text-yellow-400'
-                : 'text-bambu-gray hover:bg-bambu-dark-tertiary'
-            }`}
-          >
-            <AlertTriangle className="w-3.5 h-3.5" />
-            {t('inventory.lowStock')}
           </button>
         </div>
 
@@ -1305,7 +1139,6 @@ function InventoryPage() {
                           currencySymbol={currencySymbol}
                           dateFormat={dateFormat}
                           t={t}
-                          onSyncWeight={handleSyncWeight}
                         />
                       );
                     }
@@ -1327,7 +1160,6 @@ function InventoryPage() {
                         currencySymbol={currencySymbol}
                         dateFormat={dateFormat}
                         t={t}
-                        onSyncWeight={handleSyncWeight}
                       />
                     );
                   })}
@@ -1604,7 +1436,7 @@ function SpoolCard({
 /* Single spool row for table view */
 function SpoolTableRow({
   spool, remaining, pct, onEdit, onRestore, onArchive, onDelete,
-  visibleColumns, assignmentMap, currencySymbol, dateFormat, t, onSyncWeight,
+  visibleColumns, assignmentMap, currencySymbol, dateFormat, t,
 }: {
   spool: InventorySpool;
   remaining: number;
@@ -1618,7 +1450,6 @@ function SpoolTableRow({
   currencySymbol: string;
   dateFormat: DateFormat;
   t: TFn;
-  onSyncWeight?: (spool: InventorySpool) => void;
 }) {
   return (
     <tr
@@ -1629,12 +1460,12 @@ function SpoolTableRow({
     >
       {visibleColumns.map((colId) => (
         <td key={colId} className="py-3 px-4">
-          {columnCells[colId]?.({ spool, remaining, pct, assignmentMap, currencySymbol, dateFormat, t, onSyncWeight })}
+          {columnCells[colId]?.({ spool, remaining, pct, assignmentMap, currencySymbol, dateFormat, t })}
         </td>
       ))}
       <td className="py-3 px-4">
         <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-          <button onClick={onEdit} className="p-1.5 text-bambu-gray hover:text-white rounded transition-colors" title={t('common.edit')}>
+          <button onClick={onEdit} className="p-1.5 text-bambu-gray hover:text-white rounded transition-colors" title={t('inventory.editSpool')}>
             <Edit2 className="w-4 h-4" />
           </button>
           {spool.archived_at ? (
@@ -1659,7 +1490,7 @@ function SpoolTableRow({
 function SpoolTableGroup({
   spools, representative, remaining, pct, isExpanded, onToggle,
   onEdit, onArchive, onDelete,
-  visibleColumns, assignmentMap, currencySymbol, dateFormat, t, onSyncWeight,
+  visibleColumns, assignmentMap, currencySymbol, dateFormat, t,
 }: {
   spools: InventorySpool[];
   representative: InventorySpool;
@@ -1675,7 +1506,6 @@ function SpoolTableGroup({
   currencySymbol: string;
   dateFormat: DateFormat;
   t: TFn;
-  onSyncWeight?: (spool: InventorySpool) => void;
 }) {
   return (
     <>
@@ -1689,14 +1519,14 @@ function SpoolTableGroup({
             {idx === 0 ? (
               <div className="flex items-center gap-2">
                 <ChevronDown className={`w-4 h-4 text-bambu-gray transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
-                {columnCells[colId]?.({ spool: representative, remaining, pct, assignmentMap, currencySymbol, dateFormat, t, onSyncWeight })}
+                {columnCells[colId]?.({ spool: representative, remaining, pct, assignmentMap, currencySymbol, dateFormat, t })}
               </div>
             ) : colId === 'id' ? (
               <span className="text-xs font-medium bg-bambu-green/20 text-bambu-green px-2 py-0.5 rounded-full">
                 {t('inventory.groupedSpools', { count: spools.length })}
               </span>
             ) : (
-              columnCells[colId]?.({ spool: representative, remaining, pct, assignmentMap, currencySymbol, dateFormat, t, onSyncWeight })
+              columnCells[colId]?.({ spool: representative, remaining, pct, assignmentMap, currencySymbol, dateFormat, t })
             )}
           </td>
         ))}
@@ -1725,7 +1555,6 @@ function SpoolTableGroup({
             currencySymbol={currencySymbol}
             dateFormat={dateFormat}
             t={t}
-            onSyncWeight={onSyncWeight}
           />
         );
       })}

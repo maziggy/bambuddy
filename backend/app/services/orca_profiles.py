@@ -230,23 +230,10 @@ MATERIAL_TYPES = [
 
 
 def _parse_material_from_name(name: str) -> str | None:
-    """Extract filament material type from preset name, e.g. 'Overture PLA Matte' -> 'PLA'.
-
-    Handles 'X Support for Y' patterns where the filament type is Y, not X.
-    e.g. 'PLA Support for PETG PETG Basic @Bambu Lab H2D' -> 'PETG'.
-    """
+    """Extract filament material type from preset name, e.g. 'Overture PLA Matte' -> 'PLA'."""
     import re
 
     upper = name.upper()
-
-    # Handle "X Support for Y" pattern: the filament type is Y, not X.
-    support_match = re.search(r"\bSUPPORT\s+FOR\s+", upper)
-    if support_match:
-        after_support = upper[support_match.end() :]
-        for mat in MATERIAL_TYPES:
-            if re.search(rf"\b{mat}\b", after_support):
-                return mat
-
     for mat in MATERIAL_TYPES:
         if re.search(rf"\b{mat}\b", upper):
             return mat

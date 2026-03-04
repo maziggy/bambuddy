@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Droplets, Link2, Copy, Check, Settings2, ExternalLink, Package, Unlink } from 'lucide-react';
-import { isLightColor } from '../utils/colors';
 
 interface FilamentData {
   vendor: 'Bambu Lab' | 'Generic';
@@ -135,6 +134,17 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
     if (fill <= 30) return '#f97316'; // orange
     if (fill <= 50) return '#eab308'; // yellow
     return '#22c55e'; // green
+  };
+
+  // Determine if color is light (for text contrast on swatch)
+  const isLightColor = (hex: string | null): boolean => {
+    if (!hex) return false;
+    const cleanHex = hex.replace('#', '');
+    const r = parseInt(cleanHex.slice(0, 2), 16);
+    const g = parseInt(cleanHex.slice(2, 4), 16);
+    const b = parseInt(cleanHex.slice(4, 6), 16);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.6;
   };
 
   const colorHex = data.colorHex ? `#${data.colorHex.replace('#', '')}` : null;

@@ -2,7 +2,6 @@ import { AlertCircle, CheckCircle, ChevronDown, ChevronUp, Info, Loader2, X, XCi
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
-import { formatFileSize } from '../utils/file';
 
 type ToastType = 'success' | 'error' | 'warning' | 'info' | 'loading';
 
@@ -76,6 +75,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const timeoutRefs = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const dispatchToastId = 'background-dispatch';
   const lastDispatchSummaryRef = useRef<string | null>(null);
+
+  const formatBytes = useCallback((bytes: number) => {
+    if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  }, []);
 
   // Clean up all timeouts on unmount
   useEffect(() => {
@@ -495,7 +502,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                           )}
                           {job.status === 'processing' && typeof job.uploadBytes === 'number' && typeof job.uploadTotalBytes === 'number' && job.uploadTotalBytes > 0 && (
                             <div className="text-[11px] text-bambu-gray truncate">
-                              {formatFileSize(job.uploadBytes)} / {formatFileSize(job.uploadTotalBytes)}
+                              {formatBytes(job.uploadBytes)} / {formatBytes(job.uploadTotalBytes)}
                               {typeof job.uploadProgressPct === 'number' ? ` (${job.uploadProgressPct.toFixed(1)}%)` : ''}
                             </div>
                           )}

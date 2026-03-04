@@ -28,7 +28,7 @@ from backend.app.services.bambu_ftp import (
 )
 
 # Brief delay to allow pyftpdlib to flush uploaded files to disk.
-# Needed because upload_file() skips voidresp() for all models,
+# Needed because upload_file() skips voidresp() for A1 compatibility,
 # so the server may still be processing the data channel close event.
 _UPLOAD_FLUSH_DELAY = 0.3
 
@@ -306,8 +306,8 @@ class TestUpload:
         result = client.upload_file(local, "/cache/upload.3mf")
         assert result is True
         client.disconnect()
-        # Verify via fresh connection (upload_file skips voidresp() for all
-        # models, so the original session can't be reused for download)
+        # Verify via fresh connection (upload_file skips voidresp()
+        # so the original session can't be reused for download)
         time.sleep(_UPLOAD_FLUSH_DELAY)
         client2 = ftp_client_factory()
         client2.connect()
@@ -403,11 +403,11 @@ class TestUpload:
     def test_upload_large_chunked(self, ftp_client_factory, ftp_server, tmp_path):
         """Large file upload in chunks completes without error.
 
-        Uses 2.5MB to trigger multiple chunks with 64KB CHUNK_SIZE.
-        Content verification skipped because upload_file() skips
-        voidresp() for all models, so the server may still be flushing
-        when we check. The upload result=True confirms the client sent
-        all chunks without error.
+        Uses 2.5MB to trigger multiple chunks with 1MB CHUNK_SIZE.
+        Content verification skipped because upload_file() doesn't call
+        voidresp() (for A1 compatibility), so the server may still be
+        flushing when we check. The upload result=True confirms the
+        client sent all chunks without error.
         """
         content = b"C" * (1024 * 1024 * 2 + 512 * 1024)
         local = tmp_path / "large.bin"
@@ -422,8 +422,8 @@ class TestUpload:
         client.connect()
         result = client.upload_file(local, "/cache/large.bin", on_progress)
         assert result is True
-        # Verify many chunks were sent (2.5MB / 64KB = 40 chunks)
-        assert len(progress_calls) >= 38
+        # Verify multiple chunks were sent
+        assert len(progress_calls) >= 3  # 2.5MB / 1MB = at least 3 chunks
         assert progress_calls[-1][0] == len(content)
         client.disconnect()
 
@@ -871,27 +871,46 @@ class TestFailureScenarios:
         assert result2 == b"data after retry"
         client.disconnect()
 
-    def test_upload_skips_voidresp(self, ftp_client_factory, ftp_server, tmp_path):
-        """Upload returns True without calling voidresp() for any model.
+    def test_upload_succeeds_despite_voidresp_error(self, ftp_client_factory, ftp_server, tmp_path):
+        """Upload returns True even when voidresp() gets a non-clean response.
 
-        voidresp() is skipped for all models: A1 printers hang on it,
-        H2D printers delay the 226 response by 30+ seconds, and X1C/P1S
-        gain nothing from waiting. The file is on the SD card once
-        sendall() returns.
+        Regression: Previously, a voidresp() error after successful data transfer
+        returned False, which caused with_ftp_retry to re-upload the entire file
+        in a loop.
         """
         content = b"voidresp test data"
         local = tmp_path / "voidresp_test.3mf"
         local.write_bytes(content)
-        for model in ("X1C", "A1", "H2D", None):
-            client = ftp_client_factory(printer_model=model)
-            client.connect()
-            result = client.upload_file(local, "/cache/voidresp_test.3mf")
-            assert result is True, f"Upload failed for model={model}"
-            client.disconnect()
-            # Verify the file is actually on the server
-            time.sleep(_UPLOAD_FLUSH_DELAY)
-            client2 = ftp_client_factory()
-            client2.connect()
-            downloaded = client2.download_file("/cache/voidresp_test.3mf")
-            assert downloaded == content, f"Content mismatch for model={model}"
-            client2.disconnect()
+        client = ftp_client_factory(printer_model="X1C")
+        client.connect()
+        result = client.upload_file(local, "/cache/voidresp_test.3mf")
+        assert result is True
+        client.disconnect()
+        # Verify the file is actually on the server
+        time.sleep(_UPLOAD_FLUSH_DELAY)
+        client2 = ftp_client_factory()
+        client2.connect()
+        downloaded = client2.download_file("/cache/voidresp_test.3mf")
+        assert downloaded == content
+        client2.disconnect()
+
+    def test_upload_a1_skips_voidresp(self, ftp_client_factory, ftp_server, tmp_path):
+        """A1 models skip voidresp() entirely and still return True.
+
+        Regression: A1 printers hang on voidresp() after transfercmd uploads.
+        """
+        content = b"A1 upload test"
+        local = tmp_path / "a1_test.3mf"
+        local.write_bytes(content)
+        client = ftp_client_factory(printer_model="A1")
+        client.connect()
+        result = client.upload_file(local, "/cache/a1_test.3mf")
+        assert result is True
+        client.disconnect()
+        # Verify the file is actually on the server
+        time.sleep(_UPLOAD_FLUSH_DELAY)
+        client2 = ftp_client_factory()
+        client2.connect()
+        downloaded = client2.download_file("/cache/a1_test.3mf")
+        assert downloaded == content
+        client2.disconnect()

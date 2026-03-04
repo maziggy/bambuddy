@@ -83,9 +83,6 @@ export function hexToColorName(hex: string | null | undefined): string {
     if (l > 0.6) return 'Light Gray';
     return 'Gray';
   }
-  // Brown is orange/yellow hue with lower lightness
-  if (h >= 15 && h < 45 && l < 0.45) return 'Brown';
-  if (h >= 45 && h < 70 && l < 0.40) return 'Brown';
   if (h < 15 || h >= 345) return 'Red';
   if (h < 45) return 'Orange';
   if (h < 70) return 'Yellow';
@@ -127,31 +124,4 @@ export function resolveSpoolColorName(colorName: string | null, rgba: string | n
   }
   // Return null (displayed as "-") — better than showing a code
   return null;
-}
-
-/**
- * Parse an RGBA hex string (e.g., "FF0000FF") to a CSS rgba() color.
- * Returns null for empty, all-zero, or fully transparent colors.
- */
-export function parseFilamentColor(rgba: string): string | null {
-  if (!rgba || rgba === '00000000' || rgba.length < 6) return null;
-  const r = rgba.slice(0, 2);
-  const g = rgba.slice(2, 4);
-  const b = rgba.slice(4, 6);
-  const a = rgba.length >= 8 ? parseInt(rgba.slice(6, 8), 16) / 255 : 1;
-  if (a === 0) return null;
-  return `rgba(${parseInt(r, 16)}, ${parseInt(g, 16)}, ${parseInt(b, 16)}, ${a})`;
-}
-
-/**
- * Check if a hex color is light (for choosing text contrast).
- * Uses luminance formula: 0.299*R + 0.587*G + 0.114*B.
- */
-export function isLightColor(hex: string | null): boolean {
-  if (!hex || hex.length < 6) return false;
-  const cleanHex = hex.replace('#', '');
-  const r = parseInt(cleanHex.slice(0, 2), 16);
-  const g = parseInt(cleanHex.slice(2, 4), 16);
-  const b = parseInt(cleanHex.slice(4, 6), 16);
-  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6;
 }

@@ -2,12 +2,9 @@
 
 Bambu slicers (BambuStudio, OrcaSlicer) connect to a printer on port 3000
 or 3002 to perform the "bind with access code" handshake before using
-MQTT/FTP.
+MQTT/FTP. The port varies by slicer version, so we listen on both.
 
-Port 3000: plain TCP (legacy / some printer models).
-Port 3002: TLS (newer firmware, e.g. A1 Mini 01.07.x).
-
-Protocol (same on both ports, only transport differs):
+Protocol:
   - Framing: 0xA5A5 + uint16_le(total_msg_size) + JSON payload + 0xA7A7
   - Slicer sends: {"login":{"command":"detect","sequence_id":"20000"}}
   - Printer replies: {"login":{"bind":"free","command":"detect","connect":"lan",
@@ -19,15 +16,11 @@ Protocol (same on both ports, only transport differs):
 import asyncio
 import json
 import logging
-import ssl
 import struct
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-BIND_PORT_PLAIN = 3000
-BIND_PORT_TLS = 3002
-BIND_PORTS = [BIND_PORT_PLAIN, BIND_PORT_TLS]
+BIND_PORTS = [3000, 3002]
 FRAME_HEADER = b"\xa5\xa5"
 FRAME_TRAILER = b"\xa7\xa7"
 HEADER_SIZE = 4  # 2 bytes magic + 2 bytes length
@@ -40,8 +33,8 @@ class BindServer:
     In server mode, Bambuddy IS the printer — it responds with its own
     identity so the slicer can discover and bind to it.
 
-    Port 3000 is plain TCP, port 3002 is TLS.  BambuStudio chooses which
-    port to use based on the printer model discovered via SSDP.
+    Different BambuStudio versions connect on different ports (3000 or 3002),
+    so we listen on both to ensure compatibility.
     """
 
     def __init__(
@@ -51,66 +44,39 @@ class BindServer:
         name: str,
         version: str = "01.00.00.00",
         bind_address: str = "0.0.0.0",  # nosec B104
-        cert_path: Path | None = None,
-        key_path: Path | None = None,
     ):
         self.serial = serial
         self.model = model
         self.name = name
         self.version = version
         self.bind_address = bind_address
-        self.cert_path = cert_path
-        self.key_path = key_path
 
         self._servers: list[asyncio.Server] = []
         self._running = False
 
-    def _create_tls_context(self) -> ssl.SSLContext | None:
-        """Create SSL context for the TLS bind port (3002)."""
-        if not self.cert_path or not self.key_path:
-            return None
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ctx.load_cert_chain(str(self.cert_path), str(self.key_path))
-        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-        ctx.verify_mode = ssl.CERT_NONE
-        return ctx
-
     async def start(self) -> None:
-        """Start the bind server on ports 3000 (plain) and 3002 (TLS)."""
+        """Start the bind server on ports 3000 and 3002."""
         if self._running:
             return
 
         self._running = True
-
-        tls_ctx = self._create_tls_context()
-        if not tls_ctx:
-            logger.warning("Bind server: no TLS cert provided, port %s will be plain TCP", BIND_PORT_TLS)
-
         logger.info(
-            "Starting bind server on ports %s (serial=%s, model=%s, tls=%s)",
+            "Starting bind server on ports %s (serial=%s, model=%s)",
             BIND_PORTS,
             self.serial,
             self.model,
-            tls_ctx is not None,
         )
 
         try:
             for port in BIND_PORTS:
-                use_tls = port == BIND_PORT_TLS and tls_ctx is not None
                 try:
                     server = await asyncio.start_server(
                         self._handle_client,
                         self.bind_address,
                         port,
-                        ssl=tls_ctx if use_tls else None,
                     )
                     self._servers.append(server)
-                    logger.info(
-                        "Bind server listening on %s:%s (%s)",
-                        self.bind_address,
-                        port,
-                        "TLS" if use_tls else "plain",
-                    )
+                    logger.info("Bind server listening on %s:%s", self.bind_address, port)
                 except OSError as e:
                     if e.errno == 98:
                         logger.warning("Bind server port %s already in use, skipping", port)

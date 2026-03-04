@@ -42,9 +42,6 @@ import {
   XCircle,
   User,
   Home,
-  Printer as PrinterIcon,
-  Info,
-  Cable,
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
@@ -67,12 +64,7 @@ import { ConfigureAmsSlotModal } from '../components/ConfigureAmsSlotModal';
 import { useToast } from '../contexts/ToastContext';
 import { ChamberLight } from '../components/icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';
-import { FileUploadModal } from '../components/FileUploadModal';
-import { PrintModal } from '../components/PrintModal';
-import { PrinterInfoModal } from '../components/PrinterInfoModal';
 import { getGlobalTrayId } from '../utils/amsHelpers';
-import { getPrinterImage, getWifiStrength } from '../utils/printer';
-import { hexToColorName, parseFilamentColor, isLightColor } from '../utils/colors';
 
 // Complete Bambu Lab filament color mapping by tray_id_name
 // Source: https://github.com/queengooborg/Bambu-Lab-RFID-Library
@@ -336,6 +328,69 @@ function getBambuColorName(trayIdName: string | null | undefined): string | null
   return BAMBU_COLOR_CODE_FALLBACK[colorCode] || null;
 }
 
+// Convert hex color to basic color name
+function hexToBasicColorName(hex: string | null | undefined): string {
+  if (!hex || hex.length < 6) return 'Unknown';
+
+  // Parse RGB from hex (format: RRGGBBAA or RRGGBB)
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+
+  // Calculate HSL for better color classification
+  const max = Math.max(r, g, b) / 255;
+  const min = Math.min(r, g, b) / 255;
+  const l = (max + min) / 2;
+
+  let h = 0;
+  let s = 0;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+
+    const rNorm = r / 255;
+    const gNorm = g / 255;
+    const bNorm = b / 255;
+
+    if (max === rNorm) {
+      h = ((gNorm - bNorm) / d + (gNorm < bNorm ? 6 : 0)) / 6;
+    } else if (max === gNorm) {
+      h = ((bNorm - rNorm) / d + 2) / 6;
+    } else {
+      h = ((rNorm - gNorm) / d + 4) / 6;
+    }
+  }
+
+  // Convert to degrees
+  h = h * 360;
+
+  // Classify by lightness first
+  if (l < 0.15) return 'Black';
+  if (l > 0.85) return 'White';
+
+  // Low saturation = gray
+  if (s < 0.15) {
+    if (l < 0.4) return 'Dark Gray';
+    if (l > 0.6) return 'Light Gray';
+    return 'Gray';
+  }
+
+  // Classify by hue
+  // Brown is orange/yellow hue with lower lightness
+  if (h >= 15 && h < 45 && l < 0.45) return 'Brown';
+  if (h >= 45 && h < 70 && l < 0.40) return 'Brown';
+
+  if (h < 15 || h >= 345) return 'Red';
+  if (h < 45) return 'Orange';
+  if (h < 70) return 'Yellow';
+  if (h < 150) return 'Green';
+  if (h < 200) return 'Cyan';
+  if (h < 260) return 'Blue';
+  if (h < 290) return 'Purple';
+  return 'Pink';
+}
+
 // Format K value with 3 decimal places, default to 0.020 if null
 function formatKValue(k: number | null | undefined): string {
   const value = k ?? 0.020;
@@ -355,6 +410,25 @@ function NozzleBadge({ side }: { side: 'L' | 'R' }) {
       {side}
     </span>
   );
+}
+
+// Parse RGBA hex to CSS color (skip if empty or all zeros)
+function parseFilamentColor(rgba: string): string | null {
+  if (!rgba || rgba === '00000000' || rgba.length < 6) return null;
+  const r = rgba.slice(0, 2);
+  const g = rgba.slice(2, 4);
+  const b = rgba.slice(4, 6);
+  const a = rgba.length >= 8 ? parseInt(rgba.slice(6, 8), 16) / 255 : 1;
+  if (a === 0) return null;
+  return `rgba(${parseInt(r, 16)}, ${parseInt(g, 16)}, ${parseInt(b, 16)}, ${a})`;
+}
+
+function isLightFilamentColor(rgba: string): boolean {
+  if (!rgba || rgba.length < 6) return false;
+  const r = parseInt(rgba.slice(0, 2), 16);
+  const g = parseInt(rgba.slice(2, 4), 16);
+  const b = parseInt(rgba.slice(4, 6), 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6;
 }
 
 // Expand nozzle type codes to material names
@@ -750,7 +824,7 @@ function NozzleRackCard({ slots, filamentInfo }: { slots: import('../api/client'
         {rackSlots.map((slot, i) => {
           const isEmpty = !slot.nozzle_diameter && !slot.nozzle_type;
           const filamentBg = !isEmpty ? parseFilamentColor(slot.filament_color) : null;
-          const lightBg = filamentBg ? isLightColor(slot.filament_color) : false;
+          const lightBg = filamentBg ? isLightFilamentColor(slot.filament_color) : false;
 
           return (
             <NozzleSlotHoverCard key={slot.id >= 0 ? slot.id : `empty-${i}`} slot={slot} index={i} filamentName={slot.filament_id ? filamentInfo?.[slot.filament_id]?.name : undefined}>
@@ -1012,6 +1086,36 @@ function getSpoolmanFillLevel(
   return Math.min(100, Math.round(
     (linkedSpool.remaining_weight / linkedSpool.filament_weight) * 100
   ));
+}
+
+function getPrinterImage(model: string | null | undefined): string {
+  if (!model) return '/img/printers/default.png';
+
+  const modelLower = model.toLowerCase().replace(/\s+/g, '');
+
+  // Map model names to image files
+  if (modelLower.includes('x1e')) return '/img/printers/x1e.png';
+  if (modelLower.includes('x1c') || modelLower.includes('x1carbon')) return '/img/printers/x1c.png';
+  if (modelLower.includes('x1')) return '/img/printers/x1c.png';
+  if (modelLower.includes('h2dpro') || modelLower.includes('h2d-pro')) return '/img/printers/h2dpro.png';
+  if (modelLower.includes('h2d')) return '/img/printers/h2d.png';
+  if (modelLower.includes('h2c')) return '/img/printers/h2c.png';
+  if (modelLower.includes('h2s')) return '/img/printers/h2d.png';
+  if (modelLower.includes('p2s')) return '/img/printers/p1s.png';
+  if (modelLower.includes('p1s')) return '/img/printers/p1s.png';
+  if (modelLower.includes('p1p')) return '/img/printers/p1p.png';
+  if (modelLower.includes('a1mini')) return '/img/printers/a1mini.png';
+  if (modelLower.includes('a1')) return '/img/printers/a1.png';
+
+  return '/img/printers/default.png';
+}
+
+function getWifiStrength(rssi: number): { labelKey: string; color: string; bars: number } {
+  if (rssi >= -50) return { labelKey: 'printers.wifiSignal.excellent', color: 'text-bambu-green', bars: 4 };
+  if (rssi >= -60) return { labelKey: 'printers.wifiSignal.good', color: 'text-bambu-green', bars: 3 };
+  if (rssi >= -70) return { labelKey: 'printers.wifiSignal.fair', color: 'text-yellow-400', bars: 2 };
+  if (rssi >= -80) return { labelKey: 'printers.wifiSignal.weak', color: 'text-orange-400', bars: 1 };
+  return { labelKey: 'printers.wifiSignal.veryWeak', color: 'text-red-400', bars: 1 };
 }
 
 /**
@@ -1348,13 +1452,6 @@ function PrinterCard({
   const [showPauseConfirm, setShowPauseConfirm] = useState(false);
   const [showResumeConfirm, setShowResumeConfirm] = useState(false);
   const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
-  const [showUploadForPrint, setShowUploadForPrint] = useState(false);
-  const [showPrinterInfo, setShowPrinterInfo] = useState(false);
-  const closePrinterInfo = useCallback(() => setShowPrinterInfo(false), []);
-  const [printAfterUpload, setPrintAfterUpload] = useState<{ id: number; filename: string } | null>(null);
-  const [isDraggingFile, setIsDraggingFile] = useState(false);
-  const [isDropUploading, setIsDropUploading] = useState(false);
-  const dragCounterRef = useRef(0);
   const [amsHistoryModal, setAmsHistoryModal] = useState<{
     amsId: number;
     amsLabel: string;
@@ -2011,106 +2108,8 @@ function PrinterCard({
     }
   };
 
-  const canDrop = isConnected && status?.state !== 'RUNNING' && status?.state !== 'PAUSE' && hasPermission('printers:control');
-
-  const handleCardDragEnter = (e: React.DragEvent) => {
-    e.preventDefault();
-    dragCounterRef.current++;
-    if (dragCounterRef.current === 1) setIsDraggingFile(true);
-  };
-
-  const handleCardDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = canDrop ? 'copy' : 'none';
-  };
-
-  const handleCardDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    dragCounterRef.current--;
-    if (dragCounterRef.current === 0) setIsDraggingFile(false);
-  };
-
-  const handleCardDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    dragCounterRef.current = 0;
-    setIsDraggingFile(false);
-
-    if (!canDrop) return;
-
-    const droppedFiles = Array.from(e.dataTransfer.files);
-    const file = droppedFiles[0];
-    if (!file) return;
-
-    // Only accept sliced/printable files (.gcode, .gcode.3mf, etc.)
-    const lower = file.name.toLowerCase();
-    if (!lower.endsWith('.gcode') && !lower.includes('.gcode.')) {
-      showToast(t('printers.dropNotPrintable', 'Only .gcode and .gcode.3mf files can be printed'), 'error');
-      return;
-    }
-
-    setIsDropUploading(true);
-    try {
-      const result = await api.uploadLibraryFile(file, null);
-
-      // Check printer compatibility if sliced_for_model is available in metadata
-      const slicedFor = (result.metadata as Record<string, unknown>)?.sliced_for_model as string | undefined;
-      const printerModel = mapModelCode(printer.model);
-      if (slicedFor && printerModel && slicedFor.toLowerCase() !== printerModel.toLowerCase()) {
-        await api.deleteLibraryFile(result.id).catch(() => {});
-        showToast(
-          t('printers.incompatibleFile', 'This file was sliced for {{slicedFor}}, but this printer is a {{printerModel}}', { slicedFor, printerModel }),
-          'error'
-        );
-        return;
-      }
-
-      setPrintAfterUpload({ id: result.id, filename: result.filename });
-    } catch {
-      showToast(t('common.uploadFailed', 'Upload failed'), 'error');
-    } finally {
-      setIsDropUploading(false);
-    }
-  };
-
   return (
-    <Card
-      className="relative"
-      onDragEnter={handleCardDragEnter}
-      onDragOver={handleCardDragOver}
-      onDragLeave={handleCardDragLeave}
-      onDrop={handleCardDrop}
-    >
-      {/* Drop zone overlay */}
-      {(isDraggingFile || isDropUploading) && (
-        <div
-          className={`absolute inset-0 z-10 rounded-xl border-2 border-dashed flex items-center justify-center transition-colors ${
-            isDropUploading
-              ? 'bg-bambu-green/10 border-bambu-green/50'
-              : canDrop
-                ? 'bg-bambu-green/10 border-bambu-green'
-                : 'bg-red-500/10 border-red-500/50'
-          }`}
-        >
-          <div className="text-center">
-            {isDropUploading ? (
-              <>
-                <Loader2 className="w-8 h-8 mx-auto mb-2 text-bambu-green animate-spin" />
-                <p className="text-sm font-medium text-bambu-green">{t('common.uploading', 'Uploading...')}</p>
-              </>
-            ) : canDrop ? (
-              <>
-                <PrinterIcon className="w-8 h-8 mx-auto mb-2 text-bambu-green" />
-                <p className="text-sm font-medium text-bambu-green">{t('printers.dropToPrint', 'Drop to print')}</p>
-              </>
-            ) : (
-              <>
-                <X className="w-8 h-8 mx-auto mb-2 text-red-400" />
-                <p className="text-sm font-medium text-red-400">{t('printers.cannotPrint', 'Printer busy')}</p>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+    <Card className="relative">
       <CardContent className={cardSize >= 3 ? 'p-5' : ''}>
         {/* Header */}
         <div className={getSpacing()}>
@@ -2183,16 +2182,6 @@ function PrinterCard({
                   <button
                     className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
                     onClick={() => {
-                      setShowPrinterInfo(true);
-                      setShowMenu(false);
-                    }}
-                  >
-                    <Info className="w-4 h-4" />
-                    {t('printers.printerInformation')}
-                  </button>
-                  <button
-                    className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
-                    onClick={() => {
                       connectMutation.mutate();
                       setShowMenu(false);
                     }}
@@ -2249,17 +2238,8 @@ function PrinterCard({
                 )}
                 {status?.connected ? t('printers.connection.connected') : t('printers.connection.offline')}
               </span>
-              {/* Network connection indicator */}
-              {status?.connected && status?.wired_network && (
-                <span
-                  className="flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-status-ok/20 text-status-ok"
-                  title={t('printers.connection.ethernet', 'Ethernet')}
-                >
-                  <Cable className="w-3 h-3" />
-                  {t('printers.connection.ethernet', 'Ethernet')}
-                </span>
-              )}
-              {status?.connected && !status?.wired_network && wifiSignal != null && (
+              {/* WiFi signal strength indicator */}
+              {status?.connected && wifiSignal != null && (
                 <span
                   className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
                     wifiSignal >= -50
@@ -2427,7 +2407,7 @@ function PrinterCard({
             {/* Compact: Simple status bar */}
             {viewMode === 'compact' ? (
               <div className="mt-2">
-                {(status.state === 'RUNNING' || status.state === 'PAUSE') ? (
+                {status.state === 'RUNNING' ? (
                   <div className="flex items-center gap-2">
                     <div className="flex-1 bg-bambu-dark-tertiary rounded-full h-1.5">
                       <div
@@ -2476,14 +2456,14 @@ function PrinterCard({
                   <div className="flex gap-3">
                     {/* Cover Image */}
                     <CoverImage
-                      url={(status.state === 'RUNNING' || status.state === 'PAUSE') ? status.cover_url : null}
-                      printName={(status.state === 'RUNNING' || status.state === 'PAUSE') ? (status.subtask_name || status.current_print || undefined) : undefined}
+                      url={status.state === 'RUNNING' ? status.cover_url : null}
+                      printName={status.state === 'RUNNING' ? (status.subtask_name || status.current_print || undefined) : undefined}
                     />
                     {/* Print Info */}
                     <div className="flex-1 min-w-0">
-                      {status.current_print && (status.state === 'RUNNING' || status.state === 'PAUSE') ? (
+                      {status.current_print && status.state === 'RUNNING' ? (
                         <>
-                          <p className="text-sm text-bambu-gray mb-1">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
+                          <p className="text-sm text-bambu-gray mb-1">{status.stg_cur_name || 'Printing'}</p>
                           <p className="text-white text-sm mb-2 truncate">
                             {status.subtask_name || status.current_print}
                           </p>
@@ -2707,7 +2687,6 @@ function PrinterCard({
                           {chamberFan ?? 0}%
                         </span>
                       </div>
-
                     </div>
 
                     {/* Right: Print Control Buttons */}
@@ -2866,7 +2845,7 @@ function PrinterCard({
                                 const filamentData = tray?.tray_type ? {
                                   vendor: (isBambuLabSpool(tray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
                                   profile: cloudInfo?.name || slotPreset?.preset_name || tray.tray_sub_brands || tray.tray_type,
-                                  colorName: getBambuColorName(tray.tray_id_name) || hexToColorName(tray.tray_color),
+                                  colorName: getBambuColorName(tray.tray_id_name) || hexToBasicColorName(tray.tray_color),
                                   colorHex: tray.tray_color || null,
                                   kFactor: formatKValue(tray.k),
                                   fillLevel: effectiveFill,
@@ -3088,7 +3067,7 @@ function PrinterCard({
                         const filamentData = tray?.tray_type ? {
                           vendor: (isBambuLabSpool(tray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
                           profile: cloudInfo?.name || slotPreset?.preset_name || tray.tray_sub_brands || tray.tray_type,
-                          colorName: getBambuColorName(tray.tray_id_name) || hexToColorName(tray.tray_color),
+                          colorName: getBambuColorName(tray.tray_id_name) || hexToBasicColorName(tray.tray_color),
                           colorHex: tray.tray_color || null,
                           kFactor: formatKValue(tray.k),
                           fillLevel: htEffectiveFill,
@@ -3349,7 +3328,7 @@ function PrinterCard({
                               const extFilamentData = {
                                 vendor: (isBambuLabSpool(extTray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
                                 profile: extCloudInfo?.name || extSlotPreset?.preset_name || extTray.tray_sub_brands || extTray.tray_type || 'Unknown',
-                                colorName: getBambuColorName(extTray.tray_id_name) || hexToColorName(extTray.tray_color),
+                                colorName: getBambuColorName(extTray.tray_id_name) || hexToBasicColorName(extTray.tray_color),
                                 colorHex: extTray.tray_color || null,
                                 kFactor: formatKValue(extTray.k),
                                 fillLevel: extEffectiveFill,
@@ -3593,17 +3572,22 @@ function PrinterCard({
 
         {/* Connection Info & Actions - hidden in compact mode */}
         {viewMode === 'expanded' && (
-          <div className="mt-4 pt-4 border-t border-bambu-dark-tertiary flex items-center justify-end gap-2 flex-wrap">
-              {/* Chamber Light */}
+          <div className="mt-4 pt-4 border-t border-bambu-dark-tertiary flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="text-xs text-bambu-gray">
+              <p>{printer.ip_address}</p>
+              <p className="truncate">{printer.serial_number}</p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Chamber Light Toggle */}
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={() => chamberLightMutation.mutate(!status?.chamber_light)}
                 disabled={!status?.connected || chamberLightMutation.isPending || !hasPermission('printers:control')}
                 title={!hasPermission('printers:control') ? t('printers.permission.noControl') : (status?.chamber_light ? t('printers.chamberLightOff') : t('printers.chamberLightOn'))}
-                className={status?.chamber_light ? '!border-yellow-500 !text-yellow-400 hover:!bg-yellow-500/20' : ''}
+                className={status?.chamber_light ? 'bg-yellow-500/20 hover:bg-yellow-500/30 border-yellow-500/30' : ''}
               >
-                <ChamberLight on={status?.chamber_light ?? false} className={`w-4 h-4 ${status?.chamber_light ? 'text-yellow-400' : ''}`} />
+                <ChamberLight on={status?.chamber_light ?? false} className="w-4 h-4" />
               </Button>
               {/* Camera Button */}
               <Button
@@ -3666,24 +3650,13 @@ function PrinterCard({
                 variant="secondary"
                 size="sm"
                 onClick={() => setShowFileManager(true)}
-                disabled={!isConnected || !hasPermission('printers:files')}
+                disabled={!hasPermission('printers:files')}
                 title={!hasPermission('printers:files') ? t('printers.permission.noFiles') : t('printers.browseFiles')}
               >
                 <HardDrive className="w-4 h-4" />
-                {t('printers.files')}
+                Files
               </Button>
-              {isConnected && status?.state !== 'RUNNING' && status?.state !== 'PAUSE' && (
-                <Button
-                  size="sm"
-                  onClick={() => setShowUploadForPrint(true)}
-                  disabled={!hasPermission('printers:control')}
-                  title={!hasPermission('printers:control') ? t('printers.permission.noControl') : t('common.print')}
-                  className="!bg-bambu-green hover:!bg-bambu-green/80 !text-white"
-                >
-                  <PrinterIcon className="w-4 h-4" />
-                  {t('common.print')}
-                </Button>
-              )}
+            </div>
           </div>
         )}
       </CardContent>
@@ -3697,60 +3670,12 @@ function PrinterCard({
         />
       )}
 
-      {/* Upload for Print Modal */}
-      {showUploadForPrint && (
-        <FileUploadModal
-          folderId={null}
-          onClose={() => setShowUploadForPrint(false)}
-          onUploadComplete={() => {}}
-          autoUpload
-          accept=".gcode,.3mf"
-          validateFile={(file) => {
-            const lower = file.name.toLowerCase();
-            if (!lower.endsWith('.gcode') && !lower.includes('.gcode.')) {
-              return t('printers.dropNotPrintable', 'Only .gcode and .gcode.3mf files can be printed');
-            }
-          }}
-          onFileUploaded={(uploadedFile) => {
-            // Check printer compatibility if sliced_for_model is available in metadata
-            const slicedFor = (uploadedFile.metadata as Record<string, unknown>)?.sliced_for_model as string | undefined;
-            const printerModel = mapModelCode(printer.model);
-            if (slicedFor && printerModel && slicedFor.toLowerCase() !== printerModel.toLowerCase()) {
-              api.deleteLibraryFile(uploadedFile.id).catch(() => {});
-              return t('printers.incompatibleFile', 'This file was sliced for {{slicedFor}}, but this printer is a {{printerModel}}', { slicedFor, printerModel });
-            }
-            setPrintAfterUpload({ id: uploadedFile.id, filename: uploadedFile.filename });
-          }}
-        />
-      )}
-
-      {/* Print Modal (after upload) */}
-      {printAfterUpload && (
-        <PrintModal
-          mode="reprint"
-          libraryFileId={printAfterUpload.id}
-          archiveName={printAfterUpload.filename}
-          initialSelectedPrinterIds={[printer.id]}
-          onClose={() => setPrintAfterUpload(null)}
-          onSuccess={() => setPrintAfterUpload(null)}
-        />
-      )}
-
       {/* MQTT Debug Modal */}
       {showMQTTDebug && (
         <MQTTDebugModal
           printerId={printer.id}
           printerName={printer.name}
           onClose={() => setShowMQTTDebug(false)}
-        />
-      )}
-
-      {showPrinterInfo && (
-        <PrinterInfoModal
-          printer={printer}
-          status={status}
-          totalPrintHours={maintenanceInfo?.total_print_hours}
-          onClose={closePrinterInfo}
         />
       )}
 

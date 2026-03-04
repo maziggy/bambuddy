@@ -112,16 +112,12 @@ describe('PrintersPage', () => {
   });
 
   describe('printer info', () => {
-    it('shows IP address in printer info modal', async () => {
+    it('shows IP address', async () => {
       render(<PrintersPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+        expect(screen.getByText('192.168.1.100')).toBeInTheDocument();
       });
-
-      // IP address is shown in the PrinterInfoModal (accessed via 3-dot menu),
-      // not directly on the card. Verify the printer data loaded correctly.
-      expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
     });
 
     it('shows location when set', async () => {

@@ -276,15 +276,6 @@ export function useWebSocket() {
         window.dispatchEvent(new CustomEvent('spoolbuddy-tag-removed', { detail: message }));
         break;
 
-      case 'spoolbuddy_tag_written':
-        window.dispatchEvent(new CustomEvent('spoolbuddy-tag-written', { detail: message }));
-        debouncedInvalidate('inventory-spools');
-        break;
-
-      case 'spoolbuddy_tag_write_failed':
-        window.dispatchEvent(new CustomEvent('spoolbuddy-tag-write-failed', { detail: message }));
-        break;
-
       case 'spoolbuddy_online':
         window.dispatchEvent(new CustomEvent('spoolbuddy-online', { detail: message }));
         break;

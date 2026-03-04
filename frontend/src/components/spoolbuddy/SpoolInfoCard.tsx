@@ -24,12 +24,12 @@ function getDefaultCoreWeight(): number {
 interface SpoolInfoCardProps {
   spool: MatchedSpool;
   scaleWeight: number | null;
+  weightStable: boolean;
   onClose?: () => void;
   onSyncWeight?: () => void;
-  onAssignToAms?: () => void;
 }
 
-export function SpoolInfoCard({ spool, scaleWeight, onClose, onSyncWeight, onAssignToAms }: SpoolInfoCardProps) {
+export function SpoolInfoCard({ spool, scaleWeight, weightStable, onClose, onSyncWeight }: SpoolInfoCardProps) {
   const { t } = useTranslation();
   const [syncing, setSyncing] = useState(false);
   const [synced, setSynced] = useState(false);
@@ -66,7 +66,7 @@ export function SpoolInfoCard({ spool, scaleWeight, onClose, onSyncWeight, onAss
   const isMatch = difference !== null ? Math.abs(difference) <= 50 : null;
 
   const handleSyncWeight = async () => {
-    if (scaleWeight === null) return;
+    if (scaleWeight === null || !weightStable) return;
     setSyncing(true);
     try {
       await spoolbuddyApi.updateSpoolWeight(spool.id, Math.round(scaleWeight));
@@ -131,7 +131,7 @@ export function SpoolInfoCard({ spool, scaleWeight, onClose, onSyncWeight, onAss
       </div>
 
       {/* Details grid */}
-      <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm bg-zinc-800 rounded-lg p-4 w-full">
+      <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm bg-zinc-800 rounded-lg p-3 w-full">
         <div className="flex justify-between">
           <span className="text-zinc-500">{t('spoolbuddy.dashboard.grossWeight', 'Gross weight')}</span>
           <span className="font-mono text-zinc-300">{grossWeight !== null ? `${grossWeight}g` : '\u2014'}</span>
@@ -150,16 +150,16 @@ export function SpoolInfoCard({ spool, scaleWeight, onClose, onSyncWeight, onAss
             <span className={`flex items-center gap-1 font-mono ${isMatch ? 'text-green-500' : 'text-yellow-500'}`}>
               {grossWeight}g
               {isMatch ? (
-                <Check className="w-3.5 h-3.5" />
+                <Check className="w-3 h-3" />
               ) : (
                 <>
-                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <AlertTriangle className="w-3 h-3" />
                   <button
                     onClick={handleSyncWeight}
                     className="p-1 hover:bg-green-500/20 rounded transition-colors text-green-500"
                     title={t('spoolbuddy.dashboard.syncWeight', 'Sync Weight')}
                   >
-                    <RefreshCw className="w-4 h-4" />
+                    <RefreshCw className="w-3.5 h-3.5" />
                   </button>
                 </>
               )}
@@ -178,23 +178,13 @@ export function SpoolInfoCard({ spool, scaleWeight, onClose, onSyncWeight, onAss
 
       {/* Action buttons */}
       <div className="flex gap-2 justify-center">
-        {onAssignToAms && (
-          <button
-            onClick={onAssignToAms}
-            className="px-5 py-2.5 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors min-h-[44px]"
-          >
-            {t('spoolbuddy.modal.assignToAms', 'Assign to AMS')}
-          </button>
-        )}
         <button
           onClick={handleSyncWeight}
-          disabled={scaleWeight === null || syncing}
+          disabled={!weightStable || scaleWeight === null || syncing}
           className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-colors min-h-[44px] ${
             synced
               ? 'bg-green-600/20 text-green-400'
-              : onAssignToAms
-                ? 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed'
-                : 'bg-green-600 text-white hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed'
+              : 'bg-green-600 text-white hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed'
           }`}
         >
           {syncing ? '...' : synced ? t('spoolbuddy.dashboard.weightSynced', 'Synced!') : t('spoolbuddy.dashboard.syncWeight', 'Sync Weight')}
@@ -217,11 +207,10 @@ interface UnknownTagCardProps {
   scaleWeight: number | null;
   coreWeight?: number;
   onLinkSpool?: () => void;
-  onAddToInventory?: () => void;
   onClose?: () => void;
 }
 
-export function UnknownTagCard({ tagUid, scaleWeight, coreWeight, onLinkSpool, onAddToInventory, onClose }: UnknownTagCardProps) {
+export function UnknownTagCard({ tagUid, scaleWeight, coreWeight, onLinkSpool, onClose }: UnknownTagCardProps) {
   const { t } = useTranslation();
   const defaultCoreWeight = coreWeight ?? getDefaultCoreWeight();
   const grossWeight = scaleWeight !== null
@@ -251,18 +240,10 @@ export function UnknownTagCard({ tagUid, scaleWeight, coreWeight, onLinkSpool, o
         </div>
       )}
       <div className="flex flex-wrap gap-2 justify-center">
-        {onAddToInventory && (
-          <button
-            onClick={onAddToInventory}
-            className="px-5 py-2.5 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors min-h-[44px]"
-          >
-            {t('spoolbuddy.modal.addToInventory', 'Add to Inventory')}
-          </button>
-        )}
         {onLinkSpool && (
           <button
             onClick={onLinkSpool}
-            className="px-5 py-2.5 rounded-lg text-sm font-medium bg-zinc-700 text-zinc-300 hover:bg-zinc-600 transition-colors min-h-[44px]"
+            className="px-5 py-2.5 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors min-h-[44px]"
           >
             <svg className="w-4 h-4 inline-block mr-1.5 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />

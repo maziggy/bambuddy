@@ -26,9 +26,9 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SpoolBuddyLayout } from './components/spoolbuddy/SpoolBuddyLayout';
 import { SpoolBuddyDashboard } from './pages/spoolbuddy/SpoolBuddyDashboard';
 import { SpoolBuddyAmsPage } from './pages/spoolbuddy/SpoolBuddyAmsPage';
+import { SpoolBuddyInventoryPage } from './pages/spoolbuddy/SpoolBuddyInventoryPage';
 import { SpoolBuddySettingsPage } from './pages/spoolbuddy/SpoolBuddySettingsPage';
-import { SpoolBuddyCalibrationPage } from './pages/spoolbuddy/SpoolBuddyCalibrationPage';
-import { SpoolBuddyWriteTagPage } from './pages/spoolbuddy/SpoolBuddyWriteTagPage';
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -123,9 +123,8 @@ function App() {
                 <Route element={<ProtectedRoute><WebSocketProvider><SpoolBuddyLayout /></WebSocketProvider></ProtectedRoute>}>
                   <Route path="spoolbuddy" element={<SpoolBuddyDashboard />} />
                   <Route path="spoolbuddy/ams" element={<SpoolBuddyAmsPage />} />
-                  <Route path="spoolbuddy/write-tag" element={<SpoolBuddyWriteTagPage />} />
+                  <Route path="spoolbuddy/inventory" element={<SpoolBuddyInventoryPage />} />
                   <Route path="spoolbuddy/settings" element={<SpoolBuddySettingsPage />} />
-                  <Route path="spoolbuddy/calibration" element={<SpoolBuddyCalibrationPage />} />
                 </Route>
 
                 {/* Main app with WebSocket for real-time updates */}

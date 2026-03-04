@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Copy, Check, Signal } from 'lucide-react';
+import { X, Copy, Check, Signal, Cable } from 'lucide-react';
 import { Card, CardContent } from './Card';
 import { formatDateOnly } from '../utils/date';
 import { getPrinterImage, getWifiStrength } from '../utils/printer';
@@ -109,8 +109,18 @@ export function PrinterInfoModal({ printer, status, totalPrintHours, onClose }: 
     ),
   });
 
-  // WiFi Signal
-  if (status?.wifi_signal != null) {
+  // Network connection
+  if (status?.wired_network) {
+    rows.push({
+      label: t('printers.networkLabel', 'Network'),
+      value: (
+        <span className="flex items-center gap-2">
+          <Cable className="w-4 h-4 text-bambu-green" />
+          <span className="text-bambu-green">{t('printers.connection.ethernet', 'Ethernet')}</span>
+        </span>
+      ),
+    });
+  } else if (status?.wifi_signal != null) {
     const wifi = getWifiStrength(status.wifi_signal);
     rows.push({
       label: t('printers.wifiSignalLabel'),

@@ -205,6 +205,7 @@ class PrinterStatus(BaseModel):
     timelapse: bool = False  # Timelapse recording active
     ipcam: bool = False  # Live view enabled
     wifi_signal: int | None = None  # WiFi signal strength in dBm
+    wired_network: bool = False  # Ethernet connection detected
     nozzles: list[NozzleInfoResponse] = []  # Nozzle hardware info (index 0=left/primary, 1=right)
     nozzle_rack: list[NozzleRackSlot] = []  # H2C 6-nozzle tool-changer rack
     print_options: PrintOptionsResponse | None = None  # AI detection and print options

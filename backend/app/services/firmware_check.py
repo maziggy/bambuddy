@@ -49,6 +49,22 @@ MODEL_TO_API_KEY = {
     "H2D Pro": "h2d-pro",
     "H2D-Pro": "h2d-pro",
     "H2DPRO": "h2d-pro",
+    # SSDP model codes (DevModel header) — in case raw codes are stored
+    "O1D": "h2d",
+    "O1E": "h2d-pro",
+    "O2D": "h2d-pro",
+    "O1C": "h2c",
+    "O1C2": "h2c",
+    "O1S": "h2s",
+    "BL-P001": "x1",
+    "BL-P002": "x1",
+    "BL-P003": "x1e",
+    "C11": "p1",
+    "C12": "p1",
+    "C13": "p2s",
+    "N2S": "a1",
+    "N1": "a1-mini",
+    "N7": "p2s",
 }
 
 # Reverse mapping: API key to model codes

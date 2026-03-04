@@ -715,6 +715,7 @@ class BackgroundDispatchService:
             archive = await archive_service.archive_print(
                 printer_id=job.printer_id,
                 source_file=file_path,
+                original_filename=lib_file.filename,
             )
             if not archive:
                 raise RuntimeError("Failed to create archive")

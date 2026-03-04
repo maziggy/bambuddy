@@ -657,7 +657,7 @@ export function PrintModal({
       onClick={isSubmitting ? undefined : onClose}
     >
       <Card
-        className="w-full max-w-lg max-h-[90vh] overflow-y-auto"
+        className="w-full max-w-2xl max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <CardContent className={mode === 'reprint' ? '' : 'p-0'}>

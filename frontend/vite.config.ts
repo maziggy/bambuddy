@@ -14,7 +14,6 @@ export default defineConfig({
     chunkSizeWarningLimit: 3000,
   },
   server: {
-    host: '0.0.0.0',
     proxy: {
       '/api/v1/ws': {
         target: backendUrl,

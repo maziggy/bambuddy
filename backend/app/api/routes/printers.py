@@ -571,7 +571,6 @@ async def get_printer_status(
         timelapse=state.timelapse,
         ipcam=state.ipcam,
         wifi_signal=state.wifi_signal,
-        wired_network=state.wired_network,
         nozzles=nozzles,
         nozzle_rack=nozzle_rack,
         print_options=print_options,

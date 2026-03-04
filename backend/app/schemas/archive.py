@@ -110,27 +110,6 @@ class ArchiveResponse(BaseModel):
         from_attributes = True
 
 
-class ArchiveSlim(BaseModel):
-    """Lightweight archive response for stats/dashboard widgets."""
-
-    printer_id: int | None
-    print_name: str | None
-    print_time_seconds: int | None
-    actual_time_seconds: int | None = None
-    filament_used_grams: float | None
-    filament_type: str | None
-    filament_color: str | None
-    status: str
-    started_at: datetime | None
-    completed_at: datetime | None
-    cost: float | None
-    quantity: int = 1
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
 class ArchiveStats(BaseModel):
     total_prints: int
     successful_prints: int

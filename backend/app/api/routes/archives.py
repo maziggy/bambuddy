@@ -2,7 +2,6 @@ import io
 import json
 import logging
 import zipfile
-from datetime import date, datetime, time, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
@@ -22,7 +21,7 @@ from backend.app.models.archive import PrintArchive
 from backend.app.models.filament import Filament
 from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.user import User
-from backend.app.schemas.archive import ArchiveResponse, ArchiveSlim, ArchiveStats, ArchiveUpdate, ReprintRequest
+from backend.app.schemas.archive import ArchiveResponse, ArchiveStats, ArchiveUpdate, ReprintRequest
 from backend.app.services.archive import ArchiveService
 from backend.app.utils.threemf_tools import extract_nozzle_mapping_from_3mf
 
@@ -123,8 +122,6 @@ def archive_to_response(
 async def list_archives(
     printer_id: int | None = None,
     project_id: int | None = None,
-    date_from: date | None = Query(None),
-    date_to: date | None = Query(None),
     limit: int = 50,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
@@ -135,8 +132,6 @@ async def list_archives(
     archives = await service.list_archives(
         printer_id=printer_id,
         project_id=project_id,
-        date_from=date_from,
-        date_to=date_to,
         limit=limit,
         offset=offset,
     )
@@ -152,78 +147,6 @@ async def list_archives(
         has_duplicate = has_hash_dup or has_name_dup
         result.append(archive_to_response(a, duplicate_count=1 if has_duplicate else 0))
     return result
-
-
-@router.get("/slim", response_model=list[ArchiveSlim])
-async def list_archives_slim(
-    date_from: date | None = Query(None),
-    date_to: date | None = Query(None),
-    limit: int = Query(default=10000, le=50000),
-    offset: int = 0,
-    db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
-):
-    """Lightweight archive listing for stats/dashboard widgets.
-
-    Returns only the fields needed for client-side aggregation,
-    skipping duplicate detection, file paths, and extra_data.
-    """
-    filters = []
-    if date_from:
-        dt_from = datetime.combine(date_from, time.min, tzinfo=timezone.utc)
-        filters.append(PrintArchive.created_at >= dt_from)
-    if date_to:
-        dt_to = datetime.combine(date_to, time.max, tzinfo=timezone.utc)
-        filters.append(PrintArchive.created_at <= dt_to)
-
-    query = (
-        select(
-            PrintArchive.printer_id,
-            PrintArchive.print_name,
-            PrintArchive.print_time_seconds,
-            PrintArchive.started_at,
-            PrintArchive.completed_at,
-            PrintArchive.filament_used_grams,
-            PrintArchive.filament_type,
-            PrintArchive.filament_color,
-            PrintArchive.status,
-            PrintArchive.cost,
-            PrintArchive.quantity,
-            PrintArchive.created_at,
-        )
-        .where(*filters)
-        .order_by(PrintArchive.created_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
-    result = await db.execute(query)
-    rows = result.all()
-
-    return [
-        {
-            "printer_id": r.printer_id,
-            "print_name": r.print_name,
-            "print_time_seconds": r.print_time_seconds,
-            "actual_time_seconds": (
-                int((r.completed_at - r.started_at).total_seconds())
-                if r.started_at
-                and r.completed_at
-                and r.status == "completed"
-                and (r.completed_at - r.started_at).total_seconds() > 0
-                else None
-            ),
-            "filament_used_grams": r.filament_used_grams,
-            "filament_type": r.filament_type,
-            "filament_color": r.filament_color,
-            "status": r.status,
-            "started_at": r.started_at,
-            "completed_at": r.completed_at,
-            "cost": r.cost,
-            "quantity": r.quantity,
-            "created_at": r.created_at,
-        }
-        for r in rows
-    ]
 
 
 @router.get("/search", response_model=list[ArchiveResponse])
@@ -354,9 +277,7 @@ async def rebuild_search_index(
 
 @router.get("/analysis/failures")
 async def analyze_failures(
-    days: int | None = None,
-    date_from: date | None = Query(None),
-    date_to: date | None = Query(None),
+    days: int = 30,
     printer_id: int | None = None,
     project_id: int | None = None,
     db: AsyncSession = Depends(get_db),
@@ -376,8 +297,6 @@ async def analyze_failures(
     service = FailureAnalysisService(db)
     return await service.analyze_failures(
         days=days,
-        date_from=date_from,
-        date_to=date_to,
         printer_id=printer_id,
         project_id=project_id,
     )
@@ -521,42 +440,25 @@ async def export_stats(
 
 @router.get("/stats", response_model=ArchiveStats)
 async def get_archive_stats(
-    date_from: date | None = Query(None, description="Start date (inclusive), YYYY-MM-DD"),
-    date_to: date | None = Query(None, description="End date (inclusive), YYYY-MM-DD"),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.STATS_READ),
 ):
     """Get statistics across all archives."""
-    # Build date filter conditions
-    base_conditions = []
-    if date_from:
-        dt_from = datetime.combine(date_from, time.min, tzinfo=timezone.utc)
-        base_conditions.append(PrintArchive.created_at >= dt_from)
-    if date_to:
-        dt_to = datetime.combine(date_to, time.max, tzinfo=timezone.utc)
-        base_conditions.append(PrintArchive.created_at <= dt_to)
-
     # Total counts
-    total_result = await db.execute(select(func.count(PrintArchive.id)).where(*base_conditions))
+    total_result = await db.execute(select(func.count(PrintArchive.id)))
     total_prints = total_result.scalar() or 0
 
-    successful_result = await db.execute(
-        select(func.count(PrintArchive.id)).where(PrintArchive.status == "completed", *base_conditions)
-    )
+    successful_result = await db.execute(select(func.count(PrintArchive.id)).where(PrintArchive.status == "completed"))
     successful_prints = successful_result.scalar() or 0
 
-    failed_result = await db.execute(
-        select(func.count(PrintArchive.id)).where(PrintArchive.status == "failed", *base_conditions)
-    )
+    failed_result = await db.execute(select(func.count(PrintArchive.id)).where(PrintArchive.status == "failed"))
     failed_prints = failed_result.scalar() or 0
 
     # Totals - use actual print time from timestamps (not slicer estimates)
     # For archives with both started_at and completed_at, calculate actual duration
     # Fall back to print_time_seconds only for archives without timestamps
     archives_for_time = await db.execute(
-        select(PrintArchive.started_at, PrintArchive.completed_at, PrintArchive.print_time_seconds).where(
-            *base_conditions
-        )
+        select(PrintArchive.started_at, PrintArchive.completed_at, PrintArchive.print_time_seconds)
     )
     total_seconds = 0
     for started_at, completed_at, print_time_seconds in archives_for_time.all():
@@ -571,17 +473,15 @@ async def get_archive_stats(
     total_time = total_seconds / 3600  # Convert to hours
 
     # Sum filament directly - filament_used_grams already contains the total for the print job
-    filament_result = await db.execute(
-        select(func.coalesce(func.sum(PrintArchive.filament_used_grams), 0)).where(*base_conditions)
-    )
+    filament_result = await db.execute(select(func.coalesce(func.sum(PrintArchive.filament_used_grams), 0)))
     total_filament = filament_result.scalar() or 0
 
-    cost_result = await db.execute(select(func.sum(PrintArchive.cost)).where(*base_conditions))
+    cost_result = await db.execute(select(func.sum(PrintArchive.cost)))
     total_cost = cost_result.scalar() or 0
 
     # By filament type (split comma-separated values for multi-material prints)
     filament_type_result = await db.execute(
-        select(PrintArchive.filament_type).where(PrintArchive.filament_type.isnot(None), *base_conditions)
+        select(PrintArchive.filament_type).where(PrintArchive.filament_type.isnot(None))
     )
     prints_by_filament: dict[str, int] = {}
     for (filament_types,) in filament_type_result.all():
@@ -593,9 +493,7 @@ async def get_archive_stats(
 
     # By printer
     printer_result = await db.execute(
-        select(PrintArchive.printer_id, func.count(PrintArchive.id))
-        .where(*base_conditions)
-        .group_by(PrintArchive.printer_id)
+        select(PrintArchive.printer_id, func.count(PrintArchive.id)).group_by(PrintArchive.printer_id)
     )
     prints_by_printer = {str(k): v for k, v in printer_result.all()}
 
@@ -603,7 +501,7 @@ async def get_archive_stats(
     # Get all completed archives with both estimated and actual times
     accuracy_result = await db.execute(
         select(PrintArchive)
-        .where(PrintArchive.status == "completed", *base_conditions)
+        .where(PrintArchive.status == "completed")
         .where(PrintArchive.print_time_seconds.isnot(None))
         .where(PrintArchive.started_at.isnot(None))
         .where(PrintArchive.completed_at.isnot(None))
@@ -677,10 +575,10 @@ async def get_archive_stats(
         total_energy_cost = round(total_energy_kwh * energy_cost_per_kwh, 3)
     else:
         # Print mode: sum up per-print energy from archives
-        energy_kwh_result = await db.execute(select(func.sum(PrintArchive.energy_kwh)).where(*base_conditions))
+        energy_kwh_result = await db.execute(select(func.sum(PrintArchive.energy_kwh)))
         total_energy_kwh = energy_kwh_result.scalar() or 0
 
-        energy_cost_result = await db.execute(select(func.sum(PrintArchive.energy_cost)).where(*base_conditions))
+        energy_cost_result = await db.execute(select(func.sum(PrintArchive.energy_cost)))
         total_energy_cost = energy_cost_result.scalar() or 0
 
     return ArchiveStats(

@@ -373,7 +373,6 @@ class TestCollectSupportInfo:
         with (
             patch("backend.app.api.routes.support.is_running_in_docker", return_value=True),
             patch("backend.app.api.routes.support._get_container_memory_limit", return_value=1073741824),
-            patch("backend.app.api.routes.support._detect_docker_network_mode", return_value="bridge"),
             patch("backend.app.api.routes.support.async_session") as mock_session_ctx,
             patch("backend.app.api.routes.support.printer_manager") as mock_pm,
             patch(
@@ -530,11 +529,10 @@ class TestCollectSupportInfo:
 
         assert info["network"]["interface_count"] == 2
         assert info["network"]["interfaces"][0]["name"] == "eth0"
-        assert info["network"]["interfaces"][0]["subnet"] == "x.x.1.0/24"
-        # Verify IP addresses are NOT included (first two octets masked)
+        assert info["network"]["interfaces"][0]["subnet"] == "192.168.1.0/24"
+        # Verify IP addresses are NOT included
         for iface in info["network"]["interfaces"]:
             assert "ip" not in iface
-            assert iface["subnet"].startswith("x.x.")
 
     @pytest.mark.asyncio
     @pytest.mark.unit

@@ -54,8 +54,6 @@ API_KEY=""
 BAMBUDDY_PORT="8000"
 NON_INTERACTIVE="false"
 REBOOT_NEEDED="false"
-KIOSK_USER=""            # auto-detected from $SUDO_USER
-KIOSK_URL=""             # derived from $BAMBUDDY_URL/spoolbuddy?token=$API_KEY
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -360,13 +358,13 @@ create_spoolbuddy_user() {
         success "Service user created"
     fi
 
-    # Add to hardware access groups (gpio, spi, i2c, video for backlight)
-    for group in gpio spi i2c video; do
+    # Add to hardware access groups (gpio, spi, i2c)
+    for group in gpio spi i2c; do
         if getent group "$group" &>/dev/null; then
             usermod -aG "$group" "$SPOOLBUDDY_SERVICE_USER" 2>/dev/null || true
         fi
     done
-    success "User added to gpio, spi, i2c, video groups"
+    success "User added to gpio, spi, i2c groups"
 }
 
 download_spoolbuddy() {
@@ -376,13 +374,9 @@ download_spoolbuddy() {
         cd "$INSTALL_PATH"
         run_with_progress "Fetching updates" git fetch origin
         git reset --hard origin/main > /dev/null 2>&1
-	cd "$INSTALL_PATH"
-        git checkout 0.2.2b1
     else
         mkdir -p "$INSTALL_PATH"
         run_with_progress "Cloning repository" git clone "$GITHUB_REPO" "$INSTALL_PATH"
-        cd "$INSTALL_PATH"
-        git checkout 0.2.2b1
     fi
 
     chown -R "$SPOOLBUDDY_SERVICE_USER:$SPOOLBUDDY_SERVICE_USER" "$INSTALL_PATH"
@@ -566,282 +560,6 @@ EOF
     systemctl daemon-reload
     systemctl enable bambuddy.service
     success "Bambuddy service created and enabled"
-}
-
-# ─────────────────────────────────────────────────────────────────────────────
-# System Strip-Down (dedicated appliance — remove unnecessary services/packages)
-# ─────────────────────────────────────────────────────────────────────────────
-
-strip_services() {
-    info "Disabling unnecessary services..."
-
-    local services=(
-        bluetooth.service
-        lightdm.service
-        cloud-init-local.service
-        cloud-init.service
-        cloud-init-network.service
-        cloud-config.service
-        cloud-final.service
-        cloud-init-hotplugd.socket
-        avahi-daemon.service
-        avahi-daemon.socket
-        ModemManager.service
-        udisks2.service
-        apparmor.service
-        man-db.timer
-        e2scrub_all.timer
-        e2scrub_reap.service
-    )
-
-    local disabled=0
-    for svc in "${services[@]}"; do
-        if systemctl is-enabled "$svc" &>/dev/null; then
-            systemctl disable "$svc" 2>/dev/null || true
-            (( ++disabled ))
-        fi
-    done
-
-    if (( disabled > 0 )); then
-        success "Disabled $disabled unnecessary services"
-    else
-        success "No unnecessary services to disable"
-    fi
-}
-
-strip_packages() {
-    info "Removing unnecessary packages..."
-
-    local packages=(
-        mkvtoolnix
-        firmware-atheros
-        firmware-mediatek
-        cloud-init
-        rpi-cloud-init-mods
-        rpi-connect-lite
-        avahi-daemon
-        modemmanager
-        udisks2
-    )
-
-    local to_remove=()
-    for pkg in "${packages[@]}"; do
-        if dpkg -l "$pkg" &>/dev/null 2>&1; then
-            to_remove+=("$pkg")
-        fi
-    done
-
-    if (( ${#to_remove[@]} > 0 )); then
-        run_with_progress "Removing ${#to_remove[@]} packages" apt-get remove --purge -y "${to_remove[@]}"
-        run_with_progress "Cleaning up dependencies" apt-get autoremove --purge -y
-    else
-        success "No unnecessary packages to remove"
-    fi
-}
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Kiosk Setup (labwc + Chromium + Plymouth splash)
-# ─────────────────────────────────────────────────────────────────────────────
-
-setup_kiosk() {
-    info "Setting up touchscreen kiosk..."
-
-    # Detect kiosk user (the human user who ran sudo)
-    KIOSK_USER="${SUDO_USER:-$(logname 2>/dev/null || echo pi)}"
-    KIOSK_URL="${BAMBUDDY_URL}/spoolbuddy?token=${API_KEY}"
-    local KIOSK_HOME
-    KIOSK_HOME=$(eval echo "~$KIOSK_USER")
-
-    info "Kiosk user: $KIOSK_USER (home: $KIOSK_HOME)"
-    info "Kiosk URL:  $KIOSK_URL"
-
-    # ── Install kiosk packages ────────────────────────────────────────────
-    run_with_progress "Installing kiosk packages" apt-get install -y labwc chromium plymouth wlr-randr
-
-    # ── config.txt tweaks ─────────────────────────────────────────────────
-    local boot_config="/boot/firmware/config.txt"
-    if [[ ! -f "$boot_config" ]]; then
-        boot_config="/boot/config.txt"
-    fi
-
-    if [[ -f "$boot_config" ]]; then
-        info "Configuring $boot_config for kiosk..."
-
-        # Disable audio (change existing on→off)
-        sed -i 's/^dtparam=audio=on/dtparam=audio=off/' "$boot_config"
-
-        # Disable camera auto-detect (change existing 1→0)
-        sed -i 's/^camera_auto_detect=1/camera_auto_detect=0/' "$boot_config"
-
-        # Append if missing: gpu_mem=32
-        if ! grep -q "^gpu_mem=" "$boot_config"; then
-            echo "" >> "$boot_config"
-            echo "# Kiosk: Minimal GPU firmware memory (KMS uses CMA from system RAM)" >> "$boot_config"
-            echo "gpu_mem=32" >> "$boot_config"
-        fi
-
-        # Append if missing: dtoverlay=disable-bt
-        if ! grep -q "^dtoverlay=disable-bt" "$boot_config"; then
-            echo "" >> "$boot_config"
-            echo "# Kiosk: Disable Bluetooth hardware" >> "$boot_config"
-            echo "dtoverlay=disable-bt" >> "$boot_config"
-        fi
-
-        # Append if missing: disable_splash=1
-        if ! grep -q "^disable_splash=" "$boot_config"; then
-            echo "" >> "$boot_config"
-            echo "# Kiosk: Disable Raspberry Pi firmware splash, use custom splash.png" >> "$boot_config"
-            echo "disable_splash=1" >> "$boot_config"
-        fi
-
-        success "Boot config updated"
-    fi
-
-    # ── cmdline.txt tweaks ────────────────────────────────────────────────
-    local cmdline="/boot/firmware/cmdline.txt"
-    if [[ ! -f "$cmdline" ]]; then
-        cmdline="/boot/cmdline.txt"
-    fi
-
-    if [[ -f "$cmdline" ]]; then
-        info "Configuring $cmdline for kiosk..."
-
-        # Remove serial console (Plymouth needs tty-only console)
-        sed -i 's/console=serial0,[0-9]* //' "$cmdline"
-
-        # Add splash quiet loglevel=3 logo.nologo if missing
-        grep -q "splash" "$cmdline" || sed -i 's/$/ splash quiet loglevel=3 logo.nologo/' "$cmdline"
-
-        # Add video mode if missing
-        grep -q "video=HDMI-A-1" "$cmdline" || sed -i 's/$/ video=HDMI-A-1:1024x600@60/' "$cmdline"
-
-        success "Kernel cmdline updated"
-    fi
-
-    # ── Plymouth splash theme ─────────────────────────────────────────────
-    info "Installing Plymouth boot splash..."
-    local theme_dir="/usr/share/plymouth/themes/spoolbuddy"
-    mkdir -p "$theme_dir"
-
-    # Copy bundled splash image from the install directory
-    local script_dir
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    if [[ -f "$script_dir/splash.png" ]]; then
-        cp "$script_dir/splash.png" "$theme_dir/splash.png"
-    elif [[ -f "$INSTALL_PATH/spoolbuddy/install/splash.png" ]]; then
-        cp "$INSTALL_PATH/spoolbuddy/install/splash.png" "$theme_dir/splash.png"
-    else
-        warn "splash.png not found — Plymouth splash will not display an image"
-    fi
-
-    # Write .plymouth theme file
-    cat > "$theme_dir/spoolbuddy.plymouth" << 'EOF'
-[Plymouth Theme]
-Name=SpoolBuddy
-Description=SpoolBuddy boot splash
-ModuleName=script
-
-[script]
-ImageDir=/usr/share/plymouth/themes/spoolbuddy
-ScriptFile=/usr/share/plymouth/themes/spoolbuddy/spoolbuddy.script
-EOF
-
-    # Write .script theme file
-    cat > "$theme_dir/spoolbuddy.script" << 'EOF'
-wallpaper_image = Image("splash.png");
-screen_width = Window.GetWidth();
-screen_height = Window.GetHeight();
-resized_wallpaper_image = wallpaper_image.Scale(screen_width, screen_height);
-wallpaper_sprite = Sprite(resized_wallpaper_image);
-wallpaper_sprite.SetZ(-100);
-EOF
-
-    plymouth-set-default-theme spoolbuddy
-    run_with_progress "Updating initramfs" update-initramfs -u
-    success "Plymouth splash installed"
-
-    # ── Auto-login on tty1 ────────────────────────────────────────────────
-    info "Configuring auto-login for $KIOSK_USER..."
-    mkdir -p /etc/systemd/system/getty@tty1.service.d
-
-    cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << EOF
-[Service]
-ExecStart=
-ExecStart=-/sbin/agetty --autologin $KIOSK_USER --noclear %I \$TERM
-EOF
-
-    success "Auto-login configured"
-
-    # ── labwc rc.xml (no decorations, no keybinds) ────────────────────────
-    info "Configuring labwc window manager..."
-    local labwc_dir="$KIOSK_HOME/.config/labwc"
-    mkdir -p "$labwc_dir"
-
-    cat > "$labwc_dir/rc.xml" << 'EOF'
-<?xml version="1.0"?>
-<labwc_config>
-
-  <theme>
-    <name></name>
-    <cornerRadius>0</cornerRadius>
-  </theme>
-
-  <!-- Disable all keybindings - kiosk lockdown -->
-  <keyboard>
-  </keyboard>
-
-  <!-- Disable right-click menu -->
-  <mouse>
-    <default />
-  </mouse>
-
-  <!-- Remove window decorations, maximize Chromium, prevent unfullscreen -->
-  <windowRules>
-    <windowRule identifier="*">
-      <serverDecoration>no</serverDecoration>
-    </windowRule>
-    <windowRule identifier="chromium">
-      <skipTaskbar>yes</skipTaskbar>
-      <fixedPosition>yes</fixedPosition>
-    </windowRule>
-  </windowRules>
-
-</labwc_config>
-EOF
-
-    # ── labwc autostart ───────────────────────────────────────────────────
-    cat > "$labwc_dir/autostart" << EOF
-# Force 1024x600 (panel doesn't advertise this natively)
-wlr-randr --output HDMI-A-1 --custom-mode 1024x600@60 &
-
-# Launch Chromium in kiosk mode (virtual keyboard is embedded in the web app)
-chromium --kiosk --no-first-run --disable-infobars \\
-  --disable-session-crashed-bubble --disable-features=TranslateUI \\
-  --noerrdialogs --disable-component-update \\
-  --overscroll-history-navigation=0 \\
-  --ozone-platform=wayland \\
-  $KIOSK_URL &
-EOF
-
-    chown -R "$KIOSK_USER:$KIOSK_USER" "$labwc_dir"
-
-    # ── .bash_profile (source .bashrc, exec labwc on tty1) ────────────────
-    cat > "$KIOSK_HOME/.bash_profile" << 'EOF'
-# Source .bashrc if it exists
-if [ -f ~/.bashrc ]; then
-  . ~/.bashrc
-fi
-
-# Auto-start kiosk on tty1
-if [ "$(tty)" = "/dev/tty1" ]; then
-  exec labwc
-fi
-EOF
-
-    chown "$KIOSK_USER:$KIOSK_USER" "$KIOSK_HOME/.bash_profile"
-
-    REBOOT_NEEDED="true"
-    success "Kiosk setup complete"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1040,18 +758,9 @@ main() {
     detect_python || error "Failed to install Python 3.10+"
     echo ""
 
-    # ── Step 2b: Strip unnecessary services & packages ────────────────────
-    strip_services
-    strip_packages
-    echo ""
-
     # ── Step 3: Download source code ──────────────────────────────────────
     create_spoolbuddy_user
     download_spoolbuddy
-    echo ""
-
-    # ── Step 3b: Kiosk setup (labwc + Chromium + squeekboard + Plymouth) ──
-    setup_kiosk
     echo ""
 
     # ── Step 4: SpoolBuddy setup ──────────────────────────────────────────
@@ -1083,26 +792,20 @@ main() {
     echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
     echo ""
 
-    local ip_addr
-    ip_addr=$(hostname -I 2>/dev/null | awk '{print $1}') || ip_addr="<your-ip>"
-
     if [[ "$INSTALL_MODE" == "full" ]]; then
+        local ip_addr
+        ip_addr=$(hostname -I 2>/dev/null | awk '{print $1}') || ip_addr="<your-ip>"
+
         echo -e "  ${BOLD}Bambuddy:${NC}         ${CYAN}http://$ip_addr:$BAMBUDDY_PORT${NC}"
+        echo ""
+        echo -e "  ${BOLD}Next steps:${NC}"
+        echo -e "    1. Reboot to apply hardware changes"
+        echo -e "    2. Open Bambuddy in your browser"
+        echo -e "    3. Go to Settings -> API Keys and create an API key"
+        echo -e "    4. Update the API key in: ${CYAN}$INSTALL_PATH/spoolbuddy/.env${NC}"
+        echo -e "    5. Restart SpoolBuddy: ${CYAN}sudo systemctl restart spoolbuddy${NC}"
     else
         echo -e "  ${BOLD}SpoolBuddy:${NC}       Connecting to ${CYAN}$BAMBUDDY_URL${NC}"
-    fi
-    echo -e "  ${BOLD}Kiosk URL:${NC}        ${CYAN}$KIOSK_URL${NC}"
-    echo -e "  ${BOLD}Kiosk user:${NC}       ${CYAN}$KIOSK_USER${NC}"
-    echo ""
-
-    if [[ "$INSTALL_MODE" == "full" ]]; then
-        echo -e "  ${BOLD}Next steps:${NC}"
-        echo -e "    1. Reboot (required for kiosk, Plymouth splash, and hardware changes)"
-        echo -e "    2. The touchscreen kiosk will start automatically after reboot"
-        echo -e "    3. On another device, open ${CYAN}http://$ip_addr:$BAMBUDDY_PORT${NC}"
-        echo -e "    4. Go to Settings -> API Keys and create an API key"
-        echo -e "    5. Update the API key in: ${CYAN}$INSTALL_PATH/spoolbuddy/.env${NC}"
-        echo -e "    6. Restart SpoolBuddy: ${CYAN}sudo systemctl restart spoolbuddy${NC}"
     fi
 
     echo ""
@@ -1120,12 +823,35 @@ main() {
     echo -e "  ${BOLD}Diagnostics:${NC}      ${CYAN}sudo $INSTALL_PATH/spoolbuddy/venv/bin/python $INSTALL_PATH/spoolbuddy/pn5180_diag.py${NC}"
     echo ""
 
-    echo -e "  ${YELLOW}A reboot is required to apply all changes (kiosk, Plymouth splash, hardware).${NC}"
-    echo ""
-    if prompt_yes_no "Reboot now?" "y"; then
-        reboot
+    if [[ "$REBOOT_NEEDED" == "true" ]]; then
+        echo -e "  ${YELLOW}A reboot is required to apply SPI/I2C changes.${NC}"
+        echo ""
+        if prompt_yes_no "Reboot now?" "y"; then
+            reboot
+        else
+            echo -e "  Run ${CYAN}sudo reboot${NC} when ready."
+        fi
     else
-        echo -e "  Run ${CYAN}sudo reboot${NC} when ready."
+        # SPI/I2C already configured — start services now
+        if prompt_yes_no "Start services now?" "y"; then
+            if [[ "$INSTALL_MODE" == "full" ]]; then
+                systemctl start bambuddy
+                sleep 2
+                if systemctl is-active --quiet bambuddy; then
+                    success "Bambuddy is running"
+                else
+                    warn "Bambuddy may have failed to start. Check: sudo journalctl -u bambuddy -f"
+                fi
+            fi
+
+            systemctl start spoolbuddy
+            sleep 2
+            if systemctl is-active --quiet spoolbuddy; then
+                success "SpoolBuddy is running"
+            else
+                warn "SpoolBuddy may have failed to start. Check: sudo journalctl -u spoolbuddy -f"
+            fi
+        fi
     fi
 
     echo ""

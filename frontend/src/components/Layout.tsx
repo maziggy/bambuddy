@@ -14,7 +14,6 @@ import { useToast } from '../contexts/ToastContext';
 import { Card, CardHeader, CardContent } from './Card';
 import { parseUTCDate } from '../utils/date';
 import { Button } from './Button';
-import { BugReportBubble } from './BugReportBubble';
 
 interface NavItem {
   id: string;
@@ -1075,7 +1074,6 @@ export function Layout() {
           </Card>
         </div>
       )}
-      <BugReportBubble />
     </div>
   );
 }

@@ -455,69 +455,6 @@ class PN5180:
 
         return blocks
 
-    def ntag_write_page(self, page: int, data: bytes) -> bool:
-        """Write 4 bytes to a single NTAG page.
-
-        NTAG WRITE command: 0xA2 + page_number + 4 bytes data.
-        CRC disabled (same as reads). Returns True on ACK (0x0A).
-        """
-        if len(data) != 4:
-            return False
-
-        # Disable CRC
-        self.write_reg_and(0x19, 0xFFFFFFFE)  # TX CRC off
-        self.write_reg_and(0x12, 0xFFFFFFFE)  # RX CRC off
-
-        # Clear IRQs and set transceive mode
-        self.write_reg(0x03, 0xFFFFFFFF)
-        self.set_transceive_mode()
-        time.sleep(0.001)
-
-        # WRITE command: 0xA2 + page + 4 bytes
-        self.send_data([0xA2, page] + list(data))
-        time.sleep(0.005)
-
-        # Check for ACK: NTAG ACK is 4-bit 0x0A
-        rx_status = self.read_reg(0x13)
-        rx_len = rx_status & 0x1FF
-        if rx_len < 1:
-            return False
-
-        ack = self.read_data(1)
-        return ack[0] == 0x0A
-
-    def ntag_write_pages(self, start_page: int, data: bytes) -> bool:
-        """Write data to consecutive NTAG pages starting at start_page.
-
-        Pads last chunk to 4 bytes. Verifies by reading back.
-        Returns True if write + verify succeeded.
-        """
-        # Pad to 4-byte boundary
-        padded = bytearray(data)
-        while len(padded) % 4 != 0:
-            padded.append(0x00)
-
-        # Write page by page
-        for i in range(0, len(padded), 4):
-            page = start_page + (i // 4)
-            chunk = bytes(padded[i : i + 4])
-            if not self.ntag_write_page(page, chunk):
-                return False
-            time.sleep(0.002)
-
-        # Reactivate card for verification read
-        result = self.reactivate_card()
-        if result is None:
-            return False
-
-        # Read back and verify
-        num_pages = len(padded) // 4
-        readback = self.ntag_read_pages(start_page, num_pages)
-        if readback is None:
-            return False
-
-        return readback[: len(data)] == data
-
     def read_ntag(self, uid: bytes) -> bytes | None:
         """Read NTAG pages 4-20 (NDEF data area, 68 bytes). No auth needed.
 

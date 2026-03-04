@@ -61,14 +61,9 @@ class Config:
 
 
 def _get_mac_id() -> str:
-    """Generate a stable device ID from the primary network interface MAC address.
-
-    Interfaces are sorted by name so the same interface is always picked
-    regardless of filesystem iteration order (eth0 before wlan0, etc.).
-    """
+    """Generate a device ID from the primary network interface MAC address."""
     try:
-        ifaces = sorted(Path("/sys/class/net").iterdir(), key=lambda p: p.name)
-        for iface in ifaces:
+        for iface in Path("/sys/class/net").iterdir():
             if iface.name == "lo":
                 continue
             addr_file = iface / "address"

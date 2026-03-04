@@ -668,7 +668,6 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
         "ams_extruder_map": ams_extruder_map,
         # WiFi signal strength
         "wifi_signal": state.wifi_signal,
-        "wired_network": state.wired_network,
         # Calibration stage tracking
         "stg_cur": state.stg_cur,
         "stg_cur_name": get_derived_status_name(state, model),

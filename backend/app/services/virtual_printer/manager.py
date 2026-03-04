@@ -410,8 +410,6 @@ class VirtualPrinterInstance:
             model=self.model or DEFAULT_VIRTUAL_PRINTER_MODEL,
             name=self.name,
             bind_address=bind_addr,
-            cert_path=cert_path,
-            key_path=key_path,
         )
         self._tasks.append(
             asyncio.create_task(
@@ -627,30 +625,6 @@ class VirtualPrinterManager:
                         printer = result.scalar_one_or_none()
                         if printer:
                             proxy_ips[pvp.id] = (printer.ip_address, printer.serial_number)
-
-        # Detect config changes on running instances and restart if needed
-        for vp in enabled_vps:
-            instance = self._instances.get(vp.id)
-            if not instance:
-                continue
-
-            changed = (
-                instance.mode != vp.mode
-                or instance.model != (vp.model or DEFAULT_VIRTUAL_PRINTER_MODEL)
-                or instance.access_code != (vp.access_code or "")
-                or instance.bind_ip != (vp.bind_ip or "")
-                or instance.remote_interface_ip != (vp.remote_interface_ip or "")
-                or instance.target_printer_id != vp.target_printer_id
-            )
-
-            if changed:
-                logger.info(
-                    "VP %s config changed (mode: %s→%s), restarting",
-                    instance.name,
-                    instance.mode,
-                    vp.mode,
-                )
-                await self.remove_instance(vp.id)
 
         # Start instances for all enabled VPs (skip already running)
         for vp in enabled_vps:

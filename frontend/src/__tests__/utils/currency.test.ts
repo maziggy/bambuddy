@@ -37,7 +37,7 @@ describe('SUPPORTED_CURRENCIES', () => {
     expect(SUPPORTED_CURRENCIES.find((c) => c.code === 'INR')).toBeDefined();
   });
 
-  it('has 26 entries', () => {
-    expect(SUPPORTED_CURRENCIES).toHaveLength(26);
+  it('has 25 entries', () => {
+    expect(SUPPORTED_CURRENCIES).toHaveLength(25);
   });
 });

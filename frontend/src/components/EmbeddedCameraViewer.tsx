@@ -30,12 +30,13 @@ interface CameraState {
   height: number;
 }
 
-const DEFAULT_STATE: CameraState = {
+/** @internal */
+export const getDefaultState = (): CameraState => ({
   x: window.innerWidth - 420,
   y: 20,
   width: 400,
   height: 300,
-};
+});
 
 export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, onClose }: EmbeddedCameraViewerProps) {
   const { t } = useTranslation();
@@ -65,10 +66,11 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     }
     // Offset new viewers so they don't stack exactly on top of each other
     const offset = viewerIndex * 30;
+    const defaults = getDefaultState();
     return {
-      ...DEFAULT_STATE,
-      x: Math.max(0, DEFAULT_STATE.x - offset),
-      y: Math.max(0, DEFAULT_STATE.y + offset),
+      ...defaults,
+      x: Math.max(0, defaults.x - offset),
+      y: Math.max(0, defaults.y + offset),
     };
   };
 
@@ -188,7 +190,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
       const timer = setTimeout(() => setStreamLoading(false), 3000);
       return () => clearTimeout(timer);
     }
-  }, [streamLoading, imageKey]);
+  }, [streamLoading]);
 
   // Auto-reconnect logic
   const attemptReconnect = useCallback(() => {
@@ -206,6 +208,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     setIsReconnecting(true);
     setReconnectCountdown(Math.ceil(delay / 1000));
 
+    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
     countdownIntervalRef.current = setInterval(() => {
       setReconnectCountdown((prev) => {
         if (prev <= 1) {

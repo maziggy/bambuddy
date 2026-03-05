@@ -1639,6 +1639,7 @@ function CameraGrid({
   const [reconnectCountdown, setReconnectCountdown] = useState(0);
   const reconnectAttemptsRef = useRef(0);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Print control — confirmation modal
   const [confirmAction, setConfirmAction] = useState<{ type: 'pause' | 'stop' | 'resume'; printerId: number; printerName: string } | null>(null);
@@ -1726,6 +1727,7 @@ function CameraGrid({
     setReconnectCountdown(0);
     reconnectAttemptsRef.current = 0;
     setReconnectAttempt(0);
+
     bytesRef.current = 0;
     activeCamsRef.current = new Set();
     let t0 = performance.now();
@@ -1866,6 +1868,7 @@ function CameraGrid({
         const wasReconnecting = reconnectAttemptsRef.current > 0;
         reconnectAttemptsRef.current = 0;
         setReconnectAttempt(0);
+
         setReconnecting(false);
         setReconnectCountdown(0);
         t0 = performance.now();
@@ -1881,12 +1884,14 @@ function CameraGrid({
 
         while (active) {
           // Timeout: if no data arrives in 30s, assume stream is stalled
+          let timeoutId: ReturnType<typeof setTimeout> | null = null;
           const readResult = await Promise.race([
             reader.read(),
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error('Stream read timeout')), 30_000),
-            ),
+            new Promise<never>((_, reject) => {
+              timeoutId = setTimeout(() => reject(new Error('Stream read timeout')), 30_000);
+            }),
           ]);
+          if (timeoutId !== null) clearTimeout(timeoutId);
           const { done, value } = readResult;
           if (done) break;
 
@@ -1962,10 +1967,12 @@ function CameraGrid({
         // Countdown timer
         let remaining = Math.ceil(delay / 1000);
         setReconnectCountdown(remaining);
-        const countdownId = setInterval(() => {
+        if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = setInterval(() => {
           remaining -= 1;
           if (remaining <= 0) {
-            clearInterval(countdownId);
+            if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+            countdownIntervalRef.current = null;
             setReconnectCountdown(0);
           } else {
             setReconnectCountdown(remaining);
@@ -1974,7 +1981,8 @@ function CameraGrid({
 
         // Wait then retry
         await new Promise(resolve => setTimeout(resolve, delay));
-        clearInterval(countdownId);
+        if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = null;
 
         if (active) {
           loadedPrinters.clear();
@@ -1997,6 +2005,8 @@ function CameraGrid({
       readerRef?.cancel().catch(() => {});
       controllerRef.current.abort();
       clearInterval(statsInterval);
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
       window.removeEventListener('beforeunload', onBeforeUnload);
       worker.terminate();
       workerRef.current = null;

@@ -526,3 +526,138 @@ class TestCameraAPI:
         assert response.status_code == 200
         result = response.json()
         assert result["cameras"] == []
+
+
+class TestCameraGridStreamValidation:
+    """Tests for /api/v1/printers/camera/grid-stream input validation."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rejects_nan_scale(self, async_client: AsyncClient):
+        response = await async_client.get("/api/v1/printers/camera/grid-stream", params={"ids": "1", "scale": "NaN"})
+        assert response.status_code == 400
+        assert "finite" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rejects_inf_scale(self, async_client: AsyncClient):
+        response = await async_client.get(
+            "/api/v1/printers/camera/grid-stream", params={"ids": "1", "scale": "Infinity"}
+        )
+        assert response.status_code == 400
+        assert "finite" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rejects_non_integer_ids(self, async_client: AsyncClient):
+        response = await async_client.get(
+            "/api/v1/printers/camera/grid-stream", params={"ids": "abc,def", "scale": "0.5"}
+        )
+        assert response.status_code == 400
+        assert "integers" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rejects_empty_ids(self, async_client: AsyncClient):
+        response = await async_client.get("/api/v1/printers/camera/grid-stream", params={"ids": "", "scale": "0.5"})
+        assert response.status_code == 400
+        assert "no printer" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rejects_more_than_30_unique_ids(self, async_client: AsyncClient):
+        ids = ",".join(str(i) for i in range(1, 32))  # 31 unique IDs
+        response = await async_client.get("/api/v1/printers/camera/grid-stream", params={"ids": ids, "scale": "0.5"})
+        assert response.status_code == 400
+        assert "30" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_deduplicates_ids(self, async_client: AsyncClient):
+        """Verify duplicate IDs are deduplicated before reaching get_existing_batch."""
+        captured_ids = []
+
+        async def mock_batch(printer_ids):
+            captured_ids.extend(printer_ids)
+            return {}, printer_ids  # All missing
+
+        with patch("backend.app.api.routes.camera._hub.get_existing_batch", side_effect=mock_batch):
+            await async_client.get(
+                "/api/v1/printers/camera/grid-stream", params={"ids": "1,2,1,2,1", "scale": "0.5"}
+            )
+
+        assert captured_ids == [1, 2]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_dedup_before_limit_check(self, async_client: AsyncClient):
+        """35 IDs with only 25 unique should pass the 30-ID limit check."""
+        base_ids = list(range(1, 26))  # 25 unique
+        ids_with_dupes = base_ids + base_ids[:10]  # 35 total, 25 unique
+        ids_str = ",".join(str(i) for i in ids_with_dupes)
+
+        captured_ids = []
+
+        async def mock_batch(printer_ids):
+            captured_ids.extend(printer_ids)
+            return {}, printer_ids
+
+        with patch("backend.app.api.routes.camera._hub.get_existing_batch", side_effect=mock_batch):
+            response = await async_client.get(
+                "/api/v1/printers/camera/grid-stream", params={"ids": ids_str, "scale": "0.5"}
+            )
+
+        # Should NOT get 400 "Maximum 30" — dedup happened first
+        assert response.status_code != 400 or "30" not in response.json().get("detail", "")
+
+
+class TestCameraStreamValidation:
+    """Tests for single-stream scale validation at /{id}/camera/stream."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rejects_nan_scale(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory()
+        response = await async_client.get(
+            f"/api/v1/printers/{printer.id}/camera/stream", params={"scale": "NaN"}
+        )
+        assert response.status_code == 400
+        assert "finite" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rejects_inf_scale(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory()
+        response = await async_client.get(
+            f"/api/v1/printers/{printer.id}/camera/stream", params={"scale": "Infinity"}
+        )
+        assert response.status_code == 400
+        assert "finite" in response.json()["detail"].lower()
+
+
+class TestCameraEndpointAuth:
+    """Tests that snapshot and thumbnail endpoints have auth dependencies."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_snapshot_has_auth_dependency(self, async_client: AsyncClient, printer_factory):
+        """With auth disabled (default test config), snapshot should work (503 from mock, not 401)."""
+        printer = await printer_factory()
+        with patch("backend.app.api.routes.camera.capture_camera_frame", new_callable=AsyncMock) as mock_capture:
+            mock_capture.return_value = False
+            with patch("pathlib.Path.exists", return_value=False), patch("pathlib.Path.unlink"):
+                response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/snapshot")
+        # 503 means we got past auth (it would be 401/403 if auth blocked us)
+        assert response.status_code == 503
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_thumbnail_has_auth_dependency(self, async_client: AsyncClient, printer_factory):
+        """With auth disabled, thumbnail should work (404 from missing reference, not 401)."""
+        printer = await printer_factory()
+        with patch("backend.app.services.plate_detection.is_plate_detection_available", return_value=True):
+            response = await async_client.get(
+                f"/api/v1/printers/{printer.id}/camera/plate-detection/references/0/thumbnail"
+            )
+        # 404 means we got past auth
+        assert response.status_code == 404

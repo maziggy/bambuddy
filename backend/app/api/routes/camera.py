@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import math
 import struct
 import time
 import uuid
@@ -334,6 +335,32 @@ class SharedStreamHub:
         entry = self._streams.get(printer_id)
         return entry is not None and entry.alive
 
+    async def get_existing(self, printer_id: int) -> "_SharedStream | None":
+        """Return an alive producer for *printer_id*, or ``None``."""
+        async with self._lock:
+            entry = self._streams.get(printer_id)
+            if entry is not None and entry.alive:
+                entry.last_accessed = time.monotonic()
+                return entry
+        return None
+
+    async def get_existing_batch(
+        self, printer_ids: list[int]
+    ) -> tuple[dict[int, "_SharedStream"], list[int]]:
+        """Return ``(found, missing)`` for a batch of printer IDs in one pass."""
+        found: dict[int, _SharedStream] = {}
+        missing: list[int] = []
+        now = time.monotonic()
+        async with self._lock:
+            for pid in printer_ids:
+                entry = self._streams.get(pid)
+                if entry is not None and entry.alive:
+                    entry.last_accessed = now
+                    found[pid] = entry
+                else:
+                    missing.append(pid)
+        return found, missing
+
     def status(self) -> dict:
         """Return a snapshot of all active producers for debugging."""
         now = time.monotonic()
@@ -490,6 +517,10 @@ async def generate_rtsp_mjpeg_stream(
     # -q:v: Quality (2=best, 31=worst). Default 5 for full view, 15+ for grid thumbnails
     # -r: Output framerate
     # -vf scale: Downscale for grid view to save bandwidth
+    if not math.isfinite(quality) or not math.isfinite(scale) or not math.isfinite(fps):
+        logger.warning("Non-finite stream parameter: fps=%s quality=%s scale=%s", fps, quality, scale)
+        yield (b"--frame\r\nContent-Type: text/plain\r\n\r\nError: invalid parameters\r\n")
+        return
     quality = max(2, min(quality, 31))
     scale = max(0.1, min(scale, 1.0))
 
@@ -686,11 +717,9 @@ async def _ensure_producer(
     # quality change, grab it directly (no DB query).  This is the common case
     # when multiple clients connect to the same camera grid.
     if not force_quality:
-        async with _hub._lock:
-            existing = _hub._streams.get(printer_id)
-            if existing is not None and existing.alive:
-                existing.last_accessed = time.monotonic()
-                return existing
+        existing = await _hub.get_existing(printer_id)
+        if existing is not None:
+            return existing
 
     if printer is None:
         result = await db.execute(select(Printer).where(Printer.id == printer_id))
@@ -757,6 +786,10 @@ async def camera_grid_stream(
     The frontend reads this stream with one fetch() and demuxes frames to
     the correct <canvas> element by printer ID.
     """
+    # Validate numeric parameters
+    if not math.isfinite(scale):
+        raise HTTPException(400, "scale must be a finite number")
+
     # Parse printer IDs
     try:
         printer_ids = [int(x.strip()) for x in ids.split(",") if x.strip()]
@@ -766,21 +799,15 @@ async def camera_grid_stream(
     if not printer_ids:
         raise HTTPException(400, "No printer IDs provided")
 
+    # Deduplicate while preserving order
+    printer_ids = list(dict.fromkeys(printer_ids))
+
     if len(printer_ids) > 30:
         raise HTTPException(400, "Maximum 30 printers per grid stream")
 
     # Start producers for all requested printers.
     # First, collect IDs that already have a live producer (fast path — no DB).
-    entries: dict[int, _SharedStream] = {}
-    need_db: list[int] = []
-    async with _hub._lock:
-        for pid in printer_ids:
-            existing = _hub._streams.get(pid)
-            if existing is not None and existing.alive:
-                existing.last_accessed = time.monotonic()
-                entries[pid] = existing
-                continue
-            need_db.append(pid)
+    entries, need_db = await _hub.get_existing_batch(printer_ids)
 
     # Single batch DB query for printers that need a new producer.
     if need_db:
@@ -879,6 +906,8 @@ async def camera_stream(
     in an <img> tag or video player.
 
     Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
+    The grid-stream solved this with fetch()+auth headers. This endpoint needs
+    an EmbeddedCameraViewer refactor to canvas+fetch before auth can be added.
 
     Uses external camera if configured, otherwise uses built-in camera:
     - External: MJPEG, RTSP, or HTTP snapshot
@@ -889,6 +918,9 @@ async def camera_stream(
         printer_id: Printer ID
         fps: Target frames per second (default: 10, max: 30)
     """
+    if not math.isfinite(scale):
+        raise HTTPException(400, "scale must be a finite number")
+
     printer = await get_printer_or_404(printer_id, db)
 
     # Check for external camera first
@@ -1047,12 +1079,11 @@ async def stop_camera_stream(
 async def camera_snapshot(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Capture a single frame from the printer camera.
 
     Returns a JPEG image.
-
-    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
     """
     import tempfile
     from pathlib import Path
@@ -1539,11 +1570,9 @@ async def get_reference_thumbnail(
     printer_id: int,
     index: int,
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
-    """Get thumbnail image for a calibration reference.
-
-    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
-    """
+    """Get thumbnail image for a calibration reference."""
     from fastapi.responses import Response
 
     from backend.app.services.plate_detection import PlateDetector, is_plate_detection_available

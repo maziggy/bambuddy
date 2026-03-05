@@ -454,6 +454,7 @@ export default {
       save: '保存',
       clear: 'クリア',
       noEditPermission: 'AMS ユニットの名前を変更する権限がありません',
+      printerIdUnavailable: 'プリンターIDが利用できません',
     },
     // Firmware modal
     firmwareModal: {

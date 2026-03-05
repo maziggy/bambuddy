@@ -454,6 +454,7 @@ export default {
       save: 'Speichern',
       clear: 'Löschen',
       noEditPermission: 'Sie haben keine Berechtigung, AMS-Einheiten umzubenennen',
+      printerIdUnavailable: 'Drucker-ID nicht verfügbar',
     },
     // Firmware modal
     firmwareModal: {

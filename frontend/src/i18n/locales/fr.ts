@@ -453,7 +453,8 @@ export default {
       firmwareVersion: 'Firmware',
       save: 'Enregistrer',
       clear: 'Effacer',
-      noEditPermission: 'Vous n\'avez pas la permission de renommer les unités AMS',
+      noEditPermission: "Vous n'avez pas la permission de renommer les unités AMS",
+      printerIdUnavailable: 'ID imprimante indisponible',
     },
     // Firmware modal
     firmwareModal: {

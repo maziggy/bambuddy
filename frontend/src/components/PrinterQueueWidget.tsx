@@ -76,7 +76,7 @@ export function PrinterQueueWidget({ printerId, printerModel, printerState, plat
   if (needsClearPlate) {
     const displayItem = nextAutoItem || nextItem;
     return (
-      <div className="mb-3 p-3 bg-bambu-dark rounded-lg border border-yellow-400/30">
+      <div className="p-3 bg-bambu-dark rounded-lg border border-yellow-400/30">
         <div className="flex items-center gap-3 mb-2">
           <Calendar className="w-5 h-5 text-yellow-400 flex-shrink-0" />
           <div className="min-w-0 flex-1">
@@ -117,7 +117,7 @@ export function PrinterQueueWidget({ printerId, printerModel, printerState, plat
   return (
     <Link
       to="/queue"
-      className="block mb-3 p-3 bg-bambu-dark rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
+      className="p-3 bg-bambu-dark rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0 flex-1">

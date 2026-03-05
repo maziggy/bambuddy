@@ -454,6 +454,7 @@ export default {
       save: 'Salva',
       clear: 'Cancella',
       noEditPermission: 'Non hai il permesso di rinominare le unità AMS',
+      printerIdUnavailable: 'ID stampante non disponibile',
     },
     // Firmware modal
     firmwareModal: {

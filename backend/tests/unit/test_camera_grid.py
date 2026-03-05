@@ -25,9 +25,9 @@ class TestCleanupStaleFrameBuffers:
 
         stale_ts = time.monotonic() - cam._FRAME_BUFFER_MAX_AGE - 10
         with (
-            patch.dict(cam._last_frames, {99: b"jpeg"}),
-            patch.dict(cam._last_frame_times, {99: stale_ts}),
-            patch.dict(cam._stream_start_times, {99: stale_ts}),
+            patch.dict(cam._last_frames, {99: b"jpeg"}, clear=True),
+            patch.dict(cam._last_frame_times, {99: stale_ts}, clear=True),
+            patch.dict(cam._stream_start_times, {99: stale_ts}, clear=True),
         ):
             cam._cleanup_stale_frame_buffers()
             assert 99 not in cam._last_frames

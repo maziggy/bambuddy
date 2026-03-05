@@ -964,13 +964,14 @@ async def _capture_snapshot_for_notification(printer_id: int, printer, logger) -
                 return frame_data
 
         # Try buffered frame from active stream
-        from backend.app.api.routes.camera import _active_chamber_streams, _active_streams, get_buffered_frame
+        from backend.app.api.routes.camera import _active_chamber_streams, _active_streams, _hub, get_buffered_frame
 
         active_for_printer = [k for k in _active_streams if k.startswith(f"{printer_id}-")]
         active_chamber = [k for k in _active_chamber_streams if k.startswith(f"{printer_id}-")]
+        hub_active = _hub.is_active(printer_id)
         buffered_frame = get_buffered_frame(printer_id)
 
-        if (active_for_printer or active_chamber) and buffered_frame:
+        if (active_for_printer or active_chamber or hub_active) and buffered_frame:
             logger.info("[SNAPSHOT] Using buffered frame for printer %s: %s bytes", printer_id, len(buffered_frame))
             if len(buffered_frame) <= 2_500_000:
                 return buffered_frame

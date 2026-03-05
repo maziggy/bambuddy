@@ -9,6 +9,10 @@ interface FilamentOverrideProps {
   availableFilaments: Array<{ type: string; color: string; tray_info_idx: string; tray_sub_brands: string; extruder_id: number | null }>;
   overrides: Record<number, { type: string; color: string }>;
   onChange: (overrides: Record<number, { type: string; color: string }>) => void;
+  /** Per-slot force color match flags. Defaults to true when not provided. */
+  forceColorMatch?: Record<number, boolean>;
+  /** Called when a slot's force color match checkbox is toggled. */
+  onForceColorMatchChange?: (slotId: number, value: boolean) => void;
 }
 
 /**
@@ -21,6 +25,8 @@ export function FilamentOverride({
   availableFilaments,
   overrides,
   onChange,
+  forceColorMatch,
+  onForceColorMatchChange,
 }: FilamentOverrideProps) {
   const { t } = useTranslation();
 
@@ -73,31 +79,10 @@ export function FilamentOverride({
             : sameType;
 
           return (
-            <div
-              key={req.slot_id}
-              className="grid items-center gap-2 text-xs"
-              style={{ gridTemplateColumns: '16px minmax(70px, 1fr) auto 2fr 20px' }}
-            >
-              {/* Original color swatch */}
-              <span title={`${t('printModal.originalFilament')}: ${req.type} - ${getColorName(req.color)}`}>
-                <Circle className="w-3 h-3" fill={req.color} stroke={req.color} />
-              </span>
-              {/* Original type + grams */}
-              <span className="text-white truncate">
-                {req.type} <span className="text-bambu-gray">({req.used_grams}g)</span>
-              </span>
-              {/* Arrow */}
-              <span className="text-bambu-gray">→</span>
-              {/* Override dropdown — only compatible (same-type) filaments */}
-              <select
-                value={isOverridden ? `${override.type}|${override.color}` : ''}
-                onChange={(e) => handleChange(req.slot_id, e.target.value)}
-                disabled={compatible.length === 0}
-                className={`flex-1 px-2 py-1 rounded border text-xs bg-bambu-dark-secondary focus:outline-none focus:ring-1 focus:ring-bambu-green ${
-                  isOverridden
-                    ? 'border-blue-400/50 text-blue-400'
-                    : 'border-bambu-gray/30 text-bambu-gray'
-                }`}
+            <div key={req.slot_id} className="space-y-1">
+              <div
+                className="grid items-center gap-2 text-xs"
+                style={{ gridTemplateColumns: '16px minmax(70px, 1fr) auto 2fr 20px' }}
               >
                 <option value="" className="bg-bambu-dark text-bambu-gray">
                   {t('printModal.originalFilament')}: {req.type} ({getColorName(req.color)})
@@ -119,12 +104,64 @@ export function FilamentOverride({
                   onClick={() => handleChange(req.slot_id, '')}
                   className="text-bambu-gray hover:text-white transition-colors"
                   title={t('printModal.resetToOriginal')}
+                {/* Original color swatch */}
+                <span title={`${t('printModal.originalFilament')}: ${req.type} - ${getColorName(req.color)}`}>
+                  <Circle className="w-3 h-3" fill={req.color} stroke={req.color} />
+                </span>
+                {/* Original type + grams */}
+                <span className="text-white truncate">
+                  {req.type} <span className="text-bambu-gray">({req.used_grams}g)</span>
+                </span>
+                {/* Arrow */}
+                <span className="text-bambu-gray">→</span>
+                {/* Override dropdown — only compatible (same-type) filaments */}
+                <select
+                  value={isOverridden ? `${override.type}|${override.color}` : ''}
+                  onChange={(e) => handleChange(req.slot_id, e.target.value)}
+                  disabled={compatible.length === 0}
+                  className={`flex-1 px-2 py-1 rounded border text-xs bg-bambu-dark-secondary focus:outline-none focus:ring-1 focus:ring-bambu-green ${
+                    isOverridden
+                      ? 'border-blue-400/50 text-blue-400'
+                      : 'border-bambu-gray/30 text-bambu-gray'
+                  }`}
                 >
-                  <RotateCcw className="w-3 h-3" />
-                </button>
-              ) : (
-                <span className="w-3" />
-              )}
+                  <option value="" className="bg-bambu-dark text-bambu-gray">
+                    {t('printModal.originalFilament')}: {req.type} ({getColorName(req.color)})
+                  </option>
+                  {compatible.map((f, idx) => (
+                    <option
+                      key={`${f.type}-${f.color}-${idx}`}
+                      value={`${f.type}|${f.color}`}
+                      className="bg-bambu-dark text-white"
+                    >
+                      {f.type} ({getColorName(f.color)})
+                    </option>
+                  ))}
+                </select>
+                {/* Reset button */}
+                {isOverridden ? (
+                  <button
+                    type="button"
+                    onClick={() => handleChange(req.slot_id, '')}
+                    className="text-bambu-gray hover:text-white transition-colors"
+                    title={t('printModal.resetToOriginal')}
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                  </button>
+                ) : (
+                  <span className="w-3" />
+                )}
+              </div>
+              {/* Force Color Match checkbox — shown below each filament row */}
+              <label className="flex items-center gap-1.5 text-xs text-bambu-gray cursor-pointer select-none pl-5">
+                <input
+                  type="checkbox"
+                  checked={forceColorMatch?.[req.slot_id] ?? true}
+                  onChange={(e) => onForceColorMatchChange?.(req.slot_id, e.target.checked)}
+                  className="accent-bambu-green w-3 h-3"
+                />
+                {t('printModal.forceColorMatch')}
+              </label>
             </div>
           );
         })}

@@ -1791,28 +1791,12 @@ function PrinterCard({
         }
       }
       if (item.filament_overrides?.length && loadedFilaments !== undefined) {
-        const forceOverrides = item.filament_overrides.filter(o => o.force_color_match === true);
-        const prefOverrides = item.filament_overrides.filter(o => o.force_color_match !== true);
-
-        // All force-matched slots must have exact type+color on this printer
-        if (forceOverrides.length > 0) {
-          const allForceMatch = forceOverrides.every(o => {
-            const oType = (o.type || '').toUpperCase();
-            const oColor = (o.color || '').replace('#', '').toLowerCase().slice(0, 6);
-            return loadedFilaments.has(`${oType}:${oColor}`);
-          });
-          if (!allForceMatch) return false;
-        }
-
-        // Preference-only overrides: at least one color must match (existing behaviour)
-        if (prefOverrides.length > 0 && forceOverrides.length === 0) {
-          const hasColorMatch = prefOverrides.some(o => {
-            const oType = (o.type || '').toUpperCase();
-            const oColor = (o.color || '').replace('#', '').toLowerCase().slice(0, 6);
-            return loadedFilaments.has(`${oType}:${oColor}`);
-          });
-          if (!hasColorMatch) return false;
-        }
+        const hasColorMatch = item.filament_overrides.some((o: { type?: string; color?: string }) => {
+          const oType = (o.type || '').toUpperCase();
+          const oColor = (o.color || '').replace('#', '').toLowerCase().slice(0, 6);
+          return loadedFilaments.has(`${oType}:${oColor}`);
+        });
+        if (!hasColorMatch) return false;
       }
       return true;
     }).length;

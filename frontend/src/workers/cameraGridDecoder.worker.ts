@@ -37,6 +37,12 @@ ctx.onmessage = async (e: MessageEvent) => {
         break;
       }
 
+      case 'clear': {
+        visibleSet.clear();
+        frameGen.clear();
+        break;
+      }
+
       case 'frame': {
         const printerId = msg.printerId as number;
         const jpeg = msg.jpeg as ArrayBuffer;

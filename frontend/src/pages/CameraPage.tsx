@@ -77,7 +77,7 @@ export function CameraPage() {
       return { previousStatus };
     },
     onSuccess: (_, on) => {
-      showToast(`Chamber light ${on ? 'on' : 'off'}`);
+      showToast(t(on ? 'printers.chamberLightOn' : 'printers.chamberLightOff'));
     },
     onError: (error: Error, _, context) => {
       if (context?.previousStatus) {

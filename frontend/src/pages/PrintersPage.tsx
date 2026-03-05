@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
@@ -1326,7 +1326,7 @@ function mapModelCode(ssdpModel: string | null): string {
  * Registers an IntersectionObserver to report visibility to the worker
  * so off-screen cards skip JPEG decoding entirely.
  */
-function CameraGridCard({
+const CameraGridCard = memo(function CameraGridCard({
   printerId,
   printerName,
   connected,
@@ -1574,7 +1574,7 @@ function CameraGridCard({
       </div>
     </Card>
   );
-}
+});
 
 // Grid stream constants
 const GRID_FRAME_HEADER_SIZE = 8;          // [4B printer_id LE][4B length LE]
@@ -1923,12 +1923,12 @@ function CameraGrid({
 
             if (offset + GRID_FRAME_HEADER_SIZE + jpegLen > bufLen) break; // incomplete frame
 
-            // Send JPEG to worker for off-thread decoding (ArrayBuffer.slice — single alloc)
+            // Copy JPEG bytes from shared read buffer, then transfer ownership to worker (no second copy)
             const jpegStart = buf.byteOffset + offset + GRID_FRAME_HEADER_SIZE;
             const jpeg = buf.buffer.slice(jpegStart, jpegStart + jpegLen);
             worker.postMessage(
               { type: 'frame', printerId, jpeg },
-              [jpeg], // transfer ownership — zero-copy
+              [jpeg], // transfer ownership — no second copy
             );
             offset += GRID_FRAME_HEADER_SIZE + jpegLen;
           }
@@ -2008,6 +2008,7 @@ function CameraGrid({
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
       countdownIntervalRef.current = null;
       window.removeEventListener('beforeunload', onBeforeUnload);
+      worker.postMessage({ type: 'clear' });
       worker.terminate();
       workerRef.current = null;
     };

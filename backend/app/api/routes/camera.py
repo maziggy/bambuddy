@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import math
+import os
 import struct
 import time
 import uuid
@@ -69,6 +70,8 @@ def _cleanup_stale_frame_buffers() -> None:
     crash without running their finally blocks.
     """
     now = time.monotonic()
+    # Snapshot keys first — safe from concurrent modification since this
+    # is synchronous (no await points) and asyncio is cooperative
     stale_ids = [pid for pid, ts in _last_frame_times.items() if now - ts > _FRAME_BUFFER_MAX_AGE]
     for pid in stale_ids:
         _last_frames.pop(pid, None)
@@ -76,6 +79,20 @@ def _cleanup_stale_frame_buffers() -> None:
         _stream_start_times.pop(pid, None)
     if stale_ids:
         logger.info("Cleaned up stale frame buffers for printers: %s", stale_ids)
+
+    # Clean up PIDs for processes that no longer exist
+    dead_pids = []
+    for pid in list(_spawned_ffmpeg_pids):
+        try:
+            os.kill(pid, 0)  # Check if process exists
+        except ProcessLookupError:
+            dead_pids.append(pid)
+        except PermissionError:
+            pass  # Process exists but we can't signal it
+    for pid in dead_pids:
+        _spawned_ffmpeg_pids.pop(pid, None)
+    if dead_pids:
+        logger.info("Cleaned up %d dead ffmpeg PIDs from tracking", len(dead_pids))
 
 
 async def _periodic_cleanup_loop() -> None:
@@ -125,6 +142,9 @@ class _SharedStream:
     Viewers poll frame_seq to detect new frames.  No ref counting — viewers
     are independent polling loops with zero cleanup requirements.  The producer
     self-stops after IDLE_TIMEOUT seconds without any viewer activity.
+
+    Note: viewer_count is approximate — incremented/decremented without locks.
+    Used only for logging and idle-timeout heuristics, not for correctness.
     """
 
     __slots__ = ("frame", "frame_seq", "task", "error", "alive", "last_accessed", "params_key", "viewer_count")
@@ -137,7 +157,7 @@ class _SharedStream:
         self.alive: bool = True
         self.last_accessed: float = time.monotonic()
         self.params_key: str = params_key  # e.g. "5-15-0.5" for fps-quality-scale
-        self.viewer_count: int = 0  # approximate count of active viewers
+        self.viewer_count: int = 0
 
 
 class SharedStreamHub:
@@ -246,9 +266,11 @@ class SharedStreamHub:
 
                     seen_seq = seq
 
-                    # Per-viewer rate limiting
+                    # Per-viewer rate limiting — sleep until the next frame interval
                     now = time.monotonic()
-                    if now - last_yield < frame_interval:
+                    remaining = frame_interval - (now - last_yield)
+                    if remaining > 0:
+                        await asyncio.sleep(remaining)
                         continue
                     last_yield = now
 
@@ -259,7 +281,10 @@ class SharedStreamHub:
                         b"\r\n" + frame + b"\r\n"
                     )
             finally:
-                entry.viewer_count = max(0, entry.viewer_count - 1)
+                entry.viewer_count -= 1
+                if entry.viewer_count < 0:
+                    logger.warning("viewer_count underflow for entry params=%s, resetting to 0", entry.params_key)
+                    entry.viewer_count = 0
 
         return _viewer()
 
@@ -833,16 +858,22 @@ async def camera_grid_stream(
             entry.viewer_count += 1
 
         try:
+            last_disconnect_check = 0.0
             while True:
-                if await request.is_disconnected():
-                    break
+                now = time.monotonic()
+                # Throttle disconnect check to once per second
+                if now - last_disconnect_check > 1.0:
+                    if await request.is_disconnected():
+                        break
+                    last_disconnect_check = now
 
                 sent_any = False
-                now = time.monotonic()
                 for pid, entry in list(entries.items()):
                     if not entry.alive:
                         # Producer died — remove from rotation
-                        entry.viewer_count = max(0, entry.viewer_count - 1)
+                        entry.viewer_count -= 1
+                        if entry.viewer_count < 0:
+                            entry.viewer_count = 0
                         entries.pop(pid, None)
                         continue
 
@@ -873,7 +904,9 @@ async def camera_grid_stream(
         finally:
             # Decrement viewer count on all remaining entries
             for entry in entries.values():
-                entry.viewer_count = max(0, entry.viewer_count - 1)
+                entry.viewer_count -= 1
+                if entry.viewer_count < 0:
+                    entry.viewer_count = 0
 
     return StreamingResponse(
         generate(),

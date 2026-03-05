@@ -799,7 +799,7 @@ export default {
       failed: 'Failed',
       skipped: 'Skipped',
       cancelled: 'Cancelled',
-      noMatchingMaterial: 'No matching material/color. Waiting on...',
+      noMatchingMaterial: 'No matching material/color. Waiting on {{material}}',
     },
     // Summary cards
     summary: {

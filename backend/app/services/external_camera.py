@@ -11,6 +11,7 @@ import asyncio
 import logging
 import re
 import shutil
+import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from urllib.parse import urlparse
@@ -67,9 +68,12 @@ def _sanitize_camera_url(url: str, allowed_schemes: tuple[str, ...] = ("http", "
             logger.warning("Blocked camera URL targeting restricted host: %s", hostname)
             return None
 
-        # Block link-local addresses (169.254.x.x)
+        # Block link-local addresses (169.254.x.x and fe80::/10)
         if hostname.startswith("169.254."):
             logger.warning("Blocked camera URL targeting link-local address: %s", hostname)
+            return None
+        if hostname_lower.startswith("fe80:") or hostname_lower.startswith("[fe80:"):
+            logger.warning("Blocked camera URL targeting IPv6 link-local: %s", hostname)
             return None
 
         # Reconstruct URL from validated components to break taint chain
@@ -328,6 +332,12 @@ async def _capture_mjpeg_frame(url: str, timeout: int) -> bytes | None:
 
 async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
     """Capture frame from RTSP using ffmpeg."""
+    safe_url = _sanitize_camera_url(url, ("rtsp", "rtsps"))
+    if not safe_url:
+        logger.error("Invalid RTSP URL rejected: %s...", url[:50])
+        return None
+    url = safe_url
+
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
         logger.error("ffmpeg not found - required for RTSP capture")
@@ -489,7 +499,7 @@ async def generate_mjpeg_stream(url: str, camera_type: str, fps: int = 10) -> As
             frame_yielded = False
             async for frame in _stream_mjpeg(url):
                 frame_yielded = True
-                current_time = asyncio.get_event_loop().time()
+                current_time = time.monotonic()
                 if current_time - last_frame_time >= frame_interval:
                     last_frame_time = current_time
                     yield _format_mjpeg_frame(frame)
@@ -602,6 +612,12 @@ async def _stream_mjpeg(url: str) -> AsyncGenerator[bytes, None]:
 
 async def _stream_rtsp(url: str, fps: int) -> AsyncGenerator[bytes, None]:
     """Stream frames from RTSP URL via ffmpeg."""
+    safe_url = _sanitize_camera_url(url, ("rtsp", "rtsps"))
+    if not safe_url:
+        logger.error("Invalid RTSP URL rejected: %s...", url[:50])
+        return
+    url = safe_url
+
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
         logger.error("ffmpeg not found - required for RTSP streaming")

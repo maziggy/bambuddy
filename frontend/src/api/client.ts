@@ -2344,8 +2344,8 @@ export const api = {
     }),
   testExternalCamera: (printerId: number, url: string, cameraType: string) =>
     request<{ success: boolean; error?: string; resolution?: string }>(
-      `/printers/${printerId}/camera/external/test?url=${encodeURIComponent(url)}&camera_type=${encodeURIComponent(cameraType)}`,
-      { method: 'POST' }
+      `/printers/${printerId}/camera/external/test`,
+      { method: 'POST', body: JSON.stringify({ url, camera_type: cameraType }) }
     ),
 
   // Print Control

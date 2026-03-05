@@ -256,21 +256,15 @@ class TestCameraAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_camera_stream_fps_validation(self, async_client: AsyncClient, printer_factory):
-        """Verify FPS parameter is validated and clamped."""
+        """Verify FPS parameter is validated via Query bounds (ge=1, le=30)."""
         printer = await printer_factory()
 
-        # FPS should be clamped between 1 and 30
-        # Testing that the endpoint accepts various FPS values without error
-        # (actual streaming would require mocking ffmpeg)
-
-        with patch("backend.app.api.routes.camera.get_ffmpeg_path", return_value=None):
-            # With no ffmpeg, stream should return error message but not crash
-            response = await async_client.get(
-                f"/api/v1/printers/{printer.id}/camera/stream",
-                params={"fps": 100},  # Should be clamped to 30
-            )
-            # Response will be a streaming response with error
-            assert response.status_code == 200
+        # FPS out of range should be rejected by FastAPI Query validation
+        response = await async_client.get(
+            f"/api/v1/printers/{printer.id}/camera/stream",
+            params={"fps": 100},  # Exceeds le=30
+        )
+        assert response.status_code == 422
 
     # ========================================================================
     # Plate Detection Endpoints
@@ -535,8 +529,7 @@ class TestCameraGridStreamValidation:
     @pytest.mark.integration
     async def test_rejects_nan_scale(self, async_client: AsyncClient):
         response = await async_client.get("/api/v1/printers/camera/grid-stream", params={"ids": "1", "scale": "NaN"})
-        assert response.status_code == 400
-        assert "finite" in response.json()["detail"].lower()
+        assert response.status_code == 422
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -544,8 +537,7 @@ class TestCameraGridStreamValidation:
         response = await async_client.get(
             "/api/v1/printers/camera/grid-stream", params={"ids": "1", "scale": "Infinity"}
         )
-        assert response.status_code == 400
-        assert "finite" in response.json()["detail"].lower()
+        assert response.status_code == 422
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -621,8 +613,7 @@ class TestCameraStreamValidation:
         response = await async_client.get(
             f"/api/v1/printers/{printer.id}/camera/stream", params={"scale": "NaN"}
         )
-        assert response.status_code == 400
-        assert "finite" in response.json()["detail"].lower()
+        assert response.status_code == 422
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -631,8 +622,7 @@ class TestCameraStreamValidation:
         response = await async_client.get(
             f"/api/v1/printers/{printer.id}/camera/stream", params={"scale": "Infinity"}
         )
-        assert response.status_code == 400
-        assert "finite" in response.json()["detail"].lower()
+        assert response.status_code == 422
 
 
 class TestCameraEndpointAuth:

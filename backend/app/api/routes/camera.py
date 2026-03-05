@@ -7,8 +7,10 @@ import struct
 import time
 import uuid
 from collections.abc import AsyncGenerator
+from typing import Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+from pydantic import BaseModel
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -766,9 +768,9 @@ async def _ensure_producer(
 async def camera_grid_stream(
     request: Request,
     ids: str = Query(..., description="Comma-separated printer IDs"),
-    fps: int = 5,
-    quality: int = 15,
-    scale: float = 0.5,
+    fps: int = Query(default=5, ge=1, le=30),
+    quality: int = Query(default=15, ge=2, le=31),
+    scale: float = Query(default=0.5, ge=0.1, le=1.0),
     force: bool = Query(False, description="Force restart producers with new quality settings"),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
@@ -786,10 +788,6 @@ async def camera_grid_stream(
     The frontend reads this stream with one fetch() and demuxes frames to
     the correct <canvas> element by printer ID.
     """
-    # Validate numeric parameters
-    if not math.isfinite(scale):
-        raise HTTPException(400, "scale must be a finite number")
-
     # Parse printer IDs
     try:
         printer_ids = [int(x.strip()) for x in ids.split(",") if x.strip()]
@@ -823,8 +821,6 @@ async def camera_grid_stream(
 
     if not entries:
         raise HTTPException(404, "No valid printers found")
-
-    fps = max(1, min(fps, 30))
 
     async def generate():
         """Round-robin across all printers, yielding binary-framed JPEG data."""
@@ -895,9 +891,9 @@ async def camera_grid_stream(
 async def camera_stream(
     printer_id: int,
     request: Request,
-    fps: int = 10,
-    quality: int = 5,
-    scale: float = 1.0,
+    fps: int = Query(default=10, ge=1, le=30),
+    quality: int = Query(default=5, ge=2, le=31),
+    scale: float = Query(default=1.0, ge=0.1, le=1.0),
     db: AsyncSession = Depends(get_db),
 ):
     """Stream live video from printer camera as MJPEG.
@@ -918,9 +914,6 @@ async def camera_stream(
         printer_id: Printer ID
         fps: Target frames per second (default: 10, max: 30)
     """
-    if not math.isfinite(scale):
-        raise HTTPException(400, "scale must be a finite number")
-
     printer = await get_printer_or_404(printer_id, db)
 
     # Check for external camera first
@@ -1246,11 +1239,15 @@ async def camera_hub_status(
     return _hub.status()
 
 
+class ExternalCameraTestRequest(BaseModel):
+    url: str
+    camera_type: Literal["mjpeg", "rtsp", "snapshot", "usb"]
+
+
 @router.post("/{printer_id}/camera/external/test")
 async def test_external_camera(
     printer_id: int,
-    url: str,
-    camera_type: str,
+    body: ExternalCameraTestRequest,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
@@ -1258,8 +1255,7 @@ async def test_external_camera(
 
     Args:
         printer_id: Printer ID (for authorization)
-        url: Camera URL or USB device path to test
-        camera_type: Camera type ("mjpeg", "rtsp", "snapshot", "usb")
+        body: Request body with url and camera_type
 
     Returns:
         Dict with {success: bool, error?: str, resolution?: str}
@@ -1269,7 +1265,7 @@ async def test_external_camera(
 
     from backend.app.services.external_camera import test_connection
 
-    return await test_connection(url, camera_type)
+    return await test_connection(body.url, body.camera_type)
 
 
 @router.get("/{printer_id}/camera/check-plate")
@@ -1384,7 +1380,7 @@ async def check_plate_empty(
 @router.post("/{printer_id}/camera/plate-detection/calibrate")
 async def calibrate_plate_detection(
     printer_id: int,
-    label: str | None = None,
+    label: str | None = Query(default=None, max_length=200),
     use_external: bool = False,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),

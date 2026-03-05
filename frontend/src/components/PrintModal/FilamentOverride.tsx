@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Circle, RotateCcw } from 'lucide-react';
+import { Circle, RotateCcw, Palette } from 'lucide-react';
 import { getColorName } from '../../utils/colors';
 import type { FilamentReqsData } from './types';
 
@@ -160,6 +160,7 @@ export function FilamentOverride({
                   onChange={(e) => onForceColorMatchChange?.(req.slot_id, e.target.checked)}
                   className="accent-bambu-green w-3 h-3"
                 />
+                <Palette className="w-3 h-3" />
                 {t('printModal.forceColorMatch')}
               </label>
             </div>

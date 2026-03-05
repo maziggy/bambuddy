@@ -2862,7 +2862,7 @@ export default {
     originalFilament: 'Original',
     overrideWith: 'Override with',
     resetToOriginal: 'Reset to original',
-    forceColorMatch: 'Force Color Match',
+    forceColorMatch: 'Force color match',
   },
 
   // Backup

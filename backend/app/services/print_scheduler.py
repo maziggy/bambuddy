@@ -443,10 +443,13 @@ class PrintScheduler:
             # Filament/color mismatch is most actionable - show first
             if force_overrides and not pref_overrides:
                 # All mismatches are force-color failures — use descriptive message only;
-                # do not append "Busy" info since the root cause is the missing color, not
-                # printer availability.
-                all_missing = sorted({c for _, cols in printers_missing_filament for c in cols})
-                return None, f"No matching material/color. Waiting on {', '.join(all_missing)}"
+                # but only if there are no busy printers that DO have the matching color.
+                # If a printer has the right color but is busy, surface "Busy" instead so
+                # the user knows the job will start automatically once that printer is free.
+                if not printers_busy:
+                    all_missing = sorted({c for _, cols in printers_missing_filament for c in cols})
+                    return None, f"No matching material/color. Waiting on {', '.join(all_missing)}"
+                # else: fall through — printers_busy will be appended below
             else:
                 names_and_missing = [f"{name} (needs {', '.join(missing)})" for name, missing in printers_missing_filament]
                 reasons.append(f"Waiting for filament: {'; '.join(names_and_missing)}")

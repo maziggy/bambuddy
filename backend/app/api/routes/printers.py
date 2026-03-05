@@ -2038,7 +2038,8 @@ async def save_ams_label(
         raise HTTPException(404, "Printer not found")
 
     # Determine the serial key to store under
-    serial_key = body.ams_serial.strip() if body.ams_serial else f"p{printer_id}a{ams_id}"
+    stripped = body.ams_serial.strip() if body.ams_serial else ""
+    serial_key = stripped if stripped else f"p{printer_id}a{ams_id}"
 
     result = await db.execute(
         select(AmsLabel).where(AmsLabel.ams_serial_number == serial_key)
@@ -2064,7 +2065,8 @@ async def delete_ams_label(
     db: AsyncSession = Depends(get_db),
 ):
     """Delete the friendly name for a specific AMS unit, reverting to the auto label."""
-    serial_key = ams_serial.strip() if ams_serial else f"p{printer_id}a{ams_id}"
+    stripped = ams_serial.strip() if ams_serial else ""
+    serial_key = stripped if stripped else f"p{printer_id}a{ams_id}"
 
     result = await db.execute(
         select(AmsLabel).where(AmsLabel.ams_serial_number == serial_key)

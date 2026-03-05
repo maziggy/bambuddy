@@ -411,7 +411,8 @@ async def restore_backup(
 
     from fastapi import HTTPException
 
-    from backend.app.core.database import close_all_connections, init_db, reinitialize_database
+	from backend.app.core import database as db_module
+    from backend.app.core.database import close_all_connections, init_db, reinitialize_database, run_migrations
     from backend.app.services.virtual_printer import virtual_printer_manager
 
     base_dir = app_settings.base_dir
@@ -498,11 +499,21 @@ async def restore_backup(
                         logger.warning("Could not restore %s directory: %s", name, e)
                         skipped_dirs.append(name)
 
-            # 7. Reinitialize the database engine and apply schema migrations so that
-            # tables added after the backup was created (e.g. ams_labels) exist
-            # immediately, without requiring a manual restart.
-            await reinitialize_database()
-            await init_db()
+            # 7. Reinitialize database and run migrations on the restored database
+            # This ensures new columns (like filament_overrides) are added even if the
+            # backup predates those schema migrations.
+            logger.info("Reinitializing database and running migrations on restored database...")
+            try:
+                await reinitialize_database()
+            except Exception as reinit_err:
+                logger.warning("Could not reinitialize database connection after restore: %s", reinit_err)
+            else:
+                try:
+                    async with db_module.engine.begin() as conn:
+                        await run_migrations(conn)
+                    logger.info("Database migrations applied to restored database")
+                except Exception as mig_err:
+                    logger.warning("Could not run migrations on restored database: %s", mig_err)
 
             logger.info("Restore complete - restart required")
             message = "Backup restored successfully. Please restart Bambuddy for changes to take effect."

@@ -90,6 +90,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Skip objects during print
 - AMS slot RFID re-read
 - AMS slot configuration (model-filtered presets, K profiles, color picker, pre-population for configured slots)
+- AMS info card (hover for serial number, firmware version) with custom friendly names that persist across printers
 - Dual external spool support for H2D (Ext-L / Ext-R)
 - HMS error monitoring with history and clear errors
 - Print success rates & trends
@@ -191,6 +192,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Debug logging toggle with live indicator
 - Live application log viewer with filtering
 - Support bundle generator with comprehensive diagnostics (privacy-filtered)
+- **In-app bug reporting** — Submit bug reports directly from the UI with optional screenshot (upload, paste, or drag & drop), automatic diagnostic log collection (30s debug capture with printer push), and system info. Reports create GitHub issues via a secure relay. Privacy-first: all logs are sanitized and sensitive data (IPs, serials, credentials) is never included.
 
 ### 🔒 Optional Authentication
 - Enable/disable authentication any time

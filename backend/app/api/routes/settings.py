@@ -411,7 +411,7 @@ async def restore_backup(
 
     from fastapi import HTTPException
 
-    from backend.app.core.database import close_all_connections
+    from backend.app.core.database import close_all_connections, init_db, reinitialize_database
     from backend.app.services.virtual_printer import virtual_printer_manager
 
     base_dir = app_settings.base_dir
@@ -498,8 +498,11 @@ async def restore_backup(
                         logger.warning("Could not restore %s directory: %s", name, e)
                         skipped_dirs.append(name)
 
-            # 7. Note: Virtual printer and database will be reinitialized on restart
-            # Do NOT try to restart services here - the database session is closed
+            # 7. Reinitialize the database engine and apply schema migrations so that
+            # tables added after the backup was created (e.g. ams_labels) exist
+            # immediately, without requiring a manual restart.
+            await reinitialize_database()
+            await init_db()
 
             logger.info("Restore complete - restart required")
             message = "Backup restored successfully. Please restart Bambuddy for changes to take effect."

@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+import subprocess
+import sys
 from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -223,10 +225,17 @@ async def generate_rtsp_mjpeg_stream(
 
     process = None
     try:
+        # On Windows, spawn ffmpeg in its own process group so that
+        # terminate() doesn't broadcast CTRL_C_EVENT to uvicorn (#605).
+        kwargs: dict = {}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            **kwargs,
         )
 
         # Track active process for cleanup

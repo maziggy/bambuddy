@@ -236,7 +236,7 @@ class TestTimelapseTracking:
             {
                 "print": {
                     "gcode_state": "RUNNING",
-                    "hms": [{"attr": 0x07000002, "code": 0x1234}],  # Filament module error
+                    "hms": [{"attr": 0x07000002, "code": 0x8001}],  # Filament module error (code must be >= 0x4000)
                 }
             }
         )

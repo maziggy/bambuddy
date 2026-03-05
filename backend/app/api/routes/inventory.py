@@ -13,6 +13,7 @@ from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.catalog_defaults import DEFAULT_COLOR_CATALOG, DEFAULT_SPOOL_CATALOG
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.models.ams_label import AmsLabel
 from backend.app.models.color_catalog import ColorCatalogEntry
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
@@ -638,6 +639,8 @@ async def list_assignments(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ):
     """List spool assignments, optionally filtered by printer."""
+    from backend.app.services.printer_manager import printer_manager
+
     query = select(SpoolAssignment).options(
         selectinload(SpoolAssignment.spool).selectinload(Spool.k_profiles),
         selectinload(SpoolAssignment.printer),
@@ -645,7 +648,53 @@ async def list_assignments(
     if printer_id is not None:
         query = query.where(SpoolAssignment.printer_id == printer_id)
     result = await db.execute(query)
-    return list(result.scalars().all())
+    assignments = list(result.scalars().all())
+
+    # Build (printer_id, ams_id) -> ams_serial map from live printer states.
+    # Fetch all statuses in one call rather than one get_status() call per printer.
+    serial_map: dict[tuple[int, int], str] = {}
+    seen_printer_ids: set[int] = {a.printer_id for a in assignments}
+    all_statuses = printer_manager.get_all_statuses()
+    for pid in seen_printer_ids:
+        state = all_statuses.get(pid)
+        if state and state.raw_data:
+            for ams_unit in state.raw_data.get("ams", []):
+                sn = str(ams_unit.get("sn") or ams_unit.get("serial_number") or "")
+                if sn:
+                    try:
+                        serial_map[(pid, int(ams_unit.get("id", 0)))] = sn
+                    except (ValueError, TypeError):
+                        continue
+
+    # Fetch all relevant AMS labels keyed by serial number
+    all_serials = set(serial_map.values())
+    # Also include synthetic fallback keys for assignments without a known serial
+    synthetic_keys: dict[str, tuple[int, int]] = {}
+    for a in assignments:
+        if (a.printer_id, a.ams_id) not in serial_map:
+            synthetic = f"p{a.printer_id}a{a.ams_id}"
+            synthetic_keys[synthetic] = (a.printer_id, a.ams_id)
+            all_serials.add(synthetic)
+
+    label_by_serial: dict[str, str] = {}
+    if all_serials:
+        lbl_result = await db.execute(select(AmsLabel).where(AmsLabel.ams_serial_number.in_(all_serials)))
+        for lbl in lbl_result.scalars().all():
+            label_by_serial[lbl.ams_serial_number] = lbl.label
+
+    # Build response objects, attaching ams_label where available
+    responses: list[SpoolAssignmentResponse] = []
+    for a in assignments:
+        resp = SpoolAssignmentResponse.model_validate(a)
+        sn = serial_map.get((a.printer_id, a.ams_id))
+        if sn and sn in label_by_serial:
+            resp.ams_label = label_by_serial[sn]
+        elif not sn:
+            synthetic = f"p{a.printer_id}a{a.ams_id}"
+            resp.ams_label = label_by_serial.get(synthetic)
+        responses.append(resp)
+
+    return responses
 
 
 @router.post("/assignments", response_model=SpoolAssignmentResponse)

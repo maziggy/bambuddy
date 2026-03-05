@@ -12,9 +12,11 @@ from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.models.ams_label import AmsLabel
 from backend.app.models.printer import Printer
 from backend.app.models.slot_preset import SlotPresetMapping
 from backend.app.schemas.printer import (
+    AmsLabelBody,
     AMSTray,
     AMSUnit,
     HMSErrorResponse,
@@ -433,6 +435,10 @@ async def get_printer_status(
                     temp=ams_data.get("temp"),
                     is_ams_ht=is_ams_ht,
                     tray=trays,
+                    # Serial number: Bambu MQTT uses "sn" key on AMS unit objects
+                    serial_number=str(ams_data.get("sn") or ams_data.get("serial_number") or ""),
+                    # Firmware version: populated by _handle_version_info from info.module ams/* entries
+                    sw_ver=str(ams_data.get("sw_ver") or ""),
                 )
             )
 
@@ -561,6 +567,7 @@ async def get_printer_status(
         timelapse=state.timelapse,
         ipcam=state.ipcam,
         wifi_signal=state.wifi_signal,
+        wired_network=state.wired_network,
         nozzles=nozzles,
         nozzle_rack=nozzle_rack,
         print_options=print_options,
@@ -1953,6 +1960,124 @@ async def reset_ams_slot(
         "success": True,
         "message": f"Reset AMS {ams_id} tray {tray_id}",
     }
+
+
+@router.get("/{printer_id}/ams-labels")
+async def get_ams_labels(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get all user-defined AMS labels for a printer, keyed by AMS unit ID.
+
+    Labels are stored by AMS serial number.  This endpoint resolves the current
+    serial-to-ams_id mapping from the live printer state so the response is still
+    keyed by ams_id for UI compatibility.
+    """
+    # Build serial -> ams_id map from live printer state
+    serial_to_ams_id: dict[str, int] = {}
+    state = printer_manager.get_status(printer_id)
+    if state and state.raw_data:
+        for ams_unit in state.raw_data.get("ams", []):
+            sn = str(ams_unit.get("sn") or ams_unit.get("serial_number") or "")
+            if sn:
+                serial_to_ams_id[sn] = int(ams_unit.get("id", 0))
+
+    # Collect all known serials for this printer (live + synthetic fallback keys)
+    serials_to_query = set(serial_to_ams_id.keys())
+
+    # Fetch labels for all known serials
+    labels: dict[int, str] = {}
+    if serials_to_query:
+        result = await db.execute(
+            select(AmsLabel).where(AmsLabel.ams_serial_number.in_(serials_to_query))
+        )
+        for lbl in result.scalars().all():
+            aid = serial_to_ams_id.get(lbl.ams_serial_number)
+            if aid is not None:
+                labels[aid] = lbl.label
+
+    # Also fetch labels stored under synthetic keys for this printer (backward compat)
+    # Collect all synthetic keys first, then query with a single IN clause.
+    if state and state.raw_data:
+        synthetic_key_to_aid: dict[str, int] = {
+            f"p{printer_id}a{int(ams_unit.get('id', 0))}": int(ams_unit.get("id", 0))
+            for ams_unit in state.raw_data.get("ams", [])
+            if int(ams_unit.get("id", 0)) not in labels
+        }
+        if synthetic_key_to_aid:
+            result = await db.execute(
+                select(AmsLabel).where(AmsLabel.ams_serial_number.in_(synthetic_key_to_aid.keys()))
+            )
+            for lbl in result.scalars().all():
+                aid = synthetic_key_to_aid.get(lbl.ams_serial_number)
+                if aid is not None:
+                    labels[aid] = lbl.label
+
+    return labels
+
+
+@router.put("/{printer_id}/ams-labels/{ams_id}")
+async def save_ams_label(
+    printer_id: int,
+    ams_id: int,
+    body: AmsLabelBody,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create or update the friendly name for a specific AMS unit.
+
+    When ``ams_serial`` is provided the label is stored under that serial number so
+    it survives the AMS being moved to a different printer.  When it is absent (e.g.
+    older firmware that does not report a serial) a synthetic key based on the
+    printer_id and ams_id is used as a fallback.
+    """
+    # Verify printer exists
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(404, "Printer not found")
+
+    # Determine the serial key to store under
+    stripped = body.ams_serial.strip() if body.ams_serial else ""
+    serial_key = stripped if stripped else f"p{printer_id}a{ams_id}"
+
+    result = await db.execute(
+        select(AmsLabel).where(AmsLabel.ams_serial_number == serial_key)
+    )
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        existing.label = body.label
+        existing.ams_id = ams_id
+    else:
+        db.add(AmsLabel(ams_serial_number=serial_key, ams_id=ams_id, label=body.label))
+
+    await db.commit()
+    return {"ams_id": ams_id, "label": body.label}
+
+
+@router.delete("/{printer_id}/ams-labels/{ams_id}")
+async def delete_ams_label(
+    printer_id: int,
+    ams_id: int,
+    ams_serial: str = Query(default="", max_length=50),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete the friendly name for a specific AMS unit, reverting to the auto label."""
+    stripped = ams_serial.strip() if ams_serial else ""
+    serial_key = stripped if stripped else f"p{printer_id}a{ams_id}"
+
+    result = await db.execute(
+        select(AmsLabel).where(AmsLabel.ams_serial_number == serial_key)
+    )
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        await db.delete(existing)
+        await db.commit()
+
+    return {"success": True}
 
 
 @router.post("/{printer_id}/debug/simulate-print-complete")

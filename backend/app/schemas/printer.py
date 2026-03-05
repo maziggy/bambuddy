@@ -138,6 +138,8 @@ class AMSUnit(BaseModel):
     temp: float | None = None
     is_ams_ht: bool = False  # True for AMS-HT (single spool), False for regular AMS (4 spools)
     tray: list[AMSTray] = []
+    serial_number: str = ""  # AMS unit serial number (sn from MQTT)
+    sw_ver: str = ""         # AMS firmware version (from get_version info.module)
 
 
 class NozzleInfoResponse(BaseModel):
@@ -158,6 +160,11 @@ class NozzleRackSlot(BaseModel):
     filament_color: str = ""  # RGBA hex ("00000000" = no filament)
     filament_id: str = ""  # Bambu filament ID
     filament_type: str = ""  # Material type (e.g. "PLA", "PETG")
+
+
+class AmsLabelBody(BaseModel):
+    label: str = Field(..., min_length=1, max_length=100)
+    ams_serial: str = Field(default="", max_length=50)
 
 
 class PrintOptionsResponse(BaseModel):
@@ -205,6 +212,7 @@ class PrinterStatus(BaseModel):
     timelapse: bool = False  # Timelapse recording active
     ipcam: bool = False  # Live view enabled
     wifi_signal: int | None = None  # WiFi signal strength in dBm
+    wired_network: bool = False  # Ethernet connection detected
     nozzles: list[NozzleInfoResponse] = []  # Nozzle hardware info (index 0=left/primary, 1=right)
     nozzle_rack: list[NozzleRackSlot] = []  # H2C 6-nozzle tool-changer rack
     print_options: PrintOptionsResponse | None = None  # AI detection and print options

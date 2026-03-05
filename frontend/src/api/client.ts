@@ -134,6 +134,8 @@ export interface AMSUnit {
   temp: number | null;
   is_ams_ht: boolean;  // True for AMS-HT (single spool), False for regular AMS (4 spools)
   tray: AMSTray[];
+  serial_number: string;  // AMS unit serial number (from MQTT sn field)
+  sw_ver: string;         // AMS firmware version (from get_version info.module ams/* entry)
 }
 
 export interface NozzleInfo {
@@ -210,6 +212,7 @@ export interface PrinterStatus {
   timelapse: boolean;  // Timelapse recording active
   ipcam: boolean;  // Live view enabled
   wifi_signal: number | null;  // WiFi signal strength in dBm
+  wired_network: boolean;  // Ethernet connection detected
   nozzles: NozzleInfo[];  // Nozzle hardware info (index 0=left/primary, 1=right)
   nozzle_rack: NozzleRackSlot[];  // H2C 6-nozzle tool-changer rack
   print_options: PrintOptions | null;  // AI detection and print options
@@ -1879,6 +1882,7 @@ export interface SpoolAssignment {
   spool?: InventorySpool | null;
   configured: boolean;
   created_at: string;
+  ams_label?: string | null;  // User-defined friendly name for the AMS unit
 }
 
 // Update types
@@ -3346,6 +3350,23 @@ export const api = {
     request<{ success: boolean }>(`/printers/${printerId}/slot-presets/${amsId}/${trayId}`, {
       method: 'DELETE',
     }),
+
+  // AMS Labels (user-defined friendly names)
+  getAmsLabels: (printerId: number) =>
+    request<Record<number, string>>(`/printers/${printerId}/ams-labels`),
+  saveAmsLabel: (printerId: number, amsId: number, label: string, amsSerial = '') =>
+    request<{ ams_id: number; label: string }>(
+      `/printers/${printerId}/ams-labels/${amsId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ label, ams_serial: amsSerial }),
+      }
+    ),
+  deleteAmsLabel: (printerId: number, amsId: number, amsSerial = '') =>
+    request<{ success: boolean }>(`/printers/${printerId}/ams-labels/${amsId}?ams_serial=${encodeURIComponent(amsSerial)}`, {
+      method: 'DELETE',
+    }),
+
   configureAmsSlot: (
     printerId: number,
     amsId: number,
@@ -4935,5 +4956,27 @@ export const spoolbuddyApi = {
     request<{ status: string }>(`/spoolbuddy/devices/${deviceId}/cancel-write`, {
       method: 'POST',
       body: '{}',
+    }),
+};
+
+export interface BugReportRequest {
+  description: string;
+  email?: string;
+  screenshot_base64?: string;
+  include_support_info?: boolean;
+}
+
+export interface BugReportResponse {
+  success: boolean;
+  message: string;
+  issue_url?: string;
+  issue_number?: number;
+}
+
+export const bugReportApi = {
+  submit: (data: BugReportRequest) =>
+    request<BugReportResponse>('/bug-report/submit', {
+      method: 'POST',
+      body: JSON.stringify(data),
     }),
 };

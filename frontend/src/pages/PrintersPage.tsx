@@ -2747,6 +2747,8 @@ function PrinterCard({
   const seenBusyStateRef = useRef<boolean>(false);
   // Fallback timeout ref
   const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Minimum display time timer ref
+  const minTimeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Minimum display time passed
   const minTimePassedRef = useRef<boolean>(false);
 
@@ -2755,16 +2757,19 @@ function PrinterCard({
     mutationFn: ({ amsId, slotId }: { amsId: number; slotId: number }) =>
       api.refreshAmsSlot(printer.id, amsId, slotId),
     onMutate: ({ amsId, slotId }) => {
-      // Clear any existing timeout
+      // Clear any existing timeouts
       if (refreshTimeoutRef.current) {
         clearTimeout(refreshTimeoutRef.current);
+      }
+      if (minTimeTimerRef.current) {
+        clearTimeout(minTimeTimerRef.current);
       }
       // Reset state
       seenBusyStateRef.current = false;
       minTimePassedRef.current = false;
       setRefreshingSlot({ amsId, slotId });
       // Minimum display time (2 seconds)
-      setTimeout(() => {
+      minTimeTimerRef.current = setTimeout(() => {
         minTimePassedRef.current = true;
       }, 2000);
       // Fallback timeout (30 seconds max)
@@ -2779,6 +2784,9 @@ function PrinterCard({
       showToast(error.message || t('printers.toast.failedToRereadRfid'), 'error');
       if (refreshTimeoutRef.current) {
         clearTimeout(refreshTimeoutRef.current);
+      }
+      if (minTimeTimerRef.current) {
+        clearTimeout(minTimeTimerRef.current);
       }
       setRefreshingSlot(null);
     },
@@ -2839,12 +2847,12 @@ function PrinterCard({
 
   // Close plate check modal and restore light state
   const closePlateCheckModal = useCallback(async () => {
-    setPlateCheckResult(null);
-    // Restore light to original state if we turned it on
+    // Restore light to original state if we turned it on (before closing modal)
     if (plateCheckLightWasOff) {
       await api.setChamberLight(printer.id, false);
       setPlateCheckLightWasOff(false);
     }
+    setPlateCheckResult(null);
   }, [plateCheckLightWasOff, printer.id]);
 
   // Calibrate plate detection handler
@@ -3832,7 +3840,7 @@ function PrinterCard({
                                 const isEmpty = !tray?.tray_type;
                                 // Check if this is the currently loaded tray
                                 // Global tray ID = ams.id * 4 + slot index (for standard AMS)
-                                const globalTrayId = ams.id * 4 + slotIdx;
+                                const globalTrayId = getGlobalTrayId(ams.id, slotIdx, false);
                                 const isActive = effectiveTrayNow === globalTrayId;
                                 // Get cloud preset info if available
                                 const cloudInfo = tray?.tray_info_idx ? filamentInfo?.[tray.tray_info_idx] : null;
@@ -4624,8 +4632,15 @@ function PrinterCard({
                     onOpenEmbeddedCamera(printer.id, printer.name);
                   } else {
                     // Use saved window state or defaults
-                    const saved = localStorage.getItem('cameraWindowState');
-                    const state = saved ? JSON.parse(saved) : { width: 640, height: 400 };
+                    let state: { width: number; height: number; left?: number; top?: number } = { width: 640, height: 400 };
+                    try {
+                      const saved = localStorage.getItem('cameraWindowState');
+                      if (saved) {
+                        state = JSON.parse(saved);
+                      }
+                    } catch {
+                      // Ignore corrupted localStorage
+                    }
                     const features = [
                       `width=${state.width}`,
                       `height=${state.height}`,

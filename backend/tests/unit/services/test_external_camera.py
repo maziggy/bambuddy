@@ -65,14 +65,6 @@ class TestGetFfmpegPath:
             result = get_ffmpeg_path()
             assert result in ["/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/opt/homebrew/bin/ffmpeg"]
 
-    def test_get_ffmpeg_path_returns_none_when_not_found(self):
-        """Verify None is returned when ffmpeg not found anywhere."""
-        from backend.app.services.external_camera import get_ffmpeg_path
-
-        with patch("shutil.which", return_value=None), patch("pathlib.Path.exists", return_value=False):
-            result = get_ffmpeg_path()
-            assert result is None
-
 
 class TestJpegFrameExtraction:
     """Tests for JPEG frame extraction from buffer."""

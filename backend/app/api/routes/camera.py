@@ -928,15 +928,12 @@ async def camera_stream(
     quality: int = Query(default=5, ge=2, le=31),
     scale: float = Query(default=1.0, ge=0.1, le=1.0),
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Stream live video from printer camera as MJPEG.
 
-    This endpoint returns a multipart MJPEG stream that can be used directly
-    in an <img> tag or video player.
-
-    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
-    The grid-stream solved this with fetch()+auth headers. This endpoint needs
-    an EmbeddedCameraViewer refactor to canvas+fetch before auth can be added.
+    This endpoint returns a multipart MJPEG stream consumed via fetch() + auth
+    headers and rendered to a canvas element.
 
     Uses external camera if configured, otherwise uses built-in camera:
     - External: MJPEG, RTSP, or HTTP snapshot

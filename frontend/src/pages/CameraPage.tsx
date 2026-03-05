@@ -8,13 +8,10 @@ import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { ChamberLight } from '../components/icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';
+import { useMjpegStream } from '../hooks/useMjpegStream';
+import { useStreamReconnect } from '../hooks/useStreamReconnect';
 
 const MAX_RECONNECT_ATTEMPTS = 5;
-const INITIAL_RECONNECT_DELAY = 2000; // 2 seconds
-const MAX_RECONNECT_DELAY = 30000; // 30 seconds
-const STALL_CHECK_INTERVAL = 5000; // Check every 5 seconds
-const INITIAL_LOAD_RETRY_DELAY = 500; // ms between silent retries during initial load
-const INITIAL_LOAD_MAX_RETRIES = 20;
 
 export function CameraPage() {
   const { t } = useTranslation();
@@ -26,28 +23,53 @@ export function CameraPage() {
 
   const [streamMode, setStreamMode] = useState<'stream' | 'snapshot'>('stream');
   const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
-  const [streamError, setStreamError] = useState(false);
-  const [streamLoading, setStreamLoading] = useState(true);
-  const [imageKey, setImageKey] = useState(Date.now());
   const [transitioning, setTransitioning] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [reconnectAttempts, setReconnectAttempts] = useState(0);
-  const [isReconnecting, setIsReconnecting] = useState(false);
-  const [reconnectCountdown, setReconnectCountdown] = useState(0);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
   const [lastTouchCenter, setLastTouchCenter] = useState<{ x: number; y: number } | null>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
+
+  // Snapshot mode state
+  const [snapshotLoading, setSnapshotLoading] = useState(true);
+  const [snapshotError, setSnapshotError] = useState(false);
+  const [snapshotKey, setSnapshotKey] = useState(Date.now());
+  const snapshotImgRef = useRef<HTMLImageElement>(null);
+
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const stallCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const hasStreamConnectedRef = useRef(false);
-  const initialRetryCountRef = useRef(0);
-  const initialRetryTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Ref to allow reconnect hook to call mjpeg restart without circular deps
+  const mjpegRestartRef = useRef<() => void>(() => {});
+
+  const isStream = streamMode === 'stream';
+
+  // --- Stream hooks (only active in stream mode) ---
+  const mjpeg = useMjpegStream({
+    url: `/printers/${id}/camera/stream?fps=15`,
+    canvasRef,
+    enabled: isStream && !transitioning && id > 0,
+    onFirstFrame: () => reconnect.handleStreamSuccess(),
+    onError: () => reconnect.handleStreamError(),
+  });
+
+  // Keep restart ref in sync
+  useEffect(() => { mjpegRestartRef.current = mjpeg.restart; }, [mjpeg.restart]);
+
+  const checkStalled = useCallback(async () => {
+    const status = await api.getCameraStatus(id);
+    return !!(status.stalled || !status.active);
+  }, [id]);
+
+  const reconnect = useStreamReconnect({
+    maxAttempts: MAX_RECONNECT_ATTEMPTS,
+    onReconnect: () => mjpegRestartRef.current(),
+    onGiveUp: () => {}, // hasError from mjpeg hook covers this
+    stallPaused: !isStream || mjpeg.isLoading || transitioning,
+    checkStalled,
+  });
 
   // Fetch printer info for the title
   const { data: printer } = useQuery({
@@ -100,7 +122,6 @@ export function CameraPage() {
   }, [printer]);
 
   // Cleanup on unmount - stop the camera stream
-  // Track if we've already sent the stop signal to avoid duplicate calls
   const stopSentRef = useRef(false);
 
   useEffect(() => {
@@ -117,70 +138,40 @@ export function CameraPage() {
       }
     };
 
-    // Handle page unload/close with keepalive fetch (more reliable than sendBeacon, supports auth)
     const handleBeforeUnload = () => {
       sendStopOnce();
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
 
-    // Store ref value for cleanup - ref may change by cleanup time
-    const imgElement = imgRef.current;
-
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-
-      // Clear the image source first to stop the stream
-      if (imgElement) {
-        imgElement.src = '';
-      }
-      // Send stop signal only once
+      mjpeg.stop();
       sendStopOnce();
     };
-  }, [id]);
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-hide loading after timeout (skip during initial load retries)
-  useEffect(() => {
-    if (streamLoading && !transitioning && hasStreamConnectedRef.current) {
-      const timeout = streamMode === 'stream' ? 3000 : 20000;
-      const timer = setTimeout(() => {
-        setStreamLoading(false);
-      }, timeout);
-      return () => clearTimeout(timer);
-    }
-  }, [streamMode, streamLoading, imageKey, transitioning]);
-
-  // Fullscreen change listener - refresh stream after fullscreen transition
+  // Fullscreen change listener
   useEffect(() => {
     const handleFullscreenChange = () => {
       const nowFullscreen = !!document.fullscreenElement;
       setIsFullscreen(nowFullscreen);
-      // Reset zoom on fullscreen transition
       setZoomLevel(1);
       setPanOffset({ x: 0, y: 0 });
 
       // Refresh stream after fullscreen transition to prevent stall
-      if (streamMode === 'stream' && !transitioning) {
-        // Clear image src first, then set new key after delay
-        if (imgRef.current) {
-          imgRef.current.src = '';
-        }
-        setTimeout(() => {
-          setStreamLoading(true);
-          setImageKey(Date.now());
-        }, 200);
+      if (isStream && !transitioning) {
+        mjpeg.restart();
       }
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, [streamMode, transitioning]);
+  }, [isStream, transitioning]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Save window size and position when user resizes or moves
-  // Works for both popup windows and standalone camera pages
   useEffect(() => {
     let saveTimeout: NodeJS.Timeout;
     const saveWindowState = () => {
-      // Debounce to avoid saving during drag
       clearTimeout(saveTimeout);
       saveTimeout = setTimeout(() => {
         localStorage.setItem('cameraWindowState', JSON.stringify({
@@ -200,184 +191,6 @@ export function CameraPage() {
     };
   }, []);
 
-  // Clean up reconnect timers on unmount
-  useEffect(() => {
-    return () => {
-      if (reconnectTimerRef.current) {
-        clearTimeout(reconnectTimerRef.current);
-      }
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current);
-      }
-      if (stallCheckIntervalRef.current) {
-        clearInterval(stallCheckIntervalRef.current);
-      }
-      if (initialRetryTimerRef.current) {
-        clearTimeout(initialRetryTimerRef.current);
-      }
-    };
-  }, []);
-
-  // Auto-reconnect logic
-  const attemptReconnect = useCallback(() => {
-    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      setIsReconnecting(false);
-      setStreamError(true);
-      return;
-    }
-
-    // Calculate delay with exponential backoff
-    const delay = Math.min(
-      INITIAL_RECONNECT_DELAY * Math.pow(2, reconnectAttempts),
-      MAX_RECONNECT_DELAY
-    );
-
-    setIsReconnecting(true);
-    setReconnectCountdown(Math.ceil(delay / 1000));
-
-    // Countdown timer
-    countdownIntervalRef.current = setInterval(() => {
-      setReconnectCountdown((prev) => {
-        if (prev <= 1) {
-          if (countdownIntervalRef.current) {
-            clearInterval(countdownIntervalRef.current);
-          }
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    // Reconnect after delay
-    reconnectTimerRef.current = setTimeout(() => {
-      setReconnectAttempts((prev) => prev + 1);
-      setIsReconnecting(false);
-      setStreamLoading(true);
-      setStreamError(false);
-      if (imgRef.current) {
-        imgRef.current.src = '';
-      }
-      setImageKey(Date.now());
-    }, delay);
-  }, [reconnectAttempts]);
-
-  // Stall detection - periodically check if stream is still receiving frames
-  useEffect(() => {
-    // Only skip stall check during initial load, reconnecting, or transitioning
-    // Continue checking even during streamError to detect recovery
-    if (streamMode !== 'stream' || streamLoading || isReconnecting || transitioning) {
-      if (stallCheckIntervalRef.current) {
-        clearInterval(stallCheckIntervalRef.current);
-        stallCheckIntervalRef.current = null;
-      }
-      return;
-    }
-
-    // Start stall detection after stream has loaded
-    stallCheckIntervalRef.current = setInterval(async () => {
-      try {
-        const status = await api.getCameraStatus(id);
-        // Trigger reconnect if:
-        // 1. Backend reports stall (no frames for 10+ seconds)
-        // 2. OR stream is not active anymore (process died)
-        if (status.stalled || (!status.active && !streamError)) {
-          console.log(`Stream issue detected: stalled=${status.stalled}, active=${status.active}, reconnecting...`);
-          if (stallCheckIntervalRef.current) {
-            clearInterval(stallCheckIntervalRef.current);
-            stallCheckIntervalRef.current = null;
-          }
-          setStreamLoading(false);
-          attemptReconnect();
-        }
-      } catch {
-        // Ignore fetch errors - server might be temporarily unavailable
-      }
-    }, STALL_CHECK_INTERVAL);
-
-    return () => {
-      if (stallCheckIntervalRef.current) {
-        clearInterval(stallCheckIntervalRef.current);
-        stallCheckIntervalRef.current = null;
-      }
-    };
-  }, [streamMode, streamLoading, streamError, isReconnecting, transitioning, id, attemptReconnect]);
-
-  const handleStreamError = () => {
-    // During initial load (before first successful frame), silently retry
-    if (!hasStreamConnectedRef.current) {
-      // Skip if a retry is already scheduled
-      if (initialRetryTimerRef.current) return;
-      if (initialRetryCountRef.current < INITIAL_LOAD_MAX_RETRIES) {
-        initialRetryCountRef.current += 1;
-        initialRetryTimerRef.current = setTimeout(() => {
-          initialRetryTimerRef.current = null;
-          if (imgRef.current) imgRef.current.src = '';
-          setImageKey(Date.now());
-        }, INITIAL_LOAD_RETRY_DELAY);
-        return; // Keep streamLoading=true, no error UI
-      }
-      // Retries exhausted during initial load
-      setStreamLoading(false);
-      setStreamError(true);
-      return;
-    }
-
-    setStreamLoading(false);
-
-    // Only auto-reconnect for live stream mode
-    if (streamMode === 'stream' && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-      attemptReconnect();
-    } else {
-      setStreamError(true);
-    }
-  };
-
-  const handleStreamLoad = () => {
-    hasStreamConnectedRef.current = true;
-    initialRetryCountRef.current = 0;
-    if (initialRetryTimerRef.current) {
-      clearTimeout(initialRetryTimerRef.current);
-      initialRetryTimerRef.current = null;
-    }
-    setStreamLoading(false);
-    setStreamError(false);
-    // Reset reconnect attempts on successful connection
-    setReconnectAttempts(0);
-    setIsReconnecting(false);
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-    }
-    if (countdownIntervalRef.current) {
-      clearInterval(countdownIntervalRef.current);
-    }
-
-    // Auto-resize window to fit video content (only if no saved preference)
-    if (imgRef.current && !localStorage.getItem('cameraWindowState')) {
-      const img = imgRef.current;
-      const videoWidth = img.naturalWidth;
-      const videoHeight = img.naturalHeight;
-
-      if (videoWidth > 0 && videoHeight > 0) {
-        // Add space for header bar (~45px) and some padding
-        const headerHeight = 45;
-        const padding = 16;
-
-        // Calculate window size (outer size includes chrome)
-        const chromeWidth = window.outerWidth - window.innerWidth;
-        const chromeHeight = window.outerHeight - window.innerHeight;
-
-        const targetWidth = videoWidth + padding + chromeWidth;
-        const targetHeight = videoHeight + headerHeight + padding + chromeHeight;
-
-        try {
-          window.resizeTo(targetWidth, targetHeight);
-        } catch {
-          // resizeTo may not be allowed in all contexts
-        }
-      }
-    }
-  };
-
   const stopStream = () => {
     if (id > 0) {
       const headers: Record<string, string> = {};
@@ -390,40 +203,29 @@ export function CameraPage() {
   const switchToMode = (newMode: 'stream' | 'snapshot') => {
     if (streamMode === newMode || transitioning) return;
     setTransitioning(true);
-    setStreamLoading(true);
-    setStreamError(false);
-    // Reset reconnect state on mode switch
-    setReconnectAttempts(0);
-    setIsReconnecting(false);
-    // Reset initial load state on mode switch
-    hasStreamConnectedRef.current = false;
-    initialRetryCountRef.current = 0;
-    if (initialRetryTimerRef.current) {
-      clearTimeout(initialRetryTimerRef.current);
-      initialRetryTimerRef.current = null;
-    }
-    // Reset zoom on mode switch
     setZoomLevel(1);
     setPanOffset({ x: 0, y: 0 });
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-    }
-    if (countdownIntervalRef.current) {
-      clearInterval(countdownIntervalRef.current);
-    }
 
-    if (imgRef.current) {
-      imgRef.current.src = '';
-    }
-
-    // Stop any active streams when switching modes
+    // Stop stream when switching away from stream mode
     if (streamMode === 'stream') {
+      mjpeg.stop();
       stopStream();
+    }
+
+    // Reset reconnect state
+    reconnect.reset();
+
+    // Reset snapshot state if switching to snapshot
+    if (newMode === 'snapshot') {
+      setSnapshotLoading(true);
+      setSnapshotError(false);
     }
 
     setTimeout(() => {
       setStreamMode(newMode);
-      setImageKey(Date.now());
+      if (newMode === 'snapshot') {
+        setSnapshotKey(Date.now());
+      }
       setTransitioning(false);
     }, 100);
   };
@@ -431,36 +233,25 @@ export function CameraPage() {
   const refresh = () => {
     if (transitioning) return;
     setTransitioning(true);
-    setStreamLoading(true);
-    setStreamError(false);
-    // Reset reconnect state on manual refresh
-    setReconnectAttempts(0);
-    setIsReconnecting(false);
-    // Reset initial load state on refresh
-    hasStreamConnectedRef.current = false;
-    initialRetryCountRef.current = 0;
-    if (initialRetryTimerRef.current) {
-      clearTimeout(initialRetryTimerRef.current);
-      initialRetryTimerRef.current = null;
-    }
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-    }
-    if (countdownIntervalRef.current) {
-      clearInterval(countdownIntervalRef.current);
-    }
+    setZoomLevel(1);
+    setPanOffset({ x: 0, y: 0 });
 
-    if (imgRef.current) {
-      imgRef.current.src = '';
-    }
+    // Reset reconnect state
+    reconnect.reset();
 
-    // Stop any active streams before refresh
-    if (streamMode === 'stream') {
+    if (isStream) {
+      mjpeg.stop();
       stopStream();
     }
 
     setTimeout(() => {
-      setImageKey(Date.now());
+      if (isStream) {
+        mjpeg.restart();
+      } else {
+        setSnapshotLoading(true);
+        setSnapshotError(false);
+        setSnapshotKey(Date.now());
+      }
       setTransitioning(false);
     }, 100);
   };
@@ -495,7 +286,7 @@ export function CameraPage() {
     }
   };
 
-  const handleImageMouseDown = (e: React.MouseEvent) => {
+  const handleMouseDown = (e: React.MouseEvent) => {
     if (zoomLevel > 1) {
       e.preventDefault();
       setIsPanning(true);
@@ -503,19 +294,17 @@ export function CameraPage() {
     }
   };
 
-  // Calculate max pan based on container size and zoom level
   const getMaxPan = useCallback(() => {
     if (!containerRef.current) {
       return { x: 300, y: 200 };
     }
     const container = containerRef.current.getBoundingClientRect();
-    // Allow panning up to half the zoomed overflow in each direction
     const maxX = (container.width * (zoomLevel - 1)) / 2;
     const maxY = (container.height * (zoomLevel - 1)) / 2;
     return { x: Math.max(50, maxX), y: Math.max(50, maxY) };
   }, [zoomLevel]);
 
-  const handleImageMouseMove = (e: React.MouseEvent) => {
+  const handleMouseMove = (e: React.MouseEvent) => {
     if (isPanning && zoomLevel > 1) {
       const newX = e.clientX - panStart.x;
       const newY = e.clientY - panStart.y;
@@ -527,7 +316,7 @@ export function CameraPage() {
     }
   };
 
-  const handleImageMouseUp = () => {
+  const handleMouseUp = () => {
     setIsPanning(false);
   };
 
@@ -551,12 +340,10 @@ export function CameraPage() {
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
-      // Pinch gesture start
       e.preventDefault();
       setLastTouchDistance(getTouchDistance(e.touches));
       setLastTouchCenter(getTouchCenter(e.touches));
     } else if (e.touches.length === 1 && zoomLevel > 1) {
-      // Single touch pan start
       e.preventDefault();
       setIsPanning(true);
       setPanStart({
@@ -568,7 +355,6 @@ export function CameraPage() {
 
   const handleTouchMove = (e: React.TouchEvent) => {
     if (e.touches.length === 2 && lastTouchDistance !== null) {
-      // Pinch gesture
       e.preventDefault();
       const newDistance = getTouchDistance(e.touches);
       const scale = newDistance / lastTouchDistance;
@@ -583,7 +369,6 @@ export function CameraPage() {
 
       setLastTouchDistance(newDistance);
 
-      // Also handle pan during pinch
       const newCenter = getTouchCenter(e.touches);
       if (lastTouchCenter) {
         const maxPan = getMaxPan();
@@ -594,7 +379,6 @@ export function CameraPage() {
       }
       setLastTouchCenter(newCenter);
     } else if (e.touches.length === 1 && isPanning && zoomLevel > 1) {
-      // Single touch pan
       e.preventDefault();
       const newX = e.touches[0].clientX - panStart.x;
       const newY = e.touches[0].clientY - panStart.y;
@@ -621,13 +405,45 @@ export function CameraPage() {
     setPanOffset({ x: 0, y: 0 });
   };
 
-  const currentUrl = transitioning
-    ? ''
-    : streamMode === 'stream'
-      ? `/api/v1/printers/${id}/camera/stream?fps=15&t=${imageKey}`
-      : `/api/v1/printers/${id}/camera/snapshot?t=${imageKey}`;
+  // Derive loading/error from the appropriate source
+  const loading = isStream ? mjpeg.isLoading : snapshotLoading;
+  const hasError = isStream ? mjpeg.hasError : snapshotError;
+  const { isReconnecting, reconnectCountdown, reconnectAttempts } = reconnect;
+  const isDisabled = loading || transitioning || isReconnecting;
 
-  const isDisabled = streamLoading || transitioning || isReconnecting;
+  // Snapshot URL
+  const snapshotUrl = `/api/v1/printers/${id}/camera/snapshot?t=${snapshotKey}`;
+
+  const handleSnapshotLoad = () => {
+    setSnapshotLoading(false);
+    setSnapshotError(false);
+
+    // Auto-resize window to fit video content (only if no saved preference)
+    if (snapshotImgRef.current && !localStorage.getItem('cameraWindowState')) {
+      const img = snapshotImgRef.current;
+      const videoWidth = img.naturalWidth;
+      const videoHeight = img.naturalHeight;
+
+      if (videoWidth > 0 && videoHeight > 0) {
+        const headerHeight = 45;
+        const padding = 16;
+        const chromeWidth = window.outerWidth - window.innerWidth;
+        const chromeHeight = window.outerHeight - window.innerHeight;
+        const targetWidth = videoWidth + padding + chromeWidth;
+        const targetHeight = videoHeight + headerHeight + padding + chromeHeight;
+        try {
+          window.resizeTo(targetWidth, targetHeight);
+        } catch {
+          // resizeTo may not be allowed in all contexts
+        }
+      }
+    }
+  };
+
+  const handleSnapshotError = () => {
+    setSnapshotLoading(false);
+    setSnapshotError(true);
+  };
 
   if (!id) {
     return (
@@ -636,6 +452,11 @@ export function CameraPage() {
       </div>
     );
   }
+
+  const transformStyle = {
+    transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px)`,
+    cursor: zoomLevel > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default',
+  };
 
   return (
     <div ref={containerRef} className="min-h-screen bg-black flex flex-col">
@@ -719,21 +540,21 @@ export function CameraPage() {
       <div
         className="flex-1 flex items-center justify-center p-2 overflow-hidden"
         onWheel={handleWheel}
-        onMouseMove={handleImageMouseMove}
-        onMouseUp={handleImageMouseUp}
-        onMouseLeave={handleImageMouseUp}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         style={{ touchAction: 'none' }}
       >
         <div className="relative w-full h-full flex items-center justify-center">
-          {(streamLoading || transitioning) && !isReconnecting && (
+          {(loading || transitioning) && !isReconnecting && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
               <div className="text-center">
                 <RefreshCw className="w-8 h-8 text-bambu-gray animate-spin mx-auto mb-2" />
                 <p className="text-sm text-bambu-gray">
-                  {streamMode === 'stream' ? t('camera.connectingToCamera') : t('camera.capturingSnapshot')}
+                  {isStream ? t('camera.connectingToCamera') : t('camera.capturingSnapshot')}
                 </p>
               </div>
             </div>
@@ -755,7 +576,7 @@ export function CameraPage() {
               </div>
             </div>
           )}
-          {streamError && !isReconnecting && (
+          {hasError && !isReconnecting && (
             <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
               <div className="text-center p-4">
                 <AlertTriangle className="w-12 h-12 text-orange-400 mx-auto mb-3" />
@@ -772,21 +593,32 @@ export function CameraPage() {
               </div>
             </div>
           )}
-          <img
-            ref={imgRef}
-            key={imageKey}
-            src={currentUrl}
-            alt={t('camera.cameraStream')}
-            className="max-w-full max-h-full object-contain select-none"
-            style={{
-              transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px)`,
-              cursor: zoomLevel > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default',
-            }}
-            onError={currentUrl ? handleStreamError : undefined}
-            onLoad={currentUrl ? handleStreamLoad : undefined}
-            onMouseDown={handleImageMouseDown}
-            draggable={false}
-          />
+
+          {/* Stream mode: canvas */}
+          {isStream && (
+            <canvas
+              ref={canvasRef}
+              className="max-w-full max-h-full object-contain select-none"
+              style={transformStyle}
+              onMouseDown={handleMouseDown}
+            />
+          )}
+
+          {/* Snapshot mode: img */}
+          {!isStream && (
+            <img
+              ref={snapshotImgRef}
+              key={snapshotKey}
+              src={snapshotUrl}
+              alt={t('camera.cameraStream')}
+              className="max-w-full max-h-full object-contain select-none"
+              style={transformStyle}
+              onError={handleSnapshotError}
+              onLoad={handleSnapshotLoad}
+              onMouseDown={handleMouseDown}
+              draggable={false}
+            />
+          )}
 
           {/* Zoom controls */}
           <div className="absolute bottom-4 left-4 flex items-center gap-1.5 bg-black/60 rounded-lg px-2 py-1.5">

@@ -7,6 +7,8 @@ import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { ChamberLight } from './icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from './SkipObjectsModal';
+import { useMjpegStream } from '../hooks/useMjpegStream';
+import { useStreamReconnect } from '../hooks/useStreamReconnect';
 
 interface EmbeddedCameraViewerProps {
   printerId: number;
@@ -16,12 +18,6 @@ interface EmbeddedCameraViewerProps {
 }
 
 const STORAGE_KEY_PREFIX = 'embeddedCameraState_';
-const MAX_RECONNECT_ATTEMPTS = 5;
-const INITIAL_RECONNECT_DELAY = 2000;
-const MAX_RECONNECT_DELAY = 30000;
-const STALL_CHECK_INTERVAL = 5000;
-const INITIAL_LOAD_RETRY_DELAY = 500;
-const INITIAL_LOAD_MAX_RETRIES = 10;
 
 interface CameraState {
   x: number;
@@ -87,24 +83,12 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
   const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
   const [lastTouchCenter, setLastTouchCenter] = useState<{ x: number; y: number } | null>(null);
 
-  // Stream state
   const [streamError, setStreamError] = useState(false);
-  const [streamLoading, setStreamLoading] = useState(true);
-  const [imageKey, setImageKey] = useState(Date.now());
-  const [reconnectAttempts, setReconnectAttempts] = useState(0);
-  const [isReconnecting, setIsReconnecting] = useState(false);
-  const [reconnectCountdown, setReconnectCountdown] = useState(0);
+  const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
-  const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const stallCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const hasStreamConnectedRef = useRef(false);
-  const initialRetryCountRef = useRef(0);
-  const initialRetryTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const mjpegRestartRef = useRef<() => void>(() => {});
 
   // Fetch printer info
   const { data: printer } = useQuery({
@@ -146,6 +130,33 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
 
   const isPrintingWithObjects = (status?.state === 'RUNNING' || status?.state === 'PAUSE') && (status?.printable_objects_count ?? 0) >= 2;
 
+  // Reconnect logic
+  const checkStalled = useCallback(async () => {
+    const s = await api.getCameraStatus(printerId);
+    return s.stalled || (!s.active && !streamError);
+  }, [printerId, streamError]);
+
+  const reconnect = useStreamReconnect({
+    onReconnect: () => mjpegRestartRef.current(),
+    onGiveUp: () => setStreamError(true),
+    stallPaused: isMinimized,
+    checkStalled,
+  });
+
+  // MJPEG stream via fetch+canvas
+  const streamUrl = `/printers/${printerId}/camera/stream?fps=15&quality=5&scale=1.0`;
+  const mjpeg = useMjpegStream({
+    url: streamUrl,
+    canvasRef,
+    enabled: !isMinimized,
+    onFirstFrame: () => {
+      setStreamError(false);
+      reconnect.handleStreamSuccess();
+    },
+    onError: () => reconnect.handleStreamError(),
+  });
+  mjpegRestartRef.current = mjpeg.restart;
+
   // Save state to localStorage (printer-specific)
   useEffect(() => {
     const saveTimeout = setTimeout(() => {
@@ -154,7 +165,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     return () => clearTimeout(saveTimeout);
   }, [state, storageKey]);
 
-  // Cleanup on unmount
+  // Cleanup on unmount — send stop hint
   const stopSentRef = useRef(false);
   useEffect(() => {
     stopSentRef.current = false;
@@ -170,105 +181,16 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
       }
     };
 
-    const imgElement = imgRef.current;
-
     return () => {
-      if (imgElement) {
-        imgElement.src = '';
-      }
       sendStopOnce();
-      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-      if (stallCheckIntervalRef.current) clearInterval(stallCheckIntervalRef.current);
-      if (initialRetryTimerRef.current) clearTimeout(initialRetryTimerRef.current);
     };
   }, [printerId]);
-
-  // Auto-hide loading after timeout
-  useEffect(() => {
-    if (streamLoading) {
-      const timer = setTimeout(() => setStreamLoading(false), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [streamLoading]);
-
-  // Auto-reconnect logic
-  const attemptReconnect = useCallback(() => {
-    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      setIsReconnecting(false);
-      setStreamError(true);
-      return;
-    }
-
-    const delay = Math.min(
-      INITIAL_RECONNECT_DELAY * Math.pow(2, reconnectAttempts),
-      MAX_RECONNECT_DELAY
-    );
-
-    setIsReconnecting(true);
-    setReconnectCountdown(Math.ceil(delay / 1000));
-
-    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-    countdownIntervalRef.current = setInterval(() => {
-      setReconnectCountdown((prev) => {
-        if (prev <= 1) {
-          if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    reconnectTimerRef.current = setTimeout(() => {
-      setReconnectAttempts((prev) => prev + 1);
-      setIsReconnecting(false);
-      setStreamLoading(true);
-      setStreamError(false);
-      if (imgRef.current) imgRef.current.src = '';
-      setImageKey(Date.now());
-    }, delay);
-  }, [reconnectAttempts]);
-
-  // Stall detection
-  useEffect(() => {
-    if (streamLoading || isReconnecting || isMinimized) {
-      if (stallCheckIntervalRef.current) {
-        clearInterval(stallCheckIntervalRef.current);
-        stallCheckIntervalRef.current = null;
-      }
-      return;
-    }
-
-    stallCheckIntervalRef.current = setInterval(async () => {
-      try {
-        const status = await api.getCameraStatus(printerId);
-        if (status.stalled || (!status.active && !streamError)) {
-          if (stallCheckIntervalRef.current) {
-            clearInterval(stallCheckIntervalRef.current);
-            stallCheckIntervalRef.current = null;
-          }
-          setStreamLoading(false);
-          attemptReconnect();
-        }
-      } catch {
-        // Ignore errors
-      }
-    }, STALL_CHECK_INTERVAL);
-
-    return () => {
-      if (stallCheckIntervalRef.current) {
-        clearInterval(stallCheckIntervalRef.current);
-        stallCheckIntervalRef.current = null;
-      }
-    };
-  }, [streamLoading, streamError, isReconnecting, isMinimized, printerId, attemptReconnect]);
 
   // Fullscreen change listener
   useEffect(() => {
     const handleFullscreenChange = () => {
       const nowFullscreen = !!document.fullscreenElement;
       setIsFullscreen(nowFullscreen);
-      // Reset zoom and pan when exiting fullscreen
       if (!nowFullscreen) {
         setZoomLevel(1);
         setPanOffset({ x: 0, y: 0 });
@@ -308,7 +230,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     }
   };
 
-  const handleImageMouseDown = (e: React.MouseEvent) => {
+  const handleCanvasMouseDown = (e: React.MouseEvent) => {
     if (zoomLevel > 1) {
       e.preventDefault();
       setIsPanning(true);
@@ -316,13 +238,11 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     }
   };
 
-  // Calculate max pan based on container size and zoom level
   const getMaxPan = useCallback(() => {
-    if (!containerRef.current || !imgRef.current) {
+    if (!containerRef.current) {
       return { x: 200, y: 150 };
     }
     const container = containerRef.current.getBoundingClientRect();
-    // Allow panning up to half the zoomed overflow in each direction
     const maxX = (container.width * (zoomLevel - 1)) / 2;
     const maxY = (container.height * (zoomLevel - 1)) / 2;
     return { x: Math.max(50, maxX), y: Math.max(50, maxY) };
@@ -364,12 +284,10 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
-      // Pinch gesture start
       e.preventDefault();
       setLastTouchDistance(getTouchDistance(e.touches));
       setLastTouchCenter(getTouchCenter(e.touches));
     } else if (e.touches.length === 1 && zoomLevel > 1) {
-      // Single touch pan start
       e.preventDefault();
       setIsPanning(true);
       setPanStart({
@@ -381,7 +299,6 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
 
   const handleTouchMove = (e: React.TouchEvent) => {
     if (e.touches.length === 2 && lastTouchDistance !== null) {
-      // Pinch gesture
       e.preventDefault();
       const newDistance = getTouchDistance(e.touches);
       const scale = newDistance / lastTouchDistance;
@@ -396,7 +313,6 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
 
       setLastTouchDistance(newDistance);
 
-      // Also handle pan during pinch
       const newCenter = getTouchCenter(e.touches);
       if (lastTouchCenter) {
         const maxPan = getMaxPan();
@@ -407,7 +323,6 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
       }
       setLastTouchCenter(newCenter);
     } else if (e.touches.length === 1 && isPanning && zoomLevel > 1) {
-      // Single touch pan
       e.preventDefault();
       const newX = e.touches[0].clientX - panStart.x;
       const newY = e.touches[0].clientY - panStart.y;
@@ -434,62 +349,16 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     setPanOffset({ x: 0, y: 0 });
   };
 
-  const handleStreamError = () => {
-    if (!hasStreamConnectedRef.current) {
-      // During initial load: silently retry without showing reconnection UI
-      if (initialRetryCountRef.current < INITIAL_LOAD_MAX_RETRIES) {
-        initialRetryCountRef.current += 1;
-        initialRetryTimerRef.current = setTimeout(() => {
-          if (imgRef.current) imgRef.current.src = '';
-          setImageKey(Date.now());
-        }, INITIAL_LOAD_RETRY_DELAY);
-        return;
-      }
-      // Exhausted silent retries — show error state
-      setStreamLoading(false);
-      setStreamError(true);
-      return;
-    }
-
-    // Post-connection failure: use existing reconnect logic
-    setStreamLoading(false);
-    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-      attemptReconnect();
-    } else {
-      setStreamError(true);
-    }
-  };
-
-  const handleStreamLoad = () => {
-    hasStreamConnectedRef.current = true;
-    initialRetryCountRef.current = 0;
-    if (initialRetryTimerRef.current) clearTimeout(initialRetryTimerRef.current);
-    setStreamLoading(false);
-    setStreamError(false);
-    setReconnectAttempts(0);
-    setIsReconnecting(false);
-    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-  };
-
   const refresh = () => {
-    hasStreamConnectedRef.current = false;
-    initialRetryCountRef.current = 0;
-    if (initialRetryTimerRef.current) clearTimeout(initialRetryTimerRef.current);
-    setStreamLoading(true);
     setStreamError(false);
-    setReconnectAttempts(0);
-    setIsReconnecting(false);
-    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+    reconnect.reset();
 
     const stopHeaders: Record<string, string> = {};
     const stopToken = getAuthToken();
     if (stopToken) stopHeaders['Authorization'] = `Bearer ${stopToken}`;
     fetch(`/api/v1/printers/${printerId}/camera/stop`, { method: 'POST', headers: stopHeaders }).catch(() => {});
 
-    if (imgRef.current) imgRef.current.src = '';
-    setTimeout(() => setImageKey(Date.now()), 100);
+    setTimeout(() => mjpeg.restart(), 100);
   };
 
   // Drag handlers
@@ -541,7 +410,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     }
   }, [isDragging, isResizing, dragOffset]);
 
-  const streamUrl = `/api/v1/printers/${printerId}/camera/stream?fps=15&quality=5&scale=1.0&t=${imageKey}`;
+  const streamLoading = mjpeg.isLoading;
 
   return (
     <div
@@ -589,7 +458,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
           </button>
           <button
             onClick={refresh}
-            disabled={streamLoading || isReconnecting}
+            disabled={streamLoading || reconnect.isReconnecting}
             className="p-1 hover:bg-bambu-dark-tertiary rounded disabled:opacity-50"
             title={t('camera.refreshStream')}
           >
@@ -640,22 +509,22 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
           onTouchEnd={handleTouchEnd}
           style={{ touchAction: 'none' }}
         >
-          {streamLoading && !isReconnecting && (
+          {streamLoading && !reconnect.isReconnecting && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
               <RefreshCw className="w-6 h-6 text-bambu-gray animate-spin" />
             </div>
           )}
-          {isReconnecting && (
+          {reconnect.isReconnecting && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-10">
               <div className="text-center p-2">
                 <WifiOff className="w-6 h-6 text-orange-400 mx-auto mb-2" />
                 <p className="text-xs text-bambu-gray">
-                  {t('camera.reconnectingIn', { countdown: reconnectCountdown })}
+                  {t('camera.reconnectingIn', { countdown: reconnect.reconnectCountdown })}
                 </p>
               </div>
             </div>
           )}
-          {streamError && !isReconnecting && (
+          {streamError && !reconnect.isReconnecting && (
             <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
               <div className="text-center p-2">
                 <AlertTriangle className="w-6 h-6 text-orange-400 mx-auto mb-2" />
@@ -669,20 +538,14 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
               </div>
             </div>
           )}
-          <img
-            ref={imgRef}
-            key={imageKey}
-            src={streamUrl}
-            alt={t('camera.stream')}
+          <canvas
+            ref={canvasRef}
             className="max-w-full max-h-full object-contain select-none"
             style={{
               transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px)`,
               cursor: zoomLevel > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default',
             }}
-            onError={handleStreamError}
-            onLoad={handleStreamLoad}
-            onMouseDown={handleImageMouseDown}
-            draggable={false}
+            onMouseDown={handleCanvasMouseDown}
           />
 
           {/* Zoom controls */}

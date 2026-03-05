@@ -411,8 +411,8 @@ async def restore_backup(
 
     from fastapi import HTTPException
 
-	from backend.app.core import database as db_module
-    from backend.app.core.database import close_all_connections, init_db, reinitialize_database, run_migrations
+    from backend.app.core import database as db_module
+    from backend.app.core.database import close_all_connections, reinitialize_database, run_migrations
     from backend.app.services.virtual_printer import virtual_printer_manager
 
     base_dir = app_settings.base_dir

@@ -430,8 +430,10 @@ async def generate_chamber_mjpeg_stream(
 
     except asyncio.CancelledError:
         logger.info("Chamber image stream cancelled (stream_id=%s)", stream_id)
+        raise
     except GeneratorExit:
         logger.info("Chamber image stream generator exit (stream_id=%s)", stream_id)
+        raise
     except Exception as e:
         logger.exception("Chamber image stream error: %s", e)
     finally:
@@ -616,18 +618,20 @@ async def generate_rtsp_mjpeg_stream(
                     break
                 except asyncio.CancelledError:
                     logger.info("Camera stream cancelled (stream_id=%s)", stream_id)
-                    break
+                    raise
                 except GeneratorExit:
                     logger.info("Camera stream generator exit (stream_id=%s)", stream_id)
-                    break
+                    raise
 
         except FileNotFoundError:
             logger.error("ffmpeg not found - camera streaming requires ffmpeg")
             yield (b"--frame\r\nContent-Type: text/plain\r\n\r\nError: ffmpeg not installed\r\n")
         except asyncio.CancelledError:
             logger.info("Camera stream task cancelled (stream_id=%s)", stream_id)
+            raise
         except GeneratorExit:
             logger.info("Camera stream generator closed (stream_id=%s)", stream_id)
+            raise
         except Exception as e:
             logger.exception("Camera stream error: %s", e)
         finally:

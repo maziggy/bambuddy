@@ -249,10 +249,10 @@ async def generate_chamber_image_stream(
     ip_address: str,
     access_code: str,
     fps: int = 5,
-) -> asyncio.StreamReader | None:
+) -> tuple[asyncio.StreamReader, asyncio.StreamWriter] | None:
     """Create a persistent connection for streaming chamber images.
 
-    Returns a connected reader or None if connection failed.
+    Returns a connected (reader, writer) tuple or None if connection failed.
     """
     port = 6000
     ssl_context = _create_ssl_context()

@@ -1151,7 +1151,7 @@ function StatusSummaryBar({ printers }: { printers: Printer[] | undefined }) {
     const unsubscribe = queryClient.getQueryCache().subscribe(() => {
       if (!timerId) {
         timerId = setTimeout(() => {
-          setCacheTick(t => t + 1);
+          setCacheTick(prev => prev + 1);
           timerId = null;
         }, 500);
       }
@@ -1638,6 +1638,7 @@ function CameraGrid({
   const [reconnecting, setReconnecting] = useState(false);
   const [reconnectCountdown, setReconnectCountdown] = useState(0);
   const reconnectAttemptsRef = useRef(0);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
 
   // Print control — confirmation modal
   const [confirmAction, setConfirmAction] = useState<{ type: 'pause' | 'stop' | 'resume'; printerId: number; printerName: string } | null>(null);
@@ -1724,6 +1725,7 @@ function CameraGrid({
     setReconnecting(false);
     setReconnectCountdown(0);
     reconnectAttemptsRef.current = 0;
+    setReconnectAttempt(0);
     bytesRef.current = 0;
     activeCamsRef.current = new Set();
     let t0 = performance.now();
@@ -1863,6 +1865,7 @@ function CameraGrid({
         // Connection successful — reset reconnect state, uptime, and first-frame tracker
         const wasReconnecting = reconnectAttemptsRef.current > 0;
         reconnectAttemptsRef.current = 0;
+        setReconnectAttempt(0);
         setReconnecting(false);
         setReconnectCountdown(0);
         t0 = performance.now();
@@ -1906,6 +1909,13 @@ function CameraGrid({
             const printerId = view.getUint32(0, true);
             const jpegLen = view.getUint32(4, true);
 
+            // Sanity check: cap at 10 MB to prevent corrupt headers from growing the buffer unboundedly
+            if (jpegLen > 10_000_000) {
+              console.error(`Grid stream: corrupt frame header (jpegLen=${jpegLen}), resetting buffer`);
+              bufLen = 0;
+              break;
+            }
+
             if (offset + GRID_FRAME_HEADER_SIZE + jpegLen > bufLen) break; // incomplete frame
 
             // Send JPEG to worker for off-thread decoding (ArrayBuffer.slice — single alloc)
@@ -1946,6 +1956,7 @@ function CameraGrid({
           GRID_MAX_RECONNECT_DELAY,
         );
         reconnectAttemptsRef.current = attempt + 1;
+        setReconnectAttempt(attempt + 1);
         setReconnecting(true);
 
         // Countdown timer
@@ -2016,7 +2027,7 @@ function CameraGrid({
             error={errorSet.has(p.id)}
             reconnecting={reconnecting}
             reconnectCountdown={reconnectCountdown}
-            reconnectAttempt={reconnectAttemptsRef.current}
+            reconnectAttempt={reconnectAttempt}
             reconnectMax={GRID_MAX_RECONNECT_ATTEMPTS}
             onPause={() => setConfirmAction({ type: 'pause', printerId: p.id, printerName: p.name })}
             onStop={() => setConfirmAction({ type: 'stop', printerId: p.id, printerName: p.name })}
@@ -6256,7 +6267,7 @@ export function PrintersPage() {
       if (!pending) {
         pending = true;
         requestAnimationFrame(() => {
-          setStatusTick(t => t + 1);
+          setStatusTick(prev => prev + 1);
           pending = false;
         });
       }
@@ -6308,10 +6319,10 @@ export function PrintersPage() {
           const statusB = queryClient.getQueryData<{ connected: boolean; state: string | null; remaining_time: number | null; progress: number | null }>(['printerStatus', b.id]);
 
           const getFinishScore = (s: typeof statusA) => {
-            if (!s?.connected) return Infinity; // offline last
-            if (s.state !== 'RUNNING' && s.state !== 'PAUSE') return Infinity - 1; // idle before offline
+            if (!s?.connected) return 1e9; // offline last
+            if (s.state !== 'RUNNING' && s.state !== 'PAUSE') return 1e9 - 1; // idle before offline
             // Running/Paused: sort by remaining time (lower = finishes sooner)
-            return s.remaining_time ?? Infinity - 2;
+            return s.remaining_time ?? (1e9 - 2);
           };
 
           return getFinishScore(statusA) - getFinishScore(statusB);

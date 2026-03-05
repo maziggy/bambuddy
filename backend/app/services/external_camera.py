@@ -354,7 +354,7 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
 
     process = None
     try:
-        logger.debug(f"Running ffmpeg command: {' '.join(cmd[:6])}...")
+        logger.debug("Running ffmpeg command: %s...", " ".join(cmd[:6]))
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -363,7 +363,10 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
 
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
         logger.debug(
-            f"ffmpeg returned: code={process.returncode}, stdout={len(stdout)} bytes, stderr={len(stderr)} bytes"
+            "ffmpeg returned: code=%s, stdout=%s bytes, stderr=%s bytes",
+            process.returncode,
+            len(stdout),
+            len(stderr),
         )
 
         if process.returncode != 0:

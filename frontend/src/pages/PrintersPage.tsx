@@ -1323,20 +1323,21 @@ export function AmsNameHoverCard({
   const cardRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Sync edit field when popup opens
   useEffect(() => {
     if (isVisible) {
       setEditValue(amsLabels?.[ams.id] ?? '');
       setSaveError(null);
-      if (triggerRef.current && cardRef.current) {
-        const rect = triggerRef.current.getBoundingClientRect();
-        const spaceAbove = rect.top - 56;
-        const spaceBelow = window.innerHeight - rect.bottom;
-        setPosition(spaceAbove < cardRef.current.offsetHeight + 12 && spaceBelow > spaceAbove ? 'bottom' : 'top');
-      }
+      requestAnimationFrame(() => {
+        if (triggerRef.current && cardRef.current) {
+          const rect = triggerRef.current.getBoundingClientRect();
+          const spaceAbove = rect.top - 56;
+          const spaceBelow = window.innerHeight - rect.bottom;
+          setPosition(spaceAbove < cardRef.current.offsetHeight + 12 && spaceBelow > spaceAbove ? 'bottom' : 'top');
+        }
+      });
     }
   }, [isVisible, amsLabels, ams.id]);
-
+  
   const handleMouseEnter = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => setIsVisible(true), 80);
@@ -1441,7 +1442,8 @@ export function AmsNameHoverCard({
                 onFocus={() => setIsInputFocused(true)}
                 onBlur={() => {
                   setIsInputFocused(false);
-                  timeoutRef.current = setTimeout(() => setIsVisible(false), 200);
+                  if (timeoutRef.current) clearTimeout(timeoutRef.current);
+                    timeoutRef.current = setTimeout(() => setIsVisible(false), 200);
                 }}
                 placeholder={canEdit ? t('printers.amsPopup.friendlyNamePlaceholder') : (amsLabels?.[ams.id] || '—')}
                 disabled={!canEdit}

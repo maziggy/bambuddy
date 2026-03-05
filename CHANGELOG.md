@@ -2,6 +2,11 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
+## [0.2.2b2] - Unreleased
+
+### Fixed
+- **Windows: Server Shuts Down After 60 Seconds** ([#605](https://github.com/maziggy/bambuddy/issues/605)) — On Windows, terminating orphaned ffmpeg camera processes broadcast `CTRL_C_EVENT` to the entire process group, causing uvicorn to interpret it as a user-initiated shutdown. ffmpeg is now spawned in its own process group (`CREATE_NEW_PROCESS_GROUP`) so cleanup no longer affects the server. Reported by @Reactantvr.
+
 ## [0.2.2b1] - 2026-03-03
 
 ### Improved

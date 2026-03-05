@@ -458,7 +458,7 @@ class TestCameraAPI:
     async def test_update_reference_label_printer_not_found(self, async_client: AsyncClient):
         """Verify 404 when updating reference label for non-existent printer."""
         response = await async_client.put(
-            "/api/v1/printers/99999/camera/plate-detection/references/0", params={"label": "New Label"}
+            "/api/v1/printers/99999/camera/plate-detection/references/0", json={"label": "New Label"}
         )
 
         assert response.status_code == 404

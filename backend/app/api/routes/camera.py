@@ -2,14 +2,12 @@
 
 import asyncio
 import logging
-import subprocess
-import sys
 import struct
 import time
 import uuid
 from collections.abc import AsyncGenerator
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -327,7 +325,7 @@ class SharedStreamHub:
         if entry.task and not entry.task.done():
             entry.task.cancel()
             try:
-                await asyncio.wait_for(asyncio.shield(entry.task), timeout=5.0)
+                await asyncio.wait_for(entry.task, timeout=5.0)
             except (asyncio.CancelledError, TimeoutError, Exception):
                 pass  # Best effort — task will clean up on its own eventually
         return True
@@ -547,6 +545,7 @@ async def generate_rtsp_mjpeg_stream(
             # Track active process for cleanup
             if stream_id:
                 _active_streams[stream_id] = process
+                _spawned_ffmpeg_pids[process.pid] = time.monotonic()
 
             # Give ffmpeg a moment to start and check for immediate failures
             await asyncio.sleep(0.5)
@@ -737,6 +736,7 @@ async def camera_grid_stream(
     scale: float = 0.5,
     force: bool = Query(False, description="Force restart producers with new quality settings"),
     db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
     """Multiplexed camera stream for the camera grid.
 
@@ -750,9 +750,6 @@ async def camera_grid_stream(
 
     The frontend reads this stream with one fetch() and demuxes frames to
     the correct <canvas> element by printer ID.
-
-    Note: Unauthenticated - loaded via fetch which may not send auth headers
-    from the camera grid.
     """
     # Parse printer IDs
     try:
@@ -1563,7 +1560,7 @@ async def get_reference_thumbnail(
 async def update_reference_label(
     printer_id: int,
     index: int,
-    label: str,
+    label: str = Body(..., embed=True),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
@@ -1652,7 +1649,7 @@ async def cleanup_orphaned_streams():
     import time
 
     cleaned = 0
-    now = time.time()
+    now = time.monotonic()
 
     # Collect PIDs that are legitimately in-use (active stream, process alive)
     active_pids = {proc.pid for proc in _active_streams.values() if proc.returncode is None}
@@ -1706,7 +1703,7 @@ async def cleanup_orphaned_streams():
             _spawned_ffmpeg_pids.pop(proc.pid, None)
             cleaned += 1
 
-    # 4. Clean stale chamber stream entries
+    # 5. Clean stale chamber stream entries
     dead_chamber = [sid for sid, (_reader, writer) in _active_chamber_streams.items() if writer.is_closing()]
     for sid in dead_chamber:
         _active_chamber_streams.pop(sid, None)

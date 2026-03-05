@@ -270,6 +270,14 @@ _notified_hms_errors: dict[int, set[str]] = {}
 _hms_last_seen: dict[int, float] = {}
 _HMS_CLEAR_GRACE_SECONDS = 30.0
 
+# HMS error codes that should not trigger notifications.
+# These are infrastructure/auth issues, not actionable print errors.
+_HMS_NOTIFICATION_SUPPRESS = {
+    "0500_0007",  # MQTT command verification failed (auth/bind issue, not a print error)
+    "0500_4001",  # Failed to connect to Bambu Cloud (network issue)
+    "0500_400E",  # Printing was cancelled (user action, not an error)
+}
+
 # Track timelapse file baselines at print start: {printer_id: set of video filenames}
 # Used for snapshot-diff detection at print completion
 _timelapse_baselines: dict[int, set[str]] = {}
@@ -429,14 +437,6 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
     elif progress < 5:
         # Reset milestone tracking when print restarts or new print begins
         _last_progress_milestone[printer_id] = 0
-
-    # HMS error codes that should not trigger notifications.
-    # These are infrastructure/auth issues, not actionable print errors.
-    _HMS_NOTIFICATION_SUPPRESS = {
-        "0500_0007",  # MQTT command verification failed (auth/bind issue, not a print error)
-        "0500_4001",  # Failed to connect to Bambu Cloud (network issue)
-        "0500_400E",  # Printing was cancelled (user action, not an error)
-    }
 
     # Check for new HMS errors and send notifications
     current_hms_errors = getattr(state, "hms_errors", []) or []

@@ -2054,6 +2054,12 @@ export default {
     startRecording: 'Avvia registrazione',
     stopRecording: 'Ferma registrazione',
     chamberLight: 'Accendi/Spegni luce camera',
+    refreshStream: 'Aggiorna stream',
+    expand: 'Espandi',
+    minimize: 'Minimizza',
+    reconnectingIn: 'Riconnessione tra {{countdown}}s...',
+    stream: 'Stream fotocamera',
+    resize: 'Trascina per ridimensionare',
   },
 
   // Groups management

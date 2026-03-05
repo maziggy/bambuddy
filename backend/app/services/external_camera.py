@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 
 import aiohttp
 
-from backend.app.services.camera import get_rtsp_semaphore
+from backend.app.services.camera import get_ffmpeg_path, get_rtsp_semaphore
 
 logger = logging.getLogger(__name__)
 
@@ -162,19 +162,6 @@ def list_usb_cameras() -> list[dict]:
     return cameras
 
 
-def get_ffmpeg_path() -> str | None:
-    """Get the path to ffmpeg executable."""
-    # Try shutil.which first
-    path = shutil.which("ffmpeg")
-    if path:
-        return path
-    # Check common locations (systemd services may have limited PATH)
-    for common_path in ["/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/opt/homebrew/bin/ffmpeg"]:
-        if Path(common_path).exists():
-            return common_path
-    return None
-
-
 async def capture_frame(url: str, camera_type: str, timeout: int = 15) -> bytes | None:
     """Capture single frame from external camera.
 
@@ -251,6 +238,7 @@ async def _capture_usb_frame(device: str, timeout: int) -> bytes | None:
         "-",
     ]
 
+    process = None
     try:
         logger.debug("Running USB capture: %s", " ".join(cmd))
         process = await asyncio.create_subprocess_exec(
@@ -275,6 +263,7 @@ async def _capture_usb_frame(device: str, timeout: int) -> bytes | None:
         logger.warning("USB frame capture timed out after %ss", timeout)
         if process:
             process.kill()
+            await process.wait()
         return None
     except OSError as e:
         logger.error("USB frame capture failed: %s", e)
@@ -363,6 +352,7 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
         "-",
     ]
 
+    process = None
     try:
         logger.debug(f"Running ffmpeg command: {' '.join(cmd[:6])}...")
         process = await asyncio.create_subprocess_exec(
@@ -390,6 +380,7 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
         logger.warning("RTSP frame capture timed out after %ss", timeout)
         if process:
             process.kill()
+            await process.wait()
         return None
     except OSError as e:
         logger.error("RTSP frame capture failed: %s", e)
@@ -713,14 +704,23 @@ async def _stream_usb(device: str, fps: int) -> AsyncGenerator[bytes, None]:
         logger.error("ffmpeg not found - required for USB camera streaming")
         return
 
-    # Validate device path
-    if not device.startswith("/dev/video"):
+    # Validate device path - must be /dev/videoN format where N is 0-99
+    device_match = re.match(r"^/dev/video(\d{1,2})$", device)
+    if not device_match:
         logger.error("Invalid USB device path: %s", device)
         return
 
-    if not Path(device).exists():
-        logger.error("USB device does not exist: %s", device)
+    device_num = int(device_match.group(1))
+    if device_num > 99:
+        logger.error("USB device number out of range: %s", device_num)
         return
+
+    safe_device_path = Path(f"/dev/video{device_num}")
+    if not safe_device_path.exists():
+        logger.error("USB device does not exist: %s", safe_device_path)
+        return
+
+    device = str(safe_device_path)
 
     # ffmpeg command to stream from USB camera (v4l2)
     cmd = [

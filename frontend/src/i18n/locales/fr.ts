@@ -2055,6 +2055,12 @@ export default {
     startRecording: 'Démarrer l\'enregistrement',
     stopRecording: 'Arrêter l\'enregistrement',
     chamberLight: 'Basculer lumière chambre',
+    refreshStream: 'Rafraîchir le flux',
+    expand: 'Agrandir',
+    minimize: 'Réduire',
+    reconnectingIn: 'Reconnexion dans {{countdown}}s...',
+    stream: 'Flux caméra',
+    resize: 'Glisser pour redimensionner',
   },
 
   // Groups management

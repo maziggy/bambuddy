@@ -2068,6 +2068,12 @@ export default {
     startRecording: 'Aufnahme starten',
     stopRecording: 'Aufnahme stoppen',
     chamberLight: 'Kammerbeleuchtung umschalten',
+    refreshStream: 'Stream aktualisieren',
+    expand: 'Erweitern',
+    minimize: 'Minimieren',
+    reconnectingIn: 'Neuverbindung in {{countdown}}s...',
+    stream: 'Kamerastream',
+    resize: 'Zum Ändern der Größe ziehen',
   },
 
   // Groups management

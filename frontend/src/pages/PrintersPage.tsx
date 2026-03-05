@@ -1258,7 +1258,7 @@ type ViewMode = 'expanded' | 'compact';
  * Uses stg_cur_name for detailed calibration/preparation stages,
  * otherwise formats the gcode_state nicely.
  */
-function getStatusDisplay(state: string | null | undefined, stg_cur_name: string | null | undefined): string {
+function getStatusDisplay(state: string | null | undefined, stg_cur_name: string | null | undefined, t: (key: string) => string): string {
   // If we have a specific stage name (calibration, heating, etc.), use it
   if (stg_cur_name) {
     return stg_cur_name;
@@ -1267,17 +1267,17 @@ function getStatusDisplay(state: string | null | undefined, stg_cur_name: string
   // Format the gcode_state nicely
   switch (state) {
     case 'RUNNING':
-      return 'Printing';
+      return t('printers.status.printing');
     case 'PAUSE':
-      return 'Paused';
+      return t('printers.status.paused');
     case 'FINISH':
-      return 'Finished';
+      return t('printers.status.finished');
     case 'FAILED':
-      return 'Failed';
+      return t('printers.status.failed');
     case 'IDLE':
-      return 'Idle';
+      return t('printers.status.idle');
     default:
-      return state ? state.charAt(0) + state.slice(1).toLowerCase() : 'Idle';
+      return state ? state.charAt(0) + state.slice(1).toLowerCase() : t('printers.status.idle');
   }
 }
 
@@ -1693,12 +1693,22 @@ function CameraGrid({
   const connectedPrinters = printers.filter(p => p.connected);
   const connectedIdsKey = connectedPrinters.map(p => p.id).join(',');
 
-  // Ensure refs exist for all printers
-  for (const p of connectedPrinters) {
-    if (!canvasRefs.current.has(p.id)) {
-      canvasRefs.current.set(p.id, { current: null });
+  // Ensure refs exist for all connected printers, clean up stale ones
+  useEffect(() => {
+    const connectedIds = new Set(connectedPrinters.map(p => p.id));
+    for (const p of connectedPrinters) {
+      if (!canvasRefs.current.has(p.id)) {
+        canvasRefs.current.set(p.id, { current: null });
+      }
     }
-  }
+    // Remove refs for disconnected printers
+    for (const id of canvasRefs.current.keys()) {
+      if (!connectedIds.has(id)) {
+        canvasRefs.current.delete(id);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectedIdsKey]);
 
   // Visibility callback — forward to worker
   const handleVisibilityChange = useCallback((printerId: number, visible: boolean) => {
@@ -3389,7 +3399,7 @@ function PrinterCard({
                     <span className="text-xs text-white">{Math.round(status.progress || 0)}%</span>
                   </div>
                 ) : (
-                  <p className="text-xs text-bambu-gray">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
+                  <p className="text-xs text-bambu-gray">{getStatusDisplay(status.state, status.stg_cur_name, t)}</p>
                 )}
               </div>
             ) : (
@@ -3434,7 +3444,7 @@ function PrinterCard({
                     <div className="flex-1 min-w-0">
                       {status.current_print && (status.state === 'RUNNING' || status.state === 'PAUSE') ? (
                         <>
-                          <p className="text-sm text-bambu-gray mb-1">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
+                          <p className="text-sm text-bambu-gray mb-1">{getStatusDisplay(status.state, status.stg_cur_name, t)}</p>
                           <p className="text-white text-sm mb-2 truncate">
                             {status.subtask_name || status.current_print}
                           </p>
@@ -3477,7 +3487,7 @@ function PrinterCard({
                         <>
                           <p className="text-sm text-bambu-gray mb-1">{t('printers.sort.status')}</p>
                           <p className="text-white text-sm mb-2">
-                            {getStatusDisplay(status.state, status.stg_cur_name)}
+                            {getStatusDisplay(status.state, status.stg_cur_name, t)}
                           </p>
                           <div className="flex items-center justify-between text-sm">
                             <div className="flex-1 bg-bambu-dark-tertiary rounded-full h-2 mr-3">
@@ -5206,6 +5216,8 @@ function AddPrinterModal({
   const [detectedSubnets, setDetectedSubnets] = useState<string[]>([]);
   const [subnet, setSubnet] = useState('');
   const [scanProgress, setScanProgress] = useState({ scanned: 0, total: 0 });
+  const discoveryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const discoveryPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Fetch discovery info on mount
   useEffect(() => {
@@ -5266,10 +5278,13 @@ function AddPrinterModal({
             console.error('Failed to get discovered printers:', e);
           }
         }, 1000);
+        discoveryPollRef.current = pollInterval;
 
         // Stop after 10 seconds
-        setTimeout(async () => {
+        discoveryTimeoutRef.current = setTimeout(async () => {
           clearInterval(pollInterval);
+          discoveryPollRef.current = null;
+          discoveryTimeoutRef.current = null;
           try {
             await discoveryApi.stopDiscovery();
           } catch {
@@ -5313,6 +5328,8 @@ function AddPrinterModal({
   // Cleanup discovery on unmount
   useEffect(() => {
     return () => {
+      if (discoveryTimeoutRef.current) clearTimeout(discoveryTimeoutRef.current);
+      if (discoveryPollRef.current) clearInterval(discoveryPollRef.current);
       discoveryApi.stopDiscovery().catch(() => {});
       discoveryApi.stopSubnetScan().catch(() => {});
     };
@@ -5575,7 +5592,7 @@ function FirmwareUpdateModal({
   const canUpdate = hasPermission('firmware:update');
   const [uploadStatus, setUploadStatus] = useState<FirmwareUploadStatus | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Prepare check query (only when update available and user can update)
   const { data: prepareInfo, isLoading: isPreparing } = useQuery({
@@ -5597,7 +5614,7 @@ function FirmwareUpdateModal({
           setUploadStatus(status);
           if (status.status === 'complete' || status.status === 'error') {
             clearInterval(interval);
-            setPollInterval(null);
+            pollIntervalRef.current = null;
             setIsUploading(false);
             if (status.status === 'complete') {
               showToast(t('printers.firmwareModal.uploadedToast'), 'success');
@@ -5608,7 +5625,7 @@ function FirmwareUpdateModal({
           // Ignore errors during polling
         }
       }, 2000);
-      setPollInterval(interval);
+      pollIntervalRef.current = interval;
     },
     onError: (error: Error) => {
       showToast(t('printers.firmwareModal.uploadFailed', { error: error.message }), 'error');
@@ -5619,9 +5636,9 @@ function FirmwareUpdateModal({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (pollInterval) clearInterval(pollInterval);
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
-  }, [pollInterval]);
+  }, []);
 
   const handleStartUpload = () => {
     setUploadStatus(null);
@@ -6084,7 +6101,7 @@ export function PrintersPage() {
     if (settings?.camera_view_mode === 'window' && embeddedCameraPrinters.size > 0) {
       setEmbeddedCameraPrinters(new Map());
     }
-  }, [settings?.camera_view_mode, embeddedCameraPrinters.size]);
+  }, [settings?.camera_view_mode]);
 
   // Fetch all smart plugs to know which printers have them
   const { data: smartPlugs } = useQuery({

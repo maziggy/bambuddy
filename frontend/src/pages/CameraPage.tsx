@@ -13,6 +13,8 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 const INITIAL_RECONNECT_DELAY = 2000; // 2 seconds
 const MAX_RECONNECT_DELAY = 30000; // 30 seconds
 const STALL_CHECK_INTERVAL = 5000; // Check every 5 seconds
+const INITIAL_LOAD_RETRY_DELAY = 500; // ms between silent retries during initial load
+const INITIAL_LOAD_MAX_RETRIES = 20;
 
 export function CameraPage() {
   const { t } = useTranslation();
@@ -43,6 +45,9 @@ export function CameraPage() {
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const stallCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const hasStreamConnectedRef = useRef(false);
+  const initialRetryCountRef = useRef(0);
+  const initialRetryTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch printer info for the title
   const { data: printer } = useQuery({
@@ -134,9 +139,9 @@ export function CameraPage() {
     };
   }, [id]);
 
-  // Auto-hide loading after timeout
+  // Auto-hide loading after timeout (skip during initial load retries)
   useEffect(() => {
-    if (streamLoading && !transitioning) {
+    if (streamLoading && !transitioning && hasStreamConnectedRef.current) {
       const timeout = streamMode === 'stream' ? 3000 : 20000;
       const timer = setTimeout(() => {
         setStreamLoading(false);
@@ -206,6 +211,9 @@ export function CameraPage() {
       }
       if (stallCheckIntervalRef.current) {
         clearInterval(stallCheckIntervalRef.current);
+      }
+      if (initialRetryTimerRef.current) {
+        clearTimeout(initialRetryTimerRef.current);
       }
     };
   }, []);
@@ -295,6 +303,25 @@ export function CameraPage() {
   }, [streamMode, streamLoading, streamError, isReconnecting, transitioning, id, attemptReconnect]);
 
   const handleStreamError = () => {
+    // During initial load (before first successful frame), silently retry
+    if (!hasStreamConnectedRef.current) {
+      // Skip if a retry is already scheduled
+      if (initialRetryTimerRef.current) return;
+      if (initialRetryCountRef.current < INITIAL_LOAD_MAX_RETRIES) {
+        initialRetryCountRef.current += 1;
+        initialRetryTimerRef.current = setTimeout(() => {
+          initialRetryTimerRef.current = null;
+          if (imgRef.current) imgRef.current.src = '';
+          setImageKey(Date.now());
+        }, INITIAL_LOAD_RETRY_DELAY);
+        return; // Keep streamLoading=true, no error UI
+      }
+      // Retries exhausted during initial load
+      setStreamLoading(false);
+      setStreamError(true);
+      return;
+    }
+
     setStreamLoading(false);
 
     // Only auto-reconnect for live stream mode
@@ -306,6 +333,12 @@ export function CameraPage() {
   };
 
   const handleStreamLoad = () => {
+    hasStreamConnectedRef.current = true;
+    initialRetryCountRef.current = 0;
+    if (initialRetryTimerRef.current) {
+      clearTimeout(initialRetryTimerRef.current);
+      initialRetryTimerRef.current = null;
+    }
     setStreamLoading(false);
     setStreamError(false);
     // Reset reconnect attempts on successful connection
@@ -362,6 +395,13 @@ export function CameraPage() {
     // Reset reconnect state on mode switch
     setReconnectAttempts(0);
     setIsReconnecting(false);
+    // Reset initial load state on mode switch
+    hasStreamConnectedRef.current = false;
+    initialRetryCountRef.current = 0;
+    if (initialRetryTimerRef.current) {
+      clearTimeout(initialRetryTimerRef.current);
+      initialRetryTimerRef.current = null;
+    }
     // Reset zoom on mode switch
     setZoomLevel(1);
     setPanOffset({ x: 0, y: 0 });
@@ -396,6 +436,13 @@ export function CameraPage() {
     // Reset reconnect state on manual refresh
     setReconnectAttempts(0);
     setIsReconnecting(false);
+    // Reset initial load state on refresh
+    hasStreamConnectedRef.current = false;
+    initialRetryCountRef.current = 0;
+    if (initialRetryTimerRef.current) {
+      clearTimeout(initialRetryTimerRef.current);
+      initialRetryTimerRef.current = null;
+    }
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
     }

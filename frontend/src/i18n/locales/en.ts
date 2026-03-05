@@ -2068,6 +2068,12 @@ export default {
     startRecording: 'Start Recording',
     stopRecording: 'Stop Recording',
     chamberLight: 'Toggle chamber light',
+    refreshStream: 'Refresh stream',
+    expand: 'Expand',
+    minimize: 'Minimize',
+    reconnectingIn: 'Reconnecting in {{countdown}}s...',
+    stream: 'Camera stream',
+    resize: 'Drag to resize',
   },
 
   // Groups management

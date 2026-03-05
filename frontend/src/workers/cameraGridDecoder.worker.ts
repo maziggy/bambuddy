@@ -24,46 +24,50 @@ const visibleSet = new Set<number>();
 const frameGen = new Map<number, number>(); // printerId → latest generation
 
 ctx.onmessage = async (e: MessageEvent) => {
-  const msg = e.data;
+  try {
+    const msg = e.data;
 
-  switch (msg.type) {
-    case 'visibility': {
-      if (msg.visible) {
-        visibleSet.add(msg.printerId);
-      } else {
-        visibleSet.delete(msg.printerId);
-      }
-      break;
-    }
-
-    case 'frame': {
-      const printerId = msg.printerId as number;
-      const jpeg = msg.jpeg as ArrayBuffer;
-
-      if (!visibleSet.has(printerId)) break;
-
-      // Bump generation — any in-flight decode for this printer becomes stale
-      const gen = (frameGen.get(printerId) ?? 0) + 1;
-      frameGen.set(printerId, gen);
-
-      try {
-        const blob = new Blob([jpeg], { type: 'image/jpeg' });
-        const bitmap = await createImageBitmap(blob);
-
-        // A newer frame arrived while we were decoding — discard
-        if (frameGen.get(printerId) !== gen) {
-          bitmap.close();
-          break;
+    switch (msg.type) {
+      case 'visibility': {
+        if (msg.visible) {
+          visibleSet.add(msg.printerId);
+        } else {
+          visibleSet.delete(msg.printerId);
         }
-
-        ctx.postMessage(
-          { type: 'frame', printerId, bitmap },
-          [bitmap],
-        );
-      } catch {
-        // Invalid JPEG — skip
+        break;
       }
-      break;
+
+      case 'frame': {
+        const printerId = msg.printerId as number;
+        const jpeg = msg.jpeg as ArrayBuffer;
+
+        if (!visibleSet.has(printerId)) break;
+
+        // Bump generation — any in-flight decode for this printer becomes stale
+        const gen = (frameGen.get(printerId) ?? 0) + 1;
+        frameGen.set(printerId, gen);
+
+        try {
+          const blob = new Blob([jpeg], { type: 'image/jpeg' });
+          const bitmap = await createImageBitmap(blob);
+
+          // A newer frame arrived while we were decoding — discard
+          if (frameGen.get(printerId) !== gen) {
+            bitmap.close();
+            break;
+          }
+
+          ctx.postMessage(
+            { type: 'frame', printerId, bitmap },
+            [bitmap],
+          );
+        } catch {
+          // Invalid JPEG — skip
+        }
+        break;
+      }
     }
+  } catch (err) {
+    ctx.postMessage({ type: 'error', error: String(err) }, []);
   }
 };

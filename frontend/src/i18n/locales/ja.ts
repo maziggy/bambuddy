@@ -2113,6 +2113,12 @@ export default {
     recording: '録画中',
     startRecording: '録画開始',
     stopRecording: '録画停止',
+    refreshStream: 'ストリーム更新',
+    expand: '拡大',
+    minimize: '最小化',
+    reconnectingIn: '{{countdown}}秒後に再接続...',
+    stream: 'カメラストリーム',
+    resize: 'ドラッグしてリサイズ',
     chamberLight: 'チャンバーライト切替',
   },
 

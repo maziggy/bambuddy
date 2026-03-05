@@ -661,8 +661,11 @@ async def list_assignments(
             for ams_unit in state.raw_data.get("ams", []):
                 sn = str(ams_unit.get("sn") or ams_unit.get("serial_number") or "")
                 if sn:
-                    serial_map[(pid, int(ams_unit.get("id", 0)))] = sn
-
+                    try:
+                        serial_map[(pid, int(ams_unit.get("id", 0)))] = sn
+                    except (ValueError, TypeError):
+                        continue
+              
     # Fetch all relevant AMS labels keyed by serial number
     all_serials = set(serial_map.values())
     # Also include synthetic fallback keys for assignments without a known serial

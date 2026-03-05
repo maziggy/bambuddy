@@ -799,6 +799,7 @@ export default {
       failed: '失败',
       skipped: '已跳过',
       cancelled: '已取消',
+      noMatchingMaterial: '没有匹配的耗材/颜色。等待中...',
     },
     // Summary cards
     summary: {

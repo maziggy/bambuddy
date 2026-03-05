@@ -799,6 +799,7 @@ export default {
       failed: 'Échoué',
       skipped: 'Sauté',
       cancelled: 'Annulé',
+      noMatchingMaterial: 'Aucun matériau/couleur correspondant. En attente...',
     },
     // Summary cards
     summary: {

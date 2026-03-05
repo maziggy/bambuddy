@@ -679,12 +679,14 @@ async def _ensure_producer(
     (used when a client explicitly switches quality).
     """
     # Fast path: if a producer is already alive and we're not forcing a
-    # quality change, skip the DB query entirely.  This is the common case
+    # quality change, grab it directly (no DB query).  This is the common case
     # when multiple clients connect to the same camera grid.
-    if not force_quality and _hub.is_active(printer_id):
-        entry = await _hub.get_or_start(printer_id, lambda: None, params_key="")
-        if entry is not None and entry.alive:
-            return entry
+    if not force_quality:
+        async with _hub._lock:
+            existing = _hub._streams.get(printer_id)
+            if existing is not None and existing.alive:
+                existing.last_accessed = time.monotonic()
+                return existing
 
     if printer is None:
         result = await db.execute(select(Printer).where(Printer.id == printer_id))
@@ -767,13 +769,14 @@ async def camera_grid_stream(
     # First, collect IDs that already have a live producer (fast path — no DB).
     entries: dict[int, _SharedStream] = {}
     need_db: list[int] = []
-    for pid in printer_ids:
-        if _hub.is_active(pid):
-            entry = await _hub.get_or_start(pid, lambda: None)
-            if entry is not None and entry.alive:
-                entries[pid] = entry
+    async with _hub._lock:
+        for pid in printer_ids:
+            existing = _hub._streams.get(pid)
+            if existing is not None and existing.alive:
+                existing.last_accessed = time.monotonic()
+                entries[pid] = existing
                 continue
-        need_db.append(pid)
+            need_db.append(pid)
 
     # Single batch DB query for printers that need a new producer.
     if need_db:

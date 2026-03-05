@@ -53,7 +53,7 @@ import {
 import CameraGridDecoderWorker from '../workers/cameraGridDecoder.worker?worker';
 
 import { useNavigate } from 'react-router-dom';
-import { api, discoveryApi, firmwareApi } from '../api/client';
+import { api, discoveryApi, firmwareApi, getAuthToken } from '../api/client';
 import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
 import { formatFileSize } from '../utils/file';
 import type { Printer, PrinterCreate, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError } from '../api/client';
@@ -1849,9 +1849,12 @@ function CameraGrid({
       let bufLen = 0;
 
       try {
+        const gridHeaders: Record<string, string> = {};
+        const token = getAuthToken();
+        if (token) gridHeaders['Authorization'] = `Bearer ${token}`;
         const res = await fetch(
           `/api/v1/printers/camera/grid-stream?ids=${ids.join(',')}&fps=${GRID_FPS}&quality=${GRID_QUALITY}&scale=${GRID_SCALE}`,
-          { signal: controllerRef.current.signal },
+          { signal: controllerRef.current.signal, headers: gridHeaders },
         );
         if (!res.ok || !res.body) {
           throw new Error(`HTTP ${res.status}`);
@@ -2686,7 +2689,7 @@ function PrinterCard({
       return { previousStatus };
     },
     onSuccess: (_, on) => {
-      showToast(`Chamber light ${on ? 'on' : 'off'}`);
+      showToast(t(on ? 'printers.chamberLightOn' : 'printers.chamberLightOff'));
     },
     onError: (error: Error, _, context) => {
       // Rollback on error
@@ -6101,6 +6104,7 @@ export function PrintersPage() {
     if (settings?.camera_view_mode === 'window' && embeddedCameraPrinters.size > 0) {
       setEmbeddedCameraPrinters(new Map());
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to mode changes, not map size
   }, [settings?.camera_view_mode]);
 
   // Fetch all smart plugs to know which printers have them

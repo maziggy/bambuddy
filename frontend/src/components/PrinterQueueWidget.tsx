@@ -41,21 +41,41 @@ export function PrinterQueueWidget({ printerId, printerModel, printerState, plat
 
   // Filter queue to items this printer can actually print (filament type + color check)
   const compatibleQueue = queue?.filter(item => {
-    // Type check: all required filament types must be loaded
-    if (item.required_filament_types?.length && loadedFilamentTypes?.size) {
+    // Type check: all required filament types must be loaded.
+    // Only apply when loadedFilamentTypes is provided (not undefined).
+    // An empty Set means no filaments are loaded — jobs requiring specific types are incompatible.
+    if (item.required_filament_types?.length && loadedFilamentTypes !== undefined) {
       if (!item.required_filament_types.every((t: string) => loadedFilamentTypes.has(t.toUpperCase()))) {
         return false;
       }
     }
-    // Color check: if filament overrides specify colors, at least one must match
-    // Mirrors backend _count_override_color_matches() logic
-    if (item.filament_overrides?.length && loadedFilaments?.size) {
-      const hasColorMatch = item.filament_overrides.some(o => {
-        const oType = (o.type || '').toUpperCase();
-        const oColor = (o.color || '').replace('#', '').toLowerCase().slice(0, 6);
-        return loadedFilaments.has(`${oType}:${oColor}`);
-      });
-      if (!hasColorMatch) return false;
+    // Color check: evaluate force_color_match per slot
+    // Mirrors backend _find_idle_printer_for_model() logic.
+    // Only apply when loadedFilaments is provided (not undefined).
+    // An empty Set means no filaments are loaded — force-matched slots cannot match.
+    if (item.filament_overrides?.length && loadedFilaments !== undefined) {
+      const forceOverrides = item.filament_overrides.filter(o => o.force_color_match === true);
+      const prefOverrides = item.filament_overrides.filter(o => o.force_color_match !== true);
+
+      // All force-matched slots must have exact type+color on this printer
+      if (forceOverrides.length > 0) {
+        const allForceMatch = forceOverrides.every(o => {
+          const oType = (o.type || '').toUpperCase();
+          const oColor = (o.color || '').replace('#', '').toLowerCase().slice(0, 6);
+          return loadedFilaments.has(`${oType}:${oColor}`);
+        });
+        if (!allForceMatch) return false;
+      }
+
+      // Preference-only overrides: at least one color must match (existing behaviour)
+      if (prefOverrides.length > 0 && forceOverrides.length === 0) {
+        const hasColorMatch = prefOverrides.some(o => {
+          const oType = (o.type || '').toUpperCase();
+          const oColor = (o.color || '').replace('#', '').toLowerCase().slice(0, 6);
+          return loadedFilaments.has(`${oType}:${oColor}`);
+        });
+        if (!hasColorMatch) return false;
+      }
     }
     return true;
   });

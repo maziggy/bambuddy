@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { getAuthToken } from '../api/client';
 
 interface WebSocketMessage {
   type: string;
@@ -63,7 +64,11 @@ export function useWebSocket() {
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/v1/ws`;
+    let wsUrl = `${protocol}//${window.location.host}/api/v1/ws`;
+    const authToken = getAuthToken();
+    if (authToken) {
+      wsUrl += `?token=${encodeURIComponent(authToken)}`;
+    }
 
     const ws = new WebSocket(wsUrl);
 

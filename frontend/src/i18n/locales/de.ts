@@ -216,6 +216,7 @@ export default {
     pause: 'Pausieren',
     stop: 'Stoppen',
     camera: 'Kamera',
+    cameraGridError: 'Kameraraster konnte nicht geladen werden. Bitte Seite neu laden.',
     cameraGrid: {
       quality: 'Qualität',
       low: 'Niedrig',

@@ -216,6 +216,7 @@ export default {
     pause: 'Pausa',
     stop: 'Ferma',
     camera: 'Camera',
+    cameraGridError: 'Impossibile caricare la griglia telecamere. Aggiorna la pagina.',
     cameraGrid: {
       quality: 'Qualità',
       low: 'Bassa',

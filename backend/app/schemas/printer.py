@@ -1,6 +1,7 @@
 from datetime import datetime
+from urllib.parse import urlparse, urlunparse
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class PrinterBase(BaseModel):
@@ -53,6 +54,24 @@ class PrinterUpdate(BaseModel):
     plate_detection_roi: PlateDetectionROI | None = None
 
 
+def _sanitize_url_credentials(url: str | None) -> str | None:
+    """Strip userinfo (username:password) from a URL."""
+    if not url:
+        return url
+    try:
+        parsed = urlparse(url)
+        if parsed.username:
+            # Reconstruct netloc without credentials
+            host = parsed.hostname or ""
+            if parsed.port:
+                host = f"{host}:{parsed.port}"
+            sanitized = parsed._replace(netloc=host)
+            return urlunparse(sanitized)
+    except Exception:
+        pass
+    return url
+
+
 class PrinterResponse(PrinterBase):
     id: int
     is_active: bool
@@ -68,6 +87,12 @@ class PrinterResponse(PrinterBase):
 
     class Config:
         from_attributes = True
+
+    @model_validator(mode="after")
+    def sanitize_camera_url(self) -> "PrinterResponse":
+        """Strip credentials from external camera URLs in API responses."""
+        self.external_camera_url = _sanitize_url_credentials(self.external_camera_url)
+        return self
 
     @classmethod
     def from_orm_with_roi(cls, printer) -> "PrinterResponse":

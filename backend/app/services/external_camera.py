@@ -678,10 +678,12 @@ async def _stream_rtsp(url: str, fps: int) -> AsyncGenerator[bytes, None]:
     ]
 
     semaphore = get_rtsp_semaphore()
+    process = None
+
+    # Acquire semaphore only for process creation + liveness check
     logger.debug("External RTSP: waiting for semaphore")
     async with semaphore:
         logger.debug("External RTSP: acquired semaphore")
-        process = None
         try:
             kwargs: dict = {}
             if sys.platform == "win32":
@@ -701,55 +703,60 @@ async def _stream_rtsp(url: str, fps: int) -> AsyncGenerator[bytes, None]:
                     "ffmpeg RTSP stream failed immediately: %s", re.sub(r"://[^@]+@", "://***@", stderr.decode()[:300])
                 )
                 return
-
-            buffer = bytearray()
-            jpeg_start = b"\xff\xd8"
-            jpeg_end = b"\xff\xd9"
-
-            while True:
-                try:
-                    chunk = await asyncio.wait_for(process.stdout.read(8192), timeout=30.0)
-
-                    if not chunk:
-                        break
-
-                    buffer.extend(chunk)
-
-                    # Extract complete frames
-                    while True:
-                        start_idx = buffer.find(jpeg_start)
-                        if start_idx == -1:
-                            if len(buffer) > 2:
-                                del buffer[: len(buffer) - 2]
-                            break
-
-                        if start_idx > 0:
-                            del buffer[:start_idx]
-
-                        end_idx = buffer.find(jpeg_end, 2)
-                        if end_idx == -1:
-                            break
-
-                        frame = bytes(buffer[: end_idx + 2])
-                        del buffer[: end_idx + 2]
-                        yield frame
-
-                except TimeoutError:
-                    logger.warning("RTSP stream read timeout")
-                    break
-
-        except asyncio.CancelledError:
-            logger.info("RTSP stream cancelled")
         except OSError as e:
             logger.error("RTSP stream error: %s", e)
-        finally:
-            if process and process.returncode is None:
-                process.terminate()
-                try:
-                    await asyncio.wait_for(process.wait(), timeout=2.0)
-                except TimeoutError:
-                    process.kill()
-                    await process.wait()
+            return
+
+    # Semaphore released — streaming loop runs without holding it
+    try:
+        buffer = bytearray()
+        jpeg_start = b"\xff\xd8"
+        jpeg_end = b"\xff\xd9"
+
+        while True:
+            try:
+                chunk = await asyncio.wait_for(process.stdout.read(8192), timeout=30.0)
+
+                if not chunk:
+                    break
+
+                buffer.extend(chunk)
+
+                # Extract complete frames
+                while True:
+                    start_idx = buffer.find(jpeg_start)
+                    if start_idx == -1:
+                        if len(buffer) > 2:
+                            del buffer[: len(buffer) - 2]
+                        break
+
+                    if start_idx > 0:
+                        del buffer[:start_idx]
+
+                    end_idx = buffer.find(jpeg_end, 2)
+                    if end_idx == -1:
+                        break
+
+                    frame = bytes(buffer[: end_idx + 2])
+                    del buffer[: end_idx + 2]
+                    yield frame
+
+            except TimeoutError:
+                logger.warning("RTSP stream read timeout")
+                break
+
+    except asyncio.CancelledError:
+        logger.info("RTSP stream cancelled")
+    except OSError as e:
+        logger.error("RTSP stream error: %s", e)
+    finally:
+        if process and process.returncode is None:
+            process.terminate()
+            try:
+                await asyncio.wait_for(process.wait(), timeout=2.0)
+            except TimeoutError:
+                process.kill()
+                await process.wait()
 
 
 async def _stream_usb(device: str, fps: int) -> AsyncGenerator[bytes, None]:

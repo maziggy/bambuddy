@@ -214,6 +214,7 @@ export default {
     pause: '暂停',
     stop: '停止',
     camera: '摄像头',
+    cameraGridError: '摄像头网格加载失败。请刷新页面。',
     cameraGrid: {
       quality: '画质',
       low: '低',

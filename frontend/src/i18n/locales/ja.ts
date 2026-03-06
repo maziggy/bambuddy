@@ -503,6 +503,7 @@ export default {
     autoOffExecuted: '自動オフが実行されました - リセットするにはプリンターの電源を入れてください',
     viewHmsErrors: '{{count}}件のHMSエラーを表示',
     camera: 'カメラ',
+    cameraGridError: 'カメラグリッドの読み込みに失敗しました。ページを更新してください。',
     cameraGrid: {
       quality: '画質',
       low: '低',

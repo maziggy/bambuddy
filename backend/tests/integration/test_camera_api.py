@@ -62,7 +62,13 @@ class TestCameraAPI:
         mock_process.terminate = MagicMock()
         mock_process.wait = AsyncMock()
 
-        with patch("backend.app.api.routes.camera._active_streams", {f"{printer.id}-abc123": mock_process}):
+        mock_hub = MagicMock()
+        mock_hub.is_active.return_value = False
+
+        with (
+            patch("backend.app.api.routes.camera._active_streams", {f"{printer.id}-abc123": mock_process}),
+            patch("backend.app.api.routes.camera._hub", mock_hub),
+        ):
             response = await async_client.post(f"/api/v1/printers/{printer.id}/camera/stop")
 
         assert response.status_code == 200
@@ -94,7 +100,13 @@ class TestCameraAPI:
             f"{printer2.id}-def456": mock_process2,
         }
 
-        with patch("backend.app.api.routes.camera._active_streams", active_streams):
+        mock_hub = MagicMock()
+        mock_hub.is_active.return_value = False
+
+        with (
+            patch("backend.app.api.routes.camera._active_streams", active_streams),
+            patch("backend.app.api.routes.camera._hub", mock_hub),
+        ):
             response = await async_client.post(f"/api/v1/printers/{printer1.id}/camera/stop")
 
         assert response.status_code == 200

@@ -17,22 +17,9 @@ interface EmbeddedCameraViewerProps {
   onClose: () => void;
 }
 
+import { getDefaultState, type CameraState } from './cameraDefaults';
+
 const STORAGE_KEY_PREFIX = 'embeddedCameraState_';
-
-interface CameraState {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-/** @internal */
-export const getDefaultState = (): CameraState => ({
-  x: window.innerWidth - 420,
-  y: 20,
-  width: 400,
-  height: 300,
-});
 
 export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, onClose }: EmbeddedCameraViewerProps) {
   const { t } = useTranslation();
@@ -133,8 +120,8 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
   // Reconnect logic
   const checkStalled = useCallback(async () => {
     const s = await api.getCameraStatus(printerId);
-    return s.stalled || (!s.active && !streamError);
-  }, [printerId, streamError]);
+    return !!(s.stalled || !s.active);
+  }, [printerId]);
 
   const reconnect = useStreamReconnect({
     onReconnect: () => mjpegRestartRef.current(),

@@ -1,7 +1,11 @@
 import logging
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+import jwt
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
+from backend.app.core.auth import ALGORITHM, SECRET_KEY, _validate_api_key, get_user_by_username, is_auth_enabled
+from backend.app.core.database import async_session
+from backend.app.core.permissions import Permission
 from backend.app.core.websocket import ws_manager
 from backend.app.services.background_dispatch import background_dispatch
 from backend.app.services.printer_manager import printer_manager, printer_state_to_dict
@@ -10,9 +14,42 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+async def _authenticate_ws_token(token: str) -> bool:
+    """Validate a WebSocket auth token (JWT or API key) and check WEBSOCKET_CONNECT permission."""
+    async with async_session() as db:
+        # API key (bb_ prefix)
+        if token.startswith("bb_"):
+            api_key = await _validate_api_key(db, token)
+            return api_key is not None
+
+        # JWT
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            username: str = payload.get("sub")
+            if not username:
+                return False
+        except jwt.exceptions.PyJWTError:
+            return False
+
+        user = await get_user_by_username(db, username)
+        if user is None or not user.is_active:
+            return False
+
+        return user.has_permission(Permission.WEBSOCKET_CONNECT.value)
+
+
 @router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(default=None)):
     """WebSocket endpoint for real-time updates."""
+    # Auth check before accepting the connection
+    async with async_session() as db:
+        auth_enabled = await is_auth_enabled(db)
+
+    if auth_enabled:
+        if not token or not await _authenticate_ws_token(token):
+            await websocket.close(code=1008)
+            return
+
     logger.info("WebSocket client connecting...")
     await ws_manager.connect(websocket)
     logger.info("WebSocket client connected")

@@ -162,12 +162,12 @@ export function CameraPage() {
 
       // Refresh stream after fullscreen transition to prevent stall
       if (isStream && !transitioning) {
-        mjpeg.restart();
+        mjpegRestartRef.current();
       }
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, [isStream, transitioning]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isStream, transitioning]);
 
   // Save window size and position when user resizes or moves
   useEffect(() => {

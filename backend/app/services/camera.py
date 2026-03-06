@@ -27,14 +27,11 @@ _ffmpeg_path: str | None = None
 # Global semaphore limiting concurrent RTSP ffmpeg processes
 # ---------------------------------------------------------------------------
 _MAX_RTSP_FFMPEG: int = 20
-_rtsp_semaphore: asyncio.Semaphore | None = None
+_rtsp_semaphore = asyncio.Semaphore(_MAX_RTSP_FFMPEG)
 
 
 def get_rtsp_semaphore() -> asyncio.Semaphore:
-    """Return the global RTSP ffmpeg semaphore (lazily created on first call)."""
-    global _rtsp_semaphore
-    if _rtsp_semaphore is None:
-        _rtsp_semaphore = asyncio.Semaphore(_MAX_RTSP_FFMPEG)
+    """Return the global RTSP ffmpeg semaphore."""
     return _rtsp_semaphore
 
 
@@ -248,7 +245,6 @@ async def read_chamber_image_frame(
 async def generate_chamber_image_stream(
     ip_address: str,
     access_code: str,
-    fps: int = 5,
 ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter] | None:
     """Create a persistent connection for streaming chamber images.
 

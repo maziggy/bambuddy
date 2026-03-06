@@ -216,6 +216,7 @@ export default {
     pause: 'Pause',
     stop: 'Stop',
     camera: 'Camera',
+    cameraGridError: 'Camera grid failed to load. Please refresh the page.',
     cameraGrid: {
       quality: 'Quality',
       low: 'Low',

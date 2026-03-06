@@ -216,6 +216,7 @@ export default {
     pause: 'Pause',
     stop: 'Arrêter',
     camera: 'Caméra',
+    cameraGridError: 'Échec du chargement de la grille caméra. Veuillez rafraîchir la page.',
     cameraGrid: {
       quality: 'Qualité',
       low: 'Bas',

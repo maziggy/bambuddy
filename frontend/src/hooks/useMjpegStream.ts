@@ -36,6 +36,10 @@ export function useMjpegStream({
 
   const controllerRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const generationRef = useRef(0);
   const onFirstFrameRef = useRef(onFirstFrame);
   const onErrorRef = useRef(onError);
@@ -200,7 +204,6 @@ export function useMjpegStream({
 
   // Start/stop based on enabled
   useEffect(() => {
-    mountedRef.current = true;
     if (enabled) {
       generationRef.current += 1;
       startStream(generationRef.current);
@@ -209,7 +212,6 @@ export function useMjpegStream({
       setIsConnected(false);
     }
     return () => {
-      mountedRef.current = false;
       stopStream();
     };
   }, [enabled, url, startStream, stopStream]);

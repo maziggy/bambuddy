@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Layers, Clock, Timer, Printer } from 'lucide-react';
-import { api } from '../api/client';
+import { api, getAuthToken } from '../api/client';
 import type { PrinterStatus } from '../api/client';
 import { useMjpegStream } from '../hooks/useMjpegStream';
 import { formatDuration, formatETA, type TimeFormat } from '../utils/date';
@@ -136,7 +136,11 @@ export function StreamOverlayPage() {
     if (!id) return;
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/v1/ws`;
+    let wsUrl = `${protocol}//${window.location.host}/api/v1/ws`;
+    const authToken = getAuthToken();
+    if (authToken) {
+      wsUrl += `?token=${encodeURIComponent(authToken)}`;
+    }
     const ws = new WebSocket(wsUrl);
 
     ws.onmessage = (event) => {

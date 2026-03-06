@@ -62,6 +62,7 @@ import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { FileManagerModal } from '../components/FileManagerModal';
 import { EmbeddedCameraViewer } from '../components/EmbeddedCameraViewer';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { MQTTDebugModal } from '../components/MQTTDebugModal';
 import { HMSErrorModal, filterKnownHMSErrors, getTopHMSError } from '../components/HMSErrorModal';
 import { PrinterQueueWidget } from '../components/PrinterQueueWidget';
@@ -1848,6 +1849,7 @@ function CameraGrid({
     }, 1000);
 
     async function startMultiplexedStream() {
+      while (active) {
       // Growing buffer: pre-allocate and double when full
       let buf = new Uint8Array(256 * 1024);
       let bufLen = 0;
@@ -1984,30 +1986,28 @@ function CameraGrid({
         if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
         countdownIntervalRef.current = null;
 
-        if (active) {
-          loadedPrinters.clear();
-          // Don't reset loadingSet here — the reconnect overlay already shows
-          // the user we're reconnecting. Individual loading spinners would flicker.
-          controllerRef.current = new AbortController();
-          readerRef = null;
-          startMultiplexedStream();
-        }
+        if (!active) return;
+        loadedPrinters.clear();
+        // Don't reset loadingSet here — the reconnect overlay already shows
+        // the user we're reconnecting. Individual loading spinners would flicker.
+        controllerRef.current = new AbortController();
+        readerRef = null;
       }
+      } // end while(active)
     }
 
     startMultiplexedStream();
 
     const startupTimeout = setTimeout(() => {
-      setLoadingSet(prev => {
-        if (prev.size === 0) return prev;
-        const stillLoading = [...prev];
-        setErrorSet(errPrev => {
-          const next = new Set(errPrev);
+      const stillLoading = ids.filter(id => !loadedPrinters.has(id));
+      if (stillLoading.length > 0) {
+        setErrorSet(prev => {
+          const next = new Set(prev);
           for (const id of stillLoading) next.add(id);
           return next;
         });
-        return new Set();
-      });
+      }
+      setLoadingSet(new Set());
     }, STALE_CAMERA_TIMEOUT);
 
     const onBeforeUnload = () => controllerRef.current.abort();
@@ -6581,25 +6581,27 @@ export function PrintersPage() {
         </Card>
       ) : showCameraGrid ? (
         /* Camera grid view — single multiplexed connection for all cameras */
-        <CameraGrid
-          layout={cameraGridLayout}
-          timeFormat={settings?.time_format || 'system'}
-          printers={sortedPrinters.map(printer => {
-            const status = queryClient.getQueryData<{ connected: boolean; state: string; progress: number; remaining_time: number | null; layer_num: number | null; total_layers: number | null; plate_cleared?: boolean; hms_errors?: HMSError[] }>(['printerStatus', printer.id]);
-            return {
-              id: printer.id,
-              name: printer.name,
-              connected: status?.connected ?? false,
-              state: status?.state ?? null,
-              progress: status?.progress ?? 0,
-              remainingTime: status?.remaining_time ?? null,
-              layerNum: status?.layer_num ?? null,
-              totalLayers: status?.total_layers ?? null,
-              plateCleared: status?.plate_cleared ?? true,
-              hmsErrors: status?.hms_errors,
-            };
-          })}
-        />
+        <ErrorBoundary fallback={<div className="text-center py-8 text-red-400">{t('printers.cameraGridError')}</div>}>
+          <CameraGrid
+            layout={cameraGridLayout}
+            timeFormat={settings?.time_format || 'system'}
+            printers={sortedPrinters.map(printer => {
+              const status = queryClient.getQueryData<{ connected: boolean; state: string; progress: number; remaining_time: number | null; layer_num: number | null; total_layers: number | null; plate_cleared?: boolean; hms_errors?: HMSError[] }>(['printerStatus', printer.id]);
+              return {
+                id: printer.id,
+                name: printer.name,
+                connected: status?.connected ?? false,
+                state: status?.state ?? null,
+                progress: status?.progress ?? 0,
+                remainingTime: status?.remaining_time ?? null,
+                layerNum: status?.layer_num ?? null,
+                totalLayers: status?.total_layers ?? null,
+                plateCleared: status?.plate_cleared ?? true,
+                hmsErrors: status?.hms_errors,
+              };
+            })}
+          />
+        </ErrorBoundary>
       ) : groupedPrinters ? (
         /* Grouped by location view */
         <div className="space-y-6">

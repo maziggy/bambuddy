@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { getDefaultState } from '../../components/EmbeddedCameraViewer';
+import { getDefaultState } from '../../components/cameraDefaults';
 
 describe('getDefaultState', () => {
   it('returns correct shape with x, y, width, height', () => {

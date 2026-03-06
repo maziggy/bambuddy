@@ -569,12 +569,7 @@ function SortableQueueItem({
           {item.waiting_reason && item.status === 'pending' && (
             <p className="text-[10px] sm:text-xs text-purple-400 mt-1.5 sm:mt-2 flex items-start gap-1">
               <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-              <span>{item.filament_overrides?.length
-                ? t('queue.status.noMatchingMaterial', {
-                    material: item.filament_overrides.map(o => `${o.type} (${getColorName(o.color)})`).join(', '),
-                  })
-                : item.waiting_reason
-              }</span>
+              <span>{item.waiting_reason}</span>
             </p>
           )}
 

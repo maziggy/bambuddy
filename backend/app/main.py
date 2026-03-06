@@ -3481,10 +3481,6 @@ PUBLIC_API_PATTERNS = [
     "/timelapse",  # /archives/{id}/timelapse (video)
     "/cover",  # /printers/{id}/cover
     "/icon",  # /external-links/{id}/icon
-    # Camera (streams loaded via <img> tag or fetch)
-    "/camera/stream",  # /printers/{id}/camera/stream
-    "/camera/grid-stream",  # /printers/camera/grid-stream (multiplexed binary stream via fetch)
-    "/camera/snapshot",  # /printers/{id}/camera/snapshot
     # Slicer token-authenticated downloads — protocol handlers (bambustudioopen://,
     # orcaslicer://) cannot send auth headers. These endpoints validate a short-lived
     # download token in the URL path instead.

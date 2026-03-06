@@ -18,16 +18,12 @@ class TestCameraAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_stop_camera_stream_get(self, async_client: AsyncClient, printer_factory):
-        """Verify camera stop endpoint works with GET method."""
+    async def test_stop_camera_stream_get_rejected(self, async_client: AsyncClient, printer_factory):
+        """Verify camera stop endpoint rejects GET (CSRF prevention)."""
         printer = await printer_factory()
 
         response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/stop")
-
-        assert response.status_code == 200
-        result = response.json()
-        assert "stopped" in result
-        assert isinstance(result["stopped"], int)
+        assert response.status_code in (404, 405)
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -574,9 +570,7 @@ class TestCameraGridStreamValidation:
             return {}, printer_ids  # All missing
 
         with patch("backend.app.api.routes.camera._hub.get_existing_batch", side_effect=mock_batch):
-            await async_client.get(
-                "/api/v1/printers/camera/grid-stream", params={"ids": "1,2,1,2,1", "scale": "0.5"}
-            )
+            await async_client.get("/api/v1/printers/camera/grid-stream", params={"ids": "1,2,1,2,1", "scale": "0.5"})
 
         assert captured_ids == [1, 2]
 
@@ -610,18 +604,14 @@ class TestCameraStreamValidation:
     @pytest.mark.integration
     async def test_rejects_nan_scale(self, async_client: AsyncClient, printer_factory):
         printer = await printer_factory()
-        response = await async_client.get(
-            f"/api/v1/printers/{printer.id}/camera/stream", params={"scale": "NaN"}
-        )
+        response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/stream", params={"scale": "NaN"})
         assert response.status_code == 422
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_rejects_inf_scale(self, async_client: AsyncClient, printer_factory):
         printer = await printer_factory()
-        response = await async_client.get(
-            f"/api/v1/printers/{printer.id}/camera/stream", params={"scale": "Infinity"}
-        )
+        response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/stream", params={"scale": "Infinity"})
         assert response.status_code == 422
 
 

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Layers, Clock, Timer, Printer } from 'lucide-react';
 import { api } from '../api/client';
 import type { PrinterStatus } from '../api/client';
+import { useMjpegStream } from '../hooks/useMjpegStream';
 import { formatDuration, formatETA, type TimeFormat } from '../utils/date';
 
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
@@ -102,7 +103,7 @@ export function StreamOverlayPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const id = parseInt(printerId || '0', 10);
-  const [imageKey, setImageKey] = useState(Date.now());
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const config = useMemo(() => parseConfig(searchParams), [searchParams]);
   const sizes = getSizeClasses(config.size);
@@ -166,12 +167,13 @@ export function StreamOverlayPage() {
     };
   }, [printer, t]);
 
-  // Refresh stream on error
-  const handleStreamError = () => {
-    setTimeout(() => {
-      setImageKey(Date.now());
-    }, 3000);
-  };
+  const streamUrl = `/printers/${id}/camera/stream?fps=${config.fps}`;
+
+  useMjpegStream({
+    url: streamUrl,
+    canvasRef,
+    enabled: config.showCamera && id > 0,
+  });
 
   if (!id) {
     return (
@@ -191,18 +193,14 @@ export function StreamOverlayPage() {
 
   const isPrinting = status.state === 'RUNNING' || status.state === 'PAUSE';
   const progress = status.progress || 0;
-  const streamUrl = `/api/v1/printers/${id}/camera/stream?fps=${config.fps}&t=${imageKey}`;
 
   return (
     <div className="min-h-screen bg-black relative overflow-hidden">
       {/* Camera feed - fullscreen background (optional) */}
       {config.showCamera && (
-        <img
-          key={imageKey}
-          src={streamUrl}
-          alt={t('streamOverlay.cameraStream')}
+        <canvas
+          ref={canvasRef}
           className="absolute inset-0 w-full h-full object-contain"
-          onError={handleStreamError}
         />
       )}
 

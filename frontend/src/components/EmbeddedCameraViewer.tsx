@@ -499,7 +499,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
       {/* Video area */}
       {!isMinimized && (
         <div
-          className={`relative w-full bg-black flex items-center justify-center overflow-hidden ${isFullscreen ? 'h-[calc(100%-40px)]' : 'h-[calc(100%-40px)]'}`}
+          className="relative w-full bg-black flex items-center justify-center overflow-hidden h-[calc(100%-40px)]"
           onWheel={handleWheel}
           onMouseMove={handleImageMouseMove}
           onMouseUp={handleImageMouseUp}

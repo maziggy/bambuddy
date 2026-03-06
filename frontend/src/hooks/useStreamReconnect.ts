@@ -31,6 +31,7 @@ export function useStreamReconnect({
   maxAttempts = 5,
   initialDelay = 2000,
   maxDelay = 30000,
+  stallCheckInterval = 5000,
   initialRetryDelay = 500,
   initialRetryMax = 10,
   onReconnect,
@@ -48,6 +49,7 @@ export function useStreamReconnect({
   const hasConnectedRef = useRef(false);
   const initialRetryCountRef = useRef(0);
   const initialRetryTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectAttemptsRef = useRef(0);
 
   const clearTimers = useCallback(() => {
     if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null; }
@@ -60,13 +62,13 @@ export function useStreamReconnect({
   useEffect(() => clearTimers, [clearTimers]);
 
   const attemptReconnect = useCallback(() => {
-    if (reconnectAttempts >= maxAttempts) {
+    if (reconnectAttemptsRef.current >= maxAttempts) {
       setIsReconnecting(false);
       onGiveUp?.();
       return;
     }
 
-    const delay = Math.min(initialDelay * Math.pow(2, reconnectAttempts), maxDelay);
+    const delay = Math.min(initialDelay * Math.pow(2, reconnectAttemptsRef.current), maxDelay);
     setIsReconnecting(true);
     setReconnectCountdown(Math.ceil(delay / 1000));
 
@@ -82,11 +84,17 @@ export function useStreamReconnect({
     }, 1000);
 
     reconnectTimerRef.current = setTimeout(() => {
-      setReconnectAttempts(prev => prev + 1);
+      reconnectAttemptsRef.current += 1;
+      setReconnectAttempts(reconnectAttemptsRef.current);
       setIsReconnecting(false);
       onReconnect();
     }, delay);
-  }, [reconnectAttempts, maxAttempts, initialDelay, maxDelay, onReconnect, onGiveUp]);
+  }, [maxAttempts, initialDelay, maxDelay, onReconnect, onGiveUp]);
+
+  // Store attemptReconnect in a ref so the stall-check interval doesn't restart
+  // every time the reconnect counter changes
+  const attemptReconnectRef = useRef(attemptReconnect);
+  attemptReconnectRef.current = attemptReconnect;
 
   // Stall detection
   useEffect(() => {
@@ -106,12 +114,12 @@ export function useStreamReconnect({
             clearInterval(stallCheckIntervalRef.current);
             stallCheckIntervalRef.current = null;
           }
-          attemptReconnect();
+          attemptReconnectRef.current();
         }
       } catch {
         // Ignore errors
       }
-    }, 5000);
+    }, stallCheckInterval);
 
     return () => {
       if (stallCheckIntervalRef.current) {
@@ -119,7 +127,7 @@ export function useStreamReconnect({
         stallCheckIntervalRef.current = null;
       }
     };
-  }, [checkStalled, stallPaused, isReconnecting, attemptReconnect]);
+  }, [checkStalled, stallPaused, isReconnecting, stallCheckInterval]);
 
   const handleStreamError = useCallback(() => {
     if (!hasConnectedRef.current) {
@@ -136,16 +144,17 @@ export function useStreamReconnect({
       return;
     }
 
-    if (reconnectAttempts < maxAttempts) {
+    if (reconnectAttemptsRef.current < maxAttempts) {
       attemptReconnect();
     } else {
       onGiveUp?.();
     }
-  }, [reconnectAttempts, maxAttempts, initialRetryMax, initialRetryDelay, onReconnect, onGiveUp, attemptReconnect]);
+  }, [maxAttempts, initialRetryMax, initialRetryDelay, onReconnect, onGiveUp, attemptReconnect]);
 
   const handleStreamSuccess = useCallback(() => {
     hasConnectedRef.current = true;
     initialRetryCountRef.current = 0;
+    reconnectAttemptsRef.current = 0;
     if (initialRetryTimerRef.current) { clearTimeout(initialRetryTimerRef.current); initialRetryTimerRef.current = null; }
     setReconnectAttempts(0);
     setIsReconnecting(false);
@@ -156,6 +165,7 @@ export function useStreamReconnect({
   const reset = useCallback(() => {
     hasConnectedRef.current = false;
     initialRetryCountRef.current = 0;
+    reconnectAttemptsRef.current = 0;
     setReconnectAttempts(0);
     setIsReconnecting(false);
     setReconnectCountdown(0);

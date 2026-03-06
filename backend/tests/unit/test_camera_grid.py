@@ -13,14 +13,17 @@ import pytest
 # TestCleanupStaleFrameBuffers
 # ---------------------------------------------------------------------------
 
+
 class TestCleanupStaleFrameBuffers:
     """Tests for _cleanup_stale_frame_buffers (camera routes module)."""
 
     def _import_cleanup(self):
         from backend.app.api.routes.camera import _cleanup_stale_frame_buffers
+
         return _cleanup_stale_frame_buffers
 
-    def test_cleanup_removes_stale_entries_from_all_three_dicts(self):
+    @pytest.mark.asyncio
+    async def test_cleanup_removes_stale_entries_from_all_three_dicts(self):
         import backend.app.api.routes.camera as cam
 
         stale_ts = time.monotonic() - cam._FRAME_BUFFER_MAX_AGE - 10
@@ -29,12 +32,13 @@ class TestCleanupStaleFrameBuffers:
             patch.dict(cam._last_frame_times, {99: stale_ts}, clear=True),
             patch.dict(cam._stream_start_times, {99: stale_ts}, clear=True),
         ):
-            cam._cleanup_stale_frame_buffers()
+            await cam._cleanup_stale_frame_buffers()
             assert 99 not in cam._last_frames
             assert 99 not in cam._last_frame_times
             assert 99 not in cam._stream_start_times
 
-    def test_cleanup_preserves_fresh_entries(self):
+    @pytest.mark.asyncio
+    async def test_cleanup_preserves_fresh_entries(self):
         import backend.app.api.routes.camera as cam
 
         fresh_ts = time.monotonic()
@@ -43,12 +47,13 @@ class TestCleanupStaleFrameBuffers:
             patch.dict(cam._last_frame_times, {1: fresh_ts}, clear=True),
             patch.dict(cam._stream_start_times, {1: fresh_ts}, clear=True),
         ):
-            cam._cleanup_stale_frame_buffers()
+            await cam._cleanup_stale_frame_buffers()
             assert 1 in cam._last_frames
             assert 1 in cam._last_frame_times
             assert 1 in cam._stream_start_times
 
-    def test_cleanup_handles_partial_entries(self):
+    @pytest.mark.asyncio
+    async def test_cleanup_handles_partial_entries(self):
         """Stale _last_frame_times entry but no matching _last_frames or _stream_start_times."""
         import backend.app.api.routes.camera as cam
 
@@ -59,10 +64,11 @@ class TestCleanupStaleFrameBuffers:
             patch.dict(cam._stream_start_times, {}, clear=True),
         ):
             # Should not raise
-            cam._cleanup_stale_frame_buffers()
+            await cam._cleanup_stale_frame_buffers()
             assert 42 not in cam._last_frame_times
 
-    def test_cleanup_mixed_fresh_and_stale(self):
+    @pytest.mark.asyncio
+    async def test_cleanup_mixed_fresh_and_stale(self):
         import backend.app.api.routes.camera as cam
 
         now = time.monotonic()
@@ -74,7 +80,7 @@ class TestCleanupStaleFrameBuffers:
             patch.dict(cam._last_frame_times, {1: stale_ts, 2: fresh_ts}, clear=True),
             patch.dict(cam._stream_start_times, {1: stale_ts, 2: fresh_ts}, clear=True),
         ):
-            cam._cleanup_stale_frame_buffers()
+            await cam._cleanup_stale_frame_buffers()
             # Stale removed
             assert 1 not in cam._last_frames
             assert 1 not in cam._last_frame_times
@@ -88,6 +94,7 @@ class TestCleanupStaleFrameBuffers:
 # ---------------------------------------------------------------------------
 # TestSharedStreamHubGetExisting
 # ---------------------------------------------------------------------------
+
 
 class TestSharedStreamHubGetExisting:
     """Tests for SharedStreamHub.get_existing()."""
@@ -131,6 +138,7 @@ class TestSharedStreamHubGetExisting:
 # ---------------------------------------------------------------------------
 # TestSharedStreamHubGetExistingBatch
 # ---------------------------------------------------------------------------
+
 
 class TestSharedStreamHubGetExistingBatch:
     """Tests for SharedStreamHub.get_existing_batch()."""
@@ -207,6 +215,7 @@ class TestSharedStreamHubGetExistingBatch:
 # TestGenerateRtspNonFiniteGuard
 # ---------------------------------------------------------------------------
 
+
 class TestGenerateRtspNonFiniteGuard:
     """Tests for the NaN/Inf guard in generate_rtsp_mjpeg_stream."""
 
@@ -217,7 +226,11 @@ class TestGenerateRtspNonFiniteGuard:
         with patch("backend.app.api.routes.camera.get_ffmpeg_path", return_value="/usr/bin/ffmpeg"):
             frames = []
             async for chunk in generate_rtsp_mjpeg_stream(
-                "192.168.1.1", "code", "X1C", fps=5, scale=float("nan"),
+                "192.168.1.1",
+                "code",
+                "X1C",
+                fps=5,
+                scale=float("nan"),
             ):
                 frames.append(chunk)
                 break
@@ -230,7 +243,10 @@ class TestGenerateRtspNonFiniteGuard:
         with patch("backend.app.api.routes.camera.get_ffmpeg_path", return_value="/usr/bin/ffmpeg"):
             frames = []
             async for chunk in generate_rtsp_mjpeg_stream(
-                "192.168.1.1", "code", "X1C", fps=float("inf"),
+                "192.168.1.1",
+                "code",
+                "X1C",
+                fps=float("inf"),
             ):
                 frames.append(chunk)
                 break
@@ -243,7 +259,10 @@ class TestGenerateRtspNonFiniteGuard:
         with patch("backend.app.api.routes.camera.get_ffmpeg_path", return_value="/usr/bin/ffmpeg"):
             frames = []
             async for chunk in generate_rtsp_mjpeg_stream(
-                "192.168.1.1", "code", "X1C", quality=float("-inf"),
+                "192.168.1.1",
+                "code",
+                "X1C",
+                quality=float("-inf"),
             ):
                 frames.append(chunk)
                 break

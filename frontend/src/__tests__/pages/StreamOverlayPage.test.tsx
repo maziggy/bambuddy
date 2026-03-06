@@ -207,120 +207,79 @@ describe('StreamOverlayPage', () => {
     });
   });
 
-  describe('FPS configuration', () => {
-    it('uses default FPS of 15 when not specified', async () => {
-      renderOverlayPage(1);
-
-      await waitFor(() => {
-        const img = screen.getByAltText('Camera stream') as HTMLImageElement;
-        expect(img.src).toContain('fps=15');
-      });
-    });
-
-    it('uses custom FPS when specified in query params', async () => {
-      renderOverlayPage(1, '?fps=30');
-
-      await waitFor(() => {
-        const img = screen.getByAltText('Camera stream') as HTMLImageElement;
-        expect(img.src).toContain('fps=30');
-      });
-    });
-
-    it('clamps FPS to maximum of 30', async () => {
-      renderOverlayPage(1, '?fps=60');
-
-      await waitFor(() => {
-        const img = screen.getByAltText('Camera stream') as HTMLImageElement;
-        expect(img.src).toContain('fps=30');
-      });
-    });
-
-    it('clamps FPS to minimum of 1', async () => {
-      renderOverlayPage(1, '?fps=0');
-
-      await waitFor(() => {
-        const img = screen.getByAltText('Camera stream') as HTMLImageElement;
-        expect(img.src).toContain('fps=1');
-      });
-    });
-
-    it('handles invalid FPS value gracefully', async () => {
-      renderOverlayPage(1, '?fps=invalid');
-
-      await waitFor(() => {
-        const img = screen.getByAltText('Camera stream') as HTMLImageElement;
-        // Should fall back to default of 15
-        expect(img.src).toContain('fps=15');
-      });
-    });
-  });
-
   describe('camera toggle (status-only mode)', () => {
-    it('shows camera by default', async () => {
-      renderOverlayPage(1);
+    it('renders canvas for camera stream by default', async () => {
+      const { container } = renderOverlayPage(1);
 
       await waitFor(() => {
-        expect(screen.getByAltText('Camera stream')).toBeInTheDocument();
+        expect(screen.getByText('Printer is idle')).toBeInTheDocument();
       });
+
+      expect(container.querySelector('canvas')).toBeInTheDocument();
     });
 
     it('hides camera when camera=false', async () => {
-      renderOverlayPage(1, '?camera=false');
+      const { container } = renderOverlayPage(1, '?camera=false');
 
       await waitFor(() => {
         // Status should still be visible
         expect(screen.getByText('Printer is idle')).toBeInTheDocument();
       });
 
-      // Camera should not be rendered
-      expect(screen.queryByAltText('Camera stream')).not.toBeInTheDocument();
+      // Camera canvas should not be rendered
+      expect(container.querySelector('canvas')).not.toBeInTheDocument();
     });
 
     it('hides camera when camera=0', async () => {
-      renderOverlayPage(1, '?camera=0');
+      const { container } = renderOverlayPage(1, '?camera=0');
 
       await waitFor(() => {
         expect(screen.getByText('Printer is idle')).toBeInTheDocument();
       });
 
-      expect(screen.queryByAltText('Camera stream')).not.toBeInTheDocument();
+      expect(container.querySelector('canvas')).not.toBeInTheDocument();
     });
 
-    it('shows camera when camera=true', async () => {
-      renderOverlayPage(1, '?camera=true');
+    it('shows camera canvas when camera=true', async () => {
+      const { container } = renderOverlayPage(1, '?camera=true');
 
       await waitFor(() => {
-        expect(screen.getByAltText('Camera stream')).toBeInTheDocument();
+        expect(screen.getByText('Printer is idle')).toBeInTheDocument();
       });
+
+      expect(container.querySelector('canvas')).toBeInTheDocument();
     });
 
-    it('shows camera when camera=1', async () => {
-      renderOverlayPage(1, '?camera=1');
+    it('shows camera canvas when camera=1', async () => {
+      const { container } = renderOverlayPage(1, '?camera=1');
 
       await waitFor(() => {
-        expect(screen.getByAltText('Camera stream')).toBeInTheDocument();
+        expect(screen.getByText('Printer is idle')).toBeInTheDocument();
       });
+
+      expect(container.querySelector('canvas')).toBeInTheDocument();
     });
   });
 
   describe('combined parameters', () => {
     it('supports fps and camera together', async () => {
-      renderOverlayPage(1, '?fps=25&camera=true');
-
-      await waitFor(() => {
-        const img = screen.getByAltText('Camera stream') as HTMLImageElement;
-        expect(img.src).toContain('fps=25');
-      });
-    });
-
-    it('supports status-only with custom size', async () => {
-      renderOverlayPage(1, '?camera=false&size=large');
+      const { container } = renderOverlayPage(1, '?fps=25&camera=true');
 
       await waitFor(() => {
         expect(screen.getByText('Printer is idle')).toBeInTheDocument();
       });
 
-      expect(screen.queryByAltText('Camera stream')).not.toBeInTheDocument();
+      expect(container.querySelector('canvas')).toBeInTheDocument();
+    });
+
+    it('supports status-only with custom size', async () => {
+      const { container } = renderOverlayPage(1, '?camera=false&size=large');
+
+      await waitFor(() => {
+        expect(screen.getByText('Printer is idle')).toBeInTheDocument();
+      });
+
+      expect(container.querySelector('canvas')).not.toBeInTheDocument();
     });
 
     it('supports show parameter with fps', async () => {
@@ -333,8 +292,6 @@ describe('StreamOverlayPage', () => {
       renderOverlayPage(1, '?fps=20&show=progress');
 
       await waitFor(() => {
-        const img = screen.getByAltText('Camera stream') as HTMLImageElement;
-        expect(img.src).toContain('fps=20');
         expect(screen.getByText('45%')).toBeInTheDocument();
       });
     });

@@ -3733,11 +3733,13 @@ export const api = {
     return `${API_BASE}/printers/${printerId}/camera/plate-detection/references/${index}/thumbnail`;
   },
   updatePlateReferenceLabel: (printerId: number, index: number, label: string) => {
-    const params = new URLSearchParams();
-    params.set('label', label);
     return request<{ success: boolean; index: number; label: string }>(
-      `/printers/${printerId}/camera/plate-detection/references/${index}?${params.toString()}`,
-      { method: 'PUT' }
+      `/printers/${printerId}/camera/plate-detection/references/${index}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label }),
+      }
     );
   },
   deletePlateReference: (printerId: number, index: number) => {

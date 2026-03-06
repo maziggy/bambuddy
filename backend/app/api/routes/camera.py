@@ -4,15 +4,18 @@ import asyncio
 import logging
 import math
 import os
+import re
 import struct
+import subprocess
+import sys
 import time
 import uuid
 from collections.abc import AsyncGenerator
 from typing import Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
 from fastapi.responses import Response, StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -63,15 +66,26 @@ _CLEANUP_INTERVAL = 60.0  # seconds between periodic cleanup runs
 _cleanup_task: asyncio.Task | None = None
 
 
-def _cleanup_stale_frame_buffers() -> None:
+def _scan_dead_pids() -> list[int]:
+    """Check which tracked ffmpeg PIDs no longer exist (sync, safe for executor)."""
+    dead = []
+    for pid in list(_spawned_ffmpeg_pids):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            dead.append(pid)
+        except PermissionError:
+            pass  # Process exists but we can't signal it
+    return dead
+
+
+async def _cleanup_stale_frame_buffers() -> None:
     """Remove stale entries from module-level frame dicts.
 
     Called periodically to prevent unbounded growth if stream generators
     crash without running their finally blocks.
     """
     now = time.monotonic()
-    # Snapshot keys first — safe from concurrent modification since this
-    # is synchronous (no await points) and asyncio is cooperative
     stale_ids = [pid for pid, ts in _last_frame_times.items() if now - ts > _FRAME_BUFFER_MAX_AGE]
     for pid in stale_ids:
         _last_frames.pop(pid, None)
@@ -80,26 +94,21 @@ def _cleanup_stale_frame_buffers() -> None:
     if stale_ids:
         logger.info("Cleaned up stale frame buffers for printers: %s", stale_ids)
 
-    # Clean up PIDs for processes that no longer exist
-    dead_pids = []
-    for pid in list(_spawned_ffmpeg_pids):
-        try:
-            os.kill(pid, 0)  # Check if process exists
-        except ProcessLookupError:
-            dead_pids.append(pid)
-        except PermissionError:
-            pass  # Process exists but we can't signal it
-    for pid in dead_pids:
-        _spawned_ffmpeg_pids.pop(pid, None)
-    if dead_pids:
-        logger.info("Cleaned up %d dead ffmpeg PIDs from tracking", len(dead_pids))
+    # Clean up PIDs for processes that no longer exist — offload to thread pool
+    # to avoid blocking the event loop with os.kill() syscalls
+    if _spawned_ffmpeg_pids:
+        dead_pids = await asyncio.get_event_loop().run_in_executor(None, _scan_dead_pids)
+        for pid in dead_pids:
+            _spawned_ffmpeg_pids.pop(pid, None)
+        if dead_pids:
+            logger.info("Cleaned up %d dead ffmpeg PIDs from tracking", len(dead_pids))
 
 
 async def _periodic_cleanup_loop() -> None:
     """Background task that runs stale frame buffer cleanup on a fixed interval."""
     while True:
         await asyncio.sleep(_CLEANUP_INTERVAL)
-        _cleanup_stale_frame_buffers()
+        await _cleanup_stale_frame_buffers()
 
 
 def start_frame_buffer_cleanup() -> None:
@@ -122,8 +131,12 @@ def stop_frame_buffer_cleanup() -> None:
 def get_buffered_frame(printer_id: int) -> bytes | None:
     """Get the last buffered frame for a printer from an active stream.
 
-    Returns the JPEG frame data if available, or None if no active stream.
+    Checks the shared hub first (zero-copy), then falls back to _last_frames
+    which is populated by non-hub streams (chamber, RTSP).
     """
+    hub_frame = _hub.get_last_frame(printer_id)
+    if hub_frame is not None:
+        return hub_frame
     return _last_frames.get(printer_id)
 
 
@@ -258,21 +271,20 @@ class SharedStreamHub:
                     frame = entry.frame
 
                     if seq <= seen_seq:
-                        await asyncio.sleep(0.05)
+                        await asyncio.sleep(frame_interval)
                         continue
 
                     if frame is None:
                         break
-
-                    seen_seq = seq
 
                     # Per-viewer rate limiting — sleep until the next frame interval
                     now = time.monotonic()
                     remaining = frame_interval - (now - last_yield)
                     if remaining > 0:
                         await asyncio.sleep(remaining)
-                        continue
-                    last_yield = now
+
+                    seen_seq = seq
+                    last_yield = time.monotonic()
 
                     yield (
                         b"--frame\r\n"
@@ -362,6 +374,13 @@ class SharedStreamHub:
         entry = self._streams.get(printer_id)
         return entry is not None and entry.alive
 
+    def get_last_frame(self, printer_id: int) -> bytes | None:
+        """Return the current frame from the shared producer, or None."""
+        entry = self._streams.get(printer_id)
+        if entry is not None and entry.alive and entry.frame is not None:
+            return entry.frame
+        return None
+
     async def get_existing(self, printer_id: int) -> "_SharedStream | None":
         """Return an alive producer for *printer_id*, or ``None``."""
         async with self._lock:
@@ -371,9 +390,7 @@ class SharedStreamHub:
                 return entry
         return None
 
-    async def get_existing_batch(
-        self, printer_ids: list[int]
-    ) -> tuple[dict[int, "_SharedStream"], list[int]]:
+    async def get_existing_batch(self, printer_ids: list[int]) -> tuple[dict[int, "_SharedStream"], list[int]]:
         """Return ``(found, missing)`` for a batch of printer IDs in one pass."""
         found: dict[int, _SharedStream] = {}
         missing: list[int] = []
@@ -425,11 +442,12 @@ async def generate_chamber_mjpeg_stream(
     connection = await generate_chamber_image_stream(ip_address, access_code, fps)
     if connection is None:
         logger.error("Failed to connect to chamber image stream for %s", ip_address)
-        yield (
-            b"--frame\r\n"
-            b"Content-Type: text/plain\r\n\r\n"
-            b"Error: Camera connection failed. Check printer is on and camera is enabled.\r\n"
-        )
+        if not raw:
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: text/plain\r\n\r\n"
+                b"Error: Camera connection failed. Check printer is on and camera is enabled.\r\n"
+            )
         return
 
     reader, writer = connection
@@ -460,9 +478,8 @@ async def generate_chamber_mjpeg_stream(
                 continue
             consecutive_timeouts = 0
 
-            # Save frame to buffer for photo capture and track timestamp
+            # Track timestamp for stall detection; frame is served via hub for snapshots
             if printer_id is not None:
-                _last_frames[printer_id] = frame
                 _last_frame_times[printer_id] = time.monotonic()
 
             # Rate limiting - skip frames if needed to maintain target FPS
@@ -528,7 +545,8 @@ async def generate_rtsp_mjpeg_stream(
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
         logger.error("ffmpeg not found - camera streaming requires ffmpeg")
-        yield (b"--frame\r\nContent-Type: text/plain\r\n\r\nError: ffmpeg not installed\r\n")
+        if not raw:
+            yield (b"--frame\r\nContent-Type: text/plain\r\n\r\nError: ffmpeg not installed\r\n")
         return
 
     port = get_camera_port(model)
@@ -546,7 +564,8 @@ async def generate_rtsp_mjpeg_stream(
     # -vf scale: Downscale for grid view to save bandwidth
     if not math.isfinite(quality) or not math.isfinite(scale) or not math.isfinite(fps):
         logger.warning("Non-finite stream parameter: fps=%s quality=%s scale=%s", fps, quality, scale)
-        yield (b"--frame\r\nContent-Type: text/plain\r\n\r\nError: invalid parameters\r\n")
+        if not raw:
+            yield (b"--frame\r\nContent-Type: text/plain\r\n\r\nError: invalid parameters\r\n")
         return
     quality = max(2, min(quality, 31))
     scale = max(0.1, min(scale, 1.0))
@@ -596,10 +615,14 @@ async def generate_rtsp_mjpeg_stream(
         logger.debug("Acquired RTSP semaphore (stream_id=%s)", stream_id)
         process = None
         try:
+            kwargs: dict = {}
+            if sys.platform == "win32":
+                kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                **kwargs,
             )
 
             # Track active process for cleanup
@@ -611,12 +634,13 @@ async def generate_rtsp_mjpeg_stream(
             await asyncio.sleep(0.5)
             if process.returncode is not None:
                 stderr = await process.stderr.read()
-                logger.error("ffmpeg failed immediately: %s", stderr.decode())
-                yield (
-                    b"--frame\r\n"
-                    b"Content-Type: text/plain\r\n\r\n"
-                    b"Error: Camera connection failed. Check printer is on and camera is enabled.\r\n"
-                )
+                logger.error("ffmpeg failed immediately: %s", re.sub(r"bblp:[^@]*@", "bblp:***@", stderr.decode()))
+                if not raw:
+                    yield (
+                        b"--frame\r\n"
+                        b"Content-Type: text/plain\r\n\r\n"
+                        b"Error: Camera connection failed. Check printer is on and camera is enabled.\r\n"
+                    )
                 return
 
             # Read JPEG frames from ffmpeg output
@@ -656,9 +680,8 @@ async def generate_rtsp_mjpeg_stream(
                         frame = bytes(buffer[: end_idx + 2])
                         del buffer[: end_idx + 2]
 
-                        # Save frame to buffer for photo capture and track timestamp
+                        # Track timestamp for stall detection
                         if printer_id is not None:
-                            _last_frames[printer_id] = frame
                             _last_frame_times[printer_id] = time.monotonic()
 
                         if raw:
@@ -683,7 +706,8 @@ async def generate_rtsp_mjpeg_stream(
 
         except FileNotFoundError:
             logger.error("ffmpeg not found - camera streaming requires ffmpeg")
-            yield (b"--frame\r\nContent-Type: text/plain\r\n\r\nError: ffmpeg not installed\r\n")
+            if not raw:
+                yield (b"--frame\r\nContent-Type: text/plain\r\n\r\nError: ffmpeg not installed\r\n")
         except asyncio.CancelledError:
             logger.info("Camera stream task cancelled (stream_id=%s)", stream_id)
             raise
@@ -1024,7 +1048,7 @@ async def camera_stream(
     )
 
 
-@router.api_route("/{printer_id}/camera/stop", methods=["GET", "POST"])
+@router.post("/{printer_id}/camera/stop")
 async def stop_camera_stream(
     printer_id: int,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
@@ -1038,7 +1062,7 @@ async def stop_camera_stream(
     Only non-shared resources (chamber image TCP connections) are cleaned up
     explicitly.
 
-    Accepts both GET and POST (POST for sendBeacon compatibility).
+    POST only (sendBeacon compatibility).
     """
     stopped = 0
 
@@ -1201,10 +1225,11 @@ async def camera_status(
     Used by the frontend to detect stalled streams and auto-reconnect.
     """
     # Check if there's an active stream for this printer
-    has_active_stream = False
+    # Check shared hub first (O(1) lookup) before falling back to linear scans
+    has_active_stream = _hub.is_active(printer_id)
 
     # Check external camera streams
-    if printer_id in _active_external_streams:
+    if not has_active_stream and printer_id in _active_external_streams:
         has_active_stream = True
 
     # Check ffmpeg/RTSP streams
@@ -1222,10 +1247,6 @@ async def camera_status(
             if stream_id.startswith(f"{printer_id}-"):
                 has_active_stream = True
                 break
-
-    # Check shared hub streams
-    if not has_active_stream:
-        has_active_stream = _hub.is_active(printer_id)
 
     # Get timing information (all timestamps use time.monotonic())
     current_time = time.monotonic()

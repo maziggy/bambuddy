@@ -2,8 +2,9 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { getAuthToken } from '../api/client';
 
 const API_BASE = '/api/v1';
-const JPEG_SOI = 0xffd8;
-const JPEG_EOI = 0xffd9;
+const JPEG_SOI_HI = 0xff;
+const JPEG_SOI_LO = 0xd8;
+const JPEG_EOI_LO = 0xd9;
 
 interface UseMjpegStreamOptions {
   /** Stream URL path (relative to API_BASE, e.g. `/printers/1/camera/stream?fps=15`) */
@@ -36,6 +37,10 @@ export function useMjpegStream({
   const controllerRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
   const generationRef = useRef(0);
+  const onFirstFrameRef = useRef(onFirstFrame);
+  const onErrorRef = useRef(onError);
+  onFirstFrameRef.current = onFirstFrame;
+  onErrorRef.current = onError;
 
   const stopStream = useCallback(() => {
     if (controllerRef.current) {
@@ -73,7 +78,9 @@ export function useMjpegStream({
         }
 
         const reader = response.body.getReader();
-        let buffer = new Uint8Array(0);
+        // Pre-allocated doubling buffer to avoid O(n²) copies
+        let buf = new Uint8Array(256 * 1024);
+        let writePos = 0;
         let firstFrameDelivered = false;
 
         while (true) {
@@ -82,37 +89,46 @@ export function useMjpegStream({
           const { done, value } = await reader.read();
           if (done) break;
 
-          // Append chunk to buffer
-          const newBuf = new Uint8Array(buffer.length + value.length);
-          newBuf.set(buffer);
-          newBuf.set(value, buffer.length);
-          buffer = newBuf;
+          // Append chunk — grow by doubling when needed
+          if (writePos + value.length > buf.length) {
+            let newSize = buf.length;
+            while (newSize < writePos + value.length) newSize *= 2;
+            const next = new Uint8Array(newSize);
+            next.set(buf.subarray(0, writePos));
+            buf = next;
+          }
+          buf.set(value, writePos);
+          writePos += value.length;
 
           // Extract complete JPEG frames
-          while (buffer.length >= 4) {
+          while (writePos >= 4) {
             // Find SOI marker (0xFF 0xD8)
             let soiIdx = -1;
-            for (let i = 0; i < buffer.length - 1; i++) {
-              if (buffer[i] === 0xff && buffer[i + 1] === (JPEG_SOI & 0xff)) {
+            for (let i = 0; i < writePos - 1; i++) {
+              if (buf[i] === JPEG_SOI_HI && buf[i + 1] === JPEG_SOI_LO) {
                 soiIdx = i;
                 break;
               }
             }
             if (soiIdx === -1) {
               // Keep last byte (could be 0xFF)
-              buffer = buffer.length > 1 ? buffer.slice(buffer.length - 1) : buffer;
+              if (writePos > 1) {
+                buf[0] = buf[writePos - 1];
+                writePos = 1;
+              }
               break;
             }
 
             // Trim before SOI
             if (soiIdx > 0) {
-              buffer = buffer.slice(soiIdx);
+              buf.copyWithin(0, soiIdx, writePos);
+              writePos -= soiIdx;
             }
 
             // Find EOI marker (0xFF 0xD9)
             let eoiIdx = -1;
-            for (let i = 2; i < buffer.length - 1; i++) {
-              if (buffer[i] === 0xff && buffer[i + 1] === (JPEG_EOI & 0xff)) {
+            for (let i = 2; i < writePos - 1; i++) {
+              if (buf[i] === JPEG_SOI_HI && buf[i + 1] === JPEG_EOI_LO) {
                 eoiIdx = i;
                 break;
               }
@@ -120,8 +136,9 @@ export function useMjpegStream({
             if (eoiIdx === -1) break; // Incomplete frame
 
             // Extract JPEG frame
-            const frame = buffer.slice(0, eoiIdx + 2);
-            buffer = buffer.slice(eoiIdx + 2);
+            const frame = buf.slice(0, eoiIdx + 2);
+            buf.copyWithin(0, eoiIdx + 2, writePos);
+            writePos -= (eoiIdx + 2);
 
             // Draw to canvas
             if (gen !== generationRef.current) break;
@@ -151,7 +168,7 @@ export function useMjpegStream({
                 firstFrameDelivered = true;
                 setIsLoading(false);
                 setIsConnected(true);
-                onFirstFrame?.();
+                onFirstFrameRef.current?.();
               }
             } catch {
               // Invalid JPEG — skip
@@ -162,7 +179,7 @@ export function useMjpegStream({
         // Stream ended naturally
         if (mountedRef.current && gen === generationRef.current) {
           setIsConnected(false);
-          onError?.();
+          onErrorRef.current?.();
         }
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') return;
@@ -170,11 +187,11 @@ export function useMjpegStream({
           setIsLoading(false);
           setHasError(true);
           setIsConnected(false);
-          onError?.();
+          onErrorRef.current?.();
         }
       }
     })();
-  }, [url, enabled, canvasRef, onFirstFrame, onError, stopStream]);
+  }, [url, enabled, canvasRef, stopStream]);
 
   const restart = useCallback(() => {
     generationRef.current += 1;

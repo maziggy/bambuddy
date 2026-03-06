@@ -458,6 +458,7 @@ export default {
     },
     // HMS errors
     clickToViewHmsErrors: '点击查看 HMS 错误',
+    clickToDismiss: '点击关闭',
     estimatedCompletion: '预计完成时间',
     slotOptions: '槽位选项',
     // AMS hover popup

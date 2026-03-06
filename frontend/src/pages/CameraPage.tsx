@@ -36,6 +36,7 @@ export function CameraPage() {
   const [snapshotLoading, setSnapshotLoading] = useState(true);
   const [snapshotError, setSnapshotError] = useState(false);
   const [snapshotKey, setSnapshotKey] = useState(Date.now());
+  const [snapshotBlobUrl, setSnapshotBlobUrl] = useState<string | null>(null);
   const snapshotImgRef = useRef<HTMLImageElement>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -114,12 +115,12 @@ export function CameraPage() {
   // Update document title
   useEffect(() => {
     if (printer) {
-      document.title = `${printer.name} - Camera`;
+      document.title = `${printer.name} - ${t('camera.title')}`;
     }
     return () => {
       document.title = 'Bambuddy';
     };
-  }, [printer]);
+  }, [printer, t]);
 
   // Cleanup on unmount - stop the camera stream
   const stopSentRef = useRef(false);
@@ -411,39 +412,66 @@ export function CameraPage() {
   const { isReconnecting, reconnectCountdown, reconnectAttempts } = reconnect;
   const isDisabled = loading || transitioning || isReconnecting;
 
-  // Snapshot URL
-  const snapshotUrl = `/api/v1/printers/${id}/camera/snapshot?t=${snapshotKey}`;
+  // Fetch snapshot via blob URL (sends auth headers, avoids PUBLIC_API_PATTERNS)
+  useEffect(() => {
+    if (isStream || !id) return;
+    let cancelled = false;
+    let blobUrl: string | null = null;
 
-  const handleSnapshotLoad = () => {
-    setSnapshotLoading(false);
+    setSnapshotLoading(true);
     setSnapshotError(false);
 
-    // Auto-resize window to fit video content (only if no saved preference)
-    if (snapshotImgRef.current && !localStorage.getItem('cameraWindowState')) {
-      const img = snapshotImgRef.current;
-      const videoWidth = img.naturalWidth;
-      const videoHeight = img.naturalHeight;
+    (async () => {
+      try {
+        const headers: Record<string, string> = {};
+        const token = getAuthToken();
+        if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      if (videoWidth > 0 && videoHeight > 0) {
-        const headerHeight = 45;
-        const padding = 16;
-        const chromeWidth = window.outerWidth - window.innerWidth;
-        const chromeHeight = window.outerHeight - window.innerHeight;
-        const targetWidth = videoWidth + padding + chromeWidth;
-        const targetHeight = videoHeight + headerHeight + padding + chromeHeight;
-        try {
-          window.resizeTo(targetWidth, targetHeight);
-        } catch {
-          // resizeTo may not be allowed in all contexts
+        const res = await fetch(`/api/v1/printers/${id}/camera/snapshot?t=${snapshotKey}`, { headers });
+        if (cancelled) return;
+        if (!res.ok) throw new Error(`Snapshot failed: ${res.status}`);
+
+        const blob = await res.blob();
+        if (cancelled) return;
+
+        blobUrl = URL.createObjectURL(blob);
+        setSnapshotBlobUrl(blobUrl);
+        setSnapshotLoading(false);
+        setSnapshotError(false);
+
+        // Auto-resize window to fit video content (only if no saved preference)
+        if (!localStorage.getItem('cameraWindowState')) {
+          const img = new Image();
+          img.onload = () => {
+            if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+              const headerHeight = 45;
+              const padding = 16;
+              const chromeWidth = window.outerWidth - window.innerWidth;
+              const chromeHeight = window.outerHeight - window.innerHeight;
+              const targetWidth = img.naturalWidth + padding + chromeWidth;
+              const targetHeight = img.naturalHeight + headerHeight + padding + chromeHeight;
+              try {
+                window.resizeTo(targetWidth, targetHeight);
+              } catch {
+                // resizeTo may not be allowed in all contexts
+              }
+            }
+          };
+          img.src = blobUrl;
+        }
+      } catch {
+        if (!cancelled) {
+          setSnapshotLoading(false);
+          setSnapshotError(true);
         }
       }
-    }
-  };
+    })();
 
-  const handleSnapshotError = () => {
-    setSnapshotLoading(false);
-    setSnapshotError(true);
-  };
+    return () => {
+      cancelled = true;
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [isStream, id, snapshotKey]);
 
   if (!id) {
     return (
@@ -609,12 +637,10 @@ export function CameraPage() {
             <img
               ref={snapshotImgRef}
               key={snapshotKey}
-              src={snapshotUrl}
+              src={snapshotBlobUrl || ''}
               alt={t('camera.cameraStream')}
               className="max-w-full max-h-full object-contain select-none"
               style={transformStyle}
-              onError={handleSnapshotError}
-              onLoad={handleSnapshotLoad}
               onMouseDown={handleMouseDown}
               draggable={false}
             />

@@ -1997,6 +1997,19 @@ function CameraGrid({
 
     startMultiplexedStream();
 
+    const startupTimeout = setTimeout(() => {
+      setLoadingSet(prev => {
+        if (prev.size === 0) return prev;
+        const stillLoading = [...prev];
+        setErrorSet(errPrev => {
+          const next = new Set(errPrev);
+          for (const id of stillLoading) next.add(id);
+          return next;
+        });
+        return new Set();
+      });
+    }, STALE_CAMERA_TIMEOUT);
+
     const onBeforeUnload = () => controllerRef.current.abort();
     window.addEventListener('beforeunload', onBeforeUnload);
 
@@ -2005,6 +2018,7 @@ function CameraGrid({
       readerRef?.cancel().catch(() => {});
       controllerRef.current.abort();
       clearInterval(statsInterval);
+      clearTimeout(startupTimeout);
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
       countdownIntervalRef.current = null;
       window.removeEventListener('beforeunload', onBeforeUnload);

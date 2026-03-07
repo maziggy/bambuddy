@@ -1753,6 +1753,8 @@ export default {
     cameraQualityLow: '低',
     cameraQualityMedium: '中',
     cameraQualityHigh: '高',
+    cameraQualityAuto: '自动（推荐）',
+    cameraQualityAutoResolved: '自动选择：根据服务器硬件和打印机数量选择{{resolved}}。',
     cameraQualityDescription: '控制流的帧率和分辨率。降低画质可减少多摄像头环境下的CPU占用。',
     cameraGpuAccel: 'GPU加速',
     cameraGpuAccelDescription: '使用硬件加速视频解码处理摄像头流。在配备GPU的服务器上可降低CPU占用。',

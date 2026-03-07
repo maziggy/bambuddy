@@ -1686,11 +1686,12 @@ function CameraGrid({
 
   // Grid stream parameters from settings quality preset
   const { data: cameraSettings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
-  const qualityPreset = CAMERA_QUALITY_PRESETS[cameraSettings?.camera_quality ?? 'medium'];
-  const GRID_FPS = qualityPreset.grid.fps;
-  const GRID_QUALITY = qualityPreset.grid.quality;
-  const GRID_SCALE = qualityPreset.grid.scale;
-  const gridParamsKey = `${GRID_FPS}-${GRID_QUALITY}-${GRID_SCALE}`;
+  const cameraQuality = cameraSettings?.camera_quality ?? 'auto';
+  const qualityPreset = cameraQuality !== 'auto' ? CAMERA_QUALITY_PRESETS[cameraQuality] : null;
+  const GRID_FPS = qualityPreset?.grid.fps;
+  const GRID_QUALITY = qualityPreset?.grid.quality;
+  const GRID_SCALE = qualityPreset?.grid.scale;
+  const gridParamsKey = cameraQuality === 'auto' ? 'auto' : `${GRID_FPS}-${GRID_QUALITY}-${GRID_SCALE}`;
 
   // Mutable counters — updated in the stream loop, read by the stats interval
   const bytesRef = useRef(0);
@@ -1865,7 +1866,7 @@ function CameraGrid({
         const token = getAuthToken();
         if (token) gridHeaders['Authorization'] = `Bearer ${token}`;
         const res = await fetch(
-          `/api/v1/printers/camera/grid-stream?ids=${ids.join(',')}&fps=${GRID_FPS}&quality=${GRID_QUALITY}&scale=${GRID_SCALE}&force=true`,
+          `/api/v1/printers/camera/grid-stream?ids=${ids.join(',')}${qualityPreset ? `&fps=${GRID_FPS}&quality=${GRID_QUALITY}&scale=${GRID_SCALE}` : ''}&force=true`,
           { signal: controllerRef.current.signal, headers: gridHeaders },
         );
         if (!res.ok || !res.body) {

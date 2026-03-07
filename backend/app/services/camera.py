@@ -7,6 +7,7 @@ Supports two camera protocols:
 
 import asyncio
 import logging
+import os
 import shutil
 import ssl
 import struct
@@ -112,6 +113,34 @@ async def detect_gpu_hwaccels() -> list[str]:
         _gpu_hwaccels = []
 
     return _gpu_hwaccels
+
+
+async def resolve_camera_quality(preset_name: str, printer_count: int = 1) -> str:
+    """Resolve 'auto' to a concrete preset based on hardware and printer count.
+
+    Computes a capacity score from CPU cores and GPU availability,
+    then scales down based on how many printers need streaming.
+    """
+    if preset_name != "auto":
+        return preset_name
+
+    cpu_count = os.cpu_count() or 2
+    gpu_backends = await detect_gpu_hwaccels()
+    has_gpu = len(gpu_backends) > 0
+
+    # Base score: CPU cores + GPU bonus
+    score = cpu_count + (4 if has_gpu else 0)
+
+    # Per-printer cost: each printer consumes resources
+    # Effective score = base score / printer_count
+    effective = score / max(printer_count, 1)
+
+    if effective >= 8:
+        return "high"
+    elif effective >= 3:
+        return "medium"
+    else:
+        return "low"
 
 
 def get_gpu_hwaccels() -> list[str]:

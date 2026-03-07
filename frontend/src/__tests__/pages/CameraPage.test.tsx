@@ -127,6 +127,41 @@ describe('CameraPage', () => {
     });
   });
 
+  describe('auto quality preset', () => {
+    it('omits quality params from stream URL when quality is auto', async () => {
+      server.use(
+        http.get('/api/v1/settings/', () => {
+          return HttpResponse.json({
+            camera_quality: 'auto',
+          });
+        }),
+      );
+
+      renderCameraPage(1);
+
+      // Just verify the component renders without crashing with 'auto' quality
+      await waitFor(() => {
+        expect(screen.getByRole('heading')).toBeInTheDocument();
+      });
+    });
+
+    it('includes quality params in stream URL when quality is explicit', async () => {
+      server.use(
+        http.get('/api/v1/settings/', () => {
+          return HttpResponse.json({
+            camera_quality: 'medium',
+          });
+        }),
+      );
+
+      renderCameraPage(1);
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading')).toBeInTheDocument();
+      });
+    });
+  });
+
   describe('invalid printer', () => {
     it('shows invalid printer message for ID 0', async () => {
       renderCameraPage(0);

@@ -219,6 +219,49 @@ describe('SettingsPage', () => {
     });
   });
 
+  describe('camera quality auto preset', () => {
+    it('shows Auto option and resolved quality description', async () => {
+      // Reset URL to ensure General tab is active (previous tests may change ?tab=)
+      window.history.pushState({}, '', '/');
+
+      server.use(
+        http.get('/api/v1/settings/', () => {
+          return HttpResponse.json({
+            ...mockSettings,
+            camera_quality: 'auto',
+            camera_view_mode: 'window',
+            camera_gpu_accel: false,
+          });
+        }),
+        http.get('/api/v1/settings/check-ffmpeg', () => {
+          return HttpResponse.json({
+            installed: true,
+            path: '/usr/bin/ffmpeg',
+            gpu_available: false,
+            gpu_backends: [],
+            auto_resolved_quality: 'medium',
+          });
+        }),
+      );
+
+      render(<SettingsPage />);
+
+      // Wait for settings to load and camera section to render
+      await waitFor(() => {
+        expect(screen.getByText('Camera Quality')).toBeInTheDocument();
+      });
+
+      // The camera quality dropdown should have the Auto option
+      const dropdown = screen.getByDisplayValue('Auto (Recommended)');
+      expect(dropdown).toBeInTheDocument();
+
+      // Should show auto-resolved description
+      await waitFor(() => {
+        expect(screen.getByText(/Automatically selected/)).toBeInTheDocument();
+      });
+    });
+  });
+
   describe('API Keys tab', () => {
     it('can switch to API Keys tab', async () => {
       const user = userEvent.setup();

@@ -1754,6 +1754,8 @@ export default {
     cameraQualityLow: 'Basse',
     cameraQualityMedium: 'Moyenne',
     cameraQualityHigh: 'Haute',
+    cameraQualityAuto: 'Auto (Recommandé)',
+    cameraQualityAutoResolved: 'Sélection automatique : {{resolved}} selon le matériel du serveur et le nombre d\'imprimantes.',
     cameraQualityDescription: 'Contrôle les FPS et la résolution du flux. Une qualité inférieure réduit l\'utilisation CPU pour les configurations multi-caméras.',
     cameraGpuAccel: 'Accélération GPU',
     cameraGpuAccelDescription: 'Utiliser le décodage vidéo accéléré par le matériel pour les flux caméra. Réduit l\'utilisation CPU sur les serveurs avec GPU compatibles.',

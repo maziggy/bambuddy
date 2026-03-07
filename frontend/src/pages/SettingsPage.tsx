@@ -731,7 +731,7 @@ export function SettingsPage() {
       (settings.library_archive_mode ?? 'ask') !== (localSettings.library_archive_mode ?? 'ask') ||
       Number(settings.library_disk_warning_gb ?? 5) !== Number(localSettings.library_disk_warning_gb ?? 5) ||
       (settings.camera_view_mode ?? 'window') !== (localSettings.camera_view_mode ?? 'window') ||
-      (settings.camera_quality ?? 'medium') !== (localSettings.camera_quality ?? 'medium') ||
+      (settings.camera_quality ?? 'auto') !== (localSettings.camera_quality ?? 'auto') ||
       (settings.camera_gpu_accel ?? false) !== (localSettings.camera_gpu_accel ?? false) ||
       (settings.preferred_slicer ?? 'bambu_studio') !== (localSettings.preferred_slicer ?? 'bambu_studio') ||
       settings.prometheus_enabled !== localSettings.prometheus_enabled ||
@@ -1403,16 +1403,21 @@ export function SettingsPage() {
                   {t('settings.cameraQuality')}
                 </label>
                 <select
-                  value={localSettings.camera_quality ?? 'medium'}
-                  onChange={(e) => updateSetting('camera_quality', e.target.value as 'low' | 'medium' | 'high')}
+                  value={localSettings.camera_quality ?? 'auto'}
+                  onChange={(e) => updateSetting('camera_quality', e.target.value as 'auto' | 'low' | 'medium' | 'high')}
                   className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 >
+                  <option value="auto">{t('settings.cameraQualityAuto')}</option>
                   <option value="low">{t('settings.cameraQualityLow')}</option>
                   <option value="medium">{t('settings.cameraQualityMedium')}</option>
                   <option value="high">{t('settings.cameraQualityHigh')}</option>
                 </select>
                 <p className="text-xs text-bambu-gray mt-1">
-                  {t('settings.cameraQualityDescription')}
+                  {localSettings.camera_quality === 'auto' && ffmpegStatus?.auto_resolved_quality
+                    ? t('settings.cameraQualityAutoResolved', {
+                        resolved: t(`settings.cameraQuality${ffmpegStatus.auto_resolved_quality.charAt(0).toUpperCase() + ffmpegStatus.auto_resolved_quality.slice(1)}`)
+                      })
+                    : t('settings.cameraQualityDescription')}
                 </p>
               </div>
 

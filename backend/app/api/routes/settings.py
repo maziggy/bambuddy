@@ -217,9 +217,10 @@ async def reset_settings(
 
 
 @router.get("/check-ffmpeg")
-async def check_ffmpeg():
+async def check_ffmpeg(db: AsyncSession = Depends(get_db)):
     """Check if ffmpeg is installed and available."""
-    from backend.app.services.camera import detect_gpu_hwaccels, get_ffmpeg_path
+    from backend.app.models.printer import Printer
+    from backend.app.services.camera import detect_gpu_hwaccels, get_ffmpeg_path, resolve_camera_quality
 
     ffmpeg_path = get_ffmpeg_path()
 
@@ -227,11 +228,15 @@ async def check_ffmpeg():
     if ffmpeg_path:
         gpu_hwaccels = await detect_gpu_hwaccels()
 
+    printer_count = (await db.execute(select(Printer.id).where(Printer.is_active == True))).scalars().all()  # noqa: E712
+    resolved = await resolve_camera_quality("auto", len(printer_count))
+
     return {
         "installed": ffmpeg_path is not None,
         "path": ffmpeg_path,
         "gpu_available": len(gpu_hwaccels) > 0,
         "gpu_backends": gpu_hwaccels,
+        "auto_resolved_quality": resolved,
     }
 
 

@@ -1757,6 +1757,8 @@ export default {
     cameraQualityLow: 'Niedrig',
     cameraQualityMedium: 'Mittel',
     cameraQualityHigh: 'Hoch',
+    cameraQualityAuto: 'Automatisch (Empfohlen)',
+    cameraQualityAutoResolved: 'Automatisch gewählt: {{resolved}} basierend auf Server-Hardware und Druckeranzahl.',
     cameraQualityDescription: 'Steuert Stream-FPS und Auflösung. Niedrigere Qualität reduziert die CPU-Auslastung bei mehreren Kameras.',
     cameraGpuAccel: 'GPU-Beschleunigung',
     cameraGpuAccelDescription: 'Hardwarebeschleunigte Videodekodierung für Kamerastreams verwenden. Reduziert die CPU-Auslastung auf Servern mit geeigneten GPUs.',

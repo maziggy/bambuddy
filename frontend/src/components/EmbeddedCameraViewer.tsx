@@ -137,8 +137,11 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
 
   // Camera quality preset from settings
   const { data: cameraSettings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
-  const singlePreset = CAMERA_QUALITY_PRESETS[cameraSettings?.camera_quality ?? 'medium'].single;
-  const streamUrl = `/printers/${printerId}/camera/stream?fps=${singlePreset.fps}&quality=${singlePreset.quality}&scale=${singlePreset.scale}`;
+  const cameraQuality = cameraSettings?.camera_quality ?? 'auto';
+  const singlePreset = cameraQuality !== 'auto' ? CAMERA_QUALITY_PRESETS[cameraQuality].single : null;
+  const streamUrl = singlePreset
+    ? `/printers/${printerId}/camera/stream?fps=${singlePreset.fps}&quality=${singlePreset.quality}&scale=${singlePreset.scale}`
+    : `/printers/${printerId}/camera/stream`;
   const mjpeg = useMjpegStream({
     url: streamUrl,
     canvasRef,

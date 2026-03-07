@@ -189,6 +189,42 @@ describe('PrintersPage', () => {
     });
   });
 
+  describe('auto camera quality', () => {
+    it('renders without crashing when camera quality is auto', async () => {
+      server.use(
+        http.get('/api/v1/settings/', () => {
+          return HttpResponse.json({
+            camera_quality: 'auto',
+            check_printer_firmware: false,
+          });
+        }),
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+    });
+
+    it('renders without crashing when camera quality is explicit', async () => {
+      server.use(
+        http.get('/api/v1/settings/', () => {
+          return HttpResponse.json({
+            camera_quality: 'low',
+            check_printer_firmware: false,
+          });
+        }),
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+    });
+  });
+
   describe('nozzle rack card', () => {
     const h2cStatus = {
       ...mockPrinterStatus,

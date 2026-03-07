@@ -1757,6 +1757,8 @@ export default {
     cameraQualityLow: '低',
     cameraQualityMedium: '中',
     cameraQualityHigh: '高',
+    cameraQualityAuto: '自動（推奨）',
+    cameraQualityAutoResolved: '自動選択：サーバーハードウェアとプリンター数に基づき{{resolved}}。',
     cameraQualityDescription: 'ストリームのFPSと解像度を制御します。低画質にするとマルチカメラ環境でのCPU使用率が低下します。',
     cameraGpuAccel: 'GPUアクセラレーション',
     cameraGpuAccelDescription: 'カメラストリームにハードウェアアクセラレーションによるビデオデコードを使用します。対応GPUを搭載したサーバーでCPU使用率を削減します。',

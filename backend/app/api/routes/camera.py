@@ -16,7 +16,7 @@ from typing import Literal
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
@@ -33,6 +33,7 @@ from backend.app.services.camera import (
     get_rtsp_semaphore,
     is_chamber_image_model,
     read_next_chamber_frame,
+    resolve_camera_quality,
     test_camera_connection,
 )
 
@@ -923,7 +924,9 @@ async def camera_grid_stream(
     if fps is None and quality is None and scale is None:
         from backend.app.api.routes.settings import get_setting
 
-        preset_name = await get_setting(db, "camera_quality") or "medium"
+        raw_preset = await get_setting(db, "camera_quality") or "auto"
+        printer_count = (await db.execute(select(func.count()).select_from(Printer).where(Printer.is_active == True))).scalar() or 1  # noqa: E712
+        preset_name = await resolve_camera_quality(raw_preset, printer_count)
         preset = CAMERA_QUALITY_PRESETS.get(preset_name, CAMERA_QUALITY_PRESETS["medium"])
         fps = preset["grid"]["fps"]
         quality = preset["grid"]["quality"]
@@ -1084,7 +1087,9 @@ async def camera_stream(
     if fps is None and quality is None and scale is None:
         from backend.app.api.routes.settings import get_setting
 
-        preset_name = await get_setting(db, "camera_quality") or "medium"
+        raw_preset = await get_setting(db, "camera_quality") or "auto"
+        printer_count = (await db.execute(select(func.count()).select_from(Printer).where(Printer.is_active == True))).scalar() or 1  # noqa: E712
+        preset_name = await resolve_camera_quality(raw_preset, printer_count)
         preset = CAMERA_QUALITY_PRESETS.get(preset_name, CAMERA_QUALITY_PRESETS["medium"])
         fps = preset["single"]["fps"]
         quality = preset["single"]["quality"]

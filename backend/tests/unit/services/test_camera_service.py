@@ -1,9 +1,11 @@
 """Unit tests for the camera service (backend/app/services/camera.py).
 
-Tests model detection, URL building, chamber auth payload, and port selection.
+Tests model detection, URL building, chamber auth payload, port selection,
+and auto quality resolution.
 """
 
 import struct
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -158,3 +160,93 @@ class TestCreateChamberAuthPayload:
         assert payload[20:48] == b"\x00" * 28
         # Access code "AB" = 2 chars, remaining 30 bytes should be zero
         assert payload[50:80] == b"\x00" * 30
+
+
+class TestResolveCameraQuality:
+    """Tests for resolve_camera_quality() auto-detection logic."""
+
+    @pytest.mark.asyncio
+    async def test_non_auto_passes_through(self):
+        from backend.app.services.camera import resolve_camera_quality
+
+        assert await resolve_camera_quality("low", 1) == "low"
+        assert await resolve_camera_quality("medium", 5) == "medium"
+        assert await resolve_camera_quality("high", 10) == "high"
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=["videotoolbox"])
+    @patch("os.cpu_count", return_value=8)
+    async def test_8_cores_gpu_1_printer_high(self, _cpu, _gpu):
+        from backend.app.services.camera import resolve_camera_quality
+
+        assert await resolve_camera_quality("auto", 1) == "high"
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=["videotoolbox"])
+    @patch("os.cpu_count", return_value=8)
+    async def test_8_cores_gpu_4_printers_medium(self, _cpu, _gpu):
+        from backend.app.services.camera import resolve_camera_quality
+
+        assert await resolve_camera_quality("auto", 4) == "medium"
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=[])
+    @patch("os.cpu_count", return_value=4)
+    async def test_4_cores_no_gpu_1_printer_medium(self, _cpu, _gpu):
+        from backend.app.services.camera import resolve_camera_quality
+
+        assert await resolve_camera_quality("auto", 1) == "medium"
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=[])
+    @patch("os.cpu_count", return_value=4)
+    async def test_4_cores_no_gpu_2_printers_low(self, _cpu, _gpu):
+        from backend.app.services.camera import resolve_camera_quality
+
+        assert await resolve_camera_quality("auto", 2) == "low"
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=[])
+    @patch("os.cpu_count", return_value=2)
+    async def test_2_cores_no_gpu_1_printer_low(self, _cpu, _gpu):
+        from backend.app.services.camera import resolve_camera_quality
+
+        assert await resolve_camera_quality("auto", 1) == "low"
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=["cuda"])
+    @patch("os.cpu_count", return_value=2)
+    async def test_2_cores_gpu_1_printer_medium(self, _cpu, _gpu):
+        from backend.app.services.camera import resolve_camera_quality
+
+        assert await resolve_camera_quality("auto", 1) == "medium"
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=[])
+    @patch("os.cpu_count", return_value=None)
+    async def test_none_cpu_count_defaults_to_2(self, _cpu, _gpu):
+        """When os.cpu_count() returns None, fallback to 2 cores."""
+        from backend.app.services.camera import resolve_camera_quality
+
+        # 2 cores, no GPU, 1 printer => effective=2 => low
+        assert await resolve_camera_quality("auto", 1) == "low"
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=[])
+    @patch("os.cpu_count", return_value=8)
+    async def test_zero_printer_count_treated_as_one(self, _cpu, _gpu):
+        """Printer count of 0 should not cause division by zero."""
+        from backend.app.services.camera import resolve_camera_quality
+
+        # 8 cores, no GPU, 0 printers => effective=8/1=8 => high
+        assert await resolve_camera_quality("auto", 0) == "high"
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=["videotoolbox"])
+    @patch("os.cpu_count", return_value=16)
+    async def test_16_cores_gpu_many_printers_low(self, _cpu, _gpu):
+        """Many printers should reduce quality even on powerful hardware."""
+        from backend.app.services.camera import resolve_camera_quality
+
+        # 16 + 4 = 20, 20/10 = 2 => low
+        assert await resolve_camera_quality("auto", 10) == "low"

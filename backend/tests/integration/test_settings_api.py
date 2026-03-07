@@ -405,7 +405,25 @@ class TestSettingsAPI:
         result = response.json()
 
         assert "camera_quality" in result
-        assert result["camera_quality"] in ["low", "medium", "high"]
+        assert result["camera_quality"] in ["auto", "low", "medium", "high"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_quality_auto_can_be_set(self, async_client: AsyncClient):
+        """Verify camera quality can be set to 'auto'."""
+        response = await async_client.put("/api/v1/settings/", json={"camera_quality": "auto"})
+
+        assert response.status_code == 200
+        assert response.json()["camera_quality"] == "auto"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_quality_auto_persists(self, async_client: AsyncClient):
+        """Verify 'auto' camera quality persists after update."""
+        await async_client.put("/api/v1/settings/", json={"camera_quality": "auto"})
+
+        response = await async_client.get("/api/v1/settings/")
+        assert response.json()["camera_quality"] == "auto"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -442,6 +460,17 @@ class TestSettingsAPI:
         assert "gpu_backends" in result
         assert isinstance(result["gpu_available"], bool)
         assert isinstance(result["gpu_backends"], list)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_check_ffmpeg_auto_resolved_quality(self, async_client: AsyncClient):
+        """Verify check-ffmpeg response includes auto_resolved_quality field."""
+        response = await async_client.get("/api/v1/settings/check-ffmpeg")
+        assert response.status_code == 200
+        result = response.json()
+
+        assert "auto_resolved_quality" in result
+        assert result["auto_resolved_quality"] in ["low", "medium", "high"]
 
     # ========================================================================
     # Per-printer mapping settings tests

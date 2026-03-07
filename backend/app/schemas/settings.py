@@ -137,8 +137,8 @@ class AppSettings(BaseModel):
         description="Camera view mode: 'window' opens in new browser window, 'embedded' shows overlay on main screen",
     )
     camera_quality: str = Field(
-        default="medium",
-        description="Camera quality preset: 'low', 'medium', or 'high' — controls ffmpeg fps/quality/scale for grid and single streams",
+        default="auto",
+        description="Camera quality preset: 'auto', 'low', 'medium', or 'high' — controls ffmpeg fps/quality/scale for grid and single streams",
     )
     camera_gpu_accel: bool = Field(
         default=False,

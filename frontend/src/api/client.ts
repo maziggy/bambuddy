@@ -771,7 +771,7 @@ export interface APIKeyUpdate {
 }
 
 // Camera quality types and presets
-export type CameraQuality = 'low' | 'medium' | 'high';
+export type CameraQuality = 'auto' | 'low' | 'medium' | 'high';
 
 export const CAMERA_QUALITY_PRESETS = {
   low:    { grid: { fps: 2,  quality: 20, scale: 0.25 }, single: { fps: 10, quality: 10, scale: 0.5 } },
@@ -3165,7 +3165,7 @@ export const api = {
     }>;
   },
   checkFfmpeg: () =>
-    request<{ installed: boolean; path: string | null; gpu_available: boolean; gpu_backends: string[] }>('/settings/check-ffmpeg'),
+    request<{ installed: boolean; path: string | null; gpu_available: boolean; gpu_backends: string[]; auto_resolved_quality: string }>('/settings/check-ffmpeg'),
   getNetworkInterfaces: () =>
     request<{ interfaces: NetworkInterface[] }>('/settings/network-interfaces'),
 

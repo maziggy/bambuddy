@@ -45,7 +45,7 @@ describe('SUPPORTED_CURRENCIES', () => {
     expect(SUPPORTED_CURRENCIES.find((c) => c.code === 'MYR')).toBeDefined();
   });
 
-  it('has 27 entries', () => {
-    expect(SUPPORTED_CURRENCIES).toHaveLength(27);
+  it('has 28 entries', () => {
+    expect(SUPPORTED_CURRENCIES).toHaveLength(28);
   });
 });

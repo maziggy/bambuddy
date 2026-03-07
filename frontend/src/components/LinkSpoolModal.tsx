@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Loader2, Search, Link } from 'lucide-react';
 import { api } from '../api/client';
-import type { InventorySpool } from '../api/client';
+import type { UnlinkedSpool } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 
@@ -22,44 +22,39 @@ export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, a
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [search, setSearch] = useState('');
+  const spoolTag = trayUuid || tagUid;
 
   const { data: spools, isLoading } = useQuery({
-    queryKey: ['inventory-spools'],
-    queryFn: () => api.getSpools(false),
+    queryKey: ['unlinked-spools'],
+    queryFn: api.getUnlinkedSpools,
     enabled: isOpen,
   });
 
-  // Filter to untagged spools matching search
+  // Filter Spoolman unlinked spools matching search
   const filteredSpools = useMemo(() => {
     if (!spools) return [];
-    return spools.filter((s: InventorySpool) => {
-      if (s.tag_uid || s.tray_uuid) return false; // Already tagged
+    return spools.filter((s: UnlinkedSpool) => {
       if (!search) return true;
       const q = search.toLowerCase();
       return (
-        s.material.toLowerCase().includes(q) ||
-        (s.brand && s.brand.toLowerCase().includes(q)) ||
-        (s.color_name && s.color_name.toLowerCase().includes(q))
+        (s.filament_name && s.filament_name.toLowerCase().includes(q)) ||
+        (s.filament_material && s.filament_material.toLowerCase().includes(q)) ||
+        String(s.id).includes(q)
       );
     });
   }, [spools, search]);
 
   const linkMutation = useMutation({
     mutationFn: (spoolId: number) =>
-      api.linkTagToSpool(spoolId, {
-        tag_uid: tagUid || undefined,
-        tray_uuid: trayUuid || undefined,
-        tag_type: trayUuid ? 'bambulab' : 'generic',
-        data_origin: 'nfc_link',
-      }),
+      api.linkSpool(spoolId, spoolTag),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
-      queryClient.invalidateQueries({ queryKey: ['inventory-assignments'] });
-      showToast(t('inventory.tagLinked'), 'success');
+      queryClient.invalidateQueries({ queryKey: ['unlinked-spools'] });
+      queryClient.invalidateQueries({ queryKey: ['linked-spools'] });
+      showToast(t('spoolman.linkSuccess'), 'success');
       onClose();
     },
     onError: (err: Error) => {
-      showToast(err.message || t('inventory.tagLinkFailed'), 'error');
+      showToast(err.message || t('spoolman.linkFailed'), 'error');
     },
   });
 
@@ -74,7 +69,7 @@ export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, a
           <div>
             <h3 className="text-lg font-semibold text-white flex items-center gap-2">
               <Link className="w-5 h-5 text-bambu-green" />
-              {t('inventory.linkToSpool')}
+              {t('spoolman.selectSpool')}
             </h3>
             <p className="text-xs text-bambu-gray mt-1">
               AMS {amsId} T{trayId} &middot; Printer #{printerId}
@@ -110,33 +105,36 @@ export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, a
             <div className="flex justify-center py-8">
               <Loader2 className="w-6 h-6 animate-spin text-bambu-green" />
             </div>
+          ) : !spoolTag ? (
+            <p className="text-center text-bambu-gray py-8 text-sm">
+              {t('spoolman.noTrayUuid')}
+            </p>
           ) : filteredSpools.length === 0 ? (
             <p className="text-center text-bambu-gray py-8 text-sm">
               {t('inventory.noSpoolsMatch')}
             </p>
           ) : (
-            filteredSpools.map((spool: InventorySpool) => (
+            filteredSpools.map((spool: UnlinkedSpool) => (
               <button
                 key={spool.id}
                 onClick={() => linkMutation.mutate(spool.id)}
-                disabled={linkMutation.isPending}
+                disabled={linkMutation.isPending || !spoolTag}
                 className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-white/5 transition-colors text-left"
               >
                 <span
                   className="w-6 h-6 rounded-full border border-white/20 flex-shrink-0"
-                  style={{ backgroundColor: spool.rgba ? `#${spool.rgba.substring(0, 6)}` : '#808080' }}
+                  style={{ backgroundColor: spool.filament_color_hex ? `#${spool.filament_color_hex}` : '#808080' }}
                 />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm text-white font-medium truncate">
-                    {spool.brand ? `${spool.brand} ` : ''}{spool.material}
-                    {spool.subtype ? ` ${spool.subtype}` : ''}
+                    {spool.filament_name || t('spoolman.spoolId')}
                   </div>
                   <div className="text-xs text-bambu-gray truncate">
-                    {spool.color_name || 'No color'} &middot; #{spool.id}
+                    {spool.filament_material || 'Unknown'} &middot; #{spool.id}
                   </div>
                 </div>
                 <span className="text-xs text-bambu-gray">
-                  {Math.round(spool.label_weight - spool.weight_used)}g
+                  {spool.remaining_weight != null ? `${Math.round(spool.remaining_weight)}g` : '—'}
                 </span>
               </button>
             ))

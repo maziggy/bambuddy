@@ -3529,10 +3529,14 @@ export const api = {
     request<UnlinkedSpool[]>('/spoolman/spools/unlinked'),
   getLinkedSpools: () =>
     request<LinkedSpoolsMap>('/spoolman/spools/linked'),
-  linkSpool: (spoolId: number, trayUuid: string) =>
+  linkSpool: (spoolId: number, spoolTag: string) =>
     request<{ success: boolean; message: string }>(`/spoolman/spools/${spoolId}/link`, {
       method: 'POST',
-      body: JSON.stringify({ tray_uuid: trayUuid }),
+      body: JSON.stringify({ spool_tag: spoolTag }),
+    }),
+  unlinkSpool: (spoolId: number) =>
+    request<{ success: boolean; message: string }>(`/spoolman/spools/${spoolId}/unlink`, {
+      method: 'POST',
     }),
   getSpoolmanSettings: () =>
     request<{ spoolman_enabled: string; spoolman_url: string; spoolman_sync_mode: string; spoolman_disable_weight_sync: string; spoolman_report_partial_usage: string; }>('/settings/spoolman'),

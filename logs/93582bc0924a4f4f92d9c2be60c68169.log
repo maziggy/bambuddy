@@ -1,0 +1,200 @@
+                        ^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/aiosqlite/core.py", line 137, in _conn
+    raise ValueError("no active connection")
+ValueError: no active connection
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1128, in _rollback_impl
+    self.engine.dialect.do_rollback(self.connection)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 712, in do_rollback
+    dbapi_connection.rollback()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/dialects/sqlite/aiosqlite.py", line 309, in rollback
+    self._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/dialects/sqlite/aiosqlite.py", line 338, in _handle_exception
+    raise self.dbapi.sqlite.OperationalError(
+        "no active connection"
+    ) from error
+sqlite3.OperationalError: no active connection
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/ext/asyncio/session.py", line 1016, in close
+    await greenlet_spawn(self.sync_session.close)
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 203, in greenlet_spawn
+    result = context.switch(value)
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2507, in close
+    self._close_impl(invalidate=False)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2576, in _close_impl
+    transaction.close(invalidate)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "<string>", line 2, in close
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/orm/state_changes.py", line 137, in _go
+    ret_value = fn(self, *arg, **kw)
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 1417, in close
+    transaction.close()
+    ~~~~~~~~~~~~~~~~~^^
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 2597, in close
+    self._do_close()
+    ~~~~~~~~~~~~~~^^
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 2735, in _do_close
+    self._close_impl()
+    ~~~~~~~~~~~~~~~~^^
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 2721, in _close_impl
+    self._connection_rollback_impl()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 2713, in _connection_rollback_impl
+    self.connection._rollback_impl()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1130, in _rollback_impl
+    self._handle_dbapi_exception(e, None, None, None, None)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1128, in _rollback_impl
+    self.engine.dialect.do_rollback(self.connection)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 712, in do_rollback
+    dbapi_connection.rollback()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/dialects/sqlite/aiosqlite.py", line 309, in rollback
+    self._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/dialects/sqlite/aiosqlite.py", line 338, in _handle_exception
+    raise self.dbapi.sqlite.OperationalError(
+        "no active connection"
+    ) from error
+sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no active connection
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-03-07 01:22:32,999 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(4, 1, 3, None)]
+2026-03-07 01:22:33,005 WARNING [backend.app.main] SpoolBuddy watchdog failed: (sqlite3.OperationalError) no such column: spoolbuddy_devices.nfc_reader_type
+[SQL: SELECT spoolbuddy_devices.id, spoolbuddy_devices.device_id, spoolbuddy_devices.hostname, spoolbuddy_devices.ip_address, spoolbuddy_devices.firmware_version, spoolbuddy_devices.has_nfc, spoolbuddy_devices.has_scale, spoolbuddy_devices.tare_offset, spoolbuddy_devices.calibration_factor, spoolbuddy_devices.nfc_reader_type, spoolbuddy_devices.nfc_connection, spoolbuddy_devices.display_brightness, spoolbuddy_devices.display_blank_timeout, spoolbuddy_devices.has_backlight, spoolbuddy_devices.last_calibrated_at, spoolbuddy_devices.last_seen, spoolbuddy_devices.pending_command, spoolbuddy_devices.pending_write_payload, spoolbuddy_devices.nfc_ok, spoolbuddy_devices.scale_ok, spoolbuddy_devices.uptime_s, spoolbuddy_devices.created_at, spoolbuddy_devices.updated_at 
+FROM spoolbuddy_devices 
+WHERE spoolbuddy_devices.last_seen IS NOT NULL]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-03-07 01:22:43,854 INFO [backend.app.api.routes.websocket] WebSocket client disconnected normally
+2026-03-07 01:22:44,262 INFO [backend.app.api.routes.websocket] WebSocket client connecting...
+2026-03-07 01:22:44,262 INFO [backend.app.api.routes.websocket] WebSocket client connected
+2026-03-07 01:22:44,263 INFO [backend.app.api.routes.websocket] Sent initial status for 1 printers
+2026-03-07 01:22:48,007 WARNING [backend.app.main] SpoolBuddy watchdog failed: (sqlite3.OperationalError) no such column: spoolbuddy_devices.nfc_reader_type
+[SQL: SELECT spoolbuddy_devices.id, spoolbuddy_devices.device_id, spoolbuddy_devices.hostname, spoolbuddy_devices.ip_address, spoolbuddy_devices.firmware_version, spoolbuddy_devices.has_nfc, spoolbuddy_devices.has_scale, spoolbuddy_devices.tare_offset, spoolbuddy_devices.calibration_factor, spoolbuddy_devices.nfc_reader_type, spoolbuddy_devices.nfc_connection, spoolbuddy_devices.display_brightness, spoolbuddy_devices.display_blank_timeout, spoolbuddy_devices.has_backlight, spoolbuddy_devices.last_calibrated_at, spoolbuddy_devices.last_seen, spoolbuddy_devices.pending_command, spoolbuddy_devices.pending_write_payload, spoolbuddy_devices.nfc_ok, spoolbuddy_devices.scale_ok, spoolbuddy_devices.uptime_s, spoolbuddy_devices.created_at, spoolbuddy_devices.updated_at 
+FROM spoolbuddy_devices 
+WHERE spoolbuddy_devices.last_seen IS NOT NULL]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-03-07 01:22:55,343 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-03-07 01:22:55,343 INFO [backend.app.api.routes.bug_report] Bug report: temporarily enabled debug logging
+2026-03-07 01:22:55,343 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-03-07 01:22:55,514 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: IDLE, gcode_file: enclosure-rev3-enclosure.3mf, subtask_name: Object_1_PETG_2h20m
+2026-03-07 01:22:55,514 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 103, 'insert_flag': True, 'power_on_flag': False}
+2026-03-07 01:22:55,514 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 255
+2026-03-07 01:22:55,514 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-03-07 01:22:55,514 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=1001 (bit8=1) -> extruder 0
+2026-03-07 01:22:55,514 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-03-07 01:22:55,514 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-03-07 01:22:55,514 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-07 01:22:55,514 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper raw value: 5.0
+2026-03-07 01:22:55,514 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-03-07 01:22:55,515 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-03-07 01:22:55,515 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-03-07 01:22:55,515 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: []
+2026-03-07 01:22:55,515 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] print_error: 83935248 (0x0500c010) -> short_code=0500_C010
+2026-03-07 01:22:55,515 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-03-07 01:22:55,515 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -34dBm
+2026-03-07 01:22:55,515 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-03-07 01:22:55,515 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: IDLE -> IDLE, file: enclosure-rev3-enclosure.3mf, subtask: Object_1_PETG_2h20m
+2026-03-07 01:23:03,000 INFO [backend.app.services.print_scheduler] Queue check: found 1 pending items: [(4, 1, 3, None)]
+2026-03-07 01:23:03,008 WARNING [backend.app.main] SpoolBuddy watchdog failed: (sqlite3.OperationalError) no such column: spoolbuddy_devices.nfc_reader_type
+[SQL: SELECT spoolbuddy_devices.id, spoolbuddy_devices.device_id, spoolbuddy_devices.hostname, spoolbuddy_devices.ip_address, spoolbuddy_devices.firmware_version, spoolbuddy_devices.has_nfc, spoolbuddy_devices.has_scale, spoolbuddy_devices.tare_offset, spoolbuddy_devices.calibration_factor, spoolbuddy_devices.nfc_reader_type, spoolbuddy_devices.nfc_connection, spoolbuddy_devices.display_brightness, spoolbuddy_devices.display_blank_timeout, spoolbuddy_devices.has_backlight, spoolbuddy_devices.last_calibrated_at, spoolbuddy_devices.last_seen, spoolbuddy_devices.pending_command, spoolbuddy_devices.pending_write_payload, spoolbuddy_devices.nfc_ok, spoolbuddy_devices.scale_ok, spoolbuddy_devices.uptime_s, spoolbuddy_devices.created_at, spoolbuddy_devices.updated_at 
+FROM spoolbuddy_devices 
+WHERE spoolbuddy_devices.last_seen IS NOT NULL]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-03-07 01:23:17,040 ERROR [sqlalchemy.pool.impl.AsyncAdaptedQueuePool] Exception terminating connection <AdaptedConnection <aiosqlite.core.Connection object at 0x766e984f2950>>
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/pool/base.py", line 373, in _close_connection
+    self._dialect.do_terminate(connection)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/dialects/sqlite/aiosqlite.py", line 479, in do_terminate
+    dbapi_connection.terminate()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/connectors/asyncio.py", line 402, in terminate
+    self.await_(asyncio.shield(self._terminate_graceful_close()))  # type: ignore[attr-defined] # noqa: E501
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 132, in await_only
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return,attr-defined] # noqa: E501
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 196, in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+asyncio.exceptions.CancelledError: Cancelled via cancel scope 766eb1485a90 by <Task pending name='Task-2101' coro=<RequestResponseCycle.run_asgi() running at /usr/local/lib/python3.13/site-packages/uvicorn/protocols/http/httptools_impl.py:416> cb=[set.discard()]>
+2026-03-07 01:23:18,010 WARNING [backend.app.main] SpoolBuddy watchdog failed: (sqlite3.OperationalError) no such column: spoolbuddy_devices.nfc_reader_type
+[SQL: SELECT spoolbuddy_devices.id, spoolbuddy_devices.device_id, spoolbuddy_devices.hostname, spoolbuddy_devices.ip_address, spoolbuddy_devices.firmware_version, spoolbuddy_devices.has_nfc, spoolbuddy_devices.has_scale, spoolbuddy_devices.tare_offset, spoolbuddy_devices.calibration_factor, spoolbuddy_devices.nfc_reader_type, spoolbuddy_devices.nfc_connection, spoolbuddy_devices.display_brightness, spoolbuddy_devices.display_blank_timeout, spoolbuddy_devices.has_backlight, spoolbuddy_devices.last_calibrated_at, spoolbuddy_devices.last_seen, spoolbuddy_devices.pending_command, spoolbuddy_devices.pending_write_payload, spoolbuddy_devices.nfc_ok, spoolbuddy_devices.scale_ok, spoolbuddy_devices.uptime_s, spoolbuddy_devices.created_at, spoolbuddy_devices.updated_at 
+FROM spoolbuddy_devices 
+WHERE spoolbuddy_devices.last_seen IS NOT NULL]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-03-07 01:23:18,056 ERROR [sqlalchemy.pool.impl.AsyncAdaptedQueuePool] Exception terminating connection <AdaptedConnection <aiosqlite.core.Connection object at 0x766e98341e50>>
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/pool/base.py", line 373, in _close_connection
+    self._dialect.do_terminate(connection)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/dialects/sqlite/aiosqlite.py", line 479, in do_terminate
+    dbapi_connection.terminate()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/connectors/asyncio.py", line 402, in terminate
+    self.await_(asyncio.shield(self._terminate_graceful_close()))  # type: ignore[attr-defined] # noqa: E501
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 132, in await_only
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return,attr-defined] # noqa: E501
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 196, in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+asyncio.exceptions.CancelledError: Cancelled via cancel scope 766eb13a3a10 by <Task pending name='Task-2118' coro=<RequestResponseCycle.run_asgi() running at /usr/local/lib/python3.13/site-packages/uvicorn/protocols/http/httptools_impl.py:416> cb=[set.discard()]>
+2026-03-07 01:23:19,415 ERROR [sqlalchemy.pool.impl.AsyncAdaptedQueuePool] The garbage collector is trying to clean up non-checked-in connection <AdaptedConnection <aiosqlite.core.Connection object at 0x766e984f2950>>, which will be terminated.  Please ensure that SQLAlchemy pooled connections are returned to the pool explicitly, either by calling ``close()`` or by using appropriate context managers to manage their lifecycle.
+2026-03-07 01:23:19,416 ERROR [sqlalchemy.pool.impl.AsyncAdaptedQueuePool] The garbage collector is trying to clean up non-checked-in connection <AdaptedConnection <aiosqlite.core.Connection object at 0x766e98341e50>>, which will be terminated.  Please ensure that SQLAlchemy pooled connections are returned to the pool explicitly, either by calling ``close()`` or by using appropriate context managers to manage their lifecycle.
+2026-03-07 01:23:19,556 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-07 01:23:19,852 DEBUG [backend.app.services.network_utils] ip command not found, using ioctl fallback
+2026-03-07 01:23:21,580 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-07 01:23:21,635 DEBUG [backend.app.api.routes.virtual_printers] Update VP 1: body={'enabled': False}, current state: mode=proxy, enabled=True, access_code_set=False, bind_ip=[IP], target=1
+2026-03-07 01:23:21,636 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: [PRINTER] (id=1)
+2026-03-07 01:23:21,637 INFO [backend.app.services.virtual_printer.tcp_proxy] Stopping slicer proxy
+2026-03-07 01:23:21,637 INFO [backend.app.services.virtual_printer.tcp_proxy] Stopping FTP proxy
+2026-03-07 01:23:21,637 INFO [backend.app.services.virtual_printer.tcp_proxy] Stopping MQTT proxy
+2026-03-07 01:23:21,637 INFO [backend.app.services.virtual_printer.tcp_proxy] Stopping Bind proxy
+2026-03-07 01:23:21,637 INFO [backend.app.services.virtual_printer.tcp_proxy] Stopping Bind-TLS proxy
+2026-03-07 01:23:21,637 INFO [backend.app.services.virtual_printer.tcp_proxy] Slicer proxy stopped
+2026-03-07 01:23:21,637 INFO [backend.app.services.virtual_printer.ssdp_server] Stopping SSDP server
+2026-03-07 01:23:21,637 INFO [backend.app.services.virtual_printer.manager] Removed VP instance: [PRINTER]
+2026-03-07 01:23:23,115 DEBUG [backend.app.api.routes.virtual_printers] Update VP 1: body={'enabled': True}, current state: mode=proxy, enabled=False, access_code_set=False, bind_ip=[IP], target=1
+2026-03-07 01:23:23,116 INFO [backend.app.api.routes.virtual_printers] Updated virtual printer: [PRINTER] (id=1)
+2026-03-07 01:23:23,117 INFO [backend.app.services.virtual_printer.manager] [VP [PRINTER]] Starting proxy mode to [IP]
+2026-03-07 01:23:23,118 INFO [backend.app.services.virtual_printer.certificate] Deleted printer certificate (CA preserved)
+2026-03-07 01:23:23,118 INFO [backend.app.services.virtual_printer.certificate] Generating certificates for virtual printer (serial: [SERIAL])...
+2026-03-07 01:23:23,142 INFO [backend.app.services.virtual_printer.certificate] Using existing CA certificate (expires in 7297 days)
+2026-03-07 01:23:23,163 INFO [backend.app.services.virtual_printer.certificate] Generating printer certificate with CN=[SERIAL], local IP: [IP]
+2026-03-07 01:23:23,163 INFO [backend.app.services.virtual_printer.certificate] Added additional SAN IP: [IP]
+2026-03-07 01:23:23,164 INFO [backend.app.services.virtual_printer.certificate] Generated certificate chain at /app/data/virtual_printer/certs/1
+2026-03-07 01:23:23,164 INFO [backend.app.services.virtual_printer.certificate]   CA: CN=Virtual Printer CA
+2026-03-07 01:23:23,164 INFO [backend.app.services.virtual_printer.certificate]   Printer: CN=[SERIAL]
+2026-03-07 01:23:23,164 INFO [backend.app.services.virtual_printer.manager] Started proxy VP: [PRINTER] → [IP]
+2026-03-07 01:23:23,164 INFO [backend.app.services.virtual_printer.ssdp_server] Starting virtual printer SSDP server: [PRINTER] (Proxy) ([SERIAL])
+2026-03-07 01:23:23,165 ERROR [backend.app.services.virtual_printer.ssdp_server] SSDP server error: [Errno 99] Cannot assign requested address
+2026-03-07 01:23:23,165 INFO [backend.app.services.virtual_printer.tcp_proxy] Starting slicer TLS proxy to [IP]
+2026-03-07 01:23:23,165 INFO [backend.app.services.virtual_printer.tcp_proxy] Slicer TLS proxy started for [IP]
+2026-03-07 01:23:23,165 INFO [backend.app.services.virtual_printer.tcp_proxy] Starting FTP TLS proxy: [IP]:990 → [IP]:990
+2026-03-07 01:23:23,166 INFO [backend.app.services.virtual_printer.tcp_proxy] Starting MQTT TLS proxy: [IP]:8883 → [IP]:8883
+2026-03-07 01:23:23,166 INFO [backend.app.services.virtual_printer.tcp_proxy] Starting Bind TCP proxy: [IP]:3000 → [IP]:3000
+2026-03-07 01:23:23,166 INFO [backend.app.services.virtual_printer.tcp_proxy] Starting Bind-TLS TLS proxy: [IP]:3002 → [IP]:3002
+2026-03-07 01:23:23,167 ERROR [backend.app.services.virtual_printer.tcp_proxy] FTP proxy error: could not bind on any address out of [('[IP]', 990)]
+2026-03-07 01:23:23,167 INFO [backend.app.services.virtual_printer.tcp_proxy] Stopping FTP proxy
+2026-03-07 01:23:23,167 ERROR [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy error: could not bind on any address out of [('[IP]', 8883)]
+2026-03-07 01:23:23,167 INFO [backend.app.services.virtual_printer.tcp_proxy] Stopping MQTT proxy
+2026-03-07 01:23:23,167 ERROR [backend.app.services.virtual_printer.tcp_proxy] Bind proxy error: could not bind on any address out of [('[IP]', 3000)]
+2026-03-07 01:23:23,167 INFO [backend.app.services.virtual_printer.tcp_proxy] Stopping Bind proxy
+2026-03-07 01:23:23,167 ERROR [backend.app.services.virtual_printer.tcp_proxy] Bind-TLS proxy error: could not bind on any address out of [('[IP]', 3002)]
+2026-03-07 01:23:23,167 INFO [backend.app.services.virtual_printer.tcp_proxy] Stopping Bind-TLS proxy

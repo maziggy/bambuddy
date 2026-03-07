@@ -712,4 +712,126 @@ describe('PrintModal', () => {
       });
     });
   });
+
+  describe('queue all plates', () => {
+    const multiPlateResponse = {
+      is_multi_plate: true,
+      plates: [
+        { index: 1, name: 'Plate 1', has_thumbnail: false, thumbnail_url: null, objects: ['Part A'], filaments: [{ type: 'PLA', color: '#FF0000' }], print_time_seconds: 1800, filament_used_grams: 50 },
+        { index: 2, name: 'Plate 2', has_thumbnail: false, thumbnail_url: null, objects: ['Part B'], filaments: [{ type: 'PLA', color: '#00FF00' }], print_time_seconds: 2400, filament_used_grams: 60 },
+        { index: 3, name: 'Plate 3', has_thumbnail: false, thumbnail_url: null, objects: ['Part C'], filaments: [{ type: 'PETG', color: '#0000FF' }], print_time_seconds: 3000, filament_used_grams: 70 },
+      ],
+    };
+
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/archives/:id/plates', () => {
+          return HttpResponse.json(multiPlateResponse);
+        }),
+      );
+    });
+
+    it('shows "Queue All" button only in add-to-queue mode', async () => {
+      render(
+        <PrintModal
+          mode="add-to-queue"
+          archiveId={1}
+          archiveName="MultiPlate.3mf"
+          onClose={mockOnClose}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Queue All 3 Plates')).toBeInTheDocument();
+      });
+    });
+
+    it('does not show "Queue All" button in reprint mode', async () => {
+      render(
+        <PrintModal
+          mode="reprint"
+          archiveId={1}
+          archiveName="MultiPlate.3mf"
+          initialSelectedPrinterIds={[1]}
+          onClose={mockOnClose}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Plate 1')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Queue All 3 Plates')).not.toBeInTheDocument();
+    });
+
+    it('highlights all plates when "Queue All" is clicked', async () => {
+      const user = userEvent.setup();
+      render(
+        <PrintModal
+          mode="add-to-queue"
+          archiveId={1}
+          archiveName="MultiPlate.3mf"
+          onClose={mockOnClose}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Queue All 3 Plates')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Queue All 3 Plates'));
+
+      // All plates should show check marks
+      await waitFor(() => {
+        const checks = document.querySelectorAll('.text-bambu-green.flex-shrink-0');
+        expect(checks.length).toBe(3);
+      });
+    });
+
+    it('creates one queue item per plate when submitting with queue-all', async () => {
+      const queueRequests: unknown[] = [];
+      server.use(
+        http.post('/api/v1/queue/', async ({ request }) => {
+          const body = await request.json();
+          queueRequests.push(body);
+          return HttpResponse.json({ id: queueRequests.length, status: 'pending' });
+        }),
+      );
+
+      const user = userEvent.setup();
+      render(
+        <PrintModal
+          mode="add-to-queue"
+          archiveId={1}
+          archiveName="MultiPlate.3mf"
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+
+      // Wait for plates and select a printer
+      await waitFor(() => {
+        expect(screen.getByText('Queue All 3 Plates')).toBeInTheDocument();
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Select printer
+      await user.click(screen.getByText('X1 Carbon'));
+
+      // Click queue all
+      await user.click(screen.getByText('Queue All 3 Plates'));
+
+      // Find the submit button (type="submit") — distinct from the toggle button (type="button")
+      const submitButton = document.querySelector('button[type="submit"]') as HTMLElement;
+      await user.click(submitButton);
+
+      await waitFor(() => {
+        expect(queueRequests.length).toBe(3);
+      });
+
+      // Verify each request has the correct plate_id
+      expect((queueRequests[0] as { plate_id: number }).plate_id).toBe(1);
+      expect((queueRequests[1] as { plate_id: number }).plate_id).toBe(2);
+      expect((queueRequests[2] as { plate_id: number }).plate_id).toBe(3);
+    });
+  });
 });

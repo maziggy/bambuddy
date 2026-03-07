@@ -60,16 +60,21 @@ export function PrinterQueueWidget({ printerId, printerModel, printerState, plat
     return true;
   });
 
-  const nextItem = compatibleQueue?.[0];
+  // Split into auto-dispatchable vs staged (manual_start) items
+  const autoDispatchQueue = compatibleQueue?.filter(item => !item.manual_start) ?? [];
   const totalPending = compatibleQueue?.length || 0;
 
   if (totalPending === 0) {
     return null;
   }
 
-  const needsClearPlate = (printerState === 'FINISH' || printerState === 'FAILED') && !plateCleared;
+  const nextAutoItem = autoDispatchQueue[0];
+  const nextItem = compatibleQueue?.[0];
+  // Only prompt "Clear Plate & Start Next" when there are auto-dispatchable items
+  const needsClearPlate = (printerState === 'FINISH' || printerState === 'FAILED') && !plateCleared && autoDispatchQueue.length > 0;
 
   if (needsClearPlate) {
+    const displayItem = nextAutoItem || nextItem;
     return (
       <div className="mb-3 p-3 bg-bambu-dark rounded-lg border border-yellow-400/30">
         <div className="flex items-center gap-3 mb-2">
@@ -77,7 +82,7 @@ export function PrinterQueueWidget({ printerId, printerModel, printerState, plat
           <div className="min-w-0 flex-1">
             <p className="text-xs text-bambu-gray">{t('queue.nextInQueue')}</p>
             <p className="text-sm text-white truncate">
-              {nextItem?.archive_name || nextItem?.library_file_name || `File #${nextItem?.archive_id || nextItem?.library_file_id}`}
+              {displayItem?.archive_name || displayItem?.library_file_name || `File #${displayItem?.archive_id || displayItem?.library_file_id}`}
             </p>
           </div>
           {totalPending > 1 && (

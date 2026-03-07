@@ -74,6 +74,9 @@ export function PrintModal({
     return null;
   });
 
+  // Queue all plates at once (only for add-to-queue mode with multi-plate files)
+  const [queueAllPlates, setQueueAllPlates] = useState(false);
+
   const [printOptions, setPrintOptions] = useState<PrintOptions>(() => {
     if (mode === 'edit-queue-item' && queueItem) {
       return {
@@ -412,8 +415,11 @@ export function PrintModal({
     }
 
     setIsSubmitting(true);
-    // For model-based assignment, we just make one API call
-    const totalCount = assignmentMode === 'model' ? 1 : selectedPrinters.length;
+    // Calculate total API calls: plates × printers (or 1 for model-based)
+    const platesToQueue = queueAllPlates ? plates : [null];
+    const totalCount = assignmentMode === 'model'
+      ? platesToQueue.length
+      : selectedPrinters.length * platesToQueue.length;
     setSubmitProgress({ current: 0, total: totalCount });
 
     const results: { success: number; failed: number; errors: string[] } = {
@@ -444,7 +450,7 @@ export function PrintModal({
       : undefined;
 
     // Common queue data for add-to-queue and edit modes
-    const getQueueData = (printerId: number | null): PrintQueueItemCreate => ({
+    const getQueueData = (printerId: number | null, plateOverride?: number | null): PrintQueueItemCreate => ({
       printer_id: assignmentMode === 'printer' ? printerId : null,
       target_model: assignmentMode === 'model' ? targetModel : null,
       target_location: assignmentMode === 'model' ? targetLocation : null,
@@ -456,86 +462,40 @@ export function PrintModal({
       auto_off_after: scheduleOptions.autoOffAfter,
       manual_start: scheduleOptions.scheduleType === 'manual',
       ams_mapping: printerId ? getMappingForPrinter(printerId) : undefined,
-      plate_id: selectedPlate,
+      plate_id: plateOverride !== undefined ? plateOverride : selectedPlate,
       scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
         ? new Date(scheduleOptions.scheduledTime).toISOString()
         : undefined,
       ...printOptions,
     });
 
-    // Model-based assignment: single API call
+    // Model-based assignment
     if (assignmentMode === 'model') {
-      setSubmitProgress({ current: 1, total: 1 });
-      try {
-        if (mode === 'reprint') {
-          // Model-based reprint not supported (need specific printer for immediate print)
-          showToast('Model-based assignment only works with queue mode', 'error');
-          setIsSubmitting(false);
-          return;
-        } else if (mode === 'edit-queue-item') {
-          // Edit mode - update with target_model
-          const updateData: PrintQueueItemUpdate = {
-            printer_id: null,
-            target_model: targetModel,
-            target_location: targetLocation,
-            filament_overrides: filamentOverridesArray || null,
-            require_previous_success: scheduleOptions.requirePreviousSuccess,
-            auto_off_after: scheduleOptions.autoOffAfter,
-            manual_start: scheduleOptions.scheduleType === 'manual',
-            ams_mapping: undefined,
-            plate_id: selectedPlate,
-            scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
-              ? new Date(scheduleOptions.scheduledTime).toISOString()
-              : null,
-            ...printOptions,
-          };
-          await updateQueueMutation.mutateAsync(updateData);
-        } else {
-          // Add-to-queue mode with model-based assignment
-          await addToQueueMutation.mutateAsync(getQueueData(null));
-        }
-        results.success++;
-      } catch (error) {
-        results.failed++;
-        results.errors.push((error as Error).message);
+      if (mode === 'reprint') {
+        showToast('Model-based assignment only works with queue mode', 'error');
+        setIsSubmitting(false);
+        return;
       }
-    } else {
-      // Printer-based assignment: loop through selected printers
-      for (let i = 0; i < selectedPrinters.length; i++) {
-        const printerId = selectedPrinters[i];
-        setSubmitProgress({ current: i + 1, total: selectedPrinters.length });
+
+      let progressCounter = 0;
+      for (const plate of platesToQueue) {
+        progressCounter++;
+        setSubmitProgress({ current: progressCounter, total: totalCount });
+        const plateId = plate ? plate.index : selectedPlate;
 
         try {
-          if (mode === 'reprint') {
-            // Reprint mode - start print immediately
-            const printerMapping = getMappingForPrinter(printerId);
-            if (isLibraryFile) {
-              await api.printLibraryFile(libraryFileId!, printerId, {
-                plate_id: selectedPlate ?? undefined,
-                plate_name: selectedPlateName,
-                ams_mapping: printerMapping,
-                ...printOptions,
-              });
-            } else {
-              await api.reprintArchive(archiveId!, printerId, {
-                plate_id: selectedPlate ?? undefined,
-                plate_name: selectedPlateName,
-                ams_mapping: printerMapping,
-                ...printOptions,
-              });
-            }
-          } else if (mode === 'edit-queue-item' && i === 0) {
-            // Edit mode - update the original queue item for the first printer
-            const printerMapping = getMappingForPrinter(printerId);
+          if (mode === 'edit-queue-item' && !plate) {
+            // Edit mode - update with target_model (only for single plate)
             const updateData: PrintQueueItemUpdate = {
-              printer_id: printerId,
-              target_model: null,
-              target_location: null,
+              printer_id: null,
+              target_model: targetModel,
+              target_location: targetLocation,
+              filament_overrides: filamentOverridesArray || null,
               require_previous_success: scheduleOptions.requirePreviousSuccess,
               auto_off_after: scheduleOptions.autoOffAfter,
               manual_start: scheduleOptions.scheduleType === 'manual',
-              ams_mapping: printerMapping,
-              plate_id: selectedPlate,
+              ams_mapping: undefined,
+              plate_id: plateId,
               scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
                 ? new Date(scheduleOptions.scheduledTime).toISOString()
                 : null,
@@ -543,14 +503,76 @@ export function PrintModal({
             };
             await updateQueueMutation.mutateAsync(updateData);
           } else {
-            // Add-to-queue mode OR edit mode with additional printers
-            await addToQueueMutation.mutateAsync(getQueueData(printerId));
+            // Add-to-queue mode with model-based assignment
+            await addToQueueMutation.mutateAsync(getQueueData(null, plateId));
           }
           results.success++;
         } catch (error) {
           results.failed++;
-          const printerName = printers?.find(p => p.id === printerId)?.name || `Printer ${printerId}`;
-          results.errors.push(`${printerName}: ${(error as Error).message}`);
+          const plateName = plate ? (plate.name || `Plate ${plate.index}`) : '';
+          results.errors.push(plateName ? `${plateName}: ${(error as Error).message}` : (error as Error).message);
+        }
+      }
+    } else {
+      // Printer-based assignment: loop through plates × printers
+      let progressCounter = 0;
+      for (const plate of platesToQueue) {
+        const plateId = plate ? plate.index : selectedPlate;
+
+        for (let i = 0; i < selectedPrinters.length; i++) {
+          const printerId = selectedPrinters[i];
+          progressCounter++;
+          setSubmitProgress({ current: progressCounter, total: totalCount });
+
+          try {
+            if (mode === 'reprint') {
+              // Reprint mode - start print immediately (single plate only, queueAllPlates not available)
+              const printerMapping = getMappingForPrinter(printerId);
+              if (isLibraryFile) {
+                await api.printLibraryFile(libraryFileId!, printerId, {
+                  plate_id: selectedPlate ?? undefined,
+                  plate_name: selectedPlateName,
+                  ams_mapping: printerMapping,
+                  ...printOptions,
+                });
+              } else {
+                await api.reprintArchive(archiveId!, printerId, {
+                  plate_id: selectedPlate ?? undefined,
+                  plate_name: selectedPlateName,
+                  ams_mapping: printerMapping,
+                  ...printOptions,
+                });
+              }
+            } else if (mode === 'edit-queue-item' && progressCounter === 1) {
+              // Edit mode - update the original queue item for the first entry
+              const printerMapping = getMappingForPrinter(printerId);
+              const updateData: PrintQueueItemUpdate = {
+                printer_id: printerId,
+                target_model: null,
+                target_location: null,
+                require_previous_success: scheduleOptions.requirePreviousSuccess,
+                auto_off_after: scheduleOptions.autoOffAfter,
+                manual_start: scheduleOptions.scheduleType === 'manual',
+                ams_mapping: printerMapping,
+                plate_id: plateId,
+                scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
+                  ? new Date(scheduleOptions.scheduledTime).toISOString()
+                  : null,
+                ...printOptions,
+              };
+              await updateQueueMutation.mutateAsync(updateData);
+            } else {
+              // Add-to-queue mode OR edit mode with additional entries
+              await addToQueueMutation.mutateAsync(getQueueData(printerId, plateId));
+            }
+            results.success++;
+          } catch (error) {
+            results.failed++;
+            const printerName = printers?.find(p => p.id === printerId)?.name || `Printer ${printerId}`;
+            const plateName = plate ? (plate.name || `Plate ${plate.index}`) : '';
+            const label = plateName ? `${printerName} (${plateName})` : printerName;
+            results.errors.push(`${label}: ${(error as Error).message}`);
+          }
         }
       }
     }
@@ -560,16 +582,12 @@ export function PrintModal({
     // Show result toast (skip for reprint mode — the dispatch toast handles it)
     if (results.failed === 0) {
       if (mode !== 'reprint') {
-        if (assignmentMode === 'model') {
-          showToast(mode === 'edit-queue-item' ? 'Queue item updated' : `Queued for any ${targetModel}`);
+        if (mode === 'edit-queue-item') {
+          showToast('Queue item updated');
+        } else if (results.success === 1) {
+          showToast(assignmentMode === 'model' ? `Queued for any ${targetModel}` : t('queue.printQueued'));
         } else {
-          if (mode === 'edit-queue-item') {
-            showToast('Queue item updated');
-          } else if (results.success === 1) {
-            showToast('Print queued for printer');
-          } else {
-            showToast(`Print queued for ${results.success} printers`);
-          }
+          showToast(t('queue.itemsQueued', { count: results.success }));
         }
       }
       queryClient.invalidateQueries({ queryKey: ['queue'] });
@@ -595,11 +613,11 @@ export function PrintModal({
     // Model-based assignment only works in queue modes (not immediate reprint)
     if (assignmentMode === 'model' && mode === 'reprint') return false;
 
-    // For multi-plate files, need a selected plate
-    if (isMultiPlate && !selectedPlate) return false;
+    // For multi-plate files, need a selected plate (or queue-all)
+    if (isMultiPlate && !selectedPlate && !queueAllPlates) return false;
 
     return true;
-  }, [selectedPrinters.length, assignmentMode, targetModel, mode, isMultiPlate, selectedPlate, isPending]);
+  }, [selectedPrinters.length, assignmentMode, targetModel, mode, isMultiPlate, selectedPlate, queueAllPlates, isPending]);
 
   // Modal title and action button text based on mode
   const getModalConfig = () => {
@@ -617,10 +635,16 @@ export function PrintModal({
       };
     }
     if (mode === 'add-to-queue') {
+      let submitText = t('queue.addToQueue');
+      if (queueAllPlates && plates.length > 1) {
+        submitText = t('queue.queueAllPlates', { count: plates.length });
+      } else if (printerCount > 1) {
+        submitText = t('queue.queueToPrinters', { count: printerCount });
+      }
       return {
         title: t('queue.schedulePrint'),
         icon: Calendar,
-        submitText: printerCount > 1 ? t('queue.queueToPrinters', { count: printerCount }) : t('queue.addToQueue'),
+        submitText,
         submitIcon: Calendar,
         loadingText: submitProgress.total > 1
           ? t('queue.addingProgress', { current: submitProgress.current, total: submitProgress.total })
@@ -647,7 +671,7 @@ export function PrintModal({
   // - Single printer selected
   // - For archives: plate is selected (for multi-plate) or not required (single-plate)
   // - For library files: always show (no plate selection)
-  const showFilamentMapping = effectivePrinterId && (
+  const showFilamentMapping = effectivePrinterId && !queueAllPlates && (
     isLibraryFile || (isMultiPlate ? selectedPlate !== null : true)
   );
 
@@ -700,6 +724,8 @@ export function PrintModal({
               isMultiPlate={isMultiPlate}
               selectedPlate={selectedPlate}
               onSelect={setSelectedPlate}
+              queueAll={queueAllPlates}
+              onQueueAllChange={mode === 'add-to-queue' ? setQueueAllPlates : undefined}
             />
 
             {/* Printer selection with per-printer mapping — hidden when printer is pre-selected via props */}

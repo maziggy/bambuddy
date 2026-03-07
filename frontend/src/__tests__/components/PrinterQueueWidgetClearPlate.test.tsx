@@ -528,4 +528,41 @@ describe('PrinterQueueWidget - Clear Plate', () => {
       });
     });
   });
+
+  describe('staged (manual_start) items', () => {
+    const stagedItems = [
+      { id: 10, printer_id: 1, archive_id: 1, position: 1, status: 'pending', archive_name: 'Staged Print 1', manual_start: true, scheduled_time: null },
+      { id: 11, printer_id: 1, archive_id: 2, position: 2, status: 'pending', archive_name: 'Staged Print 2', manual_start: true, scheduled_time: null },
+    ];
+
+    it('does not show clear plate button when all items are staged', async () => {
+      server.use(
+        http.get('/api/v1/queue/', () => HttpResponse.json(stagedItems)),
+      );
+
+      render(<PrinterQueueWidget printerId={1} printerState="FINISH" />);
+
+      // Should show the passive link (not the clear plate button)
+      await waitFor(() => {
+        expect(screen.getByText('Staged Print 1')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Clear Plate & Start Next')).not.toBeInTheDocument();
+    });
+
+    it('shows clear plate button when mix of staged and auto-dispatch items', async () => {
+      const mixedItems = [
+        { id: 10, printer_id: 1, archive_id: 1, position: 1, status: 'pending', archive_name: 'Staged Print', manual_start: true, scheduled_time: null },
+        { id: 11, printer_id: 1, archive_id: 2, position: 2, status: 'pending', archive_name: 'Auto Print', manual_start: false, scheduled_time: null },
+      ];
+      server.use(
+        http.get('/api/v1/queue/', () => HttpResponse.json(mixedItems)),
+      );
+
+      render(<PrinterQueueWidget printerId={1} printerState="FINISH" />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Clear Plate & Start Next')).toBeInTheDocument();
+      });
+    });
+  });
 });

@@ -26,6 +26,7 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   TRY: '₺',
   RUB: '₽',
   HUF: 'Ft',
+  ILS: '₪',
 };
 
 export function getCurrencySymbol(currencyCode: string): string {

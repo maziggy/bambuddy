@@ -2520,6 +2520,7 @@ export default {
     unlinkSpool: 'Délier bobine',
     selectSpool: 'Choisir bobine',
     noUnlinkedSpools: 'Pas de bobine libre',
+    noTrayUuid: 'Aucun UUID de plateau - impossible de lier',
     linkSuccess: 'Lien réussi',
     linkFailed: 'Échec lien',
     spoolId: 'ID Bobine',

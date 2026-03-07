@@ -1,0 +1,200 @@
+2026-03-06 21:30:20,982 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:30:21,064 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/BAMBU - LEBRON signed lay - Large.3mf: 550 
+2026-03-06 21:30:21,093 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/BAMBU - LEBRON signed lay - Large.3mf attempt 4/4 returned failure
+2026-03-06 21:30:21,094 ERROR [backend.app.services.bambu_ftp] Download 3MF from /data/BAMBU - LEBRON signed lay - Large.3mf failed after 4 attempts
+2026-03-06 21:30:21,960 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:30:22,100 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/BAMBU - LEBRON signed lay - Large.3mf: 550 
+2026-03-06 21:30:22,149 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/BAMBU - LEBRON signed lay - Large.3mf will retry in 2.0s...
+2026-03-06 21:30:25,168 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:30:25,288 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/BAMBU - LEBRON signed lay - Large.3mf: 550 
+2026-03-06 21:30:25,313 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/BAMBU - LEBRON signed lay - Large.3mf attempt 2/4 returned failure
+2026-03-06 21:30:25,313 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/BAMBU - LEBRON signed lay - Large.3mf will retry in 2.0s...
+2026-03-06 21:30:28,169 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:30:28,241 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/BAMBU - LEBRON signed lay - Large.3mf: 550 
+2026-03-06 21:30:28,258 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/BAMBU - LEBRON signed lay - Large.3mf attempt 3/4 returned failure
+2026-03-06 21:30:28,258 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/BAMBU - LEBRON signed lay - Large.3mf will retry in 2.0s...
+2026-03-06 21:30:31,180 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:30:31,394 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/BAMBU - LEBRON signed lay - Large.3mf: 550 
+2026-03-06 21:30:31,448 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/BAMBU - LEBRON signed lay - Large.3mf attempt 4/4 returned failure
+2026-03-06 21:30:31,449 ERROR [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/BAMBU - LEBRON signed lay - Large.3mf failed after 4 attempts
+2026-03-06 21:30:32,421 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:30:32,587 INFO [backend.app.services.bambu_ftp] FTP download failed for /BAMBU - LEBRON signed lay - Large.3mf: 550 
+2026-03-06 21:30:32,656 INFO [backend.app.services.bambu_ftp] Download 3MF from /BAMBU - LEBRON signed lay - Large.3mf will retry in 2.0s...
+2026-03-06 21:30:35,515 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:30:35,577 INFO [backend.app.services.bambu_ftp] FTP download failed for /BAMBU - LEBRON signed lay - Large.3mf: 550 
+2026-03-06 21:30:35,615 INFO [backend.app.services.bambu_ftp] Download 3MF from /BAMBU - LEBRON signed lay - Large.3mf attempt 2/4 returned failure
+2026-03-06 21:30:35,615 INFO [backend.app.services.bambu_ftp] Download 3MF from /BAMBU - LEBRON signed lay - Large.3mf will retry in 2.0s...
+2026-03-06 21:30:38,430 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:30:38,553 INFO [backend.app.services.bambu_ftp] FTP download failed for /BAMBU - LEBRON signed lay - Large.3mf: 550 
+2026-03-06 21:30:38,673 INFO [backend.app.services.bambu_ftp] Download 3MF from /BAMBU - LEBRON signed lay - Large.3mf attempt 3/4 returned failure
+2026-03-06 21:30:38,674 INFO [backend.app.services.bambu_ftp] Download 3MF from /BAMBU - LEBRON signed lay - Large.3mf will retry in 2.0s...
+2026-03-06 21:30:41,581 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:30:41,733 INFO [backend.app.services.bambu_ftp] FTP download failed for /BAMBU - LEBRON signed lay - Large.3mf: 550 
+2026-03-06 21:30:41,778 INFO [backend.app.services.bambu_ftp] Download 3MF from /BAMBU - LEBRON signed lay - Large.3mf attempt 4/4 returned failure
+2026-03-06 21:30:41,778 ERROR [backend.app.services.bambu_ftp] Download 3MF from /BAMBU - LEBRON signed lay - Large.3mf failed after 4 attempts
+2026-03-06 21:30:42,750 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:30:42,854 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf: 550 
+2026-03-06 21:30:42,893 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf will retry in 2.0s...
+2026-03-06 21:30:45,779 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:30:45,909 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf: 550 
+2026-03-06 21:30:45,943 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf attempt 2/4 returned failure
+2026-03-06 21:30:45,943 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf will retry in 2.0s...
+2026-03-06 21:30:48,802 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:30:48,901 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf: 550 
+2026-03-06 21:30:48,925 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf attempt 3/4 returned failure
+2026-03-06 21:30:48,925 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf will retry in 2.0s...
+2026-03-06 21:30:51,715 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:30:51,831 INFO [backend.app.services.bambu_ftp] FTP download failed for /cache/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf: 550 
+2026-03-06 21:30:51,855 INFO [backend.app.services.bambu_ftp] Download 3MF from /cache/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf attempt 4/4 returned failure
+2026-03-06 21:30:51,856 ERROR [backend.app.services.bambu_ftp] Download 3MF from /cache/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf failed after 4 attempts
+2026-03-06 21:30:52,744 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:30:52,813 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf: 550 
+2026-03-06 21:30:52,837 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf will retry in 2.0s...
+2026-03-06 21:30:55,812 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:30:56,025 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf: 550 
+2026-03-06 21:30:56,090 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf attempt 2/4 returned failure
+2026-03-06 21:30:56,091 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf will retry in 2.0s...
+2026-03-06 21:30:58,543 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-03-06 21:30:58,543 INFO [backend.app.api.routes.bug_report] Bug report: temporarily enabled debug logging
+2026-03-06 21:30:58,544 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-03-06 21:30:58,814 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-03-06 21:30:58,954 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-03-06 21:30:59,014 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-03-06 21:30:59,015 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:30:59,077 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf: 550 
+2026-03-06 21:30:59,101 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf attempt 3/4 returned failure
+2026-03-06 21:30:59,101 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf will retry in 2.0s...
+2026-03-06 21:31:00,590 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: added 30s, total=667575s (185.44h)
+2026-03-06 21:31:00,593 DEBUG [backend.app.main] Updated runtime for 1 printer(s)
+2026-03-06 21:31:01,103 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30.0s, model=P1S, prot_c=False)
+2026-03-06 21:31:01,825 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-03-06 21:31:02,041 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: BAMBU - LEBRON signed lay - Large.3mf, subtask_name: BAMBU - LEBRON signed lay - Large
+2026-03-06 21:31:02,041 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '3', 'tray_exist_bits': 'ff', 'tray_is_bbl_bits': 'ff', 'tray_tar': '5', 'tray_now': '5', 'tray_pre': '5', 'tray_read_done_bits': 'ff', 'tray_reading_bits': '0', 'version': 129, 'insert_flag': True, 'power_on_flag': True}
+2026-03-06 21:31:02,042 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 5
+2026-03-06 21:31:02,042 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-03-06 21:31:02,042 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=1001 (bit8=1) -> extruder 0
+2026-03-06 21:31:02,043 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 1 info=2003 (bit8=1) -> extruder 0
+2026-03-06 21:31:02,043 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0, '1': 0}
+2026-03-06 21:31:02,043 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-03-06 21:31:02,043 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-06 21:31:02,043 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper raw value: 5.0
+2026-03-06 21:31:02,043 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-03-06 21:31:02,043 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-03-06 21:31:02,043 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-03-06 21:31:02,043 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: []
+2026-03-06 21:31:02,043 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-03-06 21:31:02,043 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -66dBm
+2026-03-06 21:31:02,043 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-03-06 21:31:02,044 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: BAMBU - LEBRON signed lay - Large.3mf, subtask: BAMBU - LEBRON signed lay - Large
+2026-03-06 21:31:02,058 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-03-06 21:31:02,100 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-03-06 21:31:02,100 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:31:02,202 INFO [backend.app.services.bambu_ftp] FTP download failed for /model/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf: 550 
+2026-03-06 21:31:02,226 INFO [backend.app.services.bambu_ftp] Download 3MF from /model/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf attempt 4/4 returned failure
+2026-03-06 21:31:02,226 ERROR [backend.app.services.bambu_ftp] Download 3MF from /model/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf failed after 4 attempts
+2026-03-06 21:31:02,226 DEBUG [backend.app.main] Trying FTP download: /data/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf
+2026-03-06 21:31:02,226 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30.0s, model=P1S, prot_c=False)
+2026-03-06 21:31:02,944 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-03-06 21:31:02,983 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-03-06 21:31:03,044 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-03-06 21:31:03,044 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:31:03,159 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf: 550 
+2026-03-06 21:31:03,171 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf will retry in 2.0s...
+2026-03-06 21:31:09,354 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30.0s, model=P1S, prot_c=False)
+2026-03-06 21:31:10,131 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-03-06 21:31:10,173 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-03-06 21:31:10,219 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-03-06 21:31:10,219 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:31:10,293 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf: 550 
+2026-03-06 21:31:10,321 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf attempt 2/4 returned failure
+2026-03-06 21:31:10,321 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf will retry in 2.0s...
+2026-03-06 21:31:12,322 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30.0s, model=P1S, prot_c=False)
+2026-03-06 21:31:13,094 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-03-06 21:31:13,153 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-03-06 21:31:13,197 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-03-06 21:31:13,197 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:31:13,270 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf: 550 
+2026-03-06 21:31:13,295 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf attempt 3/4 returned failure
+2026-03-06 21:31:13,295 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf will retry in 2.0s...
+2026-03-06 21:31:13,403 INFO [backend.app.services.bambu_ftp] Successfully downloaded /cache/BAMBU - LEBRON signed lay - Large.3mf to /app/data/archive/temp/cover_1_BAMBU - LEBRON signed lay - Large.gcode.3mf (7188762 bytes)
+2026-03-06 21:31:13,422 INFO [backend.app.api.routes.printers] Downloaded file size: 7188762 bytes
+2026-03-06 21:31:14,382 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-06 21:31:14,382 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] mc_print_sub_stage changed: 1 -> 3
+2026-03-06 21:31:15,297 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30.0s, model=P1S, prot_c=False)
+2026-03-06 21:31:16,121 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-03-06 21:31:16,152 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-03-06 21:31:16,199 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-03-06 21:31:16,199 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:31:16,284 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf: 550 
+2026-03-06 21:31:16,319 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf attempt 4/4 returned failure
+2026-03-06 21:31:16,320 ERROR [backend.app.services.bambu_ftp] Download 3MF from /data/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf failed after 4 attempts
+2026-03-06 21:31:16,320 DEBUG [backend.app.main] Trying FTP download: /data/Metadata/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf
+2026-03-06 21:31:16,320 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30.0s, model=P1S, prot_c=False)
+2026-03-06 21:31:17,131 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-03-06 21:31:17,151 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-03-06 21:31:17,186 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-03-06 21:31:17,186 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:31:17,249 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf: 550 
+2026-03-06 21:31:17,259 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf will retry in 2.0s...
+2026-03-06 21:31:18,068 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-06 21:31:18,069 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] mc_print_sub_stage changed: 3 -> 0
+2026-03-06 21:31:18,069 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -65dBm
+2026-03-06 21:31:19,260 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30.0s, model=P1S, prot_c=False)
+2026-03-06 21:31:20,019 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-03-06 21:31:20,053 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-03-06 21:31:20,078 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-03-06 21:31:20,079 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:31:20,130 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf: 550 
+2026-03-06 21:31:20,170 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf attempt 2/4 returned failure
+2026-03-06 21:31:20,170 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf will retry in 2.0s...
+2026-03-06 21:31:20,810 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-06 21:31:20,811 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] mc_print_sub_stage changed: 0 -> 3
+2026-03-06 21:31:20,811 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -66dBm
+2026-03-06 21:31:22,172 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30.0s, model=P1S, prot_c=False)
+2026-03-06 21:31:22,929 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-03-06 21:31:22,982 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-03-06 21:31:23,028 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-03-06 21:31:23,029 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:31:23,124 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf: 550 
+2026-03-06 21:31:23,169 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf attempt 3/4 returned failure
+2026-03-06 21:31:23,169 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf will retry in 2.0s...
+2026-03-06 21:31:23,653 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-06 21:31:23,654 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -65dBm
+2026-03-06 21:31:25,170 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30.0s, model=P1S, prot_c=False)
+2026-03-06 21:31:25,858 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-03-06 21:31:25,881 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-03-06 21:31:25,925 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-03-06 21:31:25,925 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:31:25,982 INFO [backend.app.services.bambu_ftp] FTP download failed for /data/Metadata/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf: 550 
+2026-03-06 21:31:26,005 INFO [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf attempt 4/4 returned failure
+2026-03-06 21:31:26,005 ERROR [backend.app.services.bambu_ftp] Download 3MF from /data/Metadata/BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf failed after 4 attempts
+2026-03-06 21:31:26,005 DEBUG [backend.app.main] Trying FTP download: /BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf
+2026-03-06 21:31:26,006 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30.0s, model=P1S, prot_c=False)
+2026-03-06 21:31:26,728 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-03-06 21:31:26,759 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-03-06 21:31:26,781 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-03-06 21:31:26,781 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:31:26,889 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-06 21:31:26,889 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] mc_print_sub_stage changed: 3 -> 1
+2026-03-06 21:31:26,932 INFO [backend.app.services.bambu_ftp] FTP download failed for /BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf: 550 
+2026-03-06 21:31:26,956 INFO [backend.app.services.bambu_ftp] Download 3MF from /BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf will retry in 2.0s...
+2026-03-06 21:31:28,858 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-06 21:31:28,858 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] mc_print_sub_stage changed: 1 -> 2
+2026-03-06 21:31:28,859 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -66dBm
+2026-03-06 21:31:28,957 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30.0s, model=P1S, prot_c=False)
+2026-03-06 21:31:29,664 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-03-06 21:31:29,678 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-03-06 21:31:29,709 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-03-06 21:31:29,709 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:31:29,744 INFO [backend.app.services.bambu_ftp] FTP download failed for /BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf: 550 
+2026-03-06 21:31:29,762 INFO [backend.app.services.bambu_ftp] Download 3MF from /BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf attempt 2/4 returned failure
+2026-03-06 21:31:29,762 INFO [backend.app.services.bambu_ftp] Download 3MF from /BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf will retry in 2.0s...
+2026-03-06 21:31:31,396 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-06 21:31:31,764 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30.0s, model=P1S, prot_c=False)
+2026-03-06 21:31:32,483 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-03-06 21:31:32,522 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-03-06 21:31:32,555 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-03-06 21:31:32,556 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-03-06 21:31:32,598 INFO [backend.app.services.bambu_ftp] FTP download failed for /BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf: 550 
+2026-03-06 21:31:32,625 INFO [backend.app.services.bambu_ftp] Download 3MF from /BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf attempt 3/4 returned failure
+2026-03-06 21:31:32,625 INFO [backend.app.services.bambu_ftp] Download 3MF from /BAMBU_-_LEBRON_signed_lay_-_Large.gcode.3mf will retry in 2.0s...

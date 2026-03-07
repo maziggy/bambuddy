@@ -2715,6 +2715,7 @@ export default {
     unlinkSpool: 'Unlink Spool',
     selectSpool: 'Select Spool',
     noUnlinkedSpools: 'No unlinked spools available',
+    noTrayUuid: 'No tray UUID - cannot link',
     linkSuccess: 'Spool linked to Spoolman successfully',
     linkFailed: 'Failed to link spool',
     spoolId: 'Spool ID',

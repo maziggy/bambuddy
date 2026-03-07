@@ -14,6 +14,10 @@ describe('getCurrencySymbol', () => {
     expect(getCurrencySymbol('GBP')).toBe('£');
   });
 
+  it('returns ₪ for ILS', () => {
+    expect(getCurrencySymbol('ILS')).toBe('₪');
+  });
+
   it('returns ₹ for INR', () => {
     expect(getCurrencySymbol('INR')).toBe('₹');
   });
@@ -37,7 +41,7 @@ describe('SUPPORTED_CURRENCIES', () => {
     expect(SUPPORTED_CURRENCIES.find((c) => c.code === 'INR')).toBeDefined();
   });
 
-  it('has 25 entries', () => {
-    expect(SUPPORTED_CURRENCIES).toHaveLength(25);
+  it('has 26 entries', () => {
+    expect(SUPPORTED_CURRENCIES).toHaveLength(26);
   });
 });

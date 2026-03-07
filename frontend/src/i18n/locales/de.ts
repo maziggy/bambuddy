@@ -2532,6 +2532,7 @@ export default {
     unlinkSpool: 'Spule trennen',
     selectSpool: 'Spule auswählen',
     noUnlinkedSpools: 'Keine nicht verknüpften Spulen verfügbar',
+    noTrayUuid: 'Keine Tray-UUID – Verbindung nicht möglich',
     linkSuccess: 'Spule erfolgreich mit Spoolman verknüpft',
     linkFailed: 'Verknüpfung mit Spoolman fehlgeschlagen',
     spoolId: 'Spulen-ID',

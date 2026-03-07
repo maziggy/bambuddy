@@ -1,0 +1,200 @@
+2026-03-07 03:30:16,112 INFO [backend.app.api.routes.bug_report] Bug report: temporarily enabled debug logging
+2026-03-07 03:30:16,112 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-03-07 03:30:16,171 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: IDLE, gcode_file: 2+colors.3mf, subtask_name: 2+colors
+2026-03-07 03:30:16,171 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 7, 'insert_flag': True, 'power_on_flag': False}
+2026-03-07 03:30:16,172 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 255
+2026-03-07 03:30:16,172 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-03-07 03:30:16,172 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=1001 (bit8=1) -> extruder 0
+2026-03-07 03:30:16,172 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-03-07 03:30:16,172 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-03-07 03:30:16,172 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-07 03:30:16,172 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper raw value: 5.0
+2026-03-07 03:30:16,173 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-03-07 03:30:16,173 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-03-07 03:30:16,173 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-03-07 03:30:16,173 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: []
+2026-03-07 03:30:16,173 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-03-07 03:30:16,173 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -70dBm
+2026-03-07 03:30:16,173 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-03-07 03:30:16,173 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: IDLE -> IDLE, file: 2+colors.3mf, subtask: 2+colors
+2026-03-07 03:30:17,122 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=8123 local_address=None timeout=10.0 socket_options=None
+2026-03-07 03:30:17,124 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x146d629cb200>
+2026-03-07 03:30:17,124 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:17,124 DEBUG [httpcore.http11] send_request_headers.complete
+2026-03-07 03:30:17,125 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-03-07 03:30:17,125 DEBUG [httpcore.http11] send_request_body.complete
+2026-03-07 03:30:17,125 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:17,125 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'354'), (b'Date', b'Sat, 07 Mar 2026 08:30:17 GMT')])
+2026-03-07 03:30:17,126 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/switch.bambu_lab_mingda "HTTP/1.1 200 OK"
+2026-03-07 03:30:17,126 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-03-07 03:30:17,126 DEBUG [httpcore.http11] receive_response_body.complete
+2026-03-07 03:30:17,126 DEBUG [httpcore.http11] response_closed.started
+2026-03-07 03:30:17,126 DEBUG [httpcore.http11] response_closed.complete
+2026-03-07 03:30:17,127 DEBUG [httpcore.connection] close.started
+2026-03-07 03:30:17,127 DEBUG [httpcore.connection] close.complete
+2026-03-07 03:30:17,136 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=8123 local_address=None timeout=10.0 socket_options=None
+2026-03-07 03:30:17,137 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x146d629c8550>
+2026-03-07 03:30:17,137 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:17,138 DEBUG [httpcore.http11] send_request_headers.complete
+2026-03-07 03:30:17,138 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-03-07 03:30:17,138 DEBUG [httpcore.http11] send_request_body.complete
+2026-03-07 03:30:17,138 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:17,138 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'421'), (b'Date', b'Sat, 07 Mar 2026 08:30:17 GMT')])
+2026-03-07 03:30:17,139 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/sensor.bambu_lab_energy_power_2 "HTTP/1.1 200 OK"
+2026-03-07 03:30:17,139 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-03-07 03:30:17,139 DEBUG [httpcore.http11] receive_response_body.complete
+2026-03-07 03:30:17,139 DEBUG [httpcore.http11] response_closed.started
+2026-03-07 03:30:17,139 DEBUG [httpcore.http11] response_closed.complete
+2026-03-07 03:30:17,140 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:17,141 DEBUG [httpcore.http11] send_request_headers.complete
+2026-03-07 03:30:17,141 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-03-07 03:30:17,141 DEBUG [httpcore.http11] send_request_body.complete
+2026-03-07 03:30:17,141 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:17,141 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'433'), (b'Date', b'Sat, 07 Mar 2026 08:30:17 GMT')])
+2026-03-07 03:30:17,142 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/sensor.bambu_lab_energy_today_2 "HTTP/1.1 200 OK"
+2026-03-07 03:30:17,142 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-03-07 03:30:17,142 DEBUG [httpcore.http11] receive_response_body.complete
+2026-03-07 03:30:17,142 DEBUG [httpcore.http11] response_closed.started
+2026-03-07 03:30:17,142 DEBUG [httpcore.http11] response_closed.complete
+2026-03-07 03:30:17,143 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:17,143 DEBUG [httpcore.http11] send_request_headers.complete
+2026-03-07 03:30:17,143 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-03-07 03:30:17,143 DEBUG [httpcore.http11] send_request_body.complete
+2026-03-07 03:30:17,144 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:17,144 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'424'), (b'Date', b'Sat, 07 Mar 2026 08:30:17 GMT')])
+2026-03-07 03:30:17,144 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/sensor.bambu_lab_energy_total_2 "HTTP/1.1 200 OK"
+2026-03-07 03:30:17,144 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-03-07 03:30:17,145 DEBUG [httpcore.http11] receive_response_body.complete
+2026-03-07 03:30:17,145 DEBUG [httpcore.http11] response_closed.started
+2026-03-07 03:30:17,145 DEBUG [httpcore.http11] response_closed.complete
+2026-03-07 03:30:17,145 DEBUG [httpcore.connection] close.started
+2026-03-07 03:30:17,146 DEBUG [httpcore.connection] close.complete
+2026-03-07 03:30:20,226 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-07 03:30:20,227 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -71dBm
+2026-03-07 03:30:22,258 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-07 03:30:22,258 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -70dBm
+2026-03-07 03:30:26,074 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-03-07 03:30:26,074 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 255
+2026-03-07 03:30:27,161 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=8123 local_address=None timeout=10.0 socket_options=None
+2026-03-07 03:30:27,162 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x146d629cb0c0>
+2026-03-07 03:30:27,162 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:27,163 DEBUG [httpcore.http11] send_request_headers.complete
+2026-03-07 03:30:27,163 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-03-07 03:30:27,163 DEBUG [httpcore.http11] send_request_body.complete
+2026-03-07 03:30:27,163 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:27,164 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'354'), (b'Date', b'Sat, 07 Mar 2026 08:30:27 GMT')])
+2026-03-07 03:30:27,164 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/switch.bambu_lab_mingda "HTTP/1.1 200 OK"
+2026-03-07 03:30:27,164 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-03-07 03:30:27,164 DEBUG [httpcore.http11] receive_response_body.complete
+2026-03-07 03:30:27,165 DEBUG [httpcore.http11] response_closed.started
+2026-03-07 03:30:27,165 DEBUG [httpcore.http11] response_closed.complete
+2026-03-07 03:30:27,165 DEBUG [httpcore.connection] close.started
+2026-03-07 03:30:27,165 DEBUG [httpcore.connection] close.complete
+2026-03-07 03:30:27,472 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=8123 local_address=None timeout=10.0 socket_options=None
+2026-03-07 03:30:27,473 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x146d6298bf70>
+2026-03-07 03:30:27,473 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:27,473 DEBUG [httpcore.http11] send_request_headers.complete
+2026-03-07 03:30:27,473 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-03-07 03:30:27,473 DEBUG [httpcore.http11] send_request_body.complete
+2026-03-07 03:30:27,474 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:27,474 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'421'), (b'Date', b'Sat, 07 Mar 2026 08:30:27 GMT')])
+2026-03-07 03:30:27,475 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/sensor.bambu_lab_energy_power_2 "HTTP/1.1 200 OK"
+2026-03-07 03:30:27,475 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-03-07 03:30:27,475 DEBUG [httpcore.http11] receive_response_body.complete
+2026-03-07 03:30:27,475 DEBUG [httpcore.http11] response_closed.started
+2026-03-07 03:30:27,475 DEBUG [httpcore.http11] response_closed.complete
+2026-03-07 03:30:27,476 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:27,476 DEBUG [httpcore.http11] send_request_headers.complete
+2026-03-07 03:30:27,477 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-03-07 03:30:27,477 DEBUG [httpcore.http11] send_request_body.complete
+2026-03-07 03:30:27,477 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:27,477 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'433'), (b'Date', b'Sat, 07 Mar 2026 08:30:27 GMT')])
+2026-03-07 03:30:27,478 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/sensor.bambu_lab_energy_today_2 "HTTP/1.1 200 OK"
+2026-03-07 03:30:27,478 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-03-07 03:30:27,478 DEBUG [httpcore.http11] receive_response_body.complete
+2026-03-07 03:30:27,478 DEBUG [httpcore.http11] response_closed.started
+2026-03-07 03:30:27,478 DEBUG [httpcore.http11] response_closed.complete
+2026-03-07 03:30:27,479 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:27,479 DEBUG [httpcore.http11] send_request_headers.complete
+2026-03-07 03:30:27,479 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-03-07 03:30:27,480 DEBUG [httpcore.http11] send_request_body.complete
+2026-03-07 03:30:27,480 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:27,480 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'424'), (b'Date', b'Sat, 07 Mar 2026 08:30:27 GMT')])
+2026-03-07 03:30:27,480 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/sensor.bambu_lab_energy_total_2 "HTTP/1.1 200 OK"
+2026-03-07 03:30:27,480 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-03-07 03:30:27,481 DEBUG [httpcore.http11] receive_response_body.complete
+2026-03-07 03:30:27,481 DEBUG [httpcore.http11] response_closed.started
+2026-03-07 03:30:27,481 DEBUG [httpcore.http11] response_closed.complete
+2026-03-07 03:30:27,481 DEBUG [httpcore.connection] close.started
+2026-03-07 03:30:27,482 DEBUG [httpcore.connection] close.complete
+2026-03-07 03:30:28,347 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-03-07 03:30:28,348 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=1001 (bit8=1) -> extruder 0
+2026-03-07 03:30:28,348 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-03-07 03:30:28,348 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-07 03:30:28,348 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -69dBm
+2026-03-07 03:30:30,376 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-07 03:30:30,377 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -70dBm
+2026-03-07 03:30:32,417 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-03-07 03:30:32,417 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=1001 (bit8=1) -> extruder 0
+2026-03-07 03:30:32,418 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-03-07 03:30:32,418 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-07 03:30:32,418 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -69dBm
+2026-03-07 03:30:37,499 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=8123 local_address=None timeout=10.0 socket_options=None
+2026-03-07 03:30:37,500 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x146d629d1810>
+2026-03-07 03:30:37,500 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:37,501 DEBUG [httpcore.http11] send_request_headers.complete
+2026-03-07 03:30:37,501 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-03-07 03:30:37,501 DEBUG [httpcore.http11] send_request_body.complete
+2026-03-07 03:30:37,501 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:37,501 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'354'), (b'Date', b'Sat, 07 Mar 2026 08:30:37 GMT')])
+2026-03-07 03:30:37,502 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/switch.bambu_lab_mingda "HTTP/1.1 200 OK"
+2026-03-07 03:30:37,502 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-03-07 03:30:37,502 DEBUG [httpcore.http11] receive_response_body.complete
+2026-03-07 03:30:37,502 DEBUG [httpcore.http11] response_closed.started
+2026-03-07 03:30:37,502 DEBUG [httpcore.http11] response_closed.complete
+2026-03-07 03:30:37,503 DEBUG [httpcore.connection] close.started
+2026-03-07 03:30:37,503 DEBUG [httpcore.connection] close.complete
+2026-03-07 03:30:37,508 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=8123 local_address=None timeout=10.0 socket_options=None
+2026-03-07 03:30:37,509 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x146d629d2080>
+2026-03-07 03:30:37,509 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:37,510 DEBUG [httpcore.http11] send_request_headers.complete
+2026-03-07 03:30:37,510 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-03-07 03:30:37,510 DEBUG [httpcore.http11] send_request_body.complete
+2026-03-07 03:30:37,511 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:37,511 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'421'), (b'Date', b'Sat, 07 Mar 2026 08:30:37 GMT')])
+2026-03-07 03:30:37,511 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/sensor.bambu_lab_energy_power_2 "HTTP/1.1 200 OK"
+2026-03-07 03:30:37,511 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-03-07 03:30:37,512 DEBUG [httpcore.http11] receive_response_body.complete
+2026-03-07 03:30:37,512 DEBUG [httpcore.http11] response_closed.started
+2026-03-07 03:30:37,512 DEBUG [httpcore.http11] response_closed.complete
+2026-03-07 03:30:37,513 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:37,513 DEBUG [httpcore.http11] send_request_headers.complete
+2026-03-07 03:30:37,513 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-03-07 03:30:37,514 DEBUG [httpcore.http11] send_request_body.complete
+2026-03-07 03:30:37,514 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:37,514 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'433'), (b'Date', b'Sat, 07 Mar 2026 08:30:37 GMT')])
+2026-03-07 03:30:37,514 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/sensor.bambu_lab_energy_today_2 "HTTP/1.1 200 OK"
+2026-03-07 03:30:37,515 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-03-07 03:30:37,515 DEBUG [httpcore.http11] receive_response_body.complete
+2026-03-07 03:30:37,515 DEBUG [httpcore.http11] response_closed.started
+2026-03-07 03:30:37,515 DEBUG [httpcore.http11] response_closed.complete
+2026-03-07 03:30:37,516 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:37,516 DEBUG [httpcore.http11] send_request_headers.complete
+2026-03-07 03:30:37,517 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-03-07 03:30:37,517 DEBUG [httpcore.http11] send_request_body.complete
+2026-03-07 03:30:37,517 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-03-07 03:30:37,517 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'424'), (b'Date', b'Sat, 07 Mar 2026 08:30:37 GMT')])
+2026-03-07 03:30:37,517 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/sensor.bambu_lab_energy_total_2 "HTTP/1.1 200 OK"
+2026-03-07 03:30:37,518 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-03-07 03:30:37,518 DEBUG [httpcore.http11] receive_response_body.complete
+2026-03-07 03:30:37,518 DEBUG [httpcore.http11] response_closed.started
+2026-03-07 03:30:37,518 DEBUG [httpcore.http11] response_closed.complete
+2026-03-07 03:30:37,519 DEBUG [httpcore.connection] close.started
+2026-03-07 03:30:37,519 DEBUG [httpcore.connection] close.complete
+2026-03-07 03:30:38,532 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-03-07 03:30:38,533 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=1001 (bit8=1) -> extruder 0
+2026-03-07 03:30:38,533 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-03-07 03:30:38,534 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-07 03:30:40,561 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-07 03:30:40,562 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -70dBm
+2026-03-07 03:30:44,631 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status

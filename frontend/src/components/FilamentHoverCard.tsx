@@ -11,12 +11,14 @@ interface FilamentData {
   kFactor: string;
   fillLevel: number | null; // null = unknown
   trayUuid?: string | null; // Bambu Lab spool UUID for Spoolman linking
+  tagUid?: string | null; // Generic NFC tag UID fallback for linking
   fillSource?: 'ams' | 'spoolman' | 'inventory'; // Source of fill level data
 }
 
 interface SpoolmanConfig {
   enabled: boolean;
-  onLinkSpool?: (trayUuid: string) => void;
+  onLinkSpool?: () => void;
+  onUnlinkSpool?: () => void;
   hasUnlinkedSpools?: boolean; // Whether there are spools available to link
   linkedSpoolId?: number | null; // Spoolman spool ID if this tray is already linked
   spoolmanUrl?: string | null; // Base URL for Spoolman (for "Open in Spoolman" link)
@@ -258,63 +260,87 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
               </div>
 
               {/* Spoolman section - only show if enabled */}
-              {spoolman?.enabled && data.trayUuid && (
+              {spoolman?.enabled && (
                 <div className="pt-2 mt-2 border-t border-bambu-dark-tertiary space-y-2">
                   {/* Tray UUID with copy button */}
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] uppercase tracking-wider text-bambu-gray font-medium">
                       {t('spoolman.spoolId')}
                     </span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleCopyUuid();
-                      }}
-                      className="flex items-center gap-1 text-xs text-bambu-gray hover:text-white transition-colors"
-                      title="Copy spool UUID"
-                    >
-                      <span className="font-mono text-[10px] truncate max-w-[80px]">
-                        {data.trayUuid.slice(0, 8)}...
-                      </span>
-                      {copied ? (
-                        <Check className="w-3 h-3 text-bambu-green" />
-                      ) : (
-                        <Copy className="w-3 h-3" />
-                      )}
-                    </button>
+                    {data.trayUuid ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCopyUuid();
+                        }}
+                        className="flex items-center gap-1 text-xs text-bambu-gray hover:text-white transition-colors"
+                        title="Copy spool UUID"
+                      >
+                        <span className="font-mono text-[10px] truncate max-w-[80px]">
+                          {data.trayUuid.slice(0, 8)}...
+                        </span>
+                        {copied ? (
+                          <Check className="w-3 h-3 text-bambu-green" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
+                      </button>
+                    ) : (
+                      <span className="text-[10px] text-bambu-gray">—</span>
+                    )}
                   </div>
 
                   {/* Open in Spoolman button (when already linked) */}
                   {spoolman.linkedSpoolId && spoolman.spoolmanUrl && (
-                    <a
-                      href={`${spoolman.spoolmanUrl.replace(/\/$/, '')}/spool/show/${spoolman.linkedSpoolId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-green/20 hover:bg-bambu-green/30 text-bambu-green"
-                      title={t('spoolman.openInSpoolman')}
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      {t('spoolman.openInSpoolman')}
-                    </a>
+                    <>
+                      <a
+                        href={`${spoolman.spoolmanUrl.replace(/\/$/, '')}/spool/show/${spoolman.linkedSpoolId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-green/20 hover:bg-bambu-green/30 text-bambu-green"
+                        title={t('spoolman.openInSpoolman')}
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        {t('spoolman.openInSpoolman')}
+                      </a>
+
+                      {spoolman.onUnlinkSpool && data.vendor !== 'Bambu Lab' && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            spoolman.onUnlinkSpool?.();
+                          }}
+                          className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-red-500/20 hover:bg-red-500/30 text-red-400"
+                          title={t('spoolman.unlinkSpool')}
+                        >
+                          <Unlink className="w-3.5 h-3.5" />
+                          {t('spoolman.unlinkSpool')}
+                        </button>
+                      )}
+                    </>
                   )}
 
                   {/* Link Spool button (when not linked) */}
-                  {!spoolman.linkedSpoolId && spoolman.onLinkSpool && (
+                  {!spoolman.linkedSpoolId && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (spoolman.hasUnlinkedSpools !== false) {
-                          spoolman.onLinkSpool?.(data.trayUuid!);
+                        if (spoolman.onLinkSpool) {
+                          spoolman.onLinkSpool?.();
                         }
                       }}
-                      disabled={spoolman.hasUnlinkedSpools === false}
+                      disabled={!spoolman.onLinkSpool}
                       className={`w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors ${
-                        spoolman.hasUnlinkedSpools === false
+                        !spoolman.onLinkSpool
                           ? 'bg-bambu-gray/10 text-bambu-gray cursor-not-allowed'
                           : 'bg-bambu-green/20 hover:bg-bambu-green/30 text-bambu-green'
                       }`}
-                      title={spoolman.hasUnlinkedSpools === false ? t('spoolman.noUnlinkedSpools') : t('spoolman.linkToSpoolman')}
+                      title={
+                        !spoolman.onLinkSpool
+                          ? t('spoolman.noTrayUuid')
+                          : t('spoolman.linkToSpoolman')
+                      }
                     >
                       <Link2 className="w-3.5 h-3.5" />
                       {t('spoolman.linkToSpoolman')}

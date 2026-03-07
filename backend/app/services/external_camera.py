@@ -114,19 +114,6 @@ def _sanitize_camera_url(url: str, allowed_schemes: tuple[str, ...] = ("http", "
         return None
 
 
-def _validate_camera_url(url: str, allowed_schemes: tuple[str, ...] = ("http", "https", "rtsp")) -> bool:
-    """Validate camera URL format (legacy wrapper).
-
-    Args:
-        url: URL to validate
-        allowed_schemes: Tuple of allowed URL schemes
-
-    Returns:
-        True if URL is valid, False otherwise
-    """
-    return _sanitize_camera_url(url, allowed_schemes) is not None
-
-
 def list_usb_cameras() -> list[dict]:
     """List available USB cameras (V4L2 devices on Linux).
 
@@ -424,12 +411,17 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
         return None
 
 
-async def _capture_snapshot(url: str, timeout: int) -> bytes | None:
+async def _capture_snapshot(
+    url: str, timeout: int, *, session: aiohttp.ClientSession | None = None
+) -> bytes | None:
     """Fetch snapshot from HTTP URL.
 
     Note: This function intentionally makes requests to user-configured URLs.
     External camera support requires connecting to user-specified camera endpoints.
     URL is sanitized and dangerous destinations are blocked.
+
+    Args:
+        session: Optional reusable session for connection pooling in polling loops.
     """
     # Sanitize URL - returns reconstructed URL from validated components
     safe_url = _sanitize_camera_url(url, ("http", "https"))
@@ -438,23 +430,28 @@ async def _capture_snapshot(url: str, timeout: int) -> bytes | None:
         return None
 
     try:
-        async with (
-            aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session,
-            session.get(safe_url, allow_redirects=False) as response,
-        ):
-            if response.status != 200:
-                logger.error("Snapshot URL returned status %s", response.status)
-                return None
+        if session is not None:
+            async with session.get(safe_url, allow_redirects=False, timeout=aiohttp.ClientTimeout(total=timeout)) as response:
+                if response.status != 200:
+                    logger.error("Snapshot URL returned status %s", response.status)
+                    return None
+                data = await response.content.read(5 * 1024 * 1024)
+        else:
+            async with (
+                aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as sess,
+                sess.get(safe_url, allow_redirects=False) as response,
+            ):
+                if response.status != 200:
+                    logger.error("Snapshot URL returned status %s", response.status)
+                    return None
+                data = await response.content.read(5 * 1024 * 1024)
 
-            # Cap read to 5 MB to prevent memory exhaustion from malicious/misconfigured URLs
-            data = await response.content.read(5 * 1024 * 1024)
+        # Validate it looks like JPEG
+        if not data.startswith(b"\xff\xd8"):
+            logger.warning("Snapshot does not appear to be JPEG")
+            # Still return it - might be valid with different header
 
-            # Validate it looks like JPEG
-            if not data.startswith(b"\xff\xd8"):
-                logger.warning("Snapshot does not appear to be JPEG")
-                # Still return it - might be valid with different header
-
-            return data
+        return data
 
     except TimeoutError:
         logger.warning("Snapshot capture timed out after %ss", timeout)
@@ -527,7 +524,9 @@ async def generate_mjpeg_stream(url: str, camera_type: str, fps: int = 10) -> As
                 current_time = time.monotonic()
                 if current_time - last_frame_time >= frame_interval:
                     last_frame_time = current_time
-                    yield _format_mjpeg_frame(frame)
+                    yield _format_mjpeg_header(len(frame))
+                    yield frame
+                    yield b"\r\n"
             if not frame_yielded or attempt == max_retries:
                 break
             logger.warning(
@@ -544,7 +543,9 @@ async def generate_mjpeg_stream(url: str, camera_type: str, fps: int = 10) -> As
             frame_yielded = False
             async for frame in _stream_rtsp(url, fps):
                 frame_yielded = True
-                yield _format_mjpeg_frame(frame)
+                yield _format_mjpeg_header(len(frame))
+                yield frame
+                yield b"\r\n"
             if not frame_yielded or attempt == max_retries:
                 break
             logger.warning(
@@ -557,30 +558,35 @@ async def generate_mjpeg_stream(url: str, camera_type: str, fps: int = 10) -> As
     elif camera_type == "usb":
         # Use ffmpeg to stream from USB camera
         async for frame in _stream_usb(url, fps):
-            yield _format_mjpeg_frame(frame)
+            yield _format_mjpeg_header(len(frame))
+            yield frame
+            yield b"\r\n"
 
     elif camera_type == "snapshot":
-        # Poll snapshot URL at interval
-        while True:
-            try:
-                frame = await _capture_snapshot(url, timeout=10)
-                if frame:
-                    yield _format_mjpeg_frame(frame)
-                await asyncio.sleep(frame_interval)
-            except asyncio.CancelledError:
-                break
-            except (aiohttp.ClientError, OSError) as e:
-                logger.warning("Snapshot poll failed: %s", e)
-                await asyncio.sleep(frame_interval)
+        # Poll snapshot URL at interval — reuse a single session for connection pooling
+        async with aiohttp.ClientSession() as session:
+            while True:
+                try:
+                    frame = await _capture_snapshot(url, timeout=10, session=session)
+                    if frame:
+                        yield _format_mjpeg_header(len(frame))
+                        yield frame
+                        yield b"\r\n"
+                    await asyncio.sleep(frame_interval)
+                except asyncio.CancelledError:
+                    break
+                except (aiohttp.ClientError, OSError) as e:
+                    logger.warning("Snapshot poll failed: %s", e)
+                    await asyncio.sleep(frame_interval)
 
 
-def _format_mjpeg_frame(frame: bytes) -> bytes:
-    """Format frame for MJPEG HTTP response."""
+def _format_mjpeg_header(frame_len: int) -> bytes:
+    """Format the MJPEG boundary header (without frame data)."""
     return (
         b"--frame\r\n"
         b"Content-Type: image/jpeg\r\n"
-        b"Content-Length: " + str(len(frame)).encode() + b"\r\n"
-        b"\r\n" + frame + b"\r\n"
+        b"Content-Length: " + str(frame_len).encode() + b"\r\n"
+        b"\r\n"
     )
 
 

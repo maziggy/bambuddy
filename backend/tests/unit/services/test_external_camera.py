@@ -12,36 +12,39 @@ import pytest
 class TestFormatMjpegFrame:
     """Tests for MJPEG frame formatting."""
 
-    def test_format_mjpeg_frame_basic(self):
-        """Verify MJPEG frame is formatted correctly with boundary and headers."""
-        from backend.app.services.external_camera import _format_mjpeg_frame
+    def test_format_mjpeg_header_basic(self):
+        """Verify MJPEG header is formatted correctly with boundary and headers."""
+        from backend.app.services.external_camera import _format_mjpeg_header
 
         # Minimal JPEG data (just SOI and EOI markers)
         jpeg_data = b"\xff\xd8\xff\xd9"
 
-        result = _format_mjpeg_frame(jpeg_data)
+        header = _format_mjpeg_header(len(jpeg_data))
 
         # Check boundary
-        assert result.startswith(b"--frame\r\n")
+        assert header.startswith(b"--frame\r\n")
         # Check content type
-        assert b"Content-Type: image/jpeg\r\n" in result
+        assert b"Content-Type: image/jpeg\r\n" in header
         # Check content length
-        assert b"Content-Length: 4\r\n" in result
-        # Check frame data is included
-        assert jpeg_data in result
-        # Check ends with CRLF
-        assert result.endswith(b"\r\n")
+        assert b"Content-Length: 4\r\n" in header
+        # Check header ends with double CRLF (ready for frame data)
+        assert header.endswith(b"\r\n\r\n")
+        # Full MJPEG chunk is header + frame + CRLF
+        full = header + jpeg_data + b"\r\n"
+        assert full.startswith(b"--frame\r\n")
+        assert jpeg_data in full
+        assert full.endswith(b"\r\n")
 
-    def test_format_mjpeg_frame_larger_data(self):
+    def test_format_mjpeg_header_larger_data(self):
         """Verify content length is correct for larger frames."""
-        from backend.app.services.external_camera import _format_mjpeg_frame
+        from backend.app.services.external_camera import _format_mjpeg_header
 
         # Simulate a larger JPEG (1000 bytes)
         jpeg_data = b"\xff\xd8" + b"\x00" * 996 + b"\xff\xd9"
 
-        result = _format_mjpeg_frame(jpeg_data)
+        header = _format_mjpeg_header(len(jpeg_data))
 
-        assert b"Content-Length: 1000\r\n" in result
+        assert b"Content-Length: 1000\r\n" in header
 
 
 class TestGetFfmpegPath:

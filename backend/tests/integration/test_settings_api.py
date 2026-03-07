@@ -374,6 +374,75 @@ class TestSettingsAPI:
         # Default is 'window' as defined in schema
         assert result["camera_view_mode"] in ["window", "embedded"]
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_camera_quality(self, async_client: AsyncClient):
+        """Verify camera quality can be updated."""
+        response = await async_client.put("/api/v1/settings/", json={"camera_quality": "low"})
+
+        assert response.status_code == 200
+        assert response.json()["camera_quality"] == "low"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_quality_persists(self, async_client: AsyncClient):
+        """CRITICAL: Verify camera quality persists after update."""
+        await async_client.put("/api/v1/settings/", json={"camera_quality": "high"})
+
+        response = await async_client.get("/api/v1/settings/")
+        assert response.json()["camera_quality"] == "high"
+
+        await async_client.put("/api/v1/settings/", json={"camera_quality": "medium"})
+
+        response = await async_client.get("/api/v1/settings/")
+        assert response.json()["camera_quality"] == "medium"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_quality_default(self, async_client: AsyncClient):
+        """Verify camera quality has correct default value."""
+        response = await async_client.get("/api/v1/settings/")
+        result = response.json()
+
+        assert "camera_quality" in result
+        assert result["camera_quality"] in ["low", "medium", "high"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_gpu_accel_setting(self, async_client: AsyncClient):
+        """Verify camera_gpu_accel can be toggled on and off."""
+        # Default should be False
+        response = await async_client.get("/api/v1/settings/")
+        assert response.json()["camera_gpu_accel"] is False
+
+        # Enable
+        response = await async_client.put("/api/v1/settings/", json={"camera_gpu_accel": True})
+        assert response.status_code == 200
+        assert response.json()["camera_gpu_accel"] is True
+
+        # Verify persistence
+        response = await async_client.get("/api/v1/settings/")
+        assert response.json()["camera_gpu_accel"] is True
+
+        # Disable
+        response = await async_client.put("/api/v1/settings/", json={"camera_gpu_accel": False})
+        assert response.status_code == 200
+        assert response.json()["camera_gpu_accel"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_check_ffmpeg_gpu_fields(self, async_client: AsyncClient):
+        """Verify check-ffmpeg response includes GPU fields."""
+        response = await async_client.get("/api/v1/settings/check-ffmpeg")
+        assert response.status_code == 200
+        result = response.json()
+
+        assert "installed" in result
+        assert "gpu_available" in result
+        assert "gpu_backends" in result
+        assert isinstance(result["gpu_available"], bool)
+        assert isinstance(result["gpu_backends"], list)
+
     # ========================================================================
     # Per-printer mapping settings tests
     # ========================================================================

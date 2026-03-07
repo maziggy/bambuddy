@@ -53,7 +53,7 @@ import {
 import CameraGridDecoderWorker from '../workers/cameraGridDecoder.worker?worker';
 
 import { useNavigate } from 'react-router-dom';
-import { api, discoveryApi, firmwareApi, getAuthToken } from '../api/client';
+import { api, discoveryApi, firmwareApi, getAuthToken, CAMERA_QUALITY_PRESETS } from '../api/client';
 import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
 import { formatFileSize } from '../utils/file';
 import type { Printer, PrinterCreate, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError } from '../api/client';
@@ -475,7 +475,7 @@ function NozzleSlotHoverCard({ slot, index, activeStatus, filamentName, children
           <div className="w-44 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl overflow-hidden backdrop-blur-sm">
             {isEmpty ? (
               <div className="px-3 py-2 text-xs text-bambu-gray text-center whitespace-nowrap">
-                Slot {index + 1} — Empty
+                {t('printers.nozzleSlotEmpty', { slot: index + 1 })}
               </div>
             ) : (
               <div className="p-2.5 space-y-1.5">
@@ -906,18 +906,20 @@ function HumidityIndicator({ humidity, goodThreshold = 40, fairThreshold = 60, o
   let textColor: string;
   let statusText: string;
 
+  const { t } = useTranslation();
+
   if (isNaN(humidityValue)) {
     textColor = '#C3C2C1';
-    statusText = 'Unknown';
+    statusText = t('common.statusUnknown');
   } else if (humidityValue <= good) {
     textColor = '#22a352'; // Green - Good
-    statusText = 'Good';
+    statusText = t('common.statusGood');
   } else if (humidityValue <= fair) {
     textColor = '#d4a017'; // Gold - Fair
-    statusText = 'Fair';
+    statusText = t('common.statusFair');
   } else {
     textColor = '#c62828'; // Red - Bad
-    statusText = 'Bad';
+    statusText = t('common.statusBad');
   }
 
   // Fill level based on status: Good=Empty (dry), Fair=Half, Bad=Full (wet)
@@ -937,7 +939,7 @@ function HumidityIndicator({ humidity, goodThreshold = 40, fairThreshold = 60, o
       type="button"
       onClick={onClick}
       className={`flex items-center gap-1 ${onClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
-      title={`Humidity: ${humidityValue}% - ${statusText}${onClick ? ' (click for history)' : ''}`}
+      title={`${t('printers.humidityTooltip', { value: humidityValue, status: statusText })}${onClick ? ` (${t('printers.clickForHistory')})` : ''}`}
     >
       <DropComponent className={compact ? "w-2.5 h-3" : "w-3 h-4"} />
       <span className={`font-medium tabular-nums ${compact ? 'text-[10px]' : 'text-xs'}`} style={{ color: textColor }}>{humidityValue}%</span>
@@ -955,6 +957,7 @@ interface TemperatureIndicatorProps {
 }
 
 function TemperatureIndicator({ temp, goodThreshold = 28, fairThreshold = 35, onClick, compact }: TemperatureIndicatorProps) {
+  const { t } = useTranslation();
   // Ensure thresholds are numbers
   const good = typeof goodThreshold === 'number' ? goodThreshold : 28;
   const fair = typeof fairThreshold === 'number' ? fairThreshold : 35;
@@ -965,15 +968,15 @@ function TemperatureIndicator({ temp, goodThreshold = 28, fairThreshold = 35, on
 
   if (temp <= good) {
     textColor = '#22a352'; // Green - good (same as humidity)
-    statusText = 'Good';
+    statusText = t('common.statusGood');
     ThermoComponent = ThermometerEmpty;
   } else if (temp <= fair) {
     textColor = '#d4a017'; // Gold - fair (same as humidity)
-    statusText = 'Fair';
+    statusText = t('common.statusFair');
     ThermoComponent = ThermometerHalf;
   } else {
     textColor = '#c62828'; // Red - bad (same as humidity)
-    statusText = 'Bad';
+    statusText = t('common.statusBad');
     ThermoComponent = ThermometerFull;
   }
 
@@ -982,7 +985,7 @@ function TemperatureIndicator({ temp, goodThreshold = 28, fairThreshold = 35, on
       type="button"
       onClick={onClick}
       className={`flex items-center gap-1 ${onClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
-      title={`Temperature: ${temp}°C - ${statusText}${onClick ? ' (click for history)' : ''}`}
+      title={`${t('printers.temperatureTooltip', { value: temp, status: statusText })}${onClick ? ` (${t('printers.clickForHistory')})` : ''}`}
     >
       <ThermoComponent className={compact ? "w-2.5 h-3" : "w-3 h-4"} />
       <span className={`tabular-nums text-right ${compact ? 'text-[10px] w-8' : 'w-12'}`} style={{ color: textColor }}>{temp}°C</span>
@@ -1585,9 +1588,9 @@ const GRID_MAX_RECONNECT_DELAY = 30000;    // 30s
 
 type GridLayout = 'compact' | 'default' | 'large';
 const GRID_LAYOUT_COLS: Record<GridLayout, string> = {
-  compact: 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 xxl:grid-cols-6',
-  default: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 xxl:grid-cols-5',
-  large:   'grid-cols-1 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 xxl:grid-cols-4',
+  compact: 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6',
+  default: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5',
+  large:   'grid-cols-1 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4',
 };
 const GRID_LAYOUT_ICONS: Record<GridLayout, React.ComponentType<{ className?: string }>> = {
   compact: Grid,
@@ -1681,10 +1684,13 @@ function CameraGrid({
     setConfirmAction(null);
   };
 
-  // Fixed grid stream parameters (quality is managed server-side by SharedStreamHub)
-  const GRID_FPS = 5;
-  const GRID_QUALITY = 15;  // ffmpeg -q:v (2=best, 31=worst)
-  const GRID_SCALE = 0.5;
+  // Grid stream parameters from settings quality preset
+  const { data: cameraSettings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
+  const qualityPreset = CAMERA_QUALITY_PRESETS[cameraSettings?.camera_quality ?? 'medium'];
+  const GRID_FPS = qualityPreset.grid.fps;
+  const GRID_QUALITY = qualityPreset.grid.quality;
+  const GRID_SCALE = qualityPreset.grid.scale;
+  const gridParamsKey = `${GRID_FPS}-${GRID_QUALITY}-${GRID_SCALE}`;
 
   // Mutable counters — updated in the stream loop, read by the stats interval
   const bytesRef = useRef(0);
@@ -1859,7 +1865,7 @@ function CameraGrid({
         const token = getAuthToken();
         if (token) gridHeaders['Authorization'] = `Bearer ${token}`;
         const res = await fetch(
-          `/api/v1/printers/camera/grid-stream?ids=${ids.join(',')}&fps=${GRID_FPS}&quality=${GRID_QUALITY}&scale=${GRID_SCALE}`,
+          `/api/v1/printers/camera/grid-stream?ids=${ids.join(',')}&fps=${GRID_FPS}&quality=${GRID_QUALITY}&scale=${GRID_SCALE}&force=true`,
           { signal: controllerRef.current.signal, headers: gridHeaders },
         );
         if (!res.ok || !res.body) {
@@ -1894,6 +1900,7 @@ function CameraGrid({
             }),
           ]);
           if (timeoutId !== null) clearTimeout(timeoutId);
+          if (!active) break;
           const { done, value } = readResult;
           if (done) break;
 
@@ -1901,6 +1908,12 @@ function CameraGrid({
           if (bufLen + value.length > buf.length) {
             let newSize = buf.length;
             while (newSize < bufLen + value.length) newSize *= 2;
+            const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10 MB
+            if (newSize > MAX_BUFFER_SIZE) {
+              console.error('Grid stream: buffer exceeded 10 MB, resetting');
+              bufLen = 0;
+              break;
+            }
             const newBuf = new Uint8Array(newSize);
             newBuf.set(buf.subarray(0, bufLen));
             buf = newBuf;
@@ -2027,7 +2040,7 @@ function CameraGrid({
       workerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectedIdsKey]);
+  }, [connectedIdsKey, gridParamsKey]);
 
   return (
     <div>
@@ -2054,9 +2067,9 @@ function CameraGrid({
             reconnectCountdown={reconnectCountdown}
             reconnectAttempt={reconnectAttempt}
             reconnectMax={GRID_MAX_RECONNECT_ATTEMPTS}
-            onPause={() => setConfirmAction({ type: 'pause', printerId: p.id, printerName: p.name })}
-            onStop={() => setConfirmAction({ type: 'stop', printerId: p.id, printerName: p.name })}
-            onResume={() => setConfirmAction({ type: 'resume', printerId: p.id, printerName: p.name })}
+            onPause={hasPermission('printers:control') ? () => setConfirmAction({ type: 'pause', printerId: p.id, printerName: p.name }) : undefined}
+            onStop={hasPermission('printers:control') ? () => setConfirmAction({ type: 'stop', printerId: p.id, printerName: p.name }) : undefined}
+            onResume={hasPermission('printers:control') ? () => setConfirmAction({ type: 'resume', printerId: p.id, printerName: p.name }) : undefined}
             controlLoading={
               (pauseMutation.isPending && pauseMutation.variables === p.id) ? 'pause'
               : (stopMutation.isPending && stopMutation.variables === p.id) ? 'stop'
@@ -2074,7 +2087,7 @@ function CameraGrid({
               const top = p.hmsErrors?.length ? getTopHMSError(p.hmsErrors) : null;
               return top && dismissedErrors.get(p.id) === top.description ? undefined : p.hmsErrors;
             })()}
-            hasQueuedJobs={((queryClient.getQueryData<unknown[]>(['queue', p.id, 'pending']))?.length ?? 0) > 0}
+            hasQueuedJobs={false}
             onDismissError={() => {
               const top = p.hmsErrors?.length ? getTopHMSError(p.hmsErrors) : null;
               if (top) setDismissedErrors(prev => new Map(prev).set(p.id, top.description));

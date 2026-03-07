@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import en from '../../i18n/locales/en';
 import de from '../../i18n/locales/de';
+import fr from '../../i18n/locales/fr';
+import it_ from '../../i18n/locales/it';
+import ja from '../../i18n/locales/ja';
+import ptBR from '../../i18n/locales/pt-BR';
+import zhCN from '../../i18n/locales/zh-CN';
 
 /**
  * Recursively extracts all keys from a nested object as dot-notation paths.
@@ -15,21 +20,33 @@ const getKeys = (obj: object, prefix = ''): string[] => {
   });
 };
 
+const enKeys = new Set(getKeys(en));
+
+const locales: [string, object][] = [
+  ['de', de],
+  ['fr', fr],
+  ['it', it_],
+  ['ja', ja],
+  ['pt-BR', ptBR],
+  ['zh-CN', zhCN],
+];
+
 describe('i18n locale parity', () => {
-  const enKeys = new Set(getKeys(en));
-  const deKeys = new Set(getKeys(de));
+  locales.forEach(([name, locale]) => {
+    const localeKeys = new Set(getKeys(locale));
 
-  it('German locale has all English keys', () => {
-    const missingInGerman = [...enKeys].filter((k) => !deKeys.has(k)).sort();
-    expect(missingInGerman, `Missing ${missingInGerman.length} key(s) in German locale`).toEqual([]);
-  });
+    it(`${name} locale has all English keys`, () => {
+      const missing = [...enKeys].filter((k) => !localeKeys.has(k)).sort();
+      expect(missing, `Missing ${missing.length} key(s) in ${name} locale`).toEqual([]);
+    });
 
-  it('English locale has all German keys', () => {
-    const missingInEnglish = [...deKeys].filter((k) => !enKeys.has(k)).sort();
-    expect(missingInEnglish, `Missing ${missingInEnglish.length} key(s) in English locale`).toEqual([]);
-  });
+    it(`English locale has all ${name} keys`, () => {
+      const extra = [...localeKeys].filter((k) => !enKeys.has(k)).sort();
+      expect(extra, `${extra.length} extra key(s) in ${name} locale not in English`).toEqual([]);
+    });
 
-  it('both locales have the same number of keys', () => {
-    expect(enKeys.size).toBe(deKeys.size);
+    it(`${name} locale has the same number of keys as English`, () => {
+      expect(localeKeys.size).toBe(enKeys.size);
+    });
   });
 });

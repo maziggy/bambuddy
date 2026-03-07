@@ -70,6 +70,29 @@ class TestAuthSetupAPI:
         assert result["auth_enabled"] is True
         assert result["admin_created"] is True
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_setup_rejects_after_completed(self, async_client: AsyncClient):
+        """Verify setup cannot be re-invoked after initial completion."""
+        # First setup
+        response = await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "setuponce",
+                "admin_password": "testpassword123",
+            },
+        )
+        assert response.status_code == 200
+
+        # Second setup should be rejected
+        response = await async_client.post(
+            "/api/v1/auth/setup",
+            json={"auth_enabled": False},
+        )
+        assert response.status_code == 400
+        assert "Setup has already been completed" in response.json()["detail"]
+
 
 class TestAuthLoginAPI:
     """Integration tests for /api/v1/auth/login endpoint."""
@@ -143,9 +166,32 @@ class TestAuthMeAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_me_without_token(self, async_client: AsyncClient):
-        """Verify /me fails without authentication token."""
+        """Verify /me returns synthetic admin when auth is disabled."""
         response = await async_client.get("/api/v1/auth/me")
 
+        assert response.status_code == 200
+        result = response.json()
+        assert result["id"] == 0
+        assert result["username"] == "admin"
+        assert result["role"] == "admin"
+        assert result["is_admin"] is True
+        assert result["is_active"] is True
+        assert len(result["permissions"]) > 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_me_without_token_auth_enabled(self, async_client: AsyncClient):
+        """Verify /me fails without token when auth is enabled."""
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "menotoken",
+                "admin_password": "mepassword123",
+            },
+        )
+
+        response = await async_client.get("/api/v1/auth/me")
         assert response.status_code == 401
 
     @pytest.mark.asyncio
@@ -187,6 +233,12 @@ class TestAuthMeAPI:
         from backend.app.core.auth import generate_api_key
         from backend.app.models.api_key import APIKey
 
+        # Enable auth so the endpoint doesn't short-circuit
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={"auth_enabled": True, "admin_username": "apibearertest", "admin_password": "testpassword123"},
+        )
+
         # Create an API key directly in the database
         full_key, key_hash, key_prefix = generate_api_key()
         api_key = APIKey(name="test-kiosk", key_hash=key_hash, key_prefix=key_prefix, enabled=True)
@@ -215,6 +267,12 @@ class TestAuthMeAPI:
         from backend.app.core.auth import generate_api_key
         from backend.app.models.api_key import APIKey
 
+        # Enable auth so the endpoint doesn't short-circuit
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={"auth_enabled": True, "admin_username": "apiheadertest", "admin_password": "testpassword123"},
+        )
+
         full_key, key_hash, key_prefix = generate_api_key()
         api_key = APIKey(name="test-kiosk-header", key_hash=key_hash, key_prefix=key_prefix, enabled=True)
         db_session.add(api_key)
@@ -235,6 +293,12 @@ class TestAuthMeAPI:
     @pytest.mark.integration
     async def test_me_with_invalid_api_key(self, async_client: AsyncClient):
         """Verify /me rejects invalid API key."""
+        # Enable auth so the endpoint doesn't short-circuit
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={"auth_enabled": True, "admin_username": "invalidkeytest", "admin_password": "testpassword123"},
+        )
+
         response = await async_client.get(
             "/api/v1/auth/me",
             headers={"Authorization": "Bearer bb_invalid_key_value"},

@@ -2577,6 +2577,7 @@ async def on_print_complete(printer_id: int, data: dict):
                 from backend.app.api.routes.settings import get_setting
 
                 capture_enabled = await get_setting(db, "capture_finish_photo")
+                gpu_accel = (await get_setting(db, "camera_gpu_accel") or "false").lower() == "true"
 
                 if capture_enabled is None or capture_enabled.lower() == "true":
                     from backend.app.models.printer import Printer
@@ -2647,6 +2648,7 @@ async def on_print_complete(printer_id: int, data: dict):
                                         access_code=printer.access_code,
                                         model=printer.model,
                                         archive_dir=archive_dir,
+                                        gpu_accel=gpu_accel,
                                     )
 
                             if photo_filename:
@@ -3468,8 +3470,8 @@ PUBLIC_API_PREFIXES = [
 ]
 
 # Route patterns that are public (read-only display data)
-# These are checked with "in path" - needed because browsers load images/videos
-# via <img src> and <video src> which don't include Authorization headers
+# These are checked at path-segment boundaries - needed because browsers load
+# images/videos via <img src> and <video src> which don't include Authorization headers
 PUBLIC_API_PATTERNS = [
     # Thumbnails
     "/thumbnail",  # /archives/{id}/thumbnail, /library/files/{id}/thumbnail
@@ -3490,6 +3492,15 @@ PUBLIC_API_PATTERNS = [
     # download token in the URL path instead.
     "/dl/",  # /archives/{id}/dl/{token}/{filename}, /library/files/{id}/dl/{token}/{filename}
 ]
+
+
+def _matches_public_pattern(path: str, pattern: str) -> bool:
+    """Check if pattern appears in path at a path-segment boundary."""
+    idx = path.find(pattern)
+    if idx == -1:
+        return False
+    end = idx + len(pattern)
+    return end == len(path) or path[end] == "/"
 
 
 @app.middleware("http")
@@ -3518,7 +3529,7 @@ async def auth_middleware(request, call_next):
 
     # Allow public patterns (read-only display data like thumbnails)
     for pattern in PUBLIC_API_PATTERNS:
-        if pattern in path:
+        if _matches_public_pattern(path, pattern):
             return await call_next(request)
 
     # Check if auth is enabled

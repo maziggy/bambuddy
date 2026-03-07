@@ -141,25 +141,42 @@ export function StreamOverlayPage() {
     if (authToken) {
       wsUrl += `?token=${encodeURIComponent(authToken)}`;
     }
-    const ws = new WebSocket(wsUrl);
+    let ws: WebSocket | null = null;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let alive = true;
 
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'printer_status' && data.printer_id === id) {
-          queryClient.setQueryData(['printerStatus', id], data.status);
+    function connect() {
+      if (!alive) return;
+      ws = new WebSocket(wsUrl);
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'printer_status' && data.printer_id === id) {
+            queryClient.setQueryData(['printerStatus', id], data.data);
+          }
+        } catch {
+          // Ignore parse errors
         }
-      } catch {
-        // Ignore parse errors
-      }
-    };
+      };
 
-    ws.onerror = () => {
-      // WebSocket error - polling will continue as fallback
-    };
+      ws.onerror = () => {
+        // WebSocket error - polling will continue as fallback
+      };
+
+      ws.onclose = () => {
+        if (alive) {
+          reconnectTimeout = setTimeout(connect, 3000);
+        }
+      };
+    }
+
+    connect();
 
     return () => {
-      ws.close();
+      alive = false;
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      ws?.close();
     };
   }, [id, queryClient]);
 

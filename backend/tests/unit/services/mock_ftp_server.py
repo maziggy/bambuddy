@@ -183,10 +183,17 @@ class MockBambuFTPServer:
         self._server.max_cons = 10
         self._server.max_cons_per_ip = 5
 
-        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread = threading.Thread(target=self._serve_forever_safe, daemon=True)
         self._thread.start()
         # Brief wait for server to be ready
         time.sleep(0.1)
+
+    def _serve_forever_safe(self):
+        """Run serve_forever, suppressing OSError during shutdown."""
+        try:
+            self._server.serve_forever()
+        except OSError:
+            pass
 
     def stop(self):
         """Stop the FTP server and wait for thread to exit."""

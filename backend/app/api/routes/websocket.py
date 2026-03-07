@@ -20,7 +20,7 @@ async def _authenticate_ws_token(token: str) -> bool:
         # API key (bb_ prefix)
         if token.startswith("bb_"):
             api_key = await _validate_api_key(db, token)
-            return api_key is not None
+            return api_key is not None and api_key.can_read_status
 
         # JWT
         try:
@@ -47,6 +47,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(def
 
     if auth_enabled:
         if not token or not await _authenticate_ws_token(token):
+            await websocket.accept()
             await websocket.close(code=1008)
             return
 

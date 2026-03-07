@@ -243,6 +243,12 @@ async def update_printer(
 
     update_data = printer_data.model_dump(exclude_unset=True)
 
+    # If the submitted URL still contains the masked placeholder, preserve the stored value
+    if "external_camera_url" in update_data:
+        url = update_data["external_camera_url"]
+        if url and "***:***@" in url:
+            del update_data["external_camera_url"]
+
     # Handle nested ROI object - flatten to individual columns
     if "plate_detection_roi" in update_data:
         roi = update_data.pop("plate_detection_roi")

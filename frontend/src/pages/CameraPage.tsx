@@ -3,13 +3,14 @@ import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { RefreshCw, AlertTriangle, Camera, Maximize, Minimize, WifiOff, ZoomIn, ZoomOut } from 'lucide-react';
-import { api, getAuthToken } from '../api/client';
+import { api, getAuthToken, CAMERA_QUALITY_PRESETS } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { ChamberLight } from '../components/icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';
 import { useMjpegStream } from '../hooks/useMjpegStream';
 import { useStreamReconnect } from '../hooks/useStreamReconnect';
+import { useZoomPan } from '../hooks/useZoomPan';
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 
@@ -25,12 +26,6 @@ export function CameraPage() {
   const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState(1);
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
-  const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
-  const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
-  const [lastTouchCenter, setLastTouchCenter] = useState<{ x: number; y: number } | null>(null);
 
   // Snapshot mode state
   const [snapshotLoading, setSnapshotLoading] = useState(true);
@@ -42,14 +37,27 @@ export function CameraPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const {
+    zoomLevel, panOffset, isPanning,
+    handleZoomIn, handleZoomOut, handleWheel,
+    handleMouseDown, handleMouseMove, handleMouseUp,
+    handleTouchStart, handleTouchMove, handleTouchEnd,
+    resetZoom,
+  } = useZoomPan({ containerRef });
+
   // Ref to allow reconnect hook to call mjpeg restart without circular deps
   const mjpegRestartRef = useRef<() => void>(() => {});
 
   const isStream = streamMode === 'stream';
 
+  // Camera quality preset from settings
+  const { data: cameraSettings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
+  const singlePreset = CAMERA_QUALITY_PRESETS[cameraSettings?.camera_quality ?? 'medium'].single;
+  const streamUrl = `/printers/${id}/camera/stream?fps=${singlePreset.fps}&quality=${singlePreset.quality}&scale=${singlePreset.scale}`;
+
   // --- Stream hooks (only active in stream mode) ---
   const mjpeg = useMjpegStream({
-    url: `/printers/${id}/camera/stream?fps=15`,
+    url: streamUrl,
     canvasRef,
     enabled: isStream && !transitioning && id > 0,
     onFirstFrame: () => reconnect.handleStreamSuccess(),
@@ -147,7 +155,6 @@ export function CameraPage() {
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      mjpeg.stop();
       sendStopOnce();
     };
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -157,8 +164,7 @@ export function CameraPage() {
     const handleFullscreenChange = () => {
       const nowFullscreen = !!document.fullscreenElement;
       setIsFullscreen(nowFullscreen);
-      setZoomLevel(1);
-      setPanOffset({ x: 0, y: 0 });
+      resetZoom();
 
       // Refresh stream after fullscreen transition to prevent stall
       if (isStream && !transitioning) {
@@ -204,8 +210,7 @@ export function CameraPage() {
   const switchToMode = (newMode: 'stream' | 'snapshot') => {
     if (streamMode === newMode || transitioning) return;
     setTransitioning(true);
-    setZoomLevel(1);
-    setPanOffset({ x: 0, y: 0 });
+    resetZoom();
 
     // Stop stream when switching away from stream mode
     if (streamMode === 'stream') {
@@ -218,6 +223,7 @@ export function CameraPage() {
 
     // Reset snapshot state if switching to snapshot
     if (newMode === 'snapshot') {
+      setSnapshotBlobUrl(null);
       setSnapshotLoading(true);
       setSnapshotError(false);
     }
@@ -234,8 +240,7 @@ export function CameraPage() {
   const refresh = () => {
     if (transitioning) return;
     setTransitioning(true);
-    setZoomLevel(1);
-    setPanOffset({ x: 0, y: 0 });
+    resetZoom();
 
     // Reset reconnect state
     reconnect.reset();
@@ -264,146 +269,6 @@ export function CameraPage() {
     } else {
       containerRef.current.requestFullscreen();
     }
-  };
-
-  const handleZoomIn = () => {
-    setZoomLevel(prev => Math.min(prev + 0.5, 4));
-  };
-
-  const handleZoomOut = () => {
-    setZoomLevel(prev => {
-      const newZoom = Math.max(prev - 0.5, 1);
-      if (newZoom === 1) setPanOffset({ x: 0, y: 0 });
-      return newZoom;
-    });
-  };
-
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    if (e.deltaY < 0) {
-      handleZoomIn();
-    } else {
-      handleZoomOut();
-    }
-  };
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (zoomLevel > 1) {
-      e.preventDefault();
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
-    }
-  };
-
-  const getMaxPan = useCallback(() => {
-    if (!containerRef.current) {
-      return { x: 300, y: 200 };
-    }
-    const container = containerRef.current.getBoundingClientRect();
-    const maxX = (container.width * (zoomLevel - 1)) / 2;
-    const maxY = (container.height * (zoomLevel - 1)) / 2;
-    return { x: Math.max(50, maxX), y: Math.max(50, maxY) };
-  }, [zoomLevel]);
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (isPanning && zoomLevel > 1) {
-      const newX = e.clientX - panStart.x;
-      const newY = e.clientY - panStart.y;
-      const maxPan = getMaxPan();
-      setPanOffset({
-        x: Math.max(-maxPan.x, Math.min(maxPan.x, newX)),
-        y: Math.max(-maxPan.y, Math.min(maxPan.y, newY)),
-      });
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsPanning(false);
-  };
-
-  // Touch event handlers for mobile
-  const getTouchDistance = (touches: React.TouchList) => {
-    if (touches.length < 2) return 0;
-    const dx = touches[0].clientX - touches[1].clientX;
-    const dy = touches[0].clientY - touches[1].clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-  };
-
-  const getTouchCenter = (touches: React.TouchList) => {
-    if (touches.length < 2) {
-      return { x: touches[0].clientX, y: touches[0].clientY };
-    }
-    return {
-      x: (touches[0].clientX + touches[1].clientX) / 2,
-      y: (touches[0].clientY + touches[1].clientY) / 2,
-    };
-  };
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 2) {
-      e.preventDefault();
-      setLastTouchDistance(getTouchDistance(e.touches));
-      setLastTouchCenter(getTouchCenter(e.touches));
-    } else if (e.touches.length === 1 && zoomLevel > 1) {
-      e.preventDefault();
-      setIsPanning(true);
-      setPanStart({
-        x: e.touches[0].clientX - panOffset.x,
-        y: e.touches[0].clientY - panOffset.y,
-      });
-    }
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (e.touches.length === 2 && lastTouchDistance !== null) {
-      e.preventDefault();
-      const newDistance = getTouchDistance(e.touches);
-      const scale = newDistance / lastTouchDistance;
-
-      setZoomLevel(prev => {
-        const newZoom = Math.max(1, Math.min(4, prev * scale));
-        if (newZoom === 1) {
-          setPanOffset({ x: 0, y: 0 });
-        }
-        return newZoom;
-      });
-
-      setLastTouchDistance(newDistance);
-
-      const newCenter = getTouchCenter(e.touches);
-      if (lastTouchCenter) {
-        const maxPan = getMaxPan();
-        setPanOffset(prev => ({
-          x: Math.max(-maxPan.x, Math.min(maxPan.x, prev.x + (newCenter.x - lastTouchCenter.x))),
-          y: Math.max(-maxPan.y, Math.min(maxPan.y, prev.y + (newCenter.y - lastTouchCenter.y))),
-        }));
-      }
-      setLastTouchCenter(newCenter);
-    } else if (e.touches.length === 1 && isPanning && zoomLevel > 1) {
-      e.preventDefault();
-      const newX = e.touches[0].clientX - panStart.x;
-      const newY = e.touches[0].clientY - panStart.y;
-      const maxPan = getMaxPan();
-      setPanOffset({
-        x: Math.max(-maxPan.x, Math.min(maxPan.x, newX)),
-        y: Math.max(-maxPan.y, Math.min(maxPan.y, newY)),
-      });
-    }
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (e.touches.length < 2) {
-      setLastTouchDistance(null);
-      setLastTouchCenter(null);
-    }
-    if (e.touches.length === 0) {
-      setIsPanning(false);
-    }
-  };
-
-  const resetZoom = () => {
-    setZoomLevel(1);
-    setPanOffset({ x: 0, y: 0 });
   };
 
   // Derive loading/error from the appropriate source

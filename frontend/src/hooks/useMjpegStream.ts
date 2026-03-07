@@ -86,6 +86,7 @@ export function useMjpegStream({
         let buf = new Uint8Array(256 * 1024);
         let writePos = 0;
         let firstFrameDelivered = false;
+        let cachedCtx: CanvasRenderingContext2D | null = null;
 
         while (true) {
           if (gen !== generationRef.current) break;
@@ -97,6 +98,10 @@ export function useMjpegStream({
           if (writePos + value.length > buf.length) {
             let newSize = buf.length;
             while (newSize < writePos + value.length) newSize *= 2;
+            const MAX_BUFFER_SIZE = 5 * 1024 * 1024; // 5 MB
+            if (newSize > MAX_BUFFER_SIZE) {
+              throw new Error('MJPEG buffer exceeded 5 MB limit');
+            }
             const next = new Uint8Array(newSize);
             next.set(buf.subarray(0, writePos));
             buf = next;
@@ -144,6 +149,13 @@ export function useMjpegStream({
             buf.copyWithin(0, eoiIdx + 2, writePos);
             writePos -= (eoiIdx + 2);
 
+            // Shrink buffer if it grew large but is mostly empty
+            if (buf.length > 256 * 1024 && writePos < buf.length / 4) {
+              const shrunk = new Uint8Array(Math.max(256 * 1024, writePos * 2));
+              shrunk.set(buf.subarray(0, writePos));
+              buf = shrunk;
+            }
+
             // Draw to canvas
             if (gen !== generationRef.current) break;
             try {
@@ -157,13 +169,15 @@ export function useMjpegStream({
 
               const canvas = canvasRef.current;
               if (canvas) {
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
+                if (!cachedCtx || cachedCtx.canvas !== canvas) {
+                  cachedCtx = canvas.getContext('2d');
+                }
+                if (cachedCtx) {
                   if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
                     canvas.width = bitmap.width;
                     canvas.height = bitmap.height;
                   }
-                  ctx.drawImage(bitmap, 0, 0);
+                  cachedCtx.drawImage(bitmap, 0, 0);
                 }
               }
               bitmap.close();

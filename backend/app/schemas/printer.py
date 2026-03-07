@@ -30,8 +30,8 @@ class PlateDetectionROI(BaseModel):
 
     x: float = Field(..., ge=0.0, le=1.0)  # X start %
     y: float = Field(..., ge=0.0, le=1.0)  # Y start %
-    w: float = Field(..., ge=0.0, le=1.0)  # Width %
-    h: float = Field(..., ge=0.0, le=1.0)  # Height %
+    w: float = Field(..., gt=0.0, le=1.0)  # Width %
+    h: float = Field(..., gt=0.0, le=1.0)  # Height %
 
 
 class PrinterUpdate(BaseModel):
@@ -55,17 +55,16 @@ class PrinterUpdate(BaseModel):
 
 
 def _sanitize_url_credentials(url: str | None) -> str | None:
-    """Strip userinfo (username:password) from a URL."""
+    """Mask userinfo (username:password) in a URL with ***:***."""
     if not url:
         return url
     try:
         parsed = urlparse(url)
         if parsed.username:
-            # Reconstruct netloc without credentials
             host = parsed.hostname or ""
             if parsed.port:
                 host = f"{host}:{parsed.port}"
-            sanitized = parsed._replace(netloc=host)
+            sanitized = parsed._replace(netloc=f"***:***@{host}")
             return urlunparse(sanitized)
     except Exception:
         pass

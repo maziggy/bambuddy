@@ -96,6 +96,7 @@ async def get_settings(
                 "mqtt_use_tls",
                 "ha_enabled",
                 "per_printer_mapping_expanded",
+                "camera_gpu_accel",
                 "prometheus_enabled",
             ]:
                 settings_dict[setting.key] = setting.value.lower() == "true"
@@ -218,13 +219,19 @@ async def reset_settings(
 @router.get("/check-ffmpeg")
 async def check_ffmpeg():
     """Check if ffmpeg is installed and available."""
-    from backend.app.services.camera import get_ffmpeg_path
+    from backend.app.services.camera import detect_gpu_hwaccels, get_ffmpeg_path
 
     ffmpeg_path = get_ffmpeg_path()
+
+    gpu_hwaccels: list[str] = []
+    if ffmpeg_path:
+        gpu_hwaccels = await detect_gpu_hwaccels()
 
     return {
         "installed": ffmpeg_path is not None,
         "path": ffmpeg_path,
+        "gpu_available": len(gpu_hwaccels) > 0,
+        "gpu_backends": gpu_hwaccels,
     }
 
 

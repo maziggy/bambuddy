@@ -74,6 +74,8 @@ const mockSettings = {
   library_archive_mode: 'ask',
   library_disk_warning_gb: 5.0,
   camera_view_mode: 'window',
+  camera_quality: 'medium',
+  camera_gpu_accel: false,
   preferred_slicer: 'bambu_studio',
   prometheus_enabled: false,
   prometheus_token: '',

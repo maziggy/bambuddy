@@ -2,13 +2,14 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, RefreshCw, AlertTriangle, Maximize2, Minimize2, GripVertical, WifiOff, ZoomIn, ZoomOut, Fullscreen, Minimize } from 'lucide-react';
-import { api, getAuthToken } from '../api/client';
+import { api, getAuthToken, CAMERA_QUALITY_PRESETS } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { ChamberLight } from './icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from './SkipObjectsModal';
 import { useMjpegStream } from '../hooks/useMjpegStream';
 import { useStreamReconnect } from '../hooks/useStreamReconnect';
+import { useZoomPan } from '../hooks/useZoomPan';
 
 interface EmbeddedCameraViewerProps {
   printerId: number;
@@ -60,15 +61,9 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
   const [state, setState] = useState<CameraState>(loadState);
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const dragOffsetRef = useRef({ x: 0, y: 0 });
   const [isMinimized, setIsMinimized] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState(1);
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
-  const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
-  const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
-  const [lastTouchCenter, setLastTouchCenter] = useState<{ x: number; y: number } | null>(null);
 
   const [streamError, setStreamError] = useState(false);
   const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
@@ -76,6 +71,16 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mjpegRestartRef = useRef<() => void>(() => {});
+
+  const {
+    zoomLevel, panOffset, isPanning,
+    handleZoomIn, handleZoomOut, handleWheel,
+    handleMouseDown: handleCanvasMouseDown,
+    handleMouseMove: handleImageMouseMove,
+    handleMouseUp: handleImageMouseUp,
+    handleTouchStart, handleTouchMove, handleTouchEnd,
+    resetZoom,
+  } = useZoomPan({ containerRef, defaultMaxPan: { x: 200, y: 150 } });
 
   // Fetch printer info
   const { data: printer } = useQuery({
@@ -130,8 +135,10 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     checkStalled,
   });
 
-  // MJPEG stream via fetch+canvas
-  const streamUrl = `/printers/${printerId}/camera/stream?fps=15&quality=5&scale=1.0`;
+  // Camera quality preset from settings
+  const { data: cameraSettings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
+  const singlePreset = CAMERA_QUALITY_PRESETS[cameraSettings?.camera_quality ?? 'medium'].single;
+  const streamUrl = `/printers/${printerId}/camera/stream?fps=${singlePreset.fps}&quality=${singlePreset.quality}&scale=${singlePreset.scale}`;
   const mjpeg = useMjpegStream({
     url: streamUrl,
     canvasRef,
@@ -179,8 +186,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
       const nowFullscreen = !!document.fullscreenElement;
       setIsFullscreen(nowFullscreen);
       if (!nowFullscreen) {
-        setZoomLevel(1);
-        setPanOffset({ x: 0, y: 0 });
+        resetZoom();
       }
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
@@ -194,146 +200,6 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     } else {
       containerRef.current.requestFullscreen();
     }
-  };
-
-  const handleZoomIn = () => {
-    setZoomLevel(prev => Math.min(prev + 0.5, 4));
-  };
-
-  const handleZoomOut = () => {
-    setZoomLevel(prev => {
-      const newZoom = Math.max(prev - 0.5, 1);
-      if (newZoom === 1) setPanOffset({ x: 0, y: 0 });
-      return newZoom;
-    });
-  };
-
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    if (e.deltaY < 0) {
-      handleZoomIn();
-    } else {
-      handleZoomOut();
-    }
-  };
-
-  const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    if (zoomLevel > 1) {
-      e.preventDefault();
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
-    }
-  };
-
-  const getMaxPan = useCallback(() => {
-    if (!containerRef.current) {
-      return { x: 200, y: 150 };
-    }
-    const container = containerRef.current.getBoundingClientRect();
-    const maxX = (container.width * (zoomLevel - 1)) / 2;
-    const maxY = (container.height * (zoomLevel - 1)) / 2;
-    return { x: Math.max(50, maxX), y: Math.max(50, maxY) };
-  }, [zoomLevel]);
-
-  const handleImageMouseMove = (e: React.MouseEvent) => {
-    if (isPanning && zoomLevel > 1) {
-      const newX = e.clientX - panStart.x;
-      const newY = e.clientY - panStart.y;
-      const maxPan = getMaxPan();
-      setPanOffset({
-        x: Math.max(-maxPan.x, Math.min(maxPan.x, newX)),
-        y: Math.max(-maxPan.y, Math.min(maxPan.y, newY)),
-      });
-    }
-  };
-
-  const handleImageMouseUp = () => {
-    setIsPanning(false);
-  };
-
-  // Touch event handlers for mobile
-  const getTouchDistance = (touches: React.TouchList) => {
-    if (touches.length < 2) return 0;
-    const dx = touches[0].clientX - touches[1].clientX;
-    const dy = touches[0].clientY - touches[1].clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-  };
-
-  const getTouchCenter = (touches: React.TouchList) => {
-    if (touches.length < 2) {
-      return { x: touches[0].clientX, y: touches[0].clientY };
-    }
-    return {
-      x: (touches[0].clientX + touches[1].clientX) / 2,
-      y: (touches[0].clientY + touches[1].clientY) / 2,
-    };
-  };
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 2) {
-      e.preventDefault();
-      setLastTouchDistance(getTouchDistance(e.touches));
-      setLastTouchCenter(getTouchCenter(e.touches));
-    } else if (e.touches.length === 1 && zoomLevel > 1) {
-      e.preventDefault();
-      setIsPanning(true);
-      setPanStart({
-        x: e.touches[0].clientX - panOffset.x,
-        y: e.touches[0].clientY - panOffset.y,
-      });
-    }
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (e.touches.length === 2 && lastTouchDistance !== null) {
-      e.preventDefault();
-      const newDistance = getTouchDistance(e.touches);
-      const scale = newDistance / lastTouchDistance;
-
-      setZoomLevel(prev => {
-        const newZoom = Math.max(1, Math.min(4, prev * scale));
-        if (newZoom === 1) {
-          setPanOffset({ x: 0, y: 0 });
-        }
-        return newZoom;
-      });
-
-      setLastTouchDistance(newDistance);
-
-      const newCenter = getTouchCenter(e.touches);
-      if (lastTouchCenter) {
-        const maxPan = getMaxPan();
-        setPanOffset(prev => ({
-          x: Math.max(-maxPan.x, Math.min(maxPan.x, prev.x + (newCenter.x - lastTouchCenter.x))),
-          y: Math.max(-maxPan.y, Math.min(maxPan.y, prev.y + (newCenter.y - lastTouchCenter.y))),
-        }));
-      }
-      setLastTouchCenter(newCenter);
-    } else if (e.touches.length === 1 && isPanning && zoomLevel > 1) {
-      e.preventDefault();
-      const newX = e.touches[0].clientX - panStart.x;
-      const newY = e.touches[0].clientY - panStart.y;
-      const maxPan = getMaxPan();
-      setPanOffset({
-        x: Math.max(-maxPan.x, Math.min(maxPan.x, newX)),
-        y: Math.max(-maxPan.y, Math.min(maxPan.y, newY)),
-      });
-    }
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (e.touches.length < 2) {
-      setLastTouchDistance(null);
-      setLastTouchCenter(null);
-    }
-    if (e.touches.length === 0) {
-      setIsPanning(false);
-    }
-  };
-
-  const resetZoom = () => {
-    setZoomLevel(1);
-    setPanOffset({ x: 0, y: 0 });
   };
 
   const refresh = () => {
@@ -352,10 +218,10 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
   const handleMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('.no-drag')) return;
     setIsDragging(true);
-    setDragOffset({
+    dragOffsetRef.current = {
       x: e.clientX - state.x,
       y: e.clientY - state.y,
-    });
+    };
   };
 
   // Resize handlers
@@ -365,21 +231,27 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
   };
 
   useEffect(() => {
+    let rafId = 0;
     const handleMouseMove = (e: MouseEvent) => {
-      if (isDragging) {
-        setState((prev) => ({
-          ...prev,
-          x: Math.max(0, Math.min(e.clientX - dragOffset.x, window.innerWidth - prev.width)),
-          y: Math.max(0, Math.min(e.clientY - dragOffset.y, window.innerHeight - prev.height)),
-        }));
-      } else if (isResizing && containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        setState((prev) => ({
-          ...prev,
-          width: Math.max(200, Math.min(e.clientX - rect.left, window.innerWidth - prev.x - 10)),
-          height: Math.max(150, Math.min(e.clientY - rect.top, window.innerHeight - prev.y - 10)),
-        }));
-      }
+      if (rafId) return; // Already scheduled
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        if (isDragging) {
+          const offset = dragOffsetRef.current;
+          setState((prev) => ({
+            ...prev,
+            x: Math.max(0, Math.min(e.clientX - offset.x, window.innerWidth - prev.width)),
+            y: Math.max(0, Math.min(e.clientY - offset.y, window.innerHeight - prev.height)),
+          }));
+        } else if (isResizing && containerRef.current) {
+          const rect = containerRef.current.getBoundingClientRect();
+          setState((prev) => ({
+            ...prev,
+            width: Math.max(200, Math.min(e.clientX - rect.left, window.innerWidth - prev.x - 10)),
+            height: Math.max(150, Math.min(e.clientY - rect.top, window.innerHeight - prev.y - 10)),
+          }));
+        }
+      });
     };
 
     const handleMouseUp = () => {
@@ -393,9 +265,10 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
       return () => {
         document.removeEventListener('mousemove', handleMouseMove);
         document.removeEventListener('mouseup', handleMouseUp);
+        if (rafId) cancelAnimationFrame(rafId);
       };
     }
-  }, [isDragging, isResizing, dragOffset]);
+  }, [isDragging, isResizing]);
 
   const streamLoading = mjpeg.isLoading;
 

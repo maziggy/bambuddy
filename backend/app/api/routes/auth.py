@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -155,6 +155,12 @@ async def setup_auth(request: SetupRequest, db: AsyncSession = Depends(get_db)):
     import logging
 
     logger = logging.getLogger(__name__)
+
+    if await is_setup_completed(db):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Setup has already been completed. Use the admin panel to modify settings.",
+        )
 
     try:
         # If auth_enabled is true but no users exist, allow re-setup (recovery scenario)
@@ -342,6 +348,20 @@ async def get_current_user_info(
     """
     import jwt
     from jwt.exceptions import PyJWTError as JWTError
+
+    # If auth is disabled, return synthetic admin
+    if not await is_auth_enabled(db):
+        return UserResponse(
+            id=0,
+            username="admin",
+            email=None,
+            role="admin",
+            is_active=True,
+            is_admin=True,
+            groups=[],
+            permissions=sorted(ALL_PERMISSIONS),
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
 
     # Check for API key via X-API-Key header
     if x_api_key:

@@ -770,6 +770,15 @@ export interface APIKeyUpdate {
   expires_at?: string | null;
 }
 
+// Camera quality types and presets
+export type CameraQuality = 'low' | 'medium' | 'high';
+
+export const CAMERA_QUALITY_PRESETS = {
+  low:    { grid: { fps: 2,  quality: 20, scale: 0.25 }, single: { fps: 10, quality: 10, scale: 0.5 } },
+  medium: { grid: { fps: 5,  quality: 15, scale: 0.5  }, single: { fps: 15, quality: 5,  scale: 1.0 } },
+  high:   { grid: { fps: 10, quality: 5,  scale: 0.75 }, single: { fps: 30, quality: 2,  scale: 1.0 } },
+} as const;
+
 // Settings types
 export interface AppSettings {
   auto_archive: boolean;
@@ -832,6 +841,8 @@ export interface AppSettings {
   library_disk_warning_gb: number;
   // Camera view settings
   camera_view_mode: 'window' | 'embedded';
+  camera_quality: CameraQuality;
+  camera_gpu_accel: boolean;
   // Preferred slicer
   preferred_slicer: 'bambu_studio' | 'orcaslicer';
   // Prometheus metrics
@@ -3154,7 +3165,7 @@ export const api = {
     }>;
   },
   checkFfmpeg: () =>
-    request<{ installed: boolean; path: string | null }>('/settings/check-ffmpeg'),
+    request<{ installed: boolean; path: string | null; gpu_available: boolean; gpu_backends: string[] }>('/settings/check-ffmpeg'),
   getNetworkInterfaces: () =>
     request<{ interfaces: NetworkInterface[] }>('/settings/network-interfaces'),
 

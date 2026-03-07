@@ -23,6 +23,9 @@ JPEG_END = b"\xff\xd9"
 # Cache the ffmpeg path after first lookup
 _ffmpeg_path: str | None = None
 
+# Cache GPU hardware acceleration backends
+_gpu_hwaccels: list[str] | None = None
+
 # ---------------------------------------------------------------------------
 # Global semaphore limiting concurrent RTSP ffmpeg processes
 # ---------------------------------------------------------------------------
@@ -70,6 +73,50 @@ def get_ffmpeg_path() -> str | None:
         logger.warning("ffmpeg not found in PATH or common locations")
 
     return ffmpeg_path
+
+
+async def detect_gpu_hwaccels() -> list[str]:
+    """Detect available GPU hardware acceleration backends via ffmpeg.
+
+    Runs ``ffmpeg -hwaccels``, parses the output, and caches the result.
+    Returns an empty list when ffmpeg is not installed or no backends found.
+    """
+    global _gpu_hwaccels
+
+    if _gpu_hwaccels is not None:
+        return _gpu_hwaccels
+
+    ffmpeg = get_ffmpeg_path()
+    if not ffmpeg:
+        _gpu_hwaccels = []
+        return _gpu_hwaccels
+
+    try:
+        process = await asyncio.create_subprocess_exec(
+            ffmpeg,
+            "-hwaccels",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=10)
+        lines = stdout.decode().strip().splitlines()
+        # First line is typically "Hardware acceleration methods:" — skip it
+        backends = [line.strip() for line in lines[1:] if line.strip() and line.strip().lower() != "none"]
+        _gpu_hwaccels = backends
+        if backends:
+            logger.info("GPU hwaccel backends detected: %s", ", ".join(backends))
+        else:
+            logger.info("No GPU hwaccel backends detected")
+    except Exception as e:
+        logger.warning("Failed to detect GPU hwaccels: %s", e)
+        _gpu_hwaccels = []
+
+    return _gpu_hwaccels
+
+
+def get_gpu_hwaccels() -> list[str]:
+    """Return cached GPU hwaccel backends (empty list if not yet detected)."""
+    return _gpu_hwaccels or []
 
 
 def supports_rtsp(model: str | None) -> bool:
@@ -320,6 +367,7 @@ async def capture_camera_frame(
     model: str | None,
     output_path: Path,
     timeout: int = 30,
+    gpu_accel: bool = False,
 ) -> bool:
     """Capture a single frame from the printer's camera stream and save to disk.
 
@@ -338,7 +386,7 @@ async def capture_camera_frame(
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    jpeg_data = await capture_camera_frame_bytes(ip_address, access_code, model, timeout)
+    jpeg_data = await capture_camera_frame_bytes(ip_address, access_code, model, timeout, gpu_accel=gpu_accel)
     if jpeg_data:
         try:
             with open(output_path, "wb") as f:
@@ -356,6 +404,7 @@ async def capture_camera_frame_bytes(
     access_code: str,
     model: str | None,
     timeout: int = 15,
+    gpu_accel: bool = False,
 ) -> bytes | None:
     """Capture a single frame and return as JPEG bytes (no disk write).
 
@@ -384,9 +433,10 @@ async def capture_camera_frame_bytes(
         logger.error("ffmpeg not found for camera frame capture")
         return None
 
-    cmd = [
-        ffmpeg,
-        "-y",
+    cmd = [ffmpeg, "-y"]
+    if gpu_accel:
+        cmd.extend(["-hwaccel", "auto"])
+    cmd.extend([
         "-rtsp_transport",
         "tcp",
         "-rtsp_flags",
@@ -402,7 +452,7 @@ async def capture_camera_frame_bytes(
         "-q:v",
         "2",
         "-",
-    ]
+    ])
 
     logger.info("Capturing camera frame bytes from %s using RTSP (model: %s)", ip_address, model)
 
@@ -443,6 +493,7 @@ async def capture_finish_photo(
     access_code: str,
     model: str | None,
     archive_dir: Path,
+    gpu_accel: bool = False,
 ) -> str | None:
     """Capture a finish photo and save it to the archive's photos folder.
 
@@ -471,6 +522,7 @@ async def capture_finish_photo(
         model=model,
         output_path=output_path,
         timeout=30,
+        gpu_accel=gpu_accel,
     )
 
     if success:

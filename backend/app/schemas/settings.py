@@ -136,6 +136,14 @@ class AppSettings(BaseModel):
         default="window",
         description="Camera view mode: 'window' opens in new browser window, 'embedded' shows overlay on main screen",
     )
+    camera_quality: str = Field(
+        default="medium",
+        description="Camera quality preset: 'low', 'medium', or 'high' — controls ffmpeg fps/quality/scale for grid and single streams",
+    )
+    camera_gpu_accel: bool = Field(
+        default=False,
+        description="Enable GPU hardware acceleration for ffmpeg camera decoding (-hwaccel auto)",
+    )
 
     # Preferred slicer application
     preferred_slicer: str = Field(
@@ -215,6 +223,8 @@ class AppSettingsUpdate(BaseModel):
     library_archive_mode: str | None = None
     library_disk_warning_gb: float | None = None
     camera_view_mode: str | None = None
+    camera_quality: str | None = None
+    camera_gpu_accel: bool | None = None
     preferred_slicer: str | None = None
     prometheus_enabled: bool | None = None
     prometheus_token: str | None = None

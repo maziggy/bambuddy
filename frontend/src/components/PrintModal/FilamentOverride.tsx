@@ -84,26 +84,6 @@ export function FilamentOverride({
                 className="grid items-center gap-2 text-xs"
                 style={{ gridTemplateColumns: '16px minmax(70px, 1fr) auto 2fr 20px' }}
               >
-                <option value="" className="bg-bambu-dark text-bambu-gray">
-                  {t('printModal.originalFilament')}: {req.type} ({getColorName(req.color)})
-                </option>
-                {compatible.map((f, idx) => (
-                  <option
-                    key={`${f.type}-${f.color}-${f.tray_sub_brands}-${idx}`}
-                    value={`${f.type}|${f.color}`}
-                    className="bg-bambu-dark text-white"
-                  >
-                    {f.tray_sub_brands || f.type} ({getColorName(f.color)})
-                  </option>
-                ))}
-              </select>
-              {/* Reset button */}
-              {isOverridden ? (
-                <button
-                  type="button"
-                  onClick={() => handleChange(req.slot_id, '')}
-                  className="text-bambu-gray hover:text-white transition-colors"
-                  title={t('printModal.resetToOriginal')}
                 {/* Original color swatch */}
                 <span title={`${t('printModal.originalFilament')}: ${req.type} - ${getColorName(req.color)}`}>
                   <Circle className="w-3 h-3" fill={req.color} stroke={req.color} />

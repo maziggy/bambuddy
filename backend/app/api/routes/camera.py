@@ -16,7 +16,7 @@ from typing import Literal
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
@@ -405,6 +405,26 @@ class SharedStreamHub:
                 printer_id,
                 len(self._streams),
             )
+
+    async def stop_all(self) -> int:
+        """Stop all active producers. Returns count of stopped streams."""
+        async with self._lock:
+            entries = list(self._streams.items())
+            self._streams.clear()
+        count = 0
+        for _pid, entry in entries:
+            entry.alive = False
+            entry.frame = None
+            if entry.task and not entry.task.done():
+                entry.task.cancel()
+            count += 1
+        for _, entry in entries:
+            if entry.task and not entry.task.done():
+                try:
+                    await asyncio.wait_for(entry.task, timeout=5.0)
+                except (asyncio.CancelledError, TimeoutError, Exception):
+                    pass
+        return count
 
     async def stop(self, printer_id: int) -> bool:
         """Force-stop the shared stream for a printer."""
@@ -918,6 +938,15 @@ async def camera_grid_stream(
     The frontend reads this stream with one fetch() and demuxes frames to
     the correct <canvas> element by printer ID.
     """
+    # Parse printer IDs early so we know the actual stream count for quality resolution
+    try:
+        printer_ids = [int(x.strip()) for x in ids.split(",") if x.strip()]
+    except ValueError:
+        raise HTTPException(400, "ids must be comma-separated integers")
+
+    if not printer_ids:
+        raise HTTPException(400, "No printer IDs provided")
+
     # Resolve quality preset from DB when no explicit params provided
     threads = 0
     gpu_accel = False
@@ -925,8 +954,7 @@ async def camera_grid_stream(
         from backend.app.api.routes.settings import get_setting
 
         raw_preset = await get_setting(db, "camera_quality") or "auto"
-        printer_count = (await db.execute(select(func.count()).select_from(Printer).where(Printer.is_active == True))).scalar() or 1  # noqa: E712
-        preset_name = await resolve_camera_quality(raw_preset, printer_count)
+        preset_name = await resolve_camera_quality(raw_preset, len(printer_ids))
         preset = CAMERA_QUALITY_PRESETS.get(preset_name, CAMERA_QUALITY_PRESETS["medium"])
         fps = preset["grid"]["fps"]
         quality = preset["grid"]["quality"]
@@ -938,15 +966,6 @@ async def camera_grid_stream(
         fps = fps or 5
         quality = quality or 15
         scale = scale or 0.5
-
-    # Parse printer IDs
-    try:
-        printer_ids = [int(x.strip()) for x in ids.split(",") if x.strip()]
-    except ValueError:
-        raise HTTPException(400, "ids must be comma-separated integers")
-
-    if not printer_ids:
-        raise HTTPException(400, "No printer IDs provided")
 
     # Deduplicate while preserving order
     printer_ids = list(dict.fromkeys(printer_ids))
@@ -1088,8 +1107,7 @@ async def camera_stream(
         from backend.app.api.routes.settings import get_setting
 
         raw_preset = await get_setting(db, "camera_quality") or "auto"
-        printer_count = (await db.execute(select(func.count()).select_from(Printer).where(Printer.is_active == True))).scalar() or 1  # noqa: E712
-        preset_name = await resolve_camera_quality(raw_preset, printer_count)
+        preset_name = await resolve_camera_quality(raw_preset, 1)
         preset = CAMERA_QUALITY_PRESETS.get(preset_name, CAMERA_QUALITY_PRESETS["medium"])
         fps = preset["single"]["fps"]
         quality = preset["single"]["quality"]

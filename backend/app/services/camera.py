@@ -7,13 +7,18 @@ Supports two camera protocols:
 
 import asyncio
 import logging
+import math
 import os
+import platform
 import shutil
 import ssl
 import struct
+import sys
 import uuid
 from datetime import datetime
 from pathlib import Path
+
+import psutil
 
 logger = logging.getLogger(__name__)
 
@@ -115,29 +120,106 @@ async def detect_gpu_hwaccels() -> list[str]:
     return _gpu_hwaccels
 
 
-async def resolve_camera_quality(preset_name: str, printer_count: int = 1) -> str:
-    """Resolve 'auto' to a concrete preset based on hardware and printer count.
+# ---------------------------------------------------------------------------
+# Hardware capability cache for auto quality resolution
+# ---------------------------------------------------------------------------
+_system_hw_info: dict | None = None
 
-    Computes a capacity score from CPU cores and GPU availability,
-    then scales down based on how many printers need streaming.
+
+async def _get_system_hw_info() -> dict:
+    """Probe system hardware once and cache the result.
+
+    Returns a dict with cpu_score, ram_score, gpu_score, gpu_penalty_factor,
+    and base_score used by resolve_camera_quality().
+    """
+    global _system_hw_info
+
+    if _system_hw_info is not None:
+        return _system_hw_info
+
+    cpu_count = os.cpu_count() or 2
+
+    # Platform awareness
+    is_darwin = sys.platform == "darwin"
+    is_arm = platform.machine().lower() in ("arm64", "aarch64")
+    is_apple_silicon = is_darwin and is_arm
+
+    if is_apple_silicon:
+        core_efficiency = 1.3
+    elif is_arm:
+        core_efficiency = 0.5  # Raspberry Pi, etc.
+    else:
+        core_efficiency = 1.0  # x86_64
+
+    cpu_score = math.sqrt(cpu_count) * core_efficiency
+
+    # RAM consideration
+    ram_gb = psutil.virtual_memory().total / (1024**3)
+    ram_score = min(math.log2(max(ram_gb, 1)), 3.0)
+
+    # GPU scoring by backend type
+    gpu_backends = await detect_gpu_hwaccels()
+    backend_set = {b.lower() for b in gpu_backends}
+
+    gpu_score = 0.0
+    gpu_penalty_factor = 1.0
+
+    if "videotoolbox" in backend_set and is_apple_silicon:
+        gpu_score, gpu_penalty_factor = 4.0, 0.25
+    elif "videotoolbox" in backend_set:
+        gpu_score, gpu_penalty_factor = 3.0, 0.4
+    elif "cuda" in backend_set:
+        gpu_score, gpu_penalty_factor = 3.0, 0.35
+    elif "qsv" in backend_set:
+        gpu_score, gpu_penalty_factor = 2.5, 0.4
+    elif "vaapi" in backend_set:
+        gpu_score, gpu_penalty_factor = 2.0, 0.5
+    elif gpu_backends:
+        gpu_score, gpu_penalty_factor = 1.0, 0.7
+
+    base_score = (cpu_score + ram_score + gpu_score) * 2
+
+    _system_hw_info = {
+        "cpu_count": cpu_count,
+        "cpu_score": cpu_score,
+        "ram_gb": ram_gb,
+        "ram_score": ram_score,
+        "gpu_backends": gpu_backends,
+        "gpu_score": gpu_score,
+        "gpu_penalty_factor": gpu_penalty_factor,
+        "base_score": base_score,
+    }
+
+    return _system_hw_info
+
+
+def _reset_system_hw_cache() -> None:
+    """Clear the cached hardware info (for testing)."""
+    global _system_hw_info
+    _system_hw_info = None
+
+
+async def resolve_camera_quality(preset_name: str, stream_count: int = 1) -> str:
+    """Resolve 'auto' to a concrete preset based on hardware capability and stream count.
+
+    Uses a hardware capability score (CPU cores scaled by architecture efficiency,
+    RAM, and GPU backend type) divided by a sqrt-based stream penalty that accounts
+    for how much the GPU offloads work from the CPU.
     """
     if preset_name != "auto":
         return preset_name
 
-    cpu_count = os.cpu_count() or 2
-    gpu_backends = await detect_gpu_hwaccels()
-    has_gpu = len(gpu_backends) > 0
+    hw = await _get_system_hw_info()
+    base_score = hw["base_score"]
+    gpu_penalty_factor = hw["gpu_penalty_factor"]
 
-    # Base score: CPU cores + GPU bonus
-    score = cpu_count + (4 if has_gpu else 0)
+    sc = max(stream_count, 1)
+    penalty = 1 + (math.sqrt(sc) - 1) * gpu_penalty_factor
+    effective = base_score / penalty
 
-    # Per-printer cost: each printer consumes resources
-    # Effective score = base score / printer_count
-    effective = score / max(printer_count, 1)
-
-    if effective >= 8:
+    if effective >= 12.0:
         return "high"
-    elif effective >= 3:
+    elif effective >= 7.0:
         return "medium"
     else:
         return "low"

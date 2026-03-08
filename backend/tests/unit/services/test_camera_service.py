@@ -1,7 +1,7 @@
 """Unit tests for the camera service (backend/app/services/camera.py).
 
 Tests model detection, URL building, chamber auth payload, port selection,
-and auto quality resolution.
+hardware probing, and auto quality resolution.
 """
 
 import struct
@@ -162,8 +162,200 @@ class TestCreateChamberAuthPayload:
         assert payload[50:80] == b"\x00" * 30
 
 
+# ---------------------------------------------------------------------------
+# Helper to build a fake hw_info dict for mocking _get_system_hw_info
+# ---------------------------------------------------------------------------
+def _make_hw_info(
+    cpu_count: int = 8,
+    cpu_score: float = 2.83,
+    ram_gb: float = 16.0,
+    ram_score: float = 3.0,
+    gpu_backends: list[str] | None = None,
+    gpu_score: float = 0.0,
+    gpu_penalty_factor: float = 1.0,
+    base_score: float | None = None,
+) -> dict:
+    if base_score is None:
+        base_score = (cpu_score + ram_score + gpu_score) * 2
+    return {
+        "cpu_count": cpu_count,
+        "cpu_score": cpu_score,
+        "ram_gb": ram_gb,
+        "ram_score": ram_score,
+        "gpu_backends": gpu_backends or [],
+        "gpu_score": gpu_score,
+        "gpu_penalty_factor": gpu_penalty_factor,
+        "base_score": base_score,
+    }
+
+
+class TestGetSystemHwInfo:
+    """Tests for _get_system_hw_info() hardware probing."""
+
+    @pytest.fixture(autouse=True)
+    def reset_cache(self):
+        from backend.app.services.camera import _reset_system_hw_cache
+
+        _reset_system_hw_cache()
+        yield
+        _reset_system_hw_cache()
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=["videotoolbox"])
+    @patch("backend.app.services.camera.psutil")
+    @patch("backend.app.services.camera.platform")
+    @patch("backend.app.services.camera.sys")
+    @patch("os.cpu_count", return_value=12)
+    async def test_apple_silicon(self, _cpu, mock_sys, mock_platform, mock_psutil, _gpu):
+        from backend.app.services.camera import _get_system_hw_info
+
+        mock_sys.platform = "darwin"
+        mock_platform.machine.return_value = "arm64"
+        mock_psutil.virtual_memory.return_value.total = 36 * 1024**3
+
+        hw = await _get_system_hw_info()
+        assert hw["cpu_count"] == 12
+        assert hw["gpu_score"] == 4.0
+        assert hw["gpu_penalty_factor"] == 0.25
+        # cpu_score = sqrt(12)*1.3 ≈ 4.50, ram_score = min(log2(36), 3) = 3.0
+        # base = (4.50 + 3.0 + 4.0) * 2 ≈ 23.0
+        assert 22.5 < hw["base_score"] < 23.5
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=["cuda"])
+    @patch("backend.app.services.camera.psutil")
+    @patch("backend.app.services.camera.platform")
+    @patch("backend.app.services.camera.sys")
+    @patch("os.cpu_count", return_value=16)
+    async def test_x86_cuda(self, _cpu, mock_sys, mock_platform, mock_psutil, _gpu):
+        from backend.app.services.camera import _get_system_hw_info
+
+        mock_sys.platform = "linux"
+        mock_platform.machine.return_value = "x86_64"
+        mock_psutil.virtual_memory.return_value.total = 32 * 1024**3
+
+        hw = await _get_system_hw_info()
+        assert hw["gpu_score"] == 3.0
+        assert hw["gpu_penalty_factor"] == 0.35
+        # cpu_score = sqrt(16)*1.0 = 4.0, ram = 3.0, gpu = 3.0
+        # base = (4+3+3)*2 = 20.0
+        assert hw["base_score"] == pytest.approx(20.0, abs=0.1)
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=[])
+    @patch("backend.app.services.camera.psutil")
+    @patch("backend.app.services.camera.platform")
+    @patch("backend.app.services.camera.sys")
+    @patch("os.cpu_count", return_value=4)
+    async def test_raspberry_pi(self, _cpu, mock_sys, mock_platform, mock_psutil, _gpu):
+        from backend.app.services.camera import _get_system_hw_info
+
+        mock_sys.platform = "linux"
+        mock_platform.machine.return_value = "aarch64"
+        mock_psutil.virtual_memory.return_value.total = 4 * 1024**3
+
+        hw = await _get_system_hw_info()
+        # ARM non-Apple: core_efficiency = 0.5
+        # cpu_score = sqrt(4)*0.5 = 1.0, ram_score = log2(4) = 2.0
+        # base = (1.0 + 2.0 + 0.0) * 2 = 6.0
+        assert hw["base_score"] == pytest.approx(6.0, abs=0.1)
+        assert hw["gpu_penalty_factor"] == 1.0
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=["qsv"])
+    @patch("backend.app.services.camera.psutil")
+    @patch("backend.app.services.camera.platform")
+    @patch("backend.app.services.camera.sys")
+    @patch("os.cpu_count", return_value=8)
+    async def test_intel_qsv(self, _cpu, mock_sys, mock_platform, mock_psutil, _gpu):
+        from backend.app.services.camera import _get_system_hw_info
+
+        mock_sys.platform = "linux"
+        mock_platform.machine.return_value = "x86_64"
+        mock_psutil.virtual_memory.return_value.total = 16 * 1024**3
+
+        hw = await _get_system_hw_info()
+        assert hw["gpu_score"] == 2.5
+        assert hw["gpu_penalty_factor"] == 0.4
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=["videotoolbox"])
+    @patch("backend.app.services.camera.psutil")
+    @patch("backend.app.services.camera.platform")
+    @patch("backend.app.services.camera.sys")
+    @patch("os.cpu_count", return_value=8)
+    async def test_intel_mac_videotoolbox(self, _cpu, mock_sys, mock_platform, mock_psutil, _gpu):
+        from backend.app.services.camera import _get_system_hw_info
+
+        mock_sys.platform = "darwin"
+        mock_platform.machine.return_value = "x86_64"
+        mock_psutil.virtual_memory.return_value.total = 16 * 1024**3
+
+        hw = await _get_system_hw_info()
+        assert hw["gpu_score"] == 3.0
+        assert hw["gpu_penalty_factor"] == 0.4
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=["vaapi"])
+    @patch("backend.app.services.camera.psutil")
+    @patch("backend.app.services.camera.platform")
+    @patch("backend.app.services.camera.sys")
+    @patch("os.cpu_count", return_value=4)
+    async def test_vaapi(self, _cpu, mock_sys, mock_platform, mock_psutil, _gpu):
+        from backend.app.services.camera import _get_system_hw_info
+
+        mock_sys.platform = "linux"
+        mock_platform.machine.return_value = "x86_64"
+        mock_psutil.virtual_memory.return_value.total = 8 * 1024**3
+
+        hw = await _get_system_hw_info()
+        assert hw["gpu_score"] == 2.0
+        assert hw["gpu_penalty_factor"] == 0.5
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=[])
+    @patch("backend.app.services.camera.psutil")
+    @patch("backend.app.services.camera.platform")
+    @patch("backend.app.services.camera.sys")
+    @patch("os.cpu_count", return_value=None)
+    async def test_none_cpu_count_defaults_to_2(self, _cpu, mock_sys, mock_platform, mock_psutil, _gpu):
+        from backend.app.services.camera import _get_system_hw_info
+
+        mock_sys.platform = "linux"
+        mock_platform.machine.return_value = "x86_64"
+        mock_psutil.virtual_memory.return_value.total = 4 * 1024**3
+
+        hw = await _get_system_hw_info()
+        assert hw["cpu_count"] == 2
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=["d3d11va"])
+    @patch("backend.app.services.camera.psutil")
+    @patch("backend.app.services.camera.platform")
+    @patch("backend.app.services.camera.sys")
+    @patch("os.cpu_count", return_value=8)
+    async def test_unknown_gpu_backend(self, _cpu, mock_sys, mock_platform, mock_psutil, _gpu):
+        from backend.app.services.camera import _get_system_hw_info
+
+        mock_sys.platform = "win32"
+        mock_platform.machine.return_value = "AMD64"
+        mock_psutil.virtual_memory.return_value.total = 16 * 1024**3
+
+        hw = await _get_system_hw_info()
+        assert hw["gpu_score"] == 1.0
+        assert hw["gpu_penalty_factor"] == 0.7
+
+
 class TestResolveCameraQuality:
     """Tests for resolve_camera_quality() auto-detection logic."""
+
+    @pytest.fixture(autouse=True)
+    def reset_cache(self):
+        from backend.app.services.camera import _reset_system_hw_cache
+
+        _reset_system_hw_cache()
+        yield
+        _reset_system_hw_cache()
 
     @pytest.mark.asyncio
     async def test_non_auto_passes_through(self):
@@ -174,79 +366,133 @@ class TestResolveCameraQuality:
         assert await resolve_camera_quality("high", 10) == "high"
 
     @pytest.mark.asyncio
-    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=["videotoolbox"])
-    @patch("os.cpu_count", return_value=8)
-    async def test_8_cores_gpu_1_printer_high(self, _cpu, _gpu):
+    @patch(
+        "backend.app.services.camera._get_system_hw_info",
+        new_callable=AsyncMock,
+        return_value=_make_hw_info(base_score=23.0, gpu_penalty_factor=0.25),
+    )
+    async def test_macbook_pro_m3_1_stream_high(self, _hw):
+        """MacBook Pro M3 Pro (12c/36GB/vtb), 1 stream -> high"""
         from backend.app.services.camera import resolve_camera_quality
 
         assert await resolve_camera_quality("auto", 1) == "high"
 
     @pytest.mark.asyncio
-    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=["videotoolbox"])
-    @patch("os.cpu_count", return_value=8)
-    async def test_8_cores_gpu_4_printers_medium(self, _cpu, _gpu):
+    @patch(
+        "backend.app.services.camera._get_system_hw_info",
+        new_callable=AsyncMock,
+        return_value=_make_hw_info(base_score=23.0, gpu_penalty_factor=0.25),
+    )
+    async def test_macbook_pro_m3_6_streams_high(self, _hw):
+        """MacBook Pro M3 Pro, 6 streams -> still high"""
+        from backend.app.services.camera import resolve_camera_quality
+
+        assert await resolve_camera_quality("auto", 6) == "high"
+
+    @pytest.mark.asyncio
+    @patch(
+        "backend.app.services.camera._get_system_hw_info",
+        new_callable=AsyncMock,
+        return_value=_make_hw_info(base_score=23.0, gpu_penalty_factor=0.25),
+    )
+    async def test_macbook_pro_m3_12_streams_high(self, _hw):
+        """MacBook Pro M3 Pro, 12 streams -> still high"""
+        from backend.app.services.camera import resolve_camera_quality
+
+        assert await resolve_camera_quality("auto", 12) == "high"
+
+    @pytest.mark.asyncio
+    @patch(
+        "backend.app.services.camera._get_system_hw_info",
+        new_callable=AsyncMock,
+        return_value=_make_hw_info(base_score=20.0, gpu_penalty_factor=0.35),
+    )
+    async def test_desktop_cuda_1_stream_high(self, _hw):
+        """Desktop 16c/32GB/CUDA, 1 stream -> high"""
+        from backend.app.services.camera import resolve_camera_quality
+
+        assert await resolve_camera_quality("auto", 1) == "high"
+
+    @pytest.mark.asyncio
+    @patch(
+        "backend.app.services.camera._get_system_hw_info",
+        new_callable=AsyncMock,
+        return_value=_make_hw_info(base_score=20.0, gpu_penalty_factor=0.35),
+    )
+    async def test_desktop_cuda_10_streams_medium(self, _hw):
+        """Desktop 16c/32GB/CUDA, 10 streams -> medium"""
+        from backend.app.services.camera import resolve_camera_quality
+
+        assert await resolve_camera_quality("auto", 10) == "medium"
+
+    @pytest.mark.asyncio
+    @patch(
+        "backend.app.services.camera._get_system_hw_info",
+        new_callable=AsyncMock,
+        return_value=_make_hw_info(base_score=10.0, gpu_penalty_factor=1.0),
+    )
+    async def test_mini_pc_no_gpu_12_streams_low(self, _hw):
+        """Mini PC 4c/8GB/no GPU, 12 streams -> low"""
+        from backend.app.services.camera import resolve_camera_quality
+
+        assert await resolve_camera_quality("auto", 12) == "low"
+
+    @pytest.mark.asyncio
+    @patch(
+        "backend.app.services.camera._get_system_hw_info",
+        new_callable=AsyncMock,
+        return_value=_make_hw_info(base_score=6.8, gpu_penalty_factor=1.0),
+    )
+    async def test_mini_pc_2c_no_gpu_1_stream_low(self, _hw):
+        """Mini PC 2c/4GB/no GPU, 1 stream -> low"""
+        from backend.app.services.camera import resolve_camera_quality
+
+        assert await resolve_camera_quality("auto", 1) == "low"
+
+    @pytest.mark.asyncio
+    @patch(
+        "backend.app.services.camera._get_system_hw_info",
+        new_callable=AsyncMock,
+        return_value=_make_hw_info(base_score=6.0, gpu_penalty_factor=1.0),
+    )
+    async def test_raspberry_pi_1_stream_low(self, _hw):
+        """Raspberry Pi 4 (4c/4GB/none), 1 stream -> low"""
+        from backend.app.services.camera import resolve_camera_quality
+
+        assert await resolve_camera_quality("auto", 1) == "low"
+
+    @pytest.mark.asyncio
+    @patch(
+        "backend.app.services.camera._get_system_hw_info",
+        new_callable=AsyncMock,
+        return_value=_make_hw_info(base_score=15.0, gpu_penalty_factor=0.4),
+    )
+    async def test_mini_pc_qsv_12_streams_medium(self, _hw):
+        """Mini PC 4c/8GB/QSV, 12 streams -> medium"""
+        from backend.app.services.camera import resolve_camera_quality
+
+        assert await resolve_camera_quality("auto", 12) == "medium"
+
+    @pytest.mark.asyncio
+    @patch(
+        "backend.app.services.camera._get_system_hw_info",
+        new_callable=AsyncMock,
+        return_value=_make_hw_info(base_score=16.7, gpu_penalty_factor=0.4),
+    )
+    async def test_intel_nuc_qsv_4_streams_medium(self, _hw):
+        """Intel NUC 8c/16GB/QSV, 4 streams -> medium"""
         from backend.app.services.camera import resolve_camera_quality
 
         assert await resolve_camera_quality("auto", 4) == "medium"
 
     @pytest.mark.asyncio
-    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=[])
-    @patch("os.cpu_count", return_value=4)
-    async def test_4_cores_no_gpu_1_printer_medium(self, _cpu, _gpu):
+    @patch(
+        "backend.app.services.camera._get_system_hw_info",
+        new_callable=AsyncMock,
+        return_value=_make_hw_info(base_score=20.0, gpu_penalty_factor=0.35),
+    )
+    async def test_zero_stream_count_treated_as_one(self, _hw):
+        """Stream count of 0 should not cause division by zero."""
         from backend.app.services.camera import resolve_camera_quality
 
-        assert await resolve_camera_quality("auto", 1) == "medium"
-
-    @pytest.mark.asyncio
-    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=[])
-    @patch("os.cpu_count", return_value=4)
-    async def test_4_cores_no_gpu_2_printers_low(self, _cpu, _gpu):
-        from backend.app.services.camera import resolve_camera_quality
-
-        assert await resolve_camera_quality("auto", 2) == "low"
-
-    @pytest.mark.asyncio
-    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=[])
-    @patch("os.cpu_count", return_value=2)
-    async def test_2_cores_no_gpu_1_printer_low(self, _cpu, _gpu):
-        from backend.app.services.camera import resolve_camera_quality
-
-        assert await resolve_camera_quality("auto", 1) == "low"
-
-    @pytest.mark.asyncio
-    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=["cuda"])
-    @patch("os.cpu_count", return_value=2)
-    async def test_2_cores_gpu_1_printer_medium(self, _cpu, _gpu):
-        from backend.app.services.camera import resolve_camera_quality
-
-        assert await resolve_camera_quality("auto", 1) == "medium"
-
-    @pytest.mark.asyncio
-    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=[])
-    @patch("os.cpu_count", return_value=None)
-    async def test_none_cpu_count_defaults_to_2(self, _cpu, _gpu):
-        """When os.cpu_count() returns None, fallback to 2 cores."""
-        from backend.app.services.camera import resolve_camera_quality
-
-        # 2 cores, no GPU, 1 printer => effective=2 => low
-        assert await resolve_camera_quality("auto", 1) == "low"
-
-    @pytest.mark.asyncio
-    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=[])
-    @patch("os.cpu_count", return_value=8)
-    async def test_zero_printer_count_treated_as_one(self, _cpu, _gpu):
-        """Printer count of 0 should not cause division by zero."""
-        from backend.app.services.camera import resolve_camera_quality
-
-        # 8 cores, no GPU, 0 printers => effective=8/1=8 => high
         assert await resolve_camera_quality("auto", 0) == "high"
-
-    @pytest.mark.asyncio
-    @patch("backend.app.services.camera.detect_gpu_hwaccels", new_callable=AsyncMock, return_value=["videotoolbox"])
-    @patch("os.cpu_count", return_value=16)
-    async def test_16_cores_gpu_many_printers_low(self, _cpu, _gpu):
-        """Many printers should reduce quality even on powerful hardware."""
-        from backend.app.services.camera import resolve_camera_quality
-
-        # 16 + 4 = 20, 20/10 = 2 => low
-        assert await resolve_camera_quality("auto", 10) == "low"

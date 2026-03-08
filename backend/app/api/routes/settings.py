@@ -185,6 +185,18 @@ async def update_settings(
         except Exception:
             pass  # Don't fail the settings update if MQTT reconfiguration fails
 
+    # Restart camera streams if camera settings changed
+    camera_keys = {"camera_quality", "camera_gpu_accel"}
+    if camera_keys & set(update_data.keys()):
+        try:
+            from backend.app.api.routes.camera import _hub
+
+            stopped = await _hub.stop_all()
+            if stopped:
+                logger.info("Stopped %d camera stream(s) after quality settings change", stopped)
+        except Exception:
+            pass  # Don't fail settings update if camera restart fails
+
     # Return updated settings
     return await get_settings(db)
 
@@ -228,15 +240,18 @@ async def check_ffmpeg(db: AsyncSession = Depends(get_db)):
     if ffmpeg_path:
         gpu_hwaccels = await detect_gpu_hwaccels()
 
-    printer_count = (await db.execute(select(Printer.id).where(Printer.is_active == True))).scalars().all()  # noqa: E712
-    resolved = await resolve_camera_quality("auto", len(printer_count))
+    printer_count = len((await db.execute(select(Printer.id).where(Printer.is_active == True))).scalars().all())  # noqa: E712
+    resolved_single = await resolve_camera_quality("auto", 1)
+    resolved_grid = await resolve_camera_quality("auto", max(printer_count, 1))
 
     return {
         "installed": ffmpeg_path is not None,
         "path": ffmpeg_path,
         "gpu_available": len(gpu_hwaccels) > 0,
         "gpu_backends": gpu_hwaccels,
-        "auto_resolved_quality": resolved,
+        "auto_resolved_quality": resolved_single,  # backward compat
+        "auto_resolved_single": resolved_single,
+        "auto_resolved_grid": resolved_grid,
     }
 
 

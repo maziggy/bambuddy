@@ -2764,7 +2764,6 @@ export default {
     unlinkSpool: 'Scollega bobina',
     selectSpool: 'Seleziona bobina',
     noUnlinkedSpools: 'Nessuna bobina scollegata disponibile',
-    noTrayUuid: 'Nessun UUID del vassoio: impossibile collegare',
     linkSuccess: 'Bobina collegata a Spoolman con successo',
     linkFailed: 'Collegamento bobina fallito',
     spoolId: 'ID bobina',

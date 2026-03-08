@@ -105,10 +105,6 @@ export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, a
             <div className="flex justify-center py-8">
               <Loader2 className="w-6 h-6 animate-spin text-bambu-green" />
             </div>
-          ) : !spoolTag ? (
-            <p className="text-center text-bambu-gray py-8 text-sm">
-              {t('spoolman.noTrayUuid')}
-            </p>
           ) : filteredSpools.length === 0 ? (
             <p className="text-center text-bambu-gray py-8 text-sm">
               {t('inventory.noSpoolsMatch')}

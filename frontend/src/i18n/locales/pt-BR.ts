@@ -2764,7 +2764,6 @@ export default {
     unlinkSpool: 'Desvincular Carretel',
     selectSpool: 'Selecionar Carretel',
     noUnlinkedSpools: 'Nenhum carretel desvinculado disponível',
-    noTrayUuid: 'Sem UUID de bandeja - não é possível criar links',
     linkSuccess: 'Carretel vinculado ao Spoolman com sucesso',
     linkFailed: 'Falha ao vincular carretel',
     spoolId: 'Carretel ID (Spool ID)',

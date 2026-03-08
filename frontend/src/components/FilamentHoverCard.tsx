@@ -335,11 +335,6 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                           ? 'bg-bambu-gray/10 text-bambu-gray cursor-not-allowed'
                           : 'bg-bambu-green/20 hover:bg-bambu-green/30 text-bambu-green'
                       }`}
-                      title={
-                        !spoolman.onLinkSpool
-                          ? t('spoolman.noTrayUuid')
-                          : t('spoolman.linkToSpoolman')
-                      }
                     >
                       <Link2 className="w-3.5 h-3.5" />
                       {t('spoolman.linkToSpoolman')}

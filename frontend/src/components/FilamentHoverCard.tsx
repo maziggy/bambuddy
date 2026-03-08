@@ -53,6 +53,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState<'top' | 'bottom'>('top');
   const [copied, setCopied] = useState(false);
+  const [showUnlinkConfirm, setShowUnlinkConfirm] = useState(false);
   const triggerRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -308,7 +309,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            spoolman.onUnlinkSpool?.();
+                            setShowUnlinkConfirm(true);
                           }}
                           className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-red-500/20 hover:bg-red-500/30 text-red-400"
                           title={t('spoolman.unlinkSpool')}
@@ -417,6 +418,45 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                 : 'bottom-full border-b-[6px] border-b-bambu-dark-tertiary'}
             `}
           />
+        </div>
+      )}
+
+      {/* Unlink Confirmation Dialog */}
+      {showUnlinkConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center" onClick={() => setShowUnlinkConfirm(false)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="relative bg-bambu-dark-secondary rounded-lg shadow-xl w-full max-w-sm mx-4 border border-bambu-dark-tertiary"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 space-y-4">
+              <div className="space-y-2">
+                <h3 className="text-base font-semibold text-white">
+                  {t('spoolman.unlinkConfirmTitle')}
+                </h3>
+                <p className="text-sm text-bambu-gray">
+                  {t('spoolman.unlinkConfirmMessage')}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowUnlinkConfirm(false)}
+                  className="flex-1 px-3 py-2 text-sm font-medium rounded transition-colors bg-bambu-dark hover:bg-bambu-dark-tertiary text-white"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  onClick={() => {
+                    spoolman?.onUnlinkSpool?.();
+                    setShowUnlinkConfirm(false);
+                  }}
+                  className="flex-1 px-3 py-2 text-sm font-medium rounded transition-colors bg-red-500/20 hover:bg-red-500/30 text-red-400"
+                >
+                  {t('spoolman.unlinkSpool')}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

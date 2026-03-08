@@ -228,7 +228,7 @@ export default {
       high: 'Hoch',
       cameraUnavailable: 'Kamera nicht verfügbar',
       connectionLost: 'Verbindung verloren',
-      reconnecting: 'Neuverbindung in {{countdown}}s ({{attempt}}/{{max}})',
+      reconnecting: 'Neuverbindung in {{countdown}}s (Versuch {{attempt}})',
       expand: 'Vergrößern',
       layout: {
         compact: 'Kompakt',
@@ -1757,7 +1757,8 @@ export default {
     cameraQualityLow: 'Niedrig',
     cameraQualityMedium: 'Mittel',
     cameraQualityHigh: 'Hoch',
-    cameraQualityAuto: 'Automatisch (Empfohlen)',
+    cameraQualityAuto: 'Automatisch',
+    cameraQualityAutoWithResolved: 'Automatisch ({{resolved}})',
     cameraQualityAutoResolved: 'Automatisch gewählt: {{resolved}} basierend auf Server-Hardware.',
     cameraQualityAutoResolvedDual: 'Automatisch gewählt: {{single}} (Einzelansicht), {{grid}} (Kameraraster) basierend auf Server-Hardware und Streamanzahl.',
     cameraQualityDescription: 'Steuert Stream-FPS und Auflösung. Niedrigere Qualität reduziert die CPU-Auslastung bei mehreren Kameras.',

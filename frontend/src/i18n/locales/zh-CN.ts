@@ -228,7 +228,7 @@ export default {
       high: '高',
       cameraUnavailable: '摄像头不可用',
       connectionLost: '连接丢失',
-      reconnecting: '{{countdown}}秒后重新连接 ({{attempt}}/{{max}})',
+      reconnecting: '{{countdown}}秒后重新连接 (第{{attempt}}次)',
       expand: '展开',
       layout: {
         compact: '紧凑',
@@ -1753,7 +1753,8 @@ export default {
     cameraQualityLow: '低',
     cameraQualityMedium: '中',
     cameraQualityHigh: '高',
-    cameraQualityAuto: '自动（推荐）',
+    cameraQualityAuto: '自动',
+    cameraQualityAutoWithResolved: '自动（{{resolved}}）',
     cameraQualityAutoResolved: '自动选择：根据服务器硬件选择{{resolved}}。',
     cameraQualityAutoResolvedDual: '自动选择：{{single}}（单视图）、{{grid}}（摄像头网格）根据服务器硬件和流数量。',
     cameraQualityDescription: '控制流的帧率和分辨率。降低画质可减少多摄像头环境下的CPU占用。',

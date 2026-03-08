@@ -33,6 +33,9 @@ const mockSettings = {
   check_updates: false,
   check_printer_firmware: false,
   bed_cooled_threshold: 35,
+  camera_quality: 'auto',
+  camera_gpu_accel: true,
+  camera_view_mode: 'window',
 };
 
 describe('SettingsPage', () => {
@@ -254,7 +257,7 @@ describe('SettingsPage', () => {
       });
 
       // The camera quality dropdown should have the Auto option
-      const dropdown = screen.getByDisplayValue('Auto (Recommended)');
+      const dropdown = screen.getByDisplayValue('Auto (Medium)');
       expect(dropdown).toBeInTheDocument();
 
       // Should show auto-resolved description

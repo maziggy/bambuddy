@@ -31,16 +31,31 @@ _ffmpeg_path: str | None = None
 
 # Cache GPU hardware acceleration backends
 _gpu_hwaccels: list[str] | None = None
+_gpu_hwaccels_lock: asyncio.Lock | None = None
+
+
+def _get_gpu_lock() -> asyncio.Lock:
+    """Return (lazy-init) the lock guarding GPU hwaccel detection."""
+    global _gpu_hwaccels_lock
+    if _gpu_hwaccels_lock is None:
+        _gpu_hwaccels_lock = asyncio.Lock()
+    return _gpu_hwaccels_lock
+
 
 # ---------------------------------------------------------------------------
 # Global semaphore limiting concurrent RTSP ffmpeg processes
+# Lazily initialised to avoid creating an asyncio.Semaphore before the event
+# loop is running (raises RuntimeError on Python 3.12+).
 # ---------------------------------------------------------------------------
 _MAX_RTSP_FFMPEG: int = 20
-_rtsp_semaphore = asyncio.Semaphore(_MAX_RTSP_FFMPEG)
+_rtsp_semaphore: asyncio.Semaphore | None = None
 
 
 def get_rtsp_semaphore() -> asyncio.Semaphore:
-    """Return the global RTSP ffmpeg semaphore."""
+    """Return the global RTSP ffmpeg semaphore (lazy-init on first call)."""
+    global _rtsp_semaphore
+    if _rtsp_semaphore is None:
+        _rtsp_semaphore = asyncio.Semaphore(_MAX_RTSP_FFMPEG)
     return _rtsp_semaphore
 
 
@@ -86,44 +101,59 @@ async def detect_gpu_hwaccels() -> list[str]:
 
     Runs ``ffmpeg -hwaccels``, parses the output, and caches the result.
     Returns an empty list when ffmpeg is not installed or no backends found.
+    Uses a lock to prevent duplicate subprocess spawns on concurrent calls.
     """
     global _gpu_hwaccels
 
     if _gpu_hwaccels is not None:
         return _gpu_hwaccels
 
-    ffmpeg = get_ffmpeg_path()
-    if not ffmpeg:
-        _gpu_hwaccels = []
+    async with _get_gpu_lock():
+        # Re-check after acquiring lock (another coroutine may have populated it)
+        if _gpu_hwaccels is not None:
+            return _gpu_hwaccels
+
+        ffmpeg = get_ffmpeg_path()
+        if not ffmpeg:
+            _gpu_hwaccels = []
+            return _gpu_hwaccels
+
+        try:
+            process = await asyncio.create_subprocess_exec(
+                ffmpeg,
+                "-hwaccels",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(process.communicate(), timeout=10)
+            lines = stdout.decode().strip().splitlines()
+            # First line is typically "Hardware acceleration methods:" — skip it
+            backends = [line.strip() for line in lines[1:] if line.strip() and line.strip().lower() != "none"]
+            _gpu_hwaccels = backends
+            if backends:
+                logger.info("GPU hwaccel backends detected: %s", ", ".join(backends))
+            else:
+                logger.info("No GPU hwaccel backends detected")
+        except Exception as e:
+            logger.warning("Failed to detect GPU hwaccels: %s", e)
+            _gpu_hwaccels = []
+
         return _gpu_hwaccels
-
-    try:
-        process = await asyncio.create_subprocess_exec(
-            ffmpeg,
-            "-hwaccels",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=10)
-        lines = stdout.decode().strip().splitlines()
-        # First line is typically "Hardware acceleration methods:" — skip it
-        backends = [line.strip() for line in lines[1:] if line.strip() and line.strip().lower() != "none"]
-        _gpu_hwaccels = backends
-        if backends:
-            logger.info("GPU hwaccel backends detected: %s", ", ".join(backends))
-        else:
-            logger.info("No GPU hwaccel backends detected")
-    except Exception as e:
-        logger.warning("Failed to detect GPU hwaccels: %s", e)
-        _gpu_hwaccels = []
-
-    return _gpu_hwaccels
 
 
 # ---------------------------------------------------------------------------
 # Hardware capability cache for auto quality resolution
 # ---------------------------------------------------------------------------
 _system_hw_info: dict | None = None
+_system_hw_lock: asyncio.Lock | None = None
+
+
+def _get_hw_lock() -> asyncio.Lock:
+    """Return (lazy-init) the lock guarding system HW info detection."""
+    global _system_hw_lock
+    if _system_hw_lock is None:
+        _system_hw_lock = asyncio.Lock()
+    return _system_hw_lock
 
 
 async def _get_system_hw_info() -> dict:
@@ -131,66 +161,72 @@ async def _get_system_hw_info() -> dict:
 
     Returns a dict with cpu_score, ram_score, gpu_score, gpu_penalty_factor,
     and base_score used by resolve_camera_quality().
+    Uses a lock to prevent duplicate probing on concurrent calls.
     """
     global _system_hw_info
 
     if _system_hw_info is not None:
         return _system_hw_info
 
-    cpu_count = os.cpu_count() or 2
+    async with _get_hw_lock():
+        # Re-check after acquiring lock
+        if _system_hw_info is not None:
+            return _system_hw_info
 
-    # Platform awareness
-    is_darwin = sys.platform == "darwin"
-    is_arm = platform.machine().lower() in ("arm64", "aarch64")
-    is_apple_silicon = is_darwin and is_arm
+        cpu_count = os.cpu_count() or 2
 
-    if is_apple_silicon:
-        core_efficiency = 1.3
-    elif is_arm:
-        core_efficiency = 0.5  # Raspberry Pi, etc.
-    else:
-        core_efficiency = 1.0  # x86_64
+        # Platform awareness
+        is_darwin = sys.platform == "darwin"
+        is_arm = platform.machine().lower() in ("arm64", "aarch64")
+        is_apple_silicon = is_darwin and is_arm
 
-    cpu_score = math.sqrt(cpu_count) * core_efficiency
+        if is_apple_silicon:
+            core_efficiency = 1.3
+        elif is_arm:
+            core_efficiency = 0.5  # Raspberry Pi, etc.
+        else:
+            core_efficiency = 1.0  # x86_64
 
-    # RAM consideration
-    ram_gb = psutil.virtual_memory().total / (1024**3)
-    ram_score = min(math.log2(max(ram_gb, 1)), 3.0)
+        cpu_score = math.sqrt(cpu_count) * core_efficiency
 
-    # GPU scoring by backend type
-    gpu_backends = await detect_gpu_hwaccels()
-    backend_set = {b.lower() for b in gpu_backends}
+        # RAM consideration
+        ram_gb = psutil.virtual_memory().total / (1024**3)
+        ram_score = min(math.log2(max(ram_gb, 1)), 3.0)
 
-    gpu_score = 0.0
-    gpu_penalty_factor = 1.0
+        # GPU scoring by backend type
+        gpu_backends = await detect_gpu_hwaccels()
+        backend_set = {b.lower() for b in gpu_backends}
 
-    if "videotoolbox" in backend_set and is_apple_silicon:
-        gpu_score, gpu_penalty_factor = 4.0, 0.25
-    elif "videotoolbox" in backend_set:
-        gpu_score, gpu_penalty_factor = 3.0, 0.4
-    elif "cuda" in backend_set:
-        gpu_score, gpu_penalty_factor = 3.0, 0.35
-    elif "qsv" in backend_set:
-        gpu_score, gpu_penalty_factor = 2.5, 0.4
-    elif "vaapi" in backend_set:
-        gpu_score, gpu_penalty_factor = 2.0, 0.5
-    elif gpu_backends:
-        gpu_score, gpu_penalty_factor = 1.0, 0.7
+        gpu_score = 0.0
+        gpu_penalty_factor = 1.0
 
-    base_score = (cpu_score + ram_score + gpu_score) * 2
+        if "videotoolbox" in backend_set and is_apple_silicon:
+            gpu_score, gpu_penalty_factor = 4.0, 0.25
+        elif "videotoolbox" in backend_set:
+            gpu_score, gpu_penalty_factor = 3.0, 0.4
+        elif "cuda" in backend_set:
+            gpu_score, gpu_penalty_factor = 3.0, 0.35
+        elif "qsv" in backend_set:
+            gpu_score, gpu_penalty_factor = 2.5, 0.4
+        elif "vaapi" in backend_set:
+            gpu_score, gpu_penalty_factor = 2.0, 0.5
+        elif gpu_backends:
+            gpu_score, gpu_penalty_factor = 1.0, 0.7
 
-    _system_hw_info = {
-        "cpu_count": cpu_count,
-        "cpu_score": cpu_score,
-        "ram_gb": ram_gb,
-        "ram_score": ram_score,
-        "gpu_backends": gpu_backends,
-        "gpu_score": gpu_score,
-        "gpu_penalty_factor": gpu_penalty_factor,
-        "base_score": base_score,
-    }
+        base_score = (cpu_score + ram_score + gpu_score) * 2
 
-    return _system_hw_info
+        _system_hw_info = {
+            "cpu_count": cpu_count,
+            "cpu_score": cpu_score,
+            "ram_gb": ram_gb,
+            "ram_score": ram_score,
+            "gpu_backends": gpu_backends,
+            "gpu_score": gpu_score,
+            "gpu_penalty_factor": gpu_penalty_factor,
+            "base_score": base_score,
+        }
+
+        return _system_hw_info
 
 
 def _reset_system_hw_cache() -> None:
@@ -547,23 +583,25 @@ async def capture_camera_frame_bytes(
     cmd = [ffmpeg, "-y"]
     if gpu_accel:
         cmd.extend(["-hwaccel", "auto"])
-    cmd.extend([
-        "-rtsp_transport",
-        "tcp",
-        "-rtsp_flags",
-        "prefer_tcp",
-        "-i",
-        camera_url,
-        "-frames:v",
-        "1",
-        "-f",
-        "image2pipe",
-        "-vcodec",
-        "mjpeg",
-        "-q:v",
-        "2",
-        "-",
-    ])
+    cmd.extend(
+        [
+            "-rtsp_transport",
+            "tcp",
+            "-rtsp_flags",
+            "prefer_tcp",
+            "-i",
+            camera_url,
+            "-frames:v",
+            "1",
+            "-f",
+            "image2pipe",
+            "-vcodec",
+            "mjpeg",
+            "-q:v",
+            "2",
+            "-",
+        ]
+    )
 
     logger.info("Capturing camera frame bytes from %s using RTSP (model: %s)", ip_address, model)
 

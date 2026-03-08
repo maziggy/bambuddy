@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { RefreshCw, AlertTriangle, Camera, Maximize, Minimize, WifiOff, ZoomIn, ZoomOut } from 'lucide-react';
-import { api, getAuthToken, CAMERA_QUALITY_PRESETS } from '../api/client';
-import { useToast } from '../contexts/ToastContext';
-import { useAuth } from '../contexts/AuthContext';
+import { api, getAuthToken } from '../api/client';
+import { useCameraStopHint } from '../hooks/useCameraStopHint';
+import { useCameraControls } from '../hooks/useCameraControls';
 import { ChamberLight } from '../components/icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';
 import { useMjpegStream } from '../hooks/useMjpegStream';
@@ -16,14 +16,20 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 
 export function CameraPage() {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const { showToast } = useToast();
-  const { hasPermission } = useAuth();
   const { printerId } = useParams<{ printerId: string }>();
   const id = parseInt(printerId || '0', 10);
 
+  const {
+    status,
+    chamberLightMutation,
+    isPrintingWithObjects,
+    showSkipObjectsModal,
+    setShowSkipObjectsModal,
+    checkStalled,
+    hasControlPermission,
+  } = useCameraControls({ printerId: id });
+
   const [streamMode, setStreamMode] = useState<'stream' | 'snapshot'>('stream');
-  const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -50,13 +56,8 @@ export function CameraPage() {
 
   const isStream = streamMode === 'stream';
 
-  // Camera quality preset from settings
-  const { data: cameraSettings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
-  const cameraQuality = cameraSettings?.camera_quality ?? 'auto';
-  const singlePreset = cameraQuality !== 'auto' ? CAMERA_QUALITY_PRESETS[cameraQuality].single : null;
-  const streamUrl = singlePreset
-    ? `/printers/${id}/camera/stream?fps=${singlePreset.fps}&quality=${singlePreset.quality}&scale=${singlePreset.scale}`
-    : `/printers/${id}/camera/stream`;
+  // Stream URL — quality preset is resolved server-side from settings
+  const streamUrl = `/printers/${id}/camera/stream`;
 
   // --- Stream hooks (only active in stream mode) ---
   const mjpeg = useMjpegStream({
@@ -69,11 +70,6 @@ export function CameraPage() {
 
   // Keep restart ref in sync
   useEffect(() => { mjpegRestartRef.current = mjpeg.restart; }, [mjpeg.restart]);
-
-  const checkStalled = useCallback(async () => {
-    const status = await api.getCameraStatus(id);
-    return !!(status.stalled || !status.active);
-  }, [id]);
 
   const reconnect = useStreamReconnect({
     maxAttempts: MAX_RECONNECT_ATTEMPTS,
@@ -90,39 +86,6 @@ export function CameraPage() {
     enabled: id > 0,
   });
 
-  // Fetch printer status for light toggle and skip objects
-  const { data: status } = useQuery({
-    queryKey: ['printerStatus', id],
-    queryFn: () => api.getPrinterStatus(id),
-    refetchInterval: 30000,
-    enabled: id > 0,
-  });
-
-  // Chamber light mutation with optimistic update
-  const chamberLightMutation = useMutation({
-    mutationFn: (on: boolean) => api.setChamberLight(id, on),
-    onMutate: async (on) => {
-      await queryClient.cancelQueries({ queryKey: ['printerStatus', id] });
-      const previousStatus = queryClient.getQueryData(['printerStatus', id]);
-      queryClient.setQueryData(['printerStatus', id], (old: typeof status) => ({
-        ...old,
-        chamber_light: on,
-      }));
-      return { previousStatus };
-    },
-    onSuccess: (_, on) => {
-      showToast(t(on ? 'printers.chamberLightOn' : 'printers.chamberLightOff'));
-    },
-    onError: (error: Error, _, context) => {
-      if (context?.previousStatus) {
-        queryClient.setQueryData(['printerStatus', id], context.previousStatus);
-      }
-      showToast(error.message || t('printers.toast.failedToControlChamberLight'), 'error');
-    },
-  });
-
-  const isPrintingWithObjects = (status?.state === 'RUNNING' || status?.state === 'PAUSE') && (status?.printable_objects_count ?? 0) >= 2;
-
   // Update document title
   useEffect(() => {
     if (printer) {
@@ -133,34 +96,8 @@ export function CameraPage() {
     };
   }, [printer, t]);
 
-  // Cleanup on unmount - stop the camera stream
-  const stopSentRef = useRef(false);
-
-  useEffect(() => {
-    const stopUrl = `/api/v1/printers/${id}/camera/stop`;
-    stopSentRef.current = false;
-
-    const sendStopOnce = () => {
-      if (id > 0 && !stopSentRef.current) {
-        stopSentRef.current = true;
-        const headers: Record<string, string> = {};
-        const token = getAuthToken();
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-        fetch(stopUrl, { method: 'POST', keepalive: true, headers }).catch(() => {});
-      }
-    };
-
-    const handleBeforeUnload = () => {
-      sendStopOnce();
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      sendStopOnce();
-    };
-  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Cleanup on unmount — stop the camera stream
+  useCameraStopHint(id);
 
   // Fullscreen change listener
   useEffect(() => {
@@ -390,18 +327,18 @@ export function CameraPage() {
           </div>
           <button
             onClick={() => chamberLightMutation.mutate(!status?.chamber_light)}
-            disabled={!status?.connected || chamberLightMutation.isPending || !hasPermission('printers:control')}
+            disabled={!status?.connected || chamberLightMutation.isPending || !hasControlPermission}
             className={`p-1.5 rounded disabled:opacity-50 ${status?.chamber_light ? 'bg-yellow-500/20 hover:bg-yellow-500/30' : 'hover:bg-bambu-dark-tertiary'}`}
-            title={!hasPermission('printers:control') ? t('printers.permission.noControl') : t('camera.chamberLight')}
+            title={!hasControlPermission ? t('printers.permission.noControl') : t('camera.chamberLight')}
           >
             <ChamberLight on={status?.chamber_light ?? false} className="w-4 h-4" />
           </button>
           <button
             onClick={() => setShowSkipObjectsModal(true)}
-            disabled={!isPrintingWithObjects || !hasPermission('printers:control')}
-            className={`p-1.5 rounded disabled:opacity-50 ${isPrintingWithObjects && hasPermission('printers:control') ? 'hover:bg-bambu-dark-tertiary' : ''}`}
+            disabled={!isPrintingWithObjects || !hasControlPermission}
+            className={`p-1.5 rounded disabled:opacity-50 ${isPrintingWithObjects && hasControlPermission ? 'hover:bg-bambu-dark-tertiary' : ''}`}
             title={
-              !hasPermission('printers:control')
+              !hasControlPermission
                 ? t('printers.permission.noControl')
                 : !isPrintingWithObjects
                   ? t('printers.skipObjects.onlyWhilePrinting')

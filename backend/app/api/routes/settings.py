@@ -1,3 +1,4 @@
+import asyncio
 import io
 import logging
 import zipfile
@@ -189,9 +190,10 @@ async def update_settings(
     camera_keys = {"camera_quality", "camera_gpu_accel"}
     if camera_keys & set(update_data.keys()):
         try:
-            from backend.app.api.routes.camera import _hub
+            from backend.app.api.routes.camera import _hub, _single_hub
 
-            stopped = await _hub.stop_all()
+            results = await asyncio.gather(_hub.stop_all(), _single_hub.stop_all())
+            stopped = sum(results)
             if stopped:
                 logger.info("Stopped %d camera stream(s) after quality settings change", stopped)
         except Exception:

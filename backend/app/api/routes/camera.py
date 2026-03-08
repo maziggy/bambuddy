@@ -20,9 +20,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
-from backend.app.core.database import get_db
+from backend.app.core.database import async_session, get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.printer import Printer
+from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.services.camera import (
     ChamberConnectionClosed,
@@ -41,19 +42,33 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["camera"])
 
 CAMERA_QUALITY_PRESETS = {
-    "low": {"grid": {"fps": 2, "quality": 20, "scale": 0.25}, "single": {"fps": 10, "quality": 10, "scale": 0.5}, "threads": 1},
-    "medium": {"grid": {"fps": 5, "quality": 15, "scale": 0.5}, "single": {"fps": 15, "quality": 5, "scale": 1.0}, "threads": 0},
-    "high": {"grid": {"fps": 10, "quality": 5, "scale": 0.75}, "single": {"fps": 30, "quality": 2, "scale": 1.0}, "threads": 0},
+    "low": {
+        "grid": {"fps": 2, "quality": 20, "scale": 0.25},
+        "single": {"fps": 10, "quality": 10, "scale": 0.5},
+        "threads": 1,
+    },
+    "medium": {
+        "grid": {"fps": 5, "quality": 15, "scale": 0.5},
+        "single": {"fps": 15, "quality": 5, "scale": 1.0},
+        "threads": 0,
+    },
+    "high": {
+        "grid": {"fps": 10, "quality": 5, "scale": 0.75},
+        "single": {"fps": 30, "quality": 2, "scale": 1.0},
+        "threads": 0,
+    },
 }
+
+# Grid stream auto-restart constants
+_GRID_MAX_RESTARTS = 5
+_GRID_RESTART_BASE_DELAY = 3.0  # seconds
+_GRID_RESTART_MAX_DELAY = 30.0  # cap on exponential backoff (also used for slow retry cadence)
 
 # Track active ffmpeg processes for cleanup
 _active_streams: dict[str, asyncio.subprocess.Process] = {}
 
 # Track active chamber image connections for cleanup
 _active_chamber_streams: dict[str, tuple] = {}
-
-# Store last frame for each printer (for photo capture from active stream)
-_last_frames: dict[int, bytes] = {}
 
 # Track last frame timestamp for each printer (for stall detection)
 _last_frame_times: dict[int, float] = {}
@@ -96,7 +111,6 @@ async def _cleanup_stale_frame_buffers() -> None:
     now = time.monotonic()
     stale_ids = [pid for pid, ts in _last_frame_times.items() if now - ts > _FRAME_BUFFER_MAX_AGE]
     for pid in stale_ids:
-        _last_frames.pop(pid, None)
         _last_frame_times.pop(pid, None)
         _stream_start_times.pop(pid, None)
     if stale_ids:
@@ -137,15 +151,8 @@ def stop_frame_buffer_cleanup() -> None:
 
 
 def get_buffered_frame(printer_id: int) -> bytes | None:
-    """Get the last buffered frame for a printer from an active stream.
-
-    Checks the shared hub first (zero-copy), then falls back to _last_frames
-    which is populated by non-hub streams (chamber, RTSP).
-    """
-    hub_frame = _hub.get_last_frame(printer_id)
-    if hub_frame is not None:
-        return hub_frame
-    return _last_frames.get(printer_id)
+    """Get the last buffered frame for a printer from an active stream."""
+    return _single_hub.get_last_frame(printer_id) or _hub.get_last_frame(printer_id)
 
 
 async def get_printer_or_404(printer_id: int, db: AsyncSession) -> Printer:
@@ -282,8 +289,14 @@ class SharedStreamHub:
             # Guard: another caller may have started a producer during our gap
             existing = self._streams.get(printer_id)
             if existing is not None and existing.alive:
-                existing.last_accessed = time.monotonic()
-                return existing
+                if existing.params_key == params_key:
+                    existing.last_accessed = time.monotonic()
+                    return existing
+                # Different params — cancel this entry and create a new one
+                existing.alive = False
+                if existing.task:
+                    existing.task.cancel()
+                del self._streams[printer_id]
             entry = _SharedStream(params_key=params_key)
             self._streams[printer_id] = entry
             entry.task = asyncio.create_task(self._run_producer(printer_id, starter_fn, entry))
@@ -316,9 +329,12 @@ class SharedStreamHub:
                     frame = entry.frame
 
                     if seq <= seen_seq:
-                        # Wait for the producer to post a new frame instead of polling
+                        # Capture a reference to the *current* event before waiting.
+                        # The producer replaces it with a fresh one each frame, then
+                        # sets the old one — so this wait always wakes reliably.
+                        evt = entry.frame_event
                         try:
-                            await asyncio.wait_for(entry.frame_event.wait(), timeout=frame_interval)
+                            await asyncio.wait_for(evt.wait(), timeout=frame_interval)
                         except TimeoutError:
                             pass
                         continue
@@ -365,8 +381,11 @@ class SharedStreamHub:
                     break
                 entry.frame = frame
                 entry.frame_seq += 1
-                entry.frame_event.set()
-                entry.frame_event.clear()
+                # Replace with a fresh event, then set the old one so all
+                # viewers waiting on it are reliably woken (no set/clear race).
+                old_event = entry.frame_event
+                entry.frame_event = asyncio.Event()
+                old_event.set()
                 # Auto-stop if no viewer has polled recently
                 if time.monotonic() - entry.last_accessed > self.IDLE_TIMEOUT:
                     logger.info(
@@ -496,12 +515,12 @@ class SharedStreamHub:
 
 # Shared stream hub instance — one source per printer, many viewers
 _hub = SharedStreamHub()
+_single_hub = SharedStreamHub()
 
 
 async def generate_chamber_mjpeg_stream(
     ip_address: str,
     access_code: str,
-    model: str | None,
     fps: int = 5,
     stream_id: str | None = None,
     printer_id: int | None = None,
@@ -511,7 +530,7 @@ async def generate_chamber_mjpeg_stream(
 
     This connects to port 6000 and reads JPEG frames using the Bambu binary protocol.
     """
-    logger.info("Starting chamber image stream for %s (stream_id=%s, model=%s)", ip_address, stream_id, model)
+    logger.info("Starting chamber image stream for %s (stream_id=%s)", ip_address, stream_id)
 
     connection = await generate_chamber_image_stream(ip_address, access_code)
     if connection is None:
@@ -567,10 +586,7 @@ async def generate_chamber_mjpeg_stream(
             else:
                 # Yield frame in MJPEG format — separate chunks to avoid copying frame
                 yield (
-                    b"--frame\r\n"
-                    b"Content-Type: image/jpeg\r\n"
-                    b"Content-Length: " + str(len(frame)).encode() + b"\r\n"
-                    b"\r\n"
+                    b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " + str(len(frame)).encode() + b"\r\n\r\n"
                 )
                 yield frame
                 yield b"\r\n"
@@ -590,7 +606,6 @@ async def generate_chamber_mjpeg_stream(
 
         # Clean up frame buffer and timestamps
         if printer_id is not None:
-            _last_frames.pop(printer_id, None)
             _last_frame_times.pop(printer_id, None)
             _stream_start_times.pop(printer_id, None)
 
@@ -615,10 +630,18 @@ async def generate_rtsp_mjpeg_stream(
     scale: float = 1.0,
     threads: int = 0,
     gpu_accel: bool = False,
+    skip_frames: bool = False,
 ) -> AsyncGenerator[bytes, None]:
     """Generate MJPEG stream from printer camera using ffmpeg/RTSP.
 
     This is for X1/H2/P2 models that support RTSP streaming.
+
+    Args:
+        skip_frames: When True, adds ``-skip_frame nokey`` to tell the H.264
+            decoder to only decode keyframes (I-frames).  This reduces CPU
+            usage by ~80-90% per stream at the cost of lower temporal
+            resolution (~0.5-1 fps from keyframes).  Ideal for grid view
+            thumbnails where smooth video is unnecessary.
     """
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
@@ -655,20 +678,26 @@ async def generate_rtsp_mjpeg_stream(
     cmd = [ffmpeg]
     if gpu_accel:
         cmd.extend(["-hwaccel", "auto"])
-    cmd.extend([
-        "-rtsp_transport",
-        "tcp",
-        "-rtsp_flags",
-        "prefer_tcp",
-        "-timeout",
-        "30000000",  # 30 seconds in microseconds
-        "-buffer_size",
-        "1024000",  # 1MB buffer
-        "-max_delay",
-        "500000",  # 0.5 seconds max delay
-        "-i",
-        camera_url,
-    ])
+    cmd.extend(
+        [
+            "-rtsp_transport",
+            "tcp",
+            "-rtsp_flags",
+            "prefer_tcp",
+            "-timeout",
+            "30000000",  # 30 seconds in microseconds
+            "-buffer_size",
+            "1024000",  # 1MB buffer
+            "-max_delay",
+            "500000",  # 0.5 seconds max delay
+        ]
+    )
+    if skip_frames:
+        # Only decode keyframes (I-frames).  Skips all P/B-frame decoding,
+        # reducing CPU by ~80-90%.  Keyframes arrive every 1-2 s which is
+        # sufficient for low-fps grid thumbnails.
+        cmd.extend(["-skip_frame", "nokey"])
+    cmd.extend(["-i", camera_url])
     if vf_filters:
         cmd.extend(["-vf", ",".join(vf_filters)])
     output_args = [
@@ -686,7 +715,12 @@ async def generate_rtsp_mjpeg_stream(
     cmd.extend(output_args)
 
     logger.info(
-        "Starting RTSP camera stream for %s (stream_id=%s, model=%s, fps=%s)", ip_address, stream_id, model, fps
+        "Starting RTSP camera stream for %s (stream_id=%s, model=%s, fps=%s, skip_frames=%s)",
+        ip_address,
+        stream_id,
+        model,
+        fps,
+        skip_frames,
     )
     logger.debug("ffmpeg command: %s ... (url hidden)", ffmpeg)
 
@@ -820,7 +854,6 @@ async def generate_rtsp_mjpeg_stream(
 
         # Clean up frame buffer and timestamps
         if printer_id is not None:
-            _last_frames.pop(printer_id, None)
             _last_frame_times.pop(printer_id, None)
             _stream_start_times.pop(printer_id, None)
 
@@ -843,6 +876,32 @@ async def generate_rtsp_mjpeg_stream(
         logger.info("Camera stream stopped for %s (stream_id=%s)", ip_address, stream_id)
 
 
+async def _resolve_quality_from_settings(
+    db: AsyncSession, stream_count: int, mode: str = "grid"
+) -> tuple[int, int, float, int, bool, bool]:
+    """Resolve camera quality settings from DB.
+
+    Returns (fps, quality, scale, threads, gpu_accel, skip_frames).
+    """
+    # Batch both settings in one query
+    result = await db.execute(select(Settings).where(Settings.key.in_(["camera_quality", "camera_gpu_accel"])))
+    settings_map = {s.key: s.value for s in result.scalars()}
+
+    raw_preset = settings_map.get("camera_quality") or "auto"
+    preset_name = await resolve_camera_quality(raw_preset, stream_count)
+    preset = CAMERA_QUALITY_PRESETS.get(preset_name, CAMERA_QUALITY_PRESETS["medium"])
+    fps = preset[mode]["fps"]
+    quality = preset[mode]["quality"]
+    scale = preset[mode]["scale"]
+    threads = preset["threads"]
+    gpu_accel = (settings_map.get("camera_gpu_accel") or "true").lower() == "true"
+    # Keyframe-only decoding for grid mode when there are multiple streams.
+    # Tells ffmpeg to skip all non-keyframe H.264 decoding, cutting CPU by ~80-90%.
+    # Keyframes arrive every 1-2s which is sufficient for low-fps grid thumbnails.
+    skip_frames = mode == "grid" and stream_count >= 4 and preset_name in ("low", "medium")
+    return fps, quality, scale, threads, gpu_accel, skip_frames
+
+
 async def _ensure_producer(
     printer_id: int,
     db: AsyncSession,
@@ -853,6 +912,8 @@ async def _ensure_producer(
     force_quality: bool = False,
     threads: int = 0,
     gpu_accel: bool = False,
+    skip_frames: bool = False,
+    hub: SharedStreamHub | None = None,
 ) -> _SharedStream | None:
     """Start or reuse a shared producer for a single printer.
 
@@ -863,11 +924,12 @@ async def _ensure_producer(
     Set ``force_quality=True`` to restart the producer if params changed
     (used when a client explicitly switches quality).
     """
+    hub = hub or _hub
     # Fast path: if a producer is already alive and we're not forcing a
     # quality change, grab it directly (no DB query).  This is the common case
     # when multiple clients connect to the same camera grid.
     if not force_quality:
-        existing = await _hub.get_existing(printer_id)
+        existing = await hub.get_existing(printer_id)
         if existing is not None:
             return existing
 
@@ -892,26 +954,27 @@ async def _ensure_producer(
     gen_kwargs: dict = {
         "ip_address": printer.ip_address,
         "access_code": printer.access_code,
-        "model": printer.model,
         "fps": fps_clamped,
         "stream_id": stream_id,
         "printer_id": printer_id,
         "raw": True,
     }
     if stream_generator is generate_rtsp_mjpeg_stream:
+        gen_kwargs["model"] = printer.model
         gen_kwargs["quality"] = quality
         gen_kwargs["scale"] = scale
         gen_kwargs["threads"] = threads
         gen_kwargs["gpu_accel"] = gpu_accel
+        gen_kwargs["skip_frames"] = skip_frames
 
     def starter_fn():
         return stream_generator(**gen_kwargs)
 
-    params_key = f"{fps_clamped}-{quality}-{scale}-{threads}-{gpu_accel}"
+    params_key = f"{fps_clamped}-{quality}-{scale}-{threads}-{gpu_accel}-{skip_frames}"
     _stream_start_times[printer_id] = time.monotonic()
     if force_quality:
-        return await _hub.restart(printer_id, starter_fn, params_key=params_key)
-    return await _hub.get_or_start(printer_id, starter_fn, params_key=params_key)
+        return await hub.restart(printer_id, starter_fn, params_key=params_key)
+    return await hub.get_or_start(printer_id, starter_fn, params_key=params_key)
 
 
 @router.get("/camera/grid-stream")
@@ -950,17 +1013,11 @@ async def camera_grid_stream(
     # Resolve quality preset from DB when no explicit params provided
     threads = 0
     gpu_accel = False
+    skip_frames = False
     if fps is None and quality is None and scale is None:
-        from backend.app.api.routes.settings import get_setting
-
-        raw_preset = await get_setting(db, "camera_quality") or "auto"
-        preset_name = await resolve_camera_quality(raw_preset, len(printer_ids))
-        preset = CAMERA_QUALITY_PRESETS.get(preset_name, CAMERA_QUALITY_PRESETS["medium"])
-        fps = preset["grid"]["fps"]
-        quality = preset["grid"]["quality"]
-        scale = preset["grid"]["scale"]
-        threads = preset["threads"]
-        gpu_accel = (await get_setting(db, "camera_gpu_accel") or "true").lower() == "true"
+        fps, quality, scale, threads, gpu_accel, skip_frames = await _resolve_quality_from_settings(
+            db, len(printer_ids), "grid"
+        )
         force = True  # Ensure producers match preset params
     else:
         fps = fps or 5
@@ -985,7 +1042,18 @@ async def camera_grid_stream(
             printer = printers_by_id.get(pid)
             if printer is None:
                 continue
-            entry = await _ensure_producer(pid, db, fps, quality, scale, printer=printer, force_quality=force, threads=threads, gpu_accel=gpu_accel)
+            entry = await _ensure_producer(
+                pid,
+                db,
+                fps,
+                quality,
+                scale,
+                printer=printer,
+                force_quality=force,
+                threads=threads,
+                gpu_accel=gpu_accel,
+                skip_frames=skip_frames,
+            )
             if entry is not None:
                 entries[pid] = entry
 
@@ -997,6 +1065,9 @@ async def camera_grid_stream(
         frame_interval = 1.0 / fps
         # Track last seen sequence per printer to avoid sending duplicates
         seen_seqs: dict[int, int] = dict.fromkeys(entries, 0)
+
+        # Per-camera restart tracking: pid -> (attempt_count, next_retry_monotonic)
+        pending_restarts: dict[int, tuple[int, float]] = {}
 
         # Register as viewer on all entries
         for entry in entries.values():
@@ -1018,8 +1089,11 @@ async def camera_grid_stream(
                 sent_any = False
                 for pid, entry in list(entries.items()):
                     if not entry.alive:
-                        # Producer died — remove from rotation (finally handles decrement)
+                        # Producer died — schedule restart instead of permanent removal
                         entries.pop(pid, None)
+                        if pid not in pending_restarts:
+                            pending_restarts[pid] = (0, now + _GRID_RESTART_BASE_DELAY)
+                            logger.warning("Grid producer died for printer %d, scheduling restart", pid)
                         continue
 
                     # Touch last_accessed so the producer stays alive
@@ -1040,13 +1114,77 @@ async def camera_grid_stream(
                     yield header + frame
                     sent_any = True
 
-                if not entries:
+                # Process pending restarts
+                for pid in list(pending_restarts):
+                    attempts, next_retry = pending_restarts[pid]
+                    if now < next_retry:
+                        continue
+                    if attempts >= _GRID_MAX_RESTARTS:
+                        # Switch to slow retry cadence — don't permanently give up.
+                        # RTSP/chamber connections can recover after network hiccups,
+                        # printer reboots, or temporary camera unavailability.
+                        delay = _GRID_RESTART_MAX_DELAY
+                        pending_restarts[pid] = (attempts + 1, now + delay)
+                        if (attempts - _GRID_MAX_RESTARTS) % 10 == 0:
+                            logger.warning(
+                                "Grid producer for printer %d: %d restart attempts, slow-retrying every %.0fs",
+                                pid,
+                                attempts,
+                                delay,
+                            )
+                        continue
+                    # Use a fresh DB session — the endpoint's `db` may be stale hours into a stream
+                    try:
+                        async with async_session() as restart_db:
+                            r_fps, r_quality, r_scale, r_threads, r_gpu_accel, r_skip_frames = (
+                                await _resolve_quality_from_settings(
+                                    restart_db, len(entries) + len(pending_restarts), "grid"
+                                )
+                            )
+                            entry = await _ensure_producer(
+                                pid,
+                                restart_db,
+                                r_fps,
+                                r_quality,
+                                r_scale,
+                                force_quality=True,
+                                threads=r_threads,
+                                gpu_accel=r_gpu_accel,
+                                skip_frames=r_skip_frames,
+                            )
+                    except Exception:
+                        logger.warning("Grid restart DB/producer error for printer %d", pid, exc_info=True)
+                        entry = None
+
+                    if entry is not None:
+                        entries[pid] = entry
+                        entry.viewer_count += 1
+                        registered_entries.append(entry)
+                        seen_seqs[pid] = 0
+                        del pending_restarts[pid]
+                        logger.info("Grid producer restarted for printer %d (attempt %d)", pid, attempts + 1)
+                    else:
+                        # Exponential backoff: base * 2^attempt, capped
+                        delay = min(_GRID_RESTART_BASE_DELAY * (2**attempts), _GRID_RESTART_MAX_DELAY)
+                        pending_restarts[pid] = (attempts + 1, now + delay)
+                        logger.warning(
+                            "Grid restart failed for printer %d (attempt %d/%d), next retry in %.0fs",
+                            pid,
+                            attempts + 1,
+                            _GRID_MAX_RESTARTS,
+                            delay,
+                        )
+
+                if not entries and not pending_restarts:
                     break
 
-                if sent_any:
+                if not entries:
+                    # All producers dead, restarts pending — wait before retrying
+                    await asyncio.sleep(frame_interval)
+                elif sent_any:
                     await asyncio.sleep(0.001)
                 else:
-                    wait_tasks = [asyncio.ensure_future(e.frame_event.wait()) for e in entries.values()]
+                    wait_tasks = [asyncio.create_task(e.frame_event.wait()) for e in entries.values()]
                     try:
                         _, pending = await asyncio.wait(
                             wait_tasks, timeout=frame_interval, return_when=asyncio.FIRST_COMPLETED
@@ -1104,16 +1242,7 @@ async def camera_stream(
     threads = 0
     gpu_accel = False
     if fps is None and quality is None and scale is None:
-        from backend.app.api.routes.settings import get_setting
-
-        raw_preset = await get_setting(db, "camera_quality") or "auto"
-        preset_name = await resolve_camera_quality(raw_preset, 1)
-        preset = CAMERA_QUALITY_PRESETS.get(preset_name, CAMERA_QUALITY_PRESETS["medium"])
-        fps = preset["single"]["fps"]
-        quality = preset["single"]["quality"]
-        scale = preset["single"]["scale"]
-        threads = preset["threads"]
-        gpu_accel = (await get_setting(db, "camera_gpu_accel") or "true").lower() == "true"
+        fps, quality, scale, threads, gpu_accel, _skip = await _resolve_quality_from_settings(db, 1, "single")
     else:
         fps = fps or 10
         quality = quality or 5
@@ -1141,7 +1270,12 @@ async def camera_stream(
             last_yield_time = 0.0
             try:
                 async for frame in generate_mjpeg_stream(
-                    printer.external_camera_url, printer.external_camera_type, fps
+                    printer.external_camera_url,
+                    printer.external_camera_type,
+                    fps,
+                    gpu_accel=gpu_accel,
+                    quality=quality,
+                    threads=threads,
                 ):
                     # Rate limit to prevent overwhelming browser
                     current_time = time.monotonic()
@@ -1173,10 +1307,12 @@ async def camera_stream(
 
     # Reuse the shared producer start logic (skips external-camera check
     # since we already handled it above).
-    entry = await _ensure_producer(printer_id, db, fps, quality, scale, printer=printer, threads=threads, gpu_accel=gpu_accel)
+    entry = await _ensure_producer(
+        printer_id, db, fps, quality, scale, printer=printer, threads=threads, gpu_accel=gpu_accel, hub=_single_hub
+    )
     if entry is None:
         raise HTTPException(503, "Failed to start camera stream")
-    viewer = _hub.make_viewer(entry, fps)
+    viewer = _single_hub.make_viewer(entry, fps)
 
     # Wrap with disconnect detection so the response stops promptly when
     # the client goes away (page refresh, tab close).  Without this,
@@ -1218,7 +1354,7 @@ async def stop_camera_stream(
     stopped = 0
 
     # Stop ffmpeg/RTSP streams — skip hub-owned processes (hub manages its own lifecycle)
-    hub_owns_printer = _hub.is_active(printer_id)
+    hub_owns_printer = _hub.is_active(printer_id) or _single_hub.is_active(printer_id)
     to_remove = []
     for stream_id, process in list(_active_streams.items()):
         if stream_id.startswith(f"{printer_id}-"):
@@ -1268,10 +1404,11 @@ async def stop_camera_stream(
     # causing unnecessary process churn and visual glitches.
 
     logger.info(
-        "Camera stop hint for printer %s (cleaned %s chamber conn, hub active=%s)",
+        "Camera stop hint for printer %s (cleaned %s chamber conn, grid hub=%s, single hub=%s)",
         printer_id,
         stopped,
         _hub.is_active(printer_id),
+        _single_hub.is_active(printer_id),
     )
     return {"stopped": stopped}
 
@@ -1380,7 +1517,7 @@ async def camera_status(
     """
     # Check if there's an active stream for this printer
     # Check shared hub first (O(1) lookup) before falling back to linear scans
-    has_active_stream = _hub.is_active(printer_id)
+    has_active_stream = _hub.is_active(printer_id) or _single_hub.is_active(printer_id)
 
     # Check external camera streams
     if not has_active_stream and printer_id in _active_external_streams:
@@ -1419,7 +1556,7 @@ async def camera_status(
 
     return {
         "active": has_active_stream,
-        "has_frames": printer_id in _last_frames or _hub.get_last_frame(printer_id) is not None,
+        "has_frames": _hub.get_last_frame(printer_id) is not None or _single_hub.get_last_frame(printer_id) is not None,
         "seconds_since_frame": seconds_since_frame,
         "stream_uptime": stream_uptime,
         # Consider stalled if no frame for more than 10 seconds after stream started
@@ -1441,7 +1578,7 @@ async def camera_hub_status(
     Shows how many ffmpeg/chamber producers are running, their viewer
     counts, idle times, and frame counters.
     """
-    return _hub.status()
+    return {"grid": _hub.status(), "single": _single_hub.status()}
 
 
 class ExternalCameraTestRequest(BaseModel):

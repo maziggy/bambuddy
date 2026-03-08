@@ -163,7 +163,7 @@ class TestSharedStreamHubStatus:
 class TestGetBufferedFrame:
     """Tests for get_buffered_frame() checking hub then fallback."""
 
-    def test_returns_hub_frame_first(self):
+    def test_returns_hub_frame(self):
         import backend.app.api.routes.camera as cam
         from backend.app.api.routes.camera import _SharedStream
 
@@ -174,26 +174,17 @@ class TestGetBufferedFrame:
         original_streams = dict(cam._hub._streams)
         cam._hub._streams[42] = entry
         try:
-            with patch.dict(cam._last_frames, {42: b"fallback_frame"}, clear=False):
-                result = cam.get_buffered_frame(42)
-                assert result == b"hub_frame"
+            result = cam.get_buffered_frame(42)
+            assert result == b"hub_frame"
         finally:
             cam._hub._streams.clear()
             cam._hub._streams.update(original_streams)
 
-    def test_falls_back_to_last_frames(self):
+    def test_returns_none_when_no_hub_entry(self):
         import backend.app.api.routes.camera as cam
 
-        with patch.dict(cam._last_frames, {42: b"fallback_frame"}, clear=True):
-            result = cam.get_buffered_frame(42)
-            assert result == b"fallback_frame"
-
-    def test_returns_none_when_nothing(self):
-        import backend.app.api.routes.camera as cam
-
-        with patch.dict(cam._last_frames, {}, clear=True):
-            result = cam.get_buffered_frame(9999)
-            assert result is None
+        result = cam.get_buffered_frame(9999)
+        assert result is None
 
 
 class TestFrameBufferCleanupLifecycle:

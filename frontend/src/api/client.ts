@@ -770,14 +770,8 @@ export interface APIKeyUpdate {
   expires_at?: string | null;
 }
 
-// Camera quality types and presets
+// Camera quality types — preset values are managed server-side only
 export type CameraQuality = 'auto' | 'low' | 'medium' | 'high';
-
-export const CAMERA_QUALITY_PRESETS = {
-  low:    { grid: { fps: 2,  quality: 20, scale: 0.25 }, single: { fps: 10, quality: 10, scale: 0.5 } },
-  medium: { grid: { fps: 5,  quality: 15, scale: 0.5  }, single: { fps: 15, quality: 5,  scale: 1.0 } },
-  high:   { grid: { fps: 10, quality: 5,  scale: 0.75 }, single: { fps: 30, quality: 2,  scale: 1.0 } },
-} as const;
 
 // Settings types
 export interface AppSettings {

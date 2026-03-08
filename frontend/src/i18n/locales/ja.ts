@@ -228,7 +228,7 @@ export default {
       high: '高',
       cameraUnavailable: 'カメラが利用できません',
       connectionLost: '接続が切断されました',
-      reconnecting: '{{countdown}}秒後に再接続 ({{attempt}}/{{max}})',
+      reconnecting: '{{countdown}}秒後に再接続 (試行{{attempt}})',
       expand: '拡大',
       layout: {
         compact: 'コンパクト',
@@ -1757,7 +1757,8 @@ export default {
     cameraQualityLow: '低',
     cameraQualityMedium: '中',
     cameraQualityHigh: '高',
-    cameraQualityAuto: '自動（推奨）',
+    cameraQualityAuto: '自動',
+    cameraQualityAutoWithResolved: '自動（{{resolved}}）',
     cameraQualityAutoResolved: '自動選択：サーバーハードウェアに基づき{{resolved}}。',
     cameraQualityAutoResolvedDual: '自動選択：{{single}}（単体表示）、{{grid}}（カメラグリッド）サーバーハードウェアとストリーム数に基づく。',
     cameraQualityDescription: 'ストリームのFPSと解像度を制御します。低画質にするとマルチカメラ環境でのCPU使用率が低下します。',

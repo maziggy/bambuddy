@@ -23,17 +23,15 @@ class TestCleanupStaleFrameBuffers:
         return _cleanup_stale_frame_buffers
 
     @pytest.mark.asyncio
-    async def test_cleanup_removes_stale_entries_from_all_three_dicts(self):
+    async def test_cleanup_removes_stale_entries(self):
         import backend.app.api.routes.camera as cam
 
         stale_ts = time.monotonic() - cam._FRAME_BUFFER_MAX_AGE - 10
         with (
-            patch.dict(cam._last_frames, {99: b"jpeg"}, clear=True),
             patch.dict(cam._last_frame_times, {99: stale_ts}, clear=True),
             patch.dict(cam._stream_start_times, {99: stale_ts}, clear=True),
         ):
             await cam._cleanup_stale_frame_buffers()
-            assert 99 not in cam._last_frames
             assert 99 not in cam._last_frame_times
             assert 99 not in cam._stream_start_times
 
@@ -43,23 +41,20 @@ class TestCleanupStaleFrameBuffers:
 
         fresh_ts = time.monotonic()
         with (
-            patch.dict(cam._last_frames, {1: b"jpeg"}, clear=True),
             patch.dict(cam._last_frame_times, {1: fresh_ts}, clear=True),
             patch.dict(cam._stream_start_times, {1: fresh_ts}, clear=True),
         ):
             await cam._cleanup_stale_frame_buffers()
-            assert 1 in cam._last_frames
             assert 1 in cam._last_frame_times
             assert 1 in cam._stream_start_times
 
     @pytest.mark.asyncio
     async def test_cleanup_handles_partial_entries(self):
-        """Stale _last_frame_times entry but no matching _last_frames or _stream_start_times."""
+        """Stale _last_frame_times entry but no matching _stream_start_times."""
         import backend.app.api.routes.camera as cam
 
         stale_ts = time.monotonic() - cam._FRAME_BUFFER_MAX_AGE - 10
         with (
-            patch.dict(cam._last_frames, {}, clear=True),
             patch.dict(cam._last_frame_times, {42: stale_ts}, clear=True),
             patch.dict(cam._stream_start_times, {}, clear=True),
         ):
@@ -76,17 +71,14 @@ class TestCleanupStaleFrameBuffers:
         fresh_ts = now
 
         with (
-            patch.dict(cam._last_frames, {1: b"old", 2: b"new"}, clear=True),
             patch.dict(cam._last_frame_times, {1: stale_ts, 2: fresh_ts}, clear=True),
             patch.dict(cam._stream_start_times, {1: stale_ts, 2: fresh_ts}, clear=True),
         ):
             await cam._cleanup_stale_frame_buffers()
             # Stale removed
-            assert 1 not in cam._last_frames
             assert 1 not in cam._last_frame_times
             assert 1 not in cam._stream_start_times
             # Fresh preserved
-            assert 2 in cam._last_frames
             assert 2 in cam._last_frame_times
             assert 2 in cam._stream_start_times
 

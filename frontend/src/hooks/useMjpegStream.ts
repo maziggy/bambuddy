@@ -196,6 +196,7 @@ export function useMjpegStream({
 
         // Stream ended naturally
         if (mountedRef.current && gen === generationRef.current) {
+          setIsLoading(false);
           setIsConnected(false);
           onErrorRef.current?.();
         }

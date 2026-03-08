@@ -411,9 +411,7 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
         return None
 
 
-async def _capture_snapshot(
-    url: str, timeout: int, *, session: aiohttp.ClientSession | None = None
-) -> bytes | None:
+async def _capture_snapshot(url: str, timeout: int, *, session: aiohttp.ClientSession | None = None) -> bytes | None:
     """Fetch snapshot from HTTP URL.
 
     Note: This function intentionally makes requests to user-configured URLs.
@@ -431,7 +429,9 @@ async def _capture_snapshot(
 
     try:
         if session is not None:
-            async with session.get(safe_url, allow_redirects=False, timeout=aiohttp.ClientTimeout(total=timeout)) as response:
+            async with session.get(
+                safe_url, allow_redirects=False, timeout=aiohttp.ClientTimeout(total=timeout)
+            ) as response:
                 if response.status != 200:
                     logger.error("Snapshot URL returned status %s", response.status)
                     return None
@@ -500,13 +500,23 @@ async def test_connection(url: str, camera_type: str) -> dict:
         return {"success": False, "error": f"Connection failed: {error_type}"}
 
 
-async def generate_mjpeg_stream(url: str, camera_type: str, fps: int = 10) -> AsyncGenerator[bytes, None]:
+async def generate_mjpeg_stream(
+    url: str,
+    camera_type: str,
+    fps: int = 10,
+    gpu_accel: bool = False,
+    quality: int = 5,
+    threads: int = 0,
+) -> AsyncGenerator[bytes, None]:
     """Generator yielding MJPEG frames for streaming.
 
     Args:
         url: Camera URL or USB device path
         camera_type: "mjpeg", "rtsp", "snapshot", or "usb"
         fps: Target frames per second
+        gpu_accel: Enable hardware-accelerated decoding (RTSP only)
+        quality: MJPEG quality (lower = better, 2-31)
+        threads: FFmpeg thread count (0 = auto)
 
     Yields:
         MJPEG frame data with HTTP multipart boundaries
@@ -541,7 +551,7 @@ async def generate_mjpeg_stream(url: str, camera_type: str, fps: int = 10) -> As
         max_retries = 3
         for attempt in range(max_retries + 1):
             frame_yielded = False
-            async for frame in _stream_rtsp(url, fps):
+            async for frame in _stream_rtsp(url, fps, gpu_accel=gpu_accel, quality=quality, threads=threads):
                 frame_yielded = True
                 yield _format_mjpeg_header(len(frame))
                 yield frame
@@ -557,7 +567,7 @@ async def generate_mjpeg_stream(url: str, camera_type: str, fps: int = 10) -> As
 
     elif camera_type == "usb":
         # Use ffmpeg to stream from USB camera
-        async for frame in _stream_usb(url, fps):
+        async for frame in _stream_usb(url, fps, quality=quality, threads=threads):
             yield _format_mjpeg_header(len(frame))
             yield frame
             yield b"\r\n"
@@ -582,12 +592,7 @@ async def generate_mjpeg_stream(url: str, camera_type: str, fps: int = 10) -> As
 
 def _format_mjpeg_header(frame_len: int) -> bytes:
     """Format the MJPEG boundary header (without frame data)."""
-    return (
-        b"--frame\r\n"
-        b"Content-Type: image/jpeg\r\n"
-        b"Content-Length: " + str(frame_len).encode() + b"\r\n"
-        b"\r\n"
-    )
+    return b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " + str(frame_len).encode() + b"\r\n\r\n"
 
 
 async def _stream_mjpeg(url: str) -> AsyncGenerator[bytes, None]:
@@ -645,7 +650,9 @@ async def _stream_mjpeg(url: str) -> AsyncGenerator[bytes, None]:
         logger.error("MJPEG stream error: %s", e)
 
 
-async def _stream_rtsp(url: str, fps: int) -> AsyncGenerator[bytes, None]:
+async def _stream_rtsp(
+    url: str, fps: int, *, gpu_accel: bool = False, quality: int = 5, threads: int = 0
+) -> AsyncGenerator[bytes, None]:
     """Stream frames from RTSP URL via ffmpeg."""
     safe_url = _sanitize_camera_url(url, ("rtsp", "rtsps"))
     if not safe_url:
@@ -659,29 +666,35 @@ async def _stream_rtsp(url: str, fps: int) -> AsyncGenerator[bytes, None]:
         return
 
     # ffmpeg handles both rtsp:// and rtsps:// URLs automatically
-    cmd = [
-        ffmpeg,
-        "-rtsp_transport",
-        "tcp",
-        "-rtsp_flags",
-        "prefer_tcp",
-        "-timeout",
-        "30000000",
-        "-buffer_size",
-        "1024000",
-        "-max_delay",
-        "500000",
-        "-i",
-        url,
-        "-f",
-        "mjpeg",
-        "-q:v",
-        "5",
-        "-r",
-        str(fps),
-        "-an",
-        "-",
-    ]
+    cmd = [ffmpeg]
+    if gpu_accel:
+        cmd.extend(["-hwaccel", "auto"])
+    cmd.extend(
+        [
+            "-rtsp_transport",
+            "tcp",
+            "-rtsp_flags",
+            "prefer_tcp",
+            "-timeout",
+            "30000000",
+            "-buffer_size",
+            "1024000",
+            "-max_delay",
+            "500000",
+            "-i",
+            url,
+            "-f",
+            "mjpeg",
+            "-q:v",
+            str(quality),
+            "-r",
+            str(fps),
+            "-an",
+        ]
+    )
+    if threads > 0:
+        cmd.extend(["-threads", str(threads)])
+    cmd.append("-")
 
     semaphore = get_rtsp_semaphore()
     process = None
@@ -721,7 +734,7 @@ async def _stream_rtsp(url: str, fps: int) -> AsyncGenerator[bytes, None]:
 
         while True:
             try:
-                chunk = await asyncio.wait_for(process.stdout.read(8192), timeout=30.0)
+                chunk = await asyncio.wait_for(process.stdout.read(65536), timeout=30.0)
 
                 if not chunk:
                     break
@@ -765,7 +778,7 @@ async def _stream_rtsp(url: str, fps: int) -> AsyncGenerator[bytes, None]:
                 await process.wait()
 
 
-async def _stream_usb(device: str, fps: int) -> AsyncGenerator[bytes, None]:
+async def _stream_usb(device: str, fps: int, *, quality: int = 5, threads: int = 0) -> AsyncGenerator[bytes, None]:
     """Stream frames from USB camera via ffmpeg."""
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
@@ -789,11 +802,13 @@ async def _stream_usb(device: str, fps: int) -> AsyncGenerator[bytes, None]:
         "-f",
         "mjpeg",
         "-q:v",
-        "5",
+        str(quality),
         "-r",
         str(fps),
-        "-",
     ]
+    if threads > 0:
+        cmd.extend(["-threads", str(threads)])
+    cmd.append("-")
 
     process = None
     try:
@@ -821,7 +836,7 @@ async def _stream_usb(device: str, fps: int) -> AsyncGenerator[bytes, None]:
 
         while True:
             try:
-                chunk = await asyncio.wait_for(process.stdout.read(8192), timeout=30.0)
+                chunk = await asyncio.wait_for(process.stdout.read(65536), timeout=30.0)
 
                 if not chunk:
                     break

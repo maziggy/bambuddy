@@ -186,10 +186,11 @@ class TestCameraAPI:
                 mock_open.return_value.__enter__.return_value.read.return_value = fake_jpeg
 
                 with patch("pathlib.Path.exists", return_value=True), patch("pathlib.Path.unlink"):
-                    _response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/snapshot")
+                    response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/snapshot")
 
-        # Note: The actual test might fail due to file operations, but this tests the endpoint structure
-        # In production tests, we'd mock more comprehensively
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/jpeg"
+        assert response.content == fake_jpeg
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -606,7 +607,7 @@ class TestCameraGridStreamValidation:
             )
 
         # Should NOT get 400 "Maximum 30" — dedup happened first
-        assert response.status_code != 400 or "30" not in response.json().get("detail", "")
+        assert response.status_code != 400
 
 
 class TestCameraStreamValidation:

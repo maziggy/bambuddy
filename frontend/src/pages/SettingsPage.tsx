@@ -1407,7 +1407,9 @@ export function SettingsPage() {
                   onChange={(e) => updateSetting('camera_quality', e.target.value as 'auto' | 'low' | 'medium' | 'high')}
                   className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 >
-                  <option value="auto">{t('settings.cameraQualityAuto')}</option>
+                  <option value="auto">{ffmpegStatus?.auto_resolved_single
+                    ? t('settings.cameraQualityAutoWithResolved', { resolved: t(`settings.cameraQuality${ffmpegStatus.auto_resolved_single.charAt(0).toUpperCase() + ffmpegStatus.auto_resolved_single.slice(1)}`) })
+                    : t('settings.cameraQualityAuto')}</option>
                   <option value="low">{t('settings.cameraQualityLow')}</option>
                   <option value="medium">{t('settings.cameraQualityMedium')}</option>
                   <option value="high">{t('settings.cameraQualityHigh')}</option>

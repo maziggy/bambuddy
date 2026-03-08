@@ -11,8 +11,6 @@ interface UseStreamReconnectOptions {
   onGiveUp?: () => void;
   /** Pause stall detection (e.g. when minimized) */
   stallPaused?: boolean;
-  /** Printer ID for stall detection API calls */
-  printerId?: number;
   /** Stall check function — called periodically, should return true if stalled */
   checkStalled?: () => Promise<boolean>;
 }
@@ -31,7 +29,7 @@ export function useStreamReconnect({
   maxAttempts = 5,
   initialDelay = 2000,
   maxDelay = 30000,
-  stallCheckInterval = 5000,
+  stallCheckInterval = 30000,
   initialRetryDelay = 500,
   initialRetryMax = 10,
   onReconnect,
@@ -106,7 +104,10 @@ export function useStreamReconnect({
       return;
     }
 
+    let stallCheckInFlight = false;
     stallCheckIntervalRef.current = setInterval(async () => {
+      if (stallCheckInFlight) return;
+      stallCheckInFlight = true;
       try {
         const stalled = await checkStalled();
         if (stalled) {
@@ -118,6 +119,8 @@ export function useStreamReconnect({
         }
       } catch {
         // Ignore errors
+      } finally {
+        stallCheckInFlight = false;
       }
     }, stallCheckInterval);
 

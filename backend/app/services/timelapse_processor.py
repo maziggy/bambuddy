@@ -83,7 +83,10 @@ class TimelapseProcessor:
         count: int = 10,
         width: int = 160,
     ) -> list[tuple[float, bytes]]:
-        """Generate evenly-spaced thumbnail frames."""
+        """Generate evenly-spaced thumbnail frames.
+
+        Runs up to 4 FFmpeg extractions concurrently for faster processing.
+        """
         info = await self.get_info()
         duration = info["duration"]
 
@@ -91,10 +94,11 @@ class TimelapseProcessor:
             return []
 
         interval = duration / max(count, 1)
-        thumbnails = []
+        semaphore = asyncio.Semaphore(4)
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            for i in range(count):
+
+            async def _extract_one(i: int) -> tuple[float, bytes] | None:
                 timestamp = i * interval
                 output_path = Path(tmpdir) / f"thumb_{i:03d}.jpg"
 
@@ -114,17 +118,21 @@ class TimelapseProcessor:
                     str(output_path),
                 ]
 
-                process = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                await process.communicate()
+                async with semaphore:
+                    process = await asyncio.create_subprocess_exec(
+                        *cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    await process.communicate()
 
                 if output_path.exists():
-                    thumbnails.append((timestamp, output_path.read_bytes()))
+                    return (timestamp, output_path.read_bytes())
+                return None
 
-        return thumbnails
+            results = await asyncio.gather(*(_extract_one(i) for i in range(count)))
+
+        return [r for r in results if r is not None]
 
     async def process(
         self,

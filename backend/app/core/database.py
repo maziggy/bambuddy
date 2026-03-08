@@ -1365,10 +1365,10 @@ async def run_migrations(conn):
     # Migration: Convert ams_labels table from (printer_id, ams_id) key to ams_serial_number key
     # Labels are now keyed by AMS serial number so they persist when the AMS is moved to another printer.
     try:
-        await conn.execute(text("DROP TABLE IF EXISTS ams_labels_new"))
         result = await conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='ams_labels'"))
         row = result.fetchone()
         if row and "printer_id" in (row[0] or ""):
+            await conn.execute(text("DROP TABLE IF EXISTS ams_labels_new"))
             # Old schema: rebuild the table with ams_serial_number as the unique key.
             # Existing rows get a synthetic serial "p{printer_id}a{ams_id}" so data is preserved.
             await conn.execute(

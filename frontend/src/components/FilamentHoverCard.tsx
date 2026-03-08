@@ -19,7 +19,6 @@ interface SpoolmanConfig {
   enabled: boolean;
   onLinkSpool?: () => void;
   onUnlinkSpool?: () => void;
-  hasUnlinkedSpools?: boolean; // Whether there are spools available to link
   linkedSpoolId?: number | null; // Spoolman spool ID if this tray is already linked
   spoolmanUrl?: string | null; // Base URL for Spoolman (for "Open in Spoolman" link)
 }

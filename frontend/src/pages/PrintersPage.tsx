@@ -1514,7 +1514,6 @@ function PrinterCard({
   cardSize = 2,
   amsThresholds,
   spoolmanEnabled = false,
-  hasUnlinkedSpools = false,
   linkedSpools,
   spoolmanUrl,
   onGetAssignment,
@@ -3210,7 +3209,6 @@ function PrinterCard({
                                         data={filamentData}
                                         spoolman={{
                                           enabled: spoolmanEnabled,
-                                          hasUnlinkedSpools,
                                           linkedSpoolId: trayTag
                                             ? linkedSpools?.[trayTag]?.id
                                             : undefined,
@@ -3457,7 +3455,6 @@ function PrinterCard({
                                     data={filamentData}
                                     spoolman={{
                                       enabled: spoolmanEnabled,
-                                      hasUnlinkedSpools,
                                       linkedSpoolId: htTrayTag
                                         ? linkedSpools?.[htTrayTag]?.id
                                         : undefined,
@@ -3654,7 +3651,6 @@ function PrinterCard({
                                       data={extFilamentData}
                                       spoolman={{
                                         enabled: spoolmanEnabled,
-                                        hasUnlinkedSpools,
                                         linkedSpoolId: extTrayTag
                                           ? linkedSpools?.[extTrayTag]?.id
                                           : undefined,

@@ -23,6 +23,7 @@ class VirtualPrinterCreate(BaseModel):
     model: str | None = None
     access_code: str | None = None
     target_printer_id: int | None = None
+    auto_dispatch: bool = True
     bind_ip: str | None = None
     remote_interface_ip: str | None = None
 
@@ -34,6 +35,7 @@ class VirtualPrinterUpdate(BaseModel):
     model: str | None = None
     access_code: str | None = None
     target_printer_id: int | None = None
+    auto_dispatch: bool | None = None
     bind_ip: str | None = None
     remote_interface_ip: str | None = None
 
@@ -56,6 +58,7 @@ def _vp_to_dict(vp, status: dict | None = None) -> dict:
         "access_code_set": bool(vp.access_code),
         "serial": serial,
         "target_printer_id": vp.target_printer_id,
+        "auto_dispatch": vp.auto_dispatch,
         "bind_ip": vp.bind_ip,
         "remote_interface_ip": vp.remote_interface_ip,
         "position": vp.position,
@@ -169,6 +172,7 @@ async def create_virtual_printer(
         model=body.model or DEFAULT_VIRTUAL_PRINTER_MODEL,
         access_code=body.access_code,
         target_printer_id=body.target_printer_id,
+        auto_dispatch=body.auto_dispatch,
         bind_ip=body.bind_ip,
         remote_interface_ip=body.remote_interface_ip,
         serial_suffix=new_suffix,
@@ -265,6 +269,8 @@ async def update_virtual_printer(
                 status_code=400, content={"detail": f"Printer with ID {body.target_printer_id} not found"}
             )
         vp.target_printer_id = body.target_printer_id
+    if body.auto_dispatch is not None:
+        vp.auto_dispatch = body.auto_dispatch
     if body.bind_ip is not None:
         vp.bind_ip = body.bind_ip
     if body.remote_interface_ip is not None:

@@ -114,3 +114,50 @@ export function isPlaceholderDate(scheduledTime: string | null | undefined): boo
   const sixMonthsFromNow = Date.now() + 180 * 24 * 60 * 60 * 1000;
   return (parseUTCDate(scheduledTime)?.getTime() ?? 0) > sixMonthsFromNow;
 }
+
+/**
+ * Auto-match a filament requirement to a loaded filament, respecting nozzle constraints.
+ * Used by both single-printer (FilamentMapping) and multi-printer (InlineMappingEditor) paths.
+ */
+export function autoMatchFilament(
+  req: { type?: string; color?: string; nozzle_id?: number | null },
+  loadedFilaments: { globalTrayId: number; type?: string; color?: string; extruderId?: number }[],
+  usedTrayIds: Set<number>,
+): typeof loadedFilaments[number] | undefined {
+  const nozzleFilaments = filterFilamentsByNozzle(loadedFilaments, req.nozzle_id);
+
+  const exactMatch = nozzleFilaments.find(
+    (f) =>
+      !usedTrayIds.has(f.globalTrayId) &&
+      f.type?.toUpperCase() === req.type?.toUpperCase() &&
+      normalizeColorForCompare(f.color) === normalizeColorForCompare(req.color)
+  );
+  const similarMatch = exactMatch
+    ? undefined
+    : nozzleFilaments.find(
+        (f) =>
+          !usedTrayIds.has(f.globalTrayId) &&
+          f.type?.toUpperCase() === req.type?.toUpperCase() &&
+          colorsAreSimilar(f.color, req.color)
+      );
+  const typeOnlyMatch =
+    exactMatch || similarMatch
+      ? undefined
+      : nozzleFilaments.find(
+          (f) => !usedTrayIds.has(f.globalTrayId) && f.type?.toUpperCase() === req.type?.toUpperCase()
+        );
+  return exactMatch ?? similarMatch ?? typeOnlyMatch;
+}
+
+/**
+ * Filter loaded filaments to those valid for a given nozzle requirement.
+ * For single-nozzle printers (nozzle_id is null/undefined), returns all filaments.
+ */
+export function filterFilamentsByNozzle<T extends { extruderId?: number }>(
+  loadedFilaments: T[],
+  nozzleId: number | undefined | null,
+): T[] {
+  return loadedFilaments.filter(
+    (f) => nozzleId == null || f.extruderId === nozzleId
+  );
+}

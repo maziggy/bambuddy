@@ -413,11 +413,30 @@ class BambuFTPClient:
                     except OSError:
                         pass
 
-            # Skip voidresp() for all models — the data transfer is already complete.
-            # A1 models hang indefinitely on voidresp(). H2D printers (vsFTPd) delay
-            # the 226 response by 30+ seconds after data is fully sent. Even X1C/P1S
-            # gain nothing from waiting — the file is on the SD card once sendall() returns.
-            # Verified via direct curl upload: 226 arrives ~32s after data channel closes.
+            # Wait for the server's 226 "Transfer complete" response to confirm
+            # the file has been flushed to the SD card. Without this, the printer
+            # may try to read an incomplete file when the print command is sent,
+            # causing 0500-C010 "MicroSD Card read/write exception" errors.
+            # See: https://bugs.python.org/issue25458 (ftplib response desync)
+            try:
+                old_timeout = self._ftp.sock.gettimeout()
+                # Use a generous timeout — H2D printers can take 30+ seconds
+                # to send the 226 after the data channel closes.
+                self._ftp.sock.settimeout(max(self.timeout, 60))
+                try:
+                    resp = self._ftp.voidresp()
+                    logger.info("FTP STOR confirmed for %s: %s", remote_path, resp.strip())
+                finally:
+                    self._ftp.sock.settimeout(old_timeout)
+            except Exception as e:
+                # Timeout or error reading 226 — log but proceed, the data
+                # was fully sent so the file is likely on the SD card.
+                logger.warning(
+                    "FTP STOR confirmation not received for %s (proceeding): %s (%s)",
+                    remote_path,
+                    e,
+                    type(e).__name__,
+                )
 
             if callback_exception is not None:
                 cleanup_ok = False
@@ -489,6 +508,16 @@ class BambuFTPClient:
                     conn.close()
                 except OSError:
                     pass
+            # Wait for 226 confirmation (see upload_file for rationale)
+            try:
+                old_timeout = self._ftp.sock.gettimeout()
+                self._ftp.sock.settimeout(max(self.timeout, 60))
+                try:
+                    self._ftp.voidresp()
+                finally:
+                    self._ftp.sock.settimeout(old_timeout)
+            except Exception:
+                pass  # Best-effort — data was sent, proceed
             return True
         except (OSError, ftplib.Error):
             return False

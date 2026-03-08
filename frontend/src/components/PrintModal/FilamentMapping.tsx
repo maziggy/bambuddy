@@ -223,7 +223,7 @@ export function FilamentMapping({
                       : '';
                     return (
                       <option key={f.globalTrayId} value={f.globalTrayId} className="bg-bambu-dark text-white">
-                        {f.label}: {f.type} ({f.colorName}){remainingLabel}
+                        {f.label}: {f.traySubBrands || f.type} ({f.colorName}){remainingLabel}
                       </option>
                     );
                 })}

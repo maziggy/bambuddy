@@ -122,8 +122,8 @@ async def get_available_filaments(
         return []
 
     # Collect filaments from all matching printers
-    # Dedup key includes extruder_id so same color on different nozzles appears separately
-    seen: set[tuple[str, str, int | None]] = set()  # (type_upper, color_normalized, extruder_id)
+    # Dedup key includes extruder_id and tray_sub_brands so "PLA Basic" and "PLA Matte" appear separately
+    seen: set[tuple[str, str, str, int | None]] = set()  # (type_upper, color_normalized, sub_brands_upper, extruder_id)
     filaments = []
 
     for printer in printers_list:
@@ -147,8 +147,9 @@ async def get_available_filaments(
                 hex_color = tray_color.replace("#", "")[:6] if tray_color else "808080"
                 color = f"#{hex_color}"
                 tray_info_idx = tray.get("tray_info_idx", "")
+                tray_sub_brands = tray.get("tray_sub_brands", "") or ""
 
-                key = (tray_type.upper(), hex_color.lower(), extruder_id)
+                key = (tray_type.upper(), hex_color.lower(), tray_sub_brands.upper(), extruder_id)
                 if key not in seen:
                     seen.add(key)
                     filaments.append(
@@ -156,6 +157,7 @@ async def get_available_filaments(
                             "type": tray_type,
                             "color": color,
                             "tray_info_idx": tray_info_idx,
+                            "tray_sub_brands": tray_sub_brands,
                             "extruder_id": extruder_id,
                         }
                     )
@@ -169,10 +171,11 @@ async def get_available_filaments(
             hex_color = vt_color.replace("#", "")[:6] if vt_color else "808080"
             color = f"#{hex_color}"
             tray_info_idx = vt.get("tray_info_idx", "")
+            tray_sub_brands = vt.get("tray_sub_brands", "") or ""
             vt_id = int(vt.get("id", 254))
             extruder_id = (255 - vt_id) if ams_extruder_map else None
 
-            key = (vt_type.upper(), hex_color.lower(), extruder_id)
+            key = (vt_type.upper(), hex_color.lower(), tray_sub_brands.upper(), extruder_id)
             if key not in seen:
                 seen.add(key)
                 filaments.append(
@@ -180,6 +183,7 @@ async def get_available_filaments(
                         "type": vt_type,
                         "color": color,
                         "tray_info_idx": tray_info_idx,
+                        "tray_sub_brands": tray_sub_brands,
                         "extruder_id": extruder_id,
                     }
                 )
@@ -1989,9 +1993,7 @@ async def get_ams_labels(
     # Fetch labels for all known serials
     labels: dict[int, str] = {}
     if serials_to_query:
-        result = await db.execute(
-            select(AmsLabel).where(AmsLabel.ams_serial_number.in_(serials_to_query))
-        )
+        result = await db.execute(select(AmsLabel).where(AmsLabel.ams_serial_number.in_(serials_to_query)))
         for lbl in result.scalars().all():
             aid = serial_to_ams_id.get(lbl.ams_serial_number)
             if aid is not None:
@@ -2041,9 +2043,7 @@ async def save_ams_label(
     stripped = body.ams_serial.strip() if body.ams_serial else ""
     serial_key = stripped if stripped else f"p{printer_id}a{ams_id}"
 
-    result = await db.execute(
-        select(AmsLabel).where(AmsLabel.ams_serial_number == serial_key)
-    )
+    result = await db.execute(select(AmsLabel).where(AmsLabel.ams_serial_number == serial_key))
     existing = result.scalar_one_or_none()
 
     if existing:
@@ -2068,9 +2068,7 @@ async def delete_ams_label(
     stripped = ams_serial.strip() if ams_serial else ""
     serial_key = stripped if stripped else f"p{printer_id}a{ams_id}"
 
-    result = await db.execute(
-        select(AmsLabel).where(AmsLabel.ams_serial_number == serial_key)
-    )
+    result = await db.execute(select(AmsLabel).where(AmsLabel.ams_serial_number == serial_key))
     existing = result.scalar_one_or_none()
 
     if existing:

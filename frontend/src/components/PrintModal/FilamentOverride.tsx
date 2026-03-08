@@ -6,7 +6,7 @@ import type { FilamentReqsData } from './types';
 
 interface FilamentOverrideProps {
   filamentReqs: FilamentReqsData | undefined;
-  availableFilaments: Array<{ type: string; color: string; tray_info_idx: string; extruder_id: number | null }>;
+  availableFilaments: Array<{ type: string; color: string; tray_info_idx: string; tray_sub_brands: string; extruder_id: number | null }>;
   overrides: Record<number, { type: string; color: string }>;
   onChange: (overrides: Record<number, { type: string; color: string }>) => void;
 }
@@ -26,7 +26,7 @@ export function FilamentOverride({
 
   // Index available filaments by type (uppercased) for per-slot filtering
   const filamentsByType = useMemo(() => {
-    const map: Record<string, Array<{ type: string; color: string; tray_info_idx: string; extruder_id: number | null }>> = {};
+    const map: Record<string, Array<{ type: string; color: string; tray_info_idx: string; tray_sub_brands: string; extruder_id: number | null }>> = {};
     for (const f of availableFilaments) {
       const key = f.type.toUpperCase();
       if (!map[key]) map[key] = [];
@@ -104,11 +104,11 @@ export function FilamentOverride({
                 </option>
                 {compatible.map((f, idx) => (
                   <option
-                    key={`${f.type}-${f.color}-${idx}`}
+                    key={`${f.type}-${f.color}-${f.tray_sub_brands}-${idx}`}
                     value={`${f.type}|${f.color}`}
                     className="bg-bambu-dark text-white"
                   >
-                    {f.type} ({getColorName(f.color)})
+                    {f.tray_sub_brands || f.type} ({getColorName(f.color)})
                   </option>
                 ))}
               </select>

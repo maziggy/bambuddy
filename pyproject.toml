@@ -2,10 +2,10 @@
 name = "bambuddy"
 version = "0.1.5"
 description = "Archive and manage Bambu Lab 3MF files"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py310"
 line-length = 120
 exclude = [
     ".git",
@@ -54,6 +54,8 @@ unfixable = []
 "backend/app/main.py" = ["E402"]
 # MQTT client has some unused variables for debugging
 "backend/app/services/bambu_mqtt.py" = ["F841"]
+# compat module intentionally uses version checks for Python 3.10 support
+"backend/app/core/compat.py" = ["UP036"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["backend"]

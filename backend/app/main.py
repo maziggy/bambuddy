@@ -693,7 +693,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
             # Commit any changes (stale deletions and/or fingerprint updates)
             await db.commit()
     except Exception as e:
-        logger.warning("Spool assignment cleanup failed: %s", e)
+        logger.warning("Spool assignment cleanup failed: %s", e, exc_info=True)
 
     # Auto-manage inventory spools from AMS tray data (skip if Spoolman manages AMS)
     try:
@@ -816,7 +816,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                 }
                             )
     except Exception as e:
-        logger.warning("RFID spool auto-assign failed: %s", e)
+        logger.warning("RFID spool auto-assign failed: %s", e, exc_info=True)
 
     try:
         async with async_session() as db:

@@ -231,8 +231,53 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
       const hasActiveWork = dispatched + processing > 0;
       const allDone = total > 0 && completed + failed >= total && !hasActiveWork;
+      const recentStatus = detail.recent_event?.status;
+
+      // Once any print starts successfully, dismiss the dispatch toast (#615)
+      // Remaining jobs continue in the background silently
+      if (recentStatus === 'completed' && completed > 0) {
+        const summaryKey = `first-complete:${completed}:${failed}`;
+        if (lastDispatchSummaryRef.current !== summaryKey) {
+          lastDispatchSummaryRef.current = summaryKey;
+
+          const remaining = total - completed - failed;
+          const doneMessage = remaining > 0
+            ? t('backgroundDispatch.toast.printStartedRemaining', { completed, remaining })
+            : failed > 0
+              ? t('backgroundDispatch.toast.completeWithFailures', { completed, failed })
+              : t('backgroundDispatch.toast.completeSuccess', { completed });
+
+          setToasts((prev) => {
+            const doneToast: Toast = {
+              id: dispatchToastId,
+              message: doneMessage,
+              type: failed > 0 ? 'warning' : 'success',
+              persistent: true,
+            };
+            const exists = prev.find((toastItem) => toastItem.id === dispatchToastId);
+            if (exists) {
+              return prev.map((toastItem) =>
+                toastItem.id === dispatchToastId ? doneToast : toastItem
+              );
+            }
+            return [...prev, doneToast];
+          });
+
+          const existingTimeout = timeoutRefs.current.get(dispatchToastId);
+          if (existingTimeout) clearTimeout(existingTimeout);
+          const timeout = setTimeout(() => {
+            setToasts((prev) => prev.filter((t) => t.id !== dispatchToastId));
+            timeoutRefs.current.delete(dispatchToastId);
+            lastDispatchSummaryRef.current = null;
+          }, 3000);
+          timeoutRefs.current.set(dispatchToastId, timeout);
+        }
+        return;
+      }
 
       if (hasActiveWork) {
+        // New batch starting — reset dedup guard so completion toast works
+        lastDispatchSummaryRef.current = null;
         setToasts((prev) => {
           const existing = prev.find((toastItem) => toastItem.id === dispatchToastId);
           const existingJobs = existing?.dispatchData?.jobs || [];
@@ -341,11 +386,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const recentStatus = detail.recent_event?.status;
-      if (!hasActiveWork && recentStatus && ['cancelled', 'failed', 'completed', 'idle'].includes(recentStatus)) {
-        setToasts((prev) => prev.filter((t) => t.id !== dispatchToastId));
-      }
-
       if (allDone) {
         const summaryKey = `${completed}:${failed}`;
         if (lastDispatchSummaryRef.current === summaryKey) {
@@ -353,21 +393,49 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         }
         lastDispatchSummaryRef.current = summaryKey;
 
-        setToasts((prev) => prev.filter((t) => t.id !== dispatchToastId));
         const doneMessage = failed > 0
           ? t('backgroundDispatch.toast.completeWithFailures', { completed, failed })
           : t('backgroundDispatch.toast.completeSuccess', { completed });
-        const id = Math.random().toString(36).substr(2, 9);
-        setToasts((prev) => [...prev, { id, message: doneMessage, type: failed > 0 ? 'warning' : 'success' }]);
+
+        // Show a brief "completed" state on the dispatch toast before replacing with summary
+        // This ensures the user sees confirmation even for fast uploads (#615)
+        setToasts((prev) => {
+          const doneToast: Toast = {
+            id: dispatchToastId,
+            message: doneMessage,
+            type: failed > 0 ? 'warning' : 'success',
+            persistent: true,
+            // Clear dispatchData so it renders as a simple text toast
+          };
+          const exists = prev.find((toastItem) => toastItem.id === dispatchToastId);
+          if (exists) {
+            return prev.map((toastItem) =>
+              toastItem.id === dispatchToastId ? doneToast : toastItem
+            );
+          }
+          return [...prev, doneToast];
+        });
+
+        // Auto-dismiss after 3 seconds
+        const existingTimeout = timeoutRefs.current.get(dispatchToastId);
+        if (existingTimeout) clearTimeout(existingTimeout);
         const timeout = setTimeout(() => {
-          setToasts((prev) => prev.filter((t) => t.id !== id));
-          timeoutRefs.current.delete(id);
-        }, 4000);
-        timeoutRefs.current.set(id, timeout);
+          setToasts((prev) => prev.filter((t) => t.id !== dispatchToastId));
+          timeoutRefs.current.delete(dispatchToastId);
+          lastDispatchSummaryRef.current = null;
+        }, 3000);
+        timeoutRefs.current.set(dispatchToastId, timeout);
+        return;
+      }
+
+      if (!hasActiveWork && recentStatus && ['cancelled', 'failed', 'completed', 'idle'].includes(recentStatus)) {
+        setToasts((prev) => prev.filter((t) => t.id !== dispatchToastId));
+        lastDispatchSummaryRef.current = null;
       }
 
       if (detail.recent_event?.status === 'idle' && !hasActiveWork) {
         setToasts((prev) => prev.filter((t) => t.id !== dispatchToastId));
+        lastDispatchSummaryRef.current = null;
       }
 
       if (!hasActiveWork) {
@@ -396,8 +464,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={{ showToast, showPersistentToast, dismissToast }}>
       {children}
 
-      {/* Toast Container */}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+      {/* Toast Container — to the left of the bug-report bubble (bottom-4 right-4 w-12) */}
+      <div className="fixed bottom-4 right-20 z-[60] flex flex-col items-end gap-2">
         {toasts.map((toast) => (
           <div
             key={toast.id}

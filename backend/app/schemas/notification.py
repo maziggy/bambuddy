@@ -1,10 +1,11 @@
 """Pydantic schemas for notification providers."""
 
 from datetime import datetime
-from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
+
+from backend.app.core.compat import StrEnum
 
 
 class ProviderType(StrEnum):

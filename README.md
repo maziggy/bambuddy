@@ -196,7 +196,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 
 ### 🔒 Optional Authentication
 - Enable/disable authentication any time
-- Group-based permissions (50+ granular permissions)
+- Group-based permissions (80+ granular permissions)
 - Default groups: Administrators, Operators, Viewers
 - JWT tokens with secure password hashing
 - Comprehensive API protection (200+ endpoints secured)

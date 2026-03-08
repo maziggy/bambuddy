@@ -142,9 +142,18 @@ function getMaintenanceWikiUrl(typeName: string, printerModel: string | null): s
 
   switch (typeName) {
     case 'Lubricate Carbon Rods':
-      // X1, P1, P2S series have carbon rods
+      // X1, P1 series have carbon rods
       if (isX1) return 'https://wiki.bambulab.com/en/x1/maintenance/basic-maintenance';
       if (isP1) return 'https://wiki.bambulab.com/en/p1/maintenance/p1p-maintenance';
+      return null;
+
+    case 'Lubricate Steel Rods':
+      // P2S has hardened steel rods
+      if (isP2S) return 'https://wiki.bambulab.com/en/p2s/maintenance/lubricate-x-y-z-axis';
+      return null;
+
+    case 'Clean Steel Rods':
+      // P2S has hardened steel rods
       if (isP2S) return 'https://wiki.bambulab.com/en/p2s/maintenance/lubricate-x-y-z-axis';
       return null;
 
@@ -174,8 +183,8 @@ function getMaintenanceWikiUrl(typeName: string, printerModel: string | null): s
       return 'https://wiki.bambulab.com/en/x1/maintenance/belt-tension';
 
     case 'Clean Carbon Rods':
-      // X1, P1, P2S series have carbon rods
-      if (isX1 || isP1 || isP2S) return 'https://wiki.bambulab.com/en/general/carbon-rods-clearance';
+      // X1, P1 series have carbon rods
+      if (isX1 || isP1) return 'https://wiki.bambulab.com/en/general/carbon-rods-clearance';
       return null;
 
     case 'Clean Linear Rails':

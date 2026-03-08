@@ -5,7 +5,7 @@ import json
 import logging
 import re
 import smtplib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any
@@ -92,6 +92,21 @@ class NotificationService:
         # Remove any remaining unreplaced placeholders
         result = re.sub(r"\{[a-z_]+\}", "", result)
         return result
+
+    async def _format_eta(self, seconds: int | None, db: AsyncSession) -> str:
+        """Format ETA as wall-clock time, respecting user's time_format setting."""
+        if not seconds or seconds <= 0:
+            return "Unknown"
+
+        from backend.app.api.routes.settings import get_setting
+
+        eta_time = datetime.now() + timedelta(seconds=seconds)
+        time_format = await get_setting(db, "time_format")
+
+        if time_format == "12h":
+            return eta_time.strftime("%I:%M %p").lstrip("0")
+        # Default to 24h for "24h", "system", or unset
+        return eta_time.strftime("%H:%M")
 
     def _format_duration(self, seconds: int | None) -> str:
         """Format duration in seconds to human-readable string."""
@@ -678,11 +693,13 @@ class NotificationService:
                 logger.debug("Using mc_remaining_time from raw_data: %s", estimated_time)
 
         time_str = self._format_duration(estimated_time)
+        eta_str = await self._format_eta(estimated_time, db)
 
         variables = {
             "printer": printer_name,
             "filename": filename,
             "estimated_time": time_str,
+            "eta": eta_str,
         }
 
         # Extract image data for providers that support attachments (e.g. Pushover)
@@ -805,11 +822,14 @@ class NotificationService:
         if not providers:
             return
 
+        eta_str = await self._format_eta(remaining_time, db)
+
         variables = {
             "printer": printer_name,
             "filename": self._clean_filename(filename),
             "progress": str(progress),
             "remaining_time": self._format_duration(remaining_time) if remaining_time else "Unknown",
+            "eta": eta_str,
         }
 
         title, message = await self._build_message_from_template(db, "print_progress", variables)
@@ -1128,10 +1148,13 @@ class NotificationService:
         if not providers:
             return
 
+        eta_str = await self._format_eta(estimated_time, db)
+
         variables = {
             "job_name": job_name,
             "printer": printer_name,
             "estimated_time": self._format_duration(estimated_time),
+            "eta": eta_str,
         }
 
         title, message = await self._build_message_from_template(db, "queue_job_started", variables)

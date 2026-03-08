@@ -2,9 +2,10 @@
 
 import re
 from datetime import datetime
-from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
+
+from backend.app.core.compat import StrEnum
 
 
 class ScheduleType(StrEnum):

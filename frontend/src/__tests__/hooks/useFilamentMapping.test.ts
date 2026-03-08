@@ -86,6 +86,49 @@ describe('buildLoadedFilaments', () => {
     expect(result[0].trayInfoIdx).toBe('');
   });
 
+  it('includes tray_sub_brands from AMS trays', () => {
+    const status = createPrinterStatus([
+      {
+        id: 0,
+        tray: [
+          { id: 0, tray_type: 'PLA', tray_color: '000000', tray_info_idx: 'GFL99', tray_sub_brands: 'PLA Basic' },
+          { id: 1, tray_type: 'PLA', tray_color: '000000', tray_info_idx: 'GFL05', tray_sub_brands: 'PLA Matte' },
+        ],
+      },
+    ]);
+
+    const result = buildLoadedFilaments(status);
+
+    expect(result[0].traySubBrands).toBe('PLA Basic');
+    expect(result[1].traySubBrands).toBe('PLA Matte');
+  });
+
+  it('handles missing tray_sub_brands', () => {
+    const status = createPrinterStatus([
+      {
+        id: 0,
+        tray: [
+          { id: 0, tray_type: 'PLA', tray_color: 'FF0000', tray_info_idx: 'GFA00' },
+        ],
+      },
+    ]);
+
+    const result = buildLoadedFilaments(status);
+
+    expect(result[0].traySubBrands).toBe('');
+  });
+
+  it('includes tray_sub_brands from external spool', () => {
+    const status = createPrinterStatus(
+      [],
+      [{ tray_type: 'PETG', tray_color: '00FF00', tray_info_idx: 'GFG00', tray_sub_brands: 'PETG HF' }]
+    );
+
+    const result = buildLoadedFilaments(status);
+
+    expect(result[0].traySubBrands).toBe('PETG HF');
+  });
+
   it('extracts external spool with tray_info_idx', () => {
     const status = createPrinterStatus(
       [],

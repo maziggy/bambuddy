@@ -129,6 +129,9 @@ class TLSProxy:
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
         ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+        # Bambu printers use plain RSA key exchange (no ECDHE/DHE),
+        # which modern OpenSSL 3.x defaults exclude. Add them back.
+        ctx.set_ciphers("DEFAULT:AES256-GCM-SHA384:AES128-GCM-SHA256")
         return ctx
 
     async def start(self) -> None:

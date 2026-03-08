@@ -172,7 +172,6 @@ if errorlevel 1 (
 call :verify_sha256 "%PORTABLE%\python.zip" "%PYTHON_ZIP_HASH_EXPECTED%" "Python"
 if errorlevel 1 (
     echo [ERROR] Failed to download Python archive.
-    del "%PORTABLE%\python.zip" >nul 2>&1
     pause
     exit /b 1
 )
@@ -217,13 +216,6 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
-call :verify_sha256 "%PORTABLE%\get-pip.py" "%GET_PIP_SHA256%" "get-pip.py"
-if errorlevel 1 (
-    del "%PORTABLE%\get-pip.py" >nul 2>&1
-    pause
-    exit /b 1
-)
-
 "%PYTHON_DIR%\python.exe" "%PORTABLE%\get-pip.py" --no-warn-script-location -q
 if errorlevel 1 (
     echo [ERROR] Failed to install pip.
@@ -232,26 +224,18 @@ if errorlevel 1 (
 )
 del "%PORTABLE%\get-pip.py"
 
+"%PYTHON_DIR%\python.exe" -m pip install setuptools wheel --no-warn-script-location -q
+if errorlevel 1 (
+    echo [ERROR] Failed to install setuptools/wheel.
+    pause
+    exit /b 1
+)
+
 echo [OK] Python %PYTHON_VER% ready.
 
 :python_ready
 
-REM ============================================
-REM  Step 2.5: Create Virtual Environment (best effort)
-REM ============================================
-set "VENV_DIR=%PORTABLE%\venv"
 set "PYTHON_EXE=%PYTHON_DIR%\python.exe"
-if not exist "%VENV_DIR%\Scripts\python.exe" (
-    echo.
-    echo Creating virtual environment [optional]...
-    "%PYTHON_DIR%\python.exe" -m venv "%VENV_DIR%"
-    if errorlevel 1 (
-        echo [WARN] Failed to create virtual environment. Continuing without venv.
-    )
-)
-if exist "%VENV_DIR%\Scripts\python.exe" (
-    set "PYTHON_EXE=%VENV_DIR%\Scripts\python.exe"
-)
 
 REM ============================================
 REM  Step 3: Install Python Dependencies
@@ -264,10 +248,10 @@ if exist "%PORTABLE%\.deps-installed" (
 echo.
 echo [3/6] Installing Python packages (this may take a few minutes)...
 if exist "%ROOT%\requirements.lock" (
-    "%PYTHON_EXE%" -m pip install -r "%ROOT%\requirements.lock" --require-hashes --no-warn-script-location -q
+    "%PYTHON_EXE%" -m pip install -r "%ROOT%\requirements.lock" --require-hashes --no-build-isolation --no-warn-script-location -q
 ) else (
     echo [WARN] requirements.lock not found. Falling back to requirements.txt - no hash enforcement.
-    "%PYTHON_EXE%" -m pip install -r "%ROOT%\requirements.txt" --no-warn-script-location -q
+    "%PYTHON_EXE%" -m pip install -r "%ROOT%\requirements.txt" --no-build-isolation --no-warn-script-location -q
 )
 if errorlevel 1 (
     echo [ERROR] Failed to install Python packages.

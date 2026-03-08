@@ -19,6 +19,7 @@ import type { PrintQueueItem } from '../../api/client';
 const mockPrinters = [
   { id: 1, name: 'X1 Carbon', model: 'X1C', ip_address: '192.168.1.100', enabled: true, is_active: true },
   { id: 2, name: 'P1S', model: 'P1S', ip_address: '192.168.1.101', enabled: true, is_active: true },
+  { id: 3, name: 'A1 Mini', model: 'A1M', ip_address: '192.168.1.102', enabled: true, is_active: true },
 ];
 
 const createMockQueueItem = (overrides: Partial<PrintQueueItem> = {}): PrintQueueItem => ({
@@ -508,7 +509,7 @@ describe('PrintModal', () => {
       await user.click(screen.getByText('Select all'));
 
       await waitFor(() => {
-        expect(screen.getByText(/2 printers selected/)).toBeInTheDocument();
+        expect(screen.getByText(/3 printers selected/)).toBeInTheDocument();
       });
     });
 
@@ -530,8 +531,307 @@ describe('PrintModal', () => {
       await user.click(screen.getByText('Select all'));
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /print to 2 printers/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /print to 3 printers/i })).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('busy printer handling (#622)', () => {
+    beforeEach(() => {
+      // Set up per-printer statuses: printer 1 RUNNING, printer 2 IDLE, printer 3 FINISH
+      server.use(
+        http.get('/api/v1/printers/:id/status', ({ params }) => {
+          const id = Number(params.id);
+          if (id === 1) {
+            return HttpResponse.json({
+              connected: true, state: 'RUNNING', stg_cur_name: null,
+              ams: [], vt_tray: [], nozzles: [],
+            });
+          }
+          if (id === 2) {
+            return HttpResponse.json({
+              connected: true, state: 'IDLE', stg_cur_name: null,
+              ams: [], vt_tray: [], nozzles: [],
+            });
+          }
+          // printer 3
+          return HttpResponse.json({
+            connected: true, state: 'FINISH', stg_cur_name: null,
+            ams: [], vt_tray: [], nozzles: [],
+          });
+        })
+      );
+    });
+
+    it('shows state badges on printers in reprint mode', async () => {
+      render(
+        <PrintModal
+          mode="reprint"
+          archiveId={1}
+          archiveName="Benchy"
+          onClose={mockOnClose}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Printing')).toBeInTheDocument();
+        expect(screen.getByText('Idle')).toBeInTheDocument();
+        expect(screen.getByText('Finished')).toBeInTheDocument();
+      });
+    });
+
+    it('prevents selecting a busy printer in reprint mode', async () => {
+      const user = userEvent.setup();
+      render(
+        <PrintModal
+          mode="reprint"
+          archiveId={1}
+          archiveName="Benchy"
+          onClose={mockOnClose}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Printing')).toBeInTheDocument();
+      });
+
+      // The busy printer button should be disabled
+      const busyButton = screen.getByText('X1 Carbon').closest('button');
+      expect(busyButton).toBeDisabled();
+
+      // Click the busy printer — selection should not change
+      await user.click(busyButton!);
+
+      // Idle printer should still be selectable
+      const idleButton = screen.getByText('P1S').closest('button');
+      expect(idleButton).not.toBeDisabled();
+      await user.click(idleButton!);
+
+      await waitFor(() => {
+        expect(screen.getByText('1 printer selected')).toBeInTheDocument();
+      });
+    });
+
+    it('select all skips busy printers in reprint mode', async () => {
+      const user = userEvent.setup();
+      render(
+        <PrintModal
+          mode="reprint"
+          archiveId={1}
+          archiveName="Benchy"
+          onClose={mockOnClose}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Select all')).toBeInTheDocument();
+        expect(screen.getByText('Printing')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Select all'));
+
+      await waitFor(() => {
+        // Only 2 available printers selected (IDLE + FINISH), not the RUNNING one
+        expect(screen.getByText(/2 printers selected/)).toBeInTheDocument();
+      });
+    });
+
+    it('allows selecting busy printers in add-to-queue mode', async () => {
+      const user = userEvent.setup();
+      render(
+        <PrintModal
+          mode="add-to-queue"
+          archiveId={1}
+          archiveName="Benchy"
+          onClose={mockOnClose}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Printing')).toBeInTheDocument();
+      });
+
+      // The busy printer button should NOT be disabled in queue mode
+      const busyButton = screen.getByText('X1 Carbon').closest('button');
+      expect(busyButton).not.toBeDisabled();
+
+      await user.click(busyButton!);
+
+      await waitFor(() => {
+        expect(screen.getByText('1 printer selected')).toBeInTheDocument();
+      });
+    });
+
+    it('shows Offline badge for disconnected printers', async () => {
+      server.use(
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json({
+            connected: false, state: null, stg_cur_name: null,
+            ams: [], vt_tray: [], nozzles: [],
+          });
+        })
+      );
+
+      render(
+        <PrintModal
+          mode="reprint"
+          archiveId={1}
+          archiveName="Benchy"
+          onClose={mockOnClose}
+        />
+      );
+
+      await waitFor(() => {
+        const offlineBadges = screen.getAllByText('Offline');
+        expect(offlineBadges.length).toBeGreaterThanOrEqual(1);
+      });
+    });
+
+    it('shows calibration stage name when printer is calibrating', async () => {
+      server.use(
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json({
+            connected: true, state: 'RUNNING', stg_cur_name: 'Auto bed leveling',
+            ams: [], vt_tray: [], nozzles: [],
+          });
+        })
+      );
+
+      render(
+        <PrintModal
+          mode="reprint"
+          archiveId={1}
+          archiveName="Benchy"
+          onClose={mockOnClose}
+        />
+      );
+
+      await waitFor(() => {
+        const badges = screen.getAllByText('Auto bed leveling');
+        expect(badges.length).toBeGreaterThanOrEqual(1);
+      });
+    });
+  });
+
+  describe('queue all plates', () => {
+    const multiPlateResponse = {
+      is_multi_plate: true,
+      plates: [
+        { index: 1, name: 'Plate 1', has_thumbnail: false, thumbnail_url: null, objects: ['Part A'], filaments: [{ type: 'PLA', color: '#FF0000' }], print_time_seconds: 1800, filament_used_grams: 50 },
+        { index: 2, name: 'Plate 2', has_thumbnail: false, thumbnail_url: null, objects: ['Part B'], filaments: [{ type: 'PLA', color: '#00FF00' }], print_time_seconds: 2400, filament_used_grams: 60 },
+        { index: 3, name: 'Plate 3', has_thumbnail: false, thumbnail_url: null, objects: ['Part C'], filaments: [{ type: 'PETG', color: '#0000FF' }], print_time_seconds: 3000, filament_used_grams: 70 },
+      ],
+    };
+
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/archives/:id/plates', () => {
+          return HttpResponse.json(multiPlateResponse);
+        }),
+      );
+    });
+
+    it('shows "Queue All" button only in add-to-queue mode', async () => {
+      render(
+        <PrintModal
+          mode="add-to-queue"
+          archiveId={1}
+          archiveName="MultiPlate.3mf"
+          onClose={mockOnClose}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Queue All 3 Plates')).toBeInTheDocument();
+      });
+    });
+
+    it('does not show "Queue All" button in reprint mode', async () => {
+      render(
+        <PrintModal
+          mode="reprint"
+          archiveId={1}
+          archiveName="MultiPlate.3mf"
+          initialSelectedPrinterIds={[1]}
+          onClose={mockOnClose}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Plate 1')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Queue All 3 Plates')).not.toBeInTheDocument();
+    });
+
+    it('highlights all plates when "Queue All" is clicked', async () => {
+      const user = userEvent.setup();
+      render(
+        <PrintModal
+          mode="add-to-queue"
+          archiveId={1}
+          archiveName="MultiPlate.3mf"
+          onClose={mockOnClose}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Queue All 3 Plates')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Queue All 3 Plates'));
+
+      // All plates should show check marks
+      await waitFor(() => {
+        const checks = document.querySelectorAll('.text-bambu-green.flex-shrink-0');
+        expect(checks.length).toBe(3);
+      });
+    });
+
+    it('creates one queue item per plate when submitting with queue-all', async () => {
+      const queueRequests: unknown[] = [];
+      server.use(
+        http.post('/api/v1/queue/', async ({ request }) => {
+          const body = await request.json();
+          queueRequests.push(body);
+          return HttpResponse.json({ id: queueRequests.length, status: 'pending' });
+        }),
+      );
+
+      const user = userEvent.setup();
+      render(
+        <PrintModal
+          mode="add-to-queue"
+          archiveId={1}
+          archiveName="MultiPlate.3mf"
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+
+      // Wait for plates and select a printer
+      await waitFor(() => {
+        expect(screen.getByText('Queue All 3 Plates')).toBeInTheDocument();
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Select printer
+      await user.click(screen.getByText('X1 Carbon'));
+
+      // Click queue all
+      await user.click(screen.getByText('Queue All 3 Plates'));
+
+      // Find the submit button (type="submit") — distinct from the toggle button (type="button")
+      const submitButton = document.querySelector('button[type="submit"]') as HTMLElement;
+      await user.click(submitButton);
+
+      await waitFor(() => {
+        expect(queueRequests.length).toBe(3);
+      });
+
+      // Verify each request has the correct plate_id
+      expect((queueRequests[0] as { plate_id: number }).plate_id).toBe(1);
+      expect((queueRequests[1] as { plate_id: number }).plate_id).toBe(2);
+      expect((queueRequests[2] as { plate_id: number }).plate_id).toBe(3);
     });
   });
 });

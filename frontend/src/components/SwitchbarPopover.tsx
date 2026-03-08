@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Plug, Power, PowerOff, Loader2, Wifi, WifiOff, Zap, Radio, Eye } from 'lucide-react';
 import { api } from '../api/client';
 import type { SmartPlug } from '../api/client';
@@ -146,6 +147,7 @@ function SwitchItem({ plug }: { plug: SmartPlug }) {
 }
 
 export function SwitchbarPopover({ onClose }: SwitchbarPopoverProps) {
+  const { t } = useTranslation();
   // Fetch all smart plugs
   const { data: plugs, isLoading } = useQuery({
     queryKey: ['smart-plugs'],
@@ -177,9 +179,9 @@ export function SwitchbarPopover({ onClose }: SwitchbarPopoverProps) {
         ) : switchbarPlugs.length === 0 ? (
           <div className="text-center py-6 px-4">
             <Plug className="w-8 h-8 text-bambu-gray mx-auto mb-2" />
-            <p className="text-sm text-bambu-gray">No switches in switchbar</p>
+            <p className="text-sm text-bambu-gray">{t('smartPlugs.noSwitchesInSwitchbar')}</p>
             <p className="text-xs text-bambu-gray mt-1">
-              Enable "Show in Switchbar" in Settings &gt; Smart Plugs
+              {t('smartPlugs.enableSwitchbarHint')}
             </p>
           </div>
         ) : (

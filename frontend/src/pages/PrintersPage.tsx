@@ -1337,7 +1337,7 @@ export function AmsNameHoverCard({
       });
     }
   }, [isVisible, amsLabels, ams.id]);
-  
+
   const handleMouseEnter = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => setIsVisible(true), 80);
@@ -5368,6 +5368,7 @@ export function PrintersPage() {
   const { data: spoolAssignments } = useQuery({
     queryKey: ['spool-assignments'],
     queryFn: () => api.getAssignments(),
+    enabled: hasPermission('inventory:view_assignments'),
     staleTime: 30 * 1000,
   });
 

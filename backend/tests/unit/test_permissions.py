@@ -74,3 +74,41 @@ class TestPermissionCategoriesCompleteness:
             for perm in perms:
                 assert perm not in seen, f"{perm} in both '{seen[perm]}' and '{cat_name}'"
                 seen[perm] = cat_name
+
+
+class TestInventoryViewAssignmentsPermission:
+    """Test the INVENTORY_VIEW_ASSIGNMENTS permission."""
+
+    def test_view_assignments_permission_exists(self):
+        """inventory:view_assignments permission should exist in the enum."""
+        assert hasattr(Permission, "INVENTORY_VIEW_ASSIGNMENTS")
+        assert Permission.INVENTORY_VIEW_ASSIGNMENTS == "inventory:view_assignments"
+
+    def test_view_assignments_in_all_permissions(self):
+        """inventory:view_assignments should be in ALL_PERMISSIONS list."""
+        assert "inventory:view_assignments" in ALL_PERMISSIONS
+
+    def test_view_assignments_in_inventory_category(self):
+        """inventory:view_assignments should be in the Inventory permission category."""
+        inventory_perms = PERMISSION_CATEGORIES["Inventory"]
+        assert Permission.INVENTORY_VIEW_ASSIGNMENTS in inventory_perms
+
+    def test_view_assignments_separate_from_read(self):
+        """view_assignments and read should be distinct permissions."""
+        assert Permission.INVENTORY_VIEW_ASSIGNMENTS != Permission.INVENTORY_READ
+        assert Permission.INVENTORY_VIEW_ASSIGNMENTS.value != Permission.INVENTORY_READ.value
+
+    def test_operators_have_view_assignments(self):
+        """Operators group should include inventory:view_assignments."""
+        operators = DEFAULT_GROUPS["Operators"]
+        assert "inventory:view_assignments" in operators["permissions"]
+
+    def test_viewers_have_view_assignments(self):
+        """Viewers group should include inventory:view_assignments."""
+        viewers = DEFAULT_GROUPS["Viewers"]
+        assert "inventory:view_assignments" in viewers["permissions"]
+
+    def test_administrators_have_view_assignments(self):
+        """Administrators should have all permissions including view_assignments."""
+        admins = DEFAULT_GROUPS["Administrators"]
+        assert "inventory:view_assignments" in admins["permissions"]

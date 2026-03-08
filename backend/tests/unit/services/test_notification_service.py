@@ -738,6 +738,7 @@ class TestNotificationVariableFallbacks:
             patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
             patch.object(service, "_send_to_providers", new_callable=AsyncMock),
             patch.object(service, "_build_message_from_template", side_effect=capture_build),
+            patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=None),
         ):
             # Need at least one provider to trigger message building
             mock_get.return_value = [mock_provider]
@@ -772,6 +773,7 @@ class TestNotificationVariableFallbacks:
             patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
             patch.object(service, "_send_to_providers", new_callable=AsyncMock),
             patch.object(service, "_build_message_from_template", side_effect=capture_build),
+            patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=None),
         ):
             # Need at least one provider to trigger message building
             mock_get.return_value = [mock_provider]
@@ -837,6 +839,7 @@ class TestNotificationVariableFallbacks:
             patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
             patch.object(service, "_send_to_providers", new_callable=AsyncMock),
             patch.object(service, "_build_message_from_template", side_effect=capture_build),
+            patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=None),
         ):
             mock_get.return_value = [mock_provider]
 
@@ -869,6 +872,7 @@ class TestNotificationVariableFallbacks:
             patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
             patch.object(service, "_send_to_providers", new_callable=AsyncMock),
             patch.object(service, "_build_message_from_template", side_effect=capture_build),
+            patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=None),
         ):
             mock_get.return_value = [mock_provider]
 
@@ -905,6 +909,7 @@ class TestNotificationVariableFallbacks:
             patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
             patch.object(service, "_send_to_providers", new_callable=AsyncMock),
             patch.object(service, "_build_message_from_template", side_effect=capture_build),
+            patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=None),
         ):
             mock_get.return_value = [mock_provider]
 
@@ -922,6 +927,105 @@ class TestNotificationVariableFallbacks:
 
             # Should use MQTT remaining_time
             assert captured_variables.get("estimated_time") == "30m"
+
+    @pytest.mark.asyncio
+    async def test_print_start_eta_calculated_from_estimated_time(self, service):
+        """Verify ETA is calculated as wall-clock time from estimated_time."""
+        mock_db = AsyncMock()
+        mock_provider = MagicMock()
+        mock_provider.id = 1
+
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+            patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=None),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_print_start(
+                printer_id=1,
+                printer_name="Test",
+                data={"subtask_name": "test"},
+                db=mock_db,
+                archive_data={"print_time_seconds": 3600},  # 1 hour
+            )
+
+            # ETA should be a time string in HH:MM format
+            eta = captured_variables.get("eta")
+            assert eta is not None
+            assert eta != "Unknown"
+            assert ":" in eta  # HH:MM format
+
+    @pytest.mark.asyncio
+    async def test_print_start_eta_unknown_when_no_time(self, service):
+        """Verify ETA shows 'Unknown' when no time data available."""
+        mock_db = AsyncMock()
+        mock_provider = MagicMock()
+        mock_provider.id = 1
+
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+            patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=None),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_print_start(
+                printer_id=1,
+                printer_name="Test",
+                data={"subtask_name": "test"},
+                db=mock_db,
+            )
+
+            assert captured_variables.get("eta") == "Unknown"
+
+    @pytest.mark.asyncio
+    async def test_print_start_eta_respects_12h_format(self, service):
+        """Verify ETA uses 12-hour format when time_format is '12h'."""
+        mock_db = AsyncMock()
+        mock_provider = MagicMock()
+        mock_provider.id = 1
+
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+            patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value="12h"),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_print_start(
+                printer_id=1,
+                printer_name="Test",
+                data={"subtask_name": "test"},
+                db=mock_db,
+                archive_data={"print_time_seconds": 3600},
+            )
+
+            eta = captured_variables.get("eta")
+            assert eta is not None
+            # 12h format should contain AM or PM
+            assert "AM" in eta or "PM" in eta
 
 
 class TestNotificationTemplates:

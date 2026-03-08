@@ -79,6 +79,10 @@ class CatalogEntryUpdate(BaseModel):
     weight: int
 
 
+class BulkDeleteIdsRequest(BaseModel):
+    ids: list[int]
+
+
 # ── Color Catalog Schemas ──────────────────────────────────────────────────
 
 
@@ -176,6 +180,23 @@ async def delete_catalog_entry(
     return {"status": "deleted"}
 
 
+@router.post("/catalog/bulk-delete")
+async def bulk_delete_catalog_entries(
+    data: BulkDeleteIdsRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Delete multiple spool catalog entries by ID."""
+    if not data.ids:
+        return {"deleted": 0}
+    result = await db.execute(select(SpoolCatalogEntry).where(SpoolCatalogEntry.id.in_(data.ids)))
+    rows = result.scalars().all()
+    for row in rows:
+        await db.delete(row)
+    await db.commit()
+    return {"deleted": len(rows)}
+
+
 @router.post("/catalog/reset")
 async def reset_spool_catalog(
     db: AsyncSession = Depends(get_db),
@@ -266,6 +287,23 @@ async def delete_color_entry(
     await db.delete(row)
     await db.commit()
     return {"status": "deleted"}
+
+
+@router.post("/colors/bulk-delete")
+async def bulk_delete_color_entries(
+    data: BulkDeleteIdsRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Delete multiple color catalog entries by ID."""
+    if not data.ids:
+        return {"deleted": 0}
+    result = await db.execute(select(ColorCatalogEntry).where(ColorCatalogEntry.id.in_(data.ids)))
+    rows = result.scalars().all()
+    for row in rows:
+        await db.delete(row)
+    await db.commit()
+    return {"deleted": len(rows)}
 
 
 @router.post("/colors/reset")
@@ -636,7 +674,7 @@ async def replace_k_profiles(
 async def list_assignments(
     printer_id: int | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_VIEW_ASSIGNMENTS),
 ):
     """List spool assignments, optionally filtered by printer."""
     from backend.app.services.printer_manager import printer_manager

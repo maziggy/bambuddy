@@ -1,0 +1,136 @@
+/**
+ * Tests for the VirtualPrinterCard component.
+ *
+ * Tests the auto-dispatch toggle behavior:
+ * - Visibility based on mode (print_queue only)
+ * - Default state (on)
+ * - API mutation on toggle click
+ */
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { render } from '../utils';
+import { VirtualPrinterCard } from '../../components/VirtualPrinterCard';
+import type { VirtualPrinterConfig } from '../../api/client';
+
+// Mock the API client
+vi.mock('../../api/client', () => ({
+  multiVirtualPrinterApi: {
+    update: vi.fn().mockResolvedValue({}),
+    remove: vi.fn().mockResolvedValue({}),
+  },
+  api: {
+    getSettings: vi.fn().mockResolvedValue({}),
+    getPrinters: vi.fn().mockResolvedValue([]),
+    getNetworkInterfaces: vi.fn().mockResolvedValue({ interfaces: [] }),
+  },
+}));
+
+import { multiVirtualPrinterApi } from '../../api/client';
+
+const models: Record<string, string> = {
+  '3DPrinter-X1-Carbon': 'X1C',
+  'C12': 'P1S',
+};
+
+const createMockPrinter = (overrides: Partial<VirtualPrinterConfig> = {}): VirtualPrinterConfig => ({
+  id: 1,
+  name: 'Test VP',
+  enabled: false,
+  mode: 'immediate',
+  model: '3DPrinter-X1-Carbon',
+  model_name: 'X1C',
+  access_code_set: false,
+  serial: '00M00A391800001',
+  target_printer_id: null,
+  auto_dispatch: true,
+  bind_ip: null,
+  remote_interface_ip: null,
+  position: 0,
+  status: { running: false, pending_files: 0 },
+  ...overrides,
+});
+
+describe('VirtualPrinterCard - auto-dispatch toggle', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(multiVirtualPrinterApi.update).mockResolvedValue(createMockPrinter());
+  });
+
+  it('renders auto-dispatch toggle when mode is print_queue', async () => {
+    const printer = createMockPrinter({ mode: 'print_queue' });
+    render(<VirtualPrinterCard printer={printer} models={models} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Auto-dispatch')).toBeInTheDocument();
+    });
+  });
+
+  it('does not render auto-dispatch toggle when mode is immediate', async () => {
+    const printer = createMockPrinter({ mode: 'immediate' });
+    render(<VirtualPrinterCard printer={printer} models={models} />);
+
+    // Wait for the card to render fully (check for something that should be there)
+    await waitFor(() => {
+      expect(screen.getByText('Test VP')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('Auto-dispatch')).not.toBeInTheDocument();
+  });
+
+  it('does not render auto-dispatch toggle when mode is proxy', async () => {
+    const printer = createMockPrinter({ mode: 'proxy' });
+    render(<VirtualPrinterCard printer={printer} models={models} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Test VP')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('Auto-dispatch')).not.toBeInTheDocument();
+  });
+
+  it('auto-dispatch toggle defaults to on', async () => {
+    const printer = createMockPrinter({ mode: 'print_queue', auto_dispatch: true });
+    render(<VirtualPrinterCard printer={printer} models={models} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Auto-dispatch')).toBeInTheDocument();
+    });
+
+    // The auto-dispatch section container has the toggle button as a sibling of the text div
+    const title = screen.getByText('Auto-dispatch');
+    const section = title.closest('.flex.items-center.justify-between');
+    expect(section).toBeTruthy();
+    const toggleButton = section!.querySelector('button');
+    expect(toggleButton).toBeTruthy();
+    expect(toggleButton!.className).toContain('bg-bambu-green');
+  });
+
+  it('clicking auto-dispatch toggle calls update API', async () => {
+    const user = userEvent.setup();
+    const printer = createMockPrinter({ mode: 'print_queue', auto_dispatch: true });
+    vi.mocked(multiVirtualPrinterApi.update).mockResolvedValue(
+      createMockPrinter({ mode: 'print_queue', auto_dispatch: false })
+    );
+
+    render(<VirtualPrinterCard printer={printer} models={models} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Auto-dispatch')).toBeInTheDocument();
+    });
+
+    // Find the auto-dispatch toggle via the section container
+    const title = screen.getByText('Auto-dispatch');
+    const section = title.closest('.flex.items-center.justify-between');
+    expect(section).toBeTruthy();
+    const toggleButton = section!.querySelector('button');
+    expect(toggleButton).toBeTruthy();
+
+    await user.click(toggleButton!);
+
+    await waitFor(() => {
+      expect(multiVirtualPrinterApi.update).toHaveBeenCalledWith(1, { auto_dispatch: false });
+    });
+  });
+});

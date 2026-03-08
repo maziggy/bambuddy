@@ -2025,7 +2025,7 @@ export type Permission =
   | 'library:update_own' | 'library:update_all' | 'library:delete_own' | 'library:delete_all'
   | 'projects:read' | 'projects:create' | 'projects:update' | 'projects:delete'
   | 'filaments:read' | 'filaments:create' | 'filaments:update' | 'filaments:delete'
-  | 'inventory:read' | 'inventory:create' | 'inventory:update' | 'inventory:delete'
+  | 'inventory:read' | 'inventory:create' | 'inventory:update' | 'inventory:delete' | 'inventory:view_assignments'
   | 'smart_plugs:read' | 'smart_plugs:create' | 'smart_plugs:update' | 'smart_plugs:delete' | 'smart_plugs:control'
   | 'camera:view'
   | 'maintenance:read' | 'maintenance:create' | 'maintenance:update' | 'maintenance:delete'
@@ -2330,7 +2330,7 @@ export const api = {
   getAvailableFilaments: (model: string, location?: string) => {
     const params = new URLSearchParams({ model });
     if (location) params.set('location', location);
-    return request<Array<{ type: string; color: string; tray_info_idx: string; extruder_id: number | null }>>(`/printers/available-filaments?${params}`);
+    return request<Array<{ type: string; color: string; tray_info_idx: string; tray_sub_brands: string; extruder_id: number | null }>>(`/printers/available-filaments?${params}`);
   },
   getPrinterStatus: (id: number) =>
     request<PrinterStatus>(`/printers/${id}/status`),
@@ -3593,6 +3593,8 @@ export const api = {
     request<SpoolCatalogEntry>(`/inventory/catalog/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteCatalogEntry: (id: number) =>
     request<{ status: string }>(`/inventory/catalog/${id}`, { method: 'DELETE' }),
+  bulkDeleteCatalogEntries: (ids: number[]) =>
+    request<{ deleted: number }>('/inventory/catalog/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }),
   resetSpoolCatalog: () =>
     request<{ status: string }>('/inventory/catalog/reset', { method: 'POST' }),
   getColorCatalog: () =>
@@ -3603,6 +3605,8 @@ export const api = {
     request<ColorCatalogEntry>(`/inventory/colors/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteColorEntry: (id: number) =>
     request<{ status: string }>(`/inventory/colors/${id}`, { method: 'DELETE' }),
+  bulkDeleteColorEntries: (ids: number[]) =>
+    request<{ deleted: number }>('/inventory/colors/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }),
   resetColorCatalog: () =>
     request<{ status: string }>('/inventory/colors/reset', { method: 'POST' }),
   lookupColor: (manufacturer: string, colorName: string, material?: string) =>
@@ -4679,6 +4683,7 @@ export interface VirtualPrinterConfig {
   access_code_set: boolean;
   serial: string;
   target_printer_id: number | null;
+  auto_dispatch: boolean;
   bind_ip: string | null;
   remote_interface_ip: string | null;
   position: number;
@@ -4702,6 +4707,7 @@ export const multiVirtualPrinterApi = {
     model?: string;
     access_code?: string;
     target_printer_id?: number;
+    auto_dispatch?: boolean;
     bind_ip?: string;
     remote_interface_ip?: string;
   }) =>
@@ -4717,6 +4723,7 @@ export const multiVirtualPrinterApi = {
     model?: string;
     access_code?: string;
     target_printer_id?: number;
+    auto_dispatch?: boolean;
     bind_ip?: string;
     remote_interface_ip?: string;
   }) =>

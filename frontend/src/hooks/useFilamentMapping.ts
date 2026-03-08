@@ -35,6 +35,7 @@ export function buildLoadedFilaments(printerStatus: PrinterStatus | undefined): 
           label: formatSlotLabel(amsUnit.id, tray.id, isHt, false),
           globalTrayId: getGlobalTrayId(amsUnit.id, tray.id, false),
           trayInfoIdx: tray.tray_info_idx || '',
+          traySubBrands: tray.tray_sub_brands || '',
           extruderId: amsExtruderMap?.[String(amsUnit.id)],
         });
       }
@@ -58,6 +59,7 @@ export function buildLoadedFilaments(printerStatus: PrinterStatus | undefined): 
         label: hasDualExternal ? (trayId === 254 ? 'Ext-L' : 'Ext-R') : 'External',
         globalTrayId: trayId,
         trayInfoIdx: extTray.tray_info_idx || '',
+        traySubBrands: extTray.tray_sub_brands || '',
         extruderId: hasDualNozzle ? (255 - trayId) : undefined,
       });
     }
@@ -206,6 +208,8 @@ export interface LoadedFilament {
   globalTrayId: number;
   /** Unique spool identifier (e.g., "GFA00", "P4d64437") */
   trayInfoIdx?: string;
+  /** Filament subtype name (e.g., "PLA Basic", "PLA Matte", "PETG HF") */
+  traySubBrands?: string;
   /** Extruder ID for dual-nozzle printers (0=right, 1=left) */
   extruderId?: number;
 }

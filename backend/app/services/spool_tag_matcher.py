@@ -142,12 +142,16 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
         data_origin="rfid_auto",
         tag_type="bambulab",
     )
+    # Initialize relationships BEFORE db.add() to prevent lazy loads.
+    # Setting them after flush() would trigger a lazy load because SQLAlchemy
+    # loads the current collection before replacing it on a persistent object.
+    # They must also be set before add() because cascade processing during
+    # add/flush accesses these collections, and back_populates resolution
+    # when creating SpoolAssignment runs synchronously outside the greenlet.
+    spool.k_profiles = []
+    spool.assignments = []
     db.add(spool)
     await db.flush()
-
-    # Eagerly set k_profiles so callers (auto_assign_spool) don't trigger
-    # a lazy load in async context (greenlet_spawn error).
-    spool.k_profiles = []
 
     logger.info(
         "Auto-created spool %d from AMS tray data: %s %s %s (tag=%s uuid=%s)",
@@ -170,7 +174,7 @@ async def get_spool_by_tag(db: AsyncSession, tag_uid: str, tray_uuid: str) -> Sp
     if tray_uuid and tray_uuid != ZERO_TRAY_UUID and tray_uuid != "0" * len(tray_uuid):
         result = await db.execute(
             select(Spool)
-            .options(selectinload(Spool.k_profiles))
+            .options(selectinload(Spool.k_profiles), selectinload(Spool.assignments))
             .where(Spool.tray_uuid == tray_uuid, Spool.archived_at.is_(None))
             .limit(1)
         )
@@ -182,7 +186,7 @@ async def get_spool_by_tag(db: AsyncSession, tag_uid: str, tray_uuid: str) -> Sp
     if tag_uid and tag_uid != ZERO_TAG_UID and tag_uid != "0" * len(tag_uid):
         result = await db.execute(
             select(Spool)
-            .options(selectinload(Spool.k_profiles))
+            .options(selectinload(Spool.k_profiles), selectinload(Spool.assignments))
             .where(Spool.tag_uid == tag_uid, Spool.archived_at.is_(None))
             .limit(1)
         )

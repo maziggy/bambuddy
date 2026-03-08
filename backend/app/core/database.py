@@ -1401,6 +1401,12 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already migrated or table does not exist yet
 
+    # Migration: Add auto_dispatch column to virtual_printers
+    try:
+        await conn.execute(text("ALTER TABLE virtual_printers ADD COLUMN auto_dispatch BOOLEAN DEFAULT 1"))
+    except OperationalError:
+        pass  # Already applied
+
     # Cleanup: Remove obsolete settings keys that are no longer used
     obsolete_keys = ["slicer_binary_path"]
     for key in obsolete_keys:

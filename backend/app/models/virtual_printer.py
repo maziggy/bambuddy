@@ -15,6 +15,7 @@ class VirtualPrinter(Base):
     name: Mapped[str] = mapped_column(String(100), default="Bambuddy")
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     mode: Mapped[str] = mapped_column(String(20), default="immediate")  # immediate|review|print_queue|proxy
+    auto_dispatch: Mapped[bool] = mapped_column(Boolean, default=True)  # print_queue mode: auto-start or manual
     model: Mapped[str | None] = mapped_column(String(50), nullable=True)  # SSDP model code (server mode)
     access_code: Mapped[str | None] = mapped_column(String(8), nullable=True)  # 8 chars (server mode)
     target_printer_id: Mapped[int | None] = mapped_column(

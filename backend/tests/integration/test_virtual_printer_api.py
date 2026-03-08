@@ -270,3 +270,71 @@ class TestPendingUploadsAPI:
         assert response.status_code == 200
         result = response.json()
         assert "discarded" in result
+
+
+class TestVirtualPrinterAutoDispatchAPI:
+    """Integration tests for auto_dispatch on /api/v1/virtual-printers endpoints."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_virtual_printer_auto_dispatch_default(self, async_client: AsyncClient):
+        """Verify creating a VP without auto_dispatch defaults to true."""
+        response = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={
+                "name": "TestDefaultDispatch",
+                "mode": "print_queue",
+                "access_code": "12345678",
+            },
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["auto_dispatch"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_virtual_printer_auto_dispatch_false(self, async_client: AsyncClient):
+        """Verify creating a VP with auto_dispatch=false persists correctly."""
+        response = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={
+                "name": "TestManualDispatch",
+                "mode": "print_queue",
+                "access_code": "12345678",
+                "auto_dispatch": False,
+            },
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["auto_dispatch"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_virtual_printer_auto_dispatch(self, async_client: AsyncClient):
+        """Verify auto_dispatch can be toggled via PUT and persists."""
+        # Create with auto_dispatch=True (default)
+        create_resp = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={
+                "name": "TestToggleDispatch",
+                "mode": "print_queue",
+                "access_code": "12345678",
+            },
+        )
+        assert create_resp.status_code == 200
+        vp_id = create_resp.json()["id"]
+
+        # Update to auto_dispatch=False
+        update_resp = await async_client.put(
+            f"/api/v1/virtual-printers/{vp_id}",
+            json={"auto_dispatch": False},
+        )
+        assert update_resp.status_code == 200
+        assert update_resp.json()["auto_dispatch"] is False
+
+        # Verify it persists by fetching
+        get_resp = await async_client.get(f"/api/v1/virtual-printers/{vp_id}")
+        assert get_resp.status_code == 200
+        assert get_resp.json()["auto_dispatch"] is False

@@ -78,6 +78,9 @@ class PrintScheduler:
             # Track busy printers to avoid assigning multiple items to same printer
             busy_printers: set[int] = set()
 
+            # Log skip reasons once per queue check (not per item)
+            skip_reasons: dict[str, int] = {}
+
             for item in items:
                 # Check scheduled time first (scheduled_time is stored in UTC from ISO string)
                 if item.scheduled_time:
@@ -85,10 +88,12 @@ class PrintScheduler:
                     if sched.tzinfo is None:
                         sched = sched.replace(tzinfo=timezone.utc)
                     if sched > datetime.now(timezone.utc):
+                        skip_reasons["scheduled_future"] = skip_reasons.get("scheduled_future", 0) + 1
                         continue
 
                 # Skip items that require manual start
                 if item.manual_start:
+                    skip_reasons["manual_start"] = skip_reasons.get("manual_start", 0) + 1
                     continue
 
                 if item.printer_id:
@@ -260,6 +265,24 @@ class PrintScheduler:
 
                         await self._start_print(db, item)
                         busy_printers.add(printer_id)
+
+            # Log summary of skip reasons (helps diagnose why queue items aren't starting)
+            if skip_reasons:
+                logger.info("Queue skip summary: %s", skip_reasons)
+            if busy_printers:
+                # Log why each printer was busy (first time it was checked)
+                for pid in busy_printers:
+                    state = printer_manager.get_status(pid)
+                    connected = printer_manager.is_connected(pid)
+                    plate_cleared = printer_manager.is_plate_cleared(pid)
+                    state_name = state.state if state else "NO_STATUS"
+                    logger.info(
+                        "Queue: printer %d not available — connected=%s, state=%s, plate_cleared=%s",
+                        pid,
+                        connected,
+                        state_name,
+                        plate_cleared,
+                    )
 
     async def _find_idle_printer_for_model(
         self,
@@ -821,17 +844,27 @@ class PrintScheduler:
     def _is_printer_idle(self, printer_id: int) -> bool:
         """Check if a printer is connected and idle."""
         if not printer_manager.is_connected(printer_id):
+            logger.debug("Printer %d: not connected", printer_id)
             return False
 
         state = printer_manager.get_status(printer_id)
         if not state:
+            logger.debug("Printer %d: no status available", printer_id)
             return False
 
         # IDLE = ready for next print
         # FINISH/FAILED = ready only if user confirmed plate is cleared
-        return state.state == "IDLE" or (
+        idle = state.state == "IDLE" or (
             state.state in ("FINISH", "FAILED") and printer_manager.is_plate_cleared(printer_id)
         )
+        if not idle:
+            logger.debug(
+                "Printer %d: not idle — state=%s, plate_cleared=%s",
+                printer_id,
+                state.state,
+                printer_manager.is_plate_cleared(printer_id),
+            )
+        return idle
 
     async def _get_smart_plug(self, db: AsyncSession, printer_id: int) -> SmartPlug | None:
         """Get the smart plug associated with a printer."""

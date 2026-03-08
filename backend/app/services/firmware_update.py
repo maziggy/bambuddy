@@ -11,11 +11,11 @@ Orchestrates firmware updates for Bambu Lab printers:
 import asyncio
 import logging
 from dataclasses import dataclass
-from enum import StrEnum
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.compat import StrEnum
 from backend.app.core.websocket import ws_manager
 from backend.app.models.printer import Printer
 from backend.app.services.bambu_ftp import (

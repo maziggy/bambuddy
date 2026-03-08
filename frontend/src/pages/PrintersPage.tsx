@@ -1045,9 +1045,20 @@ function toFixedHex(value: number, width: number): string {
   return safe.toString(16).toUpperCase().padStart(width, '0').slice(-width);
 }
 
-function getFallbackSpoolTag(printerId: number, amsId: number, trayId: number): string {
+// 32-bit FNV-1a hash -> 8-char hex (stable for alphanumeric serials)
+function hashSerialToHex32(serial: string): string {
+  const input = (serial || '').trim().toUpperCase();
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).toUpperCase().padStart(8, '0');
+}
+
+function getFallbackSpoolTag(printerSerial: string, amsId: number, trayId: number): string {
   // 16-char stable hex tag for slots without RFID identifiers
-  return `${toFixedHex(printerId, 8)}${toFixedHex(amsId, 4)}${toFixedHex(trayId, 4)}`;
+  return `${hashSerialToHex32(printerSerial)}${toFixedHex(amsId, 4)}${toFixedHex(trayId, 4)}`;
 }
 
 function CoverImage({ url, printName }: { url: string | null; printName?: string }) {
@@ -3080,7 +3091,7 @@ function PrinterCard({
                                 const slotPreset = slotPresets?.[globalTrayId];
 
                                 // Fill level fallback chain: Spoolman → Inventory → AMS remain
-                                const trayTag = (tray?.tray_uuid || tray?.tag_uid || getFallbackSpoolTag(printer.id, ams.id, slotIdx))?.toUpperCase();
+                                const trayTag = (tray?.tray_uuid || tray?.tag_uid || getFallbackSpoolTag(printer.serial_number, ams.id, slotIdx))?.toUpperCase();
                                 const linkedSpool = trayTag ? linkedSpools?.[trayTag] : undefined;
                                 const spoolmanFill = getSpoolmanFillLevel(linkedSpool);
                                 const inventoryAssignment = onGetAssignment?.(printer.id, ams.id, slotIdx);
@@ -3205,7 +3216,7 @@ function PrinterCard({
                                             : undefined,
                                           spoolmanUrl,
                                           onLinkSpool: spoolmanEnabled ? () => {
-                                            const linkTag = (filamentData.trayUuid || filamentData.tagUid || getFallbackSpoolTag(printer.id, ams.id, slotIdx)).toUpperCase();
+                                            const linkTag = (filamentData.trayUuid || filamentData.tagUid || getFallbackSpoolTag(printer.serial_number, ams.id, slotIdx)).toUpperCase();
                                             setLinkSpoolModal({
                                               tagUid: filamentData.tagUid || linkTag,
                                               trayUuid: filamentData.trayUuid || '',
@@ -3305,7 +3316,7 @@ function PrinterCard({
                         const htSlotId = tray?.id ?? 0;
 
                         // Fill level fallback chain: Spoolman → Inventory → AMS remain
-                        const htTrayTag = (tray?.tray_uuid || tray?.tag_uid || getFallbackSpoolTag(printer.id, ams.id, htSlotId))?.toUpperCase();
+                        const htTrayTag = (tray?.tray_uuid || tray?.tag_uid || getFallbackSpoolTag(printer.serial_number, ams.id, htSlotId))?.toUpperCase();
                         const htLinkedSpool = htTrayTag ? linkedSpools?.[htTrayTag] : undefined;
                         const htSpoolmanFill = getSpoolmanFillLevel(htLinkedSpool);
                         const htInventoryAssignment = onGetAssignment?.(printer.id, ams.id, htSlotId);
@@ -3452,7 +3463,7 @@ function PrinterCard({
                                         : undefined,
                                       spoolmanUrl,
                                       onLinkSpool: spoolmanEnabled ? () => {
-                                        const linkTag = (filamentData.trayUuid || filamentData.tagUid || getFallbackSpoolTag(printer.id, ams.id, htSlotId)).toUpperCase();
+                                        const linkTag = (filamentData.trayUuid || filamentData.tagUid || getFallbackSpoolTag(printer.serial_number, ams.id, htSlotId)).toUpperCase();
                                         setLinkSpoolModal({
                                           tagUid: filamentData.tagUid || linkTag,
                                           trayUuid: filamentData.trayUuid || '',
@@ -3578,7 +3589,7 @@ function PrinterCard({
                               const extCloudInfo = extTray.tray_info_idx ? filamentInfo?.[extTray.tray_info_idx] : null;
                               const extSlotPreset = slotPresets?.[255 * 4 + slotTrayId];
 
-                              const extTrayTag = (extTray.tray_uuid || extTray.tag_uid || getFallbackSpoolTag(printer.id, 255, slotTrayId))?.toUpperCase();
+                              const extTrayTag = (extTray.tray_uuid || extTray.tag_uid || getFallbackSpoolTag(printer.serial_number, 255, slotTrayId))?.toUpperCase();
                               const extLinkedSpool = extTrayTag ? linkedSpools?.[extTrayTag] : undefined;
                               const extSpoolmanFill = getSpoolmanFillLevel(extLinkedSpool);
                               const extInventoryAssignment = onGetAssignment?.(printer.id, 255, slotTrayId);
@@ -3649,7 +3660,7 @@ function PrinterCard({
                                           : undefined,
                                         spoolmanUrl,
                                         onLinkSpool: spoolmanEnabled ? () => {
-                                          const linkTag = (extFilamentData.trayUuid || extFilamentData.tagUid || getFallbackSpoolTag(printer.id, 255, slotTrayId)).toUpperCase();
+                                          const linkTag = (extFilamentData.trayUuid || extFilamentData.tagUid || getFallbackSpoolTag(printer.serial_number, 255, slotTrayId)).toUpperCase();
                                           setLinkSpoolModal({
                                             tagUid: extFilamentData.tagUid || linkTag,
                                             trayUuid: extFilamentData.trayUuid || '',

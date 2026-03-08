@@ -71,7 +71,7 @@ import { FileUploadModal } from '../components/FileUploadModal';
 import { PrintModal } from '../components/PrintModal';
 import { PrinterInfoModal } from '../components/PrinterInfoModal';
 import { getGlobalTrayId } from '../utils/amsHelpers';
-import { getPrinterImage, getWifiStrength } from '../utils/printer';
+import { getPrinterImage, getWifiStrength, filterCompatibleQueueItems } from '../utils/printer';
 import { FilamentSlotCircle } from '../components/FilamentSlotCircle';
 import { hexToColorName, parseFilamentColor, isLightColor } from '../utils/colors';
 
@@ -1784,38 +1784,7 @@ function PrinterCard({
   // An empty Set means no filaments are loaded — jobs requiring specific types are incompatible.
   const queueCount = useMemo(() => {
     if (!queueItems?.length) return 0;
-    return queueItems.filter(item => {
-      if (item.required_filament_types?.length && loadedFilamentTypes !== undefined) {
-        if (!item.required_filament_types.every((t: string) => loadedFilamentTypes.has(t.toUpperCase()))) {
-          return false;
-        }
-      }
-      if (item.filament_overrides?.length && loadedFilaments !== undefined) {
-        const forceOverrides = item.filament_overrides.filter(o => o.force_color_match === true);
-        const prefOverrides = item.filament_overrides.filter(o => o.force_color_match !== true);
-
-        // All force-matched slots must have exact type+color on this printer
-        if (forceOverrides.length > 0) {
-          const allForceMatch = forceOverrides.every(o => {
-            const oType = (o.type || '').toUpperCase();
-            const oColor = (o.color || '').replace('#', '').toLowerCase().slice(0, 6);
-            return loadedFilaments.has(`${oType}:${oColor}`);
-          });
-          if (!allForceMatch) return false;
-        }
-
-        // Preference-only overrides: at least one color must match (existing behaviour)
-        if (prefOverrides.length > 0 && forceOverrides.length === 0) {
-          const hasColorMatch = prefOverrides.some(o => {
-            const oType = (o.type || '').toUpperCase();
-            const oColor = (o.color || '').replace('#', '').toLowerCase().slice(0, 6);
-            return loadedFilaments.has(`${oType}:${oColor}`);
-          });
-          if (!hasColorMatch) return false;
-        }
-      }
-      return true;
-    }).length;
+    return filterCompatibleQueueItems(queueItems, loadedFilamentTypes, loadedFilaments).length;
   }, [queueItems, loadedFilamentTypes, loadedFilaments]);
 
   // Fetch currently printing queue item to show who started it (Issue #206)

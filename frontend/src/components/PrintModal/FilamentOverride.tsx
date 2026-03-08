@@ -9,6 +9,7 @@ interface FilamentOverrideProps {
   availableFilaments: Array<{ type: string; color: string; tray_info_idx: string; tray_sub_brands: string; extruder_id: number | null }>;
   overrides: Record<number, { type: string; color: string }>;
   onChange: (overrides: Record<number, { type: string; color: string }>) => void;
+  
   /** Per-slot force color match flags. Defaults to true when not provided. */
   forceColorMatch?: Record<number, boolean>;
   /** Called when a slot's force color match checkbox is toggled. */
@@ -110,11 +111,11 @@ export function FilamentOverride({
                   </option>
                   {compatible.map((f, idx) => (
                     <option
-                      key={`${f.type}-${f.color}-${idx}`}
+                    key={`${f.type}-${f.color}-${f.tray_sub_brands}-${idx}`}
                       value={`${f.type}|${f.color}`}
                       className="bg-bambu-dark text-white"
                     >
-                      {f.type} ({getColorName(f.color)})
+                    {f.tray_sub_brands || f.type} ({getColorName(f.color)})
                     </option>
                   ))}
                 </select>
@@ -136,7 +137,7 @@ export function FilamentOverride({
               <label className="flex items-center gap-1.5 text-xs text-bambu-gray cursor-pointer select-none pl-5">
                 <input
                   type="checkbox"
-                  checked={forceColorMatch?.[req.slot_id] ?? true}
+                  checked={forceColorMatch?.[req.slot_id] ?? false}
                   onChange={(e) => onForceColorMatchChange?.(req.slot_id, e.target.checked)}
                   className="accent-bambu-green w-3 h-3"
                 />

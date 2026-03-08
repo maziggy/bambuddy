@@ -2762,6 +2762,8 @@ export default {
     linkToSpoolman: 'Collega a Spoolman',
     openInSpoolman: 'Apri in Spoolman',
     unlinkSpool: 'Scollega bobina',
+    unlinkConfirmTitle: 'Scollegare bobina?',
+    unlinkConfirmMessage: 'Questo disconnetterà lo spool da Spoolman. I dati dello spool in Spoolman rimarranno invariati.',
     selectSpool: 'Seleziona bobina',
     noUnlinkedSpools: 'Nessuna bobina scollegata disponibile',
     linkSuccess: 'Bobina collegata a Spoolman con successo',

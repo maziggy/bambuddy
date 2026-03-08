@@ -2763,6 +2763,8 @@ export default {
     linkToSpoolman: 'Lier à Spoolman',
     openInSpoolman: 'Ouvrir Spoolman',
     unlinkSpool: 'Délier bobine',
+    unlinkConfirmTitle: 'Dissocier la bobine?',
+    unlinkConfirmMessage: 'Cette opération déconnectera la bobine de Spoolman. Les données de la bobine dans Spoolman resteront inchangées.',
     selectSpool: 'Choisir bobine',
     noUnlinkedSpools: 'Pas de bobine libre',
     linkSuccess: 'Lien réussi',

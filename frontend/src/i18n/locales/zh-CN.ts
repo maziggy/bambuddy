@@ -2762,6 +2762,8 @@ export default {
     linkToSpoolman: '链接到 Spoolman',
     openInSpoolman: '在 Spoolman 中打开',
     unlinkSpool: '取消链接耗材',
+    unlinkConfirmTitle: '解开线轴？',
+    unlinkConfirmMessage: '这将断开卷轴与 Spoolman 的连接。Spoolman 中的卷轴数据将保持不变。',
     selectSpool: '选择耗材',
     noUnlinkedSpools: '无未链接的耗材',
     linkSuccess: '耗材已成功链接到 Spoolman',

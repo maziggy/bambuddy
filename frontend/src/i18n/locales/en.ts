@@ -2776,6 +2776,8 @@ export default {
     linkToSpoolman: 'Link to Spoolman',
     openInSpoolman: 'Open in Spoolman',
     unlinkSpool: 'Unlink Spool',
+    unlinkConfirmTitle: 'Unlink Spool?',
+    unlinkConfirmMessage: 'This will disconnect the spool from Spoolman. The spool data in Spoolman will remain unchanged.',
     selectSpool: 'Select Spool',
     noUnlinkedSpools: 'No unlinked spools available',
     linkSuccess: 'Spool linked to Spoolman successfully',

@@ -2776,6 +2776,8 @@ export default {
     linkToSpoolman: 'Mit Spoolman verknüpfen',
     openInSpoolman: 'In Spoolman öffnen',
     unlinkSpool: 'Spule trennen',
+    unlinkConfirmTitle: 'Spule entkoppeln?',
+    unlinkConfirmMessage: 'Dadurch wird die Spule von Spoolman getrennt. Die Spulendaten in Spoolman bleiben unverändert.',
     selectSpool: 'Spule auswählen',
     noUnlinkedSpools: 'Keine nicht verknüpften Spulen verfügbar',
     linkSuccess: 'Spule erfolgreich mit Spoolman verknüpft',

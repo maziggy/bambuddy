@@ -2762,6 +2762,8 @@ export default {
     linkToSpoolman: 'Vincular ao Spoolman',
     openInSpoolman: 'Abrir no Spoolman',
     unlinkSpool: 'Desvincular Carretel',
+    unlinkConfirmTitle: 'Desvincular carretel?',
+    unlinkConfirmMessage: 'Isso desconectará o carretel do Spoolman. Os dados do carretel no Spoolman permanecerão inalterados.',
     selectSpool: 'Selecionar Carretel',
     noUnlinkedSpools: 'Nenhum carretel desvinculado disponível',
     linkSuccess: 'Carretel vinculado ao Spoolman com sucesso',

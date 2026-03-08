@@ -2776,6 +2776,8 @@ export default {
     linkToSpoolman: 'Spoolmanに連携',
     openInSpoolman: 'Spoolmanで開く',
     unlinkSpool: 'スプールのリンクを解除',
+    unlinkConfirmTitle: 'スプールのリンクを解除しますか?',
+    unlinkConfirmMessage: 'これにより、スプールがSpoolmanから切断されます。Spoolman内のスプールデータは変更されません。',
     selectSpool: 'スプールを選択',
     noUnlinkedSpools: 'Spoolmanに未連携のスプールが見つかりません。',
     linkSuccess: 'スプールをSpoolmanにリンクしました',

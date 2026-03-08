@@ -1,6 +1,7 @@
 """Spoolman integration API routes."""
 
 import logging
+import json
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -744,9 +745,6 @@ async def unlink_spool(
 
     if not await client.health_check():
         raise HTTPException(status_code=503, detail="Spoolman is not reachable")
-
-    # Clear tag while preserving other spool fields
-    import json
 
     result = await client.update_spool(
         spool_id=spool_id,

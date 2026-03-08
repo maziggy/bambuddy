@@ -960,7 +960,7 @@ async def camera_grid_stream(
         quality = preset["grid"]["quality"]
         scale = preset["grid"]["scale"]
         threads = preset["threads"]
-        gpu_accel = (await get_setting(db, "camera_gpu_accel") or "false").lower() == "true"
+        gpu_accel = (await get_setting(db, "camera_gpu_accel") or "true").lower() == "true"
         force = True  # Ensure producers match preset params
     else:
         fps = fps or 5
@@ -1113,7 +1113,7 @@ async def camera_stream(
         quality = preset["single"]["quality"]
         scale = preset["single"]["scale"]
         threads = preset["threads"]
-        gpu_accel = (await get_setting(db, "camera_gpu_accel") or "false").lower() == "true"
+        gpu_accel = (await get_setting(db, "camera_gpu_accel") or "true").lower() == "true"
     else:
         fps = fps or 10
         quality = quality or 5

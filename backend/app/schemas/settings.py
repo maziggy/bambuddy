@@ -141,7 +141,7 @@ class AppSettings(BaseModel):
         description="Camera quality preset: 'auto', 'low', 'medium', or 'high' — controls ffmpeg fps/quality/scale for grid and single streams",
     )
     camera_gpu_accel: bool = Field(
-        default=False,
+        default=True,
         description="Enable GPU hardware acceleration for ffmpeg camera decoding (-hwaccel auto)",
     )
 

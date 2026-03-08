@@ -2577,7 +2577,7 @@ async def on_print_complete(printer_id: int, data: dict):
                 from backend.app.api.routes.settings import get_setting
 
                 capture_enabled = await get_setting(db, "capture_finish_photo")
-                gpu_accel = (await get_setting(db, "camera_gpu_accel") or "false").lower() == "true"
+                gpu_accel = (await get_setting(db, "camera_gpu_accel") or "true").lower() == "true"
 
                 if capture_enabled is None or capture_enabled.lower() == "true":
                     from backend.app.models.printer import Printer

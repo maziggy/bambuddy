@@ -240,6 +240,8 @@ describe('SettingsPage', () => {
             gpu_available: false,
             gpu_backends: [],
             auto_resolved_quality: 'medium',
+            auto_resolved_single: 'medium',
+            auto_resolved_grid: 'medium',
           });
         }),
       );

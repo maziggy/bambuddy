@@ -3165,7 +3165,7 @@ export const api = {
     }>;
   },
   checkFfmpeg: () =>
-    request<{ installed: boolean; path: string | null; gpu_available: boolean; gpu_backends: string[]; auto_resolved_quality: string }>('/settings/check-ffmpeg'),
+    request<{ installed: boolean; path: string | null; gpu_available: boolean; gpu_backends: string[]; auto_resolved_quality: string; auto_resolved_single: string; auto_resolved_grid: string }>('/settings/check-ffmpeg'),
   getNetworkInterfaces: () =>
     request<{ interfaces: NetworkInterface[] }>('/settings/network-interfaces'),
 

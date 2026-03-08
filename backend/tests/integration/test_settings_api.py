@@ -429,16 +429,7 @@ class TestSettingsAPI:
     @pytest.mark.integration
     async def test_camera_gpu_accel_setting(self, async_client: AsyncClient):
         """Verify camera_gpu_accel can be toggled on and off."""
-        # Default should be False
-        response = await async_client.get("/api/v1/settings/")
-        assert response.json()["camera_gpu_accel"] is False
-
-        # Enable
-        response = await async_client.put("/api/v1/settings/", json={"camera_gpu_accel": True})
-        assert response.status_code == 200
-        assert response.json()["camera_gpu_accel"] is True
-
-        # Verify persistence
+        # Default should be True
         response = await async_client.get("/api/v1/settings/")
         assert response.json()["camera_gpu_accel"] is True
 
@@ -446,6 +437,15 @@ class TestSettingsAPI:
         response = await async_client.put("/api/v1/settings/", json={"camera_gpu_accel": False})
         assert response.status_code == 200
         assert response.json()["camera_gpu_accel"] is False
+
+        # Verify persistence
+        response = await async_client.get("/api/v1/settings/")
+        assert response.json()["camera_gpu_accel"] is False
+
+        # Re-enable
+        response = await async_client.put("/api/v1/settings/", json={"camera_gpu_accel": True})
+        assert response.status_code == 200
+        assert response.json()["camera_gpu_accel"] is True
 
     @pytest.mark.asyncio
     @pytest.mark.integration

@@ -1413,10 +1413,15 @@ export function SettingsPage() {
                   <option value="high">{t('settings.cameraQualityHigh')}</option>
                 </select>
                 <p className="text-xs text-bambu-gray mt-1">
-                  {localSettings.camera_quality === 'auto' && ffmpegStatus?.auto_resolved_quality
-                    ? t('settings.cameraQualityAutoResolved', {
-                        resolved: t(`settings.cameraQuality${ffmpegStatus.auto_resolved_quality.charAt(0).toUpperCase() + ffmpegStatus.auto_resolved_quality.slice(1)}`)
-                      })
+                  {localSettings.camera_quality === 'auto' && ffmpegStatus?.auto_resolved_single
+                    ? ffmpegStatus.auto_resolved_single !== ffmpegStatus.auto_resolved_grid
+                      ? t('settings.cameraQualityAutoResolvedDual', {
+                          single: t(`settings.cameraQuality${ffmpegStatus.auto_resolved_single.charAt(0).toUpperCase() + ffmpegStatus.auto_resolved_single.slice(1)}`),
+                          grid: t(`settings.cameraQuality${ffmpegStatus.auto_resolved_grid.charAt(0).toUpperCase() + ffmpegStatus.auto_resolved_grid.slice(1)}`)
+                        })
+                      : t('settings.cameraQualityAutoResolved', {
+                          resolved: t(`settings.cameraQuality${ffmpegStatus.auto_resolved_single.charAt(0).toUpperCase() + ffmpegStatus.auto_resolved_single.slice(1)}`)
+                        })
                     : t('settings.cameraQualityDescription')}
                 </p>
               </div>

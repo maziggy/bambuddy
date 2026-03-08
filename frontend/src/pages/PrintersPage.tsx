@@ -56,7 +56,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi, getAuthToken, CAMERA_QUALITY_PRESETS } from '../api/client';
 import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
 import { formatFileSize } from '../utils/file';
-import type { Printer, PrinterCreate, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError } from '../api/client';
+import type { Printer, PrinterCreate, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, CameraQuality } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -1622,7 +1622,7 @@ function CameraGrid({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const { hasPermission } = useAuth();
+  const { hasPermission, isAdmin } = useAuth();
 
   // One canvas ref per printer (parent-managed, like original)
   const canvasRefs = useRef<Map<number, React.RefObject<HTMLCanvasElement | null>>>(new Map());
@@ -1673,6 +1673,10 @@ function CameraGrid({
       showToast(t('queue.clearPlateSuccess'), 'success');
     },
     onError: (err: Error) => showToast(err.message, 'error'),
+  });
+  const qualityMutation = useMutation({
+    mutationFn: (quality: CameraQuality) => api.updateSettings({ camera_quality: quality }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings'] }),
   });
 
   const handleConfirm = () => {
@@ -2046,6 +2050,18 @@ function CameraGrid({
   return (
     <div>
       <div className="flex items-center justify-end gap-3 mb-2 tabular-nums">
+        {isAdmin && (
+          <select
+            value={cameraQuality}
+            onChange={(e) => qualityMutation.mutate(e.target.value as CameraQuality)}
+            className="text-xs bg-transparent border border-bambu-dark-tertiary rounded px-1.5 py-0.5 text-bambu-gray/60 focus:border-bambu-green focus:outline-none cursor-pointer"
+          >
+            <option value="auto">{t('settings.cameraQualityAuto')}</option>
+            <option value="low">{t('settings.cameraQualityLow')}</option>
+            <option value="medium">{t('settings.cameraQualityMedium')}</option>
+            <option value="high">{t('settings.cameraQualityHigh')}</option>
+          </select>
+        )}
         <span className="text-xs text-bambu-gray/60 w-20 text-right ml-auto">{stats.bw || '--'}</span>
         <span className="text-xs text-bambu-gray/60 w-12 text-right">{stats.uptime || '--'}</span>
       </div>

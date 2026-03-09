@@ -6,6 +6,7 @@ import math
 import os
 import random
 import re
+import signal
 import struct
 import subprocess
 import sys
@@ -88,9 +89,17 @@ _active_external_streams: set[int] = set()
 _spawned_ffmpeg_pids: dict[int, float] = {}
 # Max age for stale frame buffer entries (5 minutes)
 _FRAME_BUFFER_MAX_AGE = 300.0
-_CLEANUP_INTERVAL = 60.0  # seconds between periodic cleanup runs
+_CLEANUP_INTERVAL = 15.0  # seconds between periodic cleanup runs
 _RTSP_BUFFER_LIMIT = 3 * 1024 * 1024  # 3 MB — enough for 2-3 large JPEG frames
 _cleanup_task: asyncio.Task | None = None
+
+# CPU watchdog — kill FFmpeg processes that sustain high CPU (e.g. decoder stuck
+# in error-concealment loop despite -ec 0, or other unknown failure modes).
+# Maps PID -> (wall_time, cumulative_cpu_seconds) from last sample.
+_ffmpeg_cpu_samples: dict[int, tuple[float, float]] = {}
+_CPU_PCT_KILL_THRESHOLD = 40.0  # Kill if avg CPU% exceeds this between samples
+_CPU_WATCHDOG_GRACE_SECS = 20.0  # Skip processes younger than this (startup probe can be CPU-heavy)
+_FLEET_CPU_PCT_THRESHOLD = (os.cpu_count() or 4) * 70.0  # Fleet-level CPU cap (e.g. 280% on 4 cores)
 
 
 def _scan_dead_pids() -> list[int]:
@@ -104,6 +113,32 @@ def _scan_dead_pids() -> list[int]:
         except PermissionError:
             pass  # Process exists but we can't signal it
     return dead
+
+
+def _read_ffmpeg_cpu_times() -> dict[int, float]:
+    """Read cumulative CPU seconds for tracked FFmpeg PIDs from /proc (Linux only).
+
+    Returns {pid: cpu_seconds}.  Runs in a thread-pool executor (sync I/O).
+    """
+    if sys.platform != "linux":
+        return {}
+    try:
+        clk_tck = os.sysconf("SC_CLK_TCK")
+    except (AttributeError, ValueError):
+        return {}
+    result: dict[int, float] = {}
+    for pid in list(_spawned_ffmpeg_pids):
+        try:
+            with open(f"/proc/{pid}/stat") as f:
+                # comm field (2nd) may contain spaces/parens — split on last ')'
+                rest = f.read().split(")")[-1].split()
+                # rest[0]=state, ..., rest[11]=utime, rest[12]=stime
+                utime = int(rest[11])
+                stime = int(rest[12])
+                result[pid] = (utime + stime) / clk_tck
+        except (OSError, IndexError, ValueError):
+            pass
+    return result
 
 
 async def _cleanup_stale_frame_buffers() -> None:
@@ -126,8 +161,81 @@ async def _cleanup_stale_frame_buffers() -> None:
         dead_pids = await asyncio.get_running_loop().run_in_executor(None, _scan_dead_pids)
         for pid in dead_pids:
             _spawned_ffmpeg_pids.pop(pid, None)
+            _ffmpeg_cpu_samples.pop(pid, None)
         if dead_pids:
             logger.info("Cleaned up %d dead ffmpeg PIDs from tracking", len(dead_pids))
+
+    # CPU watchdog — detect FFmpeg processes stuck in high-CPU loops.
+    # Reads /proc/<pid>/stat (Linux only) and compares cumulative CPU time
+    # between cleanup cycles.  Kills processes that exceed the threshold.
+    if _spawned_ffmpeg_pids:
+        cpu_times = await asyncio.get_running_loop().run_in_executor(None, _read_ffmpeg_cpu_times)
+        killed = []
+        pid_cpu_pcts: dict[int, float] = {}  # Collected for fleet-level check
+        for pid, cpu_secs in cpu_times.items():
+            spawn_ts = _spawned_ffmpeg_pids.get(pid)
+            if spawn_ts is not None and now - spawn_ts < _CPU_WATCHDOG_GRACE_SECS:
+                # Still in grace period — just record the baseline sample
+                _ffmpeg_cpu_samples[pid] = (now, cpu_secs)
+                continue
+            prev = _ffmpeg_cpu_samples.get(pid)
+            if prev is not None:
+                prev_wall, prev_cpu = prev
+                wall_delta = now - prev_wall
+                if wall_delta > 5:  # Need a meaningful window
+                    cpu_pct = (cpu_secs - prev_cpu) / wall_delta * 100
+                    if cpu_pct > _CPU_PCT_KILL_THRESHOLD:
+                        logger.warning(
+                            "CPU watchdog: FFmpeg PID %d at %.0f%% CPU (%.1fs cpu / %.0fs wall), killing",
+                            pid,
+                            cpu_pct,
+                            cpu_secs - prev_cpu,
+                            wall_delta,
+                        )
+                        try:
+                            os.kill(pid, signal.SIGKILL)
+                        except (ProcessLookupError, PermissionError):
+                            pass
+                        killed.append(pid)
+                        continue
+                    pid_cpu_pcts[pid] = cpu_pct
+            _ffmpeg_cpu_samples[pid] = (now, cpu_secs)
+        for pid in killed:
+            _spawned_ffmpeg_pids.pop(pid, None)
+            _ffmpeg_cpu_samples.pop(pid, None)
+        # Prune samples for PIDs no longer tracked
+        for pid in list(_ffmpeg_cpu_samples):
+            if pid not in _spawned_ffmpeg_pids:
+                del _ffmpeg_cpu_samples[pid]
+
+        # Fleet-level CPU watchdog — safety net for mass stream corruption
+        # where individual processes stay under the per-process threshold
+        # but collectively saturate the CPU (e.g. 11 × 30% = 330%).
+        fleet_total = sum(pid_cpu_pcts.values())
+        if fleet_total > _FLEET_CPU_PCT_THRESHOLD and pid_cpu_pcts:
+            # Sort by CPU% descending, kill worst offenders until under threshold
+            sorted_pids = sorted(pid_cpu_pcts.items(), key=lambda x: x[1], reverse=True)
+            fleet_killed = []
+            remaining = fleet_total
+            for pid, pct in sorted_pids:
+                if remaining <= _FLEET_CPU_PCT_THRESHOLD:
+                    break
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    pass
+                fleet_killed.append(pid)
+                remaining -= pct
+                _spawned_ffmpeg_pids.pop(pid, None)
+                _ffmpeg_cpu_samples.pop(pid, None)
+            if fleet_killed:
+                logger.warning(
+                    "Fleet CPU watchdog: total %.0f%% > %.0f%% threshold, killed %d processes (PIDs: %s)",
+                    fleet_total,
+                    _FLEET_CPU_PCT_THRESHOLD,
+                    len(fleet_killed),
+                    fleet_killed,
+                )
 
 
 async def _periodic_cleanup_loop() -> None:
@@ -823,6 +931,31 @@ async def generate_rtsp_mjpeg_stream(
             "500000",  # 0.5 seconds max delay
         ]
     )
+    # Discard corrupt packets (prevents decode busy-loop on degraded streams)
+    # and cap probe phase so FFmpeg doesn't hang on broken connections.
+    cmd.extend(
+        [
+            "-fflags",
+            "+discardcorrupt",
+            "-probesize",
+            "2097152",  # 2 MB
+            "-analyzeduration",
+            "2000000",  # 2 s in microseconds
+        ]
+    )
+    # Disable H.264 error concealment — prevents CPU-intensive frame
+    # reconstruction on degraded streams.  Without this, the decoder can
+    # spike to 50-65% CPU per process trying to reconstruct damaged keyframes.
+    cmd.extend(["-ec", "0"])
+    # Exit immediately on decode errors (severe/structural corruption).
+    # Minor corruption is still silently handled by -fflags +discardcorrupt
+    # (demuxer) and -ec 0 (decoder), but when those can't cope, -xerror
+    # makes FFmpeg exit instead of burning CPU in a degraded state.
+    # The grid restart logic handles recovery with exponential backoff.
+    cmd.extend(["-xerror"])
+    # Cap decoder threads — single-threaded H.264 decode handles 1080p@30fps
+    # easily (~20-30% CPU) and caps any single FFmpeg at ~100% max CPU.
+    cmd.extend(["-threads", "1"])
     if skip_frames and not use_vaapi:
         # Only decode keyframes (I-frames).  Skips all P/B-frame decoding,
         # reducing CPU by ~80-90%.  Keyframes arrive every 1-2 s which is
@@ -936,6 +1069,8 @@ async def generate_rtsp_mjpeg_stream(
         buffer = bytearray()
         jpeg_start = b"\xff\xd8"
         jpeg_end = b"\xff\xd9"
+        last_frame_yielded = time.monotonic()
+        frame_watchdog_timeout = 30.0 if skip_frames else 15.0
 
         while True:
             try:
@@ -947,6 +1082,15 @@ async def generate_rtsp_mjpeg_stream(
                     break
 
                 buffer.extend(chunk)
+
+                if time.monotonic() - last_frame_yielded > frame_watchdog_timeout:
+                    logger.warning(
+                        "Frame watchdog: no JPEG frame in %.0fs despite data flow (stream_id=%s, buffer=%d bytes)",
+                        frame_watchdog_timeout,
+                        stream_id,
+                        len(buffer),
+                    )
+                    break
 
                 if len(buffer) > _RTSP_BUFFER_LIMIT:
                     logger.error(
@@ -975,6 +1119,7 @@ async def generate_rtsp_mjpeg_stream(
                     del buffer[: end_idx + 2]
 
                     # Track timestamp for stall detection
+                    last_frame_yielded = time.monotonic()
                     if printer_id is not None:
                         _last_frame_times[printer_id] = time.monotonic()
 
@@ -1047,10 +1192,10 @@ async def generate_rtsp_mjpeg_stream(
 
 async def _resolve_quality_from_settings(
     db: AsyncSession, stream_count: int, mode: str = "grid"
-) -> tuple[int, int, float, int, bool, bool]:
+) -> tuple[int, int, float, int, bool, bool, str]:
     """Resolve camera quality settings from DB.
 
-    Returns (fps, quality, scale, threads, gpu_accel, skip_frames).
+    Returns (fps, quality, scale, threads, gpu_accel, skip_frames, preset_name).
     """
     # Batch both settings in one query
     result = await db.execute(select(Settings).where(Settings.key.in_(["camera_quality", "camera_gpu_accel"])))
@@ -1068,7 +1213,7 @@ async def _resolve_quality_from_settings(
     # Tells ffmpeg to skip all non-keyframe H.264 decoding, cutting CPU by ~80-90%.
     # Keyframes arrive every 1-2s which is sufficient for low-fps grid thumbnails.
     skip_frames = mode == "grid" and stream_count >= 4 and preset_name in ("low", "medium")
-    return fps, quality, scale, threads, gpu_accel, skip_frames
+    return fps, quality, scale, threads, gpu_accel, skip_frames, preset_name
 
 
 async def _ensure_producer(
@@ -1137,7 +1282,7 @@ async def _ensure_producer(
         gen_kwargs["gpu_accel"] = gpu_accel
         gen_kwargs["skip_frames"] = skip_frames
         if skip_frames:
-            gen_kwargs["read_timeout"] = 60.0
+            gen_kwargs["read_timeout"] = 30.0
 
     def starter_fn():
         return stream_generator(**gen_kwargs)
@@ -1190,8 +1335,9 @@ async def camera_grid_stream(
     threads = 0
     gpu_accel = False
     skip_frames = False
+    preset_label = "custom"
     if fps is None and quality is None and scale is None:
-        fps, quality, scale, threads, gpu_accel, skip_frames = await _resolve_quality_from_settings(
+        fps, quality, scale, threads, gpu_accel, skip_frames, preset_label = await _resolve_quality_from_settings(
             db, len(printer_ids), "grid"
         )
         force = True  # Ensure producers match preset params
@@ -1261,8 +1407,12 @@ async def camera_grid_stream(
         frame_interval = 1.0 / fps
         # Track last seen sequence per printer to avoid sending duplicates
         seen_seqs: dict[int, int] = dict.fromkeys(entries, 0)
-        # Per-printer rate limiting (mirrors make_viewer pattern)
-        last_sent: dict[int, float] = dict.fromkeys(entries, 0.0)
+        # Per-printer rate limiting — stagger initial sends across frame_interval
+        # so printers fire ~(frame_interval / N) apart instead of all at once
+        now_init = time.monotonic()
+        last_sent: dict[int, float] = {}
+        for i, pid in enumerate(entries):
+            last_sent[pid] = now_init - frame_interval + (frame_interval * i / max(len(entries), 1))
         # Periodic stats tracking
         stats_interval = 30.0
         stats_start = time.monotonic()
@@ -1288,6 +1438,7 @@ async def camera_grid_stream(
                     last_disconnect_check = now
 
                 sent_any = False
+                rate_limited = False
                 for pid, entry in list(entries.items()):
                     if not entry.alive:
                         # Producer died — schedule restart instead of permanent removal
@@ -1295,6 +1446,21 @@ async def camera_grid_stream(
                         if pid not in pending_restarts:
                             pending_restarts[pid] = (0, now + _GRID_RESTART_BASE_DELAY)
                             logger.warning("Grid producer died for printer %d, scheduling restart", pid)
+                        continue
+
+                    # Detect stuck producers from outside the blocked generator
+                    if entry.frame_seq > 0 and entry.last_frame_produced > 0 and now - entry.last_frame_produced > 30.0:
+                        logger.warning(
+                            "Grid stale detection: printer %d no frame for %.0fs, killing producer",
+                            pid,
+                            now - entry.last_frame_produced,
+                        )
+                        entry.alive = False
+                        if entry.task and not entry.task.done():
+                            entry.task.cancel()
+                        entries.pop(pid, None)
+                        if pid not in pending_restarts:
+                            pending_restarts[pid] = (0, now + _GRID_RESTART_BASE_DELAY)
                         continue
 
                     # Touch last_accessed so the producer stays alive
@@ -1310,6 +1476,7 @@ async def camera_grid_stream(
 
                     # Per-printer rate limiting — skip frames that arrive too soon
                     if now - last_sent.get(pid, 0.0) < frame_interval:
+                        rate_limited = True
                         continue
 
                     seen_seqs[pid] = seq
@@ -1334,12 +1501,14 @@ async def camera_grid_stream(
                         sizes = stats_frames[spid]
                         if sizes:
                             avg_kb = sum(sizes) / len(sizes) / 1024
-                            parts.append(f"p{spid}:{len(sizes)}f/avg{avg_kb:.1f}KB")
+                            parts.append(f"p{spid}: frames={len(sizes)}, avg={avg_kb:.1f}KB")
                         else:
-                            parts.append(f"p{spid}:0f")
+                            parts.append(f"p{spid}: frames=0")
                     logger.info(
-                        "Grid stream stats (%.0fs): %.1f KB/s total, %d printers: %s",
+                        "Grid stream stats (%.0fs) [preset=%s, fps=%d]: %.1f KB/s total, %d printers: %s",
                         elapsed,
+                        preset_label,
+                        fps,
                         total_kbps,
                         len(stats_frames),
                         ", ".join(parts),
@@ -1380,6 +1549,7 @@ async def camera_grid_stream(
                                 r_threads,
                                 r_gpu_accel,
                                 r_skip_frames,
+                                _r_preset,
                             ) = await _resolve_quality_from_settings(
                                 restart_db, len(entries) + len(pending_restarts), "grid"
                             )
@@ -1430,8 +1600,14 @@ async def camera_grid_stream(
                     # All producers dead, restarts pending — wait before retrying
                     await asyncio.sleep(frame_interval)
                 elif sent_any:
-                    await asyncio.sleep(min(0.05, frame_interval / 4))
+                    # Sleep respects staggered send schedule: inter-printer gap
+                    await asyncio.sleep(min(frame_interval / max(len(entries), 1), frame_interval / 4))
+                elif rate_limited:
+                    # Frames available but rate-limited — sleep until next eligible send
+                    next_eligible = min(last_sent.get(p, 0.0) + frame_interval for p in entries)
+                    await asyncio.sleep(max(0.005, next_eligible - time.monotonic()))
                 else:
+                    # No new frames at all — wait for producer events
                     wait_tasks = [asyncio.create_task(e.frame_event.wait()) for e in entries.values()]
                     try:
                         _, pending = await asyncio.wait(
@@ -1488,7 +1664,7 @@ async def camera_stream(
     threads = 0
     gpu_accel = False
     if fps is None and quality is None and scale is None:
-        fps, quality, scale, threads, gpu_accel, _skip = await _resolve_quality_from_settings(db, 1, "single")
+        fps, quality, scale, threads, gpu_accel, _skip, _preset = await _resolve_quality_from_settings(db, 1, "single")
     else:
         fps = fps or 10
         quality = quality or 5

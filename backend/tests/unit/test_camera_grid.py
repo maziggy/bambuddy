@@ -358,6 +358,134 @@ class TestEnsureProducerDispatch:
 
 
 # ---------------------------------------------------------------------------
+# TestFleetCpuWatchdog
+# ---------------------------------------------------------------------------
+
+
+class TestFleetCpuWatchdog:
+    """Tests for the fleet-level CPU watchdog in _cleanup_stale_frame_buffers."""
+
+    @pytest.mark.asyncio
+    async def test_fleet_watchdog_kills_worst_offenders(self):
+        """When fleet CPU total exceeds threshold, kill highest-CPU processes first."""
+        import backend.app.api.routes.camera as cam
+
+        now = time.monotonic()
+        # Simulate 4 FFmpeg processes past grace period with high CPU
+        pids = {100: now - 60, 101: now - 60, 102: now - 60, 103: now - 60}
+        # Previous samples: each at ~35% CPU (under 40% individual threshold)
+        # Over 5s window: 35% = 1.75 cpu_secs per 5s wall
+        prev_wall = now - 10
+        samples = {
+            100: (prev_wall, 10.0),
+            101: (prev_wall, 10.0),
+            102: (prev_wall, 10.0),
+            103: (prev_wall, 10.0),
+        }
+        # Current CPU times: each used 3.5 more seconds in 10s = 35%
+        cpu_times_result = {100: 13.5, 101: 13.5, 102: 13.5, 103: 13.5}
+        # Fleet total = 4 × 35% = 140%
+
+        killed_pids = []
+        original_kill = cam.os.kill
+
+        def mock_kill(pid, sig):
+            if pid in pids:
+                killed_pids.append(pid)
+            else:
+                original_kill(pid, sig)
+
+        # Set fleet threshold low so 140% triggers it
+        with (
+            patch.dict(cam._spawned_ffmpeg_pids, pids, clear=True),
+            patch.dict(cam._ffmpeg_cpu_samples, samples, clear=True),
+            patch.dict(cam._last_frame_times, {}, clear=True),
+            patch.dict(cam._stream_start_times, {}, clear=True),
+            patch.object(cam, "_FLEET_CPU_PCT_THRESHOLD", 100.0),
+            patch("backend.app.api.routes.camera.os.kill", side_effect=mock_kill),
+            patch(
+                "backend.app.api.routes.camera._read_ffmpeg_cpu_times",
+                return_value=cpu_times_result,
+            ),
+            patch("backend.app.api.routes.camera._scan_dead_pids", return_value=[]),
+        ):
+            await cam._cleanup_stale_frame_buffers()
+            # Should have killed enough to get under 100%: need to kill at least 2 of 4
+            # (140% - 35% = 105% still over, 105% - 35% = 70% under)
+            assert len(killed_pids) >= 2
+
+    @pytest.mark.asyncio
+    async def test_fleet_watchdog_no_kill_under_threshold(self):
+        """When fleet CPU total is under threshold, no processes are killed."""
+        import backend.app.api.routes.camera as cam
+
+        now = time.monotonic()
+        pids = {200: now - 60, 201: now - 60}
+        prev_wall = now - 10
+        samples = {200: (prev_wall, 10.0), 201: (prev_wall, 10.0)}
+        # Each at 10% CPU = fleet total 20%
+        cpu_times_result = {200: 11.0, 201: 11.0}
+
+        killed_pids = []
+
+        def mock_kill(pid, sig):
+            killed_pids.append(pid)
+
+        with (
+            patch.dict(cam._spawned_ffmpeg_pids, pids, clear=True),
+            patch.dict(cam._ffmpeg_cpu_samples, samples, clear=True),
+            patch.dict(cam._last_frame_times, {}, clear=True),
+            patch.dict(cam._stream_start_times, {}, clear=True),
+            patch("backend.app.api.routes.camera.os.kill", side_effect=mock_kill),
+            patch(
+                "backend.app.api.routes.camera._read_ffmpeg_cpu_times",
+                return_value=cpu_times_result,
+            ),
+            patch("backend.app.api.routes.camera._scan_dead_pids", return_value=[]),
+        ):
+            await cam._cleanup_stale_frame_buffers()
+            assert len(killed_pids) == 0
+
+    @pytest.mark.asyncio
+    async def test_fleet_watchdog_respects_grace_period(self):
+        """Processes in grace period should not be included in fleet CPU total."""
+        import backend.app.api.routes.camera as cam
+
+        now = time.monotonic()
+        # PID 300 is past grace, PID 301 is in grace period
+        pids = {300: now - 60, 301: now - 5}
+        prev_wall = now - 10
+        samples = {300: (prev_wall, 10.0)}
+        # PID 300 at 35%, PID 301 would be 35% but in grace
+        cpu_times_result = {300: 13.5, 301: 13.5}
+
+        killed_pids = []
+
+        def mock_kill(pid, sig):
+            killed_pids.append(pid)
+
+        # Threshold at 30% — only PID 300 (35%) is counted, fleet total = 35%
+        with (
+            patch.dict(cam._spawned_ffmpeg_pids, pids, clear=True),
+            patch.dict(cam._ffmpeg_cpu_samples, samples, clear=True),
+            patch.dict(cam._last_frame_times, {}, clear=True),
+            patch.dict(cam._stream_start_times, {}, clear=True),
+            patch.object(cam, "_FLEET_CPU_PCT_THRESHOLD", 30.0),
+            patch("backend.app.api.routes.camera.os.kill", side_effect=mock_kill),
+            patch(
+                "backend.app.api.routes.camera._read_ffmpeg_cpu_times",
+                return_value=cpu_times_result,
+            ),
+            patch("backend.app.api.routes.camera._scan_dead_pids", return_value=[]),
+        ):
+            await cam._cleanup_stale_frame_buffers()
+            # Only PID 300 counted and it's over threshold → killed by fleet watchdog
+            assert 300 in killed_pids
+            # PID 301 in grace period — should NOT be killed
+            assert 301 not in killed_pids
+
+
+# ---------------------------------------------------------------------------
 # TestScanBambuFfmpegPids
 # ---------------------------------------------------------------------------
 

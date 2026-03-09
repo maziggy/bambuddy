@@ -239,6 +239,17 @@ export function useGridStream({ printerIdsKey, gridParamsKey }: UseGridStreamOpt
       let buf = new Uint8Array(256 * 1024);
       let bufLen = 0;
 
+      // Single resettable stall timer — cancels the reader if no data arrives in 45s.
+      // Declared outside try so catch can clear it on error (prevents leaked timers
+      // from cancelling a new connection's reader after reconnect).
+      let stallTimer: ReturnType<typeof setTimeout> | null = null;
+      const resetStallTimer = () => {
+        if (stallTimer !== null) clearTimeout(stallTimer);
+        stallTimer = setTimeout(() => {
+          readerRef?.cancel().catch(() => {});
+        }, 45_000);
+      };
+
       try {
         const gridHeaders: Record<string, string> = {};
         const token = getAuthToken();
@@ -268,15 +279,6 @@ export function useGridStream({ printerIdsKey, gridParamsKey }: UseGridStreamOpt
 
         const reader = res.body.getReader();
         readerRef = reader;
-
-        // Single resettable stall timer — cancels the reader if no data arrives in 45s
-        let stallTimer: ReturnType<typeof setTimeout> | null = null;
-        const resetStallTimer = () => {
-          if (stallTimer !== null) clearTimeout(stallTimer);
-          stallTimer = setTimeout(() => {
-            readerRef?.cancel().catch(() => {});
-          }, 45_000);
-        };
         resetStallTimer();
 
         while (active) {
@@ -319,9 +321,10 @@ export function useGridStream({ printerIdsKey, gridParamsKey }: UseGridStreamOpt
 
             if (offset + GRID_FRAME_HEADER_SIZE + jpegLen > bufLen) break; // incomplete frame
 
-            // Copy JPEG bytes from shared read buffer, then transfer ownership to worker (no second copy)
-            const jpegStart = buf.byteOffset + offset + GRID_FRAME_HEADER_SIZE;
-            const jpeg = buf.buffer.slice(jpegStart, jpegStart + jpegLen);
+            // Copy JPEG bytes into a standalone ArrayBuffer, then transfer to worker.
+            // Using Uint8Array.slice() ensures the copy is detached from buf.buffer,
+            // so the postMessage transfer won't risk detaching the shared read buffer.
+            const jpeg = new Uint8Array(buf.buffer, buf.byteOffset + offset + GRID_FRAME_HEADER_SIZE, jpegLen).slice().buffer;
             worker.postMessage(
               { type: 'frame', printerId, jpeg },
               [jpeg], // transfer ownership — no second copy
@@ -341,6 +344,8 @@ export function useGridStream({ printerIdsKey, gridParamsKey }: UseGridStreamOpt
         // Stream ended cleanly (server closed) — treat as recoverable
         if (active) throw new Error('Stream ended');
       } catch (e: unknown) {
+        if (stallTimer !== null) clearTimeout(stallTimer);
+
         if (e instanceof DOMException && e.name === 'AbortError') return;
         if (!active) return;
 

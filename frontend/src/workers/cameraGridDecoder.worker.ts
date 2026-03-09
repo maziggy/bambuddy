@@ -1,3 +1,6 @@
+/// <reference lib="webworker" />
+declare const self: DedicatedWorkerGlobalScope;
+
 /**
  * Camera Grid Decoder Worker
  *
@@ -19,8 +22,6 @@
  *   { type: 'frame', printerId, bitmap }       — decoded ImageBitmap (transferred)
  */
 
-const ctx = self as unknown as { postMessage(msg: unknown, transfer: Transferable[]): void; onmessage: ((e: MessageEvent) => void) | null };
-
 const visibleSet = new Set<number>();
 const pendingFrame = new Map<number, ArrayBuffer>(); // latest JPEG waiting to decode
 const decoding = new Map<number, boolean>();          // whether decode is in-flight
@@ -36,7 +37,7 @@ function tryDecode(printerId: number): void {
   const blob = new Blob([jpeg], { type: 'image/jpeg' });
   createImageBitmap(blob).then(
     (bitmap) => {
-      ctx.postMessage(
+      self.postMessage(
         { type: 'frame', printerId, bitmap },
         [bitmap],
       );
@@ -51,7 +52,7 @@ function tryDecode(printerId: number): void {
   );
 }
 
-ctx.onmessage = (e: MessageEvent) => {
+self.onmessage = (e: MessageEvent) => {
   try {
     const msg = e.data;
 
@@ -85,6 +86,6 @@ ctx.onmessage = (e: MessageEvent) => {
       }
     }
   } catch (err) {
-    ctx.postMessage({ type: 'error', error: String(err) }, []);
+    self.postMessage({ type: 'error', error: String(err) }, []);
   }
 };

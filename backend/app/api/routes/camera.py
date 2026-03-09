@@ -2510,6 +2510,13 @@ async def cleanup_orphaned_streams():
         proc = _active_streams.pop(sid, None)
         if proc:
             _spawned_ffmpeg_pids.pop(proc.pid, None)
+        try:
+            printer_id = int(sid.split("-", 1)[0])
+        except (ValueError, IndexError):
+            pass
+        else:
+            _last_frame_times.pop(printer_id, None)
+            _stream_start_times.pop(printer_id, None)
         cleaned += 1
 
     # 4. Kill stale active streams (alive but no frames for >60s)
@@ -2531,6 +2538,8 @@ async def cleanup_orphaned_streams():
                 pass
             _active_streams.pop(sid, None)
             _spawned_ffmpeg_pids.pop(proc.pid, None)
+            _last_frame_times.pop(printer_id, None)
+            _stream_start_times.pop(printer_id, None)
             cleaned += 1
 
     # 5. Clean stale chamber stream entries

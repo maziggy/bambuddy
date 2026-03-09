@@ -194,11 +194,10 @@ export function useMjpegStream({
           }
         }
 
-        // Stream ended naturally
+        // Stream ended naturally (clean EOF) — don't treat as error
         if (mountedRef.current && gen === generationRef.current) {
           setIsLoading(false);
           setIsConnected(false);
-          onErrorRef.current?.();
         }
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') return;

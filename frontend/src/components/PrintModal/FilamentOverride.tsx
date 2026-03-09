@@ -9,8 +9,8 @@ interface FilamentOverrideProps {
   availableFilaments: Array<{ type: string; color: string; tray_info_idx: string; tray_sub_brands: string; extruder_id: number | null }>;
   overrides: Record<number, { type: string; color: string }>;
   onChange: (overrides: Record<number, { type: string; color: string }>) => void;
-  
-  /** Per-slot force color match flags. Defaults to true when not provided. */
+
+  /** Per-slot force color match flags. Defaults to false (opt-in) when not provided. */
   forceColorMatch?: Record<number, boolean>;
   /** Called when a slot's force color match checkbox is toggled. */
   onForceColorMatchChange?: (slotId: number, value: boolean) => void;

@@ -41,7 +41,7 @@ export function filterCompatibleQueueItems(
 ): PrintQueueItem[] {
   return items.filter(item => {
     // Type check: all required filament types must be loaded
-    if (item.required_filament_types && item.required_filament_types.length > 0 && loadedFilamentTypes?.size) {
+    if (item.required_filament_types && item.required_filament_types.length > 0 && loadedFilamentTypes !== undefined) {
       if (!item.required_filament_types.every((t: string) => loadedFilamentTypes.has(t.toUpperCase()))) {
         return false;
       }
@@ -49,7 +49,7 @@ export function filterCompatibleQueueItems(
 
     // Color check: evaluate force_color_match per slot
     // Only apply when loadedFilaments is provided (not undefined).
-    // An empty Set means no filaments are loaded — force-matched slots cannot match.
+    // An empty Set means no filaments are loaded â€” force-matched slots cannot match.
     if (item.filament_overrides && item.filament_overrides.length > 0 && loadedFilaments !== undefined) {
       const forceOverrides = item.filament_overrides.filter(o => o.force_color_match === true);
       const prefOverrides = item.filament_overrides.filter(o => o.force_color_match !== true);

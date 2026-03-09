@@ -802,7 +802,6 @@ export default {
       failed: 'Falhou',
       skipped: 'Ignorado',
       cancelled: 'Cancelado',
-      noMatchingMaterial: 'Nenhum material/cor correspondente. Aguardando {{material}}',
     },
     // Summary cards
     summary: {

@@ -4,6 +4,7 @@ import asyncio
 import logging
 import math
 import os
+import random
 import re
 import struct
 import subprocess
@@ -28,6 +29,7 @@ from backend.app.models.user import User
 from backend.app.services.camera import (
     ChamberConnectionClosed,
     capture_camera_frame,
+    detect_vaapi_support,
     generate_chamber_image_stream,
     get_camera_port,
     get_ffmpeg_path,
@@ -63,6 +65,8 @@ CAMERA_QUALITY_PRESETS = {
 _GRID_MAX_RESTARTS = 5
 _GRID_RESTART_BASE_DELAY = 3.0  # seconds
 _GRID_RESTART_MAX_DELAY = 30.0  # cap on exponential backoff (also used for slow retry cadence)
+_GRID_MAX_CONCURRENT_RESTARTS = 2  # max cameras restarted per loop iteration (prevents resource spikes)
+_GRID_SPAWN_STAGGER_DELAY = 0.2  # seconds between initial producer spawns
 
 # Track active ffmpeg processes for cleanup
 _active_streams: dict[str, asyncio.subprocess.Process] = {}
@@ -185,6 +189,7 @@ class _SharedStream:
         "params_key",
         "viewer_count",
         "frame_event",
+        "last_frame_produced",
     )
 
     def __init__(self, params_key: str = "") -> None:
@@ -197,6 +202,7 @@ class _SharedStream:
         self.params_key: str = params_key  # e.g. "5-15-0.5" for fps-quality-scale
         self.viewer_count: int = 0
         self.frame_event: asyncio.Event = asyncio.Event()
+        self.last_frame_produced: float = 0.0
 
 
 class SharedStreamHub:
@@ -215,6 +221,7 @@ class SharedStreamHub:
     """
 
     IDLE_TIMEOUT = 30.0  # seconds without a viewer before producer auto-stops
+    STALE_PRODUCER_TIMEOUT = 45.0  # seconds without a frame = stalled
 
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
@@ -227,12 +234,45 @@ class SharedStreamHub:
         prevents different clients (grid vs single camera) from fighting over
         quality settings.  Use restart() to explicitly change quality.
         """
+        old_task: asyncio.Task | None = None
+
         async with self._lock:
             entry = self._streams.get(printer_id)
             if entry is not None and entry.alive:
-                entry.last_accessed = time.monotonic()
-                return entry
-            # Start a new producer
+                # Detect stalled producers: if frames were flowing but stopped, treat as dead
+                if entry.frame_seq > 0 and time.monotonic() - entry.last_frame_produced > self.STALE_PRODUCER_TIMEOUT:
+                    logger.warning(
+                        "Stale producer for printer %s (no frame for %.0fs), replacing",
+                        printer_id,
+                        time.monotonic() - entry.last_frame_produced,
+                    )
+                    entry.alive = False
+                    old_task = entry.task
+                    if old_task and not old_task.done():
+                        old_task.cancel()
+                    del self._streams[printer_id]
+                else:
+                    entry.last_accessed = time.monotonic()
+                    return entry
+            elif entry is not None:
+                # Entry dead but task may still be cleaning up (e.g. ffmpeg terminating).
+                # Await it to avoid two ffmpeg processes competing for the same RTSP slot.
+                old_task = entry.task if entry.task and not entry.task.done() else None
+                del self._streams[printer_id]
+
+        # Await old task outside lock so its finally block (ffmpeg kill) completes
+        if old_task is not None:
+            try:
+                await asyncio.wait_for(old_task, timeout=8.0)
+            except (asyncio.CancelledError, TimeoutError, Exception):
+                pass  # Best effort — task will clean up on its own eventually
+
+        # Re-acquire lock to create new entry (guard against concurrent calls)
+        async with self._lock:
+            existing = self._streams.get(printer_id)
+            if existing is not None and existing.alive:
+                existing.last_accessed = time.monotonic()
+                return existing
             entry = _SharedStream(params_key=params_key)
             self._streams[printer_id] = entry
             entry.task = asyncio.create_task(self._run_producer(printer_id, starter_fn, entry))
@@ -261,26 +301,44 @@ class SharedStreamHub:
             old = self._streams.get(printer_id)
             if old is not None and old.alive:
                 if old.params_key == params_key:
-                    # Same params — no need to restart
-                    old.last_accessed = time.monotonic()
-                    return old
-                logger.info(
-                    "Restarting producer for printer %s (%s → %s)",
-                    printer_id,
-                    old.params_key,
-                    params_key,
-                )
-                old.alive = False
-                old_task = old.task
-                if old_task:
-                    old_task.cancel()
-                # Remove so the old producer's finally block identity check won't match
+                    # Same params — check if stalled before reusing
+                    if old.frame_seq > 0 and time.monotonic() - old.last_frame_produced > self.STALE_PRODUCER_TIMEOUT:
+                        logger.warning(
+                            "Stale producer for printer %s during restart (no frame for %.0fs), replacing",
+                            printer_id,
+                            time.monotonic() - old.last_frame_produced,
+                        )
+                        old.alive = False
+                        old_task = old.task
+                        if old_task and not old_task.done():
+                            old_task.cancel()
+                        del self._streams[printer_id]
+                    else:
+                        old.last_accessed = time.monotonic()
+                        return old
+                else:
+                    logger.info(
+                        "Restarting producer for printer %s (%s → %s)",
+                        printer_id,
+                        old.params_key,
+                        params_key,
+                    )
+                    old.alive = False
+                    old_task = old.task
+                    if old_task:
+                        old_task.cancel()
+                    # Remove so the old producer's finally block identity check won't match
+                    del self._streams[printer_id]
+            elif old is not None:
+                # Entry dead but task may still be cleaning up (e.g. ffmpeg terminating).
+                # Await it to avoid two ffmpeg processes competing for the same RTSP slot.
+                old_task = old.task if old.task and not old.task.done() else None
                 del self._streams[printer_id]
 
         # Phase 2 — await old task outside lock (lets ffmpeg terminate fully)
         if old_task is not None:
             try:
-                await asyncio.wait_for(old_task, timeout=3.0)
+                await asyncio.wait_for(old_task, timeout=8.0)
             except (asyncio.CancelledError, TimeoutError, Exception):
                 pass  # Best effort — task will clean up on its own eventually
 
@@ -381,6 +439,7 @@ class SharedStreamHub:
                     break
                 entry.frame = frame
                 entry.frame_seq += 1
+                entry.last_frame_produced = time.monotonic()
                 # Replace with a fresh event, then set the old one so all
                 # viewers waiting on it are reliably woken (no set/clear race).
                 old_event = entry.frame_event
@@ -604,10 +663,14 @@ async def generate_chamber_mjpeg_stream(
         if stream_id and stream_id in _active_chamber_streams:
             del _active_chamber_streams[stream_id]
 
-        # Clean up frame buffer and timestamps
+        # Only clean up timestamps if no other active stream exists for this printer
         if printer_id is not None:
-            _last_frame_times.pop(printer_id, None)
-            _stream_start_times.pop(printer_id, None)
+            has_other_stream = any(sid.startswith(f"{printer_id}-") for sid in _active_streams) or any(
+                sid.startswith(f"{printer_id}-") for sid in _active_chamber_streams
+            )
+            if not has_other_stream:
+                _last_frame_times.pop(printer_id, None)
+                _stream_start_times.pop(printer_id, None)
 
         # Close the connection
         try:
@@ -616,6 +679,30 @@ async def generate_chamber_mjpeg_stream(
         except OSError:
             pass  # Connection already closed or broken; cleanup is best-effort
         logger.info("Chamber image stream stopped for %s (stream_id=%s)", ip_address, stream_id)
+
+
+async def _drain_stderr(process: asyncio.subprocess.Process, stream_id: str) -> None:
+    """Continuously read stderr to prevent pipe buffer deadlock.
+
+    Logs lines containing error/warning keywords for diagnostics.
+    """
+    try:
+        while True:
+            data = await process.stderr.read(65536)
+            if not data:
+                break
+            text = data.decode("utf-8", errors="replace")
+            for line in text.splitlines():
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                lower = stripped.lower()
+                if any(kw in lower for kw in ("error", "fatal", "failed", "broken", "timeout", "overread")):
+                    logger.warning("ffmpeg[%s]: %s", stream_id, stripped)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        pass
 
 
 async def generate_rtsp_mjpeg_stream(
@@ -631,6 +718,7 @@ async def generate_rtsp_mjpeg_stream(
     threads: int = 0,
     gpu_accel: bool = False,
     skip_frames: bool = False,
+    read_timeout: float = 30.0,
 ) -> AsyncGenerator[bytes, None]:
     """Generate MJPEG stream from printer camera using ffmpeg/RTSP.
 
@@ -642,6 +730,9 @@ async def generate_rtsp_mjpeg_stream(
             usage by ~80-90% per stream at the cost of lower temporal
             resolution (~0.5-1 fps from keyframes).  Ideal for grid view
             thumbnails where smooth video is unnecessary.
+        read_timeout: Seconds to wait for stdout data before considering the
+            stream dead.  Higher values are appropriate when *skip_frames* is
+            True because keyframe-only decode can have long inter-frame gaps.
     """
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
@@ -671,13 +762,53 @@ async def generate_rtsp_mjpeg_stream(
     quality = max(2, min(quality, 31))
     scale = max(0.1, min(scale, 1.0))
 
+    # Detect VAAPI capability (cached after first call)
+    use_vaapi = False
+    vaapi_info = None
+    if gpu_accel and not skip_frames:
+        vaapi_info = await detect_vaapi_support()
+        use_vaapi = vaapi_info["available"]
+
+    # Build filter chain
     vf_filters = []
-    if scale < 1.0:
-        vf_filters.append(f"scale=iw*{scale}:ih*{scale}")
+    if use_vaapi:
+        if scale < 1.0:
+            vf_filters.append(f"scale_vaapi=w=iw*{scale}:h=ih*{scale}")
+        if not vaapi_info["has_mjpeg_encode"]:
+            # No hardware JPEG encode — download frames for software encode
+            vf_filters.extend(["hwdownload", "format=nv12"])
+            # fps AFTER hwdownload — filter needs CPU-side frames
+            vf_filters.append(f"fps={fps}")
+        # Full GPU pipeline (has_mjpeg_encode=True): -r output option suffices
+    else:
+        # fps BEFORE scale — drops decoded frames early so scale only runs
+        # at target fps. Without this, -r output option adds fps AFTER -vf
+        # filters, so scale processes every decoded frame (~30fps) instead
+        # of the target (~5fps for grid). ~6x CPU reduction for scale step.
+        vf_filters.append(f"fps={fps}")
+        if scale < 1.0:
+            vf_filters.append(f"scale=iw*{scale}:ih*{scale}")
 
     cmd = [ffmpeg]
-    if gpu_accel:
+    if sys.platform != "win32":
+        cmd = ["nice", "-n", "10"] + cmd
+
+    if use_vaapi:
+        cmd.extend(
+            [
+                "-hwaccel",
+                "vaapi",
+                "-hwaccel_device",
+                vaapi_info["device"],
+                "-hwaccel_output_format",
+                "vaapi",
+            ]
+        )
+    elif gpu_accel and not skip_frames:
+        # Don't combine with -skip_frame nokey — hardware decoders
+        # (VideoToolbox, NVDEC) silently ignore it, decoding ALL frames.
         cmd.extend(["-hwaccel", "auto"])
+
     cmd.extend(
         [
             "-rtsp_transport",
@@ -692,42 +823,69 @@ async def generate_rtsp_mjpeg_stream(
             "500000",  # 0.5 seconds max delay
         ]
     )
-    if skip_frames:
+    if skip_frames and not use_vaapi:
         # Only decode keyframes (I-frames).  Skips all P/B-frame decoding,
         # reducing CPU by ~80-90%.  Keyframes arrive every 1-2 s which is
         # sufficient for low-fps grid thumbnails.
+        # Skipped with VAAPI — hardware decode handles all frames efficiently.
         cmd.extend(["-skip_frame", "nokey"])
     cmd.extend(["-i", camera_url])
     if vf_filters:
         cmd.extend(["-vf", ",".join(vf_filters)])
-    output_args = [
-        "-f",
-        "mjpeg",
-        "-q:v",
-        str(quality),
-        "-r",
-        str(fps),
-        "-an",  # No audio
-    ]
+
+    if use_vaapi and vaapi_info["has_mjpeg_encode"]:
+        # Full VAAPI pipeline: decode + scale + JPEG encode on GPU
+        # Map q:v scale (2=best, 31=worst) → global_quality (100=best, 1=worst)
+        vaapi_quality = max(1, min(100, round((32 - quality) * 100 / 30)))
+        output_args = [
+            "-c:v",
+            "mjpeg_vaapi",
+            "-global_quality",
+            str(vaapi_quality),
+            "-r",
+            str(fps),
+            "-an",
+        ]
+    else:
+        output_args = [
+            "-f",
+            "mjpeg",
+            "-q:v",
+            str(quality),
+            "-an",  # No audio
+        ]
+        # Only add -r when -vf doesn't already include an fps filter.
+        # When fps= is in -vf, adding -r causes frame duplication —
+        # especially bad with -skip_frame nokey where keyframes arrive
+        # irregularly and -r pads them to the target rate at full resolution.
+        if not any(f.startswith("fps=") for f in vf_filters):
+            output_args.extend(["-r", str(fps)])
+
     if threads > 0:
         output_args.extend(["-threads", str(threads)])
     output_args.append("-")  # Output to stdout
     cmd.extend(output_args)
 
     logger.info(
-        "Starting RTSP camera stream for %s (stream_id=%s, model=%s, fps=%s, skip_frames=%s)",
+        "Starting RTSP camera stream for %s (stream_id=%s, model=%s, fps=%s, q:v=%s, scale=%s, threads=%s, gpu_accel=%s, skip_frames=%s)",
         ip_address,
         stream_id,
         model,
         fps,
+        quality,
+        scale,
+        threads,
+        gpu_accel,
         skip_frames,
     )
-    logger.debug("ffmpeg command: %s ... (url hidden)", ffmpeg)
+    # Log full command with RTSP credentials redacted
+    redacted_cmd = [re.sub(r"rtsps?://[^@]+@", "rtsps://***:***@", arg) for arg in cmd]
+    logger.info("ffmpeg command: %s", redacted_cmd)
 
     semaphore = get_rtsp_semaphore()
     process = None
 
-    # Acquire semaphore only for process creation + liveness check
+    # Acquire semaphore only for process creation — release before liveness sleep
     logger.debug("Waiting for RTSP semaphore (stream_id=%s)", stream_id)
     async with semaphore:
         logger.debug("Acquired RTSP semaphore (stream_id=%s)", stream_id)
@@ -746,27 +904,30 @@ async def generate_rtsp_mjpeg_stream(
             if stream_id:
                 _active_streams[stream_id] = process
                 _spawned_ffmpeg_pids[process.pid] = time.monotonic()
-
-            # Give ffmpeg a moment to start and check for immediate failures
-            await asyncio.sleep(0.5)
-            if process.returncode is not None:
-                stderr = await process.stderr.read()
-                logger.error("ffmpeg failed immediately: %s", re.sub(r"bblp:[^@]*@", "bblp:***@", stderr.decode()))
-                if stream_id:
-                    _active_streams.pop(stream_id, None)
-                    _spawned_ffmpeg_pids.pop(process.pid, None)
-                if not raw:
-                    yield (
-                        b"--frame\r\n"
-                        b"Content-Type: text/plain\r\n\r\n"
-                        b"Error: Camera connection failed. Check printer is on and camera is enabled.\r\n"
-                    )
-                return
         except FileNotFoundError:
             logger.error("ffmpeg not found - camera streaming requires ffmpeg")
             if not raw:
                 yield (b"--frame\r\nContent-Type: text/plain\r\n\r\nError: ffmpeg not installed\r\n")
             return
+
+    # Liveness check outside semaphore — avoids 0.5s * N queuing
+    await asyncio.sleep(0.5)
+    if process.returncode is not None:
+        stderr = await process.stderr.read()
+        logger.error("ffmpeg failed immediately: %s", re.sub(r"bblp:[^@]*@", "bblp:***@", stderr.decode()))
+        if stream_id:
+            _active_streams.pop(stream_id, None)
+            _spawned_ffmpeg_pids.pop(process.pid, None)
+        if not raw:
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: text/plain\r\n\r\n"
+                b"Error: Camera connection failed. Check printer is on and camera is enabled.\r\n"
+            )
+        return
+
+    # Drain stderr continuously to prevent pipe buffer deadlock
+    stderr_drain_task = asyncio.create_task(_drain_stderr(process, stream_id or "unknown"))
 
     # Semaphore released — streaming loop runs without holding it
     try:
@@ -779,7 +940,7 @@ async def generate_rtsp_mjpeg_stream(
         while True:
             try:
                 # Read chunk from ffmpeg — larger reads reduce syscalls
-                chunk = await asyncio.wait_for(process.stdout.read(65536), timeout=30.0)
+                chunk = await asyncio.wait_for(process.stdout.read(65536), timeout=read_timeout)
 
                 if not chunk:
                     logger.warning("Camera stream ended (no more data)")
@@ -848,14 +1009,19 @@ async def generate_rtsp_mjpeg_stream(
     except Exception as e:
         logger.exception("Camera stream error: %s", e)
     finally:
+        # Stop stderr drain before process termination
+        stderr_drain_task.cancel()
+
         # Remove from active streams
         if stream_id and stream_id in _active_streams:
             del _active_streams[stream_id]
 
-        # Clean up frame buffer and timestamps
+        # Only clean up timestamps if no other active stream exists for this printer
         if printer_id is not None:
-            _last_frame_times.pop(printer_id, None)
-            _stream_start_times.pop(printer_id, None)
+            has_other_stream = any(sid.startswith(f"{printer_id}-") for sid in _active_streams)
+            if not has_other_stream:
+                _last_frame_times.pop(printer_id, None)
+                _stream_start_times.pop(printer_id, None)
 
         if process and process.returncode is None:
             logger.info("Terminating ffmpeg process for stream %s", stream_id)
@@ -865,7 +1031,10 @@ async def generate_rtsp_mjpeg_stream(
             except TimeoutError:
                 logger.warning("ffmpeg didn't terminate gracefully, killing (stream_id=%s)", stream_id)
                 process.kill()
-                await process.wait()
+                try:
+                    await asyncio.wait_for(process.wait(), timeout=5.0)
+                except TimeoutError:
+                    logger.error("ffmpeg process did not exit after kill (stream_id=%s)", stream_id)
             except ProcessLookupError:
                 pass  # Process already dead
             except OSError as e:
@@ -941,6 +1110,7 @@ async def _ensure_producer(
 
     # External cameras are not supported in the multiplexed stream
     if printer.external_camera_enabled and printer.external_camera_url:
+        logger.debug("Skipping grid producer for printer %s: external camera not supported in grid mode", printer_id)
         return None
 
     if is_chamber_image_model(printer.model):
@@ -966,21 +1136,27 @@ async def _ensure_producer(
         gen_kwargs["threads"] = threads
         gen_kwargs["gpu_accel"] = gpu_accel
         gen_kwargs["skip_frames"] = skip_frames
+        if skip_frames:
+            gen_kwargs["read_timeout"] = 60.0
 
     def starter_fn():
         return stream_generator(**gen_kwargs)
 
     params_key = f"{fps_clamped}-{quality}-{scale}-{threads}-{gpu_accel}-{skip_frames}"
-    _stream_start_times[printer_id] = time.monotonic()
     if force_quality:
-        return await hub.restart(printer_id, starter_fn, params_key=params_key)
-    return await hub.get_or_start(printer_id, starter_fn, params_key=params_key)
+        entry = await hub.restart(printer_id, starter_fn, params_key=params_key)
+    else:
+        entry = await hub.get_or_start(printer_id, starter_fn, params_key=params_key)
+    # Only update start time when a new producer was actually created
+    if printer_id not in _stream_start_times:
+        _stream_start_times[printer_id] = time.monotonic()
+    return entry
 
 
 @router.get("/camera/grid-stream")
 async def camera_grid_stream(
     request: Request,
-    ids: str = Query(..., description="Comma-separated printer IDs"),
+    ids: str = Query(..., max_length=500, description="Comma-separated printer IDs"),
     fps: int | None = Query(default=None, ge=1, le=30),
     quality: int | None = Query(default=None, ge=2, le=31),
     scale: float | None = Query(default=None, ge=0.1, le=1.0),
@@ -1034,14 +1210,34 @@ async def camera_grid_stream(
     # First, collect IDs that already have a live producer (fast path — no DB).
     entries, need_db = await _hub.get_existing_batch(printer_ids)
 
+    # When force=True, check existing producers for param mismatches.
+    # Without this, quality preset changes are silently ignored for already-running producers.
+    if force and entries:
+        for pid in list(entries):
+            new_entry = await _ensure_producer(
+                pid,
+                db,
+                fps,
+                quality,
+                scale,
+                force_quality=True,
+                threads=threads,
+                gpu_accel=gpu_accel,
+                skip_frames=skip_frames,
+            )
+            if new_entry is not None:
+                entries[pid] = new_entry
+
     # Single batch DB query for printers that need a new producer.
     if need_db:
         result = await db.execute(select(Printer).where(Printer.id.in_(need_db)))
         printers_by_id = {p.id: p for p in result.scalars().all()}
-        for pid in need_db:
+        for i, pid in enumerate(need_db):
             printer = printers_by_id.get(pid)
             if printer is None:
                 continue
+            if i > 0:
+                await asyncio.sleep(_GRID_SPAWN_STAGGER_DELAY)
             entry = await _ensure_producer(
                 pid,
                 db,
@@ -1065,16 +1261,21 @@ async def camera_grid_stream(
         frame_interval = 1.0 / fps
         # Track last seen sequence per printer to avoid sending duplicates
         seen_seqs: dict[int, int] = dict.fromkeys(entries, 0)
+        # Per-printer rate limiting (mirrors make_viewer pattern)
+        last_sent: dict[int, float] = dict.fromkeys(entries, 0.0)
+        # Periodic stats tracking
+        stats_interval = 30.0
+        stats_start = time.monotonic()
+        stats_frames: dict[int, list[int]] = {pid: [] for pid in entries}
 
         # Per-camera restart tracking: pid -> (attempt_count, next_retry_monotonic)
         pending_restarts: dict[int, tuple[int, float]] = {}
 
-        # Register as viewer on all entries
-        for entry in entries.values():
+        # Register as viewer on all entries (keyed by printer_id for clean replacement on restart)
+        registered_entries: dict[int, _SharedStream] = {}
+        for pid, entry in entries.items():
             entry.viewer_count += 1
-        # Snapshot for finally — exactly one decrement per entry we incremented,
-        # regardless of entries popped mid-loop or CancelledError timing.
-        registered_entries = list(entries.values())
+            registered_entries[pid] = entry
 
         try:
             last_disconnect_check = 0.0
@@ -1107,15 +1308,50 @@ async def camera_grid_stream(
                     if frame is None:
                         continue
 
+                    # Per-printer rate limiting — skip frames that arrive too soon
+                    if now - last_sent.get(pid, 0.0) < frame_interval:
+                        continue
+
                     seen_seqs[pid] = seq
 
                     # Binary header: [printer_id u32 LE][length u32 LE]
                     header = struct.pack("<II", pid, len(frame))
                     yield header + frame
                     sent_any = True
+                    last_sent[pid] = now
+                    # Track for periodic stats
+                    if pid not in stats_frames:
+                        stats_frames[pid] = []
+                    stats_frames[pid].append(len(frame))
 
-                # Process pending restarts
+                # Periodic bandwidth stats
+                elapsed = now - stats_start
+                if elapsed >= stats_interval:
+                    total_bytes = sum(sum(sizes) for sizes in stats_frames.values())
+                    total_kbps = total_bytes / elapsed / 1024
+                    parts = []
+                    for spid in sorted(stats_frames):
+                        sizes = stats_frames[spid]
+                        if sizes:
+                            avg_kb = sum(sizes) / len(sizes) / 1024
+                            parts.append(f"p{spid}:{len(sizes)}f/avg{avg_kb:.1f}KB")
+                        else:
+                            parts.append(f"p{spid}:0f")
+                    logger.info(
+                        "Grid stream stats (%.0fs): %.1f KB/s total, %d printers: %s",
+                        elapsed,
+                        total_kbps,
+                        len(stats_frames),
+                        ", ".join(parts),
+                    )
+                    stats_start = now
+                    stats_frames = {p: [] for p in entries}
+
+                # Process pending restarts (budget-limited to prevent thundering herd)
+                restarts_this_cycle = 0
                 for pid in list(pending_restarts):
+                    if restarts_this_cycle >= _GRID_MAX_CONCURRENT_RESTARTS:
+                        break
                     attempts, next_retry = pending_restarts[pid]
                     if now < next_retry:
                         continue
@@ -1123,7 +1359,8 @@ async def camera_grid_stream(
                         # Switch to slow retry cadence — don't permanently give up.
                         # RTSP/chamber connections can recover after network hiccups,
                         # printer reboots, or temporary camera unavailability.
-                        delay = _GRID_RESTART_MAX_DELAY
+                        base_delay = _GRID_RESTART_MAX_DELAY
+                        delay = base_delay + random.uniform(0, base_delay * 0.3)
                         pending_restarts[pid] = (attempts + 1, now + delay)
                         if (attempts - _GRID_MAX_RESTARTS) % 10 == 0:
                             logger.warning(
@@ -1136,10 +1373,15 @@ async def camera_grid_stream(
                     # Use a fresh DB session — the endpoint's `db` may be stale hours into a stream
                     try:
                         async with async_session() as restart_db:
-                            r_fps, r_quality, r_scale, r_threads, r_gpu_accel, r_skip_frames = (
-                                await _resolve_quality_from_settings(
-                                    restart_db, len(entries) + len(pending_restarts), "grid"
-                                )
+                            (
+                                r_fps,
+                                r_quality,
+                                r_scale,
+                                r_threads,
+                                r_gpu_accel,
+                                r_skip_frames,
+                            ) = await _resolve_quality_from_settings(
+                                restart_db, len(entries) + len(pending_restarts), "grid"
                             )
                             entry = await _ensure_producer(
                                 pid,
@@ -1158,14 +1400,20 @@ async def camera_grid_stream(
 
                     if entry is not None:
                         entries[pid] = entry
+                        # Decrement old entry's viewer_count before replacing
+                        old_registered = registered_entries.get(pid)
+                        if old_registered is not None and old_registered is not entry:
+                            old_registered.viewer_count = max(0, old_registered.viewer_count - 1)
                         entry.viewer_count += 1
-                        registered_entries.append(entry)
+                        registered_entries[pid] = entry
                         seen_seqs[pid] = 0
                         del pending_restarts[pid]
+                        restarts_this_cycle += 1
                         logger.info("Grid producer restarted for printer %d (attempt %d)", pid, attempts + 1)
                     else:
-                        # Exponential backoff: base * 2^attempt, capped
-                        delay = min(_GRID_RESTART_BASE_DELAY * (2**attempts), _GRID_RESTART_MAX_DELAY)
+                        # Exponential backoff with jitter: base * 2^attempt, capped
+                        base_delay = min(_GRID_RESTART_BASE_DELAY * (2**attempts), _GRID_RESTART_MAX_DELAY)
+                        delay = base_delay + random.uniform(0, base_delay * 0.3)
                         pending_restarts[pid] = (attempts + 1, now + delay)
                         logger.warning(
                             "Grid restart failed for printer %d (attempt %d/%d), next retry in %.0fs",
@@ -1182,7 +1430,7 @@ async def camera_grid_stream(
                     # All producers dead, restarts pending — wait before retrying
                     await asyncio.sleep(frame_interval)
                 elif sent_any:
-                    await asyncio.sleep(0.001)
+                    await asyncio.sleep(min(0.05, frame_interval / 4))
                 else:
                     wait_tasks = [asyncio.create_task(e.frame_event.wait()) for e in entries.values()]
                     try:
@@ -1197,10 +1445,8 @@ async def camera_grid_stream(
                         raise
         finally:
             # Decrement viewer count on all entries we registered with
-            for entry in registered_entries:
-                entry.viewer_count -= 1
-                if entry.viewer_count < 0:
-                    entry.viewer_count = 0
+            for entry in registered_entries.values():
+                entry.viewer_count = max(0, entry.viewer_count - 1)
 
     return StreamingResponse(
         generate(),
@@ -1319,9 +1565,13 @@ async def camera_stream(
     # Starlette keeps iterating the viewer and buffering frames for a dead
     # connection, blocking the event loop and exhausting connection slots.
     async def with_disconnect_check():
+        last_disconnect_check = 0.0
         async for chunk in viewer:
-            if await request.is_disconnected():
-                break
+            now = time.monotonic()
+            if now - last_disconnect_check > 1.0:
+                if await request.is_disconnected():
+                    break
+                last_disconnect_check = now
             yield chunk
 
     return StreamingResponse(
@@ -1987,6 +2237,9 @@ def _scan_bambu_ffmpeg_pids() -> list[int]:
     These are definitely ours — no other software connects to rtsps://bblp:.
     This catches orphans that survive app restarts and are not in any tracking dict.
     """
+    if sys.platform != "linux":
+        return []
+
     import os
 
     pids = []

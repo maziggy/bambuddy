@@ -3698,6 +3698,8 @@ export const api = {
     request<{ success: boolean; message?: string; error?: string }>(`/printers/${printerId}/camera/test`),
   getCameraStatus: (printerId: number) =>
     request<{ active: boolean; stalled: boolean }>(`/printers/${printerId}/camera/status`),
+  stopCameraStream: (printerId: number) =>
+    request<void>(`/printers/${printerId}/camera/stop`, { method: 'POST' }),
 
   // Plate Detection - Multi-reference calibration (stores up to 5 references per printer)
   checkPlateEmpty: (printerId: number, options?: { useExternal?: boolean; includeDebugImage?: boolean }) => {

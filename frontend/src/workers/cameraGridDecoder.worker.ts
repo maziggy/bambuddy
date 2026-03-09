@@ -7,8 +7,9 @@
  *
  * Optimizations:
  *   - Skips decoding for off-screen cameras (IntersectionObserver visibility)
- *   - Drops stale frames via per-printer generation counter — if a newer
- *     frame arrives while decoding, the old result is discarded
+ *   - Serialized decode pipeline per printer — max 1 concurrent
+ *     createImageBitmap per printer. New frames during decode replace the
+ *     pending buffer (zero wasted CPU).
  *
  * Protocol (main → worker):
  *   { type: 'frame', printerId, jpeg }         — decode a JPEG frame
@@ -21,9 +22,36 @@
 const ctx = self as unknown as { postMessage(msg: unknown, transfer: Transferable[]): void; onmessage: ((e: MessageEvent) => void) | null };
 
 const visibleSet = new Set<number>();
-const frameGen = new Map<number, number>(); // printerId → latest generation
+const pendingFrame = new Map<number, ArrayBuffer>(); // latest JPEG waiting to decode
+const decoding = new Map<number, boolean>();          // whether decode is in-flight
 
-ctx.onmessage = async (e: MessageEvent) => {
+function tryDecode(printerId: number): void {
+  if (decoding.get(printerId)) return;
+
+  const jpeg = pendingFrame.get(printerId);
+  if (!jpeg) return;
+  pendingFrame.delete(printerId);
+
+  decoding.set(printerId, true);
+  const blob = new Blob([jpeg], { type: 'image/jpeg' });
+  createImageBitmap(blob).then(
+    (bitmap) => {
+      ctx.postMessage(
+        { type: 'frame', printerId, bitmap },
+        [bitmap],
+      );
+      decoding.set(printerId, false);
+      tryDecode(printerId);
+    },
+    () => {
+      // Invalid JPEG — skip
+      decoding.set(printerId, false);
+      tryDecode(printerId);
+    },
+  );
+}
+
+ctx.onmessage = (e: MessageEvent) => {
   try {
     const msg = e.data;
 
@@ -39,7 +67,8 @@ ctx.onmessage = async (e: MessageEvent) => {
 
       case 'clear': {
         visibleSet.clear();
-        frameGen.clear();
+        pendingFrame.clear();
+        decoding.clear();
         break;
       }
 
@@ -49,27 +78,9 @@ ctx.onmessage = async (e: MessageEvent) => {
 
         if (!visibleSet.has(printerId)) break;
 
-        // Bump generation — any in-flight decode for this printer becomes stale
-        const gen = (frameGen.get(printerId) ?? 0) + 1;
-        frameGen.set(printerId, gen);
-
-        try {
-          const blob = new Blob([jpeg], { type: 'image/jpeg' });
-          const bitmap = await createImageBitmap(blob);
-
-          // A newer frame arrived while we were decoding — discard
-          if (frameGen.get(printerId) !== gen) {
-            bitmap.close();
-            break;
-          }
-
-          ctx.postMessage(
-            { type: 'frame', printerId, bitmap },
-            [bitmap],
-          );
-        } catch {
-          // Invalid JPEG — skip
-        }
+        // Store latest frame (replaces any previous pending frame)
+        pendingFrame.set(printerId, jpeg);
+        tryDecode(printerId);
         break;
       }
     }

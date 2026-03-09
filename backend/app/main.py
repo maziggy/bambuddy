@@ -3491,7 +3491,7 @@ PUBLIC_API_PATTERNS = [
     "/icon",  # /external-links/{id}/icon
     # Camera streams & snapshots — browsers load these via <img src> / fetch without auth headers.
     # External integrations (OBS, Home Assistant) also rely on unauthenticated access.
-    "/camera/stream",  # /printers/{id}/camera/stream, /printers/camera/grid-stream
+    "/camera/stream",  # /printers/{id}/camera/stream (grid-stream does NOT match — it requires CAMERA_VIEW permission)
     "/camera/snapshot",  # /printers/{id}/camera/snapshot
     # Slicer token-authenticated downloads — protocol handlers (bambustudioopen://,
     # orcaslicer://) cannot send auth headers. These endpoints validate a short-lived

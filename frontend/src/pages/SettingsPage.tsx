@@ -1437,7 +1437,7 @@ export function SettingsPage() {
                       : t('settings.cameraGpuAccelUnavailable')}
                   </p>
                   {localSettings.camera_gpu_accel && ffmpegStatus?.gpu_available && ffmpegStatus.gpu_backends.length > 0 && (
-                    <p className="text-xs text-green-400 mt-1 inline-flex items-center gap-1 bg-green-400/10 px-2 py-0.5 rounded-full">
+                    <p className="text-xs text-bambu-green mt-1 inline-flex items-center gap-1 bg-bambu-green/10 px-3 py-1.5 rounded-md">
                       {t('settings.cameraGpuAccelBackends', { backends: ffmpegStatus.gpu_backends.join(', ') })}
                     </p>
                   )}

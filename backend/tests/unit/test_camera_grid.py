@@ -259,3 +259,117 @@ class TestGenerateRtspNonFiniteGuard:
                 frames.append(chunk)
                 break
             assert any(b"invalid parameters" in f for f in frames)
+
+
+# ---------------------------------------------------------------------------
+# TestEnsureProducerDispatch
+# ---------------------------------------------------------------------------
+
+
+class TestEnsureProducerDispatch:
+    """Tests for _ensure_producer() dispatch logic."""
+
+    @pytest.mark.asyncio
+    async def test_ensure_producer_external_camera_returns_none(self):
+        """External cameras are unsupported in grid mode — should return None."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from backend.app.api.routes.camera import SharedStreamHub, _ensure_producer
+
+        hub = SharedStreamHub()
+        db = AsyncMock()
+
+        printer = MagicMock()
+        printer.id = 1
+        printer.external_camera_enabled = True
+        printer.external_camera_url = "http://example.com/stream"
+
+        result = await _ensure_producer(1, db, 5, 15, 0.5, printer=printer, hub=hub)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_ensure_producer_reuse_does_not_reset_start_time(self):
+        """Reusing an existing producer should not reset _stream_start_times (M2)."""
+        from unittest.mock import AsyncMock, patch
+
+        import backend.app.api.routes.camera as cam
+        from backend.app.api.routes.camera import SharedStreamHub, _ensure_producer, _SharedStream
+
+        hub = SharedStreamHub()
+        # Pre-insert an alive producer
+        entry = _SharedStream(params_key="5-15-0.5-0-False-False")
+        entry.alive = True
+        hub._streams[1] = entry
+
+        original_start = time.monotonic() - 100
+        with patch.dict(cam._stream_start_times, {1: original_start}, clear=False):
+            db = AsyncMock()
+            result = await _ensure_producer(1, db, 5, 15, 0.5, hub=hub)
+            assert result is entry
+            # Start time should NOT have been reset
+            assert cam._stream_start_times[1] == original_start
+
+    @pytest.mark.asyncio
+    async def test_ensure_producer_force_quality_calls_restart(self):
+        """force_quality=True should trigger hub.restart() for param changes."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        import backend.app.api.routes.camera as cam
+        from backend.app.api.routes.camera import SharedStreamHub, _ensure_producer
+
+        hub = SharedStreamHub()
+
+        # Create a mock printer
+        printer = MagicMock()
+        printer.id = 1
+        printer.model = "X1C"
+        printer.ip_address = "192.168.1.100"
+        printer.access_code = "12345678"
+        printer.external_camera_enabled = False
+        printer.external_camera_url = None
+
+        db = AsyncMock()
+
+        # Mock the stream generators to avoid real ffmpeg
+        async def fake_stream(**kwargs):
+            while True:
+                yield b"\xff\xd8fake\xff\xd9"
+                import asyncio
+
+                await asyncio.sleep(0.1)
+
+        with (
+            patch("backend.app.api.routes.camera.generate_rtsp_mjpeg_stream", fake_stream),
+            patch("backend.app.api.routes.camera.is_chamber_image_model", return_value=False),
+            patch.dict(cam._stream_start_times, {}, clear=False),
+        ):
+            # Start initial producer
+            entry1 = await _ensure_producer(1, db, 5, 15, 0.5, printer=printer, hub=hub)
+            assert entry1 is not None
+            assert entry1.alive is True
+
+            # Force restart with different params
+            entry2 = await _ensure_producer(1, db, 10, 20, 1.0, printer=printer, force_quality=True, hub=hub)
+            assert entry2 is not None
+            assert entry2 is not entry1  # Should be a new entry
+            assert entry1.alive is False  # Old one should be dead
+
+        await hub.stop_all()
+
+
+# ---------------------------------------------------------------------------
+# TestScanBambuFfmpegPids
+# ---------------------------------------------------------------------------
+
+
+class TestScanBambuFfmpegPids:
+    """Tests for _scan_bambu_ffmpeg_pids platform guard (O2)."""
+
+    def test_returns_empty_on_non_linux(self):
+        """On macOS/Windows, should return [] without scanning /proc."""
+        from backend.app.api.routes.camera import _scan_bambu_ffmpeg_pids
+
+        with patch("backend.app.api.routes.camera.sys") as mock_sys:
+            mock_sys.platform = "darwin"
+            result = _scan_bambu_ffmpeg_pids()
+            assert result == []

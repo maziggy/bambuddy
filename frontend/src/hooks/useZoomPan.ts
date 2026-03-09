@@ -15,26 +15,26 @@ export function useZoomPan({ containerRef, defaultMaxPan = { x: 300, y: 200 } }:
   // Cache container dimensions during gestures to avoid forced reflows on every touch move
   const cachedContainerSize = useRef<{ width: number; height: number } | null>(null);
 
-  const handleZoomIn = () => {
+  const handleZoomIn = useCallback(() => {
     setZoomLevel(prev => Math.min(prev + 0.5, 4));
-  };
+  }, []);
 
-  const handleZoomOut = () => {
+  const handleZoomOut = useCallback(() => {
     setZoomLevel(prev => {
       const newZoom = Math.max(prev - 0.5, 1);
       if (newZoom === 1) setPanOffset({ x: 0, y: 0 });
       return newZoom;
     });
-  };
+  }, []);
 
-  const handleWheel = (e: React.WheelEvent) => {
+  const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
     if (e.deltaY < 0) {
       handleZoomIn();
     } else {
       handleZoomOut();
     }
-  };
+  }, [handleZoomIn, handleZoomOut]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (zoomLevel > 1) {
@@ -76,9 +76,9 @@ export function useZoomPan({ containerRef, defaultMaxPan = { x: 300, y: 200 } }:
     }
   };
 
-  const handleMouseUp = () => {
+  const handleMouseUp = useCallback(() => {
     setIsPanning(false);
-  };
+  }, []);
 
   const getTouchDistance = (touches: React.TouchList) => {
     if (touches.length < 2) return 0;
@@ -150,7 +150,7 @@ export function useZoomPan({ containerRef, defaultMaxPan = { x: 300, y: 200 } }:
     }
   };
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
     if (e.touches.length < 2) {
       setLastTouchDistance(null);
       setLastTouchCenter(null);
@@ -159,11 +159,16 @@ export function useZoomPan({ containerRef, defaultMaxPan = { x: 300, y: 200 } }:
       setIsPanning(false);
       cachedContainerSize.current = null;
     }
-  };
+  }, []);
 
-  const resetZoom = () => {
+  const resetZoom = useCallback(() => {
     setZoomLevel(1);
     setPanOffset({ x: 0, y: 0 });
+  }, []);
+
+  const transformStyle = {
+    transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px)`,
+    cursor: zoomLevel > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default',
   };
 
   return {
@@ -182,5 +187,6 @@ export function useZoomPan({ containerRef, defaultMaxPan = { x: 300, y: 200 } }:
     handleTouchMove,
     handleTouchEnd,
     resetZoom,
+    transformStyle,
   };
 }

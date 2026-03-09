@@ -33,6 +33,9 @@ _ffmpeg_path: str | None = None
 _gpu_hwaccels: list[str] | None = None
 _gpu_hwaccels_lock: asyncio.Lock | None = None
 
+# Cache VAAPI capability detection
+_vaapi_info: dict | None = None
+
 
 def _get_gpu_lock() -> asyncio.Lock:
     """Return (lazy-init) the lock guarding GPU hwaccel detection."""
@@ -139,6 +142,74 @@ async def detect_gpu_hwaccels() -> list[str]:
             _gpu_hwaccels = []
 
         return _gpu_hwaccels
+
+
+_VAAPI_NOT_AVAILABLE: dict = {"available": False, "device": "", "has_mjpeg_encode": False}
+
+
+async def detect_vaapi_support() -> dict:
+    """Detect VAAPI hardware acceleration capability.
+
+    Checks for the VAAPI backend in ffmpeg hwaccels, a usable DRI render
+    device, and ``mjpeg_vaapi`` encoder support.  Results are cached after
+    the first call.
+
+    Returns a dict with:
+        available (bool): True if VAAPI decode is usable.
+        device (str): Render device path (e.g. ``/dev/dri/renderD128``).
+        has_mjpeg_encode (bool): True if ``mjpeg_vaapi`` encoder is listed.
+    """
+    global _vaapi_info
+
+    if _vaapi_info is not None:
+        return _vaapi_info
+
+    async with _get_gpu_lock():
+        if _vaapi_info is not None:
+            return _vaapi_info
+
+        # VAAPI is Linux-only
+        if sys.platform != "linux":
+            _vaapi_info = _VAAPI_NOT_AVAILABLE
+            return _vaapi_info
+
+        # Check DRI render device
+        device = "/dev/dri/renderD128"
+        if not os.path.exists(device):
+            logger.info("VAAPI: render device %s not found", device)
+            _vaapi_info = _VAAPI_NOT_AVAILABLE
+            return _vaapi_info
+
+        # Check vaapi in hwaccels
+        hwaccels = await detect_gpu_hwaccels()
+        if "vaapi" not in {h.lower() for h in hwaccels}:
+            logger.info("VAAPI: backend not listed in ffmpeg hwaccels")
+            _vaapi_info = _VAAPI_NOT_AVAILABLE
+            return _vaapi_info
+
+        # Check for mjpeg_vaapi encoder
+        has_mjpeg = False
+        ffmpeg = get_ffmpeg_path()
+        if ffmpeg:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    ffmpeg,
+                    "-encoders",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+                has_mjpeg = "mjpeg_vaapi" in stdout.decode()
+            except Exception:
+                logger.debug("VAAPI: failed to probe encoders", exc_info=True)
+
+        _vaapi_info = {"available": True, "device": device, "has_mjpeg_encode": has_mjpeg}
+        logger.info(
+            "VAAPI support detected: device=%s, mjpeg_encode=%s",
+            device,
+            has_mjpeg,
+        )
+        return _vaapi_info
 
 
 # ---------------------------------------------------------------------------

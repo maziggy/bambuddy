@@ -44,11 +44,11 @@ export function CameraPage() {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const {
-    zoomLevel, panOffset, isPanning,
+    zoomLevel,
     handleZoomIn, handleZoomOut, handleWheel,
     handleMouseDown, handleMouseMove, handleMouseUp,
     handleTouchStart, handleTouchMove, handleTouchEnd,
-    resetZoom,
+    resetZoom, transformStyle,
   } = useZoomPan({ containerRef });
 
   // Ref to allow reconnect hook to call mjpeg restart without circular deps
@@ -113,7 +113,7 @@ export function CameraPage() {
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, [isStream, transitioning]);
+  }, [isStream, transitioning, resetZoom]);
 
   // Save window size and position when user resizes or moves
   useEffect(() => {
@@ -140,10 +140,7 @@ export function CameraPage() {
 
   const stopStream = () => {
     if (id > 0) {
-      const headers: Record<string, string> = {};
-      const token = getAuthToken();
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      fetch(`/api/v1/printers/${id}/camera/stop`, { method: 'POST', headers }).catch(() => {});
+      api.stopCameraStream(id).catch(() => {});
     }
   };
 
@@ -285,11 +282,6 @@ export function CameraPage() {
       </div>
     );
   }
-
-  const transformStyle = {
-    transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px)`,
-    cursor: zoomLevel > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default',
-  };
 
   return (
     <div ref={containerRef} className="min-h-screen bg-black flex flex-col">

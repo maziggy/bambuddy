@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, RefreshCw, AlertTriangle, Maximize2, Minimize2, GripVertical, WifiOff, ZoomIn, ZoomOut, Fullscreen, Minimize } from 'lucide-react';
-import { api, getAuthToken } from '../api/client';
+import { api } from '../api/client';
 import { useCameraStopHint } from '../hooks/useCameraStopHint';
 import { useCameraControls } from '../hooks/useCameraControls';
 import { ChamberLight } from './icons/ChamberLight';
@@ -79,13 +79,13 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
   const mjpegRestartRef = useRef<() => void>(() => {});
 
   const {
-    zoomLevel, panOffset, isPanning,
+    zoomLevel,
     handleZoomIn, handleZoomOut, handleWheel,
     handleMouseDown: handleCanvasMouseDown,
     handleMouseMove: handleImageMouseMove,
     handleMouseUp: handleImageMouseUp,
     handleTouchStart, handleTouchMove, handleTouchEnd,
-    resetZoom,
+    resetZoom, transformStyle,
   } = useZoomPan({ containerRef, defaultMaxPan: { x: 200, y: 150 } });
 
   // Fetch printer info
@@ -139,7 +139,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, []);
+  }, [resetZoom]);
 
   const toggleFullscreen = () => {
     if (!containerRef.current) return;
@@ -154,10 +154,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     setStreamError(false);
     reconnect.reset();
 
-    const stopHeaders: Record<string, string> = {};
-    const stopToken = getAuthToken();
-    if (stopToken) stopHeaders['Authorization'] = `Bearer ${stopToken}`;
-    fetch(`/api/v1/printers/${printerId}/camera/stop`, { method: 'POST', headers: stopHeaders }).catch(() => {});
+    api.stopCameraStream(printerId).catch(() => {});
 
     setTimeout(() => mjpeg.restart(), 100);
   };
@@ -349,10 +346,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
           <canvas
             ref={canvasRef}
             className="max-w-full max-h-full object-contain select-none"
-            style={{
-              transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px)`,
-              cursor: zoomLevel > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default',
-            }}
+            style={transformStyle}
             onMouseDown={handleCanvasMouseDown}
           />
 

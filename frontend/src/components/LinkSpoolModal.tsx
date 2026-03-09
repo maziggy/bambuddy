@@ -22,7 +22,7 @@ export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, a
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [search, setSearch] = useState('');
-  const spoolTag = trayUuid || tagUid;
+  const spoolTag = tagUid || trayUuid;
 
   const { data: spools, isLoading } = useQuery({
     queryKey: ['unlinked-spools'],
@@ -46,7 +46,7 @@ export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, a
 
   const linkMutation = useMutation({
     mutationFn: (spoolId: number) =>
-      api.linkSpool(spoolId, spoolTag),
+      api.linkSpool(spoolId, spoolTag!),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['unlinked-spools'] });
       queryClient.invalidateQueries({ queryKey: ['linked-spools'] });

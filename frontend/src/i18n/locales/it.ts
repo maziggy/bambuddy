@@ -2768,6 +2768,8 @@ export default {
     noUnlinkedSpools: 'Nessuna bobina scollegata disponibile',
     linkSuccess: 'Bobina collegata a Spoolman con successo',
     linkFailed: 'Collegamento bobina fallito',
+    unlinkSuccess: 'Bobina scollegata da Spoolman con successo',
+    unlinkFailed: 'Impossibile scollegare la bobina',
     spoolId: 'ID bobina',
     fillSourceLabel: '(Spoolman)',
     weight: 'Peso',

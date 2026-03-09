@@ -2768,6 +2768,8 @@ export default {
     noUnlinkedSpools: 'Nenhum carretel desvinculado disponível',
     linkSuccess: 'Carretel vinculado ao Spoolman com sucesso',
     linkFailed: 'Falha ao vincular carretel',
+    unlinkSuccess: 'Carretel desvinculado do Spoolman com sucesso',
+    unlinkFailed: 'Falha ao desvincular carretel',
     spoolId: 'Carretel ID (Spool ID)',
     fillSourceLabel: '(Spoolman)',
     weight: 'Peso',

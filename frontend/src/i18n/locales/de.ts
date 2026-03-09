@@ -2782,6 +2782,8 @@ export default {
     noUnlinkedSpools: 'Keine nicht verknüpften Spulen verfügbar',
     linkSuccess: 'Spule erfolgreich mit Spoolman verknüpft',
     linkFailed: 'Verknüpfung mit Spoolman fehlgeschlagen',
+    unlinkSuccess: 'Spule erfolgreich von Spoolman getrennt',
+    unlinkFailed: 'Trennen der Spule von Spoolman fehlgeschlagen',
     spoolId: 'Spulen-ID',
     fillSourceLabel: '(Spoolman)',
     weight: 'Gewicht',

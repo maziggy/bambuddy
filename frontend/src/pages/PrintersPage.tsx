@@ -1870,12 +1870,12 @@ function PrinterCard({
   const unlinkSpoolMutation = useMutation({
     mutationFn: (spoolId: number) => api.unlinkSpool(spoolId),
     onSuccess: (result) => {
-      showToast(result?.message || t('spoolman.unlinkSpool'), 'success');
+      showToast(t('spoolman.unlinkSuccess') || result?.message, 'success');
       queryClient.invalidateQueries({ queryKey: ['linked-spools'] });
       queryClient.invalidateQueries({ queryKey: ['unlinked-spools'] });
     },
     onError: (error: Error) => {
-      showToast(error.message || t('spoolman.linkFailed'), 'error');
+      showToast(error.message || t('spoolman.unlinkFailed'), 'error');
     },
   });
 

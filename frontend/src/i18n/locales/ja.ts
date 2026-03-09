@@ -2782,6 +2782,8 @@ export default {
     noUnlinkedSpools: 'Spoolmanに未連携のスプールが見つかりません。',
     linkSuccess: 'スプールをSpoolmanにリンクしました',
     linkFailed: 'スプールのリンクに失敗しました',
+    unlinkSuccess: 'スプールをSpoolmanから解除しました',
+    unlinkFailed: 'スプールのリンク解除に失敗しました',
     spoolId: 'スプールID',
     fillSourceLabel: '(Spoolman)',
     weight: '重量',

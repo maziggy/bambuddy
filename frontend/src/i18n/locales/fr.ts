@@ -2769,6 +2769,8 @@ export default {
     noUnlinkedSpools: 'Pas de bobine libre',
     linkSuccess: 'Lien réussi',
     linkFailed: 'Échec lien',
+    unlinkSuccess: 'Bobine dissociée avec succès',
+    unlinkFailed: 'Échec de la dissociation de la bobine',
     spoolId: 'ID Bobine',
     fillSourceLabel: '(Spoolman)',
     weight: 'Poids',

@@ -2768,6 +2768,8 @@ export default {
     noUnlinkedSpools: '无未链接的耗材',
     linkSuccess: '耗材已成功链接到 Spoolman',
     linkFailed: '链接耗材失败',
+    unlinkSuccess: '已成功从 Spoolman 取消链接耗材',
+    unlinkFailed: '取消链接耗材失败',
     spoolId: '耗材 ID',
     fillSourceLabel: '(Spoolman)',
     weight: '重量',

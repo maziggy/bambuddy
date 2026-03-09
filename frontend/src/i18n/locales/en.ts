@@ -2782,6 +2782,8 @@ export default {
     noUnlinkedSpools: 'No unlinked spools available',
     linkSuccess: 'Spool linked to Spoolman successfully',
     linkFailed: 'Failed to link spool',
+    unlinkSuccess: 'Spool unlinked from Spoolman successfully',
+    unlinkFailed: 'Failed to unlink spool',
     spoolId: 'Spool ID',
     fillSourceLabel: '(Spoolman)',
     weight: 'Weight',

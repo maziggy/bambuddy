@@ -120,7 +120,6 @@ class PrinterState:
     timelapse: bool = False  # Timelapse recording active
     ipcam: bool = False  # Live view / camera streaming enabled
     wifi_signal: int | None = None  # WiFi signal strength in dBm
-    wired_network: bool = False  # Ethernet connection detected (home_flag bit 18)
     # Nozzle hardware info (for dual nozzle printers, index 0 = left, 1 = right)
     nozzles: list = field(default_factory=lambda: [NozzleInfo(), NozzleInfo()])
     # AI detection and print options
@@ -2071,8 +2070,6 @@ class BambuMQTTClient:
                     f"[{self.serial_number}] store_to_sdcard changed: {self.state.store_to_sdcard} -> {store_to_sdcard}"
                 )
             self.state.store_to_sdcard = store_to_sdcard
-            # Bit 18 (0x00040000) indicates wired/ethernet connection
-            self.state.wired_network = bool((home_flag >> 18) & 1)
 
         # Parse timelapse status (recording active during print)
         if "timelapse" in data:

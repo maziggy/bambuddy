@@ -139,7 +139,7 @@ class AMSUnit(BaseModel):
     is_ams_ht: bool = False  # True for AMS-HT (single spool), False for regular AMS (4 spools)
     tray: list[AMSTray] = []
     serial_number: str = ""  # AMS unit serial number (sn from MQTT)
-    sw_ver: str = ""         # AMS firmware version (from get_version info.module)
+    sw_ver: str = ""  # AMS firmware version (from get_version info.module)
 
 
 class NozzleInfoResponse(BaseModel):
@@ -212,7 +212,6 @@ class PrinterStatus(BaseModel):
     timelapse: bool = False  # Timelapse recording active
     ipcam: bool = False  # Live view enabled
     wifi_signal: int | None = None  # WiFi signal strength in dBm
-    wired_network: bool = False  # Ethernet connection detected
     nozzles: list[NozzleInfoResponse] = []  # Nozzle hardware info (index 0=left/primary, 1=right)
     nozzle_rack: list[NozzleRackSlot] = []  # H2C 6-nozzle tool-changer rack
     print_options: PrintOptionsResponse | None = None  # AI detection and print options

@@ -479,6 +479,7 @@ class TestSpoolmanAPI:
 
         mock_spoolman_client.update_spool.assert_called_once_with(
             spool_id=1,
+            clear_location=True,
             extra={"tag": '""'},
         )
 

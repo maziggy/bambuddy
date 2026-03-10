@@ -672,7 +672,6 @@ class LinkSpoolRequest(BaseModel):
     printer_id: int | None = None
     ams_id: int | None = None
     tray_id: int | None = None
-    ams_name: str | None = None
 
 
 @router.post("/spools/{spool_id}/link")
@@ -722,10 +721,7 @@ async def link_spool(
         if not printer:
             raise HTTPException(status_code=404, detail="Printer not found")
 
-        default_ams_name = "External" if request.ams_id == 255 else f"AMS {request.ams_id}"
-        ams_name = (request.ams_name or default_ams_name).strip()
-        slot_number = request.tray_id + 1
-        location = f"{printer.name} - {ams_name} {slot_number}"
+        location = f"{printer.name} - {client.convert_ams_slot_to_location(request.ams_id, request.tray_id)}"
 
     # Update spool with tag
     # Note: Spoolman extra field values must be valid JSON, so we encode the string

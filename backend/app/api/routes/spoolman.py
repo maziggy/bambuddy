@@ -1,7 +1,7 @@
 """Spoolman integration API routes."""
 
-import logging
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -669,6 +669,10 @@ class LinkSpoolRequest(BaseModel):
     spool_tag: str | None = None
     tray_uuid: str | None = None
     tag_uid: str | None = None
+    printer_id: int | None = None
+    ams_id: int | None = None
+    tray_id: int | None = None
+    ams_name: str | None = None
 
 
 @router.post("/spools/{spool_id}/link")
@@ -708,12 +712,26 @@ async def link_spool(
     if set(spool_tag) == {"0"}:
         raise HTTPException(status_code=400, detail="Invalid spool tag format (all-zero tag is not linkable)")
 
+    spool_tag = spool_tag.upper()
+
+    # Build location like: "{Printer Name} - {AMS Name} {Slot Number}"
+    location: str | None = None
+    if request.printer_id is not None and request.ams_id is not None and request.tray_id is not None:
+        printer_result = await db.execute(select(Printer).where(Printer.id == request.printer_id))
+        printer = printer_result.scalar_one_or_none()
+        if not printer:
+            raise HTTPException(status_code=404, detail="Printer not found")
+
+        default_ams_name = "External" if request.ams_id == 255 else f"AMS {request.ams_id}"
+        ams_name = (request.ams_name or default_ams_name).strip()
+        slot_number = request.tray_id + 1
+        location = f"{printer.name} - {ams_name} {slot_number}"
+
     # Update spool with tag
     # Note: Spoolman extra field values must be valid JSON, so we encode the string
-    import json
-
     result = await client.update_spool(
         spool_id=spool_id,
+        location=location,
         extra={"tag": json.dumps(spool_tag)},
     )
 
@@ -748,6 +766,7 @@ async def unlink_spool(
 
     result = await client.update_spool(
         spool_id=spool_id,
+        clear_location=True,
         extra={"tag": json.dumps("")},
     )
 

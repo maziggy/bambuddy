@@ -589,6 +589,154 @@ class TestNotificationProviderTypes:
             assert "source" not in payload
 
 
+class TestHomeAssistantProvider:
+    """Tests for Home Assistant notification provider."""
+
+    @pytest.fixture
+    def service(self):
+        return NotificationService()
+
+    @pytest.mark.asyncio
+    async def test_send_homeassistant_success(self, service):
+        """Verify HA provider sends persistent notification to correct endpoint."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        mock_db = AsyncMock()
+
+        with (
+            patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client,
+            patch(
+                "backend.app.api.routes.settings.get_homeassistant_settings",
+                new_callable=AsyncMock,
+            ) as mock_ha_settings,
+        ):
+            mock_get_client.return_value = mock_client
+            mock_ha_settings.return_value = {
+                "ha_url": "http://ha.local:8123",
+                "ha_token": "test-token-123",
+                "ha_enabled": True,
+            }
+
+            success, message = await service._send_homeassistant({}, "Test Title", "Test Message", db=mock_db)
+
+            assert success is True
+            mock_client.post.assert_called_once()
+            call_args = mock_client.post.call_args
+            assert call_args[0][0] == "http://ha.local:8123/api/services/persistent_notification/create"
+            payload = call_args.kwargs.get("json") or call_args[1].get("json")
+            assert payload["title"] == "Test Title"
+            assert payload["message"] == "Test Message"
+
+    @pytest.mark.asyncio
+    async def test_send_homeassistant_no_db_no_env(self, service):
+        """Verify HA provider fails gracefully without DB or env vars."""
+        with patch.dict("os.environ", {}, clear=True):
+            success, message = await service._send_homeassistant({}, "Test", "Test", db=None)
+
+        assert success is False
+        assert "not configured" in message.lower()
+
+    @pytest.mark.asyncio
+    async def test_send_homeassistant_auth_failure(self, service):
+        """Verify HA provider reports auth failure."""
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        mock_db = AsyncMock()
+
+        with (
+            patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client,
+            patch(
+                "backend.app.api.routes.settings.get_homeassistant_settings",
+                new_callable=AsyncMock,
+            ) as mock_ha_settings,
+        ):
+            mock_get_client.return_value = mock_client
+            mock_ha_settings.return_value = {
+                "ha_url": "http://ha.local:8123",
+                "ha_token": "bad-token",
+                "ha_enabled": True,
+            }
+
+            success, message = await service._send_homeassistant({}, "Test", "Test", db=mock_db)
+
+        assert success is False
+        assert "authentication" in message.lower()
+
+    @pytest.mark.asyncio
+    async def test_send_homeassistant_env_fallback(self, service):
+        """Verify HA provider falls back to env vars when no DB session."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with (
+            patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client,
+            patch.dict("os.environ", {"HA_URL": "http://env-ha:8123", "HA_TOKEN": "env-token"}),
+        ):
+            mock_get_client.return_value = mock_client
+
+            success, message = await service._send_homeassistant({}, "Test", "Test", db=None)
+
+        assert success is True
+        call_args = mock_client.post.call_args
+        assert "env-ha:8123" in call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_send_homeassistant_empty_config_accepted(self, service):
+        """Verify HA provider works with empty config dict (no fields needed)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        mock_db = AsyncMock()
+
+        with (
+            patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client,
+            patch(
+                "backend.app.api.routes.settings.get_homeassistant_settings",
+                new_callable=AsyncMock,
+            ) as mock_ha_settings,
+        ):
+            mock_get_client.return_value = mock_client
+            mock_ha_settings.return_value = {
+                "ha_url": "http://ha.local:8123",
+                "ha_token": "token",
+                "ha_enabled": True,
+            }
+
+            success, _ = await service._send_homeassistant({}, "Title", "Body", db=mock_db)
+
+        assert success is True
+
+    @pytest.mark.asyncio
+    async def test_send_to_provider_dispatches_homeassistant(self, service):
+        """Verify _send_to_provider dispatches to _send_homeassistant."""
+        provider = MagicMock()
+        provider.provider_type = "homeassistant"
+        provider.config = "{}"
+        provider.quiet_hours_enabled = False
+
+        with patch.object(service, "_send_homeassistant", new_callable=AsyncMock) as mock_send:
+            mock_send.return_value = (True, "OK")
+
+            success, _ = await service._send_to_provider(provider, "Title", "Message", db=AsyncMock())
+
+        assert success is True
+        mock_send.assert_called_once()
+
+
 class TestNotificationVariableFallbacks:
     """Tests for notification variable fallback values."""
 

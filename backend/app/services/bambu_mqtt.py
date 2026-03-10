@@ -152,7 +152,7 @@ class PrinterState:
     mc_print_sub_stage: int = 0
     # AMS mapping for dual nozzle: which slot is active (from ams.ams_exist_bits/tray_exist_bits)
     ams_mapping: list = field(default_factory=list)
-    # Per-AMS extruder map: {ams_id: extruder_id} where 0=right, 1=left
+    # Per-AMS extruder map: {ams_id: extruder_id} where 0=right/main, 1=left/deputy
     ams_extruder_map: dict = field(default_factory=dict)
     # H2D per-extruder tray_now from snow field: {extruder_id: normalized_global_tray_id}
     # snow encodes AMS ID in high byte: ams_id = snow >> 8, slot = snow & 0xFF
@@ -1431,29 +1431,35 @@ class BambuMQTTClient:
         logger.debug("[%s] Merged AMS data: %s new units, %s total", self.serial_number, len(ams_list), len(merged_ams))
 
         # Extract ams_extruder_map from each AMS unit's info field
-        # According to OpenBambuAPI: info field bit 8 indicates which extruder (0=right, 1=left)
+        # BambuStudio DevFilaSystem.cpp parses info as hex string:
+        #   type_id    = get_flag_bits(info, 0, 4)   // bits 0-3: AMS type
+        #   extruder_id = get_flag_bits(info, 8, 4)  // bits 8-11: extruder assignment
+        # where get_flag_bits uses std::stoull(str, nullptr, 16) — hex parsing.
+        # extruder_id: 0=right/main, 1=left/deputy, 0xE=uninitialized (skip)
+        #
+        # Use merged_ams (not ams_list) to avoid partial MQTT updates overwriting
+        # the full map. Merge into existing map to preserve entries from prior updates.
 
-        ams_extruder_map = {}
-        for ams_unit in ams_list:
+        ams_extruder_map = dict(self.state.ams_extruder_map) if self.state.ams_extruder_map else {}
+        for ams_unit in merged_ams:
             ams_id = ams_unit.get("id")
             info = ams_unit.get("info")
             if ams_id is not None and info is not None:
                 try:
-                    info_val = int(info) if isinstance(info, str) else info
-                    # Extract bit 8 for extruder assignment
-                    # Bit 8 = 0 means LEFT extruder (id 1), bit 8 = 1 means RIGHT extruder (id 0)
-                    # So we invert: extruder_id = 1 - bit8
-                    bit8 = (info_val >> 8) & 0x1
-                    extruder_id = 1 - bit8  # 0=right, 1=left
+                    # info is a hex-encoded string in MQTT JSON (e.g. "10001003")
+                    info_val = int(str(info), 16)
+                    # Extract 4 bits starting at bit 8 for extruder assignment
+                    extruder_id = (info_val >> 8) & 0xF
+                    if extruder_id == 0xE:
+                        # 0xE = uninitialized AMS, skip
+                        continue
                     ams_extruder_map[str(ams_id)] = extruder_id
-                    logger.debug(
-                        f"[{self.serial_number}] AMS {ams_id} info={info_val} (bit8={bit8}) -> extruder {extruder_id}"
-                    )
+                    logger.debug(f"[{self.serial_number}] AMS {ams_id} info=0x{info} -> extruder {extruder_id}")
                 except (ValueError, TypeError):
                     pass  # Skip AMS units with unparseable info bitmask values
         if ams_extruder_map:
             self.state.raw_data["ams_extruder_map"] = ams_extruder_map
-            self.state.ams_extruder_map = ams_extruder_map  # Also set on state for inference logic
+            self.state.ams_extruder_map = ams_extruder_map
             logger.debug("[%s] ams_extruder_map: %s", self.serial_number, ams_extruder_map)
 
         # Create a hash of relevant AMS data to detect changes

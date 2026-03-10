@@ -1032,24 +1032,24 @@ function ArchiveCard({
               <Button
                 variant="primary"
                 size="sm"
-                className="flex-1 min-w-0"
+                className="flex-1 min-w-0 overflow-hidden"
                 onClick={() => setShowReprint(true)}
                 disabled={!archive.file_path || !canModify('archives', 'reprint', archive.created_by_id)}
                 title={!archive.file_path ? t('archives.card.noFileForReprint') : !canModify('archives', 'reprint', archive.created_by_id) ? t('archives.card.noPermissionReprint') : undefined}
               >
                 <Printer className="w-3 h-3 flex-shrink-0" />
-                <span className="hidden sm:inline">{t('archives.card.reprint')}</span>
+                <span className="hidden sm:inline truncate">{t('archives.card.reprint')}</span>
               </Button>
               <Button
                 variant="secondary"
                 size="sm"
-                className="flex-1 min-w-0"
+                className="flex-1 min-w-0 overflow-hidden"
                 onClick={() => setShowSchedule(true)}
                 disabled={!archive.file_path || !hasPermission('queue:create')}
                 title={!archive.file_path ? t('archives.card.noFileForReprint') : !hasPermission('queue:create') ? t('archives.permission.noAddToQueue') : t('archives.card.schedulePrint')}
               >
                 <Calendar className="w-3 h-3 flex-shrink-0" />
-                <span className="hidden sm:inline">{t('archives.card.schedule')}</span>
+                <span className="hidden sm:inline truncate">{t('archives.card.schedule')}</span>
               </Button>
               <Button
                 variant="secondary"
@@ -1069,7 +1069,7 @@ function ArchiveCard({
             <Button
               variant="primary"
               size="sm"
-              className="flex-1 min-w-0"
+              className="flex-1 min-w-0 overflow-hidden"
               onClick={() => {
                 const filename = archive.print_name || archive.filename || 'model';
                 openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
@@ -1077,7 +1077,7 @@ function ArchiveCard({
               title={t('archives.card.openInBambuStudioToSlice')}
             >
               <ExternalLink className="w-3 h-3 flex-shrink-0" />
-              <span className="hidden sm:inline">{t('archives.card.slice')}</span>
+              <span className="hidden sm:inline truncate">{t('archives.card.slice')}</span>
             </Button>
           )}
           <Button

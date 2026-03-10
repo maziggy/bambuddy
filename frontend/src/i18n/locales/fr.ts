@@ -3042,6 +3042,7 @@ export default {
     githubBackup: 'Sauvegarde GitHub',
     enabled: 'Activé',
     cloudLoginRequired: 'Connexion Bambu Cloud requise. Connectez-vous sous Profils → Profils Cloud pour activer la sauvegarde GitHub.',
+    cloudLoginRequiredShort: 'Connexion Cloud requise',
     githubDescription: 'Synchronisez automatiquement vos profils vers un dépôt GitHub privé pour la sauvegarde et l\'historique des versions.',
     repositoryUrl: 'URL du dépôt',
     personalAccessToken: 'Jeton d\'accès personnel',
@@ -3674,6 +3675,7 @@ export default {
       email: 'E-mail',
       discord: 'Discord',
       webhook: 'Webhook',
+      homeassistant: 'Home Assistant',
     },
     // Provider descriptions
     providerDescriptions: {
@@ -3684,6 +3686,7 @@ export default {
       pushover: 'Notifications push simples et fiables',
       callmebot: 'Notifications WhatsApp gratuites via CallMeBot',
       webhook: 'POST HTTP générique vers n\'importe quelle URL',
+      homeassistant: 'Notifications persistantes dans le tableau de bord Home Assistant',
     },
     // NotificationProviderCard
     lastSuccess: 'Dernier : {{date}}',

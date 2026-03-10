@@ -3041,6 +3041,7 @@ export default {
     githubBackup: 'GitHub 备份',
     enabled: '已启用',
     cloudLoginRequired: '需要登录 Bambu Cloud。请在 配置文件 → 云配置文件 中登录以启用 GitHub 备份。',
+    cloudLoginRequiredShort: '需要Cloud登录',
     githubDescription: '自动将您的配置文件同步到私有 GitHub 仓库以进行备份和版本历史记录。',
     repositoryUrl: '仓库 URL',
     personalAccessToken: '个人访问令牌',
@@ -3673,6 +3674,7 @@ export default {
       email: '电子邮件',
       discord: 'Discord',
       webhook: 'Webhook',
+      homeassistant: 'Home Assistant',
     },
     // Provider descriptions
     providerDescriptions: {
@@ -3683,6 +3685,7 @@ export default {
       pushover: '简单、可靠的推送通知',
       callmebot: '通过 CallMeBot 免费发送 WhatsApp 通知',
       webhook: '通用 HTTP POST 到任意 URL',
+      homeassistant: 'Home Assistant 仪表板中的持久通知',
     },
     // NotificationProviderCard
     lastSuccess: '上次：{{date}}',

@@ -2064,7 +2064,7 @@ export function SettingsPage() {
                         onChange={(e) => updateSetting('ftp_timeout', parseInt(e.target.value))}
                         className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
                       >
-                        {[10, 15, 20, 30, 45, 60, 90, 120].map(n => (
+                        {[10, 15, 20, 30, 45, 60, 90, 120, 180, 300].map(n => (
                           <option key={n} value={n}>{t('settings.nSeconds', { count: n })}</option>
                         ))}
                       </select>

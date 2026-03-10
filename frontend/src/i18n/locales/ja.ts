@@ -3055,6 +3055,7 @@ export default {
     githubBackup: 'GitHubバックアップ',
     enabled: '有効',
     cloudLoginRequired: 'Bambu Cloudログインが必要です。GitHubバックアップを有効にするには、プロファイル → クラウドプロファイルからサインインしてください。',
+    cloudLoginRequiredShort: 'Cloudログインが必要',
     githubDescription: 'プロファイルをプライベートGitHubリポジトリに自動的に同期し、バックアップとバージョン履歴を保持します。',
     repositoryUrl: 'リポジトリURL',
     personalAccessToken: '個人アクセストークン',
@@ -3687,6 +3688,7 @@ export default {
       email: 'メール',
       discord: 'Discord',
       webhook: 'Webhook',
+      homeassistant: 'Home Assistant',
     },
     // Provider descriptions
     providerDescriptions: {
@@ -3697,6 +3699,7 @@ export default {
       pushover: 'シンプルで信頼性の高いプッシュ通知',
       callmebot: 'CallMeBot経由の無料WhatsApp通知',
       webhook: '任意のURLへの汎用HTTP POST',
+      homeassistant: 'Home Assistantダッシュボードの永続通知',
     },
     // NotificationProviderCard
     lastSuccess: '最終: {{date}}',

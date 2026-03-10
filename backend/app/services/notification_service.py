@@ -177,6 +177,8 @@ class NotificationService:
                 return await self._send_discord(config, title, message)
             elif provider_type == "webhook":
                 return await self._send_webhook(config, title, message)
+            elif provider_type == "homeassistant":
+                return await self._send_homeassistant(config, title, message, db=db)
             else:
                 return False, f"Unknown provider type: {provider_type}"
         except Exception as e:
@@ -471,6 +473,59 @@ class NotificationService:
         except Exception as e:
             return False, f"Webhook error: {str(e)}"
 
+    async def _send_homeassistant(
+        self, config: dict, title: str, message: str, db: AsyncSession | None = None
+    ) -> tuple[bool, str]:
+        """Send notification via Home Assistant persistent notifications.
+
+        Uses the globally configured HA URL/token from settings,
+        and calls POST /api/services/persistent_notification/create.
+        """
+        # Get HA connection settings from global config
+        ha_url = ""
+        ha_token = ""
+
+        if db:
+            from backend.app.api.routes.settings import get_homeassistant_settings
+
+            try:
+                ha_settings = await get_homeassistant_settings(db)
+                ha_url = ha_settings.get("ha_url", "")
+                ha_token = ha_settings.get("ha_token", "")
+            except Exception as e:
+                logger.warning("Failed to read HA settings from database: %s", e)
+        else:
+            # Fallback: read directly from environment if no DB session
+            import os
+
+            ha_url = os.environ.get("HA_URL", "")
+            ha_token = os.environ.get("HA_TOKEN", "")
+
+        if not ha_url or not ha_token:
+            return False, (
+                "Home Assistant is not configured. Please set HA URL and token in Settings → Network → Home Assistant."
+            )
+
+        url = f"{ha_url.rstrip('/')}/api/services/persistent_notification/create"
+        headers = {
+            "Authorization": f"Bearer {ha_token}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "title": title,
+            "message": message,
+        }
+
+        client = await self._get_client()
+        response = await client.post(url, json=payload, headers=headers)
+
+        if response.status_code in (200, 201):
+            return True, "Notification sent via Home Assistant"
+        elif response.status_code == 401:
+            return False, "Home Assistant authentication failed - check your token"
+        else:
+            return False, f"HTTP {response.status_code}: {response.text[:200]}"
+
     async def _send_to_provider(
         self,
         provider: NotificationProvider,
@@ -502,6 +557,8 @@ class NotificationService:
                 return await self._send_discord(config, title, message, image_data=image_data)
             elif provider.provider_type == "webhook":
                 return await self._send_webhook(config, title, message)
+            elif provider.provider_type == "homeassistant":
+                return await self._send_homeassistant(config, title, message, db=db)
             else:
                 return False, f"Unknown provider type: {provider.provider_type}"
         except Exception as e:

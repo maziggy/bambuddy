@@ -402,3 +402,42 @@ describe('NotificationProviderCard Bed Cooled notifications', () => {
     });
   });
 });
+
+describe('NotificationProviderCard Home Assistant provider', () => {
+  describe('homeassistant provider type', () => {
+    it('renders homeassistant provider type', () => {
+      const provider = createMockProvider({ provider_type: 'homeassistant' });
+      render(
+        <NotificationProviderCard provider={provider} onEdit={vi.fn()} />
+      );
+
+      expect(screen.getByTestId('provider-type')).toHaveTextContent('homeassistant');
+    });
+
+    it('creates homeassistant provider with empty config', () => {
+      const provider = createMockProvider({
+        provider_type: 'homeassistant',
+        config: {},
+      });
+
+      expect(provider.provider_type).toBe('homeassistant');
+      expect(provider.config).toEqual({});
+    });
+
+    it('homeassistant provider supports all event toggles', () => {
+      const provider = createMockProvider({
+        provider_type: 'homeassistant',
+        config: {},
+        on_print_complete: true,
+        on_print_failed: true,
+        on_filament_low: true,
+        on_queue_job_waiting: true,
+      });
+
+      expect(provider.on_print_complete).toBe(true);
+      expect(provider.on_print_failed).toBe(true);
+      expect(provider.on_filament_low).toBe(true);
+      expect(provider.on_queue_job_waiting).toBe(true);
+    });
+  });
+});

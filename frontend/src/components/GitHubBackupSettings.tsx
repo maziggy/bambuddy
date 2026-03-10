@@ -35,11 +35,12 @@ import { Button } from './Button';
 import { Toggle } from './Toggle';
 import { ConfirmModal } from './ConfirmModal';
 import { useToast } from '../contexts/ToastContext';
-import { formatRelativeTime } from '../utils/date';
+import { formatRelativeTime, parseUTCDate } from '../utils/date';
 
 function formatDateTime(dateStr: string | null): string {
   if (!dateStr) return '-';
-  const date = new Date(dateStr);
+  const date = parseUTCDate(dateStr);
+  if (!date) return '-';
   return date.toLocaleString();
 }
 
@@ -383,7 +384,7 @@ export function GitHubBackupSettings() {
                 <Github className="w-5 h-5 text-gray-400" />
                 <h2 className="text-lg font-semibold text-white">{t('backup.githubBackup')}</h2>
               </div>
-              {config && cloudStatus?.is_authenticated && (
+              {config && (
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-bambu-gray">{t('backup.enabled')}</span>
                   <Toggle
@@ -395,16 +396,6 @@ export function GitHubBackupSettings() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Bambu Cloud required message */}
-            {!cloudStatus?.is_authenticated ? (
-              <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
-                <p className="text-sm text-yellow-400">
-                  {t('backup.cloudLoginRequired')}
-                </p>
-              </div>
-            ) : (
-              <>
                 <p className="text-sm text-bambu-gray">
                   {t('backup.githubDescription')}
                 </p>
@@ -505,7 +496,7 @@ export function GitHubBackupSettings() {
                     <p className="text-xs text-bambu-gray">{t('backup.kProfilesDescription')}</p>
                   </div>
                 </label>
-                <label className="flex items-start gap-2 cursor-pointer">
+                <label className={`flex items-start gap-2 ${!cloudStatus?.is_authenticated ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
                   <input
                     type="checkbox"
                     checked={backupCloudProfiles}
@@ -514,7 +505,15 @@ export function GitHubBackupSettings() {
                     disabled={!cloudStatus?.is_authenticated}
                   />
                   <div>
-                    <span className={`text-sm ${cloudStatus?.is_authenticated ? 'text-white' : 'text-bambu-gray'}`}>{t('backup.cloudProfiles')}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-sm ${cloudStatus?.is_authenticated ? 'text-white' : 'text-bambu-gray'}`}>{t('backup.cloudProfiles')}</span>
+                      {!cloudStatus?.is_authenticated && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-yellow-500/20 text-yellow-400">
+                          <AlertTriangle className="w-3 h-3" />
+                          {t('backup.cloudLoginRequiredShort')}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-bambu-gray">{t('backup.cloudProfilesDescription')}</p>
                   </div>
                 </label>
@@ -621,8 +620,6 @@ export function GitHubBackupSettings() {
                 )}
               </div>
             </div>
-              </>
-            )}
           </CardContent>
         </Card>
 

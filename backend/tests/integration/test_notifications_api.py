@@ -411,3 +411,65 @@ class TestNotificationTemplatesAPI:
         assert response.status_code == 200
         result = response.json()
         assert result["is_default"] is True
+
+
+class TestHomeAssistantNotificationProvider:
+    """Integration tests for Home Assistant notification provider."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_homeassistant_provider(self, async_client: AsyncClient):
+        """Verify homeassistant notification provider can be created with empty config."""
+        data = {
+            "name": "HA Notifications",
+            "provider_type": "homeassistant",
+            "enabled": True,
+            "config": {},
+            "on_print_complete": True,
+            "on_print_failed": True,
+        }
+
+        response = await async_client.post("/api/v1/notifications/", json=data)
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["name"] == "HA Notifications"
+        assert result["provider_type"] == "homeassistant"
+        assert result["on_print_complete"] is True
+        assert result["on_print_failed"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_homeassistant_provider(
+        self, async_client: AsyncClient, notification_provider_factory, db_session
+    ):
+        """Verify homeassistant provider can be updated."""
+        provider = await notification_provider_factory(
+            name="HA Test",
+            provider_type="homeassistant",
+            config="{}",
+        )
+
+        response = await async_client.patch(
+            f"/api/v1/notifications/{provider.id}",
+            json={"on_print_start": True, "on_printer_offline": True},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["on_print_start"] is True
+        assert result["on_printer_offline"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_test_homeassistant_config_without_ha_settings(self, async_client: AsyncClient):
+        """Verify test-config returns error when HA is not configured."""
+        response = await async_client.post(
+            "/api/v1/notifications/test-config",
+            json={"provider_type": "homeassistant", "config": {}},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["success"] is False
+        assert "not configured" in result["message"].lower() or "Home Assistant" in result["message"]

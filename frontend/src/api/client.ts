@@ -3534,7 +3534,6 @@ export const api = {
       printerId: number;
       amsId: number;
       trayId: number;
-      amsName?: string;
     }
   ) =>
     request<{ success: boolean; message: string }>(`/spoolman/spools/${spoolId}/link`, {
@@ -3544,7 +3543,6 @@ export const api = {
         printer_id: context.printerId,
         ams_id: context.amsId,
         tray_id: context.trayId,
-        ams_name: context.amsName,
       }),
     }),
   unlinkSpool: (spoolId: number) =>

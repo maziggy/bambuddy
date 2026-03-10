@@ -15,10 +15,9 @@ interface LinkSpoolModalProps {
   printerId: number;
   amsId: number;
   trayId: number;
-  amsName: string;
 }
 
-export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, amsId, trayId, amsName }: LinkSpoolModalProps) {
+export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, amsId, trayId }: LinkSpoolModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -52,7 +51,6 @@ export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, a
         printerId,
         amsId,
         trayId,
-        amsName,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['unlinked-spools'] });

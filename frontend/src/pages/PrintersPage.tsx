@@ -1581,7 +1581,6 @@ function PrinterCard({
     printerId: number;
     amsId: number;
     trayId: number;
-    amsName: string;
   } | null>(null);
   const [assignSpoolModal, setAssignSpoolModal] = useState<{
     printerId: number;
@@ -3198,7 +3197,6 @@ function PrinterCard({
                                               printerId: printer.id,
                                               amsId: ams.id,
                                               trayId: slotIdx,
-                                              amsName: getAmsLabel(ams.id, ams.tray.length),
                                             });
                                           } : undefined,
                                           onUnlinkSpool: linkedSpool?.id ? () => unlinkSpoolMutation.mutate(linkedSpool.id) : undefined,
@@ -3445,7 +3443,6 @@ function PrinterCard({
                                           printerId: printer.id,
                                           amsId: ams.id,
                                           trayId: htSlotId,
-                                          amsName: getAmsLabel(ams.id, ams.tray.length),
                                         });
                                       } : undefined,
                                       onUnlinkSpool: htLinkedSpool?.id ? () => unlinkSpoolMutation.mutate(htLinkedSpool.id) : undefined,
@@ -3642,7 +3639,6 @@ function PrinterCard({
                                             printerId: printer.id,
                                             amsId: 255,
                                             trayId: slotTrayId,
-                                            amsName: extLabel || t('printers.external'),
                                           });
                                         } : undefined,
                                         onUnlinkSpool: extLinkedSpool?.id ? () => unlinkSpoolMutation.mutate(extLinkedSpool.id) : undefined,
@@ -4381,7 +4377,6 @@ function PrinterCard({
           printerId={linkSpoolModal.printerId}
           amsId={linkSpoolModal.amsId}
           trayId={linkSpoolModal.trayId}
-          amsName={linkSpoolModal.amsName}
         />
       )}
 

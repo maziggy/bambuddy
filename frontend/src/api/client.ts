@@ -3527,10 +3527,25 @@ export const api = {
     request<UnlinkedSpool[]>('/spoolman/spools/unlinked'),
   getLinkedSpools: () =>
     request<LinkedSpoolsMap>('/spoolman/spools/linked'),
-  linkSpool: (spoolId: number, spoolTag: string) =>
+  linkSpool: (
+    spoolId: number,
+    context: {
+      spoolTag: string;
+      printerId: number;
+      amsId: number;
+      trayId: number;
+      amsName?: string;
+    }
+  ) =>
     request<{ success: boolean; message: string }>(`/spoolman/spools/${spoolId}/link`, {
       method: 'POST',
-      body: JSON.stringify({ spool_tag: spoolTag }),
+      body: JSON.stringify({
+        spool_tag: context.spoolTag,
+        printer_id: context.printerId,
+        ams_id: context.amsId,
+        tray_id: context.trayId,
+        ams_name: context.amsName,
+      }),
     }),
   unlinkSpool: (spoolId: number) =>
     request<{ success: boolean; message: string }>(`/spoolman/spools/${spoolId}/unlink`, {

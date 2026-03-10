@@ -68,12 +68,12 @@ export function formatSlotLabel(
   isHt: boolean,
   isExternal: boolean
 ): string {
-  if (isExternal) return 'External';
+  if (isExternal) return 'Ext';
   // Convert AMS ID to letter (A, B, C, D)
   // AMS-HT uses IDs starting at 128
   const letter = String.fromCharCode(65 + (amsId >= 128 ? amsId - 128 : amsId));
   if (isHt) return `HT-${letter}`;
-  return `AMS-${letter} Slot ${trayId + 1}`;
+  return `${letter}${trayId + 1}`;
 }
 
 /**

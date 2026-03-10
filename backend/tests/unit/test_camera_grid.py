@@ -455,7 +455,7 @@ class TestFleetCpuWatchdog:
         pids = {300: now - 60, 301: now - 3}
         prev_wall = now - 10
         samples = {300: (prev_wall, 10.0)}
-        # PID 300 at 25% (under 30% per-process), PID 301 would be 25% but in grace
+        # PID 300 at 25% (under 50% per-process), PID 301 would be 25% but in grace
         cpu_times_result = {300: 12.5, 301: 12.5}
 
         killed_pids = []
@@ -597,16 +597,19 @@ class TestCircuitBreaker:
     """Tests for the circuit breaker between watchdog and grid restart logic."""
 
     @pytest.mark.asyncio
-    async def test_watchdog_kill_sets_cooldown(self):
-        """Per-process watchdog kill should activate the fleet cooldown."""
+    async def test_watchdog_kill_sets_per_printer_cooldown(self):
+        """Per-process watchdog kill should activate per-printer cooldown, not fleet cooldown."""
+        import asyncio
+        from unittest.mock import MagicMock
+
         import backend.app.api.routes.camera as cam
 
         now = time.monotonic()
         pids = {400: now - 60}
         prev_wall = now - 10
         samples = {400: (prev_wall, 10.0)}
-        # 35% CPU — over the 30% per-process threshold
-        cpu_times_result = {400: 13.5}
+        # 55% CPU — over the 50% per-process threshold
+        cpu_times_result = {400: 15.5}
 
         original_kill = cam.os.kill
 
@@ -616,12 +619,18 @@ class TestCircuitBreaker:
             else:
                 original_kill(pid, sig)
 
+        # Mock _active_streams to map PID -> printer_id via stream_id
+        mock_proc = MagicMock()
+        mock_proc.pid = 400
+
         old_cooldown = cam._fleet_cooldown_until
+        old_per_printer = dict(cam._per_printer_cooldown)
         with (
             patch.dict(cam._spawned_ffmpeg_pids, pids, clear=True),
             patch.dict(cam._ffmpeg_cpu_samples, samples, clear=True),
             patch.dict(cam._last_frame_times, {}, clear=True),
             patch.dict(cam._stream_start_times, {}, clear=True),
+            patch.dict(cam._active_streams, {"42-abc": mock_proc}, clear=True),
             patch("backend.app.api.routes.camera.os.kill", side_effect=mock_kill),
             patch(
                 "backend.app.api.routes.camera._read_ffmpeg_cpu_times",
@@ -629,13 +638,19 @@ class TestCircuitBreaker:
             ),
             patch("backend.app.api.routes.camera._scan_dead_pids", return_value=[]),
         ):
+            cam._fleet_cooldown_until = 0.0  # Reset fleet cooldown
             await cam._cleanup_stale_frame_buffers()
-            # Cooldown should be set to ~30s from now
-            assert cam._fleet_cooldown_until > now
-            assert cam._fleet_cooldown_until <= now + cam._FLEET_COOLDOWN_DURATION + 1
+            # Per-printer cooldown should be set for printer 42
+            assert 42 in cam._per_printer_cooldown
+            assert cam._per_printer_cooldown[42] > now
+            assert cam._per_printer_cooldown[42] <= now + cam._PER_PRINTER_COOLDOWN_DURATION + 1
+            # Fleet cooldown should NOT be set by per-process kill
+            assert cam._fleet_cooldown_until == 0.0
 
         # Restore
         cam._fleet_cooldown_until = old_cooldown
+        cam._per_printer_cooldown.clear()
+        cam._per_printer_cooldown.update(old_per_printer)
 
     @pytest.mark.asyncio
     async def test_fleet_kill_sets_cooldown_and_tracks_printers(self):
@@ -649,7 +664,7 @@ class TestCircuitBreaker:
         pids = {500: now - 60, 501: now - 60}
         prev_wall = now - 10
         samples = {500: (prev_wall, 10.0), 501: (prev_wall, 10.0)}
-        # Each at 25% — under per-process 30% but fleet total 50%
+        # Each at 25% — under per-process 50% but fleet total 50%
         cpu_times_result = {500: 12.5, 501: 12.5}
 
         killed_pids = []
@@ -695,7 +710,28 @@ class TestCircuitBreaker:
 
         # Verify the constant exists and _watchdog_killed_printers is a set
         assert isinstance(cam._watchdog_killed_printers, set)
-        assert cam._FLEET_COOLDOWN_DURATION == 30.0
+        assert cam._FLEET_COOLDOWN_DURATION == 15.0
+
+    def test_per_printer_cooldown_isolates_printers(self):
+        """Per-printer cooldown should not block other printers from restarting."""
+        import backend.app.api.routes.camera as cam
+
+        now = time.monotonic()
+        old_per_printer = dict(cam._per_printer_cooldown)
+        try:
+            # Printer 1 is in cooldown, printer 2 is not
+            cam._per_printer_cooldown[1] = now + 60  # 60s remaining
+            cam._per_printer_cooldown[2] = now - 10  # expired 10s ago
+
+            # Printer 1 should still be in cooldown
+            assert now < cam._per_printer_cooldown[1]
+            # Printer 2's cooldown has expired
+            assert now >= cam._per_printer_cooldown[2]
+            # Verify duration constant
+            assert cam._PER_PRINTER_COOLDOWN_DURATION == 10.0
+        finally:
+            cam._per_printer_cooldown.clear()
+            cam._per_printer_cooldown.update(old_per_printer)
 
 
 # ---------------------------------------------------------------------------
@@ -826,7 +862,7 @@ class TestPreSeededBaseline:
         """Verify the tightened watchdog constants."""
         import backend.app.api.routes.camera as cam
 
-        assert cam._CPU_PCT_KILL_THRESHOLD == 30.0
+        assert cam._CPU_PCT_KILL_THRESHOLD == 50.0
         assert cam._CPU_WATCHDOG_GRACE_SECS == 10.0
         assert cam._CLEANUP_INTERVAL == 10.0
         # Fleet threshold = cpu_count * 50

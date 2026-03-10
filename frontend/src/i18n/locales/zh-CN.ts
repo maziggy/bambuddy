@@ -230,6 +230,7 @@ export default {
       connectionLost: '连接丢失',
       reconnecting: '{{countdown}}秒后重新连接 (第{{attempt}}次)',
       expand: '展开',
+      refresh: '刷新摄像头',
       layout: {
         compact: '紧凑',
         default: '默认',

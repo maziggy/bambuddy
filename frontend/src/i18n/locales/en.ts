@@ -230,6 +230,7 @@ export default {
       connectionLost: 'Connection lost',
       reconnecting: 'Reconnecting in {{countdown}}s (attempt {{attempt}})',
       expand: 'Expand',
+      refresh: 'Refresh cameras',
       layout: {
         compact: 'Compact',
         default: 'Default',

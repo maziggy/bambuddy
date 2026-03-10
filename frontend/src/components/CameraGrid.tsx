@@ -7,6 +7,7 @@ import {
   Square,
   Pause,
   Play,
+  RefreshCw,
   Signal,
   WifiOff,
   AlertTriangle,
@@ -19,7 +20,7 @@ import {
 
 import { api } from '../api/client';
 import { formatDuration, formatETA } from '../utils/date';
-import type { HMSError, CameraQuality } from '../api/client';
+import type { HMSError } from '../api/client';
 import { Card } from './Card';
 import { ConfirmModal } from './ConfirmModal';
 import { getTopHMSError } from './HMSErrorModal';
@@ -141,40 +142,37 @@ const CameraGridCard = memo(function CameraGridCard({
   return (
     <Card className={`relative group ${state === 'FINISH' ? '!border-bambu-green/50' : ''}`} ref={cardRef}>
       <div className="relative w-full aspect-video bg-black overflow-hidden rounded-xl">
-        {connected ? (
-          <>
-            <canvas
-              ref={canvasRef}
-              className={`w-full h-full object-cover ${loading || error || reconnecting ? 'hidden' : ''}`}
-              style={{
-                filter: stale && !loading && !error && !reconnecting ? 'blur(3px)' : 'none',
-                transition: 'filter 0.6s ease-in-out',
-              }}
-            />
-            {loading && !reconnecting && (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <Loader2 className="w-8 h-8 text-white/60 animate-spin" />
-              </div>
-            )}
-            {reconnecting && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/70 z-10">
-                <div className="text-center">
-                  <WifiOff className="w-6 h-6 text-white/50 mx-auto mb-1.5" />
-                  <p className="text-xs text-white/70 mb-0.5">{t('printers.cameraGrid.connectionLost')}</p>
-                  <p className="text-[10px] text-white/40">
-                    {t('printers.cameraGrid.reconnecting', { countdown: reconnectCountdown, attempt: reconnectAttempt })}
-                  </p>
-                </div>
-              </div>
-            )}
-            {error && !reconnecting && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
-                <AlertCircle className="w-8 h-8 text-red-400" />
-                <span className="text-xs text-white/50">{t('printers.cameraGrid.cameraUnavailable')}</span>
-              </div>
-            )}
-          </>
-        ) : (
+        <canvas
+          ref={canvasRef}
+          className={`w-full h-full object-cover ${loading || error || reconnecting || !connected ? 'invisible' : ''}`}
+          style={{
+            filter: connected && stale && !loading && !error && !reconnecting ? 'blur(3px)' : 'none',
+            transition: 'filter 0.6s ease-in-out',
+          }}
+        />
+        {connected && loading && !reconnecting && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Loader2 className="w-8 h-8 text-white/60 animate-spin" />
+          </div>
+        )}
+        {connected && reconnecting && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/70 z-10">
+            <div className="text-center">
+              <WifiOff className="w-6 h-6 text-white/50 mx-auto mb-1.5" />
+              <p className="text-xs text-white/70 mb-0.5">{t('printers.cameraGrid.connectionLost')}</p>
+              <p className="text-[10px] text-white/40">
+                {t('printers.cameraGrid.reconnecting', { countdown: reconnectCountdown, attempt: reconnectAttempt })}
+              </p>
+            </div>
+          </div>
+        )}
+        {connected && error && !reconnecting && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+            <AlertCircle className="w-8 h-8 text-red-400" />
+            <span className="text-xs text-white/50">{t('printers.cameraGrid.cameraUnavailable')}</span>
+          </div>
+        )}
+        {!connected && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
             <WifiOff className="w-6 h-6 text-bambu-gray/40" />
             <span className={`${textXs} text-bambu-gray/40`}>{t('printers.status.offline')}</span>
@@ -344,7 +342,7 @@ export function CameraGrid({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const { hasPermission, isAdmin } = useAuth();
+  const { hasPermission } = useAuth();
 
   // Dismissed HMS errors per printer
   const [dismissedErrors, setDismissedErrors] = useState<Map<number, string>>(new Map());
@@ -376,12 +374,6 @@ export function CameraGrid({
     },
     onError: (err: Error) => showToast(err.message, 'error'),
   });
-  const qualityMutation = useMutation({
-    mutationFn: (quality: CameraQuality) => api.updateSettings({ camera_quality: quality }),
-    onSuccess: (data) => queryClient.setQueryData(['settings'], data),
-    onError: (err: Error) => showToast(err.message, 'error'),
-  });
-
   const handleConfirm = () => {
     if (!confirmAction) return;
     const { type, printerId } = confirmAction;
@@ -430,9 +422,7 @@ export function CameraGrid({
 
   // Grid stream quality — preset values are resolved server-side from settings
   const { data: cameraSettings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
-  const { data: ffmpegStatus } = useQuery({ queryKey: ['ffmpeg-status'], queryFn: api.checkFfmpeg });
-  const cameraQuality = cameraSettings?.camera_quality ?? 'auto';
-  const gridParamsKey = cameraQuality;
+  const gridParamsKey = cameraSettings?.camera_quality ?? 'auto';
 
   const rawPrinterIdsKey = printers.map(p => p.id).sort((a, b) => a - b).join(',');
 
@@ -448,6 +438,9 @@ export function CameraGrid({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rawPrinterIdsKey]);
 
+  // Restart key — incrementing tears down and re-initializes all camera streams
+  const [restartKey, setRestartKey] = useState(0);
+
   // Stream management via extracted hook
   const {
     canvasRefs,
@@ -461,29 +454,26 @@ export function CameraGrid({
     subscribeStats,
     getStatsSnapshot,
     handleVisibilityChange,
-  } = useGridStream({ printerIdsKey, gridParamsKey });
+  } = useGridStream({ printerIdsKey, gridParamsKey, restartKey });
 
   return (
     <div>
       <div className="flex items-center justify-end gap-3 mb-2 tabular-nums">
-        {isAdmin && (
-          <select
-            value={cameraQuality}
-            onChange={(e) => qualityMutation.mutate(e.target.value as CameraQuality)}
-            className="text-xs bg-transparent border border-bambu-dark-tertiary rounded px-1.5 py-0.5 text-bambu-gray/60 focus:border-bambu-green focus:outline-none cursor-pointer"
-          >
-            <option value="auto">{ffmpegStatus?.auto_resolved_grid
-              ? t('settings.cameraQualityAutoWithResolved', { resolved: t(`settings.cameraQuality${ffmpegStatus.auto_resolved_grid.charAt(0).toUpperCase() + ffmpegStatus.auto_resolved_grid.slice(1)}`) })
-              : t('settings.cameraQualityAuto')}</option>
-            <option value="low">{t('settings.cameraQualityLow')}</option>
-            <option value="medium">{t('settings.cameraQualityMedium')}</option>
-            <option value="high">{t('settings.cameraQualityHigh')}</option>
-          </select>
-        )}
+        <button
+          onClick={() => setRestartKey(k => k + 1)}
+          className="text-bambu-gray/60 hover:text-white transition-colors"
+          title={t('printers.cameraGrid.refresh')}
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+        </button>
         <StatsDisplay subscribeStats={subscribeStats} getStatsSnapshot={getStatsSnapshot} />
       </div>
       <div className={`grid ${layout === 'compact' ? 'gap-2' : 'gap-4'} ${GRID_LAYOUT_COLS[layout]}`}>
-        {printers.map(p => (
+        {printers.map(p => {
+          if (!canvasRefs.current.has(p.id)) {
+            canvasRefs.current.set(p.id, { current: null });
+          }
+          return (
           <CameraGridCard
             key={p.id}
             printerId={p.id}
@@ -494,7 +484,7 @@ export function CameraGrid({
             remainingTime={p.remainingTime}
             layerNum={p.layerNum}
             totalLayers={p.totalLayers}
-            canvasRef={canvasRefs.current.get(p.id) ?? { current: null }}
+            canvasRef={canvasRefs.current.get(p.id)!}
             loading={loadingSet.has(p.id)}
             error={errorSet.has(p.id)}
             reconnecting={reconnectingSet.has(p.id)}
@@ -522,7 +512,8 @@ export function CameraGrid({
             hasQueuedJobs={printersWithQueue.has(p.id)}
             onDismissError={handleDismissError}
           />
-        ))}
+          );
+        })}
       </div>
 
       {/* Print control confirmation modal */}

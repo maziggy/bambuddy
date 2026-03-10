@@ -26,6 +26,10 @@ const visibleSet = new Set<number>();
 const pendingFrame = new Map<number, ArrayBuffer>(); // latest JPEG waiting to decode
 const decoding = new Map<number, boolean>();          // whether decode is in-flight
 
+let totalDecodeErrors = 0;
+let totalDecodeSuccess = 0;
+let lastErrorReportTime = 0;
+
 function tryDecode(printerId: number): void {
   if (decoding.get(printerId)) return;
 
@@ -37,6 +41,7 @@ function tryDecode(printerId: number): void {
   const blob = new Blob([jpeg], { type: 'image/jpeg' });
   createImageBitmap(blob).then(
     (bitmap) => {
+      totalDecodeSuccess++;
       self.postMessage(
         { type: 'frame', printerId, bitmap },
         [bitmap],
@@ -45,7 +50,19 @@ function tryDecode(printerId: number): void {
       tryDecode(printerId);
     },
     () => {
-      // Invalid JPEG — skip
+      totalDecodeErrors++;
+      // Report decode errors back to main thread, throttled to once per 5s
+      const now = Date.now();
+      if (now - lastErrorReportTime > 5000) {
+        lastErrorReportTime = now;
+        self.postMessage({
+          type: 'decodeError',
+          printerId,
+          totalErrors: totalDecodeErrors,
+          totalSuccess: totalDecodeSuccess,
+          visibleCount: visibleSet.size,
+        });
+      }
       decoding.set(printerId, false);
       tryDecode(printerId);
     },
@@ -70,6 +87,20 @@ self.onmessage = (e: MessageEvent) => {
         visibleSet.clear();
         pendingFrame.clear();
         decoding.clear();
+        totalDecodeErrors = 0;
+        totalDecodeSuccess = 0;
+        break;
+      }
+
+      case 'ping': {
+        self.postMessage({
+          type: 'pong',
+          visibleCount: visibleSet.size,
+          pendingCount: pendingFrame.size,
+          decodingCount: [...decoding.values()].filter(Boolean).length,
+          totalDecodeErrors,
+          totalDecodeSuccess,
+        });
         break;
       }
 

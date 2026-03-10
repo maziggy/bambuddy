@@ -22,6 +22,7 @@ const EMPTY_STATS: GridStreamStats = { bw: '', active: 0, total: 0, uptime: '' }
 interface UseGridStreamOptions {
   printerIdsKey: string;
   gridParamsKey: string;
+  restartKey: number;
 }
 
 interface UseGridStreamReturn {
@@ -38,7 +39,7 @@ interface UseGridStreamReturn {
   handleVisibilityChange: (printerId: number, visible: boolean) => void;
 }
 
-export function useGridStream({ printerIdsKey, gridParamsKey }: UseGridStreamOptions): UseGridStreamReturn {
+export function useGridStream({ printerIdsKey, gridParamsKey, restartKey }: UseGridStreamOptions): UseGridStreamReturn {
   const canvasRefs = useRef<Map<number, React.RefObject<HTMLCanvasElement | null>>>(new Map());
 
   const [loadingSet, setLoadingSet] = useState<Set<number>>(new Set());
@@ -65,8 +66,23 @@ export function useGridStream({ printerIdsKey, gridParamsKey }: UseGridStreamOpt
   const bytesRef = useRef(0);
   const activeCamsRef = useRef(new Set<number>());
 
-  // Worker ref — one worker per grid stream lifetime
+  // Worker ref — one worker per grid stream lifetime (mutable for restart)
   const workerRef = useRef<Worker | null>(null);
+
+  // Pipeline diagnostics — tracks frame flow through each stage
+  const pipelineRef = useRef({
+    chunksReceived: 0,
+    framesParsed: 0,
+    framesSentToWorker: 0,
+    framesFromWorker: 0,
+    framesDrawn: 0,
+    workerDecodeErrors: 0,
+    lastChunkTime: 0,
+    lastWorkerFrameTime: 0,
+    lastParseTime: 0,
+    workerRestarts: 0,
+    stallPingPending: false,
+  });
 
   // Ensure refs exist for all connected printers, clean up stale ones
   useEffect(() => {
@@ -105,7 +121,7 @@ export function useGridStream({ printerIdsKey, gridParamsKey }: UseGridStreamOpt
     let t0 = performance.now();
 
     // Spin up worker for off-thread JPEG decoding
-    const worker = new CameraGridDecoderWorker();
+    let worker = new CameraGridDecoderWorker();
     workerRef.current = worker;
 
     // Seed worker with all printer IDs as visible — IntersectionObserver only
@@ -122,16 +138,77 @@ export function useGridStream({ printerIdsKey, gridParamsKey }: UseGridStreamOpt
     const loadedPrinters = new Set<number>();
     // Track last frame time per printer for stale camera detection
     const lastFrameTime = new Map<number, number>();
+    // Throttle "canvas ref null" logging — once per printer per 5s
+    const nullCanvasLogTime = new Map<number, number>();
 
-    // Worker sends back decoded ImageBitmaps — draw them on the main thread
-    worker.onmessage = (e: MessageEvent) => {
-      if (e.data.type !== 'frame') return;
+    const pipeline = pipelineRef.current;
+
+    // Named handler so we can reattach after worker restart
+    function handleWorkerMessage(e: MessageEvent): void {
+      const { type } = e.data;
+
+      if (type === 'decodeError') {
+        pipeline.workerDecodeErrors++;
+        console.debug(
+          `[grid] Worker decode error: printerId=${e.data.printerId} totalErrors=${e.data.totalErrors} totalSuccess=${e.data.totalSuccess} visible=${e.data.visibleCount}`,
+        );
+        return;
+      }
+
+      if (type === 'pong') {
+        pipeline.stallPingPending = false;
+        console.debug(
+          `[grid] Worker pong: visible=${e.data.visibleCount} pending=${e.data.pendingCount} decoding=${e.data.decodingCount} errors=${e.data.totalDecodeErrors} success=${e.data.totalDecodeSuccess}`,
+        );
+        return;
+      }
+
+      if (type !== 'frame') return;
       const pid = e.data.printerId as number;
       const bitmap = e.data.bitmap as ImageBitmap;
+      pipeline.framesFromWorker++;
+      pipeline.lastWorkerFrameTime = performance.now();
 
+      // A decoded frame proves this printer is alive — always update tracking
+      // and clear error/reconnecting/loading state, even if canvas isn't mounted
+      activeCamsRef.current.add(pid);
+      lastFrameTime.set(pid, performance.now());
+
+      setErrorSet(prev => {
+        if (!prev.has(pid)) return prev;
+        const next = new Set(prev);
+        next.delete(pid);
+        return next;
+      });
+      setReconnectingSet(prev => {
+        if (!prev.has(pid)) return prev;
+        const next = new Set(prev);
+        next.delete(pid);
+        return next;
+      });
+      if (!loadedPrinters.has(pid)) {
+        loadedPrinters.add(pid);
+        setLoadingSet(prev => {
+          if (!prev.has(pid)) return prev;
+          const next = new Set(prev);
+          next.delete(pid);
+          return next;
+        });
+      }
+
+      // Draw to canvas if ref is available — otherwise just drop the bitmap
       const ref = canvasRefs.current.get(pid);
       const canvas = ref?.current;
-      if (!canvas) { bitmap.close(); return; }
+      if (!canvas) {
+        const now = performance.now();
+        const lastLog = nullCanvasLogTime.get(pid) ?? 0;
+        if (now - lastLog > 5000) {
+          console.debug(`[grid] Canvas ref null for printer ${pid}`);
+          nullCanvasLogTime.set(pid, now);
+        }
+        bitmap.close();
+        return;
+      }
 
       // Only reset canvas dimensions when they actually change
       const dimKey = `${bitmap.width}x${bitmap.height}`;
@@ -148,33 +225,10 @@ export function useGridStream({ printerIdsKey, gridParamsKey }: UseGridStreamOpt
       }
       ctx.drawImage(bitmap, 0, 0);
       bitmap.close();
-      activeCamsRef.current.add(pid);
-      lastFrameTime.set(pid, performance.now());
+      pipeline.framesDrawn++;
+    }
 
-      // Only trigger React setState once per printer (first frame)
-      if (!loadedPrinters.has(pid)) {
-        loadedPrinters.add(pid);
-        setLoadingSet(prev => {
-          if (!prev.has(pid)) return prev;
-          const next = new Set(prev);
-          next.delete(pid);
-          return next;
-        });
-        setErrorSet(prev => {
-          if (!prev.has(pid)) return prev;
-          const next = new Set(prev);
-          next.delete(pid);
-          return next;
-        });
-        // Clear per-printer reconnect overlay once a frame arrives
-        setReconnectingSet(prev => {
-          if (!prev.has(pid)) return prev;
-          const next = new Set(prev);
-          next.delete(pid);
-          return next;
-        });
-      }
-    };
+    worker.onmessage = handleWorkerMessage;
 
     let active = true;
     const controllerRef = { current: new AbortController() };
@@ -183,6 +237,7 @@ export function useGridStream({ printerIdsKey, gridParamsKey }: UseGridStreamOpt
     // Compute stats every second
     const DEGRADED_THRESHOLD = 10_000; // 10s without frames → degraded
     const statsInterval = setInterval(() => {
+      if (!active) return;
       const bytes = bytesRef.current;
       bytesRef.current = 0;
       const elapsed = Math.floor((performance.now() - t0) / 1000);
@@ -233,6 +288,64 @@ export function useGridStream({ printerIdsKey, gridParamsKey }: UseGridStreamOpt
       });
     }, 1000);
 
+    // Pipeline stats logging — every 10s
+    let statsLogCounter = 0;
+    const pipelineStatsInterval = setInterval(() => {
+      if (!active) return;
+      statsLogCounter++;
+      if (statsLogCounter % 10 === 0) {
+        console.debug(
+          `[grid] Pipeline: chunks=${pipeline.chunksReceived} parsed=${pipeline.framesParsed} →worker=${pipeline.framesSentToWorker} ←worker=${pipeline.framesFromWorker} drawn=${pipeline.framesDrawn} errors=${pipeline.workerDecodeErrors} restarts=${pipeline.workerRestarts}`,
+        );
+      }
+    }, 1000);
+
+    // Worker health monitor — detect and recover from stalled worker
+    const MAX_WORKER_RESTARTS = 3;
+    const healthInterval = setInterval(() => {
+      if (!active) return;
+      const now = performance.now();
+      const dataFlowing = pipeline.lastParseTime > 0 && (now - pipeline.lastParseTime) < 5000;
+      const workerSilent =
+        (pipeline.lastWorkerFrameTime > 0 && (now - pipeline.lastWorkerFrameTime) > 15000) ||
+        (pipeline.framesSentToWorker > 20 && pipeline.framesFromWorker === 0);
+
+      if (dataFlowing && workerSilent) {
+        if (!pipeline.stallPingPending) {
+          // First detection: ping the worker to check if it's alive
+          pipeline.stallPingPending = true;
+          console.debug(
+            `[grid] Worker stall detected — pinging. sent=${pipeline.framesSentToWorker} received=${pipeline.framesFromWorker} lastWorkerFrame=${pipeline.lastWorkerFrameTime > 0 ? Math.round(now - pipeline.lastWorkerFrameTime) + 'ms ago' : 'never'}`,
+          );
+          workerRef.current?.postMessage({ type: 'ping' });
+        } else if (pipeline.workerRestarts < MAX_WORKER_RESTARTS) {
+          // Ping was sent but stall persists — restart the worker
+          pipeline.workerRestarts++;
+          console.debug(`[grid] Restarting worker (attempt ${pipeline.workerRestarts}/${MAX_WORKER_RESTARTS})`);
+
+          worker.terminate();
+          worker = new CameraGridDecoderWorker();
+          workerRef.current = worker;
+          worker.onmessage = handleWorkerMessage;
+
+          // Re-seed visibility for all printer IDs
+          for (const id of ids) {
+            worker.postMessage({ type: 'visibility', printerId: id, visible: true });
+          }
+
+          // Reset worker-related pipeline counters
+          pipeline.framesFromWorker = 0;
+          pipeline.framesSentToWorker = 0;
+          pipeline.workerDecodeErrors = 0;
+          pipeline.lastWorkerFrameTime = 0;
+          pipeline.stallPingPending = false;
+        }
+      } else {
+        // Worker is healthy or no data flowing — reset stall tracking
+        pipeline.stallPingPending = false;
+      }
+    }, 5000);
+
     async function startMultiplexedStream() {
       while (active) {
       // Growing buffer: pre-allocate and double when full
@@ -277,6 +390,18 @@ export function useGridStream({ printerIdsKey, gridParamsKey }: UseGridStreamOpt
         setDegradedSet(new Set());
         setStaleSet(new Set());
 
+        // Reset pipeline counters on reconnect
+        pipeline.chunksReceived = 0;
+        pipeline.framesParsed = 0;
+        pipeline.framesSentToWorker = 0;
+        pipeline.framesFromWorker = 0;
+        pipeline.framesDrawn = 0;
+        pipeline.workerDecodeErrors = 0;
+        pipeline.lastChunkTime = 0;
+        pipeline.lastWorkerFrameTime = 0;
+        pipeline.lastParseTime = 0;
+        pipeline.stallPingPending = false;
+
         const reader = res.body.getReader();
         readerRef = reader;
         resetStallTimer();
@@ -305,6 +430,16 @@ export function useGridStream({ printerIdsKey, gridParamsKey }: UseGridStreamOpt
           bufLen += value.length;
           bytesRef.current += value.length;
 
+          // Pipeline: track chunks and detect data gaps
+          const chunkNow = performance.now();
+          if (pipeline.lastChunkTime > 0 && (chunkNow - pipeline.lastChunkTime) > 3000) {
+            console.debug(
+              `[grid] Data gap: ${Math.round(chunkNow - pipeline.lastChunkTime)}ms since last chunk`,
+            );
+          }
+          pipeline.chunksReceived++;
+          pipeline.lastChunkTime = chunkNow;
+
           // Parse binary frames: [4B printer_id LE][4B length LE][jpeg_data]
           let offset = 0;
           while (offset + GRID_FRAME_HEADER_SIZE <= bufLen) {
@@ -325,7 +460,12 @@ export function useGridStream({ printerIdsKey, gridParamsKey }: UseGridStreamOpt
             // Using Uint8Array.slice() ensures the copy is detached from buf.buffer,
             // so the postMessage transfer won't risk detaching the shared read buffer.
             const jpeg = new Uint8Array(buf.buffer, buf.byteOffset + offset + GRID_FRAME_HEADER_SIZE, jpegLen).slice().buffer;
-            worker.postMessage(
+            lastFrameTime.set(printerId, performance.now());
+            pipeline.framesParsed++;
+            pipeline.framesSentToWorker++;
+            pipeline.lastParseTime = performance.now();
+            // Use workerRef so worker replacement (restart) takes effect immediately
+            workerRef.current!.postMessage(
               { type: 'frame', printerId, jpeg },
               [jpeg], // transfer ownership — no second copy
             );
@@ -412,15 +552,17 @@ export function useGridStream({ printerIdsKey, gridParamsKey }: UseGridStreamOpt
       readerRef?.cancel().catch(() => {});
       controllerRef.current.abort();
       clearInterval(statsInterval);
+      clearInterval(pipelineStatsInterval);
+      clearInterval(healthInterval);
       clearTimeout(startupTimeout);
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
       countdownIntervalRef.current = null;
       window.removeEventListener('beforeunload', onBeforeUnload);
-      worker.postMessage({ type: 'clear' });
-      worker.terminate();
+      workerRef.current?.postMessage({ type: 'clear' });
+      workerRef.current?.terminate();
       workerRef.current = null;
     };
-  }, [printerIdsKey, gridParamsKey]);
+  }, [printerIdsKey, gridParamsKey, restartKey]);
 
   return {
     canvasRefs,

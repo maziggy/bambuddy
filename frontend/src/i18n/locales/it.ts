@@ -230,6 +230,7 @@ export default {
       connectionLost: 'Connessione persa',
       reconnecting: 'Riconnessione tra {{countdown}}s (tentativo {{attempt}})',
       expand: 'Espandi',
+      refresh: 'Aggiorna telecamere',
       layout: {
         compact: 'Compatto',
         default: 'Predefinito',

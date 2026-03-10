@@ -230,6 +230,7 @@ export default {
       connectionLost: '接続が切断されました',
       reconnecting: '{{countdown}}秒後に再接続 (試行{{attempt}})',
       expand: '拡大',
+      refresh: 'カメラを更新',
       layout: {
         compact: 'コンパクト',
         default: '標準',

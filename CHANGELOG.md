@@ -8,11 +8,17 @@ All notable changes to Bambuddy will be documented in this file.
 - **Home Assistant Notification Provider** ([#656](https://github.com/maziggy/bambuddy/issues/656)) — Added Home Assistant as a notification provider. When HA is configured in Settings → Network → Home Assistant, selecting "Home Assistant" as a notification provider sends persistent notifications to the HA dashboard — no additional configuration needed. From there, HA automations can forward notifications to mobile apps, WhatsApp, or any other service. Requested by @TravisWilder.
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 ### Fixed
 - **Debug Logging Endpoint 500 Error** — The `GET /api/v1/support/debug-logging` endpoint returned a 500 Internal Server Error when the database contained a timezone-aware timestamp written by a previous version. The duration calculation subtracted a timezone-aware datetime from a naive `datetime.now()`, raising `TypeError`. Now strips timezone info when reading the stored timestamp.
 
 =======
 >>>>>>> aab695c (  Add Home Assistant as notification provider (#656))
+=======
+### Fixed
+- **Debug Logging Endpoint 500 Error** — The `GET /api/v1/support/debug-logging` endpoint returned a 500 Internal Server Error when the database contained a timezone-aware timestamp written by a previous version. The duration calculation subtracted a timezone-aware datetime from a naive `datetime.now()`, raising `TypeError`. Now strips timezone info when reading the stored timestamp.
+
+>>>>>>> 63ca668 (  Fix debug logging endpoint 500 error after version upgrade)
 
 ## [0.2.2b3] - Unreleased
 

@@ -63,12 +63,21 @@ async def _get_debug_setting(db: AsyncSession) -> tuple[bool, datetime | None]:
     if enabled_at_setting and enabled_at_setting.value:
         try:
 <<<<<<< HEAD
+<<<<<<< HEAD
             enabled_at = datetime.fromisoformat(enabled_at_setting.value).replace(tzinfo=None)
 =======
             enabled_at = datetime.fromisoformat(enabled_at_setting.value)
             if enabled_at.tzinfo is None:
                 enabled_at = enabled_at.replace(tzinfo=timezone.utc)
 >>>>>>> 63208cf (  Fix debug logging banner showing negative timer duration)
+=======
+            enabled_at = datetime.fromisoformat(enabled_at_setting.value)
+            if enabled_at.tzinfo is None:
+                enabled_at = enabled_at.replace(tzinfo=timezone.utc)
+=======
+            enabled_at = datetime.fromisoformat(enabled_at_setting.value).replace(tzinfo=None)
+>>>>>>> 253828c (  Fix debug logging endpoint 500 error after version upgrade)
+>>>>>>> 63ca668 (  Fix debug logging endpoint 500 error after version upgrade)
         except ValueError:
             pass  # Ignore malformed timestamp; enabled_at stays None
 

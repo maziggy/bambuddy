@@ -45,6 +45,7 @@ describe('LinkSpoolModal', () => {
     printerId: 1,
     amsId: 0,
     trayId: 0,
+    amsName: 'AMS 0',
   };
 
   const mockSpools = [
@@ -125,7 +126,13 @@ describe('LinkSpoolModal', () => {
       fireEvent.click(screen.getByText(/Generic PLA Red/).closest('button')!);
 
       await waitFor(() => {
-        expect(api.linkSpool).toHaveBeenCalledWith(1, 'A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4');
+        expect(api.linkSpool).toHaveBeenCalledWith(1, {
+          spoolTag: 'ABCD1234',
+          printerId: 1,
+          amsId: 0,
+          trayId: 0,
+          amsName: 'AMS 0',
+        });
       });
     });
 

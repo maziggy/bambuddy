@@ -15,6 +15,7 @@ import uuid
 from collections.abc import AsyncGenerator
 from typing import Literal
 
+import psutil
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
@@ -89,7 +90,7 @@ _active_external_streams: set[int] = set()
 _spawned_ffmpeg_pids: dict[int, float] = {}
 # Max age for stale frame buffer entries (5 minutes)
 _FRAME_BUFFER_MAX_AGE = 300.0
-_CLEANUP_INTERVAL = 15.0  # seconds between periodic cleanup runs
+_CLEANUP_INTERVAL = 10.0  # seconds between periodic cleanup runs
 _RTSP_BUFFER_LIMIT = 3 * 1024 * 1024  # 3 MB — enough for 2-3 large JPEG frames
 _cleanup_task: asyncio.Task | None = None
 
@@ -97,9 +98,28 @@ _cleanup_task: asyncio.Task | None = None
 # in error-concealment loop despite -ec 0, or other unknown failure modes).
 # Maps PID -> (wall_time, cumulative_cpu_seconds) from last sample.
 _ffmpeg_cpu_samples: dict[int, tuple[float, float]] = {}
-_CPU_PCT_KILL_THRESHOLD = 40.0  # Kill if avg CPU% exceeds this between samples
-_CPU_WATCHDOG_GRACE_SECS = 20.0  # Skip processes younger than this (startup probe can be CPU-heavy)
-_FLEET_CPU_PCT_THRESHOLD = (os.cpu_count() or 4) * 70.0  # Fleet-level CPU cap (e.g. 280% on 4 cores)
+_CPU_PCT_KILL_THRESHOLD = 30.0  # Kill if avg CPU% exceeds this between samples
+_CPU_WATCHDOG_GRACE_SECS = 10.0  # Skip processes younger than this (startup probe can be CPU-heavy)
+_FLEET_CPU_PCT_THRESHOLD = (os.cpu_count() or 4) * 50.0  # Fleet-level CPU cap (e.g. 200% on 4 cores)
+
+# Spawn-time load gate — refuse to start new FFmpeg processes when system is overloaded
+_SPAWN_LOAD_THRESHOLD = (os.cpu_count() or 4) * 1.5
+
+# Adaptive cleanup interval — accelerates watchdog under load
+_cleanup_interval_override: float | None = None
+
+# Circuit breaker — prevents grid restart logic from respawning watchdog-killed processes
+_fleet_cooldown_until: float = 0.0  # monotonic timestamp; 0 = no cooldown
+_FLEET_COOLDOWN_DURATION = 30.0
+_watchdog_killed_printers: set[int] = set()
+
+# Stderr structured error tracking for observability and debugging.
+# Maps stream_id -> {category: count} for categorized errors.
+_stderr_error_counts: dict[str, int] = {}
+_stderr_error_details: dict[str, dict[str, int]] = {}
+# Maps stream_id -> list of recent error lines (capped) for debugging
+_stderr_recent_errors: dict[str, list[str]] = {}
+_STDERR_RECENT_CAP = 20  # Max recent error lines kept per stream
 
 
 def _scan_dead_pids() -> list[int]:
@@ -116,27 +136,18 @@ def _scan_dead_pids() -> list[int]:
 
 
 def _read_ffmpeg_cpu_times() -> dict[int, float]:
-    """Read cumulative CPU seconds for tracked FFmpeg PIDs from /proc (Linux only).
+    """Read cumulative CPU seconds for tracked FFmpeg PIDs via psutil.
 
     Returns {pid: cpu_seconds}.  Runs in a thread-pool executor (sync I/O).
+    Cross-platform: works on Linux, macOS, and Windows.
     """
-    if sys.platform != "linux":
-        return {}
-    try:
-        clk_tck = os.sysconf("SC_CLK_TCK")
-    except (AttributeError, ValueError):
-        return {}
     result: dict[int, float] = {}
     for pid in list(_spawned_ffmpeg_pids):
         try:
-            with open(f"/proc/{pid}/stat") as f:
-                # comm field (2nd) may contain spaces/parens — split on last ')'
-                rest = f.read().split(")")[-1].split()
-                # rest[0]=state, ..., rest[11]=utime, rest[12]=stime
-                utime = int(rest[11])
-                stime = int(rest[12])
-                result[pid] = (utime + stime) / clk_tck
-        except (OSError, IndexError, ValueError):
+            p = psutil.Process(pid)
+            times = p.cpu_times()
+            result[pid] = times.user + times.system
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
     return result
 
@@ -166,8 +177,9 @@ async def _cleanup_stale_frame_buffers() -> None:
             logger.info("Cleaned up %d dead ffmpeg PIDs from tracking", len(dead_pids))
 
     # CPU watchdog — detect FFmpeg processes stuck in high-CPU loops.
-    # Reads /proc/<pid>/stat (Linux only) and compares cumulative CPU time
-    # between cleanup cycles.  Kills processes that exceed the threshold.
+    # Uses psutil (cross-platform) to compare cumulative CPU time between
+    # cleanup cycles.  Kills processes that exceed the threshold.
+    global _cleanup_interval_override, _fleet_cooldown_until
     if _spawned_ffmpeg_pids:
         cpu_times = await asyncio.get_running_loop().run_in_executor(None, _read_ffmpeg_cpu_times)
         killed = []
@@ -185,12 +197,27 @@ async def _cleanup_stale_frame_buffers() -> None:
                 if wall_delta > 5:  # Need a meaningful window
                     cpu_pct = (cpu_secs - prev_cpu) / wall_delta * 100
                     if cpu_pct > _CPU_PCT_KILL_THRESHOLD:
+                        # Find stream_id for this PID to correlate with stderr
+                        kill_stream_id = None
+                        for sid, proc in _active_streams.items():
+                            if proc.pid == pid:
+                                kill_stream_id = sid
+                                break
+                        stderr_info = ""
+                        if kill_stream_id:
+                            details = _stderr_error_details.get(kill_stream_id)
+                            recent = _stderr_recent_errors.get(kill_stream_id)
+                            if details:
+                                stderr_info = f", stderr={details}"
+                            if recent:
+                                stderr_info += f", last_errors={recent[-3:]}"
                         logger.warning(
-                            "CPU watchdog: FFmpeg PID %d at %.0f%% CPU (%.1fs cpu / %.0fs wall), killing",
+                            "CPU watchdog: FFmpeg PID %d at %.0f%% CPU (%.1fs cpu / %.0fs wall), killing%s",
                             pid,
                             cpu_pct,
                             cpu_secs - prev_cpu,
                             wall_delta,
+                            stderr_info,
                         )
                         try:
                             os.kill(pid, signal.SIGKILL)
@@ -200,6 +227,19 @@ async def _cleanup_stale_frame_buffers() -> None:
                         continue
                     pid_cpu_pcts[pid] = cpu_pct
             _ffmpeg_cpu_samples[pid] = (now, cpu_secs)
+        # Map killed PIDs to printer IDs and activate circuit breaker
+        if killed:
+            _fleet_cooldown_until = now + _FLEET_COOLDOWN_DURATION
+            for killed_pid in killed:
+                for stream_id, proc in _active_streams.items():
+                    if proc.pid == killed_pid:
+                        # stream_id format: "{printer_id}-{uuid_hex}"
+                        try:
+                            printer_id_str = stream_id.split("-")[0]
+                            _watchdog_killed_printers.add(int(printer_id_str))
+                        except (ValueError, IndexError):
+                            pass
+                        break
         for pid in killed:
             _spawned_ffmpeg_pids.pop(pid, None)
             _ffmpeg_cpu_samples.pop(pid, None)
@@ -212,6 +252,13 @@ async def _cleanup_stale_frame_buffers() -> None:
         # where individual processes stay under the per-process threshold
         # but collectively saturate the CPU (e.g. 11 × 30% = 330%).
         fleet_total = sum(pid_cpu_pcts.values())
+
+        # Adaptive cleanup interval — speed up detection under load
+        if fleet_total > _FLEET_CPU_PCT_THRESHOLD * 0.5:
+            _cleanup_interval_override = 5.0
+        else:
+            _cleanup_interval_override = None
+
         if fleet_total > _FLEET_CPU_PCT_THRESHOLD and pid_cpu_pcts:
             # Sort by CPU% descending, kill worst offenders until under threshold
             sorted_pids = sorted(pid_cpu_pcts.items(), key=lambda x: x[1], reverse=True)
@@ -229,19 +276,44 @@ async def _cleanup_stale_frame_buffers() -> None:
                 _spawned_ffmpeg_pids.pop(pid, None)
                 _ffmpeg_cpu_samples.pop(pid, None)
             if fleet_killed:
+                # Activate circuit breaker for fleet kills
+                _fleet_cooldown_until = now + _FLEET_COOLDOWN_DURATION
+                for killed_pid in fleet_killed:
+                    for stream_id, proc in _active_streams.items():
+                        if proc.pid == killed_pid:
+                            try:
+                                printer_id_str = stream_id.split("-")[0]
+                                _watchdog_killed_printers.add(int(printer_id_str))
+                            except (ValueError, IndexError):
+                                pass
+                            break
+                # Correlate killed PIDs with their stderr error summaries
+                fleet_stderr = {}
+                for killed_pid in fleet_killed:
+                    for sid, proc in _active_streams.items():
+                        if proc.pid == killed_pid:
+                            details = _stderr_error_details.get(sid)
+                            if details:
+                                fleet_stderr[killed_pid] = details
+                            break
                 logger.warning(
-                    "Fleet CPU watchdog: total %.0f%% > %.0f%% threshold, killed %d processes (PIDs: %s)",
+                    "Fleet CPU watchdog: total %.0f%% > %.0f%% threshold, killed %d processes (PIDs: %s), cooldown %.0fs, stderr=%s",
                     fleet_total,
                     _FLEET_CPU_PCT_THRESHOLD,
                     len(fleet_killed),
                     fleet_killed,
+                    _FLEET_COOLDOWN_DURATION,
+                    fleet_stderr or "none",
                 )
 
 
 async def _periodic_cleanup_loop() -> None:
-    """Background task that runs stale frame buffer cleanup on a fixed interval."""
+    """Background task that runs stale frame buffer cleanup on a fixed interval.
+
+    Uses _cleanup_interval_override when set (adaptive interval under CPU load).
+    """
     while True:
-        await asyncio.sleep(_CLEANUP_INTERVAL)
+        await asyncio.sleep(_cleanup_interval_override or _CLEANUP_INTERVAL)
         await _cleanup_stale_frame_buffers()
 
 
@@ -789,11 +861,36 @@ async def generate_chamber_mjpeg_stream(
         logger.info("Chamber image stream stopped for %s (stream_id=%s)", ip_address, stream_id)
 
 
+def _categorize_ffmpeg_error(line: str) -> str:
+    """Categorize an FFmpeg stderr error line into a debug-friendly bucket."""
+    lower = line.lower()
+    if any(kw in lower for kw in ("broken", "corrupt", "invalid nal", "missing reference", "concealment")):
+        return "decoder_corruption"
+    if any(kw in lower for kw in ("overread", "bitstream", "cabac", "slice")):
+        return "bitstream_error"
+    if any(kw in lower for kw in ("timeout", "timed out", "connection refused", "connection reset")):
+        return "network_timeout"
+    if any(kw in lower for kw in ("eof", "end of file", "server returned")):
+        return "stream_eof"
+    if "fatal" in lower:
+        return "fatal"
+    if "error" in lower or "failed" in lower:
+        return "generic_error"
+    return "other"
+
+
+_STDERR_ERROR_KEYWORDS = ("error", "fatal", "failed", "broken", "timeout", "timed out", "overread", "corrupt", "invalid")
+
+
 async def _drain_stderr(process: asyncio.subprocess.Process, stream_id: str) -> None:
     """Continuously read stderr to prevent pipe buffer deadlock.
 
-    Logs lines containing error/warning keywords for diagnostics.
+    Categorizes error lines for structured debugging.  Logs each captured error
+    at INFO level so it appears in normal log output for post-mortem analysis.
     """
+    error_count = 0
+    categories: dict[str, int] = {}
+    recent: list[str] = []
     try:
         while True:
             data = await process.stderr.read(65536)
@@ -805,12 +902,29 @@ async def _drain_stderr(process: asyncio.subprocess.Process, stream_id: str) -> 
                 if not stripped:
                     continue
                 lower = stripped.lower()
-                if any(kw in lower for kw in ("error", "fatal", "failed", "broken", "timeout", "overread")):
+                if any(kw in lower for kw in _STDERR_ERROR_KEYWORDS):
+                    category = _categorize_ffmpeg_error(stripped)
+                    categories[category] = categories.get(category, 0) + 1
+                    error_count += 1
+                    if len(recent) < _STDERR_RECENT_CAP:
+                        recent.append(stripped)
+                    logger.info("ffmpeg stderr captured [%s][%s]: %s", stream_id, category, stripped)
                     logger.warning("ffmpeg[%s]: %s", stream_id, stripped)
     except asyncio.CancelledError:
         raise
     except Exception:
         pass
+    finally:
+        if error_count > 0:
+            _stderr_error_counts[stream_id] = error_count
+            _stderr_error_details[stream_id] = categories
+            _stderr_recent_errors[stream_id] = recent
+            logger.info(
+                "ffmpeg stderr summary [%s]: %d errors — %s",
+                stream_id,
+                error_count,
+                ", ".join(f"{k}={v}" for k, v in sorted(categories.items())),
+            )
 
 
 async def generate_rtsp_mjpeg_stream(
@@ -947,6 +1061,11 @@ async def generate_rtsp_mjpeg_stream(
     # reconstruction on degraded streams.  Without this, the decoder can
     # spike to 50-65% CPU per process trying to reconstruct damaged keyframes.
     cmd.extend(["-ec", "0"])
+    # Aggressive error detection — makes the decoder flag more corruption
+    # patterns (CRC mismatches, bitstream syntax violations) that -xerror
+    # can then act on.  Without this, some structural corruption silently
+    # enters a high-CPU decode loop because it's not classified as an "error".
+    cmd.extend(["-err_detect", "+crccheck+bitstream+buffer+explode"])
     # Exit immediately on decode errors (severe/structural corruption).
     # Minor corruption is still silently handled by -fflags +discardcorrupt
     # (demuxer) and -ec 0 (decoder), but when those can't cope, -xerror
@@ -1037,6 +1156,8 @@ async def generate_rtsp_mjpeg_stream(
             if stream_id:
                 _active_streams[stream_id] = process
                 _spawned_ffmpeg_pids[process.pid] = time.monotonic()
+                # Pre-seed CPU baseline so watchdog only needs grace + one compare pass
+                _ffmpeg_cpu_samples[process.pid] = (time.monotonic(), 0.0)
         except FileNotFoundError:
             logger.error("ffmpeg not found - camera streaming requires ffmpeg")
             if not raw:
@@ -1216,6 +1337,14 @@ async def _resolve_quality_from_settings(
     return fps, quality, scale, threads, gpu_accel, skip_frames, preset_name
 
 
+def _check_system_load() -> float | None:
+    """Return the 1-minute load average, or None if unavailable (Windows)."""
+    try:
+        return os.getloadavg()[0]
+    except (OSError, AttributeError):
+        return None
+
+
 async def _ensure_producer(
     printer_id: int,
     db: AsyncSession,
@@ -1256,6 +1385,17 @@ async def _ensure_producer(
     # External cameras are not supported in the multiplexed stream
     if printer.external_camera_enabled and printer.external_camera_url:
         logger.debug("Skipping grid producer for printer %s: external camera not supported in grid mode", printer_id)
+        return None
+
+    # Load gate — refuse to spawn new FFmpeg processes when system is overloaded
+    load = _check_system_load()
+    if load is not None and load > _SPAWN_LOAD_THRESHOLD:
+        logger.warning(
+            "Load gate: refusing to spawn FFmpeg for printer %d (load=%.1f, threshold=%.1f)",
+            printer_id,
+            load,
+            _SPAWN_LOAD_THRESHOLD,
+        )
         return None
 
     if is_chamber_image_model(printer.model):
@@ -1383,7 +1523,10 @@ async def camera_grid_stream(
             if printer is None:
                 continue
             if i > 0:
-                await asyncio.sleep(_GRID_SPAWN_STAGGER_DELAY)
+                # Increase stagger under load to reduce spawn pressure
+                load = _check_system_load()
+                stagger = 1.0 if (load is not None and load > _SPAWN_LOAD_THRESHOLD * 0.5) else _GRID_SPAWN_STAGGER_DELAY
+                await asyncio.sleep(stagger)
             entry = await _ensure_producer(
                 pid,
                 db,
@@ -1444,8 +1587,12 @@ async def camera_grid_stream(
                         # Producer died — schedule restart instead of permanent removal
                         entries.pop(pid, None)
                         if pid not in pending_restarts:
-                            pending_restarts[pid] = (0, now + _GRID_RESTART_BASE_DELAY)
-                            logger.warning("Grid producer died for printer %d, scheduling restart", pid)
+                            # If watchdog killed this printer, start with higher attempt count
+                            # to accelerate backoff and avoid immediate respawn
+                            initial_attempts = 2 if pid in _watchdog_killed_printers else 0
+                            _watchdog_killed_printers.discard(pid)
+                            pending_restarts[pid] = (initial_attempts, now + _GRID_RESTART_BASE_DELAY)
+                            logger.warning("Grid producer died for printer %d, scheduling restart (attempts=%d)", pid, initial_attempts)
                         continue
 
                     # Detect stuck producers from outside the blocked generator
@@ -1504,94 +1651,122 @@ async def camera_grid_stream(
                             parts.append(f"p{spid}: frames={len(sizes)}, avg={avg_kb:.1f}KB")
                         else:
                             parts.append(f"p{spid}: frames=0")
+                    # Include system load and cooldown status
+                    load_info = ""
+                    load = _check_system_load()
+                    if load is not None:
+                        try:
+                            load1, load5, load15 = os.getloadavg()
+                            load_info = f", load={load1:.1f}/{load5:.1f}/{load15:.1f}"
+                        except (OSError, AttributeError):
+                            pass
+                    cooldown_info = ""
+                    if now < _fleet_cooldown_until:
+                        cooldown_info = f", cooldown={_fleet_cooldown_until - now:.0f}s"
                     logger.info(
-                        "Grid stream stats (%.0fs) [preset=%s, fps=%d]: %.1f KB/s total, %d printers: %s",
+                        "Grid stream stats (%.0fs) [preset=%s, fps=%d]: %.1f KB/s total, %d printers: %s%s%s",
                         elapsed,
                         preset_label,
                         fps,
                         total_kbps,
                         len(stats_frames),
                         ", ".join(parts),
+                        load_info,
+                        cooldown_info,
                     )
                     stats_start = now
                     stats_frames = {p: [] for p in entries}
 
+                # Circuit breaker — skip restart processing during watchdog cooldown
+                cooldown_active = now < _fleet_cooldown_until
+                if cooldown_active and pending_restarts:
+                    remaining_cooldown = _fleet_cooldown_until - now
+                    if int(remaining_cooldown) % 10 == 0:  # Log every ~10s
+                        logger.info(
+                            "Circuit breaker active: skipping %d pending restarts (cooldown %.0fs remaining)",
+                            len(pending_restarts),
+                            remaining_cooldown,
+                        )
+                elif not cooldown_active:
+                    _watchdog_killed_printers.clear()  # Cooldown expired, reset
+
                 # Process pending restarts (budget-limited to prevent thundering herd)
                 restarts_this_cycle = 0
-                for pid in list(pending_restarts):
-                    if restarts_this_cycle >= _GRID_MAX_CONCURRENT_RESTARTS:
-                        break
-                    attempts, next_retry = pending_restarts[pid]
-                    if now < next_retry:
-                        continue
-                    if attempts >= _GRID_MAX_RESTARTS:
-                        # Switch to slow retry cadence — don't permanently give up.
-                        # RTSP/chamber connections can recover after network hiccups,
-                        # printer reboots, or temporary camera unavailability.
-                        base_delay = _GRID_RESTART_MAX_DELAY
-                        delay = base_delay + random.uniform(0, base_delay * 0.3)
-                        pending_restarts[pid] = (attempts + 1, now + delay)
-                        if (attempts - _GRID_MAX_RESTARTS) % 10 == 0:
+                if not cooldown_active:
+                    for pid in list(pending_restarts):
+                        if restarts_this_cycle >= _GRID_MAX_CONCURRENT_RESTARTS:
+                            break
+                        attempts, next_retry = pending_restarts[pid]
+                        if now < next_retry:
+                            continue
+                        if attempts >= _GRID_MAX_RESTARTS:
+                            # Switch to slow retry cadence — don't permanently give up.
+                            # RTSP/chamber connections can recover after network hiccups,
+                            # printer reboots, or temporary camera unavailability.
+                            base_delay = _GRID_RESTART_MAX_DELAY
+                            delay = base_delay + random.uniform(0, base_delay * 0.3)
+                            pending_restarts[pid] = (attempts + 1, now + delay)
+                            if (attempts - _GRID_MAX_RESTARTS) % 10 == 0:
+                                logger.warning(
+                                    "Grid producer for printer %d: %d restart attempts, slow-retrying every %.0fs",
+                                    pid,
+                                    attempts,
+                                    delay,
+                                )
+                            continue
+                        # Use a fresh DB session — the endpoint's `db` may be stale hours into a stream
+                        try:
+                            async with async_session() as restart_db:
+                                (
+                                    r_fps,
+                                    r_quality,
+                                    r_scale,
+                                    r_threads,
+                                    r_gpu_accel,
+                                    r_skip_frames,
+                                    _r_preset,
+                                ) = await _resolve_quality_from_settings(
+                                    restart_db, len(entries) + len(pending_restarts), "grid"
+                                )
+                                entry = await _ensure_producer(
+                                    pid,
+                                    restart_db,
+                                    r_fps,
+                                    r_quality,
+                                    r_scale,
+                                    force_quality=True,
+                                    threads=r_threads,
+                                    gpu_accel=r_gpu_accel,
+                                    skip_frames=r_skip_frames,
+                                )
+                        except Exception:
+                            logger.warning("Grid restart DB/producer error for printer %d", pid, exc_info=True)
+                            entry = None
+
+                        if entry is not None:
+                            entries[pid] = entry
+                            # Decrement old entry's viewer_count before replacing
+                            old_registered = registered_entries.get(pid)
+                            if old_registered is not None and old_registered is not entry:
+                                old_registered.viewer_count = max(0, old_registered.viewer_count - 1)
+                            entry.viewer_count += 1
+                            registered_entries[pid] = entry
+                            seen_seqs[pid] = 0
+                            del pending_restarts[pid]
+                            restarts_this_cycle += 1
+                            logger.info("Grid producer restarted for printer %d (attempt %d)", pid, attempts + 1)
+                        else:
+                            # Exponential backoff with jitter: base * 2^attempt, capped
+                            base_delay = min(_GRID_RESTART_BASE_DELAY * (2**attempts), _GRID_RESTART_MAX_DELAY)
+                            delay = base_delay + random.uniform(0, base_delay * 0.3)
+                            pending_restarts[pid] = (attempts + 1, now + delay)
                             logger.warning(
-                                "Grid producer for printer %d: %d restart attempts, slow-retrying every %.0fs",
+                                "Grid restart failed for printer %d (attempt %d/%d), next retry in %.0fs",
                                 pid,
-                                attempts,
+                                attempts + 1,
+                                _GRID_MAX_RESTARTS,
                                 delay,
                             )
-                        continue
-                    # Use a fresh DB session — the endpoint's `db` may be stale hours into a stream
-                    try:
-                        async with async_session() as restart_db:
-                            (
-                                r_fps,
-                                r_quality,
-                                r_scale,
-                                r_threads,
-                                r_gpu_accel,
-                                r_skip_frames,
-                                _r_preset,
-                            ) = await _resolve_quality_from_settings(
-                                restart_db, len(entries) + len(pending_restarts), "grid"
-                            )
-                            entry = await _ensure_producer(
-                                pid,
-                                restart_db,
-                                r_fps,
-                                r_quality,
-                                r_scale,
-                                force_quality=True,
-                                threads=r_threads,
-                                gpu_accel=r_gpu_accel,
-                                skip_frames=r_skip_frames,
-                            )
-                    except Exception:
-                        logger.warning("Grid restart DB/producer error for printer %d", pid, exc_info=True)
-                        entry = None
-
-                    if entry is not None:
-                        entries[pid] = entry
-                        # Decrement old entry's viewer_count before replacing
-                        old_registered = registered_entries.get(pid)
-                        if old_registered is not None and old_registered is not entry:
-                            old_registered.viewer_count = max(0, old_registered.viewer_count - 1)
-                        entry.viewer_count += 1
-                        registered_entries[pid] = entry
-                        seen_seqs[pid] = 0
-                        del pending_restarts[pid]
-                        restarts_this_cycle += 1
-                        logger.info("Grid producer restarted for printer %d (attempt %d)", pid, attempts + 1)
-                    else:
-                        # Exponential backoff with jitter: base * 2^attempt, capped
-                        base_delay = min(_GRID_RESTART_BASE_DELAY * (2**attempts), _GRID_RESTART_MAX_DELAY)
-                        delay = base_delay + random.uniform(0, base_delay * 0.3)
-                        pending_restarts[pid] = (attempts + 1, now + delay)
-                        logger.warning(
-                            "Grid restart failed for printer %d (attempt %d/%d), next retry in %.0fs",
-                            pid,
-                            attempts + 1,
-                            _GRID_MAX_RESTARTS,
-                            delay,
-                        )
 
                 if not entries and not pending_restarts:
                     break
@@ -2002,9 +2177,52 @@ async def camera_hub_status(
     """Debug endpoint: return the state of all shared camera producers.
 
     Shows how many ffmpeg/chamber producers are running, their viewer
-    counts, idle times, and frame counters.
+    counts, idle times, and frame counters.  Also includes FFmpeg process
+    stats, system load, and circuit breaker status.
     """
-    return {"grid": _hub.status(), "single": _single_hub.status()}
+    now = time.monotonic()
+
+    # FFmpeg process details
+    ffmpeg_processes = []
+    for pid, spawn_ts in _spawned_ffmpeg_pids.items():
+        entry: dict = {"pid": pid, "uptime_s": round(now - spawn_ts, 1)}
+        sample = _ffmpeg_cpu_samples.get(pid)
+        if sample is not None:
+            entry["last_cpu_sample"] = {"wall_time_ago_s": round(now - sample[0], 1), "cpu_seconds": round(sample[1], 2)}
+        ffmpeg_processes.append(entry)
+
+    # System load
+    system_load: dict = {"cpu_count": os.cpu_count() or 0}
+    try:
+        load1, load5, load15 = os.getloadavg()
+        system_load["load_1m"] = round(load1, 2)
+        system_load["load_5m"] = round(load5, 2)
+        system_load["load_15m"] = round(load15, 2)
+    except (OSError, AttributeError):
+        pass
+
+    # Circuit breaker status
+    cooldown_active = now < _fleet_cooldown_until
+    cooldown_remaining = max(0.0, _fleet_cooldown_until - now) if cooldown_active else 0.0
+
+    return {
+        "grid": _hub.status(),
+        "single": _single_hub.status(),
+        "ffmpeg_processes": ffmpeg_processes,
+        "system_load": system_load,
+        "cooldown_active": cooldown_active,
+        "cooldown_remaining_s": round(cooldown_remaining, 1),
+        "watchdog_killed_printers": sorted(_watchdog_killed_printers),
+        "stderr_error_counts": dict(_stderr_error_counts),
+        "stderr_error_details": {k: dict(v) for k, v in _stderr_error_details.items()},
+        "stderr_recent_errors": {k: list(v) for k, v in _stderr_recent_errors.items()},
+        "watchdog_thresholds": {
+            "per_process_cpu_pct": _CPU_PCT_KILL_THRESHOLD,
+            "fleet_cpu_pct": _FLEET_CPU_PCT_THRESHOLD,
+            "grace_secs": _CPU_WATCHDOG_GRACE_SECS,
+            "spawn_load_threshold": _SPAWN_LOAD_THRESHOLD,
+        },
+    }
 
 
 class ExternalCameraTestRequest(BaseModel):

@@ -39,6 +39,7 @@ from backend.app.api.routes import (
     projects,
     settings as settings_routes,
     smart_plugs,
+    filaman,
     spoolbuddy,
     spoolman,
     support,
@@ -71,6 +72,12 @@ from backend.app.services.printer_manager import (
     printer_state_to_dict,
 )
 from backend.app.services.smart_plug_manager import smart_plug_manager
+from backend.app.services.filaman import close_filaman_client, get_filaman_client, init_filaman_client
+from backend.app.services.filaman_tracking import (
+    cleanup_tracking as _cleanup_filaman_tracking,
+    report_usage as _report_filaman_usage,
+    store_print_data as _store_filaman_print_data,
+)
 from backend.app.services.spoolman import close_spoolman_client, get_spoolman_client, init_spoolman_client
 from backend.app.services.spoolman_tracking import (
     cleanup_tracking as _cleanup_spoolman_tracking,
@@ -933,6 +940,82 @@ async def on_ams_change(printer_id: int, ams_data: list):
     except Exception as e:
         logging.getLogger(__name__).warning(f"Spoolman AMS sync failed: {e}")
 
+    try:
+        async with async_session() as db:
+            from backend.app.api.routes.settings import get_setting
+
+            # Check if FilaMan is enabled with auto sync mode
+            filaman_enabled = await get_setting(db, "filaman_enabled")
+            if not filaman_enabled or filaman_enabled.lower() != "true":
+                return
+
+            sync_mode = await get_setting(db, "filaman_sync_mode")
+            if sync_mode and sync_mode != "auto":
+                return
+
+            disable_weight_sync_str = await get_setting(db, "filaman_disable_weight_sync")
+            disable_weight_sync = disable_weight_sync_str and disable_weight_sync_str.lower() == "true"
+            if disable_weight_sync:
+                return  # Using per-usage tracking instead
+
+            filaman_url = await get_setting(db, "filaman_url")
+            filaman_api_key = await get_setting(db, "filaman_api_key")
+            if not filaman_url or not filaman_api_key:
+                return
+
+            client = get_filaman_client()
+            if not client:
+                client = init_filaman_client(filaman_url, filaman_api_key)
+
+            if not await client.health_check():
+                logger.warning("FilaMan not reachable at %s", filaman_url)
+                return
+
+            # Fetch all spools for batch lookup
+            try:
+                all_spools = await client.get_spools()
+            except Exception as e:
+                logger.error("[Printer %s] Failed to fetch FilaMan spools for auto-sync: %s", printer_id, e)
+                return
+
+            spool_by_rfid = {
+                (s.get("rfid_uid") or "").strip().upper(): s
+                for s in all_spools
+                if (s.get("rfid_uid") or "").strip()
+            }
+
+            synced = 0
+            for ams_unit in ams_data:
+                ams_id = int(ams_unit.get("id", 0))
+                for tray_data in ams_unit.get("tray", []):
+                    if not isinstance(tray_data, dict) or not tray_data.get("tray_type", "").strip():
+                        continue
+                    tray_uuid = tray_data.get("tray_uuid", "") or ""
+                    if not tray_uuid or tray_uuid == "00000000000000000000000000000000":
+                        continue
+                    spool = spool_by_rfid.get(tray_uuid.strip().upper())
+                    if not spool:
+                        continue
+                    try:
+                        remain = int(tray_data.get("remain", -1))
+                        tray_weight = int(tray_data.get("tray_weight", 0))
+                        if remain >= 0 and tray_weight > 0:
+                            remaining_g = (remain / 100.0) * tray_weight
+                            initial_weight = spool.get("initial_total_weight_g") or spool.get("label_weight") or 0
+                            current_remaining = spool.get("remaining_weight_g") or initial_weight
+                            delta = current_remaining - remaining_g
+                            if delta > 0.5:
+                                await client.report_consumption(spool["id"], round(delta, 2))
+                        synced += 1
+                    except Exception as e:
+                        logger.error("Error syncing FilaMan spool for tray %s: %s", tray_uuid[:16], e)
+
+            if synced > 0:
+                logger.info("Auto-synced %s AMS trays to FilaMan for printer %s", synced, printer_id)
+
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"FilaMan AMS sync failed: {e}")
+
 
 async def _capture_snapshot_for_notification(printer_id: int, printer, logger) -> bytes | None:
     """Capture a camera snapshot for notification image attachment.
@@ -1314,6 +1397,12 @@ async def on_print_start(printer_id: int, data: dict):
                 except Exception as e:
                     logger.warning("[SPOOLMAN] Failed to store tracking data: %s", e)
 
+                # Store FilaMan tracking data for per-filament consumption reporting
+                try:
+                    await _store_filaman_print_data(printer_id, archive.id, archive.file_path, db, printer_manager)
+                except Exception as e:
+                    logger.warning("[FILAMAN] Failed to store tracking data: %s", e)
+
             return  # Skip creating a new archive
 
         # Check if there's already a "printing" archive for this printer/file
@@ -1632,6 +1721,14 @@ async def on_print_start(printer_id: int, data: dict):
                 except Exception as e:
                     logger.debug("[SPOOLMAN] Could not store tracking for fallback archive: %s", e)
 
+                # Store FilaMan tracking data (may not work for fallback since no 3MF)
+                try:
+                    await _store_filaman_print_data(
+                        printer_id, fallback_archive.id, fallback_archive.file_path, db, printer_manager
+                    )
+                except Exception as e:
+                    logger.debug("[FILAMAN] Could not store tracking for fallback archive: %s", e)
+
                 # Send notification without archive data (file not found)
                 if not notification_sent:
                     await _send_print_start_notification(printer_id, data, logger=logger)
@@ -1750,6 +1847,12 @@ async def on_print_start(printer_id: int, data: dict):
                     await _store_spoolman_print_data(printer_id, archive.id, archive.file_path, db, printer_manager)
                 except Exception as e:
                     logger.warning("[SPOOLMAN] Failed to store tracking data: %s", e)
+
+                # Store FilaMan tracking data for per-filament consumption reporting
+                try:
+                    await _store_filaman_print_data(printer_id, archive.id, archive.file_path, db, printer_manager)
+                except Exception as e:
+                    logger.warning("[FILAMAN] Failed to store tracking data: %s", e)
 
                 # Capture timelapse file baseline for snapshot-diff on completion
                 try:
@@ -2516,6 +2619,21 @@ async def on_print_complete(printer_id: int, data: dict):
                 await _cleanup_spoolman_tracking(printer_id, archive_id, db)
         except Exception as e:
             logger.debug("[SPOOLMAN] Cleanup failed: %s", e)
+
+    # Report filament consumption to FilaMan if print completed successfully
+    if data.get("status") == "completed":
+        try:
+            await _report_filaman_usage(printer_id, archive_id)
+            log_timing("FilaMan consumption report")
+        except Exception as e:
+            logger.warning("FilaMan consumption reporting failed: %s", e)
+    else:
+        # Report partial consumption if tracking data exists
+        try:
+            async with async_session() as db:
+                await _cleanup_filaman_tracking(printer_id, archive_id, db)
+        except Exception as e:
+            logger.debug("[FILAMAN] Cleanup failed: %s", e)
 
     # Run slow operations as background tasks to avoid blocking the event loop
     # These operations can take 5-10+ seconds and would freeze the UI if awaited
@@ -3314,6 +3432,24 @@ async def lifespan(app: FastAPI):
     async with async_session() as db:
         await init_printer_connections(db)
 
+    # Auto-connect to FilaMan if enabled
+    async with async_session() as db:
+        from backend.app.api.routes.settings import get_setting
+
+        filaman_enabled = await get_setting(db, "filaman_enabled")
+        filaman_url = await get_setting(db, "filaman_url")
+        filaman_api_key = await get_setting(db, "filaman_api_key")
+
+        if filaman_enabled and filaman_enabled.lower() == "true" and filaman_url and filaman_api_key:
+            try:
+                client = init_filaman_client(filaman_url, filaman_api_key)
+                if await client.health_check():
+                    logging.info("Auto-connected to FilaMan at %s", filaman_url)
+                else:
+                    logging.warning("FilaMan at %s is not reachable", filaman_url)
+            except Exception as e:
+                logging.warning("Failed to auto-connect to FilaMan: %s", e)
+
     # Auto-connect to Spoolman if enabled
     async with async_session() as db:
         from backend.app.api.routes.settings import get_setting
@@ -3386,6 +3522,7 @@ async def lifespan(app: FastAPI):
     stop_spoolbuddy_watchdog()
     stop_camera_cleanup()
     printer_manager.disconnect_all()
+    await close_filaman_client()
     await close_spoolman_client()
 
     # Stop all virtual printer services
@@ -3580,6 +3717,7 @@ app.include_router(kprofiles.router, prefix=app_settings.api_prefix)
 app.include_router(notifications.router, prefix=app_settings.api_prefix)
 app.include_router(notification_templates.router, prefix=app_settings.api_prefix)
 app.include_router(spoolman.router, prefix=app_settings.api_prefix)
+app.include_router(filaman.router, prefix=app_settings.api_prefix)
 app.include_router(updates.router, prefix=app_settings.api_prefix)
 app.include_router(maintenance.router, prefix=app_settings.api_prefix)
 app.include_router(camera.router, prefix=app_settings.api_prefix)

@@ -142,7 +142,14 @@ def build_ams_tray_lookup(raw_data: dict) -> dict[int, dict]:
     return lookup
 
 
-async def store_print_data(printer_id: int, archive_id: int, file_path: str, db, printer_manager):
+async def store_print_data(
+    printer_id: int,
+    archive_id: int,
+    file_path: str,
+    db,
+    printer_manager,
+    ams_mapping: list[int] | None = None,
+):
     """Store Spoolman tracking data at print start (persisted to database).
 
     Only stores data when Spoolman is enabled and AMS weight sync is disabled
@@ -187,17 +194,21 @@ async def store_print_data(printer_id: int, archive_id: int, file_path: str, db,
     if state and state.raw_data:
         ams_trays = build_ams_tray_lookup(state.raw_data)
 
-    # Get custom slot-to-tray mapping from queue item (if this is a queued print)
-    slot_to_tray = None
-    queue_result = await db.execute(
-        select(PrintQueueItem).where(PrintQueueItem.archive_id == archive_id).where(PrintQueueItem.status == "printing")
-    )
-    queue_item = queue_result.scalar_one_or_none()
-    if queue_item and queue_item.ams_mapping:
-        try:
-            slot_to_tray = json.loads(queue_item.ams_mapping)
-        except json.JSONDecodeError:
-            pass  # Ignore malformed AMS mapping; fall back to default slot assignment
+    # Prefer the explicit mapping captured from the print command, then fall back
+    # to any queue mapping stored for scheduled/reprint jobs.
+    slot_to_tray = ams_mapping if ams_mapping else None
+    if not slot_to_tray:
+        queue_result = await db.execute(
+            select(PrintQueueItem)
+            .where(PrintQueueItem.archive_id == archive_id)
+            .where(PrintQueueItem.status == "printing")
+        )
+        queue_item = queue_result.scalar_one_or_none()
+        if queue_item and queue_item.ams_mapping:
+            try:
+                slot_to_tray = json.loads(queue_item.ams_mapping)
+            except json.JSONDecodeError:
+                pass  # Ignore malformed AMS mapping; fall back to default slot assignment
 
     # Parse G-code for per-layer filament usage (for accurate partial usage tracking)
     layer_usage = extract_layer_filament_usage_from_3mf(full_path)

@@ -250,7 +250,13 @@ async def store_print_data(
         logger.debug("[SPOOLMAN] Layer usage data available for partial tracking")
 
 
-async def cleanup_tracking(printer_id: int, archive_id: int, db):
+async def cleanup_tracking(
+    printer_id: int,
+    archive_id: int,
+    db,
+    last_layer_num: int | None = None,
+    last_progress: int | None = None,
+):
     """Report partial usage and clean up Spoolman tracking data for failed/aborted prints."""
     from backend.app.models.active_print_spoolman import ActivePrintSpoolman
 
@@ -268,7 +274,12 @@ async def cleanup_tracking(printer_id: int, archive_id: int, db):
 
     # Try to report partial usage before cleanup
     try:
-        await _report_partial_usage(printer_id, tracking)
+        await _report_partial_usage(
+            printer_id,
+            tracking,
+            last_layer_num=last_layer_num,
+            last_progress=last_progress,
+        )
     except Exception as e:
         logger.warning("[SPOOLMAN] Partial usage report failed: %s", e)
 
@@ -343,7 +354,12 @@ async def _report_spool_usage_for_slots(
     return spools_updated
 
 
-async def _report_partial_usage(printer_id: int, tracking):
+async def _report_partial_usage(
+    printer_id: int,
+    tracking,
+    last_layer_num: int | None = None,
+    last_progress: int | None = None,
+):
     """Report partial filament usage based on actual G-code layer data.
 
     Uses per-layer cumulative extrusion from G-code parsing for accurate
@@ -367,17 +383,39 @@ async def _report_partial_usage(printer_id: int, tracking):
         if not spoolman_enabled or spoolman_enabled.lower() != "true":
             return
 
-    # Get current printer state for layer progress
+    # Get current printer state for layer progress.
+    # On failed/aborted prints the firmware may already reset to IDLE with layer=0,
+    # so we fall back to completion-time hints captured from MQTT.
     state = printer_manager.get_status(printer_id)
-    if not state:
-        logger.debug("[SPOOLMAN] No printer state available for partial usage")
-        return
+    current_layer = state.layer_num if state else None
+    total_layers = state.total_layers if state else None
 
-    current_layer = state.layer_num
-    total_layers = state.total_layers
+    if (not current_layer or current_layer <= 0) and last_layer_num and last_layer_num > 0:
+        current_layer = last_layer_num
+        logger.debug("[SPOOLMAN] Using captured last_layer_num=%s for partial usage", current_layer)
+
+    progress_ratio_from_event = None
+    if last_progress is not None:
+        try:
+            progress_ratio_from_event = min(max(float(last_progress), 0.0), 100.0) / 100.0
+        except (TypeError, ValueError):
+            progress_ratio_from_event = None
+
+    if (not current_layer or current_layer <= 0) and progress_ratio_from_event and total_layers and total_layers > 0:
+        current_layer = max(1, int(round(total_layers * progress_ratio_from_event)))
+        logger.debug(
+            "[SPOOLMAN] Estimated layer from last_progress=%s%% and total_layers=%s -> %s",
+            last_progress,
+            total_layers,
+            current_layer,
+        )
 
     if not current_layer or current_layer <= 0:
-        logger.debug("[SPOOLMAN] No progress to report (layer 0 or unknown)")
+        logger.debug(
+            "[SPOOLMAN] No progress to report (layer 0/unknown, last_layer_num=%s, last_progress=%s)",
+            last_layer_num,
+            last_progress,
+        )
         return
 
     logger.info("[SPOOLMAN] Reporting partial usage at layer %s/%s", current_layer, total_layers or "?")
@@ -441,11 +479,20 @@ async def _report_partial_usage(printer_id: int, tracking):
             return
 
     # Fallback: linear interpolation (if no G-code data available)
-    if not total_layers or total_layers <= 0:
-        logger.debug("[SPOOLMAN] Cannot use linear fallback: total_layers=%s", total_layers)
+    progress_ratio = None
+    if total_layers and total_layers > 0:
+        progress_ratio = min(current_layer / total_layers, 1.0)
+    elif progress_ratio_from_event is not None:
+        progress_ratio = progress_ratio_from_event
+
+    if progress_ratio is None:
+        logger.debug(
+            "[SPOOLMAN] Cannot use linear fallback: total_layers=%s, last_progress=%s",
+            total_layers,
+            last_progress,
+        )
         return
 
-    progress_ratio = min(current_layer / total_layers, 1.0)
     logger.info("[SPOOLMAN] Falling back to linear interpolation (%s)", progress_ratio)
 
     usage_items = []

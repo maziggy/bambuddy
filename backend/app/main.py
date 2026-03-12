@@ -322,6 +322,14 @@ def register_expected_print(printer_id: int, filename: str, archive_id: int, ams
     )
 
 
+def _get_start_ams_mapping(data: dict, archive_id: int | None) -> list[int] | None:
+    """Resolve AMS mapping for print start without consuming stored queue/reprint state."""
+    stored_ams_mapping = data.get("ams_mapping")
+    if not stored_ams_mapping and archive_id:
+        stored_ams_mapping = _print_ams_mappings.get(archive_id)
+    return stored_ams_mapping
+
+
 _last_status_broadcast: dict[int, str] = {}
 # Track printers where we've updated nozzle_count
 _nozzle_count_updated: set[int] = set()
@@ -1311,7 +1319,14 @@ async def on_print_start(printer_id: int, data: dict):
 
                 # Store Spoolman tracking data for per-filament usage reporting
                 try:
-                    await _store_spoolman_print_data(printer_id, archive.id, archive.file_path, db, printer_manager)
+                    await _store_spoolman_print_data(
+                        printer_id,
+                        archive.id,
+                        archive.file_path,
+                        db,
+                        printer_manager,
+                        ams_mapping=_get_start_ams_mapping(data, archive.id),
+                    )
                 except Exception as e:
                     logger.warning("[SPOOLMAN] Failed to store tracking data: %s", e)
 
@@ -1628,7 +1643,12 @@ async def on_print_start(printer_id: int, data: dict):
                 # Store Spoolman tracking data (may not work for fallback since no 3MF)
                 try:
                     await _store_spoolman_print_data(
-                        printer_id, fallback_archive.id, fallback_archive.file_path, db, printer_manager
+                        printer_id,
+                        fallback_archive.id,
+                        fallback_archive.file_path,
+                        db,
+                        printer_manager,
+                        ams_mapping=_get_start_ams_mapping(data, fallback_archive.id),
                     )
                 except Exception as e:
                     logger.debug("[SPOOLMAN] Could not store tracking for fallback archive: %s", e)
@@ -1748,7 +1768,14 @@ async def on_print_start(printer_id: int, data: dict):
 
                 # Store Spoolman tracking data for per-filament usage reporting
                 try:
-                    await _store_spoolman_print_data(printer_id, archive.id, archive.file_path, db, printer_manager)
+                    await _store_spoolman_print_data(
+                        printer_id,
+                        archive.id,
+                        archive.file_path,
+                        db,
+                        printer_manager,
+                        ams_mapping=_get_start_ams_mapping(data, archive.id),
+                    )
                 except Exception as e:
                     logger.warning("[SPOOLMAN] Failed to store tracking data: %s", e)
 

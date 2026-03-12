@@ -404,6 +404,19 @@ export default {
       unknown: 'Inconnu',
       failedToStart: 'Échec du démarrage de la découverte',
     },
+    // AMS Drying
+    drying: {
+      start: 'Démarrer le séchage',
+      stop: 'Arrêter le séchage',
+      temperature: 'Température',
+      duration: 'Durée',
+      hours: 'heures',
+      timeRemaining: '{{time}} restant',
+      active: 'Séchage',
+      notSupported: 'Séchage non pris en charge',
+      startingDrying: 'Démarrage du séchage...',
+      stoppingDrying: 'Arrêt du séchage...',
+    },
     // Filaments section
     filaments: 'Filaments',
     // Camera

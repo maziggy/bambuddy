@@ -404,6 +404,19 @@ export default {
       unknown: '不明',
       failedToStart: '印刷の開始に失敗しました',
     },
+    // AMS Drying
+    drying: {
+      start: '乾燥開始',
+      stop: '乾燥停止',
+      temperature: '温度',
+      duration: '時間',
+      hours: '時間',
+      timeRemaining: '残り {{time}}',
+      active: '乾燥中',
+      notSupported: '乾燥非対応',
+      startingDrying: '乾燥を開始しています...',
+      stoppingDrying: '乾燥を停止しています...',
+    },
     // Filaments section
     filaments: 'フィラメント',
     // Camera

@@ -18,18 +18,81 @@ logger = logging.getLogger(__name__)
 
 # Zero UUID used by Bambu printers for empty/unset tray_uuid
 _ZERO_UUID = "00000000000000000000000000000000"
+_ZERO_TAG_UID = "0000000000000000"
 
 
-def _resolve_spool_tag(tray_info: dict) -> str:
+def _is_non_zero_identifier(value: str) -> bool:
+    """Return True when identifier is non-empty and not all zeros."""
+    if not value:
+        return False
+    return set(value) != {"0"}
+
+
+def _to_fixed_hex(value: int, width: int) -> str:
+    """Mirror frontend toFixedHex(): uppercase, zero-padded, fixed width."""
+    safe = max(0, int(value))
+    return format(safe, "X").zfill(width)[-width:]
+
+
+def _hash_serial_to_hex32(serial: str) -> str:
+    """Mirror frontend hashSerialToHex32() exactly (32-bit FNV-1a)."""
+    input_str = (serial or "").strip().upper()
+    hash_value = 0x811C9DC5
+    for char in input_str:
+        hash_value ^= ord(char)
+        hash_value = (hash_value * 0x01000193) & 0xFFFFFFFF
+    return format(hash_value, "X").zfill(8)
+
+
+def _global_tray_id_to_ams_slot(global_tray_id: int) -> tuple[int, int]:
+    """Convert global tray id to (ams_id, tray_id) tuple for fallback tag generation."""
+    # External spool slots use IDs 254/255 and map to ams_id=255 tray_id=0/1.
+    if global_tray_id >= 254:
+        return 255, max(0, global_tray_id - 254)
+    # AMS-HT units are addressed by ams_id directly and have a single tray.
+    if global_tray_id >= 128:
+        return global_tray_id, 0
+    # Standard AMS units: four trays each.
+    return global_tray_id // 4, global_tray_id % 4
+
+
+def _get_fallback_spool_tag(printer_serial: str, global_tray_id: int) -> str:
+    """Mirror frontend getFallbackSpoolTag(serial, amsId, trayId) exactly."""
+    if not printer_serial:
+        return ""
+    ams_id, tray_id = _global_tray_id_to_ams_slot(global_tray_id)
+    return f"{_hash_serial_to_hex32(printer_serial)}{_to_fixed_hex(ams_id, 4)}{_to_fixed_hex(tray_id, 4)}"
+
+
+def _resolve_spool_tag(tray_info: dict, printer_serial: str = "", global_tray_id: int | None = None) -> str:
     """Get the best spool identifier from tray info (prefer tray_uuid over tag_uid).
 
     Returns empty string if no usable identifier is found.
     """
-    tray_uuid = tray_info.get("tray_uuid", "")
-    tag_uid = tray_info.get("tag_uid", "")
-    if tray_uuid and tray_uuid != _ZERO_UUID:
+    tray_uuid = str(tray_info.get("tray_uuid", "") or "")
+    tag_uid = str(tray_info.get("tag_uid", "") or "")
+    if tray_uuid and tray_uuid != _ZERO_UUID and _is_non_zero_identifier(tray_uuid):
         return tray_uuid
-    return tag_uid
+    if tag_uid and tag_uid != _ZERO_TAG_UID and _is_non_zero_identifier(tag_uid):
+        return tag_uid
+    if global_tray_id is not None:
+        return _get_fallback_spool_tag(printer_serial, global_tray_id)
+    return ""
+
+
+async def _get_printer_serial(printer_id: int) -> str:
+    """Get printer serial for deterministic fallback tag generation."""
+    from backend.app.models.printer import Printer
+    from backend.app.services.printer_manager import printer_manager
+
+    printer_info = printer_manager.get_printer(printer_id)
+    if printer_info and printer_info.serial_number:
+        return printer_info.serial_number
+
+    async with async_session() as db:
+        result = await db.execute(select(Printer.serial_number).where(Printer.id == printer_id))
+        serial_number = result.scalar_one_or_none()
+        return serial_number or ""
 
 
 def _resolve_global_tray_id(slot_id: int, slot_to_tray: list | None) -> int:
@@ -234,6 +297,7 @@ async def _report_spool_usage_for_slots(
     ams_trays: dict[int, dict],
     slot_to_tray: list | None,
     method_label: str,
+    printer_serial: str = "",
 ) -> int:
     """Report usage to Spoolman for a list of (slot_id, grams) pairs.
 
@@ -250,7 +314,7 @@ async def _report_spool_usage_for_slots(
             logger.debug("[SPOOLMAN] Slot %s: no tray at global_tray_id %s", slot_id, global_tray_id)
             continue
 
-        spool_tag = _resolve_spool_tag(tray_info)
+        spool_tag = _resolve_spool_tag(tray_info, printer_serial, global_tray_id)
         if not spool_tag:
             logger.debug("[SPOOLMAN] Slot %s: no identifier for tray %s", slot_id, global_tray_id)
             continue
@@ -313,6 +377,7 @@ async def _report_partial_usage(printer_id: int, tracking):
     filament_usage = tracking.filament_usage or []
     ams_trays = {int(k): v for k, v in (tracking.ams_trays or {}).items()}
     slot_to_tray = tracking.slot_to_tray
+    printer_serial = await _get_printer_serial(printer_id)
 
     client = await _get_spoolman_client_with_fallback()
     if not client:
@@ -341,7 +406,7 @@ async def _report_partial_usage(printer_id: int, tracking):
                 diameter = 1.75
 
                 if tray_info:
-                    spool_tag = _resolve_spool_tag(tray_info)
+                    spool_tag = _resolve_spool_tag(tray_info, printer_serial, global_tray_id)
                     if spool_tag:
                         spool = await client.find_spool_by_tag(spool_tag)
                         if spool:
@@ -358,7 +423,7 @@ async def _report_partial_usage(printer_id: int, tracking):
                 usage_items.append((slot_id, grams_used))
 
             spools_updated = await _report_spool_usage_for_slots(
-                client, usage_items, ams_trays, slot_to_tray, "Partial (G-code)"
+                client, usage_items, ams_trays, slot_to_tray, "Partial (G-code)", printer_serial
             )
             if spools_updated > 0:
                 logger.info("[SPOOLMAN] Reported partial usage to %s spool(s) using G-code data", spools_updated)
@@ -381,7 +446,7 @@ async def _report_partial_usage(printer_id: int, tracking):
             usage_items.append((slot_id, partial_used_g))
 
     spools_updated = await _report_spool_usage_for_slots(
-        client, usage_items, ams_trays, slot_to_tray, "Partial (linear)"
+        client, usage_items, ams_trays, slot_to_tray, "Partial (linear)", printer_serial
     )
     if spools_updated > 0:
         logger.info("[SPOOLMAN] Reported partial usage to %s spool(s) using linear interpolation", spools_updated)
@@ -412,6 +477,7 @@ async def report_usage(printer_id: int, archive_id: int):
         filament_usage = tracking.filament_usage or []
         ams_trays = {int(k): v for k, v in (tracking.ams_trays or {}).items()}
         slot_to_tray = tracking.slot_to_tray
+        printer_serial = await _get_printer_serial(printer_id)
 
         # Delete tracking row (we're done with it)
         await db.delete(tracking)
@@ -435,7 +501,7 @@ async def report_usage(printer_id: int, archive_id: int):
 
         usage_items = [(u.get("slot_id", 0), u.get("used_g", 0)) for u in filament_usage]
         spools_updated = await _report_spool_usage_for_slots(
-            client, usage_items, ams_trays, slot_to_tray, f"Archive {archive_id}"
+            client, usage_items, ams_trays, slot_to_tray, f"Archive {archive_id}", printer_serial
         )
 
         if spools_updated == 0:

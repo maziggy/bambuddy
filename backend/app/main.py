@@ -2562,7 +2562,13 @@ async def on_print_complete(printer_id: int, data: dict):
         # Report partial usage if tracking data exists (only stored when weight sync is disabled)
         try:
             async with async_session() as db:
-                await _cleanup_spoolman_tracking(printer_id, archive_id, db)
+                await _cleanup_spoolman_tracking(
+                    printer_id,
+                    archive_id,
+                    db,
+                    last_layer_num=data.get("last_layer_num"),
+                    last_progress=data.get("last_progress"),
+                )
         except Exception as e:
             logger.debug("[SPOOLMAN] Cleanup failed: %s", e)
 

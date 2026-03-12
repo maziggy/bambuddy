@@ -50,15 +50,37 @@ CLOUD_TOKEN_KEY = "bambu_cloud_token"
 CLOUD_EMAIL_KEY = "bambu_cloud_email"
 
 
-async def get_stored_token(db: AsyncSession) -> tuple[str | None, str | None]:
-    """Get stored cloud token and email from database."""
+async def get_stored_token(db: AsyncSession, user: User | None = None) -> tuple[str | None, str | None]:
+    """Get stored cloud token and email.
+
+    When a user is provided (auth enabled), returns that user's per-user credentials.
+    When user is None (auth disabled), falls back to global Settings table.
+    """
+    if user is not None:
+        return user.cloud_token, user.cloud_email
+
+    # Fallback: global storage (auth disabled)
     result = await db.execute(select(Settings).where(Settings.key.in_([CLOUD_TOKEN_KEY, CLOUD_EMAIL_KEY])))
     settings = {s.key: s.value for s in result.scalars().all()}
     return settings.get(CLOUD_TOKEN_KEY), settings.get(CLOUD_EMAIL_KEY)
 
 
-async def store_token(db: AsyncSession, token: str, email: str) -> None:
-    """Store cloud token and email in database."""
+async def store_token(db: AsyncSession, token: str, email: str, user: User | None = None) -> None:
+    """Store cloud token and email.
+
+    When a user is provided (auth enabled), stores on the user record.
+    When user is None (auth disabled), stores in global Settings table.
+    """
+    if user is not None:
+        # User object is from the auth dependency's session (detached),
+        # so use a direct UPDATE via the route's db session.
+        from sqlalchemy import update
+
+        await db.execute(update(User).where(User.id == user.id).values(cloud_token=token, cloud_email=email))
+        await db.commit()
+        return
+
+    # Fallback: global storage (auth disabled)
     for key, value in [(CLOUD_TOKEN_KEY, token), (CLOUD_EMAIL_KEY, email)]:
         result = await db.execute(select(Settings).where(Settings.key == key))
         setting = result.scalar_one_or_none()
@@ -69,8 +91,20 @@ async def store_token(db: AsyncSession, token: str, email: str) -> None:
     await db.commit()
 
 
-async def clear_token(db: AsyncSession) -> None:
-    """Clear stored cloud token and email."""
+async def clear_token(db: AsyncSession, user: User | None = None) -> None:
+    """Clear stored cloud token and email.
+
+    When a user is provided (auth enabled), clears that user's credentials.
+    When user is None (auth disabled), clears from global Settings table.
+    """
+    if user is not None:
+        from sqlalchemy import update
+
+        await db.execute(update(User).where(User.id == user.id).values(cloud_token=None, cloud_email=None))
+        await db.commit()
+        return
+
+    # Fallback: global storage (auth disabled)
     result = await db.execute(select(Settings).where(Settings.key.in_([CLOUD_TOKEN_KEY, CLOUD_EMAIL_KEY])))
     for setting in result.scalars().all():
         await db.delete(setting)
@@ -80,10 +114,10 @@ async def clear_token(db: AsyncSession) -> None:
 @router.get("/status", response_model=CloudAuthStatus)
 async def get_auth_status(
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
 ):
     """Get current cloud authentication status."""
-    token, email = await get_stored_token(db)
+    token, email = await get_stored_token(db, current_user)
     cloud = get_cloud_service()
 
     if token:
@@ -99,7 +133,7 @@ async def get_auth_status(
 async def login(
     request: CloudLoginRequest,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
 ):
     """
     Initiate login to Bambu Cloud.
@@ -113,15 +147,12 @@ async def login(
     """
     cloud = get_cloud_service()
 
-    # Store email temporarily for verification step
-    await store_token(db, "", request.email)
-
     try:
         result = await cloud.login_request(request.email, request.password)
 
         if result.get("success") and cloud.access_token:
             # Direct login succeeded (rare)
-            await store_token(db, cloud.access_token, request.email)
+            await store_token(db, cloud.access_token, request.email, current_user)
 
         return CloudLoginResponse(
             success=result.get("success", False),
@@ -140,7 +171,7 @@ async def login(
 async def verify_code(
     request: CloudVerifyRequest,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
 ):
     """
     Complete login with verification code (email or TOTP).
@@ -163,7 +194,7 @@ async def verify_code(
             result = await cloud.verify_code(request.email, request.code)
 
         if result.get("success") and cloud.access_token:
-            await store_token(db, cloud.access_token, request.email)
+            await store_token(db, cloud.access_token, request.email, current_user)
 
         return CloudLoginResponse(
             success=result.get("success", False),
@@ -180,7 +211,7 @@ async def verify_code(
 async def set_token(
     request: CloudTokenRequest,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
 ):
     """
     Set access token directly.
@@ -193,7 +224,7 @@ async def set_token(
     # Verify token works by trying to get profile
     try:
         await cloud.get_user_profile()
-        await store_token(db, request.access_token, "token-auth")
+        await store_token(db, request.access_token, "token-auth", current_user)
         return CloudAuthStatus(is_authenticated=True, email="token-auth")
     except BambuCloudError:
         cloud.logout()
@@ -203,12 +234,12 @@ async def set_token(
 @router.post("/logout")
 async def logout(
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
 ):
     """Log out of Bambu Cloud."""
     cloud = get_cloud_service()
     cloud.logout()
-    await clear_token(db)
+    await clear_token(db, current_user)
     return {"success": True}
 
 
@@ -216,14 +247,14 @@ async def logout(
 async def get_slicer_settings(
     version: str = "02.04.00.70",
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
 ):
     """
     Get all slicer settings (filament, printer, process presets).
 
     Requires authentication.
     """
-    token, _ = await get_stored_token(db)
+    token, _ = await get_stored_token(db, current_user)
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -281,7 +312,7 @@ async def get_slicer_settings(
 
         return result
     except BambuCloudAuthError:
-        await clear_token(db)
+        await clear_token(db, current_user)
         raise HTTPException(status_code=401, detail="Authentication expired")
     except BambuCloudError as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -291,14 +322,14 @@ async def get_slicer_settings(
 async def get_setting_detail(
     setting_id: str,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
 ):
     """
     Get detailed information for a specific setting/preset.
 
     Returns the full preset configuration.
     """
-    token, _ = await get_stored_token(db)
+    token, _ = await get_stored_token(db, current_user)
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -312,7 +343,7 @@ async def get_setting_detail(
         data = await cloud.get_setting_detail(setting_id)
         return data
     except BambuCloudAuthError:
-        await clear_token(db)
+        await clear_token(db, current_user)
         raise HTTPException(status_code=401, detail="Authentication expired")
     except BambuCloudError as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -322,7 +353,7 @@ async def get_setting_detail(
 async def get_filament_presets(
     version: str = "02.04.00.70",
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
 ):
     """
     Get just filament presets (convenience endpoint).
@@ -330,7 +361,7 @@ async def get_filament_presets(
     Returns all filament presets with custom presets first.
     Uses the same cache as get_slicer_settings.
     """
-    settings = await get_slicer_settings(version=version, db=db)
+    settings = await get_slicer_settings(version=version, db=db, current_user=current_user)
     return settings.filament
 
 
@@ -512,7 +543,7 @@ _filament_id_to_setting_id = filament_id_to_setting_id
 async def get_filament_info(
     setting_ids: list[str] = Body(...),
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
 ):
     """
     Get filament preset info (name and K value) for multiple setting IDs.
@@ -545,7 +576,7 @@ async def get_filament_info(
 
     # Phase 2: Try cloud for uncached IDs
     if unresolved_ids:
-        token, _ = await get_stored_token(db)
+        token, _ = await get_stored_token(db, current_user)
         if token:
             cloud = get_cloud_service()
             cloud.set_token(token)
@@ -590,14 +621,14 @@ async def get_filament_info(
 @router.get("/devices", response_model=list[CloudDevice])
 async def get_devices(
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
 ):
     """
     Get list of bound printer devices.
 
     Returns printers registered to the user's Bambu account.
     """
-    token, _ = await get_stored_token(db)
+    token, _ = await get_stored_token(db, current_user)
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -622,7 +653,7 @@ async def get_devices(
             for d in devices
         ]
     except BambuCloudAuthError:
-        await clear_token(db)
+        await clear_token(db, current_user)
         raise HTTPException(status_code=401, detail="Authentication expired")
     except BambuCloudError as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -631,7 +662,7 @@ async def get_devices(
 @router.get("/firmware-updates", response_model=FirmwareUpdatesResponse)
 async def get_firmware_updates(
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.FIRMWARE_READ),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.FIRMWARE_READ),
 ):
     """
     Check for firmware updates for all bound devices.
@@ -644,7 +675,7 @@ async def get_firmware_updates(
 
     Requires cloud authentication.
     """
-    token, _ = await get_stored_token(db)
+    token, _ = await get_stored_token(db, current_user)
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -701,7 +732,7 @@ async def get_firmware_updates(
         return FirmwareUpdatesResponse(updates=updates, updates_available=updates_available)
 
     except BambuCloudAuthError:
-        await clear_token(db)
+        await clear_token(db, current_user)
         raise HTTPException(status_code=401, detail="Authentication expired")
     except BambuCloudError as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -711,7 +742,7 @@ async def get_firmware_updates(
 async def create_setting(
     request: SlicerSettingCreate,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
 ):
     """
     Create a new slicer preset/setting.
@@ -721,7 +752,7 @@ async def create_setting(
 
     Type should be: 'filament', 'print', or 'printer'
     """
-    token, _ = await get_stored_token(db)
+    token, _ = await get_stored_token(db, current_user)
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -741,7 +772,7 @@ async def create_setting(
         )
         return data
     except BambuCloudAuthError:
-        await clear_token(db)
+        await clear_token(db, current_user)
         raise HTTPException(status_code=401, detail="Authentication expired")
     except BambuCloudError as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -752,14 +783,14 @@ async def update_setting(
     setting_id: str,
     request: SlicerSettingUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
 ):
     """
     Update an existing slicer preset/setting.
 
     Updates the preset's name and/or settings on Bambu Cloud.
     """
-    token, _ = await get_stored_token(db)
+    token, _ = await get_stored_token(db, current_user)
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -777,7 +808,7 @@ async def update_setting(
         )
         return data
     except BambuCloudAuthError:
-        await clear_token(db)
+        await clear_token(db, current_user)
         raise HTTPException(status_code=401, detail="Authentication expired")
     except BambuCloudError as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -787,14 +818,14 @@ async def update_setting(
 async def delete_setting(
     setting_id: str,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
 ):
     """
     Delete a slicer preset/setting.
 
     Removes the preset from Bambu Cloud. This cannot be undone.
     """
-    token, _ = await get_stored_token(db)
+    token, _ = await get_stored_token(db, current_user)
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -811,7 +842,7 @@ async def delete_setting(
             message=result.get("message", "Setting deleted"),
         )
     except BambuCloudAuthError:
-        await clear_token(db)
+        await clear_token(db, current_user)
         raise HTTPException(status_code=401, detail="Authentication expired")
     except BambuCloudError as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -874,7 +905,7 @@ _filament_id_name_cache_time: float = 0
 @router.get("/filament-id-map")
 async def get_filament_id_map(
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
 ):
     """
     Get filament_id → name mapping for user cloud presets.
@@ -891,7 +922,7 @@ async def get_filament_id_map(
     if _filament_id_name_cache and time.time() - _filament_id_name_cache_time < FILAMENT_CACHE_TTL:
         return _filament_id_name_cache
 
-    token, _ = await get_stored_token(db)
+    token, _ = await get_stored_token(db, current_user)
     if not token:
         return _filament_id_name_cache or {}
 
@@ -930,7 +961,7 @@ async def get_filament_id_map(
 @router.get("/fields/{preset_type}")
 async def get_preset_fields(
     preset_type: Literal["filament", "print", "process", "printer"],
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
 ):
     """
     Get field definitions for a preset type.
@@ -951,7 +982,7 @@ async def get_preset_fields(
 
 @router.get("/fields")
 async def get_all_preset_fields(
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CLOUD_AUTH),
 ):
     """
     Get all field definitions for all preset types.

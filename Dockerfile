@@ -23,6 +23,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
+    iproute2 \
     libcap2-bin \
     && rm -rf /var/lib/apt/lists/*
 

@@ -197,6 +197,87 @@ async def get_spool_by_tag(db: AsyncSession, tag_uid: str, tray_uuid: str) -> Sp
     return None
 
 
+async def find_matching_inventory_spool(db: AsyncSession, tray_data: dict) -> Spool | None:
+    """Find an existing inventory spool that matches AMS tray data by attributes.
+
+    Matches by: material type (exact) + RGBA color (fuzzy, via colors_similar) +
+    brand "Bambu Lab" (exact). Only considers active, untagged, unassigned,
+    unused (weight_used == 0) spools. Prefers manually-created spools over rfid_auto ones.
+    """
+    from backend.app.utils.color_utils import colors_similar
+
+    tray_type = tray_data.get("tray_type", "")
+    tray_color = tray_data.get("tray_color", "")
+
+    if not tray_type:
+        return None
+
+    # Query: active, untagged, unused spools matching material and brand
+    result = await db.execute(
+        select(Spool)
+        .options(selectinload(Spool.k_profiles), selectinload(Spool.assignments))
+        .outerjoin(SpoolAssignment, SpoolAssignment.spool_id == Spool.id)
+        .where(
+            func.upper(Spool.material) == tray_type.upper(),
+            func.upper(Spool.brand) == "BAMBU LAB",
+            Spool.archived_at.is_(None),
+            Spool.tag_uid.is_(None),
+            Spool.tray_uuid.is_(None),
+            SpoolAssignment.id.is_(None),  # Not assigned to any slot
+            Spool.weight_used == 0,  # Only match unused (fresh) spools
+        )
+    )
+    candidates = list(result.scalars().unique().all())
+
+    if not candidates:
+        return None
+
+    # Filter by color similarity
+    if tray_color and len(tray_color) >= 6:
+        candidates = [s for s in candidates if s.rgba and colors_similar(s.rgba, tray_color)]
+
+    if not candidates:
+        return None
+
+    # Prefer manually-created spools over rfid_auto
+    manual = [s for s in candidates if s.data_origin != "rfid_auto"]
+    if manual:
+        return manual[0]
+
+    return candidates[0]
+
+
+def link_tag_to_spool(spool: Spool, tray_data: dict) -> None:
+    """Link RFID tag data from an AMS tray to an existing inventory spool.
+
+    Updates tag identifiers and sets data_origin to 'rfid_linked' to distinguish
+    from manually-created ('manual') and auto-created ('rfid_auto') spools.
+    Preserves existing slicer_filament if already set.
+    """
+    tag_uid = tray_data.get("tag_uid", "")
+    tray_uuid = tray_data.get("tray_uuid", "")
+    tray_info_idx = tray_data.get("tray_info_idx", "")
+
+    if tag_uid and tag_uid != ZERO_TAG_UID:
+        spool.tag_uid = tag_uid
+    if tray_uuid and tray_uuid != ZERO_TRAY_UUID:
+        spool.tray_uuid = tray_uuid
+
+    spool.tag_type = "bambulab"
+    spool.data_origin = "rfid_linked"
+
+    # Set slicer filament preset if not already configured
+    if not spool.slicer_filament and tray_info_idx:
+        spool.slicer_filament = tray_info_idx
+
+    logger.info(
+        "Linked RFID tag to existing spool %d (tag=%s uuid=%s)",
+        spool.id,
+        tag_uid,
+        tray_uuid,
+    )
+
+
 async def auto_assign_spool(
     printer_id: int,
     ams_id: int,

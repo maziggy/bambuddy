@@ -8,9 +8,11 @@ from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.services.spool_tag_matcher import (
     auto_assign_spool,
     create_spool_from_tray,
+    find_matching_inventory_spool,
     get_spool_by_tag,
     is_bambu_tag,
     is_valid_tag,
+    link_tag_to_spool,
 )
 
 # -- helpers -----------------------------------------------------------------
@@ -352,3 +354,410 @@ async def test_auto_assign_no_greenlet_error_existing_spool(db_session, printer_
 
     assert assignment is not None
     assert assignment.spool_id == found.id
+
+
+# -- find_matching_inventory_spool ------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_find_matching_spool_exact_match(db_session):
+    """Finds an existing spool with same material, similar color, and same brand."""
+    spool = Spool(
+        material="PLA",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.commit()
+
+    tray_data = {
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Basic",
+        "tray_color": "FFFFFFFF",
+        "tag_uid": "AABBCCDD11223344",
+        "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+    }
+    found = await find_matching_inventory_spool(db_session, tray_data)
+    assert found is not None
+    assert found.id == spool.id
+
+
+@pytest.mark.asyncio
+async def test_find_matching_spool_similar_color(db_session):
+    """Matches when colors are similar (within threshold) but not identical."""
+    spool = Spool(
+        material="PLA",
+        rgba="56B7E6FF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.commit()
+
+    tray_data = {
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Basic",
+        "tray_color": "7CC4D5FF",  # Similar cyan — distance ~43.6
+        "tag_uid": "AABBCCDD11223344",
+        "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+    }
+    found = await find_matching_inventory_spool(db_session, tray_data)
+    assert found is not None
+    assert found.id == spool.id
+
+
+@pytest.mark.asyncio
+async def test_find_matching_spool_different_color_no_match(db_session):
+    """Does NOT match when colors are clearly different."""
+    spool = Spool(
+        material="PLA",
+        rgba="FF0000FF",  # Red
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.commit()
+
+    tray_data = {
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Basic",
+        "tray_color": "0000FFFF",  # Blue — very different
+        "tag_uid": "AABBCCDD11223344",
+        "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+    }
+    found = await find_matching_inventory_spool(db_session, tray_data)
+    assert found is None
+
+
+@pytest.mark.asyncio
+async def test_find_matching_spool_different_material_no_match(db_session):
+    """Does NOT match when material differs even if color matches."""
+    spool = Spool(
+        material="PETG",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.commit()
+
+    tray_data = {
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Basic",
+        "tray_color": "FFFFFFFF",
+        "tag_uid": "AABBCCDD11223344",
+        "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+    }
+    found = await find_matching_inventory_spool(db_session, tray_data)
+    assert found is None
+
+
+@pytest.mark.asyncio
+async def test_find_matching_spool_skips_already_tagged(db_session):
+    """Does NOT match spools that already have an RFID tag linked."""
+    spool = Spool(
+        material="PLA",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        tag_uid="EXISTINGTAGUID00",  # Already tagged
+        label_weight=1000,
+        core_weight=250,
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.commit()
+
+    tray_data = {
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Basic",
+        "tray_color": "FFFFFFFF",
+        "tag_uid": "AABBCCDD11223344",
+        "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+    }
+    found = await find_matching_inventory_spool(db_session, tray_data)
+    assert found is None
+
+
+@pytest.mark.asyncio
+async def test_find_matching_spool_skips_archived(db_session):
+    """Does NOT match archived spools."""
+    from datetime import datetime
+
+    spool = Spool(
+        material="PLA",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+        archived_at=datetime.now(),
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.commit()
+
+    tray_data = {
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Basic",
+        "tray_color": "FFFFFFFF",
+        "tag_uid": "AABBCCDD11223344",
+        "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+    }
+    found = await find_matching_inventory_spool(db_session, tray_data)
+    assert found is None
+
+
+@pytest.mark.asyncio
+async def test_find_matching_spool_skips_currently_assigned(db_session, printer_factory):
+    """Does NOT match spools that are currently assigned to an AMS slot."""
+    printer = await printer_factory()
+    spool = Spool(
+        material="PLA",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.flush()
+
+    # Assign spool to a slot
+    assignment = SpoolAssignment(spool_id=spool.id, printer_id=printer.id, ams_id=0, tray_id=0)
+    db_session.add(assignment)
+    await db_session.commit()
+
+    tray_data = {
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Basic",
+        "tray_color": "FFFFFFFF",
+        "tag_uid": "AABBCCDD11223344",
+        "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+    }
+    found = await find_matching_inventory_spool(db_session, tray_data)
+    assert found is None
+
+
+@pytest.mark.asyncio
+async def test_find_matching_spool_relationships_loaded(db_session):
+    """Returned spool must have k_profiles and assignments eagerly loaded."""
+    spool = Spool(
+        material="PLA",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.commit()
+    db_session.expire(spool)
+
+    tray_data = {
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Basic",
+        "tray_color": "FFFFFFFF",
+        "tag_uid": "AABBCCDD11223344",
+        "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+    }
+    found = await find_matching_inventory_spool(db_session, tray_data)
+    assert found is not None
+    assert _relationship_is_loaded(found, "k_profiles")
+    assert _relationship_is_loaded(found, "assignments")
+
+
+@pytest.mark.asyncio
+async def test_find_matching_spool_prefers_manual_over_rfid_auto(db_session):
+    """When multiple candidates exist, prefer manually-created spools (data_origin != 'rfid_auto')."""
+    auto_spool = Spool(
+        material="PLA",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        data_origin="rfid_auto",
+        label_weight=1000,
+        core_weight=250,
+    )
+    auto_spool.k_profiles = []
+    auto_spool.assignments = []
+    db_session.add(auto_spool)
+
+    manual_spool = Spool(
+        material="PLA",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        data_origin="manual",
+        label_weight=1000,
+        core_weight=250,
+    )
+    manual_spool.k_profiles = []
+    manual_spool.assignments = []
+    db_session.add(manual_spool)
+    await db_session.commit()
+
+    tray_data = {
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Basic",
+        "tray_color": "FFFFFFFF",
+        "tag_uid": "AABBCCDD11223344",
+        "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+    }
+    found = await find_matching_inventory_spool(db_session, tray_data)
+    assert found is not None
+    assert found.id == manual_spool.id
+
+
+@pytest.mark.asyncio
+async def test_find_matching_spool_skips_used(db_session):
+    """Does NOT match spools that have been used (weight_used > 0)."""
+    spool = Spool(
+        material="PLA",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+        weight_used=50.0,  # Partially used
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.commit()
+
+    tray_data = {
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Basic",
+        "tray_color": "FFFFFFFF",
+        "tag_uid": "AABBCCDD11223344",
+        "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+    }
+    found = await find_matching_inventory_spool(db_session, tray_data)
+    assert found is None
+
+
+@pytest.mark.asyncio
+async def test_find_matching_spool_non_bambu_brand_no_match(db_session):
+    """Does NOT match spools from a different brand (Bambu tray -> Bambu Lab brand only)."""
+    spool = Spool(
+        material="PLA",
+        rgba="FFFFFFFF",
+        brand="Polymaker",
+        label_weight=1000,
+        core_weight=250,
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.commit()
+
+    tray_data = {
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Basic",
+        "tray_color": "FFFFFFFF",
+        "tag_uid": "AABBCCDD11223344",
+        "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+    }
+    found = await find_matching_inventory_spool(db_session, tray_data)
+    assert found is None
+
+
+# -- link_tag_to_spool ------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_link_tag_to_spool_sets_fields(db_session):
+    """link_tag_to_spool updates tag_uid, tray_uuid, and tag_type on the spool."""
+    spool = Spool(
+        material="PLA",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.commit()
+
+    tray_data = {
+        "tag_uid": "AABBCCDD11223344",
+        "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+        "tray_info_idx": "GFL99",
+        "remain": 75,
+        "tray_weight": "1000",
+    }
+    link_tag_to_spool(spool, tray_data)
+
+    assert spool.tag_uid == "AABBCCDD11223344"
+    assert spool.tray_uuid == "AABBCCDD11223344AABBCCDD11223344"
+    assert spool.tag_type == "bambulab"
+    assert spool.data_origin == "rfid_linked"
+
+
+@pytest.mark.asyncio
+async def test_link_tag_preserves_existing_slicer_filament(db_session):
+    """If spool already has a slicer_filament, link_tag does not overwrite it."""
+    spool = Spool(
+        material="PLA",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        slicer_filament="GFL01",
+        label_weight=1000,
+        core_weight=250,
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.commit()
+
+    tray_data = {
+        "tag_uid": "AABBCCDD11223344",
+        "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+        "tray_info_idx": "GFL99",
+        "remain": 80,
+        "tray_weight": "1000",
+    }
+    link_tag_to_spool(spool, tray_data)
+
+    assert spool.slicer_filament == "GFL01"  # Preserved, not overwritten
+
+
+@pytest.mark.asyncio
+async def test_link_tag_sets_slicer_filament_when_missing(db_session):
+    """If spool has no slicer_filament, link_tag sets it from tray_info_idx."""
+    spool = Spool(
+        material="PLA",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.commit()
+
+    tray_data = {
+        "tag_uid": "AABBCCDD11223344",
+        "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+        "tray_info_idx": "GFL99",
+        "remain": 80,
+        "tray_weight": "1000",
+    }
+    link_tag_to_spool(spool, tray_data)
+
+    assert spool.slicer_filament == "GFL99"

@@ -11,6 +11,8 @@ RUN --mount=type=cache,target=/root/.npm \
     npm ci
 
 COPY frontend/ ./
+# Increase Node.js heap limit to prevent OOM during Vite/TypeScript build
+ENV NODE_OPTIONS=--max-old-space-size=4096
 RUN npm run build
 
 # Production image

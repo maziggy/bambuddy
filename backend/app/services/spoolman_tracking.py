@@ -95,19 +95,26 @@ async def _get_printer_serial(printer_id: int) -> str:
         return serial_number or ""
 
 
-def _resolve_global_tray_id(slot_id: int, slot_to_tray: list | None) -> int:
+def _resolve_global_tray_id(slot_id: int, slot_to_tray: list | None, ams_trays: dict | None = None) -> int:
     """Map a 1-based slot_id to a global_tray_id using optional custom mapping.
 
-    Default mapping: slot 1 -> tray 0, slot 2 -> tray 1, etc.
-    Custom mapping (from print queue): slot_to_tray[slot_id - 1] overrides default.
-    A value of -1 in custom mapping means unmapped (uses default).
+    Custom mapping: slot_to_tray[slot_id - 1] is used when >= 0.
+    Position-based default: uses sorted ams_trays keys so external spools (ID 254/255)
+    naturally follow standard AMS trays, matching the slicer's slot numbering.
+    A value of -1 in the custom mapping means unmapped (uses position-based default).
+    Final fallback: slot_id - 1 (legacy, works for pure AMS without external spools).
     """
-    global_tray_id = slot_id - 1
     if slot_to_tray and slot_id <= len(slot_to_tray):
         mapped_tray = slot_to_tray[slot_id - 1]
         if mapped_tray >= 0:
-            global_tray_id = mapped_tray
-    return global_tray_id
+            return mapped_tray
+    # Position-based default: sort available tray IDs so external spools (254/255)
+    # come after standard AMS trays, matching the slicer's slot assignment order.
+    if ams_trays:
+        sorted_tray_ids = sorted(ams_trays.keys())
+        if slot_id <= len(sorted_tray_ids):
+            return sorted_tray_ids[slot_id - 1]
+    return slot_id - 1
 
 
 def build_ams_tray_lookup(raw_data: dict) -> dict[int, dict]:
@@ -330,7 +337,7 @@ async def _report_spool_usage_for_slots(
         if grams_used <= 0:
             continue
 
-        global_tray_id = _resolve_global_tray_id(slot_id, slot_to_tray)
+        global_tray_id = _resolve_global_tray_id(slot_id, slot_to_tray, ams_trays)
         tray_info = ams_trays.get(global_tray_id)
         if not tray_info:
             logger.debug("[SPOOLMAN] Slot %s: no tray at global_tray_id %s", slot_id, global_tray_id)
@@ -449,7 +456,7 @@ async def _report_partial_usage(
                 slot_id = filament_id + 1  # filament_id is 0-based, slot_id is 1-based
 
                 # Get density from Spoolman (most accurate), fall back to 3MF, then PLA default
-                global_tray_id = _resolve_global_tray_id(slot_id, slot_to_tray)
+                global_tray_id = _resolve_global_tray_id(slot_id, slot_to_tray, ams_trays)
                 tray_info = ams_trays.get(global_tray_id)
                 density = None
                 diameter = 1.75

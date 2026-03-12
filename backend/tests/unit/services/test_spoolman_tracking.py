@@ -38,12 +38,12 @@ class TestResolveSpoolTag:
     def test_uses_fallback_tag_when_ids_missing(self):
         tray = {"tray_uuid": "", "tag_uid": ""}
         # global_tray_id 0 -> ams_id 0, tray_id 0
-        assert _resolve_spool_tag(tray, "01P00A000000000", 0) == "96D80B9100000000"
+        assert _resolve_spool_tag(tray, "01P00A000000000", 0) == "ABA7845700000000"
 
     def test_uses_fallback_tag_when_ids_zero(self):
         tray = {"tray_uuid": "00000000000000000000000000000000", "tag_uid": "0000000000000000"}
         # global_tray_id 5 -> ams_id 1, tray_id 1
-        assert _resolve_spool_tag(tray, "01P00A000000000", 5) == "96D80B9100010001"
+        assert _resolve_spool_tag(tray, "01P00A000000000", 5) == "ABA7845700010001"
 
     def test_empty_both(self):
         tray = {"tray_uuid": "", "tag_uid": ""}
@@ -92,9 +92,9 @@ class TestFallbackTagHelpers:
     """Tests for frontend-mirrored fallback tag helpers."""
 
     def test_hash_serial_matches_frontend_algorithm(self):
-        assert _hash_serial_to_hex32("01P00A000000000") == "96D80B91"
+        assert _hash_serial_to_hex32("01P00A000000000") == "ABA78457"
         # Frontend trims and uppercases before hashing
-        assert _hash_serial_to_hex32(" 01p00a000000000 ") == "96D80B91"
+        assert _hash_serial_to_hex32(" 01p00a000000000 ") == "ABA78457"
 
     def test_global_tray_to_ams_slot_standard_ams(self):
         assert _global_tray_id_to_ams_slot(0) == (0, 0)
@@ -109,13 +109,13 @@ class TestFallbackTagHelpers:
         assert _global_tray_id_to_ams_slot(255) == (255, 1)
 
     def test_get_fallback_spool_tag_standard(self):
-        assert _get_fallback_spool_tag("01P00A000000000", 5) == "96D80B9100010001"
+        assert _get_fallback_spool_tag("01P00A000000000", 5) == "ABA7845700010001"
 
     def test_get_fallback_spool_tag_ams_ht(self):
-        assert _get_fallback_spool_tag("01P00A000000000", 128) == "96D80B9100800000"
+        assert _get_fallback_spool_tag("01P00A000000000", 128) == "ABA7845700800000"
 
     def test_get_fallback_spool_tag_external(self):
-        assert _get_fallback_spool_tag("01P00A000000000", 255) == "96D80B9100FF0001"
+        assert _get_fallback_spool_tag("01P00A000000000", 255) == "ABA7845700FF0001"
 
 
 class TestBuildAmsTrayLookup:

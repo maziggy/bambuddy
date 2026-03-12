@@ -1020,7 +1020,7 @@ export function SettingsPage() {
         >
           <Database className="w-4 h-4" />
           {t('settings.tabs.backup')}
-          <span className={`w-2 h-2 rounded-full ${cloudAuthStatus?.is_authenticated && githubBackupStatus?.configured && githubBackupStatus?.enabled ? 'bg-green-400' : 'bg-gray-500'}`} />
+          <span className={`w-2 h-2 rounded-full ${githubBackupStatus?.configured && githubBackupStatus?.enabled ? 'bg-green-400' : 'bg-gray-500'}`} />
         </button>
       </div>
 

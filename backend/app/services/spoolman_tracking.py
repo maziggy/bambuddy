@@ -343,6 +343,16 @@ async def _report_spool_usage_for_slots(
             logger.debug("[SPOOLMAN] Slot %s: no tray at global_tray_id %s", slot_id, global_tray_id)
             continue
 
+        is_external = global_tray_id >= 254
+        tray_type = tray_info.get("tray_type", "")
+        logger.debug(
+            "[SPOOLMAN] Slot %s resolved to global_tray_id %s (tray_type=%s, external=%s)",
+            slot_id,
+            global_tray_id,
+            tray_type or "unknown",
+            is_external,
+        )
+
         spool_tag = _resolve_spool_tag(tray_info, printer_serial, global_tray_id)
         if not spool_tag:
             logger.debug("[SPOOLMAN] Slot %s: no identifier for tray %s", slot_id, global_tray_id)

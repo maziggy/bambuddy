@@ -1407,6 +1407,16 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already applied
 
+    # Migration: Add per-user Bambu Cloud credential columns
+    try:
+        await conn.execute(text("ALTER TABLE users ADD COLUMN cloud_token VARCHAR(500)"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE users ADD COLUMN cloud_email VARCHAR(255)"))
+    except OperationalError:
+        pass  # Already applied
+
     # Cleanup: Remove obsolete settings keys that are no longer used
     obsolete_keys = ["slicer_binary_path"]
     for key in obsolete_keys:

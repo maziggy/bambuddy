@@ -15,6 +15,8 @@ class PrinterBase(BaseModel):
     model: str | None = None
     location: str | None = None  # Group/location name
     auto_archive: bool = True
+    price: float | None = None
+    lifespan_hours: int | None = None
     external_camera_url: str | None = None
     external_camera_type: str | None = None  # "mjpeg", "rtsp", "snapshot", "usb"
     external_camera_enabled: bool = False
@@ -45,6 +47,8 @@ class PrinterUpdate(BaseModel):
     location: str | None = None
     is_active: bool | None = None
     auto_archive: bool | None = None
+    price: float | None = None
+    lifespan_hours: int | None = None
     print_hours_offset: float | None = None
     external_camera_url: str | None = None
     external_camera_type: str | None = None
@@ -58,6 +62,8 @@ class PrinterResponse(PrinterBase):
     is_active: bool
     nozzle_count: int = 1  # 1 or 2, auto-detected from MQTT
     print_hours_offset: float = 0.0
+    price: float | None = None
+    lifespan_hours: int | None = None
     external_camera_url: str | None = None
     external_camera_type: str | None = None
     external_camera_enabled: bool = False
@@ -87,6 +93,8 @@ class PrinterResponse(PrinterBase):
             "is_active": printer.is_active,
             "nozzle_count": printer.nozzle_count,
             "print_hours_offset": printer.print_hours_offset,
+            "price": printer.price,
+            "lifespan_hours": printer.lifespan_hours,
             "plate_detection_enabled": printer.plate_detection_enabled,
             "created_at": printer.created_at,
             "updated_at": printer.updated_at,

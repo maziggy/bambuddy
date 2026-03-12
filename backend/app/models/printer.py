@@ -19,6 +19,8 @@ class Printer(Base):
     nozzle_count: Mapped[int] = mapped_column(default=1)  # 1 or 2, auto-detected from MQTT
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     auto_archive: Mapped[bool] = mapped_column(Boolean, default=True)
+    price: Mapped[float | None] = mapped_column(Float, nullable=True)  # Purchase price in user's currency
+    lifespan_hours: Mapped[int | None] = mapped_column(nullable=True)  # Estimated operational lifespan (hours)
     print_hours_offset: Mapped[float] = mapped_column(Float, default=0.0)  # Baseline hours to add
     runtime_seconds: Mapped[int] = mapped_column(default=0)  # Accumulated active runtime (RUNNING/PAUSE states)
     last_runtime_update: Mapped[datetime | None] = mapped_column(

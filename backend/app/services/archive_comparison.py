@@ -40,7 +40,9 @@ class ArchiveComparisonService:
 
         # Fetch archives
         result = await self.db.execute(
-            select(PrintArchive).options(selectinload(PrintArchive.project)).where(PrintArchive.id.in_(archive_ids))
+            select(PrintArchive)
+            .options(selectinload(PrintArchive.project), selectinload(PrintArchive.printer))
+            .where(PrintArchive.id.in_(archive_ids))
         )
         archives = {a.id: a for a in result.scalars().all()}
 
@@ -104,6 +106,23 @@ class ArchiveComparisonService:
             if has_difference:
                 differences.append(field_data)
 
+        # Add computed machine_cost field
+        machine_costs = [self._compute_machine_cost(a) for a in ordered_archives]
+        formatted_mc = [round(v, 2) if v is not None else None for v in machine_costs]
+        non_none_mc = [v for v in machine_costs if v is not None]
+        mc_has_diff = len({str(round(v, 2)) for v in non_none_mc}) > 1 if non_none_mc else False
+        mc_field = {
+            "field": "machine_cost",
+            "label": "Machine Cost",
+            "unit": None,
+            "values": formatted_mc,
+            "raw_values": machine_costs,
+            "has_difference": mc_has_diff,
+        }
+        comparison.append(mc_field)
+        if mc_has_diff:
+            differences.append(mc_field)
+
         # Analyze success/failure correlation
         success_correlation = self._analyze_success_correlation(ordered_archives)
 
@@ -113,6 +132,28 @@ class ArchiveComparisonService:
             "differences": differences,
             "success_correlation": success_correlation,
         }
+
+    @staticmethod
+    def _compute_machine_cost(archive: PrintArchive) -> float | None:
+        """Compute machine depreciation cost for a print archive."""
+        printer = archive.printer
+        if not printer or not printer.price or not printer.lifespan_hours:
+            return None
+        if printer.lifespan_hours <= 0:
+            return None
+
+        duration_seconds = None
+        if archive.started_at and archive.completed_at and archive.status == "completed":
+            actual = (archive.completed_at - archive.started_at).total_seconds()
+            if actual > 0:
+                duration_seconds = actual
+        if duration_seconds is None and archive.print_time_seconds and archive.print_time_seconds > 0:
+            duration_seconds = archive.print_time_seconds
+
+        if not duration_seconds:
+            return None
+
+        return (printer.price / printer.lifespan_hours) * (duration_seconds / 3600)
 
     def _analyze_success_correlation(self, archives: list[PrintArchive]) -> dict:
         """Analyze what settings correlate with success/failure."""

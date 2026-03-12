@@ -930,7 +930,7 @@ function ArchiveCard({
               {archive.filament_used_grams.toFixed(1)}g
             </div>
           )}
-          {(archive.cost != null || archive.energy_cost != null) && (
+          {(archive.cost != null || archive.energy_cost != null || archive.machine_cost != null) && (
             <div className="flex items-center gap-3 text-bambu-gray">
               {archive.cost != null && (
                 <div className="flex items-center gap-1.5">
@@ -942,6 +942,12 @@ function ArchiveCard({
                   <div className="flex items-center gap-1.5" title={`${t('stats.energyUsed')}: ${archive.energy_kwh?.toFixed(3) || 'N/A'} kWh`}>
                     <Zap className="w-3 h-3" />
                     {currency}{archive.energy_cost.toFixed(2)}
+                  </div>
+                )}
+                {archive.machine_cost != null && (
+                  <div className="flex items-center gap-1.5" title={t('stats.machineCost')}>
+                    <Settings className="w-3 h-3" />
+                    {currency}{archive.machine_cost.toFixed(2)}
                   </div>
                 )}
             </div>

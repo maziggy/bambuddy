@@ -58,6 +58,34 @@ def compute_time_accuracy(archive: PrintArchive) -> dict:
     return result
 
 
+def compute_machine_cost(archive: PrintArchive) -> float | None:
+    """Compute machine depreciation cost for a print.
+
+    Formula: (printer.price / printer.lifespan_hours) * print_duration_hours
+    Returns None if printer lacks price/lifespan or archive has no duration.
+    """
+    printer = archive.printer
+    if not printer or not printer.price or not printer.lifespan_hours:
+        return None
+    if printer.lifespan_hours <= 0:
+        return None
+
+    # Prefer actual duration, fall back to slicer estimate
+    duration_seconds = None
+    if archive.started_at and archive.completed_at and archive.status == "completed":
+        actual = (archive.completed_at - archive.started_at).total_seconds()
+        if actual > 0:
+            duration_seconds = actual
+    if duration_seconds is None and archive.print_time_seconds and archive.print_time_seconds > 0:
+        duration_seconds = archive.print_time_seconds
+
+    if not duration_seconds:
+        return None
+
+    cost_per_hour = printer.price / printer.lifespan_hours
+    return round(cost_per_hour * (duration_seconds / 3600), 2)
+
+
 def archive_to_response(
     archive: PrintArchive,
     duplicates: list[dict] | None = None,
@@ -115,6 +143,9 @@ def archive_to_response(
     # Add computed time accuracy fields
     accuracy_data = compute_time_accuracy(archive)
     data.update(accuracy_data)
+
+    # Add computed machine depreciation cost
+    data["machine_cost"] = compute_machine_cost(archive)
 
     return data
 
@@ -176,6 +207,8 @@ async def list_archives_slim(
         dt_to = datetime.combine(date_to, time.max, tzinfo=timezone.utc)
         filters.append(PrintArchive.created_at <= dt_to)
 
+    from backend.app.models.printer import Printer
+
     query = (
         select(
             PrintArchive.printer_id,
@@ -190,7 +223,10 @@ async def list_archives_slim(
             PrintArchive.cost,
             PrintArchive.quantity,
             PrintArchive.created_at,
+            Printer.price.label("printer_price"),
+            Printer.lifespan_hours.label("printer_lifespan_hours"),
         )
+        .outerjoin(Printer, Printer.id == PrintArchive.printer_id)
         .where(*filters)
         .order_by(PrintArchive.created_at.desc())
         .limit(limit)
@@ -198,6 +234,20 @@ async def list_archives_slim(
     )
     result = await db.execute(query)
     rows = result.all()
+
+    def _slim_machine_cost(r) -> float | None:
+        if not r.printer_price or not r.printer_lifespan_hours or r.printer_lifespan_hours <= 0:
+            return None
+        duration = None
+        if r.started_at and r.completed_at and r.status == "completed":
+            actual = (r.completed_at - r.started_at).total_seconds()
+            if actual > 0:
+                duration = actual
+        if duration is None and r.print_time_seconds and r.print_time_seconds > 0:
+            duration = r.print_time_seconds
+        if not duration:
+            return None
+        return round((r.printer_price / r.printer_lifespan_hours) * (duration / 3600), 2)
 
     return [
         {
@@ -219,6 +269,7 @@ async def list_archives_slim(
             "started_at": r.started_at,
             "completed_at": r.completed_at,
             "cost": r.cost,
+            "machine_cost": _slim_machine_cost(r),
             "quantity": r.quantity,
             "created_at": r.created_at,
         }
@@ -268,7 +319,7 @@ async def search_archives(
         like_pattern = f"%{q}%"
         query = (
             select(PrintArchive)
-            .options(selectinload(PrintArchive.project))
+            .options(selectinload(PrintArchive.project), selectinload(PrintArchive.printer))
             .where(
                 (PrintArchive.print_name.ilike(like_pattern))
                 | (PrintArchive.filename.ilike(like_pattern))
@@ -296,7 +347,11 @@ async def search_archives(
         return []
 
     # Fetch full archive records for matched IDs
-    query = select(PrintArchive).options(selectinload(PrintArchive.project)).where(PrintArchive.id.in_(matched_ids))
+    query = (
+        select(PrintArchive)
+        .options(selectinload(PrintArchive.project), selectinload(PrintArchive.printer))
+        .where(PrintArchive.id.in_(matched_ids))
+    )
 
     # Apply additional filters
     if printer_id:
@@ -683,6 +738,35 @@ async def get_archive_stats(
         energy_cost_result = await db.execute(select(func.sum(PrintArchive.energy_cost)).where(*base_conditions))
         total_energy_cost = energy_cost_result.scalar() or 0
 
+    # Machine depreciation cost — aggregate from printer price/lifespan x duration
+    from backend.app.models.printer import Printer as PrinterModel
+
+    total_machine_cost = 0.0
+    mc_result = await db.execute(
+        select(
+            PrintArchive.print_time_seconds,
+            PrintArchive.started_at,
+            PrintArchive.completed_at,
+            PrintArchive.status,
+            PrinterModel.price,
+            PrinterModel.lifespan_hours,
+        )
+        .outerjoin(PrinterModel, PrinterModel.id == PrintArchive.printer_id)
+        .where(*base_conditions)
+    )
+    for row in mc_result.all():
+        if not row.price or not row.lifespan_hours or row.lifespan_hours <= 0:
+            continue
+        duration = None
+        if row.started_at and row.completed_at and row.status == "completed":
+            actual = (row.completed_at - row.started_at).total_seconds()
+            if actual > 0:
+                duration = actual
+        if duration is None and row.print_time_seconds and row.print_time_seconds > 0:
+            duration = row.print_time_seconds
+        if duration:
+            total_machine_cost += (row.price / row.lifespan_hours) * (duration / 3600)
+
     return ArchiveStats(
         total_prints=total_prints,
         successful_prints=successful_prints,
@@ -696,6 +780,7 @@ async def get_archive_stats(
         time_accuracy_by_printer=accuracy_by_printer if accuracy_by_printer else None,
         total_energy_kwh=round(total_energy_kwh, 3),
         total_energy_cost=round(total_energy_cost, 3),
+        total_machine_cost=round(total_machine_cost, 2),
     )
 
 

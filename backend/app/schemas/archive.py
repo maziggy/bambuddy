@@ -91,6 +91,9 @@ class ArchiveResponse(BaseModel):
     energy_kwh: float | None = None
     energy_cost: float | None = None
 
+    # Machine depreciation cost (computed from printer price/lifespan and print duration)
+    machine_cost: float | None = None
+
     created_at: datetime
 
     # User tracking (Issue #206)
@@ -124,6 +127,7 @@ class ArchiveSlim(BaseModel):
     started_at: datetime | None
     completed_at: datetime | None
     cost: float | None
+    machine_cost: float | None = None
     quantity: int = 1
     created_at: datetime
 
@@ -147,6 +151,7 @@ class ArchiveStats(BaseModel):
     # Energy stats
     total_energy_kwh: float = 0.0
     total_energy_cost: float = 0.0
+    total_machine_cost: float = 0.0
 
 
 class ProjectPageImage(BaseModel):

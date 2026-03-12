@@ -19,6 +19,7 @@ import {
   Calculator,
   Calendar,
   ChevronDown,
+  Settings,
 } from 'lucide-react';
 import {
   BarChart,
@@ -128,6 +129,7 @@ function QuickStatsWidget({
     total_cost: number;
     total_energy_kwh: number;
     total_energy_cost: number;
+    total_machine_cost: number;
   } | undefined;
   currency: string;
 }) {
@@ -140,6 +142,7 @@ function QuickStatsWidget({
     { icon: DollarSign, color: 'text-green-400', label: t('stats.filamentCost'), value: `${currency} ${stats?.total_cost?.toFixed(2) ?? '0.00'}` },
     { icon: Zap, color: 'text-yellow-400', label: t('stats.energyUsed'), value: `${stats?.total_energy_kwh?.toFixed(3) ?? '0.000'} kWh` },
     { icon: DollarSign, color: 'text-yellow-500', label: t('stats.energyCost'), value: `${currency} ${stats?.total_energy_cost?.toFixed(2) ?? '0.00'}` },
+    { icon: Settings, color: 'text-blue-400', label: t('stats.totalMachineCost'), value: `${currency} ${stats?.total_machine_cost?.toFixed(2) ?? '0.00'}` },
   ];
 
   return (

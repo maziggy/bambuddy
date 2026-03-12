@@ -101,6 +101,8 @@ export interface Printer {
   external_camera_enabled: boolean;
   plate_detection_enabled: boolean;  // Check plate before print
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
+  price: number | null;
+  lifespan_hours: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -272,6 +274,8 @@ export interface PrinterCreate {
   external_camera_enabled?: boolean;
   plate_detection_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
+  price?: number | null;
+  lifespan_hours?: number | null;
 }
 
 // Plate Detection
@@ -370,6 +374,7 @@ export interface Archive {
   quantity: number;
   energy_kwh: number | null;
   energy_cost: number | null;
+  machine_cost: number | null;
   created_at: string;
   // User tracking (Issue #206)
   created_by_id: number | null;
@@ -388,6 +393,7 @@ export interface ArchiveSlim {
   started_at: string | null;
   completed_at: string | null;
   cost: number | null;
+  machine_cost: number | null;
   quantity: number;
   created_at: string;
 }
@@ -427,6 +433,7 @@ export interface ArchiveStats {
   time_accuracy_by_printer: Record<string, number> | null;
   total_energy_kwh: number;
   total_energy_cost: number;
+  total_machine_cost: number;
 }
 
 export interface TagInfo {

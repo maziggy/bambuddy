@@ -966,7 +966,11 @@ class ArchiveService:
 
         result = await self.db.execute(
             select(PrintArchive)
-            .options(selectinload(PrintArchive.created_by), selectinload(PrintArchive.project))
+            .options(
+                selectinload(PrintArchive.created_by),
+                selectinload(PrintArchive.project),
+                selectinload(PrintArchive.printer),
+            )
             .where(PrintArchive.id == archive_id)
         )
         return result.scalar_one_or_none()
@@ -1006,7 +1010,11 @@ class ArchiveService:
 
         query = (
             select(PrintArchive)
-            .options(selectinload(PrintArchive.project), selectinload(PrintArchive.created_by))
+            .options(
+                selectinload(PrintArchive.project),
+                selectinload(PrintArchive.created_by),
+                selectinload(PrintArchive.printer),
+            )
             .order_by(PrintArchive.created_at.desc())
         )
 

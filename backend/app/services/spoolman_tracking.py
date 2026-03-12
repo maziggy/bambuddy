@@ -55,9 +55,9 @@ def build_ams_tray_lookup(raw_data: dict) -> dict[int, dict]:
     lookup = {}
     ams_data = raw_data.get("ams", [])
     for ams_unit in ams_data:
-        ams_id = ams_unit.get("id", 0)
+        ams_id = int(ams_unit.get("id", 0))
         for tray in ams_unit.get("tray", []):
-            tray_id = tray.get("id", 0)
+            tray_id = int(tray.get("id", 0))
             # AMS-HT units have IDs starting at 128 with a single tray
             global_tray_id = ams_id if ams_id >= 128 else ams_id * 4 + tray_id
             lookup[global_tray_id] = {

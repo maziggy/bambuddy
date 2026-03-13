@@ -1,0 +1,200 @@
+2026-03-13 10:52:25,044 INFO [backend.app.services.usage_tracker] [UsageTracker] Color-matched slot_to_tray: [1]
+2026-03-13 10:52:25,044 INFO [backend.app.services.usage_tracker] [UsageTracker] 3MF: slot_to_tray=[1] (source: color_match)
+2026-03-13 10:52:25,044 INFO [backend.app.services.usage_tracker] [UsageTracker] 3MF: slot_id=1 -> global_tray=1 -> AMS0-T1 (used_g=30.9, tray_now_override=None)
+2026-03-13 10:52:25,046 INFO [backend.app.services.usage_tracker] [UsageTracker] Spool 35 consumed 30.9g (3MF, color_match_map) on printer 1 AMS0-T1 (completed)
+2026-03-13 10:52:25,054 INFO [backend.app.main] [TIMING] Usage tracker: 13.354s elapsed
+2026-03-13 10:52:25,057 INFO [backend.app.services.spoolman_tracking] [SPOOLMAN] No tracking data for print (printer=1, archive=27)
+2026-03-13 10:52:25,058 INFO [backend.app.main] [TIMING] Spoolman usage report: 13.358s elapsed
+2026-03-13 10:52:25,058 INFO [backend.app.main] [TIMING] Background tasks scheduled (energy, photo): 13.358s elapsed
+2026-03-13 10:52:25,059 INFO [backend.app.main] [TIMING] All background tasks scheduled: 13.358s elapsed
+2026-03-13 10:52:25,059 INFO [backend.app.main] [CALLBACK] on_print_complete finished for printer 1, archive 27
+2026-03-13 10:52:25,059 INFO [backend.app.main] [ENERGY-BG] Starting energy calculation for archive 27
+2026-03-13 10:52:25,060 INFO [backend.app.main] [PHOTO-BG] Starting finish photo capture for archive 27
+2026-03-13 10:52:25,061 INFO [backend.app.main] [AUTO-OFF-BG] Starting smart plug automation for printer 1
+2026-03-13 10:52:25,062 INFO [backend.app.main] [MAINT-BG] Starting maintenance check for printer 1
+2026-03-13 10:52:25,063 INFO [backend.app.main] [LAYER-TL] Stitching layer timelapse for printer 1
+2026-03-13 10:52:25,065 INFO [backend.app.main] [ENERGY-BG] No smart plug for printer 1
+2026-03-13 10:52:25,067 INFO [backend.app.main] [AUTO-OFF-BG] Completed
+2026-03-13 10:52:25,072 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-03-13 10:52:25,080 INFO [backend.app.main] [MAINT-BG] Completed (no items need attention)
+2026-03-13 10:52:27,441 INFO [backend.app.services.camera] Saved camera frame to: /app/data/archive/1/20260313_085759_Kitchen_Sink_Drain_Strainer.gcode/photos/finish_20260313_105225_77222738.jpg
+2026-03-13 10:52:27,441 INFO [backend.app.services.camera] Finish photo saved: finish_20260313_105225_77222738.jpg
+2026-03-13 10:52:27,445 INFO [backend.app.main] [PHOTO-BG] Saved: finish_20260313_105225_77222738.jpg
+2026-03-13 10:52:27,445 INFO [backend.app.main] [PHOTO-NOTIFY] Photo task returned: finish_20260313_105225_77222738.jpg
+2026-03-13 10:52:27,445 INFO [backend.app.main] [NOTIFY-BG] Starting notifications for printer 1, photo=finish_20260313_105225_77222738.jpg
+2026-03-13 10:52:27,451 INFO [backend.app.main] [NOTIFY-BG] Loaded finish photo bytes: 136592 bytes
+2026-03-13 10:52:27,452 INFO [backend.app.services.notification_service] on_print_complete called for printer 1 (A1), status=completed
+2026-03-13 10:52:27,454 INFO [backend.app.services.notification_service] Found 1 providers for on_print_complete: ['Aviso']
+2026-03-13 10:52:27,627 INFO [backend.app.services.notification_service] Sent notification via Aviso
+2026-03-13 10:52:27,628 INFO [backend.app.main] [NOTIFY-BG] Completed
+2026-03-13 10:56:05,535 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-03-13 11:01:05,544 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-03-13 11:06:05,560 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-03-13 11:08:20,454 INFO [backend.app.api.routes.cloud] get_filament_info called with 4 IDs: ['Pdeee865', 'GFA00', 'P95fe942', 'GFG00']
+2026-03-13 11:08:20,688 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset Pdeee865 (API ID: Pdeee865): Failed to get setting detail: 400
+2026-03-13 11:08:21,059 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset P95fe942 (API ID: P95fe942): Failed to get setting detail: 400
+2026-03-13 11:08:21,246 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset GFG00 (API ID: GFSG00): Failed to get setting detail: 400
+2026-03-13 11:08:29,188 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-03-13 11:08:34,190 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] Timeout on K-profiles request attempt 1/3
+2026-03-13 11:08:34,692 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 2/3)
+2026-03-13 11:08:39,693 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] Timeout on K-profiles request attempt 2/3
+2026-03-13 11:08:40,147 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-03-13 11:08:40,194 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 3/3)
+2026-03-13 11:08:45,148 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] Timeout on K-profiles request attempt 1/3
+2026-03-13 11:08:45,195 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] Timeout on K-profiles request attempt 3/3
+2026-03-13 11:08:45,195 ERROR [backend.app.services.bambu_mqtt] [[SERIAL]] Failed to get K-profiles after 3 attempts
+2026-03-13 11:08:45,650 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 2/3)
+2026-03-13 11:08:50,652 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] Timeout on K-profiles request attempt 2/3
+2026-03-13 11:08:51,152 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 3/3)
+2026-03-13 11:08:54,652 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-03-13 11:08:56,154 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] Timeout on K-profiles request attempt 3/3
+2026-03-13 11:08:56,155 ERROR [backend.app.services.bambu_mqtt] [[SERIAL]] Failed to get K-profiles after 3 attempts
+2026-03-13 11:08:59,652 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] Timeout on K-profiles request attempt 1/3
+2026-03-13 11:09:00,154 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 2/3)
+2026-03-13 11:09:05,156 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] Timeout on K-profiles request attempt 2/3
+2026-03-13 11:09:05,657 INFO [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 3/3)
+2026-03-13 11:09:10,659 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] Timeout on K-profiles request attempt 3/3
+2026-03-13 11:09:10,659 ERROR [backend.app.services.bambu_mqtt] [[SERIAL]] Failed to get K-profiles after 3 attempts
+2026-03-13 11:09:40,101 INFO [backend.app.main] [BED-COOL] Bed cooled to 23.9°C on printer 1 (threshold: 24°C)
+2026-03-13 11:09:40,269 INFO [backend.app.services.notification_service] Sent notification via Aviso
+2026-03-13 11:10:01,056 INFO [backend.app.api.routes.support] Log level changed to DEBUG
+2026-03-13 11:10:01,056 INFO [backend.app.api.routes.bug_report] Bug report: temporarily enabled debug logging
+2026-03-13 11:10:01,056 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Requesting status update (pushall)
+2026-03-13 11:10:01,233 DEBUG [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy printer→[IP]:35896: 163 bytes
+2026-03-13 11:10:01,241 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-13 11:10:01,241 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -38dBm
+2026-03-13 11:10:03,251 DEBUG [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy printer→[IP]:35896: 119 bytes
+2026-03-13 11:10:03,252 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-13 11:10:05,275 DEBUG [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy printer→[IP]:35896: 144 bytes
+2026-03-13 11:10:05,277 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-13 11:10:07,292 DEBUG [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy printer→[IP]:35896: 121 bytes
+2026-03-13 11:10:07,294 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-13 11:10:09,322 DEBUG [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy printer→[IP]:35896: 145 bytes
+2026-03-13 11:10:09,325 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-13 11:10:10,922 DEBUG [backend.app.services.virtual_printer.ssdp_server] Received SSDP from printer [IP]: Cloti
+2026-03-13 11:10:10,923 DEBUG [backend.app.services.virtual_printer.ssdp_server] Rewrote SSDP for proxy:
+NOTIFY * HTTP/1.1
+HOST: [IP]:1900
+Server: UPnP/1.0
+Location: [IP]
+NT: urn:bambulab-com:device:3dprinter:1
+USN: [SERIAL]
+Cache-Control: max-age=1800
+DevModel.bambu.com: N2S
+DevName.bambu.com: Cloti
+ - Proxy
+DevSignal.bambu.com: -37
+DevConnect.bambu.com: lan
+DevBind.bambu.com: free
+Devseclink.bambu.com: secure
+DevVersion.bambu.com: 01.07.02.00
+DevCap.bambu.com: 1
+
+
+2026-03-13 11:10:10,923 DEBUG [backend.app.services.virtual_printer.ssdp_server] Broadcast SSDP for 'Cloti' on LAN B ([IP])
+2026-03-13 11:10:11,024 DEBUG [backend.app.services.virtual_printer.ssdp_server] Received SSDP from printer [IP]: Cloti
+2026-03-13 11:10:11,024 DEBUG [backend.app.services.virtual_printer.ssdp_server] Rewrote SSDP for proxy:
+NOTIFY * HTTP/1.1
+HOST: [IP]:1900
+Server: UPnP/1.0
+Location: [IP]
+NT: urn:bambulab-com:device:3dprinter:1
+USN: [SERIAL]
+Cache-Control: max-age=1800
+DevModel.bambu.com: N2S
+DevName.bambu.com: Cloti
+ - Proxy
+DevSignal.bambu.com: -37
+DevConnect.bambu.com: lan
+DevBind.bambu.com: free
+Devseclink.bambu.com: secure
+DevVersion.bambu.com: 01.07.02.00
+DevCap.bambu.com: 1
+
+
+2026-03-13 11:10:11,025 DEBUG [backend.app.services.virtual_printer.ssdp_server] Broadcast SSDP for 'Cloti' on LAN B ([IP])
+2026-03-13 11:10:13,338 DEBUG [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy printer→[IP]:35896: 146 bytes
+2026-03-13 11:10:13,340 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-13 11:10:13,340 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -37dBm
+2026-03-13 11:10:15,372 DEBUG [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy printer→[IP]:35896: 145 bytes
+2026-03-13 11:10:15,373 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-13 11:10:15,373 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -38dBm
+2026-03-13 11:10:19,397 DEBUG [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy printer→[IP]:35896: 166 bytes
+2026-03-13 11:10:19,398 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-13 11:10:19,399 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -37dBm
+2026-03-13 11:10:20,972 DEBUG [backend.app.services.virtual_printer.ssdp_server] Received SSDP from printer [IP]: Cloti
+2026-03-13 11:10:20,973 DEBUG [backend.app.services.virtual_printer.ssdp_server] Rewrote SSDP for proxy:
+NOTIFY * HTTP/1.1
+HOST: [IP]:1900
+Server: UPnP/1.0
+Location: [IP]
+NT: urn:bambulab-com:device:3dprinter:1
+USN: [SERIAL]
+Cache-Control: max-age=1800
+DevModel.bambu.com: N2S
+DevName.bambu.com: Cloti
+ - Proxy
+DevSignal.bambu.com: -38
+DevConnect.bambu.com: lan
+DevBind.bambu.com: free
+Devseclink.bambu.com: secure
+DevVersion.bambu.com: 01.07.02.00
+DevCap.bambu.com: 1
+
+
+2026-03-13 11:10:20,973 DEBUG [backend.app.services.virtual_printer.ssdp_server] Broadcast SSDP for 'Cloti' on LAN B ([IP])
+2026-03-13 11:10:20,973 DEBUG [backend.app.services.virtual_printer.ssdp_server] Rewrote SSDP for proxy:
+NOTIFY * HTTP/1.1
+HOST: [IP]:1900
+Server: UPnP/1.0
+Location: [IP]
+NT: urn:bambulab-com:device:3dprinter:1
+USN: [SERIAL]
+Cache-Control: max-age=1800
+DevModel.bambu.com: N2S
+DevName.bambu.com: Cloti
+ - Proxy
+DevSignal.bambu.com: -38
+DevConnect.bambu.com: lan
+DevBind.bambu.com: free
+Devseclink.bambu.com: secure
+DevVersion.bambu.com: 01.07.02.00
+DevCap.bambu.com: 1
+
+
+2026-03-13 11:10:20,973 DEBUG [backend.app.services.virtual_printer.ssdp_server] Broadcast SSDP for 'Cloti' on LAN B ([IP])
+2026-03-13 11:10:21,075 DEBUG [backend.app.services.virtual_printer.ssdp_server] Received SSDP from printer [IP]: Cloti
+2026-03-13 11:10:21,075 DEBUG [backend.app.services.virtual_printer.ssdp_server] Rewrote SSDP for proxy:
+NOTIFY * HTTP/1.1
+HOST: [IP]:1900
+Server: UPnP/1.0
+Location: [IP]
+NT: urn:bambulab-com:device:3dprinter:1
+USN: [SERIAL]
+Cache-Control: max-age=1800
+DevModel.bambu.com: N2S
+DevName.bambu.com: Cloti
+ - Proxy
+DevSignal.bambu.com: -38
+DevConnect.bambu.com: lan
+DevBind.bambu.com: free
+Devseclink.bambu.com: secure
+DevVersion.bambu.com: 01.07.02.00
+DevCap.bambu.com: 1
+
+
+2026-03-13 11:10:21,076 DEBUG [backend.app.services.virtual_printer.ssdp_server] Broadcast SSDP for 'Cloti' on LAN B ([IP])
+2026-03-13 11:10:21,428 DEBUG [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy printer→[IP]:35896: 120 bytes
+2026-03-13 11:10:21,429 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-13 11:10:23,443 DEBUG [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy printer→[IP]:35896: 168 bytes
+2026-03-13 11:10:23,444 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-13 11:10:23,444 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -39dBm
+2026-03-13 11:10:25,482 DEBUG [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy printer→[IP]:35896: 143 bytes
+2026-03-13 11:10:25,483 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-13 11:10:27,485 DEBUG [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy printer→[IP]:35896: 145 bytes
+2026-03-13 11:10:27,486 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-13 11:10:28,591 DEBUG [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy [IP]:35896→printer: 2 bytes
+2026-03-13 11:10:28,595 DEBUG [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy printer→[IP]:35896: 2 bytes
+2026-03-13 11:10:29,504 DEBUG [backend.app.services.virtual_printer.tcp_proxy] MQTT proxy printer→[IP]:35896: 143 bytes
+2026-03-13 11:10:29,506 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-03-13 11:10:29,506 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -35dBm

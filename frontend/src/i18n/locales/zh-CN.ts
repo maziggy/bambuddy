@@ -404,6 +404,19 @@ export default {
       unknown: '未知',
       failedToStart: '启动发现失败',
     },
+    // AMS Drying
+    drying: {
+      start: '开始干燥',
+      stop: '停止干燥',
+      temperature: '温度',
+      duration: '时长',
+      hours: '小时',
+      timeRemaining: '剩余 {{time}}',
+      active: '干燥中',
+      notSupported: '不支持干燥',
+      startingDrying: '正在启动干燥...',
+      stoppingDrying: '正在停止干燥...',
+    },
     // Filaments section
     filaments: '耗材',
     // Camera

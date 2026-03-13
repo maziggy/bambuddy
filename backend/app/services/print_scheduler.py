@@ -451,7 +451,9 @@ class PrintScheduler:
                     return None, f"No matching material/color. Waiting on {', '.join(all_missing)}"
                 # else: fall through — printers_busy will be appended below
             else:
-                names_and_missing = [f"{name} (needs {', '.join(missing)})" for name, missing in printers_missing_filament]
+                names_and_missing = [
+                    f"{name} (needs {', '.join(missing)})" for name, missing in printers_missing_filament
+                ]
                 reasons.append(f"Waiting for filament: {'; '.join(names_and_missing)}")
         if printers_busy:
             reasons.append(f"Busy: {', '.join(printers_busy)}")

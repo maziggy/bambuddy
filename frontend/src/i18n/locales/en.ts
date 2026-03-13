@@ -404,6 +404,19 @@ export default {
       unknown: 'Unknown',
       failedToStart: 'Failed to start discovery',
     },
+    // AMS Drying
+    drying: {
+      start: 'Start Drying',
+      stop: 'Stop Drying',
+      temperature: 'Temperature',
+      duration: 'Duration',
+      hours: 'hours',
+      timeRemaining: '{{time}} left',
+      active: 'Drying',
+      notSupported: 'Drying not supported',
+      startingDrying: 'Starting drying...',
+      stoppingDrying: 'Stopping drying...',
+    },
     // Filaments section
     filaments: 'Filaments',
     // Camera

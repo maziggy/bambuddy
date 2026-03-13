@@ -404,6 +404,19 @@ export default {
       unknown: 'Desconhecido',
       failedToStart: 'Falha ao iniciar a descoberta',
     },
+    // AMS Drying
+    drying: {
+      start: 'Iniciar secagem',
+      stop: 'Parar secagem',
+      temperature: 'Temperatura',
+      duration: 'Duração',
+      hours: 'horas',
+      timeRemaining: '{{time}} restante',
+      active: 'Secagem',
+      notSupported: 'Secagem não suportada',
+      startingDrying: 'Iniciando secagem...',
+      stoppingDrying: 'Parando secagem...',
+    },
     // Filaments section
     filaments: 'Filamentos',
     // Camera

@@ -1,9 +1,18 @@
 """Unit tests for Spoolman tracking service helpers."""
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from backend.app.services.spoolman_tracking import (
+    _get_fallback_spool_tag,
+    _global_tray_id_to_ams_slot,
+    _hash_serial_to_hex32,
     _resolve_global_tray_id,
     _resolve_spool_tag,
     build_ams_tray_lookup,
+    store_print_data,
 )
 
 
@@ -21,6 +30,20 @@ class TestResolveSpoolTag:
     def test_skips_zero_uuid(self):
         tray = {"tray_uuid": "00000000000000000000000000000000", "tag_uid": "DEADBEEF"}
         assert _resolve_spool_tag(tray) == "DEADBEEF"
+
+    def test_rejects_zero_tag_uid(self):
+        tray = {"tray_uuid": "", "tag_uid": "0000000000000000"}
+        assert _resolve_spool_tag(tray) == ""
+
+    def test_uses_fallback_tag_when_ids_missing(self):
+        tray = {"tray_uuid": "", "tag_uid": ""}
+        # global_tray_id 0 -> ams_id 0, tray_id 0
+        assert _resolve_spool_tag(tray, "01P00A000000000", 0) == "ABA7845700000000"
+
+    def test_uses_fallback_tag_when_ids_zero(self):
+        tray = {"tray_uuid": "00000000000000000000000000000000", "tag_uid": "0000000000000000"}
+        # global_tray_id 5 -> ams_id 1, tray_id 1
+        assert _resolve_spool_tag(tray, "01P00A000000000", 5) == "ABA7845700010001"
 
     def test_empty_both(self):
         tray = {"tray_uuid": "", "tag_uid": ""}
@@ -63,6 +86,36 @@ class TestResolveGlobalTrayId:
     def test_empty_mapping(self):
         mapping = []
         assert _resolve_global_tray_id(1, mapping) == 0
+
+
+class TestFallbackTagHelpers:
+    """Tests for frontend-mirrored fallback tag helpers."""
+
+    def test_hash_serial_matches_frontend_algorithm(self):
+        assert _hash_serial_to_hex32("01P00A000000000") == "ABA78457"
+        # Frontend trims and uppercases before hashing
+        assert _hash_serial_to_hex32(" 01p00a000000000 ") == "ABA78457"
+
+    def test_global_tray_to_ams_slot_standard_ams(self):
+        assert _global_tray_id_to_ams_slot(0) == (0, 0)
+        assert _global_tray_id_to_ams_slot(7) == (1, 3)
+
+    def test_global_tray_to_ams_slot_ams_ht(self):
+        assert _global_tray_id_to_ams_slot(128) == (128, 0)
+        assert _global_tray_id_to_ams_slot(135) == (135, 0)
+
+    def test_global_tray_to_ams_slot_external(self):
+        assert _global_tray_id_to_ams_slot(254) == (255, 0)
+        assert _global_tray_id_to_ams_slot(255) == (255, 1)
+
+    def test_get_fallback_spool_tag_standard(self):
+        assert _get_fallback_spool_tag("01P00A000000000", 5) == "ABA7845700010001"
+
+    def test_get_fallback_spool_tag_ams_ht(self):
+        assert _get_fallback_spool_tag("01P00A000000000", 128) == "ABA7845700800000"
+
+    def test_get_fallback_spool_tag_external(self):
+        assert _get_fallback_spool_tag("01P00A000000000", 255) == "ABA7845700FF0001"
 
 
 class TestBuildAmsTrayLookup:
@@ -118,3 +171,49 @@ class TestBuildAmsTrayLookup:
         raw = {"ams": [{"id": 0, "tray": [{"id": 0}]}]}
         lookup = build_ams_tray_lookup(raw)
         assert lookup[0] == {"tray_uuid": "", "tag_uid": "", "tray_type": ""}
+
+
+class TestStorePrintData:
+    """Tests for store_print_data()."""
+
+    @pytest.mark.asyncio
+    async def test_prefers_explicit_ams_mapping_over_queue_mapping(self):
+        db = AsyncMock()
+        delete_result = MagicMock()
+        db.execute = AsyncMock(side_effect=[delete_result])
+        db.add = MagicMock()
+        db.commit = AsyncMock()
+
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            raw_data={"ams": [{"id": 0, "tray": [{"id": 0, "tray_type": "PLA"}, {"id": 1, "tray_type": "PLA"}]}]}
+        )
+
+        mock_settings = MagicMock()
+        mock_path = MagicMock()
+        mock_path.exists.return_value = True
+        mock_settings.base_dir.__truediv__.return_value = mock_path
+
+        with (
+            patch("backend.app.services.spoolman_tracking.app_settings", mock_settings),
+            patch("backend.app.api.routes.settings.get_setting", AsyncMock(side_effect=["true", "true"])),
+            patch(
+                "backend.app.utils.threemf_tools.extract_filament_usage_from_3mf",
+                return_value=[{"slot_id": 1, "used_g": 3.83, "type": "PLA", "color": "#FF0000"}],
+            ),
+            patch("backend.app.utils.threemf_tools.extract_layer_filament_usage_from_3mf", return_value=None),
+            patch("backend.app.utils.threemf_tools.extract_filament_properties_from_3mf", return_value={}),
+        ):
+            await store_print_data(
+                printer_id=1,
+                archive_id=15,
+                file_path="archives/test.3mf",
+                db=db,
+                printer_manager=printer_manager,
+                ams_mapping=[1, -1, -1, -1],
+            )
+
+        db.add.assert_called_once()
+        tracking = db.add.call_args.args[0]
+        assert tracking.slot_to_tray == [1, -1, -1, -1]
+        db.execute.assert_called_once()

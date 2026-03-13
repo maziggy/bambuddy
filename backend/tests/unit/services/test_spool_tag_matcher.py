@@ -361,9 +361,10 @@ async def test_auto_assign_no_greenlet_error_existing_spool(db_session, printer_
 
 @pytest.mark.asyncio
 async def test_find_matching_spool_exact_match(db_session):
-    """Finds an existing spool with same material, similar color, and same brand."""
+    """Finds an existing spool with same material, subtype, similar color, and same brand."""
     spool = Spool(
         material="PLA",
+        subtype="Basic",
         rgba="FFFFFFFF",
         brand="Bambu Lab",
         label_weight=1000,
@@ -391,6 +392,7 @@ async def test_find_matching_spool_similar_color(db_session):
     """Matches when colors are similar (within threshold) but not identical."""
     spool = Spool(
         material="PLA",
+        subtype="Basic",
         rgba="56B7E6FF",
         brand="Bambu Lab",
         label_weight=1000,
@@ -558,6 +560,7 @@ async def test_find_matching_spool_relationships_loaded(db_session):
     """Returned spool must have k_profiles and assignments eagerly loaded."""
     spool = Spool(
         material="PLA",
+        subtype="Basic",
         rgba="FFFFFFFF",
         brand="Bambu Lab",
         label_weight=1000,
@@ -587,6 +590,7 @@ async def test_find_matching_spool_prefers_manual_over_rfid_auto(db_session):
     """When multiple candidates exist, prefer manually-created spools (data_origin != 'rfid_auto')."""
     auto_spool = Spool(
         material="PLA",
+        subtype="Basic",
         rgba="FFFFFFFF",
         brand="Bambu Lab",
         data_origin="rfid_auto",
@@ -599,6 +603,7 @@ async def test_find_matching_spool_prefers_manual_over_rfid_auto(db_session):
 
     manual_spool = Spool(
         material="PLA",
+        subtype="Basic",
         rgba="FFFFFFFF",
         brand="Bambu Lab",
         data_origin="manual",
@@ -673,6 +678,88 @@ async def test_find_matching_spool_non_bambu_brand_no_match(db_session):
     }
     found = await find_matching_inventory_spool(db_session, tray_data)
     assert found is None
+
+
+@pytest.mark.asyncio
+async def test_find_matching_spool_subtype_mismatch_no_match(db_session):
+    """Does NOT match when subtype differs (e.g. PLA Matte vs PLA Basic)."""
+    spool = Spool(
+        material="PLA",
+        subtype="Matte",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.commit()
+
+    tray_data = {
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Basic",
+        "tray_color": "FFFFFFFF",
+        "tag_uid": "AABBCCDD11223344",
+        "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+    }
+    found = await find_matching_inventory_spool(db_session, tray_data)
+    assert found is None
+
+
+@pytest.mark.asyncio
+async def test_find_matching_spool_null_subtype_vs_basic_no_match(db_session):
+    """Does NOT match a spool with no subtype against a tray with subtype Basic."""
+    spool = Spool(
+        material="PLA",
+        subtype=None,
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.commit()
+
+    tray_data = {
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Basic",
+        "tray_color": "FFFFFFFF",
+        "tag_uid": "AABBCCDD11223344",
+        "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+    }
+    found = await find_matching_inventory_spool(db_session, tray_data)
+    assert found is None
+
+
+@pytest.mark.asyncio
+async def test_find_matching_spool_no_subtype_matches_no_subtype(db_session):
+    """Matches when both tray and spool have no subtype."""
+    spool = Spool(
+        material="PLA",
+        subtype=None,
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.commit()
+
+    tray_data = {
+        "tray_type": "PLA",
+        "tray_sub_brands": "",  # No sub-brand → no subtype
+        "tray_color": "FFFFFFFF",
+        "tag_uid": "AABBCCDD11223344",
+        "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+    }
+    found = await find_matching_inventory_spool(db_session, tray_data)
+    assert found is not None
+    assert found.id == spool.id
 
 
 # -- link_tag_to_spool ------------------------------------------------------

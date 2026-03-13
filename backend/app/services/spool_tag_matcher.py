@@ -208,12 +208,20 @@ async def find_matching_inventory_spool(db: AsyncSession, tray_data: dict) -> Sp
 
     tray_type = tray_data.get("tray_type", "")
     tray_color = tray_data.get("tray_color", "")
+    tray_sub_brands = tray_data.get("tray_sub_brands", "")
 
     if not tray_type:
         return None
 
-    # Query: active, untagged, unused spools matching material and brand
-    result = await db.execute(
+    # Parse subtype from tray_sub_brands (same logic as create_spool_from_tray)
+    subtype = None
+    if tray_sub_brands and " " in tray_sub_brands:
+        parts = tray_sub_brands.split(" ", 1)
+        if parts[0].upper() == tray_type.upper():
+            subtype = parts[1]
+
+    # Query: active, untagged, unused spools matching material, subtype, and brand
+    query = (
         select(Spool)
         .options(selectinload(Spool.k_profiles), selectinload(Spool.assignments))
         .outerjoin(SpoolAssignment, SpoolAssignment.spool_id == Spool.id)
@@ -227,6 +235,14 @@ async def find_matching_inventory_spool(db: AsyncSession, tray_data: dict) -> Sp
             Spool.weight_used == 0,  # Only match unused (fresh) spools
         )
     )
+
+    # Filter on subtype to prevent e.g. "PLA Basic" matching "PLA Matte"
+    if subtype:
+        query = query.where(func.upper(Spool.subtype) == subtype.upper())
+    else:
+        query = query.where(Spool.subtype.is_(None))
+
+    result = await db.execute(query)
     candidates = list(result.scalars().unique().all())
 
     if not candidates:
@@ -253,6 +269,9 @@ def link_tag_to_spool(spool: Spool, tray_data: dict) -> None:
     Updates tag identifiers and sets data_origin to 'rfid_linked' to distinguish
     from manually-created ('manual') and auto-created ('rfid_auto') spools.
     Preserves existing slicer_filament if already set.
+
+    Note: This mutates the spool object but does NOT commit. The caller is
+    responsible for calling db.commit() to persist the changes.
     """
     tag_uid = tray_data.get("tag_uid", "")
     tray_uuid = tray_data.get("tray_uuid", "")

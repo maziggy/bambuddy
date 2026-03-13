@@ -45,6 +45,7 @@ from backend.app.api.routes import (
     support,
     system,
     updates,
+    user_notifications,
     users,
     virtual_printers,
     webhook,
@@ -280,6 +281,16 @@ _timelapse_baselines: dict[int, set[str]] = {}
 # Track active bed cooldown monitoring tasks: {printer_id: asyncio.Task}
 _bed_cooldown_tasks: dict[int, asyncio.Task] = {}
 
+# Track printers where the user explicitly stopped the print from the queue UI.
+# When on_print_complete fires with status "failed" for these printers we treat it
+# as "cancelled" (stopped by user) so the correct notification email is sent.
+_user_stopped_printers: set[int] = set()
+
+# Track created_by_id for expected prints so the user email can be sent even when
+# the archive itself doesn't have created_by_id set (e.g. library-file-based prints).
+# {(printer_id, filename): created_by_id}
+_expected_print_creators: dict[tuple[int, str], int] = {}
+
 
 async def _get_plug_energy(plug, db) -> dict | None:
     """Get energy from plug regardless of type (Tasmota, Home Assistant, or MQTT).
@@ -308,7 +319,13 @@ async def _get_plug_energy(plug, db) -> dict | None:
         return await tasmota_service.get_energy(plug)
 
 
-def register_expected_print(printer_id: int, filename: str, archive_id: int, ams_mapping: list[int] | None = None):
+def register_expected_print(
+    printer_id: int,
+    filename: str,
+    archive_id: int,
+    ams_mapping: list[int] | None = None,
+    created_by_id: int | None = None,
+):
     """Register an expected print from reprint/scheduled so we don't create duplicate archives."""
     # Store with multiple filename variations to catch different naming patterns
     _expected_prints[(printer_id, filename)] = archive_id
@@ -320,6 +337,14 @@ def register_expected_print(printer_id: int, filename: str, archive_id: int, ams
     # Store AMS mapping for usage tracking at print completion
     if ams_mapping is not None:
         _print_ams_mappings[archive_id] = ams_mapping
+    # Store created_by_id so the user start email can be sent even when the archive
+    # itself has no created_by_id (e.g. library-file-based queue prints)
+    if created_by_id is not None:
+        _expected_print_creators[(printer_id, filename)] = created_by_id
+        if filename.endswith(".3mf"):
+            base = filename[:-4]
+            _expected_print_creators[(printer_id, base)] = created_by_id
+            _expected_print_creators[(printer_id, f"{base}.gcode")] = created_by_id
     logging.getLogger(__name__).info(
         f"Registered expected print: printer={printer_id}, file={filename}, archive={archive_id}, ams_mapping={ams_mapping}"
     )
@@ -332,6 +357,15 @@ def _get_start_ams_mapping(data: dict, archive_id: int | None) -> list[int] | No
         stored_ams_mapping = _print_ams_mappings.get(archive_id)
     return stored_ams_mapping
 
+def mark_printer_stopped_by_user(printer_id: int) -> None:
+    """Mark that the active print on this printer was stopped by the user from the queue UI.
+
+    When on_print_complete fires with status 'failed' for a printer in this set we
+    reclassify it as 'cancelled' so the correct 'print stopped' notification is sent
+    rather than a 'print failed' notification.
+    """
+    _user_stopped_printers.add(printer_id)
+    logging.getLogger(__name__).info("Marked printer %s as user-stopped from queue", printer_id)
 
 _last_status_broadcast: dict[int, str] = {}
 # Track printers where we've updated nozzle_count
@@ -448,6 +482,8 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
     # HMS error codes that should not trigger notifications even though they
     # have known descriptions (e.g. user-initiated actions, not real errors).
     _HMS_NOTIFICATION_SUPPRESS = {
+        "0500_0007",  # MQTT command verification failed (auth/bind issue, not a print error)
+        "0500_4001",  # Failed to connect to Bambu Cloud (network issue)
         "0500_400E",  # Printing was cancelled (user action, not an error)
     }
 
@@ -1035,6 +1071,16 @@ async def _send_print_start_notification(
                 archive_data["image_data"] = image_data
 
             await notification_service.on_print_start(printer_id, printer_name, data, db, archive_data=archive_data)
+
+            # Send user-specific email notification for print start
+            if archive_data and archive_data.get("created_by_id"):
+                await notification_service.send_user_print_email(
+                    event_type="user_print_start",
+                    created_by_id=archive_data["created_by_id"],
+                    printer_name=printer_name,
+                    filename=data.get("subtask_name") or data.get("filename", "Unknown"),
+                    db=db,
+                )
     except Exception as e:
         logger.warning("Notification on_print_start failed: %s", e)
 
@@ -1222,7 +1268,35 @@ async def on_print_start(printer_id: int, data: dict):
                 f"[CALLBACK] Skipping archive - printer: {printer is not None}, auto_archive: {printer.auto_archive if printer else 'N/A'}"
             )
             if not notification_sent:
-                await _send_print_start_notification(printer_id, data, logger=logger)
+                # Even with auto-archive disabled, try to recover created_by_id from
+                # a registered expected print (e.g. a library-file queue item) so the
+                # user start email can still be sent.
+                _fn = data.get("filename", "")
+                _sn = data.get("subtask_name", "")
+                _no_archive_creator_keys: list[tuple[int, str]] = []
+                if _sn:
+                    _no_archive_creator_keys += [
+                        (printer_id, _sn),
+                        (printer_id, f"{_sn}.3mf"),
+                        (printer_id, f"{_sn}.gcode.3mf"),
+                    ]
+                if _fn:
+                    _base_fn = _fn.split("/")[-1] if "/" in _fn else _fn
+                    _no_archive_creator_keys.append((printer_id, _base_fn))
+                    _no_archive_base = _base_fn.replace(".gcode", "").replace(".3mf", "")
+                    _no_archive_creator_keys += [
+                        (printer_id, _no_archive_base),
+                        (printer_id, f"{_no_archive_base}.3mf"),
+                    ]
+                _no_archive_creator: int | None = None
+                for _key in _no_archive_creator_keys:
+                    # Clean up both dicts for every key to avoid memory leaks
+                    _expected_prints.pop(_key, None)
+                    popped_creator = _expected_print_creators.pop(_key, None)
+                    if _no_archive_creator is None:
+                        _no_archive_creator = popped_creator
+                _creator_data = {"created_by_id": _no_archive_creator} if _no_archive_creator else None
+                await _send_print_start_notification(printer_id, data, _creator_data, logger)
             return
 
         # Get the filename and subtask_name
@@ -1320,7 +1394,19 @@ async def on_print_start(printer_id: int, data: dict):
 
                 # Send notification with archive data (reprint/scheduled)
                 if not notification_sent:
-                    archive_data = {"print_time_seconds": archive.print_time_seconds}
+                    # Use archive's created_by_id; fall back to the creator registered via
+                    # register_expected_print (handles library-file-based queue items where
+                    # the freshly-created archive has no created_by_id yet).
+                    # Pop ALL matching keys so no stale entries remain in the dict.
+                    fallback_creator = None
+                    for key in expected_keys:
+                        popped = _expected_print_creators.pop(key, None)
+                        if fallback_creator is None:
+                            fallback_creator = popped
+                    archive_data = {
+                        "print_time_seconds": archive.print_time_seconds,
+                        "created_by_id": archive.created_by_id or fallback_creator,
+                    }
                     await _send_print_start_notification(printer_id, data, archive_data, logger)
 
                 # Extract printable objects from the archived 3MF file
@@ -1401,7 +1487,10 @@ async def on_print_start(printer_id: int, data: dict):
                         logger.warning("Failed to record starting energy for existing archive: %s", e)
                 # Send notification with archive data (existing archive)
                 if not notification_sent:
-                    archive_data = {"print_time_seconds": existing_archive.print_time_seconds}
+                    archive_data = {
+                        "print_time_seconds": existing_archive.print_time_seconds,
+                        "created_by_id": existing_archive.created_by_id,
+                    }
                     await _send_print_start_notification(printer_id, data, archive_data, logger)
                 # Extract printable objects from the archived 3MF file
                 _load_objects_from_archive(existing_archive, printer_id, logger)
@@ -1749,7 +1838,10 @@ async def on_print_start(printer_id: int, data: dict):
 
                 # Send notification with archive data (new archive created)
                 if not notification_sent:
-                    archive_data = {"print_time_seconds": archive.print_time_seconds}
+                    archive_data = {
+                        "print_time_seconds": archive.print_time_seconds,
+                        "created_by_id": archive.created_by_id,
+                    }
                     await _send_print_start_notification(printer_id, data, archive_data, logger)
 
                 # Extract printable objects for skip object functionality
@@ -2059,6 +2151,20 @@ async def on_print_complete(printer_id: int, data: dict):
 
     # Clear current print user tracking (Issue #206)
     printer_manager.clear_current_print_user(printer_id)
+
+    # If the user explicitly stopped this print from the queue UI the printer will
+    # report "failed" or "aborted" via MQTT.  Override that to "cancelled" so the
+    # correct "print stopped" notification/email is sent instead of a failure alert.
+    _raw_status = data.get("status", "completed")
+    if printer_id in _user_stopped_printers and _raw_status in ("failed", "aborted"):
+        logger.info(
+            "[CALLBACK] Overriding status '%s' -> 'cancelled' for printer %s "
+            "(print was stopped from queue by user)",
+            _raw_status,
+            printer_id,
+        )
+        data = {**data, "status": "cancelled"}
+    _user_stopped_printers.discard(printer_id)
 
     # MQTT relay - publish print complete
     try:
@@ -2421,6 +2527,92 @@ async def on_print_complete(printer_id: int, data: dict):
 
     if not archive_id:
         logger.warning("Could not find archive for print complete: filename=%s, subtask=%s", filename, subtask_name)
+
+        # Still send print-complete/failed/stopped notifications even without an archive.
+        # Try to enrich with queue/library-file data so user-specific emails work too.
+        async def _notify_no_archive():
+            try:
+                async with async_session() as db:
+                    from backend.app.models.library import LibraryFile
+                    from backend.app.models.print_queue import PrintQueueItem
+                    from backend.app.models.printer import Printer
+
+                    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+                    printer_obj = result.scalar_one_or_none()
+                    p_name = printer_obj.name if printer_obj else f"Printer {printer_id}"
+
+                    # Try to find the most-recent queue item for this printer so we can
+                    # recover created_by_id and estimated print time.
+                    # NOTE: By the time this task runs the queue item status has already
+                    # been updated to a terminal state (completed/failed/cancelled), so
+                    # we look for recently-completed items (within the last 5 minutes).
+                    no_archive_data: dict | None = None
+                    try:
+                        cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+                        q_result = await db.execute(
+                            select(PrintQueueItem)
+                            .where(PrintQueueItem.printer_id == printer_id)
+                            .where(PrintQueueItem.status.in_(["completed", "failed", "cancelled"]))
+                            .where(PrintQueueItem.completed_at >= cutoff)
+                            .order_by(PrintQueueItem.completed_at.desc())
+                            .limit(1)
+                        )
+                        queue_item = q_result.scalar_one_or_none()
+                        if queue_item:
+                            no_archive_data = {"created_by_id": queue_item.created_by_id}
+                            # Pull estimated time from library file when available
+                            if queue_item.library_file_id:
+                                lib_result = await db.execute(
+                                    select(LibraryFile).where(LibraryFile.id == queue_item.library_file_id)
+                                )
+                                lib_file = lib_result.scalar_one_or_none()
+                                if lib_file and lib_file.print_time_seconds:
+                                    no_archive_data["print_time_seconds"] = lib_file.print_time_seconds
+                    except Exception as lookup_err:
+                        logger.debug(
+                            "[NOTIFY-BG] Could not look up queue item for no-archive notification: %s", lookup_err
+                        )
+
+                    ps = data.get("status", "completed")
+                    logger.info(
+                        "[NOTIFY-BG] Sending notification without archive: printer=%s, status=%s", printer_id, ps
+                    )
+                    await notification_service.on_print_complete(
+                        printer_id, p_name, ps, data, db, archive_data=no_archive_data
+                    )
+
+                    # Send user-specific email if we have a created_by_id
+                    if no_archive_data and no_archive_data.get("created_by_id"):
+                        raw_filename = data.get("subtask_name") or data.get("filename", "Unknown")
+                        if ps == "completed":
+                            await notification_service.send_user_print_email(
+                                event_type="user_print_complete",
+                                created_by_id=no_archive_data["created_by_id"],
+                                printer_name=p_name,
+                                filename=raw_filename,
+                                db=db,
+                            )
+                        elif ps == "failed":
+                            await notification_service.send_user_print_email(
+                                event_type="user_print_failed",
+                                created_by_id=no_archive_data["created_by_id"],
+                                printer_name=p_name,
+                                filename=raw_filename,
+                                db=db,
+                            )
+                        elif ps in ("stopped", "aborted", "cancelled"):
+                            await notification_service.send_user_print_email(
+                                event_type="user_print_stopped",
+                                created_by_id=no_archive_data["created_by_id"],
+                                printer_name=p_name,
+                                filename=raw_filename,
+                                db=db,
+                            )
+                    logger.info("[NOTIFY-BG] Completed (no-archive path)")
+            except Exception as e:
+                logger.warning("[NOTIFY-BG] Failed to send notification without archive: %s", e, exc_info=True)
+
+        asyncio.create_task(_notify_no_archive())
         return
 
     log_timing("Archive lookup")
@@ -2760,6 +2952,7 @@ async def on_print_complete(printer_id: int, data: dict):
                             "print_time_seconds": archive.print_time_seconds,
                             "actual_filament_grams": archive.filament_used_grams,
                             "failure_reason": archive.failure_reason,
+                            "created_by_id": archive.created_by_id,
                         }
 
                         # Scale filament usage for partial prints
@@ -2822,6 +3015,36 @@ async def on_print_complete(printer_id: int, data: dict):
                 await notification_service.on_print_complete(
                     printer_id, printer_name, print_status, data, db, archive_data=archive_data
                 )
+
+                # Send user-specific email notification
+                if archive_data:
+                    created_by_id = archive_data.get("created_by_id")
+                    raw_filename = data.get("subtask_name") or data.get("filename", "Unknown")
+                    if print_status == "completed":
+                        await notification_service.send_user_print_email(
+                            event_type="user_print_complete",
+                            created_by_id=created_by_id,
+                            printer_name=printer_name,
+                            filename=raw_filename,
+                            db=db,
+                        )
+                    elif print_status in ("failed",):
+                        await notification_service.send_user_print_email(
+                            event_type="user_print_failed",
+                            created_by_id=created_by_id,
+                            printer_name=printer_name,
+                            filename=raw_filename,
+                            db=db,
+                        )
+                    elif print_status in ("stopped", "aborted", "cancelled"):
+                        await notification_service.send_user_print_email(
+                            event_type="user_print_stopped",
+                            created_by_id=created_by_id,
+                            printer_name=printer_name,
+                            filename=raw_filename,
+                            db=db,
+                        )
+
                 logger.info("[NOTIFY-BG] Completed")
         except Exception as e:
             logger.warning("[NOTIFY-BG] Failed: %s", e)
@@ -3686,6 +3909,7 @@ app.include_router(background_dispatch_routes.router, prefix=app_settings.api_pr
 app.include_router(kprofiles.router, prefix=app_settings.api_prefix)
 app.include_router(notifications.router, prefix=app_settings.api_prefix)
 app.include_router(notification_templates.router, prefix=app_settings.api_prefix)
+app.include_router(user_notifications.router, prefix=app_settings.api_prefix)
 app.include_router(spoolman.router, prefix=app_settings.api_prefix)
 app.include_router(updates.router, prefix=app_settings.api_prefix)
 app.include_router(maintenance.router, prefix=app_settings.api_prefix)

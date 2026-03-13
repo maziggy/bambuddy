@@ -848,6 +848,8 @@ export interface AppSettings {
   bed_cooled_threshold: number;
   // Inventory low stock threshold
   low_stock_threshold: number;
+  // User email notifications toggle
+  user_notifications_enabled: boolean;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
@@ -2103,6 +2105,14 @@ export interface PermissionsListResponse {
   all_permissions: Permission[];
 }
 
+// User email notification preferences
+export interface UserEmailPreferences {
+  notify_print_start: boolean;
+  notify_print_complete: boolean;
+  notify_print_failed: boolean;
+  notify_print_stopped: boolean;
+}
+
 // Auth types
 export interface LoginRequest {
   username: string;
@@ -2287,6 +2297,15 @@ export const api = {
     request<{ message: string }>('/users/me/change-password', {
       method: 'POST',
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
+
+  // User Email Notifications
+  getUserEmailPreferences: () =>
+    request<UserEmailPreferences>('/user-notifications/preferences'),
+  updateUserEmailPreferences: (data: UserEmailPreferences) =>
+    request<UserEmailPreferences>('/user-notifications/preferences', {
+      method: 'PUT',
+      body: JSON.stringify(data),
     }),
 
   // Groups

@@ -196,8 +196,9 @@ export function EmailSettings() {
             </div>
             <Button
               onClick={handleToggleAdvancedAuth}
-              disabled={toggleAdvancedAuthMutation.isPending}
+              disabled={toggleAdvancedAuthMutation.isPending || (!advancedEnabled && !advancedAuthStatus?.smtp_configured)}
               variant={advancedEnabled ? 'danger' : 'primary'}
+              title={!advancedEnabled && !advancedAuthStatus?.smtp_configured ? (t('settings.email.errors.configureSmtpFirst') || 'Configure and save SMTP settings below first') : undefined}
             >
               {advancedEnabled ? (
                 <>
@@ -241,7 +242,9 @@ export function EmailSettings() {
                       {t('settings.email.advancedAuthDisabled') || 'Advanced Authentication is disabled'}
                     </p>
                     <p className="text-sm text-yellow-300">
-                      {t('settings.email.advancedAuthDisabledDesc') || 'Enable advanced authentication to activate email-based features for user management.'}
+                      {!advancedAuthStatus?.smtp_configured
+                        ? (t('settings.email.configureSmtpToEnable') || 'Configure and save your SMTP settings below, then return here to enable Advanced Authentication.')
+                        : (t('settings.email.advancedAuthDisabledDesc') || 'Enable advanced authentication to activate email-based features for user management.')}
                     </p>
                   </div>
                 </div>
@@ -251,8 +254,8 @@ export function EmailSettings() {
         </CardContent>
       </Card>
 
-      {/* SMTP Configuration - dimmed when advanced auth is disabled */}
-      <div className={!advancedEnabled ? 'opacity-50 pointer-events-none' : ''}>
+      {/* SMTP Configuration - always accessible so it can be configured before enabling Advanced Auth */}
+      <div>
         <Card>
           <CardHeader>
             <h2 className="text-lg font-semibold text-white">
@@ -399,8 +402,8 @@ export function EmailSettings() {
         </Card>
       </div>
 
-      {/* Test SMTP - dimmed when advanced auth is disabled */}
-      <div className={!advancedEnabled ? 'opacity-50 pointer-events-none' : ''}>
+      {/* Test SMTP - always accessible */}
+      <div>
         <Card>
           <CardHeader>
             <h2 className="text-lg font-semibold text-white">

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Printer, Archive, Calendar, BarChart3, Cloud, Settings, Sun, Moon, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, type LucideIcon } from 'lucide-react';
+import { Printer, Archive, Calendar, BarChart3, Cloud, Settings, Sun, Moon, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, Bell, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
@@ -34,6 +34,7 @@ export const defaultNavItems: NavItem[] = [
   { id: 'projects', to: '/projects', icon: FolderKanban, labelKey: 'nav.projects' },
   { id: 'inventory', to: '/inventory', icon: Disc3, labelKey: 'nav.inventory' },
   { id: 'files', to: '/files', icon: FolderOpen, labelKey: 'nav.files' },
+  { id: 'notifications', to: '/notifications', icon: Bell, labelKey: 'nav.notifications' },
   { id: 'settings', to: '/settings', icon: Settings, labelKey: 'nav.settings' },
 ];
 
@@ -112,6 +113,14 @@ export function Layout() {
     queryKey: ['settings'],
     queryFn: api.getSettings,
     staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
+  // Check advanced auth status for conditional nav items
+  const { data: advancedAuthStatus } = useQuery({
+    queryKey: ['advancedAuthStatus'],
+    queryFn: api.getAdvancedAuthStatus,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    enabled: authEnabled,
   });
 
   const { data: updateCheck } = useQuery({
@@ -234,10 +243,15 @@ export function Layout() {
       inventory: 'inventory:read',
       files: 'library:read',
       settings: 'settings:read',
+      notifications: 'notifications:read',
     };
 
-    const isHidden = (id: string) =>
-      authEnabled && id in navPermissions && !hasPermission(navPermissions[id]);
+    const isHidden = (id: string) => {
+      if (authEnabled && id in navPermissions && !hasPermission(navPermissions[id])) return true;
+      // notifications nav item also requires advanced auth to be enabled and user_notifications_enabled setting
+      if (id === 'notifications' && (!authEnabled || !advancedAuthStatus?.advanced_auth_enabled || (settings?.user_notifications_enabled === false))) return true;
+      return false;
+    };
 
     // Add items in stored order
     for (const id of sidebarOrder) {

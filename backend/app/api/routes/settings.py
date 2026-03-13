@@ -97,6 +97,7 @@ async def get_settings(
                 "ha_enabled",
                 "per_printer_mapping_expanded",
                 "prometheus_enabled",
+                "user_notifications_enabled",
             ]:
                 settings_dict[setting.key] = setting.value.lower() == "true"
             elif setting.key in [

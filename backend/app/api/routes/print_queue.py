@@ -789,6 +789,16 @@ async def stop_queue_item(
     item.error_message = "Stopped by user" if stop_sent else "Stopped by user (printer was offline)"
     await db.commit()
 
+    # Mark this printer as user-stopped so on_print_complete will classify the
+    # printer's "failed"/"aborted" callback as "cancelled" and send the correct
+    # "print stopped" notification instead of a failure alert.
+    try:
+        from backend.app.main import mark_printer_stopped_by_user
+
+        mark_printer_stopped_by_user(printer_id)
+    except Exception as _mark_err:
+        logger.warning("Failed to mark printer %s as user-stopped: %s", printer_id, _mark_err)
+
     # Get smart plug info if auto-off is enabled
     plug_ip = None
     if auto_off_after:

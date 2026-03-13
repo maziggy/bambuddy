@@ -8,6 +8,7 @@ import re
 import secrets
 import smtplib
 import string
+from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any
@@ -514,3 +515,68 @@ async def create_password_reset_email_from_template(
         # Fallback to hardcoded template
         logger.warning("No password reset email template found in database, using default")
         return create_password_reset_email(username, password, login_url)
+
+
+async def send_user_print_notification(
+    db: AsyncSession,
+    event_type: str,
+    user_email: str,
+    username: str,
+    variables: dict,
+) -> None:
+    """Send a print notification email to a user using Advanced Auth SMTP settings.
+
+    Args:
+        db: Database session
+        event_type: One of 'user_print_start', 'user_print_complete', 'user_print_failed', 'user_print_stopped'
+        user_email: Recipient email address
+        username: Username of the recipient
+        variables: Template variables (printer, filename, etc.)
+    """
+    # Check that advanced auth is enabled (SMTP settings must be configured)
+    smtp_settings = await get_smtp_settings(db)
+    if not smtp_settings:
+        logger.warning("Cannot send user print notification: SMTP settings not configured")
+        return
+
+    # Get the template
+    template = await get_notification_template(db, event_type)
+    if template is None:
+        logger.warning("No template found for event type: %s", event_type)
+        return
+
+    # Add common variables (username, timestamp, app_name) merged with caller-supplied variables
+    all_variables = {
+        "username": username,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "app_name": "Bambuddy",
+        **variables,
+    }
+
+    subject = render_template(template.title_template, all_variables)
+    text_body = render_template(template.body_template, all_variables)
+
+    # Build HTML body — content comes entirely from the database template
+    escaped_text_body = html.escape(text_body).replace("\n", "<br>\n")
+    html_body = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <div style="background: linear-gradient(135deg, #1db954 0%, #158a3e 100%); background-color: #1db954; padding: 20px; border-radius: 8px 8px 0 0;">
+        <h1 style="color: #ffffff; margin: 0; font-size: 24px; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">{html.escape(subject)}</h1>
+    </div>
+    <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; border: 1px solid #ddd; border-top: none;">
+        <div style="font-size: 16px;">{escaped_text_body}</div>
+    </div>
+</body>
+</html>
+"""
+
+    try:
+        send_email(smtp_settings, user_email, subject, text_body, html_body)
+        logger.info("Sent %s notification email to %s", event_type, user_email)
+    except Exception as e:
+        logger.error("Failed to send %s notification to %s: %s", event_type, user_email, e)

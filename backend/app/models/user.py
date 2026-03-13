@@ -10,6 +10,7 @@ from backend.app.core.database import Base
 
 if TYPE_CHECKING:
     from backend.app.models.group import Group
+    from backend.app.models.user_email_pref import UserEmailPreference
 
 
 class User(Base):
@@ -43,6 +44,15 @@ class User(Base):
         secondary="user_groups",
         back_populates="users",
         lazy="selectin",
+    )
+
+    # Relationship to email notification preferences
+    email_preferences: Mapped[UserEmailPreference | None] = relationship(
+        "UserEmailPreference",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+        lazy="select",
     )
 
     @property

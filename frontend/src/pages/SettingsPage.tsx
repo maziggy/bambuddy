@@ -523,6 +523,7 @@ export function SettingsPage() {
     const updateData: UserUpdate = {
       username: userFormData.username || undefined,
       password: userFormData.password || undefined,
+      email: userFormData.email || undefined,
       role: userFormData.role,
       group_ids: userFormData.group_ids,
     };
@@ -733,7 +734,8 @@ export function SettingsPage() {
       (settings.camera_view_mode ?? 'window') !== (localSettings.camera_view_mode ?? 'window') ||
       (settings.preferred_slicer ?? 'bambu_studio') !== (localSettings.preferred_slicer ?? 'bambu_studio') ||
       settings.prometheus_enabled !== localSettings.prometheus_enabled ||
-      settings.prometheus_token !== localSettings.prometheus_token;
+      settings.prometheus_token !== localSettings.prometheus_token ||
+      (settings.user_notifications_enabled ?? true) !== (localSettings.user_notifications_enabled ?? true);
 
     if (!hasChanges) {
       return;
@@ -800,6 +802,7 @@ export function SettingsPage() {
         preferred_slicer: localSettings.preferred_slicer,
         prometheus_enabled: localSettings.prometheus_enabled,
         prometheus_token: localSettings.prometheus_token,
+        user_notifications_enabled: localSettings.user_notifications_enabled,
       };
       updateMutation.mutate(settingsToSave);
     }, 500);
@@ -2770,6 +2773,32 @@ export function SettingsPage() {
                     />
                     <span className="text-sm text-bambu-gray">°C</span>
                   </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* User Notifications Toggle */}
+            <Card className="mb-4">
+              <CardContent className="py-3">
+                <div className={`flex items-center justify-between ${!advancedAuthStatus?.advanced_auth_enabled ? 'opacity-50' : ''}`}>
+                  <div>
+                    <p className="text-white text-sm font-medium">{t('settings.userNotificationsEnabled')}</p>
+                    <p className="text-xs text-bambu-gray">
+                      {!advancedAuthStatus?.advanced_auth_enabled
+                        ? t('settings.userNotificationsDisabledHint')
+                        : t('settings.userNotificationsEnabledDescription')}
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={localSettings.user_notifications_enabled ?? true}
+                      disabled={!advancedAuthStatus?.advanced_auth_enabled}
+                      onChange={(e) => updateSetting('user_notifications_enabled', e.target.checked)}
+                    />
+                    <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green peer-disabled:cursor-not-allowed"></div>
+                  </label>
                 </div>
               </CardContent>
             </Card>

@@ -91,6 +91,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - AMS slot RFID re-read
 - AMS slot configuration (model-filtered presets, K profiles, color picker, pre-population for configured slots)
 - AMS info card (hover for serial number, firmware version) with custom friendly names that persist across printers
+- **AMS remote drying** — Start, monitor, and stop drying sessions for AMS 2 Pro and AMS-HT directly from the Printers page with filament-based temperature/duration presets
 - Dual external spool support for H2D (Ext-L / Ext-R)
 - HMS error monitoring with history and clear errors
 - Print success rates & trends
@@ -151,6 +152,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Filament usage and progress in failed/cancelled print notifications
 - HMS error alerts (AMS, nozzle, etc.)
 - Build plate detection alerts
+- First layer complete alert (with camera snapshot)
 - Bed cooled alerts (configurable threshold)
 - Queue events (waiting, skipped, failed)
 

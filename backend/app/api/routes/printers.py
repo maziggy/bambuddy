@@ -35,7 +35,12 @@ from backend.app.services.bambu_ftp import (
     get_storage_info_async,
     list_files_async,
 )
-from backend.app.services.printer_manager import get_derived_status_name, printer_manager, supports_chamber_temp
+from backend.app.services.printer_manager import (
+    get_derived_status_name,
+    printer_manager,
+    supports_chamber_temp,
+    supports_drying,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["printers"])
@@ -411,6 +416,8 @@ async def get_printer_status(
                         tray_uuid=tray_uuid,
                         nozzle_temp_min=tray_data.get("nozzle_temp_min"),
                         nozzle_temp_max=tray_data.get("nozzle_temp_max"),
+                        drying_temp=tray_data.get("drying_temp"),
+                        drying_time=tray_data.get("drying_time"),
                     )
                 )
             # Prefer humidity_raw (percentage) over humidity (index 1-5)
@@ -443,6 +450,9 @@ async def get_printer_status(
                     serial_number=str(ams_data.get("sn") or ams_data.get("serial_number") or ""),
                     # Firmware version: populated by _handle_version_info from info.module ams/* entries
                     sw_ver=str(ams_data.get("sw_ver") or ""),
+                    # Drying: dry_time > 0 means drying is active (minutes remaining)
+                    dry_time=int(ams_data.get("dry_time") or 0),
+                    module_type=str(ams_data.get("module_type") or ""),
                 )
             )
 
@@ -597,6 +607,7 @@ async def get_printer_status(
         firmware_version=state.firmware_version,
         developer_mode=state.developer_mode if state else None,
         plate_cleared=printer_manager.is_plate_cleared(printer_id),
+        supports_drying=supports_drying(printer.model, state.firmware_version),
     )
 
 
@@ -1445,6 +1456,63 @@ async def clear_mqtt_logs(
 
     printer_manager.clear_logs(printer_id)
     return {"status": "cleared"}
+
+
+# ============================================
+# AMS Drying Endpoints
+# ============================================
+
+
+@router.post("/{printer_id}/drying/start")
+async def start_drying(
+    printer_id: int,
+    ams_id: int,
+    temp: int = 45,
+    duration: int = 4,
+    filament: str = "",
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Send AMS drying start command. temp=45-85, duration=hours."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    # Server-side guard: reject if this model/firmware doesn't support drying
+    live_state = printer_manager.get_status(printer_id)
+    firmware = live_state.firmware_version if live_state else None
+    if not supports_drying(printer.model, firmware):
+        raise HTTPException(400, "Drying not supported for this printer model or firmware version")
+
+    if temp < 45 or temp > 85:
+        raise HTTPException(400, "Temperature must be 45-85°C")
+    if duration < 1 or duration > 24:
+        raise HTTPException(400, "Duration must be 1-24 hours")
+
+    success = printer_manager.send_drying_command(printer_id, ams_id, temp, duration, mode=1, filament=filament)
+    if not success:
+        raise HTTPException(400, "Printer not connected")
+    return {"status": "drying_started", "ams_id": ams_id, "temp": temp, "duration": duration}
+
+
+@router.post("/{printer_id}/drying/stop")
+async def stop_drying(
+    printer_id: int,
+    ams_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Send AMS drying stop command."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    success = printer_manager.send_drying_command(printer_id, ams_id, temp=0, duration=0, mode=0)
+    if not success:
+        raise HTTPException(400, "Printer not connected")
+    return {"status": "drying_stopped", "ams_id": ams_id}
 
 
 # ============================================

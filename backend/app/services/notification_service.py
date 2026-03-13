@@ -1142,6 +1142,31 @@ class NotificationService:
         title, message = await self._build_message_from_template(db, "bed_cooled", variables)
         await self._send_to_providers(providers, title, message, db, "bed_cooled", printer_id, printer_name)
 
+    async def on_first_layer_complete(
+        self,
+        printer_id: int,
+        printer_name: str,
+        filename: str,
+        total_layers: int,
+        db: AsyncSession,
+        image_data: bytes | None = None,
+    ):
+        """Handle first layer complete event."""
+        providers = await self._get_providers_for_event(db, "on_first_layer_complete", printer_id)
+        if not providers:
+            return
+
+        variables = {
+            "printer": printer_name,
+            "filename": self._clean_filename(filename),
+            "total_layers": str(total_layers),
+        }
+
+        title, message = await self._build_message_from_template(db, "first_layer_complete", variables)
+        await self._send_to_providers(
+            providers, title, message, db, "first_layer_complete", printer_id, printer_name, image_data=image_data
+        )
+
     def clear_template_cache(self):
         """Clear the template cache. Call this when templates are updated."""
         self._template_cache.clear()

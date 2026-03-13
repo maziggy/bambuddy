@@ -404,6 +404,19 @@ export default {
       unknown: '未知',
       failedToStart: '启动发现失败',
     },
+    // AMS Drying
+    drying: {
+      start: '开始干燥',
+      stop: '停止干燥',
+      temperature: '温度',
+      duration: '时长',
+      hours: '小时',
+      timeRemaining: '剩余 {{time}}',
+      active: '干燥中',
+      notSupported: '不支持干燥',
+      startingDrying: '正在启动干燥...',
+      stoppingDrying: '正在停止干燥...',
+    },
     // Filaments section
     filaments: '耗材',
     // Camera
@@ -3717,6 +3730,7 @@ export default {
     amsHtHumidity: 'AMS-HT 湿度',
     amsHtTemp: 'AMS-HT 温度',
     bedCooled: '热床已冷却',
+    firstLayer: '首层完成',
     quiet: '免打扰',
     digest: '摘要 {{time}}',
     // Event labels (expanded settings)
@@ -3726,6 +3740,8 @@ export default {
     printCompleted: '打印已完成',
     bedCooledLabel: '热床已冷却',
     bedCooledDescription: '打印后热床温度降至阈值以下',
+    firstLayerCompleteLabel: '首层打印完成',
+    firstLayerCompleteDescription: '首层完成时发送带照片的通知',
     printFailed: '打印失败',
     printStopped: '打印已停止',
     progressMilestones: '进度里程碑',

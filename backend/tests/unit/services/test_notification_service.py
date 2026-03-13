@@ -1573,3 +1573,127 @@ class TestBedCooledNotifications:
             )
 
             assert captured_variables["filename"] == "Unknown"
+
+
+class TestFirstLayerCompleteNotifications:
+    """Tests for first layer complete notifications."""
+
+    @pytest.fixture
+    def service(self):
+        return NotificationService()
+
+    @pytest.fixture
+    def mock_provider(self):
+        """Create a mock notification provider with first layer complete enabled."""
+        provider = MagicMock()
+        provider.id = 1
+        provider.name = "Test Provider"
+        provider.provider_type = "webhook"
+        provider.enabled = True
+        provider.config = json.dumps({"webhook_url": "http://test.local/webhook"})
+        provider.on_first_layer_complete = True
+        provider.quiet_hours_enabled = False
+        provider.daily_digest_enabled = False
+        provider.printer_id = None
+        return provider
+
+    @pytest.fixture
+    def mock_db(self):
+        """Create a mock database session."""
+        db = AsyncMock()
+        db.commit = AsyncMock()
+        return db
+
+    @pytest.mark.asyncio
+    async def test_on_first_layer_complete_sends_notification(self, service, mock_provider, mock_db):
+        """Verify first layer complete notification is sent when triggered."""
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
+        ):
+            mock_get.return_value = [mock_provider]
+            mock_build.return_value = ("First Layer Complete", "Test Printer: benchy.3mf")
+
+            await service.on_first_layer_complete(
+                printer_id=1,
+                printer_name="Test Printer",
+                filename="benchy.3mf",
+                total_layers=50,
+                db=mock_db,
+            )
+
+            mock_get.assert_called_once()
+            mock_send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_on_first_layer_complete_skipped_when_no_providers(self, service, mock_db):
+        """Verify notification is skipped when no providers have first layer complete enabled."""
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+        ):
+            mock_get.return_value = []
+
+            await service.on_first_layer_complete(
+                printer_id=1,
+                printer_name="Test Printer",
+                filename="benchy.3mf",
+                total_layers=50,
+                db=mock_db,
+            )
+
+            mock_send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_on_first_layer_complete_includes_correct_variables(self, service, mock_provider, mock_db):
+        """Verify printer name, filename, and total_layers are passed to template variables."""
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_first_layer_complete(
+                printer_id=1,
+                printer_name="X1 Carbon",
+                filename="benchy.gcode.3mf",
+                total_layers=120,
+                db=mock_db,
+            )
+
+            assert captured_variables["printer"] == "X1 Carbon"
+            assert captured_variables["filename"] == "benchy"
+            assert captured_variables["total_layers"] == "120"
+
+    @pytest.mark.asyncio
+    async def test_on_first_layer_complete_passes_image_data(self, service, mock_provider, mock_db):
+        """Verify image_data is passed through to _send_to_providers."""
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
+        ):
+            mock_get.return_value = [mock_provider]
+            mock_build.return_value = ("First Layer Complete", "Test message")
+            fake_image = b"\x89PNG\r\n\x1a\nfakeimage"
+
+            await service.on_first_layer_complete(
+                printer_id=1,
+                printer_name="Test Printer",
+                filename="benchy.3mf",
+                total_layers=50,
+                db=mock_db,
+                image_data=fake_image,
+            )
+
+            mock_send.assert_called_once()
+            call_kwargs = mock_send.call_args
+            assert call_kwargs.kwargs.get("image_data") == fake_image

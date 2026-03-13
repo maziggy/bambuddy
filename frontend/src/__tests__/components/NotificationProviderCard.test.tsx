@@ -65,6 +65,7 @@ const createMockProvider = (
   on_ams_ht_temperature_high: false,
   on_plate_not_empty: true,
   on_bed_cooled: false,
+  on_first_layer_complete: false,
   on_queue_job_added: false,
   on_queue_job_assigned: false,
   on_queue_job_started: false,
@@ -399,6 +400,49 @@ describe('NotificationProviderCard Bed Cooled notifications', () => {
       expect(provider.on_print_complete).toBe(true);
       expect(provider.on_bed_cooled).toBe(true);
       expect(provider.on_plate_not_empty).toBe(false);
+    });
+  });
+});
+
+describe('NotificationProviderCard First Layer Complete notifications', () => {
+  describe('first layer complete toggle', () => {
+    it('includes on_first_layer_complete in provider data when enabled', () => {
+      const provider = createMockProvider({ on_first_layer_complete: true });
+      expect(provider.on_first_layer_complete).toBe(true);
+    });
+
+    it('includes on_first_layer_complete in provider data when disabled', () => {
+      const provider = createMockProvider({ on_first_layer_complete: false });
+      expect(provider.on_first_layer_complete).toBe(false);
+    });
+
+    it('defaults on_first_layer_complete to false', () => {
+      const provider = createMockProvider();
+      expect(provider.on_first_layer_complete).toBe(false);
+    });
+
+    it('first layer complete is independent from other print event toggles', () => {
+      const provider = createMockProvider({
+        on_print_complete: true,
+        on_bed_cooled: true,
+        on_first_layer_complete: false,
+      });
+
+      expect(provider.on_print_complete).toBe(true);
+      expect(provider.on_bed_cooled).toBe(true);
+      expect(provider.on_first_layer_complete).toBe(false);
+    });
+
+    it('can enable first layer complete independently', () => {
+      const provider = createMockProvider({
+        on_print_complete: false,
+        on_bed_cooled: false,
+        on_first_layer_complete: true,
+      });
+
+      expect(provider.on_print_complete).toBe(false);
+      expect(provider.on_bed_cooled).toBe(false);
+      expect(provider.on_first_layer_complete).toBe(true);
     });
   });
 });

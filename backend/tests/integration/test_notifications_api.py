@@ -336,6 +336,61 @@ class TestNotificationsAPI:
 
         assert response.status_code == 404
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_provider_with_first_layer_complete(self, async_client: AsyncClient):
+        """Verify first layer complete toggle persists on create."""
+        data = {
+            "name": "First Layer Test",
+            "provider_type": "ntfy",
+            "config": {"server": "https://ntfy.sh", "topic": "test"},
+            "on_first_layer_complete": True,
+        }
+
+        response = await async_client.post("/api/v1/notifications/", json=data)
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["on_first_layer_complete"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_first_layer_complete_toggle(
+        self, async_client: AsyncClient, notification_provider_factory, db_session
+    ):
+        """CRITICAL: Verify first layer complete toggle persists correctly."""
+        provider = await notification_provider_factory(on_first_layer_complete=False)
+
+        response = await async_client.patch(
+            f"/api/v1/notifications/{provider.id}",
+            json={"on_first_layer_complete": True},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["on_first_layer_complete"] is True
+
+        # Verify persistence
+        response = await async_client.get(f"/api/v1/notifications/{provider.id}")
+        assert response.json()["on_first_layer_complete"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_first_layer_complete_independent_from_other_toggles(
+        self, async_client: AsyncClient, notification_provider_factory, db_session
+    ):
+        """Verify first layer complete is independent from bed cooled and print complete."""
+        provider = await notification_provider_factory(
+            on_print_complete=True,
+            on_bed_cooled=False,
+            on_first_layer_complete=True,
+        )
+
+        response = await async_client.get(f"/api/v1/notifications/{provider.id}")
+        result = response.json()
+        assert result["on_print_complete"] is True
+        assert result["on_bed_cooled"] is False
+        assert result["on_first_layer_complete"] is True
+
 
 class TestNotificationTemplatesAPI:
     """Integration tests for /api/v1/notification-templates/ endpoints."""

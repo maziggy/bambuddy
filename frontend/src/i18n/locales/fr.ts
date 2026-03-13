@@ -404,6 +404,19 @@ export default {
       unknown: 'Inconnu',
       failedToStart: 'Échec du démarrage de la découverte',
     },
+    // AMS Drying
+    drying: {
+      start: 'Démarrer le séchage',
+      stop: 'Arrêter le séchage',
+      temperature: 'Température',
+      duration: 'Durée',
+      hours: 'heures',
+      timeRemaining: '{{time}} restant',
+      active: 'Séchage',
+      notSupported: 'Séchage non pris en charge',
+      startingDrying: 'Démarrage du séchage...',
+      stoppingDrying: 'Arrêt du séchage...',
+    },
     // Filaments section
     filaments: 'Filaments',
     // Camera
@@ -3718,6 +3731,7 @@ export default {
     amsHtHumidity: 'Humidité AMS-HT',
     amsHtTemp: 'Temp. AMS-HT',
     bedCooled: 'Plateau refroidi',
+    firstLayer: 'Première couche',
     quiet: 'Silencieux',
     digest: 'Résumé {{time}}',
     // Event labels (expanded settings)
@@ -3727,6 +3741,8 @@ export default {
     printCompleted: 'Impression terminée',
     bedCooledLabel: 'Plateau refroidi',
     bedCooledDescription: 'Plateau refroidi sous le seuil après l\'impression',
+    firstLayerCompleteLabel: 'Première couche terminée',
+    firstLayerCompleteDescription: 'Notification avec photo après la première couche',
     printFailed: 'Impression échouée',
     printStopped: 'Impression arrêtée',
     progressMilestones: 'Jalons de progression',

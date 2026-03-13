@@ -228,6 +228,8 @@ export function SpoolBuddyAmsPage() {
       };
       const invFill = fillOverrides[`${unit.id}-0`] ?? null;
       const amsFill = tray.remain != null && tray.remain >= 0 ? tray.remain : null;
+      // If inventory says 0% but AMS reports positive remain, prefer AMS (#676)
+      const resolvedInvFill = (invFill === 0 && amsFill !== null && amsFill > 0) ? null : invFill;
       items.push({
         key: `ht-${unit.id}`,
         label: getAmsName(unit.id),
@@ -237,7 +239,7 @@ export function SpoolBuddyAmsPage() {
         temp: unit.temp,
         humidity: unit.humidity,
         nozzleSide: getNozzleSide(unit.id),
-        effectiveFill: invFill ?? amsFill,
+        effectiveFill: resolvedInvFill ?? amsFill,
         onClick: () => handleAmsSlotClick(unit.id, 0, isTrayEmpty(tray) ? null : tray),
       });
     }
@@ -253,6 +255,8 @@ export function SpoolBuddyAmsPage() {
       const extSlotTrayId = extTrayId - 254;
       const extInvFill = fillOverrides[`255-${extSlotTrayId}`] ?? null;
       const extAmsFill = extTray.remain != null && extTray.remain >= 0 ? extTray.remain : null;
+      // If inventory says 0% but AMS reports positive remain, prefer AMS (#676)
+      const extResolvedInvFill = (extInvFill === 0 && extAmsFill !== null && extAmsFill > 0) ? null : extInvFill;
       items.push({
         key: `ext-${extTrayId}`,
         label: isDualNozzle
@@ -262,7 +266,7 @@ export function SpoolBuddyAmsPage() {
         isEmpty: isTrayEmpty(extTray),
         isActive: isExtActive,
         nozzleSide: null,
-        effectiveFill: extInvFill ?? extAmsFill,
+        effectiveFill: extResolvedInvFill ?? extAmsFill,
         onClick: () => handleExtSlotClick(extTray),
       });
     }

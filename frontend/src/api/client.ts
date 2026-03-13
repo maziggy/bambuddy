@@ -126,6 +126,8 @@ export interface AMSTray {
   tray_uuid: string | null;  // Bambu Lab spool UUID (32-char hex, only valid for Bambu Lab spools)
   nozzle_temp_min: number | null;  // Min nozzle temperature
   nozzle_temp_max: number | null;  // Max nozzle temperature
+  drying_temp: number | null;      // RFID-recommended drying temp
+  drying_time: number | null;      // RFID-recommended drying time (hours)
 }
 
 export interface AMSUnit {
@@ -136,6 +138,8 @@ export interface AMSUnit {
   tray: AMSTray[];
   serial_number: string;  // AMS unit serial number (from MQTT sn field)
   sw_ver: string;         // AMS firmware version (from get_version info.module ams/* entry)
+  dry_time: number;       // Minutes remaining (0 = not drying, >0 = drying active)
+  module_type: string;    // "ams", "n3f", "n3s"
 }
 
 export interface NozzleInfo {
@@ -257,6 +261,8 @@ export interface PrinterStatus {
   developer_mode: boolean | null;
   // Queue: user has acknowledged plate is cleared for next queued print
   plate_cleared: boolean;
+  // AMS drying support
+  supports_drying: boolean;
 }
 
 export interface PrinterCreate {
@@ -1458,6 +1464,8 @@ export interface NotificationProvider {
   on_plate_not_empty: boolean;
   // Bed cooled
   on_bed_cooled: boolean;
+  // First layer complete
+  on_first_layer_complete: boolean;
   // Print queue events
   on_queue_job_added: boolean;
   on_queue_job_assigned: boolean;
@@ -1510,6 +1518,8 @@ export interface NotificationProviderCreate {
   on_plate_not_empty?: boolean;
   // Bed cooled
   on_bed_cooled?: boolean;
+  // First layer complete
+  on_first_layer_complete?: boolean;
   // Print queue events
   on_queue_job_added?: boolean;
   on_queue_job_assigned?: boolean;
@@ -1555,6 +1565,8 @@ export interface NotificationProviderUpdate {
   on_plate_not_empty?: boolean;
   // Bed cooled
   on_bed_cooled?: boolean;
+  // First layer complete
+  on_first_layer_complete?: boolean;
   // Print queue events
   on_queue_job_added?: boolean;
   on_queue_job_assigned?: boolean;
@@ -2376,6 +2388,18 @@ export const api = {
     request<{ success: boolean; message: string }>(`/printers/${printerId}/chamber-light?on=${on}`, {
       method: 'POST',
     }),
+
+  // AMS Drying Control
+  startDrying: (printerId: number, amsId: number, temp: number, duration: number, filament: string = '') =>
+    request<{ status: string; ams_id: number; temp: number; duration: number }>(
+      `/printers/${printerId}/drying/start?ams_id=${amsId}&temp=${temp}&duration=${duration}&filament=${encodeURIComponent(filament)}`,
+      { method: 'POST' }
+    ),
+  stopDrying: (printerId: number, amsId: number) =>
+    request<{ status: string; ams_id: number }>(
+      `/printers/${printerId}/drying/stop?ams_id=${amsId}`,
+      { method: 'POST' }
+    ),
 
   // Skip Objects
   getPrintableObjects: (printerId: number) =>

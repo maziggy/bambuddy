@@ -404,6 +404,19 @@ export default {
       unknown: 'Unbekannt',
       failedToStart: 'Erkennung konnte nicht gestartet werden',
     },
+    // AMS Drying
+    drying: {
+      start: 'Trocknung starten',
+      stop: 'Trocknung stoppen',
+      temperature: 'Temperatur',
+      duration: 'Dauer',
+      hours: 'Stunden',
+      timeRemaining: '{{time}} verbleibend',
+      active: 'Trocknung',
+      notSupported: 'Trocknung nicht unterstützt',
+      startingDrying: 'Trocknung wird gestartet...',
+      stoppingDrying: 'Trocknung wird gestoppt...',
+    },
     // Filaments section
     filaments: 'Filamente',
     // Camera
@@ -3726,6 +3739,7 @@ export default {
     amsHtHumidity: 'AMS-HT-Feuchtigkeit',
     amsHtTemp: 'AMS-HT-Temperatur',
     bedCooled: 'Bett abgekühlt',
+    firstLayer: 'Erste Schicht',
     quiet: 'Ruhe',
     digest: 'Zusammenfassung {{time}}',
     // Event labels (expanded settings)
@@ -3735,6 +3749,8 @@ export default {
     printCompleted: 'Druck abgeschlossen',
     bedCooledLabel: 'Bett abgekühlt',
     bedCooledDescription: 'Bett nach dem Druck unter Schwellenwert abgekühlt',
+    firstLayerCompleteLabel: 'Erste Schicht fertig',
+    firstLayerCompleteDescription: 'Benachrichtigung mit Foto nach erster Schicht',
     printFailed: 'Druck fehlgeschlagen',
     printStopped: 'Druck gestoppt',
     progressMilestones: 'Fortschrittsmeilensteine',

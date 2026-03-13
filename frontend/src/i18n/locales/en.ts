@@ -404,6 +404,19 @@ export default {
       unknown: 'Unknown',
       failedToStart: 'Failed to start discovery',
     },
+    // AMS Drying
+    drying: {
+      start: 'Start Drying',
+      stop: 'Stop Drying',
+      temperature: 'Temperature',
+      duration: 'Duration',
+      hours: 'hours',
+      timeRemaining: '{{time}} left',
+      active: 'Drying',
+      notSupported: 'Drying not supported',
+      startingDrying: 'Starting drying...',
+      stoppingDrying: 'Stopping drying...',
+    },
     // Filaments section
     filaments: 'Filaments',
     // Camera
@@ -3731,6 +3744,7 @@ export default {
     amsHtHumidity: 'AMS-HT Humidity',
     amsHtTemp: 'AMS-HT Temp',
     bedCooled: 'Bed Cooled',
+    firstLayer: 'First Layer',
     quiet: 'Quiet',
     digest: 'Digest {{time}}',
     // Event labels (expanded settings)
@@ -3740,6 +3754,8 @@ export default {
     printCompleted: 'Print Completed',
     bedCooledLabel: 'Bed Cooled',
     bedCooledDescription: 'Bed cooled below threshold after print',
+    firstLayerCompleteLabel: 'First Layer Complete',
+    firstLayerCompleteDescription: 'Notify with snapshot when first layer finishes',
     printFailed: 'Print Failed',
     printStopped: 'Print Stopped',
     progressMilestones: 'Progress Milestones',

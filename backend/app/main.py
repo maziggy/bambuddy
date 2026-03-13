@@ -262,6 +262,9 @@ _print_ams_mappings: dict[int, list[int]] = {}
 # Milestones are 25, 50, 75. Value of 0 means no milestone notified yet for current print.
 _last_progress_milestone: dict[int, int] = {}
 
+# Track whether first layer complete notification has been sent for current print
+_first_layer_notified: dict[int, bool] = {}
+
 # Track HMS errors that have been notified: {printer_id: set of error codes}
 # This prevents sending duplicate notifications for the same error
 _notified_hms_errors: dict[int, set[str]] = {}
@@ -367,12 +370,15 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
 
     # Include tray_now and vt_tray hash so external spool changes trigger broadcasts
     vt_tray_key = hash(str(state.raw_data.get("vt_tray", []))) if state.raw_data else 0
+    # Include AMS dry_time values so drying status changes trigger broadcasts
+    ams_dry_key = tuple(a.get("dry_time", 0) for a in (state.raw_data.get("ams") or [])) if state.raw_data else ()
     status_key = (
         f"{state.connected}:{state.state}:{state.progress}:{state.layer_num}:"
         f"{nozzle_temp}:{bed_temp}:{nozzle_2_temp}:{chamber_temp}:"
         f"{state.stg_cur}:{bed_target}:{nozzle_target}:"
         f"{state.cooling_fan_speed}:{state.big_fan1_speed}:{state.big_fan2_speed}:"
-        f"{state.chamber_light}:{state.active_extruder}:{state.tray_now}:{vt_tray_key}"
+        f"{state.chamber_light}:{state.active_extruder}:{state.tray_now}:{vt_tray_key}:"
+        f"{ams_dry_key}"
     )
 
     # MQTT relay - publish status (before dedup check - always publish to MQTT)
@@ -437,6 +443,7 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
     elif progress < 5:
         # Reset milestone tracking when print restarts or new print begins
         _last_progress_milestone[printer_id] = 0
+        _first_layer_notified[printer_id] = False
 
     # HMS error codes that should not trigger notifications.
     # These are infrastructure/auth issues, not actionable print errors.
@@ -3340,10 +3347,36 @@ async def lifespan(app: FastAPI):
 
     # Layer change callback for external camera timelapse
     async def on_layer_change(printer_id: int, layer_num: int):
-        """Capture timelapse frame on layer change."""
+        """Capture timelapse frame on layer change + first layer notification."""
         from backend.app.services.layer_timelapse import on_layer_change as tl_layer_change
 
         await tl_layer_change(printer_id, layer_num)
+
+        # First layer complete notification (layer_num >= 2 means layer 1 is done)
+        if 2 <= layer_num <= 5 and not _first_layer_notified.get(printer_id, False):
+            _first_layer_notified[printer_id] = True
+            try:
+                async with async_session() as db:
+                    from backend.app.models.printer import Printer
+
+                    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+                    printer = result.scalar_one_or_none()
+                    if not printer:
+                        return
+                    printer_name = printer.name
+                    client = printer_manager.get_client(printer_id)
+                    state = client.state if client else None
+                    filename = (state.subtask_name or state.gcode_file or "Unknown") if state else "Unknown"
+                    total_layers = state.total_layers if state else 0
+
+                    image_data = await _capture_snapshot_for_notification(
+                        printer_id, printer, logging.getLogger(__name__)
+                    )
+                    await notification_service.on_first_layer_complete(
+                        printer_id, printer_name, filename, total_layers, db, image_data=image_data
+                    )
+            except Exception as e:
+                logging.getLogger(__name__).warning("First layer notification failed: %s", e)
 
     printer_manager.set_layer_change_callback(on_layer_change)
 

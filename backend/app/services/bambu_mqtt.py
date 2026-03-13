@@ -745,9 +745,12 @@ class BambuMQTTClient:
             sw_ver = module.get("sw_ver", "")
             sn = module.get("sn", "")
 
+            # Extract module type from prefix (e.g. "ams/0" → "ams", "n3f/0" → "n3f")
+            module_type = name.split("/", 1)[0]
+
             # Always cache so _apply_ams_version_cache can apply it when AMS data arrives
-            if sw_ver or sn:
-                self._ams_version_cache[ams_id] = {"sw_ver": sw_ver, "sn": sn}
+            if sw_ver or sn or module_type:
+                self._ams_version_cache[ams_id] = {"sw_ver": sw_ver, "sn": sn, "module_type": module_type}
                 state_changed = True
 
             # Also directly update any AMS unit already present in raw_data
@@ -766,6 +769,8 @@ class BambuMQTTClient:
                         # Only set sn from version info if not already present in AMS data
                         if sn and not ams_unit.get("sn"):
                             ams_unit["sn"] = sn
+                        if module_type:
+                            ams_unit["module_type"] = module_type
                         break
 
         # Trigger state change callback AFTER both loops so AMS sn/sw_ver are
@@ -832,6 +837,9 @@ class BambuMQTTClient:
             # Only set sn if not already present in AMS data
             if sn and not unit.get("sn") and not unit.get("serial_number"):
                 unit["sn"] = sn
+            module_type = cached.get("module_type") or ""
+            if module_type and not unit.get("module_type"):
+                unit["module_type"] = module_type
 
     def _parse_xcam_data(self, xcam_data):
         """Parse xcam data for camera settings and AI detection options."""
@@ -2897,6 +2905,45 @@ class BambuMQTTClient:
     def logging_enabled(self) -> bool:
         """Check if logging is enabled."""
         return self._logging_enabled
+
+    def send_drying_command(self, ams_id: int, temp: int, duration: int, mode: int = 1, filament: str = ""):
+        """Send AMS drying start/stop command.
+
+        Args:
+            ams_id: AMS unit ID (0-3 for AMS 2 Pro, 128-135 for AMS-HT)
+            temp: Target drying temperature (45-65 for AMS 2 Pro, 45-85 for AMS-HT)
+            duration: Drying duration in hours
+            mode: 1=start, 0=stop
+            filament: Filament type string (e.g. "PLA", "PETG")
+        """
+        if not self._client:
+            return False
+        self._sequence_id += 1
+        command = {
+            "print": {
+                "sequence_id": str(self._sequence_id),
+                "command": "ams_filament_drying",
+                "ams_id": ams_id,
+                "temp": temp,
+                "cooling_temp": 20 if mode == 1 else 0,
+                "duration": duration,
+                "humidity": 0,
+                "mode": mode,
+                "rotate_tray": False,
+                "filament": filament,
+                "close_power_conflict": False,
+            }
+        }
+        self._client.publish(self.topic_publish, json.dumps(command), qos=1)
+        logger.info(
+            "[%s] Sent drying command: ams_id=%d, temp=%d, duration=%d, mode=%d",
+            self.serial_number,
+            ams_id,
+            temp,
+            duration,
+            mode,
+        )
+        return True
 
     def _handle_kprofile_response(self, data: dict):
         """Handle K-profile response from printer."""

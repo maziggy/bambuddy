@@ -58,6 +58,8 @@ def _provider_to_dict(provider: NotificationProvider) -> dict:
         "on_plate_not_empty": provider.on_plate_not_empty,
         # Bed cooled
         "on_bed_cooled": provider.on_bed_cooled,
+        # First layer complete
+        "on_first_layer_complete": provider.on_first_layer_complete,
         # Print queue events
         "on_queue_job_added": provider.on_queue_job_added,
         "on_queue_job_assigned": provider.on_queue_job_assigned,
@@ -135,6 +137,8 @@ async def create_notification_provider(
         on_plate_not_empty=provider_data.on_plate_not_empty,
         # Bed cooled
         on_bed_cooled=provider_data.on_bed_cooled,
+        # First layer complete
+        on_first_layer_complete=provider_data.on_first_layer_complete,
         # Print queue events
         on_queue_job_added=provider_data.on_queue_job_added,
         on_queue_job_assigned=provider_data.on_queue_job_assigned,

@@ -404,6 +404,19 @@ export default {
       unknown: 'Sconosciuto',
       failedToStart: 'Avvio ricerca non riuscito',
     },
+    // AMS Drying
+    drying: {
+      start: 'Avvia essiccazione',
+      stop: 'Ferma essiccazione',
+      temperature: 'Temperatura',
+      duration: 'Durata',
+      hours: 'ore',
+      timeRemaining: '{{time}} rimanente',
+      active: 'Essiccazione',
+      notSupported: 'Essiccazione non supportata',
+      startingDrying: 'Avvio essiccazione...',
+      stoppingDrying: 'Arresto essiccazione...',
+    },
     // Filaments section
     filaments: 'Filamenti',
     // Camera
@@ -3717,6 +3730,7 @@ export default {
     amsHtHumidity: 'Umidità AMS-HT',
     amsHtTemp: 'Temp AMS-HT',
     bedCooled: 'Piatto raffreddato',
+    firstLayer: 'Primo strato',
     quiet: 'Silenzioso',
     digest: 'Riepilogo {{time}}',
     // Event labels (expanded settings)
@@ -3726,6 +3740,8 @@ export default {
     printCompleted: 'Stampa completata',
     bedCooledLabel: 'Piatto raffreddato',
     bedCooledDescription: 'Piatto raffreddato sotto la soglia dopo la stampa',
+    firstLayerCompleteLabel: 'Primo strato completato',
+    firstLayerCompleteDescription: 'Notifica con foto al termine del primo strato',
     printFailed: 'Stampa fallita',
     printStopped: 'Stampa interrotta',
     progressMilestones: 'Traguardi di avanzamento',

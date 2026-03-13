@@ -86,6 +86,9 @@ def parse_version(version: str) -> tuple:
     # Remove 'v' prefix if present
     version = version.lstrip("v")
 
+    # Strip daily build suffix (e.g., "0.2.2b4-daily.20260313" -> "0.2.2b4")
+    version = re.sub(r"-daily\.\d+$", "", version)
+
     # Match version pattern: major.minor.patch[.micro][b|beta|alpha|rc]N
     match = re.match(r"(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?(?:b|beta|alpha|rc)?(\d+)?", version)
 

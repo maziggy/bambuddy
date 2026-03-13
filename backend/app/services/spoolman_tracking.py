@@ -203,7 +203,7 @@ async def store_print_data(
 
     # Prefer the explicit mapping captured from the print command, then fall back
     # to any queue mapping stored for scheduled/reprint jobs.
-    slot_to_tray = ams_mapping if ams_mapping else None
+    slot_to_tray = ams_mapping if ams_mapping is not None else None
     if not slot_to_tray:
         queue_result = await db.execute(
             select(PrintQueueItem)

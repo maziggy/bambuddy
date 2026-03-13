@@ -25,7 +25,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     iproute2 \
     libcap2-bin \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /etc/gnutls \
+    && printf '[overrides]\ninsecure-hash = SHA1\n[priorities]\nSYSTEM = NORMAL:%%UNSAFE_RENEGOTIATION:%%COMPAT\n' > /etc/gnutls/config
 
 # Allow binding to privileged ports (e.g. 990/FTPS) as non-root user.
 # File capabilities are more reliable than Docker cap_add with user: directive,

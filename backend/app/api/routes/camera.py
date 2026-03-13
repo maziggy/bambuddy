@@ -197,7 +197,7 @@ async def _read_ffmpeg_stderr(process: asyncio.subprocess.Process) -> str | None
 # Some printer firmwares (notably P2S) drop RTSP sessions after a few seconds,
 # so we transparently respawn ffmpeg to keep the MJPEG stream alive.
 _RTSP_MAX_RECONNECTS = 30
-_RTSP_RECONNECT_DELAY = 1.0  # seconds between respawns
+_RTSP_RECONNECT_DELAY = 0.2  # seconds between respawns
 
 
 async def generate_rtsp_mjpeg_stream(
@@ -244,6 +244,14 @@ async def generate_rtsp_mjpeg_stream(
         "1024000",  # 1MB buffer
         "-max_delay",
         "500000",  # 0.5 seconds max delay
+        "-probesize",
+        "32",  # Minimal probing for faster startup
+        "-analyzeduration",
+        "0",  # Skip format analysis for faster startup
+        "-fflags",
+        "nobuffer",  # Reduce internal buffering
+        "-flags",
+        "low_delay",  # Minimize decode latency
         "-i",
         camera_url,
         "-f",
@@ -266,6 +274,15 @@ async def generate_rtsp_mjpeg_stream(
     spawn_kwargs: dict = {}
     if sys.platform == "win32":
         spawn_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+
+    # Pass GnuTLS debug level when debug logging is enabled so TLS issues
+    # (e.g. P2S renegotiation failures) appear in support packages.
+    env = None
+    if logger.isEnabledFor(logging.DEBUG):
+        import os
+
+        env = {**os.environ, "GNUTLS_DEBUG_LEVEL": "2"}
+        spawn_kwargs["env"] = env
 
     jpeg_start = b"\xff\xd8"
     jpeg_end = b"\xff\xd9"
@@ -305,8 +322,8 @@ async def generate_rtsp_mjpeg_stream(
 
             _spawned_ffmpeg_pids[process.pid] = _time.time()
 
-            # Give ffmpeg a moment to start and check for immediate failures
-            await asyncio.sleep(0.5)
+            # Brief check for immediate startup failures (e.g. missing ffmpeg)
+            await asyncio.sleep(0.1)
             if process.returncode is not None:
                 stderr = await process.stderr.read()
                 stderr_text = stderr.decode(errors="replace")
@@ -486,19 +503,13 @@ async def camera_stream(
 
         async def external_stream_wrapper():
             """Wrap external stream to track start/stop and update frame times."""
-            frame_interval = 1.0 / fps
-            last_yield_time = 0.0
             try:
                 async for frame in generate_mjpeg_stream(
                     printer.external_camera_url, printer.external_camera_type, fps
                 ):
-                    # Rate limit to prevent overwhelming browser
-                    current_time = time.time()
-                    elapsed = current_time - last_yield_time
-                    if elapsed < frame_interval:
-                        await asyncio.sleep(frame_interval - elapsed)
-                    last_yield_time = time.time()
-                    _last_frame_times[printer_id] = last_yield_time
+                    # generate_mjpeg_stream already handles rate limiting;
+                    # just track frame times for stall detection
+                    _last_frame_times[printer_id] = time.time()
                     yield frame
             finally:
                 _active_external_streams.discard(printer_id)

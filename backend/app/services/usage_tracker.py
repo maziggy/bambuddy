@@ -475,7 +475,8 @@ async def _track_from_3mf(
     2. MQTT mapping field from printer state (universal, all print sources)
     3. Queue item ams_mapping (for queue-initiated prints)
     4. tray_now from printer state (for single-filament non-queue prints)
-    5. Default mapping: slot_id - 1 = global_tray_id (last resort)
+    5. Position-based default using sorted available tray IDs (handles external spools)
+    6. Default mapping: slot_id - 1 = global_tray_id (last resort)
     """
     from backend.app.core.config import settings as app_settings
     from backend.app.models.archive import PrintArchive
@@ -804,12 +805,26 @@ async def _track_from_3mf(
             # Single-filament non-queue print: use actual tray from printer state
             global_tray_id = tray_now_override
         else:
-            # Queue mapping or default: slot_id - 1, overridden by ams_mapping
-            global_tray_id = slot_id - 1
+            # Explicit mapping (print command, MQTT, queue, color match)
+            global_tray_id = None
             if slot_to_tray and slot_id <= len(slot_to_tray):
                 mapped = slot_to_tray[slot_id - 1]
                 if isinstance(mapped, int) and mapped >= 0:
                     global_tray_id = mapped
+            # Position-based default: sort available tray IDs so external spools (254/255)
+            # naturally follow standard AMS trays, matching slicer slot numbering
+            if global_tray_id is None:
+                _state = printer_manager.get_status(printer_id)
+                _raw = getattr(_state, "raw_data", None) if _state else None
+                if _raw:
+                    from backend.app.services.spoolman_tracking import build_ams_tray_lookup
+
+                    available_trays = sorted(build_ams_tray_lookup(_raw).keys())
+                    if slot_id <= len(available_trays):
+                        global_tray_id = available_trays[slot_id - 1]
+            # Final fallback: slot_id - 1 (legacy, works for pure AMS without external spools)
+            if global_tray_id is None:
+                global_tray_id = slot_id - 1
 
         if global_tray_id >= 254:
             # External spool: ams_id=255 (sentinel), tray_id=slot index (0 or 1)

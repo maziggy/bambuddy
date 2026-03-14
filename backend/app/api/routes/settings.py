@@ -100,6 +100,7 @@ async def get_settings(
                 "user_notifications_enabled",
                 "queue_drying_enabled",
                 "queue_drying_block",
+                "ambient_drying_enabled",
             ]:
                 settings_dict[setting.key] = setting.value.lower() == "true"
             elif setting.key in [

@@ -1499,6 +1499,8 @@ export default {
     queueDryingEnabledDescription: 'Avvia l\'asciugatura AMS automaticamente quando la stampante è inattiva e l\'umidità supera la soglia',
     queueDryingBlock: 'Attendi completamento asciugatura',
     queueDryingBlockDescription: 'Blocca la coda di stampa fino al completamento dell\'asciugatura. Se disattivato, le stampe hanno priorità.',
+    ambientDryingEnabled: 'Asciugatura ambientale',
+    ambientDryingEnabledDescription: 'Asciuga automaticamente il filamento sulle stampanti inattive quando l\'umidità supera la soglia, anche senza stampe in coda.',
     dryingPresets: 'Preset di asciugatura',
     dryingPresetsDescription: 'Temperatura e durata per tipo di filamento. AMS 2 Pro usa temperature più basse, AMS-HT supporta temperature più alte.',
     dryingFilament: 'Filamento',

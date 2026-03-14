@@ -1499,6 +1499,8 @@ export default {
     queueDryingEnabledDescription: 'AMS-Trocknung automatisch starten, wenn der Drucker im Leerlauf ist und die Feuchtigkeit über dem Schwellenwert liegt',
     queueDryingBlock: 'Auf Trocknung warten',
     queueDryingBlockDescription: 'Druckwarteschlange blockieren, bis die Trocknung abgeschlossen ist. Wenn aus, haben Drucke Vorrang.',
+    ambientDryingEnabled: 'Umgebungstrocknung',
+    ambientDryingEnabledDescription: 'Filament auf inaktiven Druckern automatisch trocknen, wenn die Luftfeuchtigkeit den Schwellenwert überschreitet — auch ohne Warteschlange.',
     dryingPresets: 'Trocknungsvoreinstellungen',
     dryingPresetsDescription: 'Temperatur und Dauer pro Filamenttyp. AMS 2 Pro verwendet niedrigere Temperaturen, AMS-HT unterstützt höhere.',
     dryingFilament: 'Filament',

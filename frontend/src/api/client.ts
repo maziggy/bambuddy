@@ -803,6 +803,7 @@ export interface AppSettings {
   // Queue auto-drying settings
   queue_drying_enabled: boolean;  // Auto-dry AMS between queued prints
   queue_drying_block: boolean;  // Block queue until drying completes
+  ambient_drying_enabled: boolean;  // Auto-dry idle printers based on humidity regardless of queue
   drying_presets: string;  // JSON blob of drying presets per filament type
   // Print modal settings
   per_printer_mapping_expanded: boolean;  // Whether custom mapping is expanded by default in print modal

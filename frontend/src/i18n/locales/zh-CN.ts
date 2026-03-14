@@ -1498,6 +1498,8 @@ export default {
     queueDryingEnabledDescription: '当打印机空闲且湿度超过阈值时，自动启动AMS干燥',
     queueDryingBlock: '等待干燥完成',
     queueDryingBlockDescription: '阻止打印队列直到干燥完成。关闭时，打印优先于干燥。',
+    ambientDryingEnabled: '环境干燥',
+    ambientDryingEnabledDescription: '当空闲打印机的湿度超过阈值时自动干燥耗材，无需排队打印。',
     dryingPresets: '干燥预设',
     dryingPresetsDescription: '每种耗材类型的温度和时长。AMS 2 Pro使用较低温度，AMS-HT支持较高温度。',
     dryingFilament: '耗材',

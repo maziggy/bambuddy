@@ -712,6 +712,7 @@ export function SettingsPage() {
       settings.ams_history_retention_days !== localSettings.ams_history_retention_days ||
       (settings.queue_drying_enabled ?? false) !== (localSettings.queue_drying_enabled ?? false) ||
       (settings.queue_drying_block ?? false) !== (localSettings.queue_drying_block ?? false) ||
+      (settings.ambient_drying_enabled ?? false) !== (localSettings.ambient_drying_enabled ?? false) ||
       (settings.drying_presets ?? '') !== (localSettings.drying_presets ?? '') ||
       settings.per_printer_mapping_expanded !== localSettings.per_printer_mapping_expanded ||
       settings.date_format !== localSettings.date_format ||
@@ -782,6 +783,7 @@ export function SettingsPage() {
         ams_history_retention_days: localSettings.ams_history_retention_days,
         queue_drying_enabled: localSettings.queue_drying_enabled,
         queue_drying_block: localSettings.queue_drying_block,
+        ambient_drying_enabled: localSettings.ambient_drying_enabled,
         drying_presets: localSettings.drying_presets,
         per_printer_mapping_expanded: localSettings.per_printer_mapping_expanded,
         date_format: localSettings.date_format,
@@ -3449,6 +3451,25 @@ export function SettingsPage() {
                       </div>
                     </>
                   )}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="block text-sm text-white">
+                        {t('settings.ambientDryingEnabled')}
+                      </label>
+                      <p className="text-xs text-bambu-gray mt-0.5">
+                        {t('settings.ambientDryingEnabledDescription')}
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={localSettings.ambient_drying_enabled ?? false}
+                        onChange={(e) => updateSetting('ambient_drying_enabled', e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                    </label>
+                  </div>
                   {/* Drying Presets Table — always visible since manual drying also uses these */}
                   <div className="space-y-2">
                     <p className="text-sm text-white font-medium">{t('settings.dryingPresets')}</p>

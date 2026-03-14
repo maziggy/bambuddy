@@ -1499,6 +1499,8 @@ export default {
     queueDryingEnabledDescription: 'プリンターがアイドル状態で湿度がしきい値を超えた場合、AMS乾燥を自動的に開始',
     queueDryingBlock: '乾燥完了まで待機',
     queueDryingBlockDescription: '乾燥が完了するまで印刷キューをブロックします。オフの場合、印刷が優先されます。',
+    ambientDryingEnabled: '常時乾燥',
+    ambientDryingEnabledDescription: 'キューに関係なく、アイドル状態のプリンターで湿度がしきい値を超えた場合に自動的にフィラメントを乾燥。',
     dryingPresets: '乾燥プリセット',
     dryingPresetsDescription: 'フィラメントタイプごとの温度と時間。AMS 2 Proは低温、AMS-HTは高温に対応。',
     dryingFilament: 'フィラメント',

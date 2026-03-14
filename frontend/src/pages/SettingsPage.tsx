@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -710,6 +710,9 @@ export function SettingsPage() {
       settings.ams_temp_good !== localSettings.ams_temp_good ||
       settings.ams_temp_fair !== localSettings.ams_temp_fair ||
       settings.ams_history_retention_days !== localSettings.ams_history_retention_days ||
+      (settings.queue_drying_enabled ?? false) !== (localSettings.queue_drying_enabled ?? false) ||
+      (settings.queue_drying_block ?? false) !== (localSettings.queue_drying_block ?? false) ||
+      (settings.drying_presets ?? '') !== (localSettings.drying_presets ?? '') ||
       settings.per_printer_mapping_expanded !== localSettings.per_printer_mapping_expanded ||
       settings.date_format !== localSettings.date_format ||
       settings.time_format !== localSettings.time_format ||
@@ -777,6 +780,9 @@ export function SettingsPage() {
         ams_temp_good: localSettings.ams_temp_good,
         ams_temp_fair: localSettings.ams_temp_fair,
         ams_history_retention_days: localSettings.ams_history_retention_days,
+        queue_drying_enabled: localSettings.queue_drying_enabled,
+        queue_drying_block: localSettings.queue_drying_block,
+        drying_presets: localSettings.drying_presets,
         per_printer_mapping_expanded: localSettings.per_printer_mapping_expanded,
         date_format: localSettings.date_format,
         time_format: localSettings.time_format,
@@ -3313,6 +3319,9 @@ export function SettingsPage() {
                   <p className="text-xs text-bambu-gray">
                     {t('settings.aboveFairBad')}
                   </p>
+                  <p className="text-xs text-amber-400/70">
+                    {t('settings.fairAlsoDryingThreshold')}
+                  </p>
                 </div>
 
                 {/* Temperature Thresholds */}
@@ -3387,6 +3396,123 @@ export function SettingsPage() {
                   <p className="text-xs text-bambu-gray">
                     {t('settings.historyRetentionDescription')}
                   </p>
+                </div>
+
+                {/* Queue Auto-Drying */}
+                <div className="space-y-3 pt-4 border-t border-bambu-dark-tertiary">
+                  <div className="flex items-center gap-2 text-white">
+                    <Flame className="w-4 h-4 text-amber-400" />
+                    <span className="font-medium">{t('settings.queueDrying')}</span>
+                  </div>
+                  <p className="text-xs text-bambu-gray">
+                    {t('settings.queueDryingDescription')}
+                  </p>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="block text-sm text-white">
+                        {t('settings.queueDryingEnabled')}
+                      </label>
+                      <p className="text-xs text-bambu-gray mt-0.5">
+                        {t('settings.queueDryingEnabledDescription')}
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={localSettings.queue_drying_enabled ?? false}
+                        onChange={(e) => updateSetting('queue_drying_enabled', e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                    </label>
+                  </div>
+                  {localSettings.queue_drying_enabled && (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <label className="block text-sm text-white">
+                            {t('settings.queueDryingBlock')}
+                          </label>
+                          <p className="text-xs text-bambu-gray mt-0.5">
+                            {t('settings.queueDryingBlockDescription')}
+                          </p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={localSettings.queue_drying_block ?? false}
+                            onChange={(e) => updateSetting('queue_drying_block', e.target.checked)}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                        </label>
+                      </div>
+                    </>
+                  )}
+                  {/* Drying Presets Table — always visible since manual drying also uses these */}
+                  <div className="space-y-2">
+                    <p className="text-sm text-white font-medium">{t('settings.dryingPresets')}</p>
+                    <p className="text-xs text-bambu-gray">{t('settings.dryingPresetsDescription')}</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-bambu-gray border-b border-bambu-dark-tertiary">
+                            <th className="text-left py-1.5 pr-2">{t('settings.dryingFilament')}</th>
+                            <th className="text-center py-1.5 px-1">AMS 2 Pro °C</th>
+                            <th className="text-center py-1.5 px-1">AMS-HT °C</th>
+                            <th className="text-center py-1.5 px-1">AMS 2 Pro h</th>
+                            <th className="text-center py-1.5 px-1">AMS-HT h</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(() => {
+                            const defaults: Record<string, { n3f: number; n3s: number; n3f_hours: number; n3s_hours: number }> = {
+                              PLA: { n3f: 45, n3s: 45, n3f_hours: 12, n3s_hours: 12 },
+                              PETG: { n3f: 65, n3s: 65, n3f_hours: 12, n3s_hours: 12 },
+                              TPU: { n3f: 65, n3s: 75, n3f_hours: 12, n3s_hours: 18 },
+                              ABS: { n3f: 65, n3s: 80, n3f_hours: 12, n3s_hours: 8 },
+                              ASA: { n3f: 65, n3s: 80, n3f_hours: 12, n3s_hours: 8 },
+                              PA: { n3f: 65, n3s: 85, n3f_hours: 12, n3s_hours: 12 },
+                              PC: { n3f: 65, n3s: 80, n3f_hours: 12, n3s_hours: 8 },
+                              PVA: { n3f: 65, n3s: 85, n3f_hours: 12, n3s_hours: 18 },
+                            };
+                            let presets = { ...defaults };
+                            try {
+                              if (localSettings.drying_presets) {
+                                const parsed = JSON.parse(localSettings.drying_presets);
+                                if (typeof parsed === 'object' && parsed !== null) {
+                                  presets = { ...defaults, ...parsed };
+                                }
+                              }
+                            } catch { /* use defaults */ }
+
+                            const updatePreset = (fil: string, key: string, value: number) => {
+                              const updated = { ...presets, [fil]: { ...presets[fil], [key]: value } };
+                              updateSetting('drying_presets', JSON.stringify(updated));
+                            };
+
+                            return Object.entries(presets).map(([fil, preset]) => (
+                              <tr key={fil} className="border-b border-bambu-dark-tertiary/50">
+                                <td className="py-1.5 pr-2 text-white font-medium">{fil}</td>
+                                {(['n3f', 'n3s', 'n3f_hours', 'n3s_hours'] as const).map(key => (
+                                  <td key={key} className="py-1 px-1">
+                                    <input
+                                      type="number"
+                                      min={key.includes('hours') ? 1 : 30}
+                                      max={key.includes('hours') ? 24 : (key === 'n3s' ? 85 : 65)}
+                                      value={preset[key]}
+                                      onChange={e => updatePreset(fil, key, Math.max(1, parseInt(e.target.value) || 0))}
+                                      className="w-14 px-1.5 py-1 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-center text-xs focus:border-amber-500/50 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                    />
+                                  </td>
+                                ))}
+                              </tr>
+                            ));
+                          })()}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Per-Printer Mapping Default */}

@@ -1536,6 +1536,7 @@ function PrinterCard({
   cameraViewMode = 'window',
   onOpenEmbeddedCamera,
   checkPrinterFirmware = true,
+  dryingPresets = DRYING_PRESETS,
 }: {
   printer: Printer;
   hideIfDisconnected?: boolean;
@@ -1559,6 +1560,7 @@ function PrinterCard({
   cameraViewMode?: 'window' | 'embedded';
   onOpenEmbeddedCamera?: (printerId: number, printerName: string) => void;
   checkPrinterFirmware?: boolean;
+  dryingPresets?: Record<string, { n3f: number; n3s: number; n3f_hours: number; n3s_hours: number }>;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -3099,6 +3101,7 @@ function PrinterCard({
                                   {/* Drying button — only for AMS 2 Pro (n3f) and AMS-HT (n3s) */}
                                   {status.supports_drying && (ams.module_type === 'n3f' || ams.module_type === 'n3s') && hasPermission('printers:control') && (
                                     <button
+                                      disabled={!!(ams.dry_sf_reason?.length && ams.dry_time === 0)}
                                       onClick={(e) => {
                                         if (ams.dry_time > 0) {
                                           stopDryingMutation.mutate(ams.id);
@@ -3106,8 +3109,8 @@ function PrinterCard({
                                           setDryingPopoverAmsId(null);
                                         } else {
                                           const firstTray = ams.tray.find(t => t.tray_type);
-                                          const filType = firstTray?.tray_type || 'PLA';
-                                          const preset = DRYING_PRESETS[filType] || DRYING_PRESETS['PLA'];
+                                          const filType = (firstTray?.tray_type || 'PLA').split(' ')[0].toUpperCase();
+                                          const preset = dryingPresets[filType] || dryingPresets['PLA'];
                                           const moduleType = ams.module_type as 'n3f' | 'n3s';
                                           setDryingFilament(filType);
                                           setDryingTemp(preset[moduleType] || preset.n3f);
@@ -3121,9 +3124,11 @@ function PrinterCard({
                                       className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] transition-colors ${
                                         ams.dry_time > 0
                                           ? 'bg-amber-500/20 text-amber-400'
-                                          : 'bg-bambu-dark-tertiary/50 text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary'
+                                          : ams.dry_sf_reason?.length
+                                            ? 'bg-bambu-dark-tertiary/30 text-bambu-gray/50 cursor-not-allowed'
+                                            : 'bg-bambu-dark-tertiary/50 text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary'
                                       }`}
-                                      title={ams.dry_time > 0 ? t('printers.drying.stop') : t('printers.drying.start')}
+                                      title={ams.dry_time > 0 ? t('printers.drying.stop') : ams.dry_sf_reason?.length ? t('printers.drying.powerRequired') : t('printers.drying.start')}
                                     >
                                       <Flame className="w-3 h-3" />
                                     </button>
@@ -3497,12 +3502,12 @@ function PrinterCard({
                                         setDryingPopoverAmsId(null);
                                       } else {
                                         const firstTray = ams.tray.find(t => t.tray_type);
-                                        const filType = firstTray?.tray_type || 'PLA';
-                                        const preset = DRYING_PRESETS[filType] || DRYING_PRESETS['PLA'];
+                                        const filType = (firstTray?.tray_type || 'PLA').split(' ')[0].toUpperCase();
+                                        const preset = dryingPresets[filType] || dryingPresets['PLA'];
                                         const moduleType = ams.module_type as 'n3f' | 'n3s';
                                         setDryingFilament(filType);
-                                        setDryingTemp(firstTray?.drying_temp || preset[moduleType] || preset.n3f);
-                                        setDryingDuration(firstTray?.drying_time || (moduleType === 'n3s' ? preset.n3s_hours : preset.n3f_hours));
+                                        setDryingTemp(preset[moduleType] || preset.n3f);
+                                        setDryingDuration(moduleType === 'n3s' ? preset.n3s_hours : preset.n3f_hours);
                                         setDryingPopoverModuleType(ams.module_type);
                                         setDryingPopoverAmsId(ams.id);
                                         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -4635,7 +4640,7 @@ function PrinterCard({
                     onChange={e => {
                       const fil = e.target.value;
                       setDryingFilament(fil);
-                      const preset = DRYING_PRESETS[fil];
+                      const preset = dryingPresets[fil];
                       if (preset) {
                         const key = dryingPopoverModuleType === 'n3s' ? 'n3s' : 'n3f';
                         setDryingTemp(preset[key]);
@@ -4644,7 +4649,7 @@ function PrinterCard({
                     }}
                     className="w-full px-2 py-1.5 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-xs focus:outline-none focus:border-amber-500/50"
                   >
-                    {Object.keys(DRYING_PRESETS).map(fil => (
+                    {Object.keys(dryingPresets).map(fil => (
                       <option key={fil} value={fil}>{fil}</option>
                     ))}
                   </select>
@@ -5627,6 +5632,19 @@ export function PrintersPage() {
     queryFn: api.getSettings,
   });
 
+  // Compute drying presets: user-configured (from settings) merged over built-in defaults
+  const effectiveDryingPresets = useMemo(() => {
+    if (settings?.drying_presets) {
+      try {
+        const userPresets = JSON.parse(settings.drying_presets);
+        if (typeof userPresets === 'object' && userPresets !== null && Object.keys(userPresets).length > 0) {
+          return { ...DRYING_PRESETS, ...userPresets };
+        }
+      } catch { /* ignore parse errors, use defaults */ }
+    }
+    return DRYING_PRESETS;
+  }, [settings?.drying_presets]);
+
   // Close embedded cameras if mode changes to 'window'
   useEffect(() => {
     if (settings?.camera_view_mode === 'window' && embeddedCameraPrinters.size > 0) {
@@ -6010,6 +6028,7 @@ export function PrintersPage() {
                     cameraViewMode={settings?.camera_view_mode || 'window'}
                     onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
                     checkPrinterFirmware={settings?.check_printer_firmware !== false}
+                    dryingPresets={effectiveDryingPresets}
                   />
                 ))}
               </div>
@@ -6043,6 +6062,7 @@ export function PrintersPage() {
               cameraViewMode={settings?.camera_view_mode || 'window'}
               onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
               checkPrinterFirmware={settings?.check_printer_firmware !== false}
+              dryingPresets={effectiveDryingPresets}
             />
           ))}
         </div>

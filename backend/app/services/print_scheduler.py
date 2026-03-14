@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import time
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,10 +18,11 @@ from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
+from backend.app.models.settings import Settings
 from backend.app.models.smart_plug import SmartPlug
 from backend.app.services.bambu_ftp import delete_file_async, get_ftp_retry_settings, upload_file_async, with_ftp_retry
 from backend.app.services.notification_service import notification_service
-from backend.app.services.printer_manager import printer_manager
+from backend.app.services.printer_manager import printer_manager, supports_drying
 from backend.app.services.smart_plug_manager import smart_plug_manager
 from backend.app.utils.printer_models import normalize_printer_model
 from backend.app.utils.threemf_tools import extract_nozzle_mapping_from_3mf
@@ -48,11 +50,27 @@ def _canonical_filament_type(ftype: str) -> str:
 class PrintScheduler:
     """Background scheduler that processes the print queue."""
 
+    # Built-in drying presets per filament type (from BambuStudio filament profiles)
+    # Format: { n3f_temp, n3s_temp, n3f_hours, n3s_hours }
+    DEFAULT_DRYING_PRESETS: dict[str, dict[str, int]] = {
+        "PLA": {"n3f": 45, "n3s": 45, "n3f_hours": 12, "n3s_hours": 12},
+        "PETG": {"n3f": 65, "n3s": 65, "n3f_hours": 12, "n3s_hours": 12},
+        "TPU": {"n3f": 65, "n3s": 75, "n3f_hours": 12, "n3s_hours": 18},
+        "ABS": {"n3f": 65, "n3s": 80, "n3f_hours": 12, "n3s_hours": 8},
+        "ASA": {"n3f": 65, "n3s": 80, "n3f_hours": 12, "n3s_hours": 8},
+        "PA": {"n3f": 65, "n3s": 85, "n3f_hours": 12, "n3s_hours": 12},
+        "PC": {"n3f": 65, "n3s": 80, "n3f_hours": 12, "n3s_hours": 8},
+        "PVA": {"n3f": 65, "n3s": 85, "n3f_hours": 12, "n3s_hours": 18},
+    }
+
     def __init__(self):
         self._running = False
         self._check_interval = 30  # seconds
         self._power_on_wait_time = 180  # seconds to wait for printer after power on (3 min)
         self._power_on_check_interval = 10  # seconds between connection checks
+        self._min_drying_seconds = 1800  # 30 minutes minimum before humidity re-check can stop drying
+        # Track which printers are currently auto-drying (printer_id -> start timestamp)
+        self._drying_in_progress: dict[int, float] = {}
 
     async def run(self):
         """Main loop - check queue every interval."""
@@ -84,6 +102,8 @@ class PrintScheduler:
             items = list(result.scalars().all())
 
             if not items:
+                # No pending items — still check auto-drying on idle printers
+                await self._check_auto_drying(db, [], set())
                 return
 
             logger.info(
@@ -142,8 +162,24 @@ class PrintScheduler:
 
                     # Check if printer is idle (busy with another print)
                     if not printer_idle:
-                        busy_printers.add(item.printer_id)
-                        continue
+                        # If printer is drying (not truly busy), handle based on queue_drying_block
+                        if self._drying_in_progress.get(item.printer_id):
+                            block_for_drying = await self._get_bool_setting(db, "queue_drying_block")
+                            if block_for_drying:
+                                # Drying blocks queue — skip this printer
+                                busy_printers.add(item.printer_id)
+                                continue
+                            else:
+                                # Print takes priority — stop drying
+                                await self._stop_drying(item.printer_id)
+                                # Re-check idle after stopping drying
+                                printer_idle = self._is_printer_idle(item.printer_id)
+                                if not printer_idle:
+                                    busy_printers.add(item.printer_id)
+                                    continue
+                        else:
+                            busy_printers.add(item.printer_id)
+                            continue
 
                     # Check condition (previous print success)
                     if item.require_previous_success:
@@ -300,6 +336,9 @@ class PrintScheduler:
                         state_name,
                         plate_cleared,
                     )
+
+            # Auto-drying: start drying on idle printers that have no pending queue items
+            await self._check_auto_drying(db, items, busy_printers)
 
     async def _find_idle_printer_for_model(
         self,
@@ -994,6 +1033,295 @@ class PrintScheduler:
                 printer_manager.is_plate_cleared(printer_id),
             )
         return idle
+
+    async def _get_bool_setting(self, db: AsyncSession, key: str, default: bool = False) -> bool:
+        """Read a boolean setting from the database."""
+        result = await db.execute(select(Settings).where(Settings.key == key))
+        setting = result.scalar_one_or_none()
+        if setting:
+            return setting.value.lower() == "true"
+        return default
+
+    async def _get_drying_presets(self, db: AsyncSession) -> dict[str, dict[str, int]]:
+        """Get drying presets (user-configured or built-in defaults)."""
+        result = await db.execute(select(Settings).where(Settings.key == "drying_presets"))
+        setting = result.scalar_one_or_none()
+        if setting and setting.value:
+            try:
+                presets = json.loads(setting.value)
+                if isinstance(presets, dict) and presets:
+                    return presets
+            except json.JSONDecodeError:
+                pass
+        return self.DEFAULT_DRYING_PRESETS
+
+    def _get_conservative_drying_params(
+        self, trays: list[dict], module_type: str, presets: dict[str, dict[str, int]]
+    ) -> tuple[int, int, str] | None:
+        """Get the most conservative drying params for mixed filament types in an AMS unit.
+
+        Returns (temp, duration_hours, filament_type) or None if no drying-eligible filaments.
+        """
+        temp_key = module_type if module_type in ("n3f", "n3s") else "n3f"
+        hours_key = f"{temp_key}_hours"
+
+        min_temp = None
+        max_hours = None
+        filament_type = ""
+
+        for tray in trays:
+            tray_type = tray.get("tray_type", "")
+            if not tray_type:
+                continue
+            # Normalize filament type for preset lookup (e.g., "PLA Basic" -> "PLA")
+            base_type = tray_type.split()[0].upper()
+            preset = presets.get(base_type)
+            if not preset:
+                continue
+
+            temp = preset.get(temp_key, 55)
+            hours = preset.get(hours_key, 12)
+
+            # Conservative: lowest temp, longest duration
+            if min_temp is None or temp < min_temp:
+                min_temp = temp
+            if max_hours is None or hours > max_hours:
+                max_hours = hours
+            if not filament_type:
+                filament_type = base_type
+
+        if min_temp is None:
+            return None
+        return (min_temp, max_hours or 12, filament_type)
+
+    async def _check_auto_drying(self, db: AsyncSession, queue_items: list[PrintQueueItem], busy_printers: set[int]):
+        """Start drying on idle printers that have no pending queue items.
+
+        Only runs when queue_drying_enabled is True.
+        """
+        queue_drying_enabled = await self._get_bool_setting(db, "queue_drying_enabled")
+        if not queue_drying_enabled:
+            # Stop active drying on all printers if feature was just disabled
+            if self._drying_in_progress:
+                for pid in list(self._drying_in_progress):
+                    logger.info("Auto-drying: printer %d — stopping, auto-drying disabled", pid)
+                    await self._stop_drying(pid)
+            return
+
+        # Update drying state from printer status (handles backend restart)
+        self._sync_drying_state()
+
+        # Find printers with scheduled items (auto-drying only makes sense
+        # when there are upcoming scheduled prints to fill idle time between)
+        printers_with_scheduled: set[int] = set()
+        printers_with_items: set[int] = set()
+        for item in queue_items:
+            if item.printer_id:
+                printers_with_items.add(item.printer_id)
+                if item.scheduled_time and not item.manual_start:
+                    printers_with_scheduled.add(item.printer_id)
+
+        # If no printers have scheduled items, stop any auto-started drying
+        if not printers_with_scheduled:
+            for pid in list(self._drying_in_progress):
+                logger.info("Auto-drying: printer %d — stopping, no scheduled prints in queue", pid)
+                await self._stop_drying(pid)
+            return
+
+        # Get humidity threshold
+        result = await db.execute(select(Settings).where(Settings.key == "ams_humidity_fair"))
+        setting = result.scalar_one_or_none()
+        humidity_threshold = int(setting.value) if setting else 60
+
+        # Get drying presets
+        presets = await self._get_drying_presets(db)
+
+        # Determine if drying should be skipped for printers with pending items
+        block_for_drying = await self._get_bool_setting(db, "queue_drying_block")
+
+        # Get all active printers
+        all_printers = await db.execute(select(Printer).where(Printer.is_active.is_(True)))
+        for printer in all_printers.scalars():
+            pid = printer.id
+            if pid in busy_printers:
+                logger.debug("Auto-drying: printer %d skipped — busy", pid)
+                continue
+            # Only dry printers that have scheduled prints (filling idle time between prints)
+            if pid not in printers_with_scheduled:
+                if self._drying_in_progress.get(pid):
+                    logger.info("Auto-drying: printer %d — stopping, no scheduled prints for this printer", pid)
+                    await self._stop_drying(pid)
+                logger.debug("Auto-drying: printer %d skipped — no scheduled prints", pid)
+                continue
+            # When block mode is on, skip printers whose scheduled time hasn't arrived
+            if block_for_drying and pid in printers_with_items:
+                logger.debug("Auto-drying: printer %d skipped — has pending items (block mode)", pid)
+                continue
+            if not printer_manager.is_connected(pid):
+                logger.debug("Auto-drying: printer %d skipped — not connected", pid)
+                continue
+            if not self._is_printer_idle(pid):
+                logger.debug("Auto-drying: printer %d skipped — not idle", pid)
+                continue
+
+            # Check if this printer supports drying
+            state = printer_manager.get_status(pid)
+            if not state:
+                logger.debug("Auto-drying: printer %d skipped — no state", pid)
+                continue
+            model = printer_manager.get_model(pid)
+            firmware = state.firmware_version
+            if not supports_drying(model, firmware):
+                logger.debug("Auto-drying: printer %d skipped — model %s does not support drying", pid, model)
+                continue
+
+            # Check each AMS unit from raw_data
+            ams_list = state.raw_data.get("ams", [])
+            logger.debug("Auto-drying: printer %d — checking %d AMS units", pid, len(ams_list))
+            for ams_data in ams_list:
+                module_type = str(ams_data.get("module_type") or "")
+                ams_id = int(ams_data.get("id", 0))
+                # Only n3f/n3s support drying
+                if module_type not in ("n3f", "n3s"):
+                    logger.debug("Auto-drying: printer %d AMS %d skipped — module_type=%s", pid, ams_id, module_type)
+                    continue
+
+                dry_time = int(ams_data.get("dry_time") or 0)
+
+                # Read humidity — prefer humidity_raw (actual %) over humidity (index 1-5)
+                humidity = None
+                h_raw = ams_data.get("humidity_raw")
+                if h_raw is not None:
+                    try:
+                        humidity = int(h_raw)
+                    except (ValueError, TypeError):
+                        pass
+                if humidity is None:
+                    h_idx = ams_data.get("humidity")
+                    if h_idx is not None:
+                        try:
+                            humidity = int(h_idx)
+                        except (ValueError, TypeError):
+                            pass
+                # Already drying — check if humidity dropped below threshold (with minimum drying time)
+                if dry_time > 0:
+                    if pid not in self._drying_in_progress:
+                        # Drying we didn't start (manual or from before restart) — track but don't stop
+                        self._drying_in_progress[pid] = time.monotonic()
+                    started_at = self._drying_in_progress[pid]
+                    elapsed = time.monotonic() - started_at
+                    if humidity is not None and humidity <= humidity_threshold and elapsed >= self._min_drying_seconds:
+                        logger.info(
+                            "Auto-drying: printer %d AMS %d — humidity %d%% <= threshold %d%% after %dm, stopping drying",
+                            pid,
+                            ams_id,
+                            humidity,
+                            humidity_threshold,
+                            int(elapsed / 60),
+                        )
+                        printer_manager.send_drying_command(pid, ams_id, temp=0, duration=0, mode=0)
+                    else:
+                        logger.debug(
+                            "Auto-drying: printer %d AMS %d — drying (%dm left, humidity %s%%, elapsed %dm/%dm min)",
+                            pid,
+                            ams_id,
+                            dry_time,
+                            humidity,
+                            int(elapsed / 60),
+                            self._min_drying_seconds // 60,
+                        )
+                    continue
+
+                # Humidity below threshold — no need to start drying
+                if humidity is None or humidity <= humidity_threshold:
+                    logger.debug(
+                        "Auto-drying: printer %d AMS %d skipped — humidity %s <= threshold %d",
+                        pid,
+                        ams_id,
+                        humidity,
+                        humidity_threshold,
+                    )
+                    continue
+
+                # Check cannot-dry reasons (power constraints etc.)
+                sf_reasons = ams_data.get("dry_sf_reason", [])
+                if sf_reasons:
+                    logger.debug(
+                        "Auto-drying: printer %d AMS %d skipped — cannot dry reasons: %s",
+                        pid,
+                        ams_id,
+                        sf_reasons,
+                    )
+                    continue
+
+                # Get conservative drying params for mixed filaments
+                trays = ams_data.get("tray", [])
+                params = self._get_conservative_drying_params(trays, module_type, presets)
+                if not params:
+                    logger.debug(
+                        "Auto-drying: printer %d AMS %d skipped — no drying-eligible filaments in trays", pid, ams_id
+                    )
+                    continue
+
+                temp, duration_hours, filament_type = params
+
+                # Start drying
+                logger.info(
+                    "Auto-drying: printer %d AMS %d — humidity %d%% > threshold %d%%, "
+                    "starting %s drying at %d°C for %dh",
+                    pid,
+                    ams_id,
+                    humidity,
+                    humidity_threshold,
+                    filament_type,
+                    temp,
+                    duration_hours,
+                )
+                success = printer_manager.send_drying_command(
+                    pid, ams_id, temp, duration_hours, mode=1, filament=filament_type
+                )
+                if success:
+                    self._drying_in_progress[pid] = time.monotonic()
+
+    def _sync_drying_state(self):
+        """Sync in-memory drying state with actual printer status.
+
+        Handles backend restart — if a printer is drying but we don't know about it,
+        update our state. If we think it's drying but it's not, clear it.
+        """
+        to_remove = []
+        for pid in self._drying_in_progress:
+            state = printer_manager.get_status(pid)
+            if not state:
+                to_remove.append(pid)
+                continue
+            # Check if any AMS unit is still drying
+            ams_list = state.raw_data.get("ams", [])
+            any_drying = any(int(a.get("dry_time") or 0) > 0 for a in ams_list)
+            if not any_drying:
+                to_remove.append(pid)
+        for pid in to_remove:
+            self._drying_in_progress.pop(pid, None)
+
+    async def _stop_drying(self, printer_id: int):
+        """Stop all active drying on a printer (print takes priority)."""
+        state = printer_manager.get_status(printer_id)
+        if not state:
+            self._drying_in_progress.pop(printer_id, None)
+            return
+
+        ams_list = state.raw_data.get("ams", [])
+        for ams_data in ams_list:
+            dry_time = int(ams_data.get("dry_time") or 0)
+            if dry_time > 0:
+                ams_id = int(ams_data.get("id", 0))
+                logger.info(
+                    "Auto-drying: stopping drying on printer %d AMS %d — print takes priority",
+                    printer_id,
+                    ams_id,
+                )
+                printer_manager.send_drying_command(printer_id, ams_id, 0, 0, mode=0)
+        self._drying_in_progress.pop(printer_id, None)
 
     async def _get_smart_plug(self, db: AsyncSession, printer_id: int) -> SmartPlug | None:
         """Get the smart plug associated with a printer."""

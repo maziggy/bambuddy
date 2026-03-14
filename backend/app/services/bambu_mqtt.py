@@ -1477,6 +1477,32 @@ class BambuMQTTClient:
             self.state.ams_extruder_map = ams_extruder_map
             logger.debug("[%s] ams_extruder_map: %s", self.serial_number, ams_extruder_map)
 
+        # Extract drying status from info hex string and dry_sf_reason per AMS unit
+        # BambuStudio DevFilaSystem.cpp parses info bits:
+        #   dry_status     = get_flag_bits(info, 4, 4)   // bits 4-7
+        #   dry_sub_status = get_flag_bits(info, 22, 4)  // bits 22-25
+        for ams_unit in merged_ams:
+            info = ams_unit.get("info")
+            if info is not None:
+                try:
+                    info_val = int(str(info), 16)
+                    ams_unit["dry_status"] = (info_val >> 4) & 0xF
+                    ams_unit["dry_sub_status"] = (info_val >> 22) & 0xF
+                except (ValueError, TypeError):
+                    pass  # Skip unparseable info values
+            # dry_sf_reason is a per-unit array of cannot-dry reason codes
+            if "dry_sf_reason" in ams_unit:
+                sf_reason = ams_unit["dry_sf_reason"]
+                if isinstance(sf_reason, list):
+                    ams_unit["dry_sf_reason"] = [
+                        int(r) for r in sf_reason if isinstance(r, int) or (isinstance(r, str) and r.isdigit())
+                    ]
+                else:
+                    ams_unit["dry_sf_reason"] = []
+
+        # Persist updated drying fields back to raw_data
+        self.state.raw_data["ams"] = merged_ams
+
         # Create a hash of relevant AMS data to detect changes
         ams_hash_data = []
         for ams_unit in ams_list:

@@ -31,9 +31,6 @@ export function SetupPage() {
       // Refresh auth status after setup
       await refreshAuth();
 
-      // Clear authStatus cache to ensure it reflects the new setup state
-      queryClient.invalidateQueries({ queryKey: ['authStatus'] });
-
       if (data.auth_enabled) {
         if (data.admin_created) {
           showToast(t('setup.toast.authEnabledAdminCreated'));

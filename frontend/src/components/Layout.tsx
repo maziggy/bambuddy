@@ -25,6 +25,7 @@ interface NavItem {
 }
 
 export const defaultNavItems: NavItem[] = [
+  // Primary workflow items
   { id: 'printers', to: '/', icon: Printer, labelKey: 'nav.printers' },
   { id: 'archives', to: '/archives', icon: Archive, labelKey: 'nav.archives' },
   { id: 'queue', to: '/queue', icon: Calendar, labelKey: 'nav.queue' },
@@ -34,6 +35,7 @@ export const defaultNavItems: NavItem[] = [
   { id: 'projects', to: '/projects', icon: FolderKanban, labelKey: 'nav.projects' },
   { id: 'inventory', to: '/inventory', icon: Disc3, labelKey: 'nav.inventory' },
   { id: 'files', to: '/files', icon: FolderOpen, labelKey: 'nav.files' },
+  // User-account features: kept adjacent to Settings intentionally
   { id: 'notifications', to: '/notifications', icon: Bell, labelKey: 'nav.notifications' },
   { id: 'settings', to: '/settings', icon: Settings, labelKey: 'nav.settings' },
 ];

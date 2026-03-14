@@ -783,21 +783,22 @@ async def stop_queue_item(
     except Exception as e:
         logger.error("Error sending stop command for queue item %s: %s", item_id, e)
 
-    # Update queue item status regardless - if printer is off, print is already stopped
-    item.status = "cancelled"
-    item.completed_at = datetime.now(timezone.utc)
-    item.error_message = "Stopped by user" if stop_sent else "Stopped by user (printer was offline)"
-    await db.commit()
-
-    # Mark this printer as user-stopped so on_print_complete will classify the
-    # printer's "failed"/"aborted" callback as "cancelled" and send the correct
-    # "print stopped" notification instead of a failure alert.
+    # Mark this printer as user-stopped BEFORE the first await so that if the
+    # MQTT on_print_complete callback fires during the db.commit() yield the flag
+    # is already set and the "failed" status will be correctly overridden to
+    # "cancelled" (preventing a spurious "print failed" notification).
     try:
         from backend.app.main import mark_printer_stopped_by_user
 
         mark_printer_stopped_by_user(printer_id)
     except Exception as _mark_err:
         logger.warning("Failed to mark printer %s as user-stopped: %s", printer_id, _mark_err)
+
+    # Update queue item status regardless - if printer is off, print is already stopped
+    item.status = "cancelled"
+    item.completed_at = datetime.now(timezone.utc)
+    item.error_message = "Stopped by user" if stop_sent else "Stopped by user (printer was offline)"
+    await db.commit()
 
     # Get smart plug info if auto-off is enabled
     plug_ip = None

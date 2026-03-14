@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import get_current_active_user
+from backend.app.core.auth import get_current_user_optional
 from backend.app.core.database import get_db
 from backend.app.models.user import User
 from backend.app.models.user_email_pref import UserEmailPreference
@@ -19,13 +19,22 @@ router = APIRouter(prefix="/user-notifications", tags=["user-notifications"])
 
 @router.get("/preferences", response_model=UserEmailPreferenceResponse)
 async def get_user_email_preferences(
-    current_user: User = Depends(get_current_active_user),
+    current_user: User | None = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db),
 ):
     """Get the current user's email notification preferences.
 
     Returns defaults (all enabled) if no preferences are saved yet.
     """
+    if current_user is None:
+        # Auth is disabled; no user context available, return defaults
+        return UserEmailPreferenceResponse(
+            notify_print_start=True,
+            notify_print_complete=True,
+            notify_print_failed=True,
+            notify_print_stopped=True,
+        )
+
     result = await db.execute(
         select(UserEmailPreference).where(UserEmailPreference.user_id == current_user.id)
     )
@@ -46,10 +55,16 @@ async def get_user_email_preferences(
 @router.put("/preferences", response_model=UserEmailPreferenceResponse)
 async def update_user_email_preferences(
     data: UserEmailPreferenceUpdate,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User | None = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db),
 ):
     """Update the current user's email notification preferences."""
+    if current_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Authentication must be enabled to save user notification preferences",
+        )
+
     if not current_user.email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

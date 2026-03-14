@@ -1495,6 +1495,8 @@ export default {
     queueDryingEnabledDescription: 'Start AMS drying automatically when printer is idle and humidity is above threshold',
     queueDryingBlock: 'Wait for drying to complete',
     queueDryingBlockDescription: 'Block the print queue until drying finishes. When off, prints take priority over drying.',
+    ambientDryingEnabled: 'Ambient drying',
+    ambientDryingEnabledDescription: 'Automatically dry filament on idle printers when humidity exceeds threshold, even without queued prints.',
     dryingPresets: 'Drying Presets',
     dryingPresetsDescription: 'Temperature and duration per filament type. AMS 2 Pro uses lower temps, AMS-HT supports higher temps.',
     dryingFilament: 'Filament',

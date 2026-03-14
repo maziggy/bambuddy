@@ -213,6 +213,11 @@ async def find_matching_inventory_spool(db: AsyncSession, tray_data: dict) -> Sp
     if not tray_type:
         return None
 
+    # BL RFID spools always report tray_color; if it's missing we can't safely
+    # match by material+brand alone (risk of wrong-color match).
+    if not tray_color or len(tray_color) < 6:
+        return None
+
     # Parse subtype from tray_sub_brands (same logic as create_spool_from_tray)
     subtype = None
     if tray_sub_brands and " " in tray_sub_brands:
@@ -242,6 +247,9 @@ async def find_matching_inventory_spool(db: AsyncSession, tray_data: dict) -> Sp
     else:
         query = query.where(Spool.subtype.is_(None))
 
+    # Deterministic ordering so multiple matches give predictable FIFO behavior
+    query = query.order_by(Spool.created_at)
+
     result = await db.execute(query)
     candidates = list(result.scalars().unique().all())
 
@@ -249,8 +257,7 @@ async def find_matching_inventory_spool(db: AsyncSession, tray_data: dict) -> Sp
         return None
 
     # Filter by color similarity
-    if tray_color and len(tray_color) >= 6:
-        candidates = [s for s in candidates if s.rgba and colors_similar(s.rgba, tray_color)]
+    candidates = [s for s in candidates if s.rgba and colors_similar(s.rgba, tray_color)]
 
     if not candidates:
         return None

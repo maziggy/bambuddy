@@ -93,6 +93,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - AMS info card (hover for serial number, firmware version) with custom friendly names that persist across printers
 - **AMS remote drying** — Start, monitor, and stop drying sessions for AMS 2 Pro and AMS-HT directly from the Printers page with filament-based temperature/duration presets; automatic PSU detection and HMS power error reporting
 - **Queue auto-drying** — Automatically dry filament between scheduled prints when humidity exceeds threshold; configurable presets per filament type, optional blocking mode
+- **Ambient drying** — Automatically keep filament dry on idle printers based on humidity, regardless of whether prints are queued
 - Configurable drying presets per filament type (temperature & duration for AMS 2 Pro and AMS-HT)
 - Dual external spool support for H2D (Ext-L / Ext-R)
 - HMS error monitoring with history and clear errors

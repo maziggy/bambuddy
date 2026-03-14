@@ -25,7 +25,8 @@ const PORT_SECURITY_MAP: Record<number, string> = {
 export function EmailSettings() {
   const { t } = useTranslation();
   const { showToast } = useToast();
-
+  const queryClient = useQueryClient();
+  
   const [smtpSettings, setSMTPSettings] = useState<SMTPSettings>({
     smtp_host: '',
     smtp_port: 587,

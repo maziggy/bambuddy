@@ -57,6 +57,19 @@ class AppSettings(BaseModel):
     )
     ams_history_retention_days: int = Field(default=30, description="Number of days to keep AMS sensor history data")
 
+    # Queue auto-drying settings
+    queue_drying_enabled: bool = Field(
+        default=False, description="Automatically dry AMS filament between queued prints"
+    )
+    queue_drying_block: bool = Field(
+        default=False,
+        description="Block queue until drying completes (when disabled, prints take priority over drying)",
+    )
+    drying_presets: str = Field(
+        default="",
+        description="JSON blob of drying presets per filament type (empty = use built-in defaults)",
+    )
+
     # Print modal settings
     per_printer_mapping_expanded: bool = Field(
         default=False, description="Expand custom filament mapping by default in print modal"
@@ -184,6 +197,9 @@ class AppSettingsUpdate(BaseModel):
     ams_temp_good: float | None = None
     ams_temp_fair: float | None = None
     ams_history_retention_days: int | None = None
+    queue_drying_enabled: bool | None = None
+    queue_drying_block: bool | None = None
+    drying_presets: str | None = None
     per_printer_mapping_expanded: bool | None = None
     date_format: str | None = None
     time_format: str | None = None

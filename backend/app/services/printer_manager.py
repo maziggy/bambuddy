@@ -646,6 +646,11 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
                     "sw_ver": str(ams_data.get("sw_ver") or ""),
                     # Drying: dry_time > 0 means drying is active (minutes remaining)
                     "dry_time": int(ams_data.get("dry_time") or 0),
+                    # Drying status from info hex bits (0=Off, 1=Checking, 2=Drying, 3=Cooling, etc.)
+                    "dry_status": int(ams_data.get("dry_status") or 0),
+                    "dry_sub_status": int(ams_data.get("dry_sub_status") or 0),
+                    # Cannot-dry reasons from firmware (e.g. 1=InsufficientPower, 8=NeedPluginPower)
+                    "dry_sf_reason": list(ams_data.get("dry_sf_reason") or []),
                     # Module type: "ams", "n3f", "n3s" (from get_version)
                     "module_type": str(ams_data.get("module_type") or ""),
                 }

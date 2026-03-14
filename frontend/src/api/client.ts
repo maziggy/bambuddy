@@ -139,6 +139,9 @@ export interface AMSUnit {
   serial_number: string;  // AMS unit serial number (from MQTT sn field)
   sw_ver: string;         // AMS firmware version (from get_version info.module ams/* entry)
   dry_time: number;       // Minutes remaining (0 = not drying, >0 = drying active)
+  dry_status: number;     // 0=Off, 1=Checking, 2=Drying, 3=Cooling, 4=Stopping, 5=Error
+  dry_sub_status: number; // 0=Off, 1=Heating, 2=Dehumidify
+  dry_sf_reason: number[]; // Cannot-dry reasons (1=InsufficientPower, 8=NeedPluginPower)
   module_type: string;    // "ams", "n3f", "n3s"
 }
 
@@ -797,6 +800,10 @@ export interface AppSettings {
   ams_temp_good: number;      // <= this is green/blue
   ams_temp_fair: number;      // <= this is orange, > is red
   ams_history_retention_days: number;  // days to keep AMS sensor history
+  // Queue auto-drying settings
+  queue_drying_enabled: boolean;  // Auto-dry AMS between queued prints
+  queue_drying_block: boolean;  // Block queue until drying completes
+  drying_presets: string;  // JSON blob of drying presets per filament type
   // Print modal settings
   per_printer_mapping_expanded: boolean;  // Whether custom mapping is expanded by default in print modal
   // Date/time format settings

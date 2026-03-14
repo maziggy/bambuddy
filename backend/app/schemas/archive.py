@@ -91,6 +91,9 @@ class ArchiveResponse(BaseModel):
     energy_kwh: float | None = None
     energy_cost: float | None = None
 
+    # Printer depreciation
+    depreciation_cost: float | None = None
+
     created_at: datetime
 
     # User tracking (Issue #206)
@@ -147,6 +150,7 @@ class ArchiveStats(BaseModel):
     # Energy stats
     total_energy_kwh: float = 0.0
     total_energy_cost: float = 0.0
+    total_depreciation_cost: float = 0.0
 
 
 class ProjectPageImage(BaseModel):

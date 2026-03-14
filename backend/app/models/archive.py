@@ -66,6 +66,9 @@ class PrintArchive(Base):
     energy_kwh: Mapped[float | None] = mapped_column(Float)  # Energy consumed in kWh
     energy_cost: Mapped[float | None] = mapped_column(Float)  # Cost of energy consumed
 
+    # Printer depreciation cost
+    depreciation_cost: Mapped[float | None] = mapped_column(Float)  # Hourly depreciation * print hours
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

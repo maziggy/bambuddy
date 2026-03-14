@@ -187,6 +187,9 @@ export default {
     name: 'Name',
     serialCannotBeChanged: 'Seriennummer kann nicht geändert werden',
     locationHelp: 'Dient zur Gruppierung von Druckern und zum Filtern von Warteschlangenaufträgen',
+    purchasePrice: 'Kaufpreis',
+    lifespanHours: 'Lebensdauer (Stunden)',
+    depreciationHelp: 'Optional — wird zur Berechnung der Abschreibungskosten pro Druck verwendet',
     // WiFi signal strength
     wifiSignal: {
       veryWeak: 'Sehr schwach',
@@ -983,6 +986,7 @@ export default {
     totalCost: 'Gesamtkosten',
     energyUsed: 'Energieverbrauch',
     energyCost: 'Energiekosten',
+    depreciationCost: 'Abschreibungskosten',
     averagePrintTime: 'Durchschnittliche Druckzeit',
     printsPerDay: 'Drucke pro Tag',
     byPrinter: 'Nach Drucker',

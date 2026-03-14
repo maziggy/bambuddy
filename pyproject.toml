@@ -2,10 +2,10 @@
 name = "bambuddy"
 version = "0.1.5"
 description = "Archive and manage Bambu Lab 3MF files"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 120
 exclude = [
     ".git",
@@ -78,4 +78,20 @@ filterwarnings = [
 ]
 markers = [
     "docker: marks tests that run in Docker integration environment",
+]
+
+[tool.coverage.run]
+source = ["backend/app"]
+omit = [
+    "backend/app/alembic/*",
+    "backend/app/__main__.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "if TYPE_CHECKING:",
 ]

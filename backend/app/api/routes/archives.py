@@ -106,6 +106,7 @@ def archive_to_response(
         "quantity": archive.quantity,
         "energy_kwh": archive.energy_kwh,
         "energy_cost": archive.energy_cost,
+        "depreciation_cost": archive.depreciation_cost,
         "created_at": archive.created_at,
         # User tracking (Issue #206)
         "created_by_id": archive.created_by_id,
@@ -685,6 +686,10 @@ async def get_archive_stats(
         energy_cost_result = await db.execute(select(func.sum(PrintArchive.energy_cost)).where(*base_conditions))
         total_energy_cost = energy_cost_result.scalar() or 0
 
+    # Depreciation cost total
+    dep_cost_result = await db.execute(select(func.sum(PrintArchive.depreciation_cost)).where(*base_conditions))
+    total_depreciation_cost = dep_cost_result.scalar() or 0
+
     return ArchiveStats(
         total_prints=total_prints,
         successful_prints=successful_prints,
@@ -698,6 +703,7 @@ async def get_archive_stats(
         time_accuracy_by_printer=accuracy_by_printer if accuracy_by_printer else None,
         total_energy_kwh=round(total_energy_kwh, 3),
         total_energy_cost=round(total_energy_cost, 3),
+        total_depreciation_cost=round(total_depreciation_cost, 2),
     )
 
 
@@ -991,6 +997,19 @@ async def rescan_archive(
                     )
                 )
 
+    # Calculate depreciation cost from printer's purchase_price and lifespan_hours
+    from backend.app.models.printer import Printer
+
+    if archive.printer_id and archive.print_time_seconds:
+        printer_result = await db.execute(select(Printer).where(Printer.id == archive.printer_id))
+        printer = printer_result.scalar_one_or_none()
+        if printer and printer.purchase_price and printer.lifespan_hours and printer.lifespan_hours > 0:
+            archive.depreciation_cost = round(
+                (printer.purchase_price / printer.lifespan_hours) * (archive.print_time_seconds / 3600), 2
+            )
+        else:
+            archive.depreciation_cost = None
+
     await db.commit()
     await db.refresh(archive)
     return archive
@@ -1023,6 +1042,12 @@ async def recalculate_all_costs(
     usage_costs = usage_costs_result.fetchall()
     cost_map = {row[0]: row[1] for row in usage_costs if row[0] is not None and row[1] is not None and row[1] > 0}
 
+    # Pre-fetch printers for depreciation calculation
+    from backend.app.models.printer import Printer
+
+    printer_result = await db.execute(select(Printer))
+    printer_map = {p.id: p for p in printer_result.scalars().all()}
+
     updated = 0
     for archive in archives:
         usage_cost = cost_map.get(archive.id)
@@ -1047,6 +1072,18 @@ async def recalculate_all_costs(
                 new_cost = None
         if new_cost is not None and archive.cost != new_cost:
             archive.cost = new_cost
+            updated += 1
+
+        # Recalculate depreciation cost
+        new_dep = None
+        if archive.printer_id and archive.print_time_seconds:
+            printer = printer_map.get(archive.printer_id)
+            if printer and printer.purchase_price and printer.lifespan_hours and printer.lifespan_hours > 0:
+                new_dep = round(
+                    (printer.purchase_price / printer.lifespan_hours) * (archive.print_time_seconds / 3600), 2
+                )
+        if archive.depreciation_cost != new_dep:
+            archive.depreciation_cost = new_dep
             updated += 1
 
     await db.commit()

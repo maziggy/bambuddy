@@ -5102,6 +5102,33 @@ function AddPrinterModal({
                 {t('printers.modal.autoArchiveLabel')}
               </label>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm text-bambu-gray mb-1">{t('printers.purchasePrice')}</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                  value={form.purchase_price ?? ''}
+                  onChange={(e) => setForm({ ...form, purchase_price: e.target.value ? parseFloat(e.target.value) : undefined })}
+                  placeholder="600.00"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-bambu-gray mb-1">{t('printers.lifespanHours')}</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                  value={form.lifespan_hours ?? ''}
+                  onChange={(e) => setForm({ ...form, lifespan_hours: e.target.value ? parseFloat(e.target.value) : undefined })}
+                  placeholder="3000"
+                />
+              </div>
+              <p className="col-span-2 text-xs text-bambu-gray">{t('printers.depreciationHelp')}</p>
+            </div>
             <div className="flex gap-3 pt-4">
               <Button type="button" variant="secondary" onClick={onClose} className="flex-1">
                 {t('common.cancel')}
@@ -5346,6 +5373,8 @@ function EditPrinterModal({
     model: printer.model || '',
     location: printer.location || '',
     auto_archive: printer.auto_archive,
+    purchase_price: printer.purchase_price as number | null,
+    lifespan_hours: printer.lifespan_hours as number | null,
   });
 
   const updateMutation = useMutation({
@@ -5375,6 +5404,8 @@ function EditPrinterModal({
       model: form.model || undefined,
       location: form.location || undefined,
       auto_archive: form.auto_archive,
+      purchase_price: form.purchase_price,
+      lifespan_hours: form.lifespan_hours,
     };
     // Only include access_code if it was changed
     if (form.access_code) {
@@ -5487,6 +5518,33 @@ function EditPrinterModal({
               <label htmlFor="edit_auto_archive" className="text-sm text-bambu-gray">
                 {t('printers.modal.autoArchiveLabel')}
               </label>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm text-bambu-gray mb-1">{t('printers.purchasePrice')}</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                  value={form.purchase_price ?? ''}
+                  onChange={(e) => setForm({ ...form, purchase_price: e.target.value ? parseFloat(e.target.value) : null })}
+                  placeholder="600.00"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-bambu-gray mb-1">{t('printers.lifespanHours')}</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                  value={form.lifespan_hours ?? ''}
+                  onChange={(e) => setForm({ ...form, lifespan_hours: e.target.value ? parseFloat(e.target.value) : null })}
+                  placeholder="3000"
+                />
+              </div>
+              <p className="col-span-2 text-xs text-bambu-gray">{t('printers.depreciationHelp')}</p>
             </div>
             <div className="flex gap-3 pt-4">
               <Button type="button" variant="secondary" onClick={onClose} className="flex-1">

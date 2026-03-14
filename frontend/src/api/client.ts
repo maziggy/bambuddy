@@ -99,6 +99,8 @@ export interface Printer {
   external_camera_url: string | null;
   external_camera_type: string | null;  // "mjpeg", "rtsp", "snapshot"
   external_camera_enabled: boolean;
+  purchase_price: number | null;  // Purchase price for depreciation
+  lifespan_hours: number | null;  // Expected lifespan in print-hours
   plate_detection_enabled: boolean;  // Check plate before print
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
   created_at: string;
@@ -276,6 +278,8 @@ export interface PrinterCreate {
   model?: string;
   location?: string;
   auto_archive?: boolean;
+  purchase_price?: number | null;
+  lifespan_hours?: number | null;
   external_camera_url?: string | null;
   external_camera_type?: string | null;
   external_camera_enabled?: boolean;
@@ -379,6 +383,7 @@ export interface Archive {
   quantity: number;
   energy_kwh: number | null;
   energy_cost: number | null;
+  depreciation_cost: number | null;
   created_at: string;
   // User tracking (Issue #206)
   created_by_id: number | null;

@@ -187,6 +187,9 @@ export default {
     name: 'Name',
     serialCannotBeChanged: 'Serial number cannot be changed',
     locationHelp: 'Used to group printers and filter queue jobs',
+    purchasePrice: 'Purchase Price',
+    lifespanHours: 'Lifespan (hours)',
+    depreciationHelp: 'Optional — used to calculate per-print depreciation cost',
     // WiFi signal strength
     wifiSignal: {
       veryWeak: 'Very weak',
@@ -983,6 +986,7 @@ export default {
     totalCost: 'Total Cost',
     energyUsed: 'Energy Used',
     energyCost: 'Energy Cost',
+    depreciationCost: 'Depreciation Cost',
     averagePrintTime: 'Average Print Time',
     printsPerDay: 'Prints per Day',
     byPrinter: 'By Printer',

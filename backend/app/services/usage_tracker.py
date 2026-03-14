@@ -444,7 +444,19 @@ async def on_print_complete(
             total_cost = sum(r.get("cost", 0) or 0 for r in results)
             if total_cost > 0:
                 archive.cost = round(total_cost, 2)
-                await db.commit()
+
+            # Calculate depreciation cost if printer has pricing configured
+            if archive.printer_id and archive.print_time_seconds:
+                from backend.app.models.printer import Printer
+
+                printer_result = await db.execute(select(Printer).where(Printer.id == archive.printer_id))
+                printer = printer_result.scalar_one_or_none()
+                if printer and printer.purchase_price and printer.lifespan_hours and printer.lifespan_hours > 0:
+                    archive.depreciation_cost = round(
+                        (printer.purchase_price / printer.lifespan_hours) * (archive.print_time_seconds / 3600), 2
+                    )
+
+            await db.commit()
 
     return results
 

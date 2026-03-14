@@ -1446,6 +1446,22 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already applied
 
+    # Migration: Add purchase_price and lifespan_hours to printers for depreciation cost
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN purchase_price REAL"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE printers ADD COLUMN lifespan_hours REAL"))
+    except OperationalError:
+        pass  # Already applied
+
+    # Migration: Add depreciation_cost to print_archives
+    try:
+        await conn.execute(text("ALTER TABLE print_archives ADD COLUMN depreciation_cost REAL"))
+    except OperationalError:
+        pass  # Already applied
+
     # Cleanup: Remove obsolete settings keys that are no longer used
     obsolete_keys = ["slicer_binary_path"]
     for key in obsolete_keys:

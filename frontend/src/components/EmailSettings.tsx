@@ -261,7 +261,7 @@ export function EmailSettings() {
         </CardContent>
       </Card>
 
-      {/* SMTP Configuration - dimmed when advanced auth is disabled */}
+      {/* SMTP Configuration */}
       <div>
         <Card>
           <CardHeader>
@@ -409,7 +409,7 @@ export function EmailSettings() {
         </Card>
       </div>
 
-      {/* Test SMTP - dimmed when advanced auth is disabled */}
+      {/* Test SMTP */}
       <div>
         <Card>
           <CardHeader>

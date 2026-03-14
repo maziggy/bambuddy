@@ -20,7 +20,7 @@ import aiohttp
 logger = logging.getLogger(__name__)
 
 
-def _sanitize_camera_url(url: str, allowed_schemes: tuple[str, ...] = ("http", "https", "rtsp")) -> str | None:
+def _sanitize_camera_url(url: str, allowed_schemes: tuple[str, ...] = ("http", "https", "rtsp", "rtsps")) -> str | None:
     """Validate and sanitize camera URL, returning a safe reconstructed URL.
 
     This validates that the URL is well-formed, uses an allowed scheme,
@@ -84,7 +84,7 @@ def _sanitize_camera_url(url: str, allowed_schemes: tuple[str, ...] = ("http", "
         return None
 
 
-def _validate_camera_url(url: str, allowed_schemes: tuple[str, ...] = ("http", "https", "rtsp")) -> bool:
+def _validate_camera_url(url: str, allowed_schemes: tuple[str, ...] = ("http", "https", "rtsp", "rtsps")) -> bool:
     """Validate camera URL format (legacy wrapper).
 
     Args:
@@ -507,8 +507,9 @@ async def generate_mjpeg_stream(url: str, camera_type: str, fps: int = 10) -> As
             await asyncio.sleep(2)
 
     elif camera_type == "rtsp":
-        # Use ffmpeg to convert RTSP to MJPEG, with reconnect on timeout
-        max_retries = 3
+        # Use ffmpeg to convert RTSP to MJPEG, with auto-reconnect.
+        # High retry count for cameras that drop RTSP sessions frequently (e.g. P2S).
+        max_retries = 30
         for attempt in range(max_retries + 1):
             frame_yielded = False
             async for frame in _stream_rtsp(url, fps):
@@ -521,7 +522,7 @@ async def generate_mjpeg_stream(url: str, camera_type: str, fps: int = 10) -> As
                 attempt + 1,
                 max_retries,
             )
-            await asyncio.sleep(2)
+            await asyncio.sleep(0.2)
 
     elif camera_type == "usb":
         # Use ffmpeg to stream from USB camera
@@ -624,6 +625,16 @@ async def _stream_rtsp(url: str, fps: int) -> AsyncGenerator[bytes, None]:
         "1024000",
         "-max_delay",
         "500000",
+        "-probesize",
+        "32",
+        "-analyzeduration",
+        "0",
+        "-fflags",
+        "+nobuffer+discardcorrupt+genpts",
+        "-flags",
+        "low_delay",
+        "-err_detect",
+        "ignore_err",
         "-i",
         url,
         "-f",
@@ -644,8 +655,8 @@ async def _stream_rtsp(url: str, fps: int) -> AsyncGenerator[bytes, None]:
             stderr=asyncio.subprocess.PIPE,
         )
 
-        # Give ffmpeg a moment to start and check for immediate failures
-        await asyncio.sleep(0.5)
+        # Brief check for immediate startup failures
+        await asyncio.sleep(0.1)
         if process.returncode is not None:
             stderr = await process.stderr.read()
             logger.error("ffmpeg RTSP stream failed immediately: %s", stderr.decode()[:300])

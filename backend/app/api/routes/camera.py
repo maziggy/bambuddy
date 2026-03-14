@@ -249,9 +249,11 @@ async def generate_rtsp_mjpeg_stream(
         "-analyzeduration",
         "0",  # Skip format analysis for faster startup
         "-fflags",
-        "nobuffer",  # Reduce internal buffering
+        "+nobuffer+discardcorrupt+genpts",  # Reduce buffering, drop corrupt frames
         "-flags",
         "low_delay",  # Minimize decode latency
+        "-err_detect",
+        "ignore_err",  # Continue on stream errors instead of aborting
         "-i",
         camera_url,
         "-f",
@@ -1285,11 +1287,12 @@ async def cleanup_orphaned_streams():
     cleaned = 0
     now = time.time()
 
-    # Collect PIDs that are legitimately in-use (active stream, process alive)
+    # Collect PIDs that are legitimately in-use (active streams + any tracked spawn)
     active_pids = {proc.pid for proc in _active_streams.values() if proc.returncode is None}
+    active_pids.update(_spawned_ffmpeg_pids.keys())
 
     # 1. /proc scan — catch ALL orphaned Bambu ffmpeg processes on the system.
-    #    Any ffmpeg with rtsps://bblp: that is NOT in an active stream is orphaned.
+    #    Any ffmpeg with rtsps://bblp: that is NOT tracked by us is orphaned.
     for pid in _scan_bambu_ffmpeg_pids():
         if pid in active_pids:
             continue

@@ -386,6 +386,10 @@ async def capture_camera_frame_bytes(
 
     logger.info("Capturing camera frame bytes from %s using RTSP (model: %s)", ip_address, model)
 
+    # Register PID with the orphan cleanup tracker so the periodic /proc scan
+    # doesn't SIGKILL our short-lived snapshot process (see camera routes).
+    from backend.app.api.routes.camera import _spawned_ffmpeg_pids
+
     try:
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -393,13 +397,20 @@ async def capture_camera_frame_bytes(
             stderr=asyncio.subprocess.PIPE,
         )
 
+        import time as _time
+
+        _spawned_ffmpeg_pids[process.pid] = _time.time()
+
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
         except TimeoutError:
             process.kill()
             await process.wait()
+            _spawned_ffmpeg_pids.pop(process.pid, None)
             logger.error("Camera frame bytes capture timed out after %ss", timeout)
             return None
+
+        _spawned_ffmpeg_pids.pop(process.pid, None)
 
         if process.returncode == 0 and stdout and len(stdout) >= 100:
             logger.info("Successfully captured camera frame bytes: %s bytes", len(stdout))

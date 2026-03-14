@@ -44,6 +44,12 @@ export function EmailSettings() {
     queryFn: () => api.getSMTPSettings(),
   });
 
+  // Fetch global auth status
+  const { data: authStatus } = useQuery({
+    queryKey: ['authStatus'],
+    queryFn: () => api.getAuthStatus(),
+  });
+
   // Fetch advanced auth status
   const { data: advancedAuthStatus } = useQuery({
     queryKey: ['advancedAuthStatus'],
@@ -163,6 +169,10 @@ export function EmailSettings() {
   };
 
   const handleToggleAdvancedAuth = () => {
+    if (!authStatus?.auth_enabled) {
+      showToast(t('settings.email.errors.enableAuthFirst'), 'error');
+      return;
+    }
     if (!advancedAuthStatus?.advanced_auth_enabled && !advancedAuthStatus?.smtp_configured) {
       showToast(t('settings.email.errors.configureSmtpFirst'), 'error');
       return;
@@ -252,7 +262,7 @@ export function EmailSettings() {
       </Card>
 
       {/* SMTP Configuration - dimmed when advanced auth is disabled */}
-      <div className={!advancedEnabled ? 'opacity-50 pointer-events-none' : ''}>
+      <div>
         <Card>
           <CardHeader>
             <h2 className="text-lg font-semibold text-white">
@@ -400,7 +410,7 @@ export function EmailSettings() {
       </div>
 
       {/* Test SMTP - dimmed when advanced auth is disabled */}
-      <div className={!advancedEnabled ? 'opacity-50 pointer-events-none' : ''}>
+      <div>
         <Card>
           <CardHeader>
             <h2 className="text-lg font-semibold text-white">

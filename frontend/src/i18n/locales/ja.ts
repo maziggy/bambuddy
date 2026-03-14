@@ -1240,6 +1240,7 @@ export default {
         smtpServerAndEmail: 'テストする前にSMTPサーバーと送信元メールを入力してください',
         usernamePasswordRequired: '認証が有効な場合、ユーザー名とパスワードは必須です',
         configureSmtpFirst: '最初にSMTP設定を構成してテストしてください',
+        enableAuthFirst: 'メール関連機能をご利用いただくには、まず認証を有効にしてください。',
       },
       // Success messages
       success: {

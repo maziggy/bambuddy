@@ -1227,7 +1227,6 @@ export default {
       advancedAuthEnabledDesc: 'Recursos de gerenciamento de usuários baseados em email estão ativos. Novos usuários receberão senhas geradas automaticamente por email, e os usuários podem redefinir suas senhas através do recurso de esqueci minha senha.',
       advancedAuthDisabled: 'Autenticação Avançada está desabilitada',
       advancedAuthDisabledDesc: 'Habilite a autenticação avançada para ativar recursos baseados em email para gerenciamento de usuários.',
-      configureSmtpToEnable: 'Configure e salve suas configurações SMTP abaixo, depois volte aqui para habilitar a autenticação avançada.',
       enable: 'Habilitar',
       disable: 'Desabilitar',
       feature1: 'Senhas são geradas automaticamente e enviadas por email para novos usuários',
@@ -1242,6 +1241,7 @@ export default {
         smtpServerAndEmail: 'Por favor, preencha o servidor SMTP e o email de remetente antes de testar',
         usernamePasswordRequired: 'Nome de usuário e senha são obrigatórios quando a autenticação está habilitada',
         configureSmtpFirst: 'Por favor, configure e teste as configurações SMTP primeiro',
+        enableAuthFirst: 'Por favor, habilite a autenticação primeiro para usar os recursos baseados em e-mail.',
       },
       // Success messages
       success: {

@@ -1227,7 +1227,6 @@ export default {
       advancedAuthEnabledDesc: 'メールベースのユーザー管理機能が有効になっています。新規ユーザーには自動生成されたパスワードがメールで送信され、ユーザーはパスワード忘れ機能でパスワードをリセットできます。',
       advancedAuthDisabled: '高度な認証が無効です',
       advancedAuthDisabledDesc: '高度な認証を有効にして、ユーザー管理のメールベース機能を有効化してください。',
-      configureSmtpToEnable: '以下でSMTP設定を構成して保存してから、ここに戻って高度な認証を有効にしてください。',
       enable: '有効にする',
       disable: '無効にする',
       feature1: 'パスワードは自動生成され、新規ユーザーにメールで送信されます',
@@ -1242,6 +1241,7 @@ export default {
         smtpServerAndEmail: 'テストする前にSMTPサーバーと送信元メールを入力してください',
         usernamePasswordRequired: '認証が有効な場合、ユーザー名とパスワードは必須です',
         configureSmtpFirst: '最初にSMTP設定を構成してテストしてください',
+        enableAuthFirst: 'メール関連機能をご利用いただくには、まず認証を有効にしてください。',
       },
       // Success messages
       success: {

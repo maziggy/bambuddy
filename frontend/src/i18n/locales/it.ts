@@ -1227,7 +1227,6 @@ export default {
       advancedAuthEnabledDesc: 'Le funzionalità di gestione utenti via email sono attive. I nuovi utenti riceveranno password generate automaticamente via email e potranno reimpostare la password tramite la funzione di recupero.',
       advancedAuthDisabled: 'L\'autenticazione avanzata è disabilitata',
       advancedAuthDisabledDesc: 'Abilita l\'autenticazione avanzata per attivare le funzionalità email per la gestione utenti.',
-      configureSmtpToEnable: 'Configura e salva le impostazioni SMTP qui sotto, poi torna qui per abilitare l\'autenticazione avanzata.',
       enable: 'Abilita',
       disable: 'Disabilita',
       feature1: 'Le password vengono generate automaticamente e inviate via email ai nuovi utenti',
@@ -1242,6 +1241,7 @@ export default {
         smtpServerAndEmail: 'Compilare Server SMTP e Email mittente prima di testare',
         usernamePasswordRequired: 'Nome utente e password sono obbligatori quando l\'autenticazione è abilitata',
         configureSmtpFirst: 'Configurare e testare le impostazioni SMTP prima',
+        enableAuthFirst: 'Per utilizzare le funzionalità basate sulla posta elettronica, è necessario prima abilitare l\'autenticazione.',
       },
       // Success messages
       success: {

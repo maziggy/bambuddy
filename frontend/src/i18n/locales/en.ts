@@ -1227,7 +1227,6 @@ export default {
       advancedAuthEnabledDesc: 'Email-based user management features are active. New users will receive auto-generated passwords via email, and users can reset their passwords through the forgot password feature.',
       advancedAuthDisabled: 'Advanced Authentication is disabled',
       advancedAuthDisabledDesc: 'Enable advanced authentication to activate email-based features for user management.',
-      configureSmtpToEnable: 'Configure and save your SMTP settings below, then return here to enable Advanced Authentication.',
       enable: 'Enable',
       disable: 'Disable',
       feature1: 'Passwords are auto-generated and emailed to new users',
@@ -1242,6 +1241,7 @@ export default {
         smtpServerAndEmail: 'Please fill in SMTP Server and From Email before testing',
         usernamePasswordRequired: 'Username and Password are required when authentication is enabled',
         configureSmtpFirst: 'Please configure and test SMTP settings first',
+        enableAuthFirst: 'Please enable authentication first to use email-based features.',
       },
       // Success messages
       success: {

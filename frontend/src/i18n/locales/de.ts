@@ -1227,7 +1227,6 @@ export default {
       advancedAuthEnabledDesc: 'E-Mail-basierte Benutzerverwaltungsfunktionen sind aktiv. Neue Benutzer erhalten automatisch generierte Passwörter per E-Mail und können ihr Passwort über die Passwort vergessen Funktion zurücksetzen.',
       advancedAuthDisabled: 'Erweiterte Authentifizierung ist deaktiviert',
       advancedAuthDisabledDesc: 'Aktivieren Sie die erweiterte Authentifizierung, um E-Mail-basierte Funktionen für die Benutzerverwaltung zu aktivieren.',
-      configureSmtpToEnable: 'Konfigurieren und speichern Sie Ihre SMTP-Einstellungen unten, dann kehren Sie hierher zurück, um die erweiterte Authentifizierung zu aktivieren.',
       enable: 'Aktivieren',
       disable: 'Deaktivieren',
       feature1: 'Passwörter werden automatisch generiert und an neue Benutzer gesendet',
@@ -1242,6 +1241,7 @@ export default {
         smtpServerAndEmail: 'Bitte füllen Sie SMTP-Server und Absender-E-Mail aus, bevor Sie testen',
         usernamePasswordRequired: 'Benutzername und Passwort sind erforderlich, wenn Authentifizierung aktiviert ist',
         configureSmtpFirst: 'Bitte konfigurieren und testen Sie zuerst die SMTP-Einstellungen',
+        enableAuthFirst: 'Bitte aktivieren Sie zuerst die Authentifizierung, um E-Mail-basierte Funktionen nutzen zu können.',
       },
       // Success messages
       success: {

@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import { useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 
 const SECURITY_PORT_MAP: Record<string, number> = {
   starttls: 587,
@@ -25,7 +26,7 @@ export function EmailSettings() {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-
+  
   const [smtpSettings, setSMTPSettings] = useState<SMTPSettings>({
     smtp_host: '',
     smtp_port: 587,
@@ -44,6 +45,8 @@ export function EmailSettings() {
     queryFn: () => api.getSMTPSettings(),
   });
 
+  // Fetch global auth status
+  const { authEnabled } = useAuth();
   // Fetch advanced auth status
   const { data: advancedAuthStatus } = useQuery({
     queryKey: ['advancedAuthStatus'],
@@ -163,6 +166,10 @@ export function EmailSettings() {
   };
 
   const handleToggleAdvancedAuth = () => {
+    if (!authEnabled) {
+      showToast(t('settings.email.errors.enableAuthFirst'), 'error');
+      return;
+    }
     if (!advancedAuthStatus?.advanced_auth_enabled && !advancedAuthStatus?.smtp_configured) {
       showToast(t('settings.email.errors.configureSmtpFirst'), 'error');
       return;
@@ -196,9 +203,8 @@ export function EmailSettings() {
             </div>
             <Button
               onClick={handleToggleAdvancedAuth}
-              disabled={toggleAdvancedAuthMutation.isPending || (!advancedEnabled && !advancedAuthStatus?.smtp_configured)}
+              disabled={toggleAdvancedAuthMutation.isPending}
               variant={advancedEnabled ? 'danger' : 'primary'}
-              title={!advancedEnabled && !advancedAuthStatus?.smtp_configured ? (t('settings.email.errors.configureSmtpFirst') || 'Configure and save SMTP settings below first') : undefined}
             >
               {advancedEnabled ? (
                 <>
@@ -242,9 +248,7 @@ export function EmailSettings() {
                       {t('settings.email.advancedAuthDisabled') || 'Advanced Authentication is disabled'}
                     </p>
                     <p className="text-sm text-yellow-300">
-                      {!advancedAuthStatus?.smtp_configured
-                        ? (t('settings.email.configureSmtpToEnable') || 'Configure and save your SMTP settings below, then return here to enable Advanced Authentication.')
-                        : (t('settings.email.advancedAuthDisabledDesc') || 'Enable advanced authentication to activate email-based features for user management.')}
+                      {t('settings.email.advancedAuthDisabledDesc') || 'Enable advanced authentication to activate email-based features for user management.'}
                     </p>
                   </div>
                 </div>
@@ -254,7 +258,7 @@ export function EmailSettings() {
         </CardContent>
       </Card>
 
-      {/* SMTP Configuration - always accessible so it can be configured before enabling Advanced Auth */}
+      {/* SMTP Configuration */}
       <div>
         <Card>
           <CardHeader>
@@ -402,7 +406,7 @@ export function EmailSettings() {
         </Card>
       </div>
 
-      {/* Test SMTP - always accessible */}
+      {/* Test SMTP */}
       <div>
         <Card>
           <CardHeader>

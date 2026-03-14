@@ -1227,7 +1227,6 @@ export default {
       advancedAuthEnabledDesc: 'La gestion des utilisateurs par email est active. Les nouveaux utilisateurs recevront un mot de passe auto-généré.',
       advancedAuthDisabled: 'Authentification avancée désactivée',
       advancedAuthDisabledDesc: 'Activez pour les fonctionnalités liées à l\'email (mot de passe oublié, etc).',
-      configureSmtpToEnable: 'Configurez et enregistrez vos paramètres SMTP ci-dessous, puis revenez ici pour activer l\'authentification avancée.',
       enable: 'Activer',
       disable: 'Désactiver',
       feature1: 'Génération auto et envoi de mots de passe par email',
@@ -1242,6 +1241,7 @@ export default {
         smtpServerAndEmail: 'Serveur et expéditeur requis pour le test',
         usernamePasswordRequired: 'Utilisateur et mot de passe requis pour l\'auth',
         configureSmtpFirst: 'Configurez et testez le SMTP d\'abord',
+        enableAuthFirst: 'Veuillez d\'abord activer l\'authentification pour utiliser les fonctionnalités basées sur le courrier électronique.',
       },
       // Success messages
       success: {

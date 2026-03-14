@@ -642,7 +642,9 @@ async def get_archive_stats(
     energy_cost_per_kwh_str = await get_setting(db, "energy_cost_per_kwh")
     energy_cost_per_kwh = float(energy_cost_per_kwh_str) if energy_cost_per_kwh_str else 0.15
 
-    if energy_tracking_mode == "total":
+    # When date filters are active, smart plug lifetime totals can't be
+    # filtered by date range — fall back to per-print archive data instead.
+    if energy_tracking_mode == "total" and not date_from and not date_to:
         # Total mode: sum up 'total' counter from all smart plugs (lifetime consumption)
         from backend.app.models.smart_plug import SmartPlug
         from backend.app.services.homeassistant import homeassistant_service

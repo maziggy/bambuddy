@@ -1240,6 +1240,7 @@ export default {
         smtpServerAndEmail: 'Por favor, preencha o servidor SMTP e o email de remetente antes de testar',
         usernamePasswordRequired: 'Nome de usuário e senha são obrigatórios quando a autenticação está habilitada',
         configureSmtpFirst: 'Por favor, configure e teste as configurações SMTP primeiro',
+        enableAuthFirst: 'Por favor, habilite a autenticação primeiro para usar os recursos baseados em e-mail.',
       },
       // Success messages
       success: {

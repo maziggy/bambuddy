@@ -1240,6 +1240,7 @@ export default {
         smtpServerAndEmail: 'Serveur et expéditeur requis pour le test',
         usernamePasswordRequired: 'Utilisateur et mot de passe requis pour l\'auth',
         configureSmtpFirst: 'Configurez et testez le SMTP d\'abord',
+        enableAuthFirst: 'Veuillez d\'abord activer l\'authentification pour utiliser les fonctionnalités basées sur le courrier électronique.',
       },
       // Success messages
       success: {

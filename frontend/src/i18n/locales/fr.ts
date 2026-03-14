@@ -3731,6 +3731,7 @@ export default {
     amsHtHumidity: 'Humidité AMS-HT',
     amsHtTemp: 'Temp. AMS-HT',
     bedCooled: 'Plateau refroidi',
+    firstLayer: 'Première couche',
     quiet: 'Silencieux',
     digest: 'Résumé {{time}}',
     // Event labels (expanded settings)
@@ -3740,6 +3741,8 @@ export default {
     printCompleted: 'Impression terminée',
     bedCooledLabel: 'Plateau refroidi',
     bedCooledDescription: 'Plateau refroidi sous le seuil après l\'impression',
+    firstLayerCompleteLabel: 'Première couche terminée',
+    firstLayerCompleteDescription: 'Notification avec photo après la première couche',
     printFailed: 'Impression échouée',
     printStopped: 'Impression arrêtée',
     progressMilestones: 'Jalons de progression',

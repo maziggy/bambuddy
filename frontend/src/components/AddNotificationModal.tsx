@@ -41,6 +41,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
   const [onFilamentLow, setOnFilamentLow] = useState(provider?.on_filament_low ?? false);
   const [onMaintenanceDue, setOnMaintenanceDue] = useState(provider?.on_maintenance_due ?? false);
   const [onBedCooled, setOnBedCooled] = useState(provider?.on_bed_cooled ?? false);
+  const [onFirstLayerComplete, setOnFirstLayerComplete] = useState(provider?.on_first_layer_complete ?? false);
 
   // Provider-specific config
   const [config, setConfig] = useState<Record<string, string>>(
@@ -141,6 +142,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
       on_filament_low: onFilamentLow,
       on_maintenance_due: onMaintenanceDue,
       on_bed_cooled: onBedCooled,
+      on_first_layer_complete: onFirstLayerComplete,
     };
 
     if (isEditing) {
@@ -490,6 +492,13 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
                     <span className="text-xs text-bambu-gray ml-1">{t('notifications.bedCooledAfterPrint')}</span>
                   </div>
                   <Toggle checked={onBedCooled} onChange={setOnBedCooled} />
+                </div>
+                <div className="flex items-center justify-between col-span-2">
+                  <div>
+                    <span className="text-sm text-white">{t('notifications.firstLayerCompleteLabel')}</span>
+                    <span className="text-xs text-bambu-gray ml-1">{t('notifications.firstLayerCompleteDescription')}</span>
+                  </div>
+                  <Toggle checked={onFirstLayerComplete} onChange={setOnFirstLayerComplete} />
                 </div>
               </div>
             </div>

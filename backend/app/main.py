@@ -262,6 +262,9 @@ _print_ams_mappings: dict[int, list[int]] = {}
 # Milestones are 25, 50, 75. Value of 0 means no milestone notified yet for current print.
 _last_progress_milestone: dict[int, int] = {}
 
+# Track whether first layer complete notification has been sent for current print
+_first_layer_notified: dict[int, bool] = {}
+
 # Track HMS errors that have been notified: {printer_id: set of error codes}
 # This prevents sending duplicate notifications for the same error
 _notified_hms_errors: dict[int, set[str]] = {}
@@ -320,6 +323,14 @@ def register_expected_print(printer_id: int, filename: str, archive_id: int, ams
     logging.getLogger(__name__).info(
         f"Registered expected print: printer={printer_id}, file={filename}, archive={archive_id}, ams_mapping={ams_mapping}"
     )
+
+
+def _get_start_ams_mapping(data: dict, archive_id: int | None) -> list[int] | None:
+    """Resolve AMS mapping for print start without consuming stored queue/reprint state."""
+    stored_ams_mapping = data.get("ams_mapping")
+    if not stored_ams_mapping and archive_id:
+        stored_ams_mapping = _print_ams_mappings.get(archive_id)
+    return stored_ams_mapping
 
 
 _last_status_broadcast: dict[int, str] = {}
@@ -432,12 +443,11 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
     elif progress < 5:
         # Reset milestone tracking when print restarts or new print begins
         _last_progress_milestone[printer_id] = 0
+        _first_layer_notified[printer_id] = False
 
-    # HMS error codes that should not trigger notifications.
-    # These are infrastructure/auth issues, not actionable print errors.
+    # HMS error codes that should not trigger notifications even though they
+    # have known descriptions (e.g. user-initiated actions, not real errors).
     _HMS_NOTIFICATION_SUPPRESS = {
-        "0500_0007",  # MQTT command verification failed (auth/bind issue, not a print error)
-        "0500_4001",  # Failed to connect to Bambu Cloud (network issue)
         "0500_400E",  # Printing was cancelled (user action, not an error)
     }
 
@@ -485,6 +495,7 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                         printer_id, printer, logging.getLogger(__name__)
                     )
 
+                    sent_count = 0
                     for error in new_errors:
                         module_name = module_names.get(error.module, f"Module 0x{error.module:02X}")
                         # Build short code like "0700_8010"
@@ -493,21 +504,24 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                         error_code_masked = error_code_int & 0xFFFF
                         short_code = f"{(error.attr >> 16) & 0xFFFF:04X}_{error_code_masked:04X}"
 
-                        if short_code in _HMS_NOTIFICATION_SUPPRESS:
+                        # Only notify for errors with known descriptions — printers
+                        # send many undocumented/phantom codes that aren't real errors.
+                        description = get_error_description(short_code)
+                        if not description or short_code in _HMS_NOTIFICATION_SUPPRESS:
                             continue
 
                         error_type = f"{module_name} Error"
-                        # Look up human-readable description
-                        description = get_error_description(short_code)
-                        error_detail = description if description else f"Error code: {short_code}"
+                        error_detail = description
 
                         await notification_service.on_printer_error(
                             printer_id, printer_name, error_type, db, error_detail, image_data=error_image_data
                         )
+                        sent_count += 1
 
-                    logging.getLogger(__name__).info(
-                        f"[HMS] Sent notification for {len(new_errors)} new error(s) on printer {printer_id}"
-                    )
+                    if sent_count:
+                        logging.getLogger(__name__).info(
+                            f"[HMS] Sent notification for {sent_count} error(s) on printer {printer_id}"
+                        )
 
                     # Also publish to MQTT relay
                     printer_info = printer_manager.get_printer(printer_id)
@@ -1321,7 +1335,14 @@ async def on_print_start(printer_id: int, data: dict):
 
                 # Store Spoolman tracking data for per-filament usage reporting
                 try:
-                    await _store_spoolman_print_data(printer_id, archive.id, archive.file_path, db, printer_manager)
+                    await _store_spoolman_print_data(
+                        printer_id,
+                        archive.id,
+                        archive.file_path,
+                        db,
+                        printer_manager,
+                        ams_mapping=_get_start_ams_mapping(data, archive.id),
+                    )
                 except Exception as e:
                     logger.warning("[SPOOLMAN] Failed to store tracking data: %s", e)
 
@@ -1638,7 +1659,12 @@ async def on_print_start(printer_id: int, data: dict):
                 # Store Spoolman tracking data (may not work for fallback since no 3MF)
                 try:
                     await _store_spoolman_print_data(
-                        printer_id, fallback_archive.id, fallback_archive.file_path, db, printer_manager
+                        printer_id,
+                        fallback_archive.id,
+                        fallback_archive.file_path,
+                        db,
+                        printer_manager,
+                        ams_mapping=_get_start_ams_mapping(data, fallback_archive.id),
                     )
                 except Exception as e:
                     logger.debug("[SPOOLMAN] Could not store tracking for fallback archive: %s", e)
@@ -1758,7 +1784,14 @@ async def on_print_start(printer_id: int, data: dict):
 
                 # Store Spoolman tracking data for per-filament usage reporting
                 try:
-                    await _store_spoolman_print_data(printer_id, archive.id, archive.file_path, db, printer_manager)
+                    await _store_spoolman_print_data(
+                        printer_id,
+                        archive.id,
+                        archive.file_path,
+                        db,
+                        printer_manager,
+                        ams_mapping=_get_start_ams_mapping(data, archive.id),
+                    )
                 except Exception as e:
                     logger.warning("[SPOOLMAN] Failed to store tracking data: %s", e)
 
@@ -2545,7 +2578,13 @@ async def on_print_complete(printer_id: int, data: dict):
         # Report partial usage if tracking data exists (only stored when weight sync is disabled)
         try:
             async with async_session() as db:
-                await _cleanup_spoolman_tracking(printer_id, archive_id, db)
+                await _cleanup_spoolman_tracking(
+                    printer_id,
+                    archive_id,
+                    db,
+                    last_layer_num=data.get("last_layer_num"),
+                    last_progress=data.get("last_progress"),
+                )
         except Exception as e:
             logger.debug("[SPOOLMAN] Cleanup failed: %s", e)
 
@@ -3317,10 +3356,36 @@ async def lifespan(app: FastAPI):
 
     # Layer change callback for external camera timelapse
     async def on_layer_change(printer_id: int, layer_num: int):
-        """Capture timelapse frame on layer change."""
+        """Capture timelapse frame on layer change + first layer notification."""
         from backend.app.services.layer_timelapse import on_layer_change as tl_layer_change
 
         await tl_layer_change(printer_id, layer_num)
+
+        # First layer complete notification (layer_num >= 2 means layer 1 is done)
+        if 2 <= layer_num <= 5 and not _first_layer_notified.get(printer_id, False):
+            _first_layer_notified[printer_id] = True
+            try:
+                async with async_session() as db:
+                    from backend.app.models.printer import Printer
+
+                    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+                    printer = result.scalar_one_or_none()
+                    if not printer:
+                        return
+                    printer_name = printer.name
+                    client = printer_manager.get_client(printer_id)
+                    state = client.state if client else None
+                    filename = (state.subtask_name or state.gcode_file or "Unknown") if state else "Unknown"
+                    total_layers = state.total_layers if state else 0
+
+                    image_data = await _capture_snapshot_for_notification(
+                        printer_id, printer, logging.getLogger(__name__)
+                    )
+                    await notification_service.on_first_layer_complete(
+                        printer_id, printer_name, filename, total_layers, db, image_data=image_data
+                    )
+            except Exception as e:
+                logging.getLogger(__name__).warning("First layer notification failed: %s", e)
 
     printer_manager.set_layer_change_callback(on_layer_change)
 

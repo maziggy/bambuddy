@@ -27,6 +27,23 @@ from backend.app.utils.threemf_tools import extract_nozzle_mapping_from_3mf
 
 logger = logging.getLogger(__name__)
 
+# Filament type equivalence groups — types within the same group are
+# interchangeable on the printer side (Bambu Lab firmware treats them as compatible).
+_FILAMENT_TYPE_GROUPS: list[list[str]] = [
+    ["PA-CF", "PA12-CF", "PAHT-CF"],
+]
+_FILAMENT_EQUIV_MAP: dict[str, str] = {}
+for _group in _FILAMENT_TYPE_GROUPS:
+    _canonical = _group[0].upper()
+    for _t in _group:
+        _FILAMENT_EQUIV_MAP[_t.upper()] = _canonical
+
+
+def _canonical_filament_type(ftype: str) -> str:
+    """Return canonical type for equivalence matching."""
+    upper = ftype.upper()
+    return _FILAMENT_EQUIV_MAP.get(upper, upper)
+
 
 class PrintScheduler:
     """Background scheduler that processes the print queue."""
@@ -484,16 +501,16 @@ class PrintScheduler:
                 tray_color = tray.get("tray_color", "")
                 if tray_type:
                     color_norm = tray_color.replace("#", "").lower()[:6]
-                    loaded.add((tray_type.upper(), color_norm))
+                    loaded.add((_canonical_filament_type(tray_type), color_norm))
         for vt in status.raw_data.get("vt_tray") or []:
             vt_type = vt.get("tray_type")
             if vt_type:
                 color_norm = (vt.get("tray_color", "") or "").replace("#", "").lower()[:6]
-                loaded.add((vt_type.upper(), color_norm))
+                loaded.add((_canonical_filament_type(vt_type), color_norm))
 
         missing = []
         for o in force_overrides:
-            o_type = (o.get("type") or "").upper()
+            o_type = _canonical_filament_type(o.get("type") or "")
             o_color = (o.get("color") or "").replace("#", "").lower()[:6]
             if (o_type, o_color) not in loaded:
                 color_label = o.get("color_name") or o.get("color", "?")
@@ -515,6 +532,7 @@ class PrintScheduler:
             return required_types  # Can't determine, assume all missing
 
         # Collect all filament types loaded on this printer (AMS units + external spool)
+        # Use canonical types so equivalence groups (e.g. PA-CF/PA12-CF/PAHT-CF) match.
         loaded_types: set[str] = set()
 
         # Check AMS units (stored in raw_data["ams"])
@@ -524,18 +542,18 @@ class PrintScheduler:
                 for tray in ams_unit.get("tray", []):
                     tray_type = tray.get("tray_type")
                     if tray_type:
-                        loaded_types.add(tray_type.upper())
+                        loaded_types.add(_canonical_filament_type(tray_type))
 
         # Check external spool(s) (virtual tray, stored in raw_data["vt_tray"] as list)
         for vt in status.raw_data.get("vt_tray") or []:
             vt_type = vt.get("tray_type")
             if vt_type:
-                loaded_types.add(vt_type.upper())
+                loaded_types.add(_canonical_filament_type(vt_type))
 
-        # Find which required types are missing (case-insensitive comparison)
+        # Find which required types are missing (using canonical type for equivalence)
         missing = []
         for req_type in required_types:
-            if req_type.upper() not in loaded_types:
+            if _canonical_filament_type(req_type) not in loaded_types:
                 missing.append(req_type)
 
         return missing
@@ -915,7 +933,7 @@ class PrintScheduler:
             if not idx_match and not exact_match and not similar_match and not type_only_match:
                 for f in available:
                     f_type = (f.get("type") or "").upper()
-                    if f_type != req_type:
+                    if _canonical_filament_type(f_type) != _canonical_filament_type(req_type):
                         continue
 
                     # Type matches - check color

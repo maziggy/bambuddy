@@ -3730,6 +3730,7 @@ export default {
     amsHtHumidity: 'Umidade do AMS-HT',
     amsHtTemp: 'Temp. do AMS-HT',
     bedCooled: 'Mesa Resfriada',
+    firstLayer: 'Primeira camada',
     quiet: 'Silencioso',
     digest: 'Resumo {{time}}',
     // Event labels (expanded settings)
@@ -3739,6 +3740,8 @@ export default {
     printCompleted: 'Impressão Concluída',
     bedCooledLabel: 'Mesa Resfriada',
     bedCooledDescription: 'Mesa resfriou abaixo do limite após a impressão',
+    firstLayerCompleteLabel: 'Primeira camada concluída',
+    firstLayerCompleteDescription: 'Notificar com foto quando a primeira camada terminar',
     printFailed: 'Impressão Falhou',
     printStopped: 'Impressão Parada',
     progressMilestones: 'Marcos de Progresso',

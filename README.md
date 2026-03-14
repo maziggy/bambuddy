@@ -152,6 +152,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Filament usage and progress in failed/cancelled print notifications
 - HMS error alerts (AMS, nozzle, etc.)
 - Build plate detection alerts
+- First layer complete alert (with camera snapshot)
 - Bed cooled alerts (configurable threshold)
 - Queue events (waiting, skipped, failed)
 

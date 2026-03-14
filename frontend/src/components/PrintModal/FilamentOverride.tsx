@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Circle, RotateCcw, Palette } from 'lucide-react';
 import { getColorName } from '../../utils/colors';
+import { canonicalFilamentType } from '../../utils/amsHelpers';
 import type { FilamentReqsData } from './types';
 
 interface FilamentOverrideProps {
@@ -31,11 +32,12 @@ export function FilamentOverride({
 }: FilamentOverrideProps) {
   const { t } = useTranslation();
 
-  // Index available filaments by type (uppercased) for per-slot filtering
+  // Index available filaments by canonical type for per-slot filtering.
+  // Types in the same equivalence group (e.g. PA-CF / PA12-CF / PAHT-CF) share one bucket.
   const filamentsByType = useMemo(() => {
     const map: Record<string, Array<{ type: string; color: string; tray_info_idx: string; tray_sub_brands: string; extruder_id: number | null }>> = {};
     for (const f of availableFilaments) {
-      const key = f.type.toUpperCase();
+      const key = canonicalFilamentType(f.type);
       if (!map[key]) map[key] = [];
       map[key].push(f);
     }
@@ -71,7 +73,7 @@ export function FilamentOverride({
           const override = overrides[req.slot_id];
           const isOverridden = !!override;
           // Only show filaments of the same type AND compatible nozzle/extruder
-          const sameType = filamentsByType[req.type.toUpperCase()] || [];
+          const sameType = filamentsByType[canonicalFilamentType(req.type)] || [];
           // On dual-nozzle printers (H2D), filter to filaments on the correct extruder.
           // nozzle_id from 3MF maps to extruder_id from AMS. If nozzle_id is undefined
           // (single-nozzle) or extruder_id is null, no nozzle filtering is needed.
@@ -134,7 +136,7 @@ export function FilamentOverride({
                 )}
               </div>
               {/* Force Color Match checkbox — shown below each filament row */}
-              <label className="flex items-center gap-1.5 text-xs text-bambu-gray cursor-pointer select-none pl-5">
+              <label className="inline-flex items-center gap-1.5 text-xs text-bambu-gray cursor-pointer select-none pl-5">
                 <input
                   type="checkbox"
                   checked={forceColorMatch?.[req.slot_id] ?? false}

@@ -147,7 +147,9 @@ function SpoolSlot({ tray, slotIndex, isActive, fillOverride, onClick }: SpoolSl
   const isEmpty = isTrayEmpty(tray);
   const color = trayColorToCSS(tray.tray_color);
   const amsFill = tray.remain !== null && tray.remain !== undefined && tray.remain >= 0 ? tray.remain : null;
-  const effectiveFill = fillOverride ?? amsFill;
+  // If inventory says 0% but AMS reports positive remain, prefer AMS (#676)
+  const resolvedOverride = (fillOverride === 0 && amsFill !== null && amsFill > 0) ? null : fillOverride;
+  const effectiveFill = resolvedOverride ?? amsFill;
 
   return (
     <div

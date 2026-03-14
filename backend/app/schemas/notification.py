@@ -58,6 +58,9 @@ class NotificationProviderBase(BaseModel):
     # Event triggers - Bed cooled
     on_bed_cooled: bool = Field(default=False, description="Notify when bed cools after print")
 
+    # Event triggers - First layer complete
+    on_first_layer_complete: bool = Field(default=False, description="Notify when first layer completes")
+
     # Event triggers - Print queue
     on_queue_job_added: bool = Field(default=False, description="Notify when job is added to queue")
     on_queue_job_assigned: bool = Field(default=False, description="Notify when model-based job is assigned to printer")
@@ -136,6 +139,9 @@ class NotificationProviderUpdate(BaseModel):
 
     # Event triggers - Bed cooled
     on_bed_cooled: bool | None = None
+
+    # Event triggers - First layer complete
+    on_first_layer_complete: bool | None = None
 
     # Event triggers - Print queue
     on_queue_job_added: bool | None = None

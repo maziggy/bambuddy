@@ -3744,6 +3744,7 @@ export default {
     amsHtHumidity: 'AMS-HT Humidity',
     amsHtTemp: 'AMS-HT Temp',
     bedCooled: 'Bed Cooled',
+    firstLayer: 'First Layer',
     quiet: 'Quiet',
     digest: 'Digest {{time}}',
     // Event labels (expanded settings)
@@ -3753,6 +3754,8 @@ export default {
     printCompleted: 'Print Completed',
     bedCooledLabel: 'Bed Cooled',
     bedCooledDescription: 'Bed cooled below threshold after print',
+    firstLayerCompleteLabel: 'First Layer Complete',
+    firstLayerCompleteDescription: 'Notify with snapshot when first layer finishes',
     printFailed: 'Print Failed',
     printStopped: 'Print Stopped',
     progressMilestones: 'Progress Milestones',

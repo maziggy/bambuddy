@@ -840,10 +840,31 @@ async def run_migrations(conn):
     # This allows HA scripts to coexist with regular plugs (scripts are for multi-device control)
     # SQLite requires table recreation to drop constraints
     try:
-        # Check if we need to migrate (if UNIQUE constraint exists)
+        # Check if we need to migrate — look for UNIQUE on printer_id in the
+        # CREATE TABLE statement OR as a separate UNIQUE index.
+        needs_migration = False
         result = await conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='smart_plugs'"))
         row = result.fetchone()
-        if row and "printer_id INTEGER UNIQUE" in (row[0] or ""):
+        table_sql = (row[0] or "").upper() if row else ""
+        if "PRINTER_ID" in table_sql and "UNIQUE" in table_sql:
+            # Check if UNIQUE appears near printer_id — inline or table-level constraint.
+            # Handle quoted ("PRINTER_ID") and unquoted column names.
+            import re
+
+            if re.search(r'"?PRINTER_ID"?\s+\w+\s+UNIQUE', table_sql) or re.search(
+                r'UNIQUE\s*\([^)]*"?PRINTER_ID"?', table_sql
+            ):
+                needs_migration = True
+        # Also check for separate UNIQUE indexes on printer_id
+        idx_result = await conn.execute(
+            text("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='smart_plugs' AND sql IS NOT NULL")
+        )
+        for idx_row in idx_result.fetchall():
+            idx_sql = (idx_row[0] or "").upper()
+            if "UNIQUE" in idx_sql and "PRINTER_ID" in idx_sql:
+                needs_migration = True
+                break
+        if needs_migration:
             # Create new table without UNIQUE constraint on printer_id
             await conn.execute(
                 text("""
@@ -1223,6 +1244,14 @@ async def run_migrations(conn):
     # Migration: Add bed cooled notification column to notification_providers
     try:
         await conn.execute(text("ALTER TABLE notification_providers ADD COLUMN on_bed_cooled BOOLEAN DEFAULT 0"))
+    except OperationalError:
+        pass  # Already applied
+
+    # Migration: Add first layer complete notification column to notification_providers
+    try:
+        await conn.execute(
+            text("ALTER TABLE notification_providers ADD COLUMN on_first_layer_complete BOOLEAN DEFAULT 0")
+        )
     except OperationalError:
         pass  # Already applied
 

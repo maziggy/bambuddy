@@ -1464,6 +1464,8 @@ export interface NotificationProvider {
   on_plate_not_empty: boolean;
   // Bed cooled
   on_bed_cooled: boolean;
+  // First layer complete
+  on_first_layer_complete: boolean;
   // Print queue events
   on_queue_job_added: boolean;
   on_queue_job_assigned: boolean;
@@ -1516,6 +1518,8 @@ export interface NotificationProviderCreate {
   on_plate_not_empty?: boolean;
   // Bed cooled
   on_bed_cooled?: boolean;
+  // First layer complete
+  on_first_layer_complete?: boolean;
   // Print queue events
   on_queue_job_added?: boolean;
   on_queue_job_assigned?: boolean;
@@ -1561,6 +1565,8 @@ export interface NotificationProviderUpdate {
   on_plate_not_empty?: boolean;
   // Bed cooled
   on_bed_cooled?: boolean;
+  // First layer complete
+  on_first_layer_complete?: boolean;
   // Print queue events
   on_queue_job_added?: boolean;
   on_queue_job_assigned?: boolean;

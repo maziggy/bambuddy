@@ -10,6 +10,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   autoMatchFilament,
+  canonicalFilamentType,
+  filamentTypesCompatible,
   filterFilamentsByNozzle,
 } from '../../utils/amsHelpers';
 import type { LoadedFilament, FilamentRequirement } from '../../hooks/useFilamentMapping';
@@ -49,6 +51,50 @@ const H2D_FILAMENTS: LoadedFilament[] = [
   makeFilament({ globalTrayId: 4, type: 'PLA', color: '#FFFFFF', colorName: 'White', amsId: 1, trayId: 0, label: 'AMS2-T1', extruderId: 0 }),
   makeFilament({ globalTrayId: 5, type: 'PLA', color: '#FF0000', colorName: 'Red', amsId: 1, trayId: 1, label: 'AMS2-T2', extruderId: 0 }),
 ];
+
+// -- canonicalFilamentType / filamentTypesCompatible -------------------------
+
+describe('canonicalFilamentType', () => {
+  it('maps PA-CF variants to the same canonical type', () => {
+    const canonical = canonicalFilamentType('PA-CF');
+    expect(canonicalFilamentType('PA12-CF')).toBe(canonical);
+    expect(canonicalFilamentType('PAHT-CF')).toBe(canonical);
+  });
+
+  it('is case-insensitive', () => {
+    expect(canonicalFilamentType('pa-cf')).toBe(canonicalFilamentType('PA-CF'));
+    expect(canonicalFilamentType('Pa12-Cf')).toBe(canonicalFilamentType('PA12-CF'));
+  });
+
+  it('returns the type unchanged for non-equivalent types', () => {
+    expect(canonicalFilamentType('PLA')).toBe('PLA');
+    expect(canonicalFilamentType('PETG')).toBe('PETG');
+    expect(canonicalFilamentType('ABS')).toBe('ABS');
+  });
+
+  it('returns empty string for undefined/empty input', () => {
+    expect(canonicalFilamentType(undefined)).toBe('');
+    expect(canonicalFilamentType('')).toBe('');
+  });
+});
+
+describe('filamentTypesCompatible', () => {
+  it('treats PA-CF and PA12-CF as compatible', () => {
+    expect(filamentTypesCompatible('PA-CF', 'PA12-CF')).toBe(true);
+  });
+
+  it('treats PA-CF and PAHT-CF as compatible', () => {
+    expect(filamentTypesCompatible('PA-CF', 'PAHT-CF')).toBe(true);
+  });
+
+  it('treats PLA and PETG as incompatible', () => {
+    expect(filamentTypesCompatible('PLA', 'PETG')).toBe(false);
+  });
+
+  it('treats same types as compatible', () => {
+    expect(filamentTypesCompatible('PLA', 'PLA')).toBe(true);
+  });
+});
 
 // -- filterFilamentsByNozzle -------------------------------------------------
 
@@ -128,5 +174,25 @@ describe('autoMatchFilament', () => {
     // Should fall back to PLA Red (tray 5) as type-only match
     expect(result).toBeDefined();
     expect(result!.globalTrayId).toBe(5);
+  });
+
+  it('matches PA-CF requirement to PA12-CF filament — #688', () => {
+    const filaments: LoadedFilament[] = [
+      makeFilament({ globalTrayId: 0, type: 'PA12-CF', color: '#000000', colorName: 'Black' }),
+    ];
+    const req = makeReq({ type: 'PA-CF', color: '#000000' });
+    const result = autoMatchFilament(req, filaments, new Set());
+    expect(result).toBeDefined();
+    expect(result!.globalTrayId).toBe(0);
+  });
+
+  it('matches PAHT-CF requirement to PA-CF filament — #688', () => {
+    const filaments: LoadedFilament[] = [
+      makeFilament({ globalTrayId: 0, type: 'PA-CF', color: '#333333', colorName: 'Dark Gray' }),
+    ];
+    const req = makeReq({ type: 'PAHT-CF', color: '#333333' });
+    const result = autoMatchFilament(req, filaments, new Set());
+    expect(result).toBeDefined();
+    expect(result!.globalTrayId).toBe(0);
   });
 });

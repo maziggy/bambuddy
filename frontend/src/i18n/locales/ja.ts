@@ -3744,6 +3744,7 @@ export default {
     amsHtHumidity: 'AMS-HT湿度',
     amsHtTemp: 'AMS-HT温度',
     bedCooled: 'ベッド冷却済み',
+    firstLayer: '第1層完了',
     quiet: '静音',
     digest: 'ダイジェスト {{time}}',
     // Event labels (expanded settings)
@@ -3753,6 +3754,8 @@ export default {
     printCompleted: '印刷完了',
     bedCooledLabel: 'ベッド冷却済み',
     bedCooledDescription: '印刷後にベッドがしきい値以下に冷却',
+    firstLayerCompleteLabel: '第1層完了',
+    firstLayerCompleteDescription: '第1層完了時にスナップショット付きで通知',
     printFailed: '印刷失敗',
     printStopped: '印刷停止',
     progressMilestones: '進捗マイルストーン',

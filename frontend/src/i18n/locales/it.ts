@@ -3730,6 +3730,7 @@ export default {
     amsHtHumidity: 'Umidità AMS-HT',
     amsHtTemp: 'Temp AMS-HT',
     bedCooled: 'Piatto raffreddato',
+    firstLayer: 'Primo strato',
     quiet: 'Silenzioso',
     digest: 'Riepilogo {{time}}',
     // Event labels (expanded settings)
@@ -3739,6 +3740,8 @@ export default {
     printCompleted: 'Stampa completata',
     bedCooledLabel: 'Piatto raffreddato',
     bedCooledDescription: 'Piatto raffreddato sotto la soglia dopo la stampa',
+    firstLayerCompleteLabel: 'Primo strato completato',
+    firstLayerCompleteDescription: 'Notifica con foto al termine del primo strato',
     printFailed: 'Stampa fallita',
     printStopped: 'Stampa interrotta',
     progressMilestones: 'Traguardi di avanzamento',

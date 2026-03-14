@@ -3730,6 +3730,7 @@ export default {
     amsHtHumidity: 'AMS-HT 湿度',
     amsHtTemp: 'AMS-HT 温度',
     bedCooled: '热床已冷却',
+    firstLayer: '首层完成',
     quiet: '免打扰',
     digest: '摘要 {{time}}',
     // Event labels (expanded settings)
@@ -3739,6 +3740,8 @@ export default {
     printCompleted: '打印已完成',
     bedCooledLabel: '热床已冷却',
     bedCooledDescription: '打印后热床温度降至阈值以下',
+    firstLayerCompleteLabel: '首层打印完成',
+    firstLayerCompleteDescription: '首层完成时发送带照片的通知',
     printFailed: '打印失败',
     printStopped: '打印已停止',
     progressMilestones: '进度里程碑',

@@ -1924,9 +1924,9 @@ function PrinterCard({
     },
   });
 
-  // Run script mutation
+  // Run HA entity mutation — scripts use 'on' (trigger), switches use 'toggle'
   const runScriptMutation = useMutation({
-    mutationFn: (scriptId: number) => api.controlSmartPlug(scriptId, 'on'),
+    mutationFn: ({ id, action }: { id: number; action: 'on' | 'toggle' }) => api.controlSmartPlug(id, action),
     onSuccess: () => {
       showToast(t('printers.toast.scriptTriggered'));
     },
@@ -3182,9 +3182,13 @@ function PrinterCard({
                                   }
                                   return null;
                                 })();
-                                const effectiveFill = spoolmanFill ?? inventoryFill ?? (hasFillLevel ? tray.remain : null);
+                                // If inventory says 0% but AMS reports positive remain, prefer AMS
+                                // (inventory weight_used may be stale or over-counted — #676)
+                                const resolvedInventoryFill = (inventoryFill === 0 && hasFillLevel && tray.remain > 0)
+                                  ? null : inventoryFill;
+                                const effectiveFill = spoolmanFill ?? resolvedInventoryFill ?? (hasFillLevel ? tray.remain : null);
                                 const fillSource = spoolmanFill !== null ? 'spoolman' as const
-                                  : inventoryFill !== null ? 'inventory' as const
+                                  : resolvedInventoryFill !== null ? 'inventory' as const
                                   : hasFillLevel ? 'ams' as const
                                   : undefined;
 
@@ -3406,9 +3410,12 @@ function PrinterCard({
                           }
                           return null;
                         })();
-                        const htEffectiveFill = htSpoolmanFill ?? htInventoryFill ?? (hasFillLevel ? tray.remain : null);
+                        // If inventory says 0% but AMS reports positive remain, prefer AMS (#676)
+                        const htResolvedInventoryFill = (htInventoryFill === 0 && hasFillLevel && tray.remain > 0)
+                          ? null : htInventoryFill;
+                        const htEffectiveFill = htSpoolmanFill ?? htResolvedInventoryFill ?? (hasFillLevel ? tray.remain : null);
                         const htFillSource = htSpoolmanFill !== null ? 'spoolman' as const
-                          : htInventoryFill !== null ? 'inventory' as const
+                          : htResolvedInventoryFill !== null ? 'inventory' as const
                           : hasFillLevel ? 'ams' as const
                           : undefined;
 
@@ -3732,9 +3739,12 @@ function PrinterCard({
                                 return null;
                               })();
                               const extHasFillLevel = extTray.tray_type && extTray.remain >= 0;
-                              const extEffectiveFill = extSpoolmanFill ?? extInventoryFill ?? (extHasFillLevel ? extTray.remain : null);
+                              // If inventory says 0% but AMS reports positive remain, prefer AMS (#676)
+                              const extResolvedInventoryFill = (extInventoryFill === 0 && extHasFillLevel && extTray.remain > 0)
+                                ? null : extInventoryFill;
+                              const extEffectiveFill = extSpoolmanFill ?? extResolvedInventoryFill ?? (extHasFillLevel ? extTray.remain : null);
                               const extFillSource = extSpoolmanFill !== null ? 'spoolman' as const
-                                : extInventoryFill !== null ? 'inventory' as const
+                                : extResolvedInventoryFill !== null ? 'inventory' as const
                                 : extHasFillLevel ? 'ams' as const
                                 : undefined;
 
@@ -3967,18 +3977,21 @@ function PrinterCard({
                 <Home className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
                 <span className="text-xs text-bambu-gray">HA:</span>
                 <div className="flex flex-wrap gap-1">
-                  {scriptPlugs.map(script => (
-                    <button
-                      key={script.id}
-                      onClick={() => runScriptMutation.mutate(script.id)}
-                      disabled={runScriptMutation.isPending}
-                      title={`Run ${script.ha_entity_id}`}
-                      className="px-2 py-0.5 text-xs bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 rounded transition-colors flex items-center gap-1"
-                    >
-                      <Play className="w-2.5 h-2.5" />
-                      {script.name}
-                    </button>
-                  ))}
+                  {scriptPlugs.map(script => {
+                    const isScript = script.ha_entity_id?.startsWith('script.');
+                    return (
+                      <button
+                        key={script.id}
+                        onClick={() => runScriptMutation.mutate({ id: script.id, action: isScript ? 'on' : 'toggle' })}
+                        disabled={runScriptMutation.isPending}
+                        title={`${isScript ? 'Run' : 'Toggle'} ${script.ha_entity_id}`}
+                        className="px-2 py-0.5 text-xs bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 rounded transition-colors flex items-center gap-1"
+                      >
+                        <Play className="w-2.5 h-2.5" />
+                        {script.name}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}

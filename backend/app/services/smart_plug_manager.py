@@ -132,11 +132,29 @@ class SmartPlugManager:
             await db.commit()
 
     async def _get_plug_for_printer(self, printer_id: int, db: AsyncSession) -> "SmartPlug | None":
-        """Get the smart plug linked to a printer."""
+        """Get the main (non-script) smart plug linked to a printer.
+
+        When multiple plugs are assigned (e.g., a power plug + secondary HA switch),
+        returns the main power plug for automation control.
+        """
         from backend.app.models.smart_plug import SmartPlug
 
         result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
-        return result.scalar_one_or_none()
+        plugs = result.scalars().all()
+
+        if not plugs:
+            return None
+
+        # Prefer non-script, non-secondary plugs (main power plug)
+        for plug in plugs:
+            is_script = (
+                plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script.")
+            )
+            if not is_script:
+                return plug
+
+        # All are scripts, return the first one
+        return plugs[0]
 
     async def on_print_start(self, printer_id: int, db: AsyncSession):
         """Called when a print starts - turn on plug if configured."""

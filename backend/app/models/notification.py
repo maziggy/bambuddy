@@ -85,6 +85,7 @@ class NotificationProvider(Base):
 
     # Event triggers - Bed cooled after print
     on_bed_cooled = Column(Boolean, default=False)  # Bed cooled below threshold after print
+    on_first_layer_complete = Column(Boolean, default=False)  # First layer finished printing
 
     # Event triggers - Print queue
     on_queue_job_added = Column(Boolean, default=False)  # Job added to queue

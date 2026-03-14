@@ -65,6 +65,10 @@ class AppSettings(BaseModel):
         default=False,
         description="Block queue until drying completes (when disabled, prints take priority over drying)",
     )
+    ambient_drying_enabled: bool = Field(
+        default=False,
+        description="Automatically dry AMS filament on idle printers when humidity exceeds threshold, regardless of queue",
+    )
     drying_presets: str = Field(
         default="",
         description="JSON blob of drying presets per filament type (empty = use built-in defaults)",
@@ -199,6 +203,7 @@ class AppSettingsUpdate(BaseModel):
     ams_history_retention_days: int | None = None
     queue_drying_enabled: bool | None = None
     queue_drying_block: bool | None = None
+    ambient_drying_enabled: bool | None = None
     drying_presets: str | None = None
     per_printer_mapping_expanded: bool | None = None
     date_format: str | None = None

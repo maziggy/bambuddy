@@ -1495,6 +1495,8 @@ export default {
     queueDryingEnabledDescription: 'Iniciar secagem AMS automaticamente quando a impressora estiver ociosa e a umidade estiver acima do limite',
     queueDryingBlock: 'Aguardar conclusão da secagem',
     queueDryingBlockDescription: 'Bloquear a fila de impressão até a secagem terminar. Quando desativado, impressões têm prioridade.',
+    ambientDryingEnabled: 'Secagem ambiente',
+    ambientDryingEnabledDescription: 'Secar automaticamente o filamento em impressoras ociosas quando a umidade exceder o limite, mesmo sem impressões na fila.',
     dryingPresets: 'Predefinições de secagem',
     dryingPresetsDescription: 'Temperatura e duração por tipo de filamento. AMS 2 Pro usa temperaturas mais baixas, AMS-HT suporta temperaturas mais altas.',
     dryingFilament: 'Filamento',

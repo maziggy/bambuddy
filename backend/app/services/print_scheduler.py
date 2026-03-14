@@ -1095,13 +1095,16 @@ class PrintScheduler:
         return (min_temp, max_hours or 12, filament_type)
 
     async def _check_auto_drying(self, db: AsyncSession, queue_items: list[PrintQueueItem], busy_printers: set[int]):
-        """Start drying on idle printers that have no pending queue items.
+        """Start drying on idle printers based on humidity.
 
-        Only runs when queue_drying_enabled is True.
+        Two modes (can both be enabled):
+        - queue_drying_enabled: Dry between scheduled queue prints
+        - ambient_drying_enabled: Dry any idle printer when humidity is high, regardless of queue
         """
         queue_drying_enabled = await self._get_bool_setting(db, "queue_drying_enabled")
-        if not queue_drying_enabled:
-            # Stop active drying on all printers if feature was just disabled
+        ambient_drying_enabled = await self._get_bool_setting(db, "ambient_drying_enabled")
+        if not queue_drying_enabled and not ambient_drying_enabled:
+            # Stop active drying on all printers if both features disabled
             if self._drying_in_progress:
                 for pid in list(self._drying_in_progress):
                     logger.info("Auto-drying: printer %d — stopping, auto-drying disabled", pid)
@@ -1111,8 +1114,7 @@ class PrintScheduler:
         # Update drying state from printer status (handles backend restart)
         self._sync_drying_state()
 
-        # Find printers with scheduled items (auto-drying only makes sense
-        # when there are upcoming scheduled prints to fill idle time between)
+        # Find printers with scheduled items (for queue drying mode)
         printers_with_scheduled: set[int] = set()
         printers_with_items: set[int] = set()
         for item in queue_items:
@@ -1121,8 +1123,8 @@ class PrintScheduler:
                 if item.scheduled_time and not item.manual_start:
                     printers_with_scheduled.add(item.printer_id)
 
-        # If no printers have scheduled items, stop any auto-started drying
-        if not printers_with_scheduled:
+        # If only queue mode is on and no printers have scheduled items, stop drying
+        if not ambient_drying_enabled and not printers_with_scheduled:
             for pid in list(self._drying_in_progress):
                 logger.info("Auto-drying: printer %d — stopping, no scheduled prints in queue", pid)
                 await self._stop_drying(pid)
@@ -1146,15 +1148,16 @@ class PrintScheduler:
             if pid in busy_printers:
                 logger.debug("Auto-drying: printer %d skipped — busy", pid)
                 continue
-            # Only dry printers that have scheduled prints (filling idle time between prints)
-            if pid not in printers_with_scheduled:
+            # In queue-only mode, only dry printers that have scheduled prints
+            if not ambient_drying_enabled and pid not in printers_with_scheduled:
                 if self._drying_in_progress.get(pid):
                     logger.info("Auto-drying: printer %d — stopping, no scheduled prints for this printer", pid)
                     await self._stop_drying(pid)
                 logger.debug("Auto-drying: printer %d skipped — no scheduled prints", pid)
                 continue
-            # When block mode is on, skip printers whose scheduled time hasn't arrived
-            if block_for_drying and pid in printers_with_items:
+            # When block mode is on, don't START new drying on printers with pending items.
+            # But allow already-drying printers through so humidity auto-stop logic still runs.
+            if block_for_drying and pid in printers_with_items and not self._drying_in_progress.get(pid):
                 logger.debug("Auto-drying: printer %d skipped — has pending items (block mode)", pid)
                 continue
             if not printer_manager.is_connected(pid):

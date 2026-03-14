@@ -31,6 +31,7 @@ export function SetupPage() {
       // Refresh auth status after setup
       await refreshAuth();
 
+      // Clear authStatus cache to ensure it reflects the new setup state
       queryClient.setQueryData(['authStatus'], {
         auth_enabled: data.auth_enabled,
         requires_setup: false,

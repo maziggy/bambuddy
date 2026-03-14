@@ -735,6 +735,161 @@ async def test_find_matching_spool_null_subtype_vs_basic_no_match(db_session):
 
 
 @pytest.mark.asyncio
+async def test_find_matching_spool_returns_none_when_color_missing(db_session):
+    """Returns None when tray_color is empty — avoids wrong-color match."""
+    spool = Spool(
+        material="PLA",
+        subtype="Basic",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.commit()
+
+    tray_data = {
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Basic",
+        "tray_color": "",  # Missing color
+        "tag_uid": "AABBCCDD11223344",
+        "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+    }
+    found = await find_matching_inventory_spool(db_session, tray_data)
+    assert found is None
+
+
+@pytest.mark.asyncio
+async def test_find_matching_spool_returns_none_when_color_too_short(db_session):
+    """Returns None when tray_color is too short to be valid RGBA hex."""
+    spool = Spool(
+        material="PLA",
+        subtype="Basic",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.commit()
+
+    tray_data = {
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Basic",
+        "tray_color": "FFF",  # Too short
+        "tag_uid": "AABBCCDD11223344",
+        "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+    }
+    found = await find_matching_inventory_spool(db_session, tray_data)
+    assert found is None
+
+
+@pytest.mark.asyncio
+async def test_find_matching_spool_fifo_order(db_session):
+    """When multiple spools match, the oldest (by created_at) is returned."""
+    import asyncio
+    from datetime import datetime, timedelta
+
+    now = datetime.now()
+
+    # Create newer spool first
+    newer = Spool(
+        material="PLA",
+        subtype="Basic",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+        created_at=now,
+    )
+    newer.k_profiles = []
+    newer.assignments = []
+    db_session.add(newer)
+    await db_session.flush()
+
+    # Create older spool second (out of insertion order)
+    older = Spool(
+        material="PLA",
+        subtype="Basic",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+        data_origin="rfid_auto",
+        created_at=now - timedelta(days=1),
+    )
+    older.k_profiles = []
+    older.assignments = []
+    db_session.add(older)
+    await db_session.commit()
+
+    tray_data = {
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Basic",
+        "tray_color": "FFFFFFFF",
+        "tag_uid": "AABBCCDD11223344",
+        "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+    }
+    found = await find_matching_inventory_spool(db_session, tray_data)
+    assert found is not None
+    # older was inserted second but has earlier created_at — FIFO order picks it.
+    # However, manual spools are preferred over rfid_auto, so newer (manual) wins.
+    assert found.id == newer.id
+
+
+@pytest.mark.asyncio
+async def test_find_matching_spool_fifo_among_same_origin(db_session):
+    """Among spools with the same data_origin, the oldest is returned (FIFO)."""
+    from datetime import datetime, timedelta
+
+    now = datetime.now()
+
+    older = Spool(
+        material="PLA",
+        subtype="Basic",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+        data_origin="manual",
+        created_at=now - timedelta(days=2),
+    )
+    older.k_profiles = []
+    older.assignments = []
+    db_session.add(older)
+
+    newer = Spool(
+        material="PLA",
+        subtype="Basic",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+        data_origin="manual",
+        created_at=now,
+    )
+    newer.k_profiles = []
+    newer.assignments = []
+    db_session.add(newer)
+    await db_session.commit()
+
+    tray_data = {
+        "tray_type": "PLA",
+        "tray_sub_brands": "PLA Basic",
+        "tray_color": "FFFFFFFF",
+        "tag_uid": "AABBCCDD11223344",
+        "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+    }
+    found = await find_matching_inventory_spool(db_session, tray_data)
+    assert found is not None
+    assert found.id == older.id, "Should return the oldest spool (FIFO)"
+
+
+@pytest.mark.asyncio
 async def test_find_matching_spool_no_subtype_matches_no_subtype(db_session):
     """Matches when both tray and spool have no subtype."""
     spool = Spool(

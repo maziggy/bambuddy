@@ -564,6 +564,13 @@ def _is_bambu_uuid(tray_uuid: str) -> bool:
     return bool(tray_uuid) and tray_uuid not in ("", "0" * len(tray_uuid))
 
 
+# Serialize spool inventory matching across concurrent on_ams_change calls.
+# Without this, two printers loading identical spool types simultaneously could
+# both match the same untagged inventory spool, with the second commit silently
+# overwriting the first's tag_uid/tray_uuid.
+_spool_match_lock = asyncio.Lock()
+
+
 async def on_ams_change(printer_id: int, ams_data: list):
     """Handle AMS data changes - sync to Spoolman if enabled and auto mode."""
     logger = logging.getLogger(__name__)
@@ -780,25 +787,28 @@ async def on_ams_change(printer_id: int, ams_data: list):
                             continue
 
                         if is_bambu_tag(tag_uid, tray_uuid, tray_info_idx):
-                            # BL spool with RFID tag: auto-match, inventory match, or auto-create
-                            spool = await get_spool_by_tag(db, tag_uid, tray_uuid)
-                            if not spool:
-                                # Try matching an existing inventory spool by attributes
-                                spool = await find_matching_inventory_spool(db, tray)
-                                if spool:
-                                    link_tag_to_spool(spool, tray)
-                                else:
-                                    spool = await create_spool_from_tray(db, tray)
-                            await auto_assign_spool(
-                                printer_id,
-                                ams_id,
-                                tray_id,
-                                spool,
-                                printer_manager,
-                                db,
-                                tray_info_idx=tray_info_idx,
-                            )
-                            await db.commit()
+                            # BL spool with RFID tag: auto-match, inventory match, or auto-create.
+                            # Lock serializes find+link+commit so two printers loading
+                            # identical spool types can't both claim the same inventory spool.
+                            async with _spool_match_lock:
+                                spool = await get_spool_by_tag(db, tag_uid, tray_uuid)
+                                if not spool:
+                                    # Try matching an existing inventory spool by attributes
+                                    spool = await find_matching_inventory_spool(db, tray)
+                                    if spool:
+                                        link_tag_to_spool(spool, tray)
+                                    else:
+                                        spool = await create_spool_from_tray(db, tray)
+                                await auto_assign_spool(
+                                    printer_id,
+                                    ams_id,
+                                    tray_id,
+                                    spool,
+                                    printer_manager,
+                                    db,
+                                    tray_info_idx=tray_info_idx,
+                                )
+                                await db.commit()
                             await ws_manager.broadcast(
                                 {
                                     "type": "spool_auto_assigned",

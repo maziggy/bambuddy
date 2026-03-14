@@ -488,10 +488,12 @@ function PrinterStatsWidget({
   stats,
   archives,
   printerMap,
+  currency,
 }: {
   stats: { prints_by_printer: Record<string, number> } | undefined;
   archives: ArchiveSlim[];
   printerMap: Map<string, string>;
+  currency: string;
 }) {
   const { t } = useTranslation();
   const [printerMetric, setPrinterMetric] = useState<Metric>('weight');
@@ -499,10 +501,10 @@ function PrinterStatsWidget({
 
   // Per-printer data
   const printerData = useMemo(() => {
-    const map = new Map<string, { prints: number; weight: number; time: number }>();
+    const map = new Map<string, { prints: number; weight: number; time: number; cost: number }>();
     if (stats?.prints_by_printer) {
       Object.entries(stats.prints_by_printer).forEach(([id, count]) => {
-        const entry = map.get(id) || { prints: 0, weight: 0, time: 0 };
+        const entry = map.get(id) || { prints: 0, weight: 0, time: 0, cost: 0 };
         entry.prints = count;
         map.set(id, entry);
       });
@@ -510,9 +512,10 @@ function PrinterStatsWidget({
     archives.forEach(a => {
       if (!a.printer_id) return;
       const id = String(a.printer_id);
-      const entry = map.get(id) || { prints: 0, weight: 0, time: 0 };
+      const entry = map.get(id) || { prints: 0, weight: 0, time: 0, cost: 0 };
       entry.weight += a.filament_used_grams || 0;
       entry.time += a.actual_time_seconds || a.print_time_seconds || 0;
+      entry.cost += a.depreciation_cost || 0;
       if (!stats?.prints_by_printer) entry.prints++;
       map.set(id, entry);
     });
@@ -521,6 +524,7 @@ function PrinterStatsWidget({
         name: printerMap.get(id) || `${t('common.printer')} ${id}`,
         value: printerMetric === 'prints' ? v.prints :
                printerMetric === 'weight' ? Math.round(v.weight) :
+               printerMetric === 'cost' ? Math.round(v.cost * 100) / 100 :
                Math.round((v.time / 3600) * 10) / 10,
       }))
       .sort((a, b) => b.value - a.value);
@@ -587,12 +591,34 @@ function PrinterStatsWidget({
     }));
   }, [archives, habitsMetric]);
 
+  // Printer cost by day of week (depreciation only)
+  const printerCostByDay = useMemo(() => {
+    const dayValues = [0, 0, 0, 0, 0, 0, 0];
+    archives.forEach(a => {
+      if (!a.depreciation_cost) return;
+      const date = parseUTCDate(a.created_at) || new Date(a.created_at);
+      let day = date.getDay() - 1;
+      if (day < 0) day = 6;
+      dayValues[day] += a.depreciation_cost;
+    });
+    return DAY_LABELS.map((name, i) => ({
+      name,
+      cost: Math.round(dayValues[i] * 100) / 100,
+    }));
+  }, [archives]);
+
+  const hasPrinterCostData = archives.some(a => a.depreciation_cost && a.depreciation_cost > 0);
+
   const metricStyle = (m: Metric) => ({
-    unit: m === 'weight' ? 'g' : m === 'time' ? 'h' : '',
-    color: m === 'weight' ? '#00ae42' : m === 'time' ? '#3b82f6' : '#f59e0b',
+    unit: m === 'weight' ? 'g' : m === 'time' ? 'h' : m === 'cost' ? ` ${currency}` : '',
+    color: m === 'weight' ? '#00ae42' : m === 'time' ? '#3b82f6' : m === 'cost' ? '#a855f7' : '#f59e0b',
   });
+
   const ps = metricStyle(printerMetric);
-  const pLabel = printerMetric === 'weight' ? t('stats.filamentByWeight') : printerMetric === 'time' ? t('stats.hours') : t('common.prints');
+  const pLabel = printerMetric === 'weight' ? t('stats.filamentByWeight') :
+                 printerMetric === 'time' ? t('stats.hours') :
+                 printerMetric === 'cost' ? t('stats.depreciationCost') :
+                 t('common.prints');
   const hs = metricStyle(habitsMetric);
   const hLabel = habitsMetric === 'weight' ? t('stats.avgWeight') : habitsMetric === 'time' ? t('stats.avgTime') : t('stats.avgPrints');
 
@@ -613,7 +639,9 @@ function PrinterStatsWidget({
               <Tooltip
                 contentStyle={RECHARTS_TOOLTIP_STYLE}
                 formatter={(v: number | undefined) => [
-                  printerMetric === 'weight' ? formatWeight(Number(v ?? 0)) : `${v ?? 0}${ps.unit}`,
+                  printerMetric === 'weight' ? formatWeight(Number(v ?? 0)) :
+                  printerMetric === 'cost' ? `${currency}${(v ?? 0).toFixed(2)}` :
+                  `${v ?? 0}${ps.unit}`,
                   pLabel,
                 ]}
               />
@@ -648,7 +676,7 @@ function PrinterStatsWidget({
         <div className="bg-bambu-dark rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
             <h4 className="text-sm font-medium text-bambu-gray">{t('stats.printHabits')}</h4>
-            <MetricToggle value={habitsMetric} onChange={setHabitsMetric} />
+            <MetricToggle value={habitsMetric} onChange={setHabitsMetric} exclude={['cost']} />
           </div>
           {archives.length > 0 ? (
             <ResponsiveContainer width="100%" height={160}>
@@ -683,6 +711,25 @@ function PrinterStatsWidget({
             <p className="text-bambu-gray text-center py-4">{t('stats.noArchiveData')}</p>
           )}
         </div>
+
+        {/* Printer Cost by Day of Week */}
+        {hasPrinterCostData && (
+          <div className="bg-bambu-dark rounded-lg p-4">
+            <h4 className="text-sm font-medium text-bambu-gray mb-3">{t('stats.printerCost')}</h4>
+            <ResponsiveContainer width="100%" height={160}>
+              <BarChart data={printerCostByDay}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#3d3d3d" />
+                <XAxis dataKey="name" stroke="#9ca3af" tick={{ fontSize: 11 }} />
+                <YAxis stroke="#9ca3af" tick={{ fontSize: 11 }} />
+                <Tooltip
+                  contentStyle={RECHARTS_TOOLTIP_STYLE}
+                  formatter={(v: number | undefined) => [`${currency}${(v ?? 0).toFixed(2)}`, t('stats.depreciationCost')]}
+                />
+                <Bar dataKey="cost" fill="#a855f7" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1087,7 +1134,7 @@ export function StatsPage() {
     {
       id: 'printer-stats',
       title: t('stats.printerStats'),
-      component: <PrinterStatsWidget stats={stats} archives={archives || []} printerMap={printerMap} />,
+      component: <PrinterStatsWidget stats={stats} archives={archives || []} printerMap={printerMap} currency={currency} />,
       defaultSize: 4,
     },
     {

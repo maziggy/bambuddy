@@ -189,6 +189,7 @@ async def list_archives_slim(
             PrintArchive.filament_color,
             PrintArchive.status,
             PrintArchive.cost,
+            PrintArchive.depreciation_cost,
             PrintArchive.quantity,
             PrintArchive.created_at,
         )
@@ -220,6 +221,7 @@ async def list_archives_slim(
             "started_at": r.started_at,
             "completed_at": r.completed_at,
             "cost": r.cost,
+            "depreciation_cost": r.depreciation_cost,
             "quantity": r.quantity,
             "created_at": r.created_at,
         }

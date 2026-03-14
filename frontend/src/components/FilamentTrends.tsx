@@ -329,7 +329,7 @@ export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: F
         <div className="bg-bambu-dark rounded-lg p-4">
           <div className="flex items-center justify-between mb-4">
             <h4 className="text-sm font-medium text-bambu-gray">{t('stats.byMaterial')}</h4>
-            <MetricToggle value={filamentTypeMetric} onChange={setFilamentTypeMetric} />
+            <MetricToggle value={filamentTypeMetric} onChange={setFilamentTypeMetric} exclude={['cost']} />
           </div>
           {activeFilamentTypeData.length > 0 ? (
             <div className="flex items-center gap-4">
@@ -427,7 +427,7 @@ export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: F
         <div className="bg-bambu-dark rounded-lg p-4">
           <div className="flex items-center justify-between mb-4">
             <h4 className="text-sm font-medium text-bambu-gray">{t('stats.colorDistribution')}</h4>
-            <MetricToggle value={colorMetric} onChange={setColorMetric} exclude={['time']} />
+            <MetricToggle value={colorMetric} onChange={setColorMetric} exclude={['time', 'cost']} />
           </div>
           {colorData.length > 0 ? (() => {
             const colorTotal = colorData.reduce((sum, e) => sum + e.value, 0);

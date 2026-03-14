@@ -987,6 +987,8 @@ export default {
     energyUsed: 'Energieverbrauch',
     energyCost: 'Energiekosten',
     depreciationCost: 'Abschreibungskosten',
+    printerCost: 'Druckerkosten',
+    filamentByCost: 'Kosten',
     averagePrintTime: 'Durchschnittliche Druckzeit',
     printsPerDay: 'Drucke pro Tag',
     byPrinter: 'Nach Drucker',

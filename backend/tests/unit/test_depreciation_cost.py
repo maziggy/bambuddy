@@ -178,6 +178,53 @@ def test_archive_stats_depreciation_defaults_to_zero():
     assert stats.total_depreciation_cost == 0.0
 
 
+def test_archive_slim_includes_depreciation_cost():
+    """ArchiveSlim schema includes depreciation_cost field."""
+    from datetime import datetime
+
+    from backend.app.schemas.archive import ArchiveSlim
+
+    slim = ArchiveSlim(
+        printer_id=1,
+        print_name="Test",
+        print_time_seconds=3600,
+        filament_used_grams=50.0,
+        filament_type="PLA",
+        filament_color=None,
+        status="completed",
+        started_at=datetime.now(),
+        completed_at=datetime.now(),
+        cost=1.25,
+        depreciation_cost=0.40,
+        quantity=1,
+        created_at=datetime.now(),
+    )
+    assert slim.depreciation_cost == 0.40
+
+
+def test_archive_slim_depreciation_defaults_to_none():
+    """ArchiveSlim depreciation_cost defaults to None when not provided."""
+    from datetime import datetime
+
+    from backend.app.schemas.archive import ArchiveSlim
+
+    slim = ArchiveSlim(
+        printer_id=1,
+        print_name="Test",
+        print_time_seconds=3600,
+        filament_used_grams=50.0,
+        filament_type="PLA",
+        filament_color=None,
+        status="completed",
+        started_at=datetime.now(),
+        completed_at=datetime.now(),
+        cost=1.25,
+        quantity=1,
+        created_at=datetime.now(),
+    )
+    assert slim.depreciation_cost is None
+
+
 # -- Integration: recalculate endpoint --------------------------------------
 
 

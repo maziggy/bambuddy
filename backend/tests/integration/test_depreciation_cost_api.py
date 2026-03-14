@@ -145,6 +145,40 @@ class TestArchiveDepreciationResponse:
         assert data[0]["depreciation_cost"] == 0.25
 
 
+class TestArchiveSlimDepreciation:
+    """GET /archives/slim includes depreciation_cost."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_slim_includes_depreciation_cost(self, async_client: AsyncClient, printer_factory, archive_factory):
+        """GET /archives/slim returns depreciation_cost when set."""
+        printer = await printer_factory()
+        await archive_factory(printer.id, depreciation_cost=0.40)
+
+        response = await async_client.get("/api/v1/archives/slim")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) >= 1
+        assert data[0]["depreciation_cost"] == 0.40
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_slim_depreciation_null_when_not_set(
+        self, async_client: AsyncClient, printer_factory, archive_factory
+    ):
+        """GET /archives/slim returns null depreciation_cost when not set."""
+        printer = await printer_factory()
+        await archive_factory(printer.id)
+
+        response = await async_client.get("/api/v1/archives/slim")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) >= 1
+        assert data[0]["depreciation_cost"] is None
+
+
 class TestArchiveStatsDepreciation:
     """Stats endpoint aggregates depreciation costs."""
 

@@ -402,6 +402,7 @@ export interface ArchiveSlim {
   started_at: string | null;
   completed_at: string | null;
   cost: number | null;
+  depreciation_cost: number | null;
   quantity: number;
   created_at: string;
 }

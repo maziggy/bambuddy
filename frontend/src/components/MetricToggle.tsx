@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next';
 
-export type Metric = 'weight' | 'prints' | 'time';
+export type Metric = 'weight' | 'prints' | 'time' | 'cost';
 
-const METRICS: Metric[] = ['weight', 'prints', 'time'];
+const METRICS: Metric[] = ['weight', 'prints', 'time', 'cost'];
 
 interface MetricToggleProps {
   value: Metric;
@@ -17,6 +17,7 @@ export function MetricToggle({ value, onChange, exclude }: MetricToggleProps) {
     weight: t('stats.filamentByWeight'),
     prints: t('stats.filamentByPrints'),
     time: t('stats.filamentByTime'),
+    cost: t('stats.filamentByCost'),
   };
 
   const metrics = exclude ? METRICS.filter(m => !exclude.includes(m)) : METRICS;

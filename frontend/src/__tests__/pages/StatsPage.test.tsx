@@ -55,6 +55,7 @@ const mockArchives = [
     actual_time_seconds: 16200,
     print_time_seconds: 15000,
     cost: 0.75,
+    depreciation_cost: 0.20,
     quantity: 1,
   },
   {
@@ -71,6 +72,7 @@ const mockArchives = [
     actual_time_seconds: 28800,
     print_time_seconds: 27000,
     cost: 5.40,
+    depreciation_cost: 1.60,
     quantity: 1,
   },
   {
@@ -87,6 +89,7 @@ const mockArchives = [
     actual_time_seconds: 3600,
     print_time_seconds: 7200,
     cost: 0.30,
+    depreciation_cost: null,
     quantity: 1,
   },
   {
@@ -103,6 +106,7 @@ const mockArchives = [
     actual_time_seconds: 21600,
     print_time_seconds: 20000,
     cost: 1.35,
+    depreciation_cost: 0.50,
     quantity: 1,
   },
 ];
@@ -221,7 +225,8 @@ describe('StatsPage', () => {
       render(<StatsPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Filament Cost')).toBeInTheDocument();
+        const elements = screen.getAllByText('Filament Cost');
+        expect(elements.length).toBeGreaterThan(0);
       });
     });
 
@@ -394,6 +399,26 @@ describe('StatsPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Recalculate Costs')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('printer cost charts', () => {
+    it('shows Printer Cost chart heading', async () => {
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Printer Cost')).toBeInTheDocument();
+      });
+    });
+
+    it('shows Cost toggle option in Prints by Printer', async () => {
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        // The "Cost" button is in the MetricToggle for the "Prints by Printer" chart
+        const costButtons = screen.getAllByText('Cost');
+        expect(costButtons.length).toBeGreaterThan(0);
       });
     });
   });

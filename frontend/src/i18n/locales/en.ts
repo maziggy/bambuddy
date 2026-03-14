@@ -987,6 +987,8 @@ export default {
     energyUsed: 'Energy Used',
     energyCost: 'Energy Cost',
     depreciationCost: 'Depreciation Cost',
+    printerCost: 'Printer Cost',
+    filamentByCost: 'Cost',
     averagePrintTime: 'Average Print Time',
     printsPerDay: 'Prints per Day',
     byPrinter: 'By Printer',

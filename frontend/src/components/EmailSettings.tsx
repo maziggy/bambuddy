@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Mail, Send, Lock, Unlock, AlertTriangle, CheckCircle, Loader2 } from 'lucide-react';
 import { api } from '../api/client';
@@ -25,7 +25,6 @@ const PORT_SECURITY_MAP: Record<number, string> = {
 export function EmailSettings() {
   const { t } = useTranslation();
   const { showToast } = useToast();
-  const queryClient = useQueryClient();
 
   const [smtpSettings, setSMTPSettings] = useState<SMTPSettings>({
     smtp_host: '',

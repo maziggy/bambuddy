@@ -1240,6 +1240,7 @@ export default {
         smtpServerAndEmail: '测试前请填写 SMTP 服务器和发件邮箱',
         usernamePasswordRequired: '启用认证时需要用户名和密码',
         configureSmtpFirst: '请先配置并测试 SMTP 设置',
+        enableAuthFirst: '请先启用身份验证才能使用基于电子邮件的功能。',
       },
       // Success messages
       success: {

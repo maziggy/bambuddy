@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
@@ -10,7 +9,6 @@ import { Info } from 'lucide-react';
 
 export function SetupPage() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const { t } = useTranslation();
   const { showToast } = useToast();
   const { mode } = useTheme();

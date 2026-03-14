@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import { useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 
 const SECURITY_PORT_MAP: Record<string, number> = {
   starttls: 587,
@@ -45,11 +46,7 @@ export function EmailSettings() {
   });
 
   // Fetch global auth status
-  const { data: authStatus } = useQuery({
-    queryKey: ['authStatus'],
-    queryFn: () => api.getAuthStatus(),
-  });
-
+  const { authEnabled } = useAuth();
   // Fetch advanced auth status
   const { data: advancedAuthStatus } = useQuery({
     queryKey: ['advancedAuthStatus'],
@@ -169,7 +166,7 @@ export function EmailSettings() {
   };
 
   const handleToggleAdvancedAuth = () => {
-    if (!authStatus?.auth_enabled) {
+    if (!authEnabled) {
       showToast(t('settings.email.errors.enableAuthFirst'), 'error');
       return;
     }

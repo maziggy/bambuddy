@@ -245,7 +245,7 @@ export function Layout() {
       inventory: 'inventory:read',
       files: 'library:read',
       settings: 'settings:read',
-      notifications: 'notifications:read',
+      notifications: 'notifications:user_email',
     };
 
     const isHidden = (id: string) => {

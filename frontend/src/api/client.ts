@@ -2049,7 +2049,7 @@ export type Permission =
   | 'camera:view'
   | 'maintenance:read' | 'maintenance:create' | 'maintenance:update' | 'maintenance:delete'
   | 'kprofiles:read' | 'kprofiles:create' | 'kprofiles:update' | 'kprofiles:delete'
-  | 'notifications:read' | 'notifications:create' | 'notifications:update' | 'notifications:delete'
+  | 'notifications:read' | 'notifications:create' | 'notifications:update' | 'notifications:delete' | 'notifications:user_email'
   | 'notification_templates:read' | 'notification_templates:update'
   | 'external_links:read' | 'external_links:create' | 'external_links:update' | 'external_links:delete'
   | 'discovery:scan'

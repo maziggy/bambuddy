@@ -97,6 +97,7 @@ class Permission(StrEnum):
     NOTIFICATIONS_CREATE = "notifications:create"
     NOTIFICATIONS_UPDATE = "notifications:update"
     NOTIFICATIONS_DELETE = "notifications:delete"
+    NOTIFICATIONS_USER_EMAIL = "notifications:user_email"  # Receive per-user print email notifications
     # Notification Templates
     NOTIFICATION_TEMPLATES_READ = "notification_templates:read"
     NOTIFICATION_TEMPLATES_UPDATE = "notification_templates:update"
@@ -243,6 +244,7 @@ PERMISSION_CATEGORIES = {
         Permission.NOTIFICATIONS_CREATE,
         Permission.NOTIFICATIONS_UPDATE,
         Permission.NOTIFICATIONS_DELETE,
+        Permission.NOTIFICATIONS_USER_EMAIL,
         Permission.NOTIFICATION_TEMPLATES_READ,
         Permission.NOTIFICATION_TEMPLATES_UPDATE,
     ],
@@ -380,6 +382,7 @@ DEFAULT_GROUPS = {
             Permission.NOTIFICATIONS_CREATE.value,
             Permission.NOTIFICATIONS_UPDATE.value,
             Permission.NOTIFICATIONS_DELETE.value,
+            Permission.NOTIFICATIONS_USER_EMAIL.value,
             Permission.NOTIFICATION_TEMPLATES_READ.value,
             Permission.NOTIFICATION_TEMPLATES_UPDATE.value,
             # External Links - full access

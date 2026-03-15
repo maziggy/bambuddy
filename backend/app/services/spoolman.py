@@ -42,7 +42,7 @@ class SpoolmanFilament:
 class AMSTray:
     """Represents an AMS tray with filament data from Bambu printer."""
 
-    ams_id: int  # 0-3 for regular AMS, 128-135 for external spool
+    ams_id: int  # 0-3 for regular AMS, 128-135 for AMS-HT, 254+ for external spool
     tray_id: int  # 0-3
     tray_type: str  # PLA, PETG, ABS, etc.
     tray_sub_brands: str  # Full name like "PLA Basic", "PETG HF"
@@ -620,7 +620,7 @@ class SpoolmanClient:
         """Parse AMS tray data into AMSTray object.
 
         Args:
-            ams_id: The AMS unit ID (0-3 for regular, 128-135 for external)
+            ams_id: The AMS unit ID (0-3 for regular, 128-135 for AMS-HT, 254+ for external)
             tray_data: Raw tray data from MQTT
 
         Returns:

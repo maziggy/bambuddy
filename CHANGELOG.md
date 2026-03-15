@@ -33,6 +33,7 @@ All notable changes to Bambuddy will be documented in this file.
 ### Security
 - **PyJWT ≥2.12.0** — Bumped minimum version to address CVE-2026-32597.
 - **flatted ≥3.4.0** — Updated transitive ESLint dependency to address GHSA-25h7-pfq9-p65f (unbounded recursion DoS).
+- **Access Code Redacted from Support Logs** — Printer access codes embedded in RTSP stream URLs were not redacted in support bundles and bug report logs. Extended the URL credential sanitizer to cover `rtsps://` URLs and added access codes to the sensitive string collection for exact-match redaction.
 
 ### Changed
 - **CI: Node.js 20 → 22** — Updated GitHub Actions workflows (`ci.yml`, `security.yml`) from Node.js 20 to Node.js 22 LTS ahead of [GitHub's Node 20 deprecation](https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/).

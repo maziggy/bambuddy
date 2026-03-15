@@ -735,8 +735,8 @@ def _sanitize_log_content(content: str, sensitive_strings: dict[str, str] | None
                 continue  # Skip very short strings to prevent over-redaction
             content = re.sub(re.escape(value), label, content)
 
-    # Replace credentials in URLs (e.g. http://user:pass@host)
-    content = re.sub(r"(https?://)[^/:@\s]+:[^/@\s]+@", r"\1[CREDENTIALS]@", content)
+    # Replace credentials in URLs (e.g. http://user:pass@host, rtsps://bblp:code@host)
+    content = re.sub(r"((?:https?|rtsps?)://)[^/:@\s]+:[^/@\s]+@", r"\1[CREDENTIALS]@", content)
 
     # Replace email addresses
     content = re.sub(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "[EMAIL]", content)
@@ -786,14 +786,16 @@ async def _get_recent_sanitized_logs(max_lines: int = 200) -> str:
     # Collect sensitive strings from DB for redaction
     sensitive_strings: dict[str, str] = {}
     async with async_session() as db:
-        result = await db.execute(select(Printer.name, Printer.serial_number, Printer.ip_address))
-        for name, serial, ip_address in result.all():
+        result = await db.execute(select(Printer.name, Printer.serial_number, Printer.ip_address, Printer.access_code))
+        for name, serial, ip_address, access_code in result.all():
             if name:
                 sensitive_strings[name] = "[PRINTER]"
             if serial:
                 sensitive_strings[serial] = "[SERIAL]"
             if ip_address:
                 sensitive_strings[ip_address] = "[IP]"
+            if access_code:
+                sensitive_strings[access_code] = "[ACCESS_CODE]"
 
         result = await db.execute(select(User.username))
         for (username,) in result.all():
@@ -839,15 +841,17 @@ async def generate_support_bundle(
         # Collect known sensitive values for log redaction
         sensitive_strings: dict[str, str] = {}
 
-        # Printer names, serial numbers, and IP addresses
-        result = await db.execute(select(Printer.name, Printer.serial_number, Printer.ip_address))
-        for name, serial, ip_address in result.all():
+        # Printer names, serial numbers, IP addresses, and access codes
+        result = await db.execute(select(Printer.name, Printer.serial_number, Printer.ip_address, Printer.access_code))
+        for name, serial, ip_address, access_code in result.all():
             if name:
                 sensitive_strings[name] = "[PRINTER]"
             if serial:
                 sensitive_strings[serial] = "[SERIAL]"
             if ip_address:
                 sensitive_strings[ip_address] = "[IP]"
+            if access_code:
+                sensitive_strings[access_code] = "[ACCESS_CODE]"
 
         # Auth usernames
         result = await db.execute(select(User.username))

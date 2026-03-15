@@ -42,7 +42,7 @@ class SpoolmanFilament:
 class AMSTray:
     """Represents an AMS tray with filament data from Bambu printer."""
 
-    ams_id: int  # 0-3 for regular AMS, 128-135 for external spool
+    ams_id: int  # 0-3 for regular AMS, 128-135 for AMS-HT, 254+ for external spool
     tray_id: int  # 0-3
     tray_type: str  # PLA, PETG, ABS, etc.
     tray_sub_brands: str  # Full name like "PLA Basic", "PETG HF"
@@ -620,7 +620,7 @@ class SpoolmanClient:
         """Parse AMS tray data into AMSTray object.
 
         Args:
-            ams_id: The AMS unit ID (0-3 for regular, 128-135 for external)
+            ams_id: The AMS unit ID (0-3 for regular, 128-135 for AMS-HT, 254+ for external)
             tray_data: Raw tray data from MQTT
 
         Returns:
@@ -678,14 +678,19 @@ class SpoolmanClient:
         """Convert AMS ID and tray ID to human-readable location.
 
         Args:
-            ams_id: AMS unit ID (0-3 for regular AMS, 128-135 for external)
+            ams_id: AMS unit ID (0-3 for regular AMS, 128-135 for AMS-HT, 254+ for external spool)
             tray_id: Tray ID within the AMS (0-3)
 
         Returns:
-            Location string like "AMS A1", "AMS B2", "External"
+            Location string like "AMS A1", "AMS-HT A1", "External Spool", etc.
         """
-        if ams_id >= 128:
+        if ams_id >= 254:
             return "External Spool"
+
+        if 128 <= ams_id <= 135:
+            # AMS-HT units use IDs 128-135
+            ht_letter = chr(ord("A") + (ams_id - 128))
+            return f"AMS-HT {ht_letter}{tray_id + 1}"
 
         ams_letter = chr(ord("A") + ams_id)
         return f"AMS {ams_letter}{tray_id + 1}"

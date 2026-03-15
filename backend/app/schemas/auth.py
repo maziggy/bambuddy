@@ -100,16 +100,7 @@ class SMTPSettings(BaseModel):
 
 
 class TestSMTPRequest(BaseModel):
-    smtp_host: str
-    smtp_port: int
-    smtp_username: str | None = None  # Optional when auth is disabled
-    smtp_password: str | None = None  # Optional when auth is disabled
-    smtp_security: str = "starttls"  # 'starttls', 'ssl', 'none'
-    smtp_auth_enabled: bool = True
-    smtp_from_email: str
     test_recipient: str
-    # Deprecated field for backward compatibility
-    smtp_use_tls: bool | None = None
 
 
 class TestSMTPResponse(BaseModel):

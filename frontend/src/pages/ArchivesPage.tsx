@@ -41,6 +41,7 @@ import {
   MoreVertical,
   FileSpreadsheet,
   GitCompare,
+  GitBranch,
   Loader2,
   FolderKanban,
   ChevronLeft,
@@ -774,6 +775,15 @@ function ArchiveCard({
             #{duplicateSequence}
           </button>
         )}
+        {archive.duplicate_count > 0 && duplicateSequence === 0 && (
+          <span
+            className="absolute top-2 right-12 px-2 py-1 rounded text-xs bg-purple-500/80 text-white flex items-center gap-1"
+            title={`${archive.duplicate_count} reprint${archive.duplicate_count === 1 ? '' : 's'}`}
+          >
+            <GitBranch className="w-3 h-3" />
+            +{archive.duplicate_count}
+          </span>
+        )}
         {/* Source 3MF badge */}
         {archive.source_3mf_path && (
           <button
@@ -901,7 +911,7 @@ function ArchiveCard({
           {/* File hash badge */}
           {archive.content_hash && (
             <span
-              className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-bambu-dark-tertiary/50 text-bambu-gray-light"
+              className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-bambu-dark-tertiary/50 text-bambu-gray-light opacity-0 transition-opacity duration-150 group-hover:opacity-100"
               title={`SHA256: ${archive.content_hash}`}
             >
             {archive.content_hash.slice(0, 8).toUpperCase()}
@@ -1907,6 +1917,15 @@ function ArchiveListRow({
                 <Copy className="w-3 h-3" />
                 #{duplicateSequence}
               </button>
+            )}
+            {archive.duplicate_count > 0 && duplicateSequence === 0 && (
+              <span
+                className="px-1.5 py-0.5 rounded text-[10px] leading-tight bg-purple-500/80 text-white flex-shrink-0 flex items-center gap-1"
+                title={`${archive.duplicate_count} reprint${archive.duplicate_count === 1 ? '' : 's'}`}
+              >
+                <GitBranch className="w-3 h-3" />
+                +{archive.duplicate_count}
+              </span>
             )}
             {archive.timelapse_path && (
               <span title={t('archives.list.hasTimelapse')}>

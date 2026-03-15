@@ -44,7 +44,7 @@ fast-simplification>=0.1.0
 psutil>=6.0.0
 
 # Authentication
-PyJWT>=2.8.0
+PyJWT>=2.12.0
 passlib[bcrypt]>=1.7.4
 
 # Plate Detection (optional - enables build plate empty detection)

@@ -31,7 +31,7 @@ from backend.app.schemas.spool import (
     SpoolUpdate,
 )
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
-from backend.app.utils.filament_ids import normalize_slicer_filament
+from backend.app.utils.filament_ids import filament_id_to_setting_id, normalize_slicer_filament
 
 logger = logging.getLogger(__name__)
 
@@ -902,6 +902,7 @@ async def assign_spool(
                     # Official Bambu filament_id (e.g. "GFL05")
                     tray_info_idx, setting_id = normalize_slicer_filament(sf)
                     logger.info("Spool assign: using official filament_id=%r", tray_info_idx)
+
                 else:
                     # Could be a local preset ID or material type — try local DB
                     try:
@@ -927,6 +928,27 @@ async def assign_spool(
                     except (ValueError, TypeError):
                         # Not a numeric ID — treat as material type string
                         tray_info_idx, setting_id = normalize_slicer_filament(sf)
+
+            # Cross-check: the cloud API returns the base filament_id for
+            # versioned setting_ids (e.g. GFSL99 → GFL99 for all PLA variants).
+            # If the spool has a specific preset name (e.g. "Generic PLA Silk"),
+            # reverse-lookup the correct filament_id from the built-in table.
+            if tray_info_idx and spool.slicer_filament_name:
+                from backend.app.api.routes.cloud import _BUILTIN_FILAMENT_NAMES
+
+                expected_name = _BUILTIN_FILAMENT_NAMES.get(tray_info_idx, "")
+                if expected_name and expected_name != spool.slicer_filament_name:
+                    for fid, fname in _BUILTIN_FILAMENT_NAMES.items():
+                        if fname == spool.slicer_filament_name:
+                            logger.info(
+                                "Spool assign: corrected filament_id %r→%r (name=%r)",
+                                tray_info_idx,
+                                fid,
+                                spool.slicer_filament_name,
+                            )
+                            tray_info_idx = fid
+                            setting_id = filament_id_to_setting_id(fid)
+                            break
 
             if not tray_info_idx:
                 # Fallback: reuse slot's existing tray_info_idx or generic ID

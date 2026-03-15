@@ -2367,6 +2367,7 @@ export function ArchivesPage() {
   const [showCompareModal, setShowCompareModal] = useState(false);
   const [showTagManagement, setShowTagManagement] = useState(false);
   const [highlightedArchiveId, setHighlightedArchiveId] = useState<number | null>(null);
+  const [pendingNavigationArchiveId, setPendingNavigationArchiveId] = useState<number | null>(null);
 
   // Log view state
   const [logFilterUser, setLogFilterUser] = useState<string | null>(() =>
@@ -2391,6 +2392,11 @@ export function ArchivesPage() {
     return saved ? Number(saved) : 25;
   });
 
+  const handleNavigateToArchive = useCallback((archiveId: number) => {
+    setPendingNavigationArchiveId(archiveId);
+    setHighlightedArchiveId(archiveId);
+  }, []);
+
   // Clear highlight after 5 seconds and scroll to highlighted element
   useEffect(() => {
     if (highlightedArchiveId) {
@@ -2399,6 +2405,11 @@ export function ArchivesPage() {
         const element = document.querySelector(`[data-archive-id="${highlightedArchiveId}"]`);
         if (element) {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else if (pendingNavigationArchiveId === highlightedArchiveId) {
+          showToast(t('archives.noArchivesSearch'), 'warning');
+        }
+        if (pendingNavigationArchiveId === highlightedArchiveId) {
+          setPendingNavigationArchiveId(null);
         }
       }, 100);
 
@@ -2409,7 +2420,7 @@ export function ArchivesPage() {
         clearTimeout(clearTimer);
       };
     }
-  }, [highlightedArchiveId]);
+  }, [highlightedArchiveId, pendingNavigationArchiveId, showToast, t]);
 
   const { data: archives, isLoading } = useQuery({
     queryKey: ['archives', filterPrinter],
@@ -2804,7 +2815,7 @@ export function ArchivesPage() {
 
   return (
     <div
-      className="p-4 md:p-8 relative"
+      className="p-4 md:p-8 relative min-h-full"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -3290,7 +3301,7 @@ export function ArchivesPage() {
               preferredSlicer={preferredSlicer}
               currency={currency}
               t={t}
-              onNavigateToArchive={setHighlightedArchiveId}
+              onNavigateToArchive={handleNavigateToArchive}
             />
           ))}
         </div>
@@ -3319,7 +3330,7 @@ export function ArchivesPage() {
                 isHighlighted={archive.id === highlightedArchiveId}
                 preferredSlicer={preferredSlicer}
                 t={t}
-                onNavigateToArchive={setHighlightedArchiveId}
+                onNavigateToArchive={handleNavigateToArchive}
               />
             ))}
           </div>

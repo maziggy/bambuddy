@@ -157,7 +157,13 @@ async def setup_auth(request: SetupRequest, db: AsyncSession = Depends(get_db)):
     logger = logging.getLogger(__name__)
 
     try:
-        # If auth_enabled is true but no users exist, allow re-setup (recovery scenario)
+        # If auth is currently enabled, block unauthenticated setup changes.
+        # Use the admin panel (/disable endpoint) to modify auth when it's already on.
+        if await is_auth_enabled(db):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Authentication is already configured. Use the admin panel to modify auth settings.",
+            )
 
         admin_created = False
 

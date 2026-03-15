@@ -684,8 +684,13 @@ class SpoolmanClient:
         Returns:
             Location string like "AMS A1", "AMS B2", "External"
         """
-        if ams_id >= 128:
+        if ams_id >= 254:
             return "External Spool"
+
+        if 128 <= ams_id <= 135:
+            # AMS-HT units use IDs 128-135
+            ht_letter = chr(ord("A") + (ams_id - 128))
+            return f"AMS-HT {ht_letter}{tray_id + 1}"
 
         ams_letter = chr(ord("A") + ams_id)
         return f"AMS {ams_letter}{tray_id + 1}"

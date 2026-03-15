@@ -41,6 +41,7 @@ import {
   MoreVertical,
   FileSpreadsheet,
   GitCompare,
+  GitBranch,
   Loader2,
   FolderKanban,
   ChevronLeft,
@@ -151,6 +152,7 @@ function ArchiveCard({
   preferredSlicer = 'bambu_studio',
   currency,
   t,
+  onNavigateToArchive,
 }: {
   archive: Archive;
   printerName: string;
@@ -163,6 +165,7 @@ function ArchiveCard({
   preferredSlicer?: SlicerType;
   currency: string;
   t: TFunction;
+  onNavigateToArchive?: (archiveId: number) => void;
 }) {
   // Debug: log when card is highlighted
   if (isHighlighted) {
@@ -201,6 +204,10 @@ function ArchiveCard({
     enabled: showPlateNav, // Only fetch when user hovers to see navigation
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
+
+  // Use pre-computed duplicate sequence and original archive ID from list response
+  const duplicateSequence = archive.duplicate_sequence ?? 0;
+  const originalArchiveId = archive.original_archive_id ?? null;
 
   const plates = platesData?.plates ?? [];
   const isMultiPlate = platesData?.is_multi_plate ?? false;
@@ -755,14 +762,27 @@ function ArchiveCard({
           </div>
         )}
         {/* Duplicate badge */}
-        {archive.duplicate_count > 0 && (
-          <div
-            className="absolute top-2 right-12 px-2 py-1 rounded text-xs bg-purple-500/80 text-white flex items-center gap-1"
-            title={t('archives.card.duplicateTitle')}
+        {archive.duplicate_count > 0 && duplicateSequence > 0 && originalArchiveId && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onNavigateToArchive?.(originalArchiveId);
+            }}
+            className="absolute top-2 right-12 px-2 py-1 rounded text-xs bg-purple-500/80 hover:bg-purple-600/90 text-white flex items-center gap-1 transition-colors cursor-pointer"
+            title={t('archives.viewOriginalPrint', { id: originalArchiveId })}
           >
             <Copy className="w-3 h-3" />
-            {t('archives.card.duplicate')}
-          </div>
+            #{duplicateSequence}
+          </button>
+        )}
+        {archive.duplicate_count > 0 && duplicateSequence === 0 && (
+          <span
+            className="absolute top-2 right-12 px-2 py-1 rounded text-xs bg-purple-500/80 text-white flex items-center gap-1"
+            title={`${archive.duplicate_count} reprint${archive.duplicate_count === 1 ? '' : 's'}`}
+          >
+            <GitBranch className="w-3 h-3" />
+            +{archive.duplicate_count}
+          </span>
         )}
         {/* Source 3MF badge */}
         {archive.source_3mf_path && (
@@ -852,6 +872,9 @@ function ArchiveCard({
       </div>
 
       <CardContent className="p-4 flex-1 flex flex-col">
+        {/* Archive ID */}
+        <p className="text-[10px] text-bambu-gray/70 mb-1">#{archive.id}</p>
+
         {/* Title */}
         <div className="flex items-center justify-between gap-2 mb-1">
           <h3 className="min-w-0 font-medium text-white truncate">
@@ -885,6 +908,15 @@ function ArchiveCard({
           >
             {isSlicedFile(archive) ? t('archives.card.gcode') : t('archives.card.source')}
           </span>
+          {/* File hash badge */}
+          {archive.content_hash && (
+            <span
+              className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-bambu-dark-tertiary/50 text-bambu-gray-light opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+              title={`SHA256: ${archive.content_hash}`}
+            >
+            {archive.content_hash.slice(0, 8).toUpperCase()}
+            </span>
+          )}
           {archive.project_name && (
             <span
               className="text-xs px-1.5 py-0.5 rounded-full truncate max-w-[120px]"
@@ -1396,6 +1428,7 @@ function ArchiveListRow({
   isHighlighted,
   preferredSlicer = 'bambu_studio',
   t,
+  onNavigateToArchive,
 }: {
   archive: Archive;
   printerName: string;
@@ -1406,6 +1439,7 @@ function ArchiveListRow({
   isHighlighted?: boolean;
   preferredSlicer?: SlicerType;
   t: TFunction;
+  onNavigateToArchive?: (archiveId: number) => void;
 }) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -1428,6 +1462,10 @@ function ArchiveListRow({
   const source3mfInputRef = useRef<HTMLInputElement>(null);
   const f3dInputRef = useRef<HTMLInputElement>(null);
   const timelapseInputRef = useRef<HTMLInputElement>(null);
+
+  // Use pre-computed duplicate sequence and original archive ID from list response
+  const duplicateSequence = archive.duplicate_sequence ?? 0;
+  const originalArchiveId = archive.original_archive_id ?? null;
 
   const timelapseDeleteMutation = useMutation({
     mutationFn: () => api.deleteArchiveTimelapse(archive.id),
@@ -1867,6 +1905,28 @@ function ArchiveListRow({
                 {archive.status === 'aborted' ? t('archives.card.cancelled') : t('archives.card.failed')}
               </span>
             )}
+            {archive.duplicate_count > 0 && duplicateSequence > 0 && originalArchiveId && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onNavigateToArchive?.(originalArchiveId);
+                }}
+                className="px-1.5 py-0.5 rounded text-[10px] leading-tight bg-purple-500/80 hover:bg-purple-600/90 text-white flex-shrink-0 transition-colors flex items-center gap-1"
+                title={t('archives.viewOriginalPrint', { id: originalArchiveId })}
+              >
+                <Copy className="w-3 h-3" />
+                #{duplicateSequence}
+              </button>
+            )}
+            {archive.duplicate_count > 0 && duplicateSequence === 0 && (
+              <span
+                className="px-1.5 py-0.5 rounded text-[10px] leading-tight bg-purple-500/80 text-white flex-shrink-0 flex items-center gap-1"
+                title={`${archive.duplicate_count} reprint${archive.duplicate_count === 1 ? '' : 's'}`}
+              >
+                <GitBranch className="w-3 h-3" />
+                +{archive.duplicate_count}
+              </span>
+            )}
             {archive.timelapse_path && (
               <span title={t('archives.list.hasTimelapse')}>
                 <Film className="w-3.5 h-3.5 text-bambu-green flex-shrink-0" />
@@ -2295,6 +2355,9 @@ export function ArchivesPage() {
   const [hideFailed, setHideFailed] = useState(() =>
     localStorage.getItem('archiveHideFailed') === 'true'
   );
+  const [hideDuplicates, setHideDuplicates] = useState(() =>
+    localStorage.getItem('archiveHideDuplicates') === 'true'
+  );
   const [filterTag, setFilterTag] = useState<string | null>(() =>
     localStorage.getItem('archiveFilterTag')
   );
@@ -2323,6 +2386,7 @@ export function ArchivesPage() {
   const [showCompareModal, setShowCompareModal] = useState(false);
   const [showTagManagement, setShowTagManagement] = useState(false);
   const [highlightedArchiveId, setHighlightedArchiveId] = useState<number | null>(null);
+  const [pendingNavigationArchiveId, setPendingNavigationArchiveId] = useState<number | null>(null);
 
   // Log view state
   const [logFilterUser, setLogFilterUser] = useState<string | null>(() =>
@@ -2347,6 +2411,11 @@ export function ArchivesPage() {
     return saved ? Number(saved) : 25;
   });
 
+  const handleNavigateToArchive = useCallback((archiveId: number) => {
+    setPendingNavigationArchiveId(archiveId);
+    setHighlightedArchiveId(archiveId);
+  }, []);
+
   // Clear highlight after 5 seconds and scroll to highlighted element
   useEffect(() => {
     if (highlightedArchiveId) {
@@ -2355,6 +2424,11 @@ export function ArchivesPage() {
         const element = document.querySelector(`[data-archive-id="${highlightedArchiveId}"]`);
         if (element) {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else if (pendingNavigationArchiveId === highlightedArchiveId) {
+          showToast(t('archives.noArchivesSearch'), 'warning');
+        }
+        if (pendingNavigationArchiveId === highlightedArchiveId) {
+          setPendingNavigationArchiveId(null);
         }
       }, 100);
 
@@ -2365,7 +2439,7 @@ export function ArchivesPage() {
         clearTimeout(clearTimer);
       };
     }
-  }, [highlightedArchiveId]);
+  }, [highlightedArchiveId, pendingNavigationArchiveId, showToast, t]);
 
   const { data: archives, isLoading } = useQuery({
     queryKey: ['archives', filterPrinter],
@@ -2471,6 +2545,10 @@ export function ArchivesPage() {
   useEffect(() => {
     localStorage.setItem('archiveHideFailed', hideFailed.toString());
   }, [hideFailed]);
+
+  useEffect(() => {
+    localStorage.setItem('archiveHideDuplicates', hideDuplicates.toString());
+  }, [hideDuplicates]);
 
   useEffect(() => {
     if (filterTag) {
@@ -2600,6 +2678,10 @@ export function ArchivesPage() {
       // Hide failed filter (don't apply when viewing failed collection)
       const matchesHideFailed = collection === 'failed' || !hideFailed || (a.status !== 'failed' && a.status !== 'aborted');
 
+      // Hide duplicates filter (don't apply when viewing duplicates collection)
+      const matchesHideDuplicates =
+        collection === 'duplicates' || !hideDuplicates || a.duplicate_count === 0 || a.duplicate_sequence === 0;
+
       // Tag filter
       const archiveTags = a.tags?.split(',').map(t => t.trim()) || [];
       const matchesTag = !filterTag || archiveTags.includes(filterTag);
@@ -2610,7 +2692,7 @@ export function ArchivesPage() {
         (filterFileType === 'gcode' && isGcodeFile) ||
         (filterFileType === 'source' && !isGcodeFile);
 
-      return matchesCollection && matchesSearch && matchesMaterial && matchesColor && matchesFavorites && matchesHideFailed && matchesTag && matchesFileType;
+      return matchesCollection && matchesSearch && matchesMaterial && matchesColor && matchesFavorites && matchesHideFailed && matchesHideDuplicates && matchesTag && matchesFileType;
     })
     .sort((a, b) => {
       switch (sortBy) {
@@ -2678,11 +2760,12 @@ export function ArchivesPage() {
     setFilterMaterial(null);
     setFilterFavorites(false);
     setHideFailed(false);
+    setHideDuplicates(false);
     setFilterTag(null);
     setFilterFileType('all');
   };
 
-  const hasTopFilters = search || filterPrinter || filterMaterial || filterFavorites || hideFailed || filterTag || filterFileType !== 'all';
+  const hasTopFilters = search || filterPrinter || filterMaterial || filterFavorites || hideFailed || hideDuplicates || filterTag || filterFileType !== 'all';
 
   // Drag & drop handlers for page-wide upload
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -3081,6 +3164,18 @@ export function ArchivesPage() {
               <AlertCircle className={`w-4 h-4 ${hideFailed ? '' : ''}`} />
               <span className="text-sm hidden md:inline">Hide Failed</span>
             </button>
+            <button
+              onClick={() => setHideDuplicates(!hideDuplicates)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors flex-shrink-0 ${
+                hideDuplicates
+                  ? 'bg-purple-500/20 border-purple-500 text-purple-400'
+                  : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:text-white'
+              }`}
+              title={t('archives.hideDuplicates')}
+            >
+              <Copy className="w-4 h-4" />
+              <span className="text-sm hidden md:inline">{t('archives.hideDuplicates')}</span>
+            </button>
             {uniqueTags.length > 0 && (
               <div className="flex items-center gap-2 flex-shrink-0">
                 <Tag className="w-4 h-4 text-bambu-gray hidden md:block" />
@@ -3225,6 +3320,7 @@ export function ArchivesPage() {
               preferredSlicer={preferredSlicer}
               currency={currency}
               t={t}
+              onNavigateToArchive={handleNavigateToArchive}
             />
           ))}
         </div>
@@ -3253,6 +3349,7 @@ export function ArchivesPage() {
                 isHighlighted={archive.id === highlightedArchiveId}
                 preferredSlicer={preferredSlicer}
                 t={t}
+                onNavigateToArchive={handleNavigateToArchive}
               />
             ))}
           </div>

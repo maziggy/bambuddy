@@ -48,6 +48,8 @@ class ArchiveResponse(BaseModel):
     # Duplicate detection
     duplicates: list[ArchiveDuplicate] | None = None
     duplicate_count: int = 0  # Quick count for list views
+    duplicate_sequence: int = 0  # 0 = original, 1+ = nth duplicate
+    original_archive_id: int | None = None  # ID of the first/original archive
 
     # Object count (computed from extra_data.printable_objects)
     object_count: int | None = None

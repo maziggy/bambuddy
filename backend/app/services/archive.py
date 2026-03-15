@@ -727,10 +727,14 @@ class ArchiveService:
                 sha256.update(chunk)
         return sha256.hexdigest()
 
-    async def get_duplicate_hashes_and_names(self) -> tuple[set[str], set[str]]:
-        """Get all content hashes and print names that appear more than once.
+    async def get_duplicate_hashes_and_names(self) -> tuple[set[str], set[tuple[str, str]]]:
+        """Get all content hashes and (print name, hash) pairs that appear more than once.
 
-        Returns a tuple of (duplicate_hashes, duplicate_names).
+        For hashes: returns all hashes with > 1 archive (true duplicates).
+        For name/hash pairs: returns only pairs that have > 1 archive
+                     (i.e., same file archived multiple times, not different files with same name).
+
+        Returns a tuple of (duplicate_hashes, duplicate_name_hash_pairs).
         """
         from sqlalchemy import func
 
@@ -742,15 +746,17 @@ class ArchiveService:
         )
         duplicate_hashes = {row[0] for row in result.all()}
 
+        # Find print names that have multiple archives with the SAME hash
+        # This avoids marking different files with the same name as duplicates
         result = await self.db.execute(
-            select(func.lower(PrintArchive.print_name))
-            .where(PrintArchive.print_name.isnot(None))
-            .group_by(func.lower(PrintArchive.print_name))
+            select(func.lower(PrintArchive.print_name), PrintArchive.content_hash)
+            .where(PrintArchive.print_name.isnot(None), PrintArchive.content_hash.isnot(None))
+            .group_by(func.lower(PrintArchive.print_name), PrintArchive.content_hash)
             .having(func.count(PrintArchive.id) > 1)
         )
-        duplicate_names = {row[0] for row in result.all()}
+        duplicate_name_hash_pairs = {(row[0], row[1]) for row in result.all()}
 
-        return duplicate_hashes, duplicate_names
+        return duplicate_hashes, duplicate_name_hash_pairs
 
     async def find_duplicates(
         self,
@@ -789,15 +795,18 @@ class ArchiveService:
                 )
 
         # Then, find similar matches by print name or MakerWorld ID
+        # Only match by name if they also have the same content hash (same file, different metadata)
         if print_name or makerworld_model_id:
             conditions = [PrintArchive.id != archive_id]
 
             name_conditions = []
-            if print_name:
-                # Match if print names are similar (ignoring case)
-                name_conditions.append(PrintArchive.print_name.ilike(print_name))
+            if print_name and content_hash:
+                # Match if print names are similar AND have the same hash (same file)
+                name_conditions.append(
+                    and_(PrintArchive.print_name.ilike(print_name), PrintArchive.content_hash == content_hash)
+                )
             if makerworld_model_id:
-                # Match by MakerWorld model ID stored in extra_data
+                # Match by MakerWorld model ID stored in extra_data (same design from MakerWorld)
                 # Use json_extract for SQLite compatibility (astext is PostgreSQL-only)
                 from sqlalchemy import func
 

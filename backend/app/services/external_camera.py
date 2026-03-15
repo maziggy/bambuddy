@@ -336,20 +336,46 @@ async def _capture_mjpeg_frame(url: str, timeout: int) -> bytes | None:
 
 
 async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
-    """Capture frame from RTSP using ffmpeg."""
+    """Capture frame from RTSP using ffmpeg.
+
+    For rtsps:// URLs, a local TLS proxy is used to avoid GnuTLS issues.
+    """
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
         logger.error("ffmpeg not found - required for RTSP capture")
         return None
 
-    # Use ffmpeg to grab a single frame from RTSP stream
-    # ffmpeg handles both rtsp:// and rtsps:// URLs automatically
+    # If rtsps://, use TLS proxy
+    proxy_server = None
+    effective_url = url
+    if url.lower().startswith("rtsps://"):
+        try:
+            from urllib.parse import urlparse
+
+            from backend.app.services.camera import create_tls_proxy
+
+            parsed = urlparse(url)
+            target_port = parsed.port or 322
+            proxy_port, proxy_server = await create_tls_proxy(parsed.hostname, target_port)
+            userinfo = ""
+            if parsed.username:
+                userinfo = parsed.username
+                if parsed.password:
+                    userinfo += f":{parsed.password}"
+                userinfo += "@"
+            effective_url = f"rtsp://{userinfo}127.0.0.1:{proxy_port}{parsed.path}"
+            if parsed.query:
+                effective_url += f"?{parsed.query}"
+        except Exception as e:
+            logger.warning("Failed to create TLS proxy for RTSP capture, falling back: %s", e)
+            effective_url = url
+
     cmd = [
         ffmpeg,
         "-rtsp_transport",
         "tcp",
         "-i",
-        url,
+        effective_url,
         "-frames:v",
         "1",
         "-f",
@@ -362,7 +388,7 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
     ]
 
     try:
-        logger.debug(f"Running ffmpeg command: {' '.join(cmd[:6])}...")
+        logger.debug("Running ffmpeg RTSP capture...")
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -371,7 +397,10 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
 
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
         logger.debug(
-            f"ffmpeg returned: code={process.returncode}, stdout={len(stdout)} bytes, stderr={len(stderr)} bytes"
+            "ffmpeg returned: code=%s, stdout=%s bytes, stderr=%s bytes",
+            process.returncode,
+            len(stdout),
+            len(stderr),
         )
 
         if process.returncode != 0:
@@ -392,6 +421,10 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
     except OSError as e:
         logger.error("RTSP frame capture failed: %s", e)
         return None
+    finally:
+        if proxy_server:
+            proxy_server.close()
+            await proxy_server.wait_closed()
 
 
 async def _capture_snapshot(url: str, timeout: int) -> bytes | None:
@@ -605,13 +638,43 @@ async def _stream_mjpeg(url: str) -> AsyncGenerator[bytes, None]:
 
 
 async def _stream_rtsp(url: str, fps: int) -> AsyncGenerator[bytes, None]:
-    """Stream frames from RTSP URL via ffmpeg."""
+    """Stream frames from RTSP URL via ffmpeg.
+
+    For rtsps:// URLs, a local TLS proxy (Python OpenSSL) is used instead
+    of relying on ffmpeg's GnuTLS backend, which has compatibility issues
+    with some printer firmwares.
+    """
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
         logger.error("ffmpeg not found - required for RTSP streaming")
         return
 
-    # ffmpeg handles both rtsp:// and rtsps:// URLs automatically
+    # If the URL uses rtsps://, set up a TLS proxy so ffmpeg uses plain rtsp://
+    proxy_server = None
+    effective_url = url
+    if url.lower().startswith("rtsps://"):
+        try:
+            from urllib.parse import urlparse
+
+            from backend.app.services.camera import create_tls_proxy
+
+            parsed = urlparse(url)
+            target_port = parsed.port or 322
+            proxy_port, proxy_server = await create_tls_proxy(parsed.hostname, target_port)
+            # Rewrite URL: rtsps://user:pass@host:port/path → rtsp://user:pass@127.0.0.1:proxy/path
+            userinfo = ""
+            if parsed.username:
+                userinfo = parsed.username
+                if parsed.password:
+                    userinfo += f":{parsed.password}"
+                userinfo += "@"
+            effective_url = f"rtsp://{userinfo}127.0.0.1:{proxy_port}{parsed.path}"
+            if parsed.query:
+                effective_url += f"?{parsed.query}"
+        except Exception as e:
+            logger.warning("Failed to create TLS proxy for RTSP, falling back to direct: %s", e)
+            effective_url = url
+
     cmd = [
         ffmpeg,
         "-rtsp_transport",
@@ -624,8 +687,16 @@ async def _stream_rtsp(url: str, fps: int) -> AsyncGenerator[bytes, None]:
         "1024000",
         "-max_delay",
         "500000",
+        "-probesize",
+        "32",
+        "-analyzeduration",
+        "0",
+        "-fflags",
+        "nobuffer",
+        "-flags",
+        "low_delay",
         "-i",
-        url,
+        effective_url,
         "-f",
         "mjpeg",
         "-q:v",
@@ -644,8 +715,8 @@ async def _stream_rtsp(url: str, fps: int) -> AsyncGenerator[bytes, None]:
             stderr=asyncio.subprocess.PIPE,
         )
 
-        # Give ffmpeg a moment to start and check for immediate failures
-        await asyncio.sleep(0.5)
+        # Brief check for immediate startup failures
+        await asyncio.sleep(0.1)
         if process.returncode is not None:
             stderr = await process.stderr.read()
             logger.error("ffmpeg RTSP stream failed immediately: %s", stderr.decode()[:300])
@@ -698,6 +769,9 @@ async def _stream_rtsp(url: str, fps: int) -> AsyncGenerator[bytes, None]:
             except TimeoutError:
                 process.kill()
                 await process.wait()
+        if proxy_server:
+            proxy_server.close()
+            await proxy_server.wait_closed()
 
 
 async def _stream_usb(device: str, fps: int) -> AsyncGenerator[bytes, None]:

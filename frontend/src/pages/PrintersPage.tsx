@@ -3200,7 +3200,7 @@ function PrinterCard({
                                 // Build filament data for hover card
                                 const filamentData = tray?.tray_type ? {
                                   vendor: (isBambuLabSpool(tray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
-                                  profile: cloudInfo?.name || slotPreset?.preset_name || tray.tray_sub_brands || tray.tray_type,
+                                  profile: slotPreset?.preset_name || cloudInfo?.name || tray.tray_sub_brands || tray.tray_type,
                                   colorName: getBambuColorName(tray.tray_id_name) || hexToColorName(tray.tray_color),
                                   colorHex: tray.tray_color || null,
                                   kFactor: formatKValue(tray.k),
@@ -3427,7 +3427,7 @@ function PrinterCard({
                         // Build filament data for hover card
                         const filamentData = tray?.tray_type ? {
                           vendor: (isBambuLabSpool(tray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
-                          profile: cloudInfo?.name || slotPreset?.preset_name || tray.tray_sub_brands || tray.tray_type,
+                          profile: slotPreset?.preset_name || cloudInfo?.name || tray.tray_sub_brands || tray.tray_type,
                           colorName: getBambuColorName(tray.tray_id_name) || hexToColorName(tray.tray_color),
                           colorHex: tray.tray_color || null,
                           kFactor: formatKValue(tray.k),
@@ -3755,7 +3755,7 @@ function PrinterCard({
 
                               const extFilamentData = {
                                 vendor: (isBambuLabSpool(extTray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
-                                profile: extCloudInfo?.name || extSlotPreset?.preset_name || extTray.tray_sub_brands || extTray.tray_type || 'Unknown',
+                                profile: extSlotPreset?.preset_name || extCloudInfo?.name || extTray.tray_sub_brands || extTray.tray_type || 'Unknown',
                                 colorName: getBambuColorName(extTray.tray_id_name) || hexToColorName(extTray.tray_color),
                                 colorHex: extTray.tray_color || null,
                                 kFactor: formatKValue(extTray.k),

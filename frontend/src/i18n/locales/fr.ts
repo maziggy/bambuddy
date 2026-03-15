@@ -113,12 +113,6 @@ export default {
     right: 'Droite',
   },
 
-  // Inventory/Spool assignment
-  inventory: {
-    assignMismatchTitle: 'Incompatibilité de matériau',
-    assignMismatchMessage: 'Le matériau de la bobine sélectionnée ({{spoolMaterial}}) ne correspond pas au profil AMS ({{trayMaterial}}) pour {{location}}. Assigner quand même ?',
-    assignMismatchConfirm: 'Assigner quand même',
-  },
   // Printers page
   printers: {
     title: 'Imprimantes',
@@ -1336,6 +1330,7 @@ export default {
     // Filament Tracking Mode
     filamentTracking: 'Suivi de Filament',
     filamentTrackingDesc: 'Choisissez comment suivre vos bobines. Utilisez l\'inventaire intégré ou connectez un serveur Spoolman.',
+    filamentChecks: 'Vérifications du filament',
     disableFilamentWarnings: 'Désactiver les avertissements de filament',
     disableFilamentWarningsDesc: 'Ne pas afficher les avertissements de filament insuffisant lors de l\'impression ou de la mise en file d\'attente',
     trackingModeBuiltIn: 'Inventaire Intégré',
@@ -2978,6 +2973,11 @@ export default {
     historyCleared: 'Historique effacé',
     fillSourceLabel: '(Inv)',
     lowStockThresholdError: 'Le seuil doit être compris entre 0.1 et 99.9',
+    assignMismatchTitle: 'Incompatibilité de matériau',
+    assignMismatchMessage: 'Le matériau de la bobine sélectionnée "{{spoolMaterial}}" ne correspond pas au matériau du plateau "{{trayMaterial}}" pour {{location}}. Assigner quand même ?',
+    assignMismatchConfirm: 'Assigner quand même',
+    assignPartialMismatchMessage: 'Le matériau de la bobine "{{spoolMaterial}}" est similaire, mais ne correspond pas exactement à "{{trayMaterial}}" dans {{location}}. Voulez-vous continuer ?',
+    assignProfileMismatchMessage: 'Le profil de la bobine "{{spoolProfile}}" ne correspond pas au profil du plateau "{{trayProfile}}" dans {{location}}. Voulez-vous continuer ?',
   },
 
   // Timelapse

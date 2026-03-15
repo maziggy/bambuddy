@@ -16,6 +16,7 @@ interface AssignSpoolModalProps {
   trayId: number;
   trayInfo?: {
     type: string;
+    material?: string;
     color: string;
     location: string;
   };
@@ -29,6 +30,13 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
   const [searchFilter, setSearchFilter] = useState('');
   const [pendingAssignId, setPendingAssignId] = useState<number | null>(null);
   const [showMismatchConfirm, setShowMismatchConfirm] = useState(false);
+  const [mismatchDetails, setMismatchDetails] = useState<{
+    type: 'material' | 'partial' | 'profile';
+    spoolMaterial: string;
+    trayMaterial: string;
+    spoolProfile?: string;
+    trayProfile?: string;
+  } | null>(null);
 
   const { data: spools, isLoading } = useQuery({
     queryKey: ['inventory-spools'],
@@ -58,6 +66,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
       showToast(t('inventory.assignSuccess'), 'success');
       setShowMismatchConfirm(false);
       setPendingAssignId(null);
+      setMismatchDetails(null);
       onClose();
     },
     onError: (error: Error) => {
@@ -65,17 +74,38 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
     },
   });
 
-  // --- Material mismatch logic ---
+  // --- Material/profile mismatch logic ---
   const normalizeMaterial = (value: string | undefined | null) =>
     (value ?? '').trim().toUpperCase();
 
-  const materialsMatch = (spoolMaterial: string, trayMaterial: string) => {
+  const checkMaterialMatch = (
+    spoolMaterial: string | undefined | null,
+    trayMaterial: string | undefined | null
+  ): 'exact' | 'partial' | 'none' => {
     const normalizedSpool = normalizeMaterial(spoolMaterial);
     const normalizedTray = normalizeMaterial(trayMaterial);
-    if (!normalizedSpool || !normalizedTray) return true;
-    if (normalizedTray.includes(normalizedSpool)) return true;
-    if (normalizedSpool.includes(normalizedTray)) return true;
-    return false;
+
+    if (!normalizedSpool || !normalizedTray) return 'exact';
+    if (normalizedSpool === normalizedTray) return 'exact';
+    if (normalizedTray.includes(normalizedSpool) || normalizedSpool.includes(normalizedTray)) {
+      return 'partial';
+    }
+
+    return 'none';
+  };
+
+  const checkProfileMatch = (
+    spoolProfile: string | undefined | null,
+    trayProfile: string | undefined | null
+  ): boolean => {
+    const normalizedSpoolProfile = normalizeMaterial(spoolProfile);
+    const normalizedTrayProfile = normalizeMaterial(trayProfile);
+
+    if (!normalizedSpoolProfile || !normalizedTrayProfile) return true;
+
+    return normalizedSpoolProfile === normalizedTrayProfile
+      || normalizedTrayProfile.includes(normalizedSpoolProfile)
+      || normalizedSpoolProfile.includes(normalizedTrayProfile);
   };
 
   if (!isOpen) return null;
@@ -107,10 +137,32 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
   const handleAssign = () => {
     if (!selectedSpoolId) return;
     const selectedSpool = spools?.find((spool: InventorySpool) => spool.id === selectedSpoolId);
-    if (selectedSpool && trayInfo?.type) {
-      const mismatch = !materialsMatch(selectedSpool.material, trayInfo.type);
-      if (mismatch) {
+
+    if (selectedSpool && trayInfo) {
+      const trayMaterial = trayInfo.material || trayInfo.type;
+      const materialMatchResult = checkMaterialMatch(selectedSpool.material, trayMaterial);
+      const spoolProfile = selectedSpool.slicer_filament_name || selectedSpool.slicer_filament;
+      const profileMatches = checkProfileMatch(spoolProfile, trayInfo.type);
+
+      let mismatchType: 'material' | 'partial' | 'profile' | null = null;
+
+      if (materialMatchResult === 'none') {
+        mismatchType = 'material';
+      } else if (materialMatchResult === 'partial') {
+        mismatchType = 'partial';
+      } else if (materialMatchResult === 'exact' && !profileMatches) {
+        mismatchType = 'profile';
+      }
+
+      if (mismatchType) {
         setPendingAssignId(selectedSpoolId);
+        setMismatchDetails({
+          type: mismatchType,
+          spoolMaterial: selectedSpool.material || '',
+          trayMaterial: trayMaterial || '',
+          spoolProfile: spoolProfile || undefined,
+          trayProfile: trayInfo.type || undefined,
+        });
         setShowMismatchConfirm(true);
         return;
       }
@@ -121,14 +173,17 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
   const handleConfirmMismatch = () => {
     if (!pendingAssignId) return;
     assignMutation.mutate(pendingAssignId);
+    setShowMismatchConfirm(false);
+    setPendingAssignId(null);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
+    <>
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div
+          className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+          onClick={onClose}
+        />
 
       <div className="relative w-full max-w-md mx-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl">
         {/* Header */}
@@ -260,14 +315,36 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
           </div>
         )}
 
-        {showMismatchConfirm && trayInfo && selectedSpoolId && (
+      </div>
+      </div>
+
+      {showMismatchConfirm && trayInfo && selectedSpoolId && mismatchDetails && (() => {
+        let message = '';
+
+        if (mismatchDetails.type === 'material') {
+          message = t('inventory.assignMismatchMessage', {
+            spoolMaterial: mismatchDetails.spoolMaterial,
+            trayMaterial: mismatchDetails.trayMaterial,
+            location: trayInfo.location,
+          });
+        } else if (mismatchDetails.type === 'partial') {
+          message = t('inventory.assignPartialMismatchMessage', {
+            spoolMaterial: mismatchDetails.spoolMaterial,
+            trayMaterial: mismatchDetails.trayMaterial,
+            location: trayInfo.location,
+          });
+        } else if (mismatchDetails.type === 'profile') {
+          message = t('inventory.assignProfileMismatchMessage', {
+            spoolProfile: mismatchDetails.spoolProfile || t('common.unknown'),
+            trayProfile: mismatchDetails.trayProfile || t('common.unknown'),
+            location: trayInfo.location,
+          });
+        }
+
+        return (
           <ConfirmModal
             title={t('inventory.assignMismatchTitle')}
-            message={t('inventory.assignMismatchMessage', {
-              spoolMaterial: spools?.find((spool: InventorySpool) => spool.id === selectedSpoolId)?.material ?? '',
-              trayMaterial: trayInfo.type,
-              location: trayInfo.location,
-            })}
+            message={message}
             confirmText={t('inventory.assignMismatchConfirm')}
             variant="warning"
             isLoading={assignMutation.isPending}
@@ -276,11 +353,12 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
               if (!assignMutation.isPending) {
                 setShowMismatchConfirm(false);
                 setPendingAssignId(null);
+                setMismatchDetails(null);
               }
             }}
           />
-        )}
-      </div>
-    </div>
+        );
+      })()}
+    </>
   );
 }

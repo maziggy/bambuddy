@@ -113,12 +113,6 @@ export default {
     right: 'Destra',
   },
 
-  // Inventory/Spool assignment
-  inventory: {
-    assignMismatchTitle: 'Materiale non corrispondente',
-    assignMismatchMessage: 'Il materiale della bobina selezionata ({{spoolMaterial}}) non corrisponde al profilo AMS ({{trayMaterial}}) per {{location}}. Assegnare comunque?',
-    assignMismatchConfirm: 'Assegna comunque',
-  },
   // Printers page
   printers: {
     title: 'Stampanti',
@@ -1336,6 +1330,7 @@ export default {
     // Filament Tracking Mode
     filamentTracking: 'Tracciamento filamento',
     filamentTrackingDesc: 'Scegli come tracciare le tue bobine di filamento. Puoi utilizzare l\'inventario integrato o collegare un server Spoolman esterno.',
+    filamentChecks: 'Controlli filamento',
     disableFilamentWarnings: 'Disabilita avvisi filamento',
     disableFilamentWarningsDesc: 'Non mostrare avvisi per filamento insufficiente durante la stampa o l\'accodamento',
     trackingModeBuiltIn: 'Inventario integrato',
@@ -2971,6 +2966,11 @@ export default {
     historyCleared: 'Cronologia utilizzo cancellata',
     fillSourceLabel: '(Inv)',
     lowStockThresholdError: 'La soglia deve essere tra 0.1 e 99.9',
+    assignMismatchTitle: 'Materiale non corrispondente',
+    assignMismatchMessage: 'Il materiale della bobina selezionata "{{spoolMaterial}}" non corrisponde al materiale del vassoio "{{trayMaterial}}" per {{location}}. Assegnare comunque?',
+    assignMismatchConfirm: 'Assegna comunque',
+    assignPartialMismatchMessage: 'Il materiale della bobina "{{spoolMaterial}}" è simile ma non corrisponde esattamente a "{{trayMaterial}}" in {{location}}. Vuoi procedere?',
+    assignProfileMismatchMessage: 'Il profilo della bobina "{{spoolProfile}}" non corrisponde al profilo del vassoio "{{trayProfile}}" in {{location}}. Vuoi procedere?',
   },
 
   // Timelapse

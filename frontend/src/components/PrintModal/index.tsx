@@ -11,11 +11,10 @@ import { ConfirmModal } from '../ConfirmModal';
 import { useToast } from '../../contexts/ToastContext';
 import { buildLoadedFilaments, useFilamentMapping } from '../../hooks/useFilamentMapping';
 import { useMultiPrinterFilamentMapping, type PerPrinterConfig } from '../../hooks/useMultiPrinterFilamentMapping';
+import { getColorName } from '../../utils/colors';
 import { getCurrencySymbol } from '../../utils/currency';
 import { toDateTimeLocalValue, parseUTCDate } from '../../utils/date';
 import { getGlobalTrayId, isPlaceholderDate } from '../../utils/amsHelpers';
-import { getCurrencySymbol } from '../../utils/currency';
-import { toDateTimeLocalValue, parseUTCDate } from '../../utils/date';
 import { FilamentMapping } from './FilamentMapping';
 import { FilamentOverride } from './FilamentOverride';
 import { PlateSelector } from './PlateSelector';
@@ -229,7 +228,7 @@ export function PrintModal({
     queryKey: ['spool-assignments'],
     queryFn: () => api.getAssignments(),
     staleTime: 30 * 1000,
-    enabled: (mode === 'reprint' || mode === 'add-to-queue') && assignmentMode === 'printer',
+    enabled: ((mode === 'reprint' || mode === 'add-to-queue') && assignmentMode === 'printer') || (isLibraryFile && mode === 'reprint'),
   });
 
   // Fetch archive details to get sliced_for_model
@@ -418,10 +417,11 @@ export function PrintModal({
     const map = new Map<number, Map<number, SpoolAssignment>>();
     if (!spoolAssignments) return map;
     spoolAssignments.forEach((assignment) => {
+      const isExternal = assignment.ams_id === 255;
       const globalTrayId = getGlobalTrayId(
         assignment.ams_id,
         assignment.tray_id,
-        assignment.ams_id < 0
+        isExternal
       );
       const printerMap = map.get(assignment.printer_id) ?? new Map();
       printerMap.set(globalTrayId, assignment);

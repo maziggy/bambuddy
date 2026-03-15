@@ -237,7 +237,7 @@ async def find_matching_inventory_spool(db: AsyncSession, tray_data: dict) -> Sp
             Spool.tag_uid.is_(None),
             Spool.tray_uuid.is_(None),
             SpoolAssignment.id.is_(None),  # Not assigned to any slot
-            Spool.weight_used == 0,  # Only match unused (fresh) spools
+            Spool.weight_used <= 0,  # Only match unused (fresh) spools
         )
     )
 
@@ -289,6 +289,7 @@ def link_tag_to_spool(spool: Spool, tray_data: dict) -> None:
     if tray_uuid and tray_uuid != ZERO_TRAY_UUID:
         spool.tray_uuid = tray_uuid
 
+    previous_origin = spool.data_origin
     spool.tag_type = "bambulab"
     spool.data_origin = "rfid_linked"
 
@@ -296,12 +297,28 @@ def link_tag_to_spool(spool: Spool, tray_data: dict) -> None:
     if not spool.slicer_filament and tray_info_idx:
         spool.slicer_filament = tray_info_idx
 
-    logger.info(
-        "Linked RFID tag to existing spool %d (tag=%s uuid=%s)",
-        spool.id,
-        tag_uid,
-        tray_uuid,
-    )
+    if previous_origin not in ("rfid_auto", "rfid_linked"):
+        # Linking to a user-created spool — log at WARNING so users can spot
+        # incorrect fuzzy-color matches that overwrite hand-curated records.
+        logger.warning(
+            "Auto-linked RFID tag to manually-created spool %d '%s %s %s' "
+            "(tag=%s uuid=%s, previous origin=%s). "
+            "If this match is wrong, unlink via the inventory UI.",
+            spool.id,
+            spool.material or "",
+            spool.subtype or "",
+            spool.color_name or spool.rgba or "",
+            tag_uid,
+            tray_uuid,
+            previous_origin,
+        )
+    else:
+        logger.info(
+            "Linked RFID tag to existing spool %d (tag=%s uuid=%s)",
+            spool.id,
+            tag_uid,
+            tray_uuid,
+        )
 
 
 async def auto_assign_spool(

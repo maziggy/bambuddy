@@ -2,8 +2,8 @@
 
 Verifies that two simultaneous on_ams_change calls for identical spool types
 (e.g., both load white PLA Basic) don't both claim the same inventory spool.
-The _spool_match_lock in main.py serializes find+link+commit so the second
-caller sees the first's committed tag_uid and falls through to create a new spool.
+The _spool_match_lock in main.py serializes find+link+flush so the second
+caller sees the first's flushed tag_uid and falls through to create a new spool.
 """
 
 import asyncio
@@ -92,7 +92,8 @@ async def test_lock_prevents_double_match_of_same_spool(test_engine, spool_match
                     link_tag_to_spool(spool, tray_data)
                 else:
                     spool = await create_spool_from_tray(db, tray_data)
-                await db.commit()
+                await db.flush()
+            await db.commit()
             results[label] = spool.id
 
     # Run both "printers" concurrently
@@ -103,24 +104,19 @@ async def test_lock_prevents_double_match_of_same_spool(test_engine, spool_match
 
     # The two printers must have been assigned DIFFERENT spools
     assert results["printer_a"] != results["printer_b"], (
-        f"Both printers matched the same spool id={results['printer_a']}! "
-        "The lock should have prevented this."
+        f"Both printers matched the same spool id={results['printer_a']}! The lock should have prevented this."
     )
 
     # Exactly one should have matched the pre-existing candidate
     matched_ids = {results["printer_a"], results["printer_b"]}
-    assert candidate_id in matched_ids, (
-        "Neither printer matched the pre-seeded inventory spool"
-    )
+    assert candidate_id in matched_ids, "Neither printer matched the pre-seeded inventory spool"
 
     # Verify each spool has the correct tag_uid from its respective tray
     async with session_maker() as db:
         for label, tray in [("printer_a", TRAY_A), ("printer_b", TRAY_B)]:
             spool = await db.get(Spool, results[label])
             assert spool is not None
-            assert spool.tag_uid == tray["tag_uid"], (
-                f"{label}: expected tag_uid={tray['tag_uid']}, got {spool.tag_uid}"
-            )
+            assert spool.tag_uid == tray["tag_uid"], f"{label}: expected tag_uid={tray['tag_uid']}, got {spool.tag_uid}"
 
 
 @pytest.mark.asyncio
@@ -251,7 +247,8 @@ async def test_two_inventory_spools_matched_to_two_identical_trays(test_engine, 
                     link_tag_to_spool(spool, tray_data)
                 else:
                     spool = await create_spool_from_tray(db, tray_data)
-                await db.commit()
+                await db.flush()
+            await db.commit()
             results[label] = spool.id
 
     await asyncio.gather(
@@ -260,9 +257,7 @@ async def test_two_inventory_spools_matched_to_two_identical_trays(test_engine, 
     )
 
     # Each printer must have claimed a DIFFERENT spool
-    assert results["printer_a"] != results["printer_b"], (
-        f"Both printers got spool id={results['printer_a']}"
-    )
+    assert results["printer_a"] != results["printer_b"], f"Both printers got spool id={results['printer_a']}"
 
     # Both matched pre-existing inventory spools (no new spool was created)
     inventory_ids = {spool_1_id, spool_2_id}
@@ -317,7 +312,8 @@ async def test_two_trays_only_one_inventory_spool_second_creates(test_engine, sp
                     link_tag_to_spool(spool, tray_data)
                 else:
                     spool = await create_spool_from_tray(db, tray_data)
-                await db.commit()
+                await db.flush()
+            await db.commit()
             results[label] = spool.id
 
     await asyncio.gather(
@@ -328,8 +324,8 @@ async def test_two_trays_only_one_inventory_spool_second_creates(test_engine, sp
     assert results["printer_a"] != results["printer_b"]
 
     # One matched the existing spool, the other created a new one
-    matched_existing = [l for l, sid in results.items() if sid == existing_id]
-    created_new = [l for l, sid in results.items() if sid != existing_id]
+    matched_existing = [label for label, sid in results.items() if sid == existing_id]
+    created_new = [label for label, sid in results.items() if sid != existing_id]
     assert len(matched_existing) == 1, "Exactly one printer should match the existing spool"
     assert len(created_new) == 1, "Exactly one printer should create a new spool"
 

@@ -553,6 +553,10 @@ class SpoolmanClient:
             else:
                 spool_uuid = ""
 
+            # Only clear location for Bambu Lab spools (those with a stored 32-character RFID tag).
+            if len(spool_uuid) != 32:
+                continue
+
             # If this spool's UUID is not in the current AMS, clear its location
             if spool_uuid not in current_tray_uuids:
                 logger.info(

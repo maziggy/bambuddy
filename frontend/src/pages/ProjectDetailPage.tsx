@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import DOMPurify from 'dompurify';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -807,7 +808,7 @@ export function ProjectDetailPage() {
           ) : project.notes ? (
             <div
               className="prose prose-invert prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: project.notes }}
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(project.notes) }}
             />
           ) : (
             <p className="text-bambu-gray/70 text-sm italic">

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import DOMPurify from 'dompurify';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   X,
@@ -93,53 +94,13 @@ export function ProjectPageModal({ archiveId, archiveName, onClose }: ProjectPag
     setEditData({});
   };
 
-  // Sanitize HTML content (basic XSS prevention)
+  // Sanitize HTML content using DOMPurify
   const sanitizeHtml = (html: string) => {
-    // Allow basic formatting tags only
-    const allowed = ['p', 'br', 'b', 'strong', 'i', 'em', 'u', 'a', 'ul', 'ol', 'li', 'figure', 'img'];
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-
-    const clean = (node: Node): string => {
-      if (node.nodeType === Node.TEXT_NODE) {
-        return node.textContent || '';
-      }
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        const el = node as Element;
-        const tag = el.tagName.toLowerCase();
-
-        if (!allowed.includes(tag)) {
-          // Return children content without the tag
-          return Array.from(el.childNodes).map(clean).join('');
-        }
-
-        // Build allowed attributes
-        let attrs = '';
-        if (tag === 'a' && el.getAttribute('href')) {
-          const href = el.getAttribute('href');
-          if (href?.toLowerCase().startsWith('http')) {
-            attrs = ` href="${href}" target="_blank" rel="noopener noreferrer"`;
-          }
-        }
-        if (tag === 'img') {
-          const src = el.getAttribute('src');
-          // Only render img if it has a valid http(s) URL, otherwise skip entirely
-          if (!src?.toLowerCase().startsWith('http')) {
-            return ''; // Skip images without valid URLs
-          }
-          attrs = ` src="${src}" style="max-width: 100%; height: auto;"`;
-        }
-
-        const children = Array.from(el.childNodes).map(clean).join('');
-
-        if (['br', 'img'].includes(tag)) {
-          return `<${tag}${attrs} />`;
-        }
-        return `<${tag}${attrs}>${children}</${tag}>`;
-      }
-      return '';
-    };
-
-    return Array.from(doc.body.childNodes).map(clean).join('');
+    return DOMPurify.sanitize(html, {
+      ALLOWED_TAGS: ['p', 'br', 'b', 'strong', 'i', 'em', 'u', 'a', 'ul', 'ol', 'li', 'figure', 'img'],
+      ALLOWED_ATTR: ['href', 'src', 'target', 'rel', 'style'],
+      ADD_ATTR: ['target'],
+    });
   };
 
   const hasContent = projectPage && (

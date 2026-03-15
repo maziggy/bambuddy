@@ -20,6 +20,8 @@ def _set_sqlite_pragmas(dbapi_conn, connection_record):
 engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
+    pool_size=10,
+    max_overflow=20,
 )
 
 # Register the pragma listener on the underlying sync engine
@@ -44,6 +46,8 @@ async def reinitialize_database():
     engine = create_async_engine(
         settings.database_url,
         echo=settings.debug,
+        pool_size=10,
+        max_overflow=20,
     )
     event.listen(engine.sync_engine, "connect", _set_sqlite_pragmas)
     async_session = async_sessionmaker(

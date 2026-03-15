@@ -18,6 +18,7 @@ from backend.app.models.printer import Printer
 from backend.app.models.user import User
 from backend.app.services.camera import (
     capture_camera_frame,
+    create_tls_proxy,
     generate_chamber_image_stream,
     get_camera_port,
     get_ffmpeg_path,
@@ -197,7 +198,7 @@ async def _read_ffmpeg_stderr(process: asyncio.subprocess.Process) -> str | None
 # Some printer firmwares (notably P2S) drop RTSP sessions after a few seconds,
 # so we transparently respawn ffmpeg to keep the MJPEG stream alive.
 _RTSP_MAX_RECONNECTS = 30
-_RTSP_RECONNECT_DELAY = 1.0  # seconds between respawns
+_RTSP_RECONNECT_DELAY = 0.2  # seconds between respawns
 
 
 async def generate_rtsp_mjpeg_stream(
@@ -221,17 +222,15 @@ async def generate_rtsp_mjpeg_stream(
         return
 
     port = get_camera_port(model)
-    camera_url = f"rtsps://bblp:{access_code}@{ip_address}:{port}/streaming/live/1"
+
+    # Use a local TLS proxy so Python's OpenSSL handles TLS instead of
+    # ffmpeg's GnuTLS.  This fixes P2S (and potentially other models)
+    # dropping the RTSP session after a few seconds due to GnuTLS's
+    # hardened Debian defaults rejecting TLS renegotiation.
+    proxy_port, proxy_server = await create_tls_proxy(ip_address, port)
+    camera_url = f"rtsp://bblp:{access_code}@127.0.0.1:{proxy_port}/streaming/live/1"
 
     # ffmpeg command to output MJPEG stream to stdout
-    # -rtsp_transport tcp: Use TCP for reliability
-    # -rtsp_flags prefer_tcp: Prefer TCP for RTSP
-    # -timeout: Socket I/O timeout in microseconds (30 seconds)
-    # -buffer_size: Larger buffer for network jitter
-    # -max_delay: Maximum demuxing delay
-    # -f mjpeg: Output as MJPEG
-    # -q:v 5: Quality (lower = better, 2-10 is good range)
-    # -r: Output framerate
     cmd = [
         ffmpeg,
         "-rtsp_transport",
@@ -244,6 +243,14 @@ async def generate_rtsp_mjpeg_stream(
         "1024000",  # 1MB buffer
         "-max_delay",
         "500000",  # 0.5 seconds max delay
+        "-probesize",
+        "32",  # Minimal probing for faster startup
+        "-analyzeduration",
+        "0",  # Skip format analysis for faster startup
+        "-fflags",
+        "nobuffer",  # Reduce internal buffering
+        "-flags",
+        "low_delay",  # Minimize decode latency
         "-i",
         camera_url,
         "-f",
@@ -305,8 +312,8 @@ async def generate_rtsp_mjpeg_stream(
 
             _spawned_ffmpeg_pids[process.pid] = _time.time()
 
-            # Give ffmpeg a moment to start and check for immediate failures
-            await asyncio.sleep(0.5)
+            # Brief check for immediate startup failures
+            await asyncio.sleep(0.1)
             if process.returncode is not None:
                 stderr = await process.stderr.read()
                 stderr_text = stderr.decode(errors="replace")
@@ -440,6 +447,10 @@ async def generate_rtsp_mjpeg_stream(
             await _terminate_ffmpeg(process, stream_id)
             logger.info("Camera stream stopped for %s (stream_id=%s)", ip_address, stream_id)
 
+        # Shut down the TLS proxy
+        proxy_server.close()
+        await proxy_server.wait_closed()
+
 
 @router.get("/{printer_id}/camera/stream")
 async def camera_stream(
@@ -486,19 +497,13 @@ async def camera_stream(
 
         async def external_stream_wrapper():
             """Wrap external stream to track start/stop and update frame times."""
-            frame_interval = 1.0 / fps
-            last_yield_time = 0.0
             try:
                 async for frame in generate_mjpeg_stream(
                     printer.external_camera_url, printer.external_camera_type, fps
                 ):
-                    # Rate limit to prevent overwhelming browser
-                    current_time = time.time()
-                    elapsed = current_time - last_yield_time
-                    if elapsed < frame_interval:
-                        await asyncio.sleep(frame_interval - elapsed)
-                    last_yield_time = time.time()
-                    _last_frame_times[printer_id] = last_yield_time
+                    # generate_mjpeg_stream already handles rate limiting;
+                    # just track frame times for stall detection
+                    _last_frame_times[printer_id] = time.time()
                     yield frame
             finally:
                 _active_external_streams.discard(printer_id)
@@ -1233,7 +1238,7 @@ async def delete_reference(
 def _scan_bambu_ffmpeg_pids() -> list[int]:
     """Scan /proc for ffmpeg processes with Bambu RTSP URLs.
 
-    These are definitely ours — no other software connects to rtsps://bblp:.
+    These are definitely ours — no other software connects to rtsp(s)://bblp:.
     This catches orphans that survive app restarts and are not in any tracking dict.
     """
     import os
@@ -1246,7 +1251,8 @@ def _scan_bambu_ffmpeg_pids() -> list[int]:
             try:
                 with open(f"/proc/{entry}/cmdline", "rb") as f:
                     cmdline = f.read()
-                if b"ffmpeg" in cmdline and b"rtsps://bblp:" in cmdline:
+                # Match both rtsp:// (via TLS proxy) and rtsps:// (direct)
+                if b"ffmpeg" in cmdline and (b"rtsp://bblp:" in cmdline or b"rtsps://bblp:" in cmdline):
                     pids.append(int(entry))
             except (OSError, PermissionError, ValueError):
                 continue
@@ -1278,7 +1284,7 @@ async def cleanup_orphaned_streams():
     active_pids = {proc.pid for proc in _active_streams.values() if proc.returncode is None}
 
     # 1. /proc scan — catch ALL orphaned Bambu ffmpeg processes on the system.
-    #    Any ffmpeg with rtsps://bblp: that is NOT in an active stream is orphaned.
+    #    Any ffmpeg with rtsp(s)://bblp: that is NOT in an active stream is orphaned.
     for pid in _scan_bambu_ffmpeg_pids():
         if pid in active_pids:
             continue

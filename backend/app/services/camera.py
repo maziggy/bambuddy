@@ -100,6 +100,119 @@ def get_camera_port(model: str | None) -> int:
     return 6000
 
 
+def rewrite_rtsp_request_url(data: bytes, proxy_url: bytes, real_url: bytes) -> bytes:
+    """Rewrite RTSP request-line URLs, leaving other lines (e.g. Authorization) intact.
+
+    RTSP request lines have the form ``METHOD <url> RTSP/1.0\\r\\n``.
+    Only those lines are modified so that Digest auth headers (which embed
+    the original URL and a cryptographic hash) are not broken.
+    """
+    rtsp_marker = b" RTSP/1.0"
+    if rtsp_marker not in data:
+        return data
+    lines = data.split(b"\r\n")
+    for i, line in enumerate(lines):
+        if line.endswith(rtsp_marker):
+            lines[i] = line.replace(proxy_url, real_url)
+            break
+    return b"\r\n".join(lines)
+
+
+async def create_tls_proxy(target_host: str, target_port: int) -> tuple[int, "asyncio.Server"]:
+    """Create a local TCP→TLS proxy for RTSP streams.
+
+    Bambu printers use RTSPS (RTSP over TLS) with self-signed certificates.
+    The Debian ffmpeg package uses GnuTLS, whose hardened defaults reject
+    certain TLS behaviors (renegotiation, legacy ciphers) that some printer
+    firmwares (notably P2S) rely on.  This causes streams to drop after a
+    few seconds.
+
+    This proxy terminates TLS using Python's ssl module (OpenSSL), which is
+    more permissive, and exposes a plain TCP port that ffmpeg connects to
+    with ``rtsp://`` instead of ``rtsps://``.
+
+    RTSP embeds URLs in protocol messages (DESCRIBE, SETUP, PLAY).  The proxy
+    rewrites ``127.0.0.1:<proxy_port>`` → ``<target_host>:<target_port>`` in
+    client→server data so the printer recognises the stream path.
+
+    Returns ``(local_port, server)``.  Caller must close the server when done.
+    """
+    ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+
+    # Filled in after the server socket is created (handler only runs after).
+    _local_port: list[int] = [0]
+
+    async def _handle(client_reader: asyncio.StreamReader, client_writer: asyncio.StreamWriter):
+        tls_writer = None
+        try:
+            tls_reader, tls_writer = await asyncio.wait_for(
+                asyncio.open_connection(target_host, target_port, ssl=ssl_ctx),
+                timeout=10.0,
+            )
+
+            # URL patterns for RTSP request-line rewriting.
+            proxy_url = f"rtsp://127.0.0.1:{_local_port[0]}".encode()
+            real_url = f"rtsps://{target_host}:{target_port}".encode()
+
+            async def _fwd_to_server(src: asyncio.StreamReader, dst: asyncio.StreamWriter):
+                """Forward client→server, rewriting RTSP request-line URLs only."""
+                try:
+                    while True:
+                        data = await src.read(65536)
+                        if not data:
+                            break
+                        data = rewrite_rtsp_request_url(data, proxy_url, real_url)
+                        dst.write(data)
+                        await dst.drain()
+                except (ConnectionError, OSError, asyncio.CancelledError):
+                    pass
+                finally:
+                    if not dst.is_closing():
+                        try:
+                            dst.close()
+                        except OSError:
+                            pass
+
+            async def _fwd_to_client(src: asyncio.StreamReader, dst: asyncio.StreamWriter):
+                """Forward server→client unchanged."""
+                try:
+                    while True:
+                        data = await src.read(65536)
+                        if not data:
+                            break
+                        dst.write(data)
+                        await dst.drain()
+                except (ConnectionError, OSError, asyncio.CancelledError):
+                    pass
+                finally:
+                    if not dst.is_closing():
+                        try:
+                            dst.close()
+                        except OSError:
+                            pass
+
+            await asyncio.gather(
+                _fwd_to_server(client_reader, tls_writer),
+                _fwd_to_client(tls_reader, client_writer),
+            )
+        except (ConnectionError, OSError, TimeoutError) as e:
+            logger.debug("TLS proxy connection to %s:%s failed: %s", target_host, target_port, e)
+        finally:
+            for w in (client_writer, tls_writer):
+                if w and not w.is_closing():
+                    try:
+                        w.close()
+                    except OSError:
+                        pass
+
+    server = await asyncio.start_server(_handle, "127.0.0.1", 0)
+    _local_port[0] = server.sockets[0].getsockname()[1]
+    logger.debug("TLS proxy for %s:%s listening on 127.0.0.1:%s", target_host, target_port, _local_port[0])
+    return _local_port[0], server
+
+
 def is_chamber_image_model(model: str | None) -> bool:
     """Check if printer uses chamber image protocol instead of RTSP.
 
@@ -357,10 +470,15 @@ async def capture_camera_frame_bytes(
         return await read_chamber_image_frame(ip_address, access_code, timeout=float(timeout))
 
     # RTSP models: X1/H2/P2 - use ffmpeg piping to stdout
-    camera_url = build_camera_url(ip_address, access_code, model)
+    # TLS proxy avoids GnuTLS compatibility issues with some printer firmwares
+    port = get_camera_port(model)
+    proxy_port, proxy_server = await create_tls_proxy(ip_address, port)
+    camera_url = f"rtsp://bblp:{access_code}@127.0.0.1:{proxy_port}/streaming/live/1"
 
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
+        proxy_server.close()
+        await proxy_server.wait_closed()
         logger.error("ffmpeg not found for camera frame capture")
         return None
 
@@ -415,6 +533,9 @@ async def capture_camera_frame_bytes(
     except Exception as e:
         logger.exception("Camera frame bytes capture failed: %s", e)
         return None
+    finally:
+        proxy_server.close()
+        await proxy_server.wait_closed()
 
 
 async def capture_finish_photo(

@@ -26,7 +26,7 @@ export function EmailSettings() {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  
+
   const [smtpSettings, setSMTPSettings] = useState<SMTPSettings>({
     smtp_host: '',
     smtp_port: 587,
@@ -144,23 +144,7 @@ export function EmailSettings() {
       showToast(t('settings.email.errors.enterTestEmail'), 'error');
       return;
     }
-    if (!smtpSettings.smtp_host || !smtpSettings.smtp_from_email) {
-      showToast(t('settings.email.errors.smtpServerAndEmail'), 'error');
-      return;
-    }
-    // Validate auth fields when authentication is enabled
-    if (smtpSettings.smtp_auth_enabled && (!smtpSettings.smtp_username || !smtpSettings.smtp_password)) {
-      showToast(t('settings.email.errors.usernamePasswordRequired'), 'error');
-      return;
-    }
     testMutation.mutate({
-      smtp_host: smtpSettings.smtp_host,
-      smtp_port: smtpSettings.smtp_port,
-      smtp_username: smtpSettings.smtp_username,
-      smtp_password: smtpSettings.smtp_password,
-      smtp_security: smtpSettings.smtp_security,
-      smtp_auth_enabled: smtpSettings.smtp_auth_enabled,
-      smtp_from_email: smtpSettings.smtp_from_email,
       test_recipient: testEmail,
     });
   };

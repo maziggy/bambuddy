@@ -678,11 +678,11 @@ class SpoolmanClient:
         """Convert AMS ID and tray ID to human-readable location.
 
         Args:
-            ams_id: AMS unit ID (0-3 for regular AMS, 128-135 for external)
+            ams_id: AMS unit ID (0-3 for regular AMS, 128-135 for AMS-HT, 254+ for external spool)
             tray_id: Tray ID within the AMS (0-3)
 
         Returns:
-            Location string like "AMS A1", "AMS B2", "External"
+            Location string like "AMS A1", "AMS-HT A1", "External Spool", etc.
         """
         if ams_id >= 254:
             return "External Spool"

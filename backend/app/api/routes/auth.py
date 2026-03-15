@@ -415,21 +415,15 @@ async def test_smtp_connection(
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ):
-    """Test SMTP connection with provided settings (admin only when auth enabled)."""
+    """Test SMTP connection using saved settings (admin only when auth enabled)."""
     import logging
 
     logger = logging.getLogger(__name__)
 
     try:
-        smtp_settings = SMTPSettings(
-            smtp_host=test_request.smtp_host,
-            smtp_port=test_request.smtp_port,
-            smtp_username=test_request.smtp_username,
-            smtp_password=test_request.smtp_password,
-            smtp_security=test_request.smtp_security,
-            smtp_auth_enabled=test_request.smtp_auth_enabled,
-            smtp_from_email=test_request.smtp_from_email,
-        )
+        smtp_settings = await get_smtp_settings(db)
+        if not smtp_settings:
+            return TestSMTPResponse(success=False, message="SMTP settings not configured. Save SMTP settings first.")
 
         # Send test email
         send_email(

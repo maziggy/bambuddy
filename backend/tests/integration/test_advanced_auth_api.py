@@ -120,12 +120,17 @@ class TestSMTPConfigAPI:
     @pytest.mark.integration
     async def test_test_smtp_connection(self, async_client: AsyncClient, admin_token: str):
         """POST /auth/smtp/test with mocked send_email returns success."""
+        await async_client.post(
+            "/api/v1/auth/smtp",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json=SMTP_DATA,
+        )
+
         with patch("backend.app.api.routes.auth.send_email"):
             response = await async_client.post(
                 "/api/v1/auth/smtp/test",
                 headers={"Authorization": f"Bearer {admin_token}"},
                 json={
-                    **SMTP_DATA,
                     "test_recipient": "recipient@test.com",
                 },
             )

@@ -303,6 +303,7 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['printerFiles', printerId, currentPath],
     queryFn: () => api.getPrinterFiles(printerId, currentPath),
+    refetchInterval: 30000,
   });
 
   const { data: storageData } = useQuery({

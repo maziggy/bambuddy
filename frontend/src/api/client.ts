@@ -2196,13 +2196,6 @@ export interface SMTPSettings {
 }
 
 export interface TestSMTPRequest {
-  smtp_host: string;
-  smtp_port: number;
-  smtp_username?: string;
-  smtp_password?: string;
-  smtp_security: 'starttls' | 'ssl' | 'none';
-  smtp_auth_enabled: boolean;
-  smtp_from_email: string;
   test_recipient: string;
 }
 

@@ -81,6 +81,11 @@ EVENT_VARIABLES: dict[str, list[str]] = {
     # User management notifications
     "user_created": ["username", "password", "login_url", "app_name", "timestamp"],
     "password_reset": ["username", "password", "login_url", "app_name", "timestamp"],
+    # User email print notifications
+    "user_print_start": ["username", "printer", "filename", "timestamp", "app_name"],
+    "user_print_complete": ["username", "printer", "filename", "timestamp", "app_name"],
+    "user_print_failed": ["username", "printer", "filename", "timestamp", "app_name"],
+    "user_print_stopped": ["username", "printer", "filename", "timestamp", "app_name"],
 }
 
 # Sample data for previewing templates
@@ -251,6 +256,35 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "login_url": "https://bambuddy.example.com/login",
         "app_name": "Bambuddy",
         "timestamp": "2024-01-15 14:30",
+    },
+    # User email print notifications
+    "user_print_start": {
+        "username": "john_doe",
+        "printer": "Bambu X1C",
+        "filename": "Benchy.3mf",
+        "timestamp": "2024-01-15 14:30",
+        "app_name": "Bambuddy",
+    },
+    "user_print_complete": {
+        "username": "john_doe",
+        "printer": "Bambu X1C",
+        "filename": "Benchy.3mf",
+        "timestamp": "2024-01-15 15:48",
+        "app_name": "Bambuddy",
+    },
+    "user_print_failed": {
+        "username": "john_doe",
+        "printer": "Bambu X1C",
+        "filename": "Benchy.3mf",
+        "timestamp": "2024-01-15 15:15",
+        "app_name": "Bambuddy",
+    },
+    "user_print_stopped": {
+        "username": "john_doe",
+        "printer": "Bambu X1C",
+        "filename": "Benchy.3mf",
+        "timestamp": "2024-01-15 15:15",
+        "app_name": "Bambuddy",
     },
 }
 

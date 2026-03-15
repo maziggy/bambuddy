@@ -97,6 +97,7 @@ async def get_settings(
                 "ha_enabled",
                 "per_printer_mapping_expanded",
                 "prometheus_enabled",
+                "user_notifications_enabled",
                 "queue_drying_enabled",
                 "queue_drying_block",
                 "ambient_drying_enabled",

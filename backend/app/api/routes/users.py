@@ -278,7 +278,8 @@ async def update_user(
         user.groups = list(groups)
 
     await db.commit()
-    await db.refresh(user)
+    result = await db.execute(select(User).where(User.id == user_id).options(selectinload(User.groups)))
+    user = result.scalar_one()
 
     return _user_to_response(user)
 

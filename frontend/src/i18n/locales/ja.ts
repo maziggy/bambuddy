@@ -112,6 +112,7 @@ export default {
     left: '左',
     right: '右',
   },
+  // Printers page
   printers: {
     title: 'プリンター',
     addPrinter: 'プリンターを追加',

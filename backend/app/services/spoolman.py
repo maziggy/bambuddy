@@ -9,6 +9,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+BAMBU_RFID_TAG_LENGTH = 32
 
 @dataclass
 class SpoolmanSpool:
@@ -554,7 +555,7 @@ class SpoolmanClient:
                 spool_uuid = ""
 
             # Only clear location for Bambu Lab spools (those with a stored 32-character RFID tag).
-            if len(spool_uuid) != 32:
+            if len(spool_uuid) != BAMBU_RFID_TAG_LENGTH:
                 continue
 
             # If this spool's UUID is not in the current AMS, clear its location

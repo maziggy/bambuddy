@@ -467,12 +467,13 @@ interface EmptySlotHoverCardProps {
   children: ReactNode;
   className?: string;
   configureSlot?: ConfigureSlotConfig;
+  inventory?: InventoryConfig;
 }
 
 /**
  * Wrapper for empty slots - shows "Empty" on hover with optional configure button
  */
-export function EmptySlotHoverCard({ children, className = '', configureSlot }: EmptySlotHoverCardProps) {
+export function EmptySlotHoverCard({ children, className = '', configureSlot, inventory }: EmptySlotHoverCardProps) {
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -526,6 +527,21 @@ export function EmptySlotHoverCard({ children, className = '', configureSlot }: 
                 >
                   <Settings2 className="w-3.5 h-3.5" />
                   {t('ams.configure')}
+                </button>
+              </div>
+            )}
+            {/* Assign spool button - allows assigning inventory spool to empty slot */}
+            {inventory?.onAssignSpool && (
+              <div className="px-2 pb-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    inventory.onAssignSpool?.();
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-blue/20 hover:bg-bambu-blue/30 text-bambu-blue"
+                >
+                  <Package className="w-3.5 h-3.5" />
+                  {t('inventory.assignSpool')}
                 </button>
               </div>
             )}

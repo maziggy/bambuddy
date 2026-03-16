@@ -524,6 +524,7 @@ export default {
     sortSize: '大小',
     noArchives: '未找到归档',
     noArchivesSearch: '没有匹配搜索的归档',
+    originalPrintNotVisible: '原始打印不可见 - 请尝试清除筛选条件',
     noArchivesYet: '暂无归档',
     loadingArchives: '加载归档中...',
     releaseToUpload: '释放以上传',

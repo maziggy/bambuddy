@@ -524,6 +524,7 @@ export default {
     sortSize: 'サイズ',
     noArchives: 'アーカイブが見つかりません',
     noArchivesSearch: '検索条件に一致するアーカイブがありません',
+    originalPrintNotVisible: '元の印刷が表示されていません - フィルターをクリアしてみてください',
     noArchivesYet: 'アーカイブはまだありません',
     loadingArchives: 'アーカイブを読み込み中...',
     releaseToUpload: 'ドロップしてアップロード',

@@ -524,6 +524,7 @@ export default {
     sortSize: 'Größe',
     noArchives: 'Keine Archive gefunden',
     noArchivesSearch: 'Keine Archive entsprechen Ihrer Suche',
+    originalPrintNotVisible: 'Ursprünglicher Druck nicht sichtbar - versuchen Sie, die Filter zu löschen',
     noArchivesYet: 'Noch keine Archive',
     loadingArchives: 'Lade Archive...',
     releaseToUpload: 'Loslassen zum Hochladen',

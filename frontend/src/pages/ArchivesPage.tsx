@@ -2425,7 +2425,7 @@ export function ArchivesPage() {
         if (element) {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
         } else if (pendingNavigationArchiveId === highlightedArchiveId) {
-          showToast(t('archives.noArchivesSearch'), 'warning');
+          showToast(t('archives.originalPrintNotVisible'), 'warning');
         }
         if (pendingNavigationArchiveId === highlightedArchiveId) {
           setPendingNavigationArchiveId(null);

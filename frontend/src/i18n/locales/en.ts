@@ -524,6 +524,7 @@ export default {
     sortSize: 'Size',
     noArchives: 'No archives found',
     noArchivesSearch: 'No archives match your search',
+    originalPrintNotVisible: 'Original print not visible - try clearing filters',
     noArchivesYet: 'No archives yet',
     loadingArchives: 'Loading archives...',
     releaseToUpload: 'Release to upload',

@@ -3062,6 +3062,7 @@ export default {
     insufficientFilamentMessage: 'Einige zugewiesene Spulen haben weniger Filament als dieser Druck benötigt:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: benötigt {{required}}g, verbleibend {{remaining}}g',
     printAnyway: 'Trotzdem drucken',
+    forceColorMatch: 'Farbe erzwingen',
   },
 
   // Backup

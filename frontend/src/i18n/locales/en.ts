@@ -3066,6 +3066,7 @@ export default {
     insufficientFilamentMessage: 'Some assigned spools have less filament remaining than this print needs:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: needs {{required}}g, remaining {{remaining}}g',
     printAnyway: 'Print anyway',
+    forceColorMatch: 'Force color match',
   },
 
   // Backup

@@ -3053,6 +3053,7 @@ export default {
     insufficientFilamentMessage: 'Certaines bobines assignées ont moins de filament restant que nécessaire pour cette impression :',
     insufficientFilamentLine: '{{printer}} - {{slot}} : nécessite {{required}}g, restant {{remaining}}g',
     printAnyway: 'Imprimer quand même',
+    forceColorMatch: 'Forcer correspondance des couleurs',
   },
 
   // Backup

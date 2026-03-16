@@ -51,6 +51,12 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
     enabled: isOpen,
   });
 
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.getSettings(),
+    enabled: isOpen,
+  });
+
   const assignMutation = useMutation({
     mutationFn: (spoolId: number) =>
       api.assignSpool({ spool_id: spoolId, printer_id: printerId, ams_id: amsId, tray_id: trayId }),
@@ -141,7 +147,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
       return;
     }
 
-    if (trayInfo) {
+    if (!settings?.disable_filament_warnings && trayInfo) {
       const trayMaterial = trayInfo.material || trayInfo.type;
       const materialMatchResult = checkMaterialMatch(selectedSpool.material, trayMaterial);
       const spoolProfile = selectedSpool.slicer_filament_name || selectedSpool.slicer_filament;

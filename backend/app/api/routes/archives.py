@@ -9,7 +9,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response
-from sqlalchemy import func, or_, select, tuple_
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import (
@@ -166,11 +166,11 @@ async def list_archives(
         if duplicate_hashes_in_page:
             duplicate_group_conditions.append(PrintArchive.content_hash.in_(duplicate_hashes_in_page))
         if duplicate_name_hash_keys_in_page:
-            duplicate_group_conditions.append(
-                tuple_(func.lower(PrintArchive.print_name), PrintArchive.content_hash).in_(
-                    duplicate_name_hash_keys_in_page
-                )
-            )
+            name_hash_conditions = [
+                and_(func.lower(PrintArchive.print_name) == name, PrintArchive.content_hash == hash_)
+                for name, hash_ in duplicate_name_hash_keys_in_page
+            ]
+            duplicate_group_conditions.extend(name_hash_conditions)
 
         duplicate_group_rows = await db.execute(
             select(

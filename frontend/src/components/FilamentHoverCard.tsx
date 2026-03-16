@@ -21,6 +21,7 @@ interface SpoolmanConfig {
   onUnlinkSpool?: () => void;
   linkedSpoolId?: number | null; // Spoolman spool ID if this tray is already linked
   spoolmanUrl?: string | null; // Base URL for Spoolman (for "Open in Spoolman" link)
+  syncMode?: string | null; // If auto-sync is enabled, we may want to hide the unlink option for Bambu spools
 }
 
 interface InventoryConfig {
@@ -305,7 +306,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                         {t('spoolman.openInSpoolman')}
                       </a>
 
-                      {spoolman.onUnlinkSpool && data.vendor !== 'Bambu Lab' && (
+                      {spoolman.onUnlinkSpool && (data.vendor !== 'Bambu Lab' || spoolman.syncMode === 'manual') && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();

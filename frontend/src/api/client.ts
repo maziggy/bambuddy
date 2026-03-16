@@ -349,6 +349,8 @@ export interface Archive {
   f3d_path: string | null;
   duplicates: ArchiveDuplicate[] | null;
   duplicate_count: number;
+  duplicate_sequence: number;  // 0 = original, 1+ = nth duplicate
+  original_archive_id: number | null;  // ID of the first/original archive
   object_count: number | null;
   print_name: string | null;
   print_time_seconds: number | null;
@@ -810,6 +812,8 @@ export interface AppSettings {
   // Date/time format settings
   date_format: 'system' | 'us' | 'eu' | 'iso';
   time_format: 'system' | '12h' | '24h';
+  // Filament tracking
+  disable_filament_warnings: boolean;  // Disable filament warnings (print insufficiency and assignment mismatch)
   // Default printer
   default_printer_id: number | null;
   // Dark mode theme settings

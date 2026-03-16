@@ -425,7 +425,9 @@ class NotificationService:
         else:
             return False, f"HTTP {response.status_code}: {response.text[:200]}"
 
-    async def _send_webhook(self, config: dict, title: str, message: str) -> tuple[bool, str]:
+    async def _send_webhook(
+        self, config: dict, title: str, message: str, image_data: bytes | None = None
+    ) -> tuple[bool, str]:
         """Send notification via generic webhook (POST JSON).
 
         Supports two payload formats:
@@ -453,6 +455,12 @@ class NotificationService:
                 "timestamp": datetime.now().isoformat(),
                 "source": "Bambuddy",
             }
+
+        # Attach base64-encoded image when available (generic format only)
+        if image_data and payload_format != "slack":
+            import base64
+
+            data["image"] = base64.b64encode(image_data).decode("ascii")
 
         headers = {"Content-Type": "application/json"}
         if auth_header:
@@ -556,7 +564,7 @@ class NotificationService:
             elif provider.provider_type == "discord":
                 return await self._send_discord(config, title, message, image_data=image_data)
             elif provider.provider_type == "webhook":
-                return await self._send_webhook(config, title, message)
+                return await self._send_webhook(config, title, message, image_data=image_data)
             elif provider.provider_type == "homeassistant":
                 return await self._send_homeassistant(config, title, message, db=db)
             else:

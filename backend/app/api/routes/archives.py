@@ -2,13 +2,14 @@ import io
 import json
 import logging
 import zipfile
+from collections import defaultdict
 from datetime import date, datetime, time, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import (
@@ -62,6 +63,8 @@ def archive_to_response(
     archive: PrintArchive,
     duplicates: list[dict] | None = None,
     duplicate_count: int = 0,
+    duplicate_sequence: int = 0,
+    original_archive_id: int | None = None,
 ) -> dict:
     """Convert archive model to response dict with computed fields."""
     data = {
@@ -79,6 +82,8 @@ def archive_to_response(
         "f3d_path": archive.f3d_path,
         "duplicates": duplicates,
         "duplicate_count": duplicate_count if duplicates is None else len(duplicates),
+        "duplicate_sequence": duplicate_sequence,
+        "original_archive_id": original_archive_id,
         "print_name": archive.print_name,
         "print_time_seconds": archive.print_time_seconds,
         "filament_used_grams": archive.filament_used_grams,
@@ -141,16 +146,99 @@ async def list_archives(
         offset=offset,
     )
 
-    # Get sets of hashes and names that have duplicates (efficient single queries)
-    duplicate_hashes, duplicate_names = await service.get_duplicate_hashes_and_names()
+    # Get sets of duplicate hashes and duplicate (name, hash) pairs (efficient single queries)
+    duplicate_hashes, duplicate_name_hash_pairs = await service.get_duplicate_hashes_and_names()
 
-    # Mark archives that have duplicates (by hash or by print name)
+    # Batch-load duplicate groups once for the current page keys.
+    duplicate_hashes_in_page = {
+        a.content_hash for a in archives if a.content_hash and a.content_hash in duplicate_hashes
+    }
+    duplicate_name_hash_keys_in_page = {
+        (a.print_name.lower(), a.content_hash)
+        for a in archives
+        if a.print_name and a.content_hash and (a.print_name.lower(), a.content_hash) in duplicate_name_hash_pairs
+    }
+
+    duplicate_meta_by_archive_id: dict[int, tuple[int, int, int]] = {}
+
+    if duplicate_hashes_in_page or duplicate_name_hash_keys_in_page:
+        duplicate_group_conditions = []
+        if duplicate_hashes_in_page:
+            duplicate_group_conditions.append(PrintArchive.content_hash.in_(duplicate_hashes_in_page))
+        if duplicate_name_hash_keys_in_page:
+            name_hash_conditions = [
+                and_(func.lower(PrintArchive.print_name) == name, PrintArchive.content_hash == hash_)
+                for name, hash_ in duplicate_name_hash_keys_in_page
+            ]
+            duplicate_group_conditions.extend(name_hash_conditions)
+
+        duplicate_group_rows = await db.execute(
+            select(
+                PrintArchive.id,
+                PrintArchive.created_at,
+                PrintArchive.content_hash,
+                func.lower(PrintArchive.print_name).label("print_name_lower"),
+            ).where(or_(*duplicate_group_conditions))
+        )
+
+        duplicate_groups_by_hash: dict[str, list[tuple[int, datetime]]] = defaultdict(list)
+        duplicate_groups_by_name_hash: dict[tuple[str, str], list[tuple[int, datetime]]] = defaultdict(list)
+
+        for archive_id, created_at, content_hash, print_name_lower in duplicate_group_rows.all():
+            if content_hash and content_hash in duplicate_hashes_in_page:
+                duplicate_groups_by_hash[content_hash].append((archive_id, created_at))
+            if (
+                print_name_lower
+                and content_hash
+                and (print_name_lower, content_hash) in duplicate_name_hash_keys_in_page
+            ):
+                duplicate_groups_by_name_hash[(print_name_lower, content_hash)].append((archive_id, created_at))
+
+        for group in duplicate_groups_by_hash.values():
+            if len(group) < 2:
+                continue
+            group.sort(key=lambda x: x[1])
+            original_id = group[0][0]
+            duplicate_count = len(group) - 1
+            for sequence, (archive_id, _) in enumerate(group):
+                duplicate_meta_by_archive_id[archive_id] = (sequence, original_id, duplicate_count)
+
+        # Keep hash-based grouping precedence; name/hash groups only fill missing items.
+        for group in duplicate_groups_by_name_hash.values():
+            if len(group) < 2:
+                continue
+            group.sort(key=lambda x: x[1])
+            original_id = group[0][0]
+            duplicate_count = len(group) - 1
+            for sequence, (archive_id, _) in enumerate(group):
+                duplicate_meta_by_archive_id.setdefault(archive_id, (sequence, original_id, duplicate_count))
+
+    # Build response with duplicate sequence and original archive ID pre-computed
     result = []
     for a in archives:
         has_hash_dup = a.content_hash in duplicate_hashes if a.content_hash else False
-        has_name_dup = a.print_name and a.print_name.lower() in duplicate_names
+        has_name_dup = (
+            bool(a.print_name and a.content_hash)
+            and (a.print_name.lower(), a.content_hash) in duplicate_name_hash_pairs
+        )
         has_duplicate = has_hash_dup or has_name_dup
-        result.append(archive_to_response(a, duplicate_count=1 if has_duplicate else 0))
+
+        # Pre-compute duplicate sequence and original archive ID
+        duplicate_sequence = 0
+        original_archive_id: int | None = None
+        duplicate_count = 1 if has_duplicate else 0
+
+        if has_duplicate and a.id in duplicate_meta_by_archive_id:
+            duplicate_sequence, original_archive_id, duplicate_count = duplicate_meta_by_archive_id[a.id]
+
+        result.append(
+            archive_to_response(
+                a,
+                duplicate_count=duplicate_count,
+                duplicate_sequence=duplicate_sequence,
+                original_archive_id=original_archive_id,
+            )
+        )
     return result
 
 

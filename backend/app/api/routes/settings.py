@@ -87,6 +87,7 @@ async def get_settings(
                 "spoolman_enabled",
                 "spoolman_disable_weight_sync",
                 "spoolman_report_partial_usage",
+                "disable_filament_warnings",
                 "check_updates",
                 "check_printer_firmware",
                 "include_beta_updates",

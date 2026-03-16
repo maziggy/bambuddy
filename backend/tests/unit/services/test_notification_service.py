@@ -588,6 +588,87 @@ class TestNotificationProviderTypes:
             assert "timestamp" not in payload
             assert "source" not in payload
 
+    @pytest.mark.asyncio
+    async def test_webhook_generic_format_includes_image(self, service):
+        """Verify generic webhook includes base64-encoded image when provided."""
+        config = {
+            "webhook_url": "http://test.local/webhook",
+            "field_title": "title",
+            "field_message": "message",
+        }
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client:
+            mock_get_client.return_value = mock_client
+
+            image_bytes = b"\xff\xd8\xff\xe0fake-jpeg-data"
+            success, message = await service._send_webhook(config, "Test Title", "Test Message", image_data=image_bytes)
+
+            assert success is True
+            call_args = mock_client.post.call_args
+            payload = call_args.kwargs.get("json") or call_args[1].get("json")
+            assert "image" in payload
+
+            import base64
+
+            assert payload["image"] == base64.b64encode(image_bytes).decode("ascii")
+
+    @pytest.mark.asyncio
+    async def test_webhook_generic_format_no_image_when_none(self, service):
+        """Verify generic webhook omits image field when no image_data provided."""
+        config = {
+            "webhook_url": "http://test.local/webhook",
+            "field_title": "title",
+            "field_message": "message",
+        }
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client:
+            mock_get_client.return_value = mock_client
+
+            success, message = await service._send_webhook(config, "Test Title", "Test Message")
+
+            assert success is True
+            call_args = mock_client.post.call_args
+            payload = call_args.kwargs.get("json") or call_args[1].get("json")
+            assert "image" not in payload
+
+    @pytest.mark.asyncio
+    async def test_webhook_slack_format_excludes_image(self, service):
+        """Verify Slack format does not include image even when provided."""
+        config = {
+            "webhook_url": "http://mattermost.local/hooks/abc123",
+            "payload_format": "slack",
+        }
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client:
+            mock_get_client.return_value = mock_client
+
+            success, message = await service._send_webhook(
+                config, "Test Title", "Test Message", image_data=b"fake-image"
+            )
+
+            assert success is True
+            call_args = mock_client.post.call_args
+            payload = call_args.kwargs.get("json") or call_args[1].get("json")
+            assert "image" not in payload
+
 
 class TestHomeAssistantProvider:
     """Tests for Home Assistant notification provider."""

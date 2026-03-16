@@ -22,7 +22,7 @@ export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, a
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [search, setSearch] = useState('');
-  const spoolTag = tagUid || trayUuid;
+  const spoolTag = trayUuid || tagUid;
 
   const { data: spools, isLoading } = useQuery({
     queryKey: ['unlinked-spools'],
@@ -97,9 +97,9 @@ export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, a
               className="w-full pl-9 pr-3 py-2 bg-bambu-dark rounded-lg border border-white/10 text-white text-sm placeholder:text-bambu-gray focus:outline-none focus:border-bambu-green"
             />
           </div>
-          {(tagUid || trayUuid) && (
-            <p className="text-xs text-bambu-gray mt-2 font-mono truncate" title={tagUid || trayUuid}>
-              Tag: {tagUid || trayUuid}
+          {(trayUuid || tagUid) && (
+            <p className="text-xs text-bambu-gray mt-2 font-mono truncate" title={trayUuid || tagUid}>
+              Tag: {trayUuid || tagUid}
             </p>
           )}
         </div>

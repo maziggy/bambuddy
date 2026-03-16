@@ -1466,6 +1466,7 @@ async def run_migrations(conn):
                 notify_print_start BOOLEAN NOT NULL DEFAULT 1,
                 notify_print_complete BOOLEAN NOT NULL DEFAULT 1,
                 notify_print_failed BOOLEAN NOT NULL DEFAULT 1,
+                notify_print_stopped BOOLEAN NOT NULL DEFAULT 1,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
@@ -1477,7 +1478,7 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already applied
 
-    # Migration: Add notify_print_stopped column to user_email_preferences
+    # Legacy migration: Add notify_print_stopped column (for any existing partial tables)
     try:
         await conn.execute(
             text(
@@ -1485,7 +1486,7 @@ async def run_migrations(conn):
             )
         )
     except OperationalError:
-        pass  # Column already exists
+        pass  # Column already exists or table created with full schema
 
     # Seed default settings keys that must exist on fresh install
     default_settings = [

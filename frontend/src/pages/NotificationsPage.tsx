@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Bell, CheckCircle2, Loader2, Mail, Save } from 'lucide-react';
 import { api } from '../api/client';
@@ -13,6 +14,7 @@ export function NotificationsPage() {
   const { user } = useAuth();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const [notifyPrintStart, setNotifyPrintStart] = useState(true);
   const [notifyPrintComplete, setNotifyPrintComplete] = useState(true);
@@ -20,11 +22,25 @@ export function NotificationsPage() {
   const [notifyPrintStopped, setNotifyPrintStopped] = useState(true);
   const [isDirty, setIsDirty] = useState(false);
 
+  // Check advanced auth status - redirect if disabled
+  const { data: advancedAuthStatus, isLoading: isAdvancedAuthLoading } = useQuery({
+    queryKey: ['advancedAuthStatus'],
+    queryFn: api.getAdvancedAuthStatus,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
   // Fetch current preferences
   const { data: preferences, isLoading } = useQuery({
     queryKey: ['user-email-preferences'],
     queryFn: () => api.getUserEmailPreferences(),
   });
+
+  // Redirect to settings if Advanced Auth is disabled
+  useEffect(() => {
+    if (advancedAuthStatus && !advancedAuthStatus.advanced_auth_enabled) {
+      navigate('/settings', { replace: true });
+    }
+  }, [advancedAuthStatus, navigate]);
 
   // Populate form when preferences load
   useEffect(() => {
@@ -64,7 +80,7 @@ export function NotificationsPage() {
     setIsDirty(true);
   };
 
-  if (isLoading) {
+  if (isLoading || isAdvancedAuthLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-8 h-8 animate-spin text-bambu-green" />

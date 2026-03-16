@@ -501,8 +501,6 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
     # HMS error codes that should not trigger notifications even though they
     # have known descriptions (e.g. user-initiated actions, not real errors).
     _HMS_NOTIFICATION_SUPPRESS = {
-        "0500_0007",  # MQTT command verification failed (auth/bind issue, not a print error)
-        "0500_4001",  # Failed to connect to Bambu Cloud (network issue)
         "0500_400E",  # Printing was cancelled (user action, not an error)
     }
 
@@ -1166,6 +1164,9 @@ async def on_print_start(printer_id: int, data: dict):
     logger = logging.getLogger(__name__)
 
     logger.info("[CALLBACK] on_print_start called for printer %s, data keys: %s", printer_id, list(data.keys()))
+
+    # Clear any stale user-stopped flag from previous print cycles
+    _user_stopped_printers.discard(printer_id)
 
     # Cancel any active bed cooldown task for this printer
     existing_task = _bed_cooldown_tasks.pop(printer_id, None)
@@ -2652,7 +2653,8 @@ async def on_print_complete(printer_id: int, data: dict):
             except Exception as e:
                 logger.warning("[NOTIFY-BG] Failed to send notification without archive: %s", e, exc_info=True)
 
-        asyncio.create_task(_notify_no_archive())
+        task = asyncio.create_task(_notify_no_archive())
+        task.add_done_callback(lambda t: t.result() if not t.cancelled() else None)
         return
 
     log_timing("Archive lookup")

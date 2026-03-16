@@ -7,6 +7,7 @@ All notable changes to Bambuddy will be documented in this file.
 ### New Features
 
 ### Fixed
+- **Webhook Notifications Missing Camera Snapshot** ([#679](https://github.com/maziggy/bambuddy/issues/679)) — Webhook notification providers did not include camera snapshots (e.g. from First Layer Complete notifications), even though providers like Telegram, Pushover, ntfy, and Discord already attached them. The webhook payload now includes a base64-encoded `image` field when a snapshot is available (generic format only, not Slack format). Reported by @Arn0uDz.
 
 ### Changed
 

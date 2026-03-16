@@ -1346,8 +1346,7 @@ export default {
     amsSyncing: 'Sincronizzazione...',
     amsSyncSuccess: '{{synced}} bobina/e sincronizzata/e, {{skipped}} saltata/e',
     amsSyncError: 'Impossibile sincronizzare i pesi dall\'AMS',
-    // Spoolman
-    spoolmanEnabled: 'Abilita integrazione Spoolman',
+    // Spoolman settings
     spoolmanUrl: 'URL Spoolman',
     spoolmanUrlHint: 'URL del server Spoolman (es. http://localhost:7912)',
     spoolmanConnected: 'Connesso',

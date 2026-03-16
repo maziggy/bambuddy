@@ -1333,6 +1333,9 @@ export default {
     // Filament Tracking Mode
     filamentTracking: 'Tracciamento filamento',
     filamentTrackingDesc: 'Scegli come tracciare le bobine di filamento. Puoi usare l\'inventario integrato o collegare un server Spoolman esterno.',
+    filamentChecks: 'Controlli filamento',
+    disableFilamentWarnings: 'Disabilita avvisi filamento',
+    disableFilamentWarningsDesc: 'Non mostrare avvisi per filamento insufficiente durante la stampa o l\'accodamento',
     trackingModeBuiltIn: 'Inventario integrato',
     trackingModeBuiltInDesc: 'Riconoscimento RFID automatico e tracciamento dell\'uso inclusi',
     trackingModeSpoolmanDesc: 'Server esterno per la gestione del filamento',
@@ -2972,6 +2975,11 @@ export default {
     historyCleared: 'Cronologia utilizzo cancellata',
     fillSourceLabel: '(Inv)',
     lowStockThresholdError: 'La soglia deve essere tra 0.1 e 99.9',
+    assignMismatchTitle: 'Materiale non corrispondente',
+    assignMismatchMessage: 'Il materiale della bobina selezionata "{{spoolMaterial}}" non corrisponde al materiale del vassoio "{{trayMaterial}}" per {{location}}. Assegnare comunque?',
+    assignMismatchConfirm: 'Assegna comunque',
+    assignPartialMismatchMessage: 'Il materiale della bobina "{{spoolMaterial}}" è simile ma non corrisponde esattamente a "{{trayMaterial}}" in {{location}}. Vuoi procedere?',
+    assignProfileMismatchMessage: 'Il profilo della bobina "{{spoolProfile}}" non corrisponde al profilo del vassoio "{{trayProfile}}" in {{location}}. Vuoi procedere?',
   },
 
   // Timelapse
@@ -3043,7 +3051,11 @@ export default {
     originalFilament: 'Originale',
     overrideWith: 'Sostituisci con',
     resetToOriginal: 'Ripristina originale',
-    forceColorMatch: 'Corrispondenza colore forzata',
+    insufficientFilamentTitle: 'Filamento insufficiente',
+    insufficientFilamentMessage: 'Alcune bobine assegnate hanno meno filamento rimanente di quanto necessario per questa stampa:',
+    insufficientFilamentLine: '{{printer}} - {{slot}}: necessita di {{required}}g, rimanenti {{remaining}}g',
+    printAnyway: 'Stampa comunque',
+    forceColorMatch: 'Forza corrispondenza colore',
   },
 
   // Backup

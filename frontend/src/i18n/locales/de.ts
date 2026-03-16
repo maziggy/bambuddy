@@ -1333,6 +1333,9 @@ export default {
     // Filament Tracking Mode
     filamentTracking: 'Filament-Verfolgung',
     filamentTrackingDesc: 'Wählen Sie, wie Sie Ihre Filamentspulen verfolgen möchten. Sie können das integrierte Inventar oder einen externen Spoolman-Server verwenden.',
+    filamentChecks: 'Filament-Prüfungen',
+    disableFilamentWarnings: 'Filament-Warnungen deaktivieren',
+    disableFilamentWarningsDesc: 'Keine Warnungen über unzureichendes Filament beim Drucken oder Einreihen anzeigen',
     trackingModeBuiltIn: 'Integriertes Inventar',
     trackingModeBuiltInDesc: 'RFID-Erkennung und Verbrauchserfassung inklusive',
     trackingModeSpoolmanDesc: 'Externer Filament-Management-Server',
@@ -2982,6 +2985,11 @@ export default {
     historyCleared: 'Verbrauchshistorie gelöscht',
     fillSourceLabel: '(Inv)',
     lowStockThresholdError: 'Der Schwellenwert muss zwischen 0.1 und 99.9 liegen',
+    assignMismatchTitle: 'Material stimmt nicht überein',
+    assignMismatchMessage: 'Das ausgewählte Spulenmaterial "{{spoolMaterial}}" stimmt nicht mit dem Tray-Material "{{trayMaterial}}" für {{location}} überein. Trotzdem zuweisen?',
+    assignMismatchConfirm: 'Trotzdem zuweisen',
+    assignPartialMismatchMessage: 'Das Spulenmaterial "{{spoolMaterial}}" ist ähnlich, stimmt aber nicht genau mit "{{trayMaterial}}" in {{location}} überein. Möchten Sie fortfahren?',
+    assignProfileMismatchMessage: 'Das Spulenprofil "{{spoolProfile}}" stimmt nicht mit dem Fachprofil "{{trayProfile}}" in {{location}} überein. Möchten Sie fortfahren?',
   },
 
   // Timelapse
@@ -3053,6 +3061,10 @@ export default {
     originalFilament: 'Original',
     overrideWith: 'Ersetzen mit',
     resetToOriginal: 'Auf Original zurücksetzen',
+    insufficientFilamentTitle: 'Nicht genug Filament',
+    insufficientFilamentMessage: 'Einige zugewiesene Spulen haben weniger Filament als dieser Druck benötigt:',
+    insufficientFilamentLine: '{{printer}} - {{slot}}: benötigt {{required}}g, verbleibend {{remaining}}g',
+    printAnyway: 'Trotzdem drucken',
     forceColorMatch: 'Farbe erzwingen',
   },
 

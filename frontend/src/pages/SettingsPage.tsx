@@ -709,6 +709,7 @@ export function SettingsPage() {
       settings.ams_temp_good !== localSettings.ams_temp_good ||
       settings.ams_temp_fair !== localSettings.ams_temp_fair ||
       settings.ams_history_retention_days !== localSettings.ams_history_retention_days ||
+      settings.disable_filament_warnings !== localSettings.disable_filament_warnings ||
       (settings.queue_drying_enabled ?? false) !== (localSettings.queue_drying_enabled ?? false) ||
       (settings.queue_drying_block ?? false) !== (localSettings.queue_drying_block ?? false) ||
       (settings.ambient_drying_enabled ?? false) !== (localSettings.ambient_drying_enabled ?? false) ||
@@ -779,6 +780,7 @@ export function SettingsPage() {
         ams_temp_good: localSettings.ams_temp_good,
         ams_temp_fair: localSettings.ams_temp_fair,
         ams_history_retention_days: localSettings.ams_history_retention_days,
+        disable_filament_warnings: localSettings.disable_filament_warnings,
         queue_drying_enabled: localSettings.queue_drying_enabled,
         queue_drying_block: localSettings.queue_drying_block,
         ambient_drying_enabled: localSettings.ambient_drying_enabled,
@@ -3239,6 +3241,31 @@ export function SettingsPage() {
           {/* Left Column (1/3) - Mode Selector + AMS Thresholds */}
           <div className="lg:w-1/3 space-y-6">
             <SpoolmanSettings />
+
+            <Card>
+              <CardHeader>
+                <h2 className="text-lg font-semibold text-white">{t('settings.filamentChecks')}</h2>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white">{t('settings.disableFilamentWarnings')}</p>
+                    <p className="text-sm text-bambu-gray">
+                      {t('settings.disableFilamentWarningsDesc')}
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={localSettings.disable_filament_warnings}
+                      onChange={(e) => updateSetting('disable_filament_warnings', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                  </label>
+                </div>
+              </CardContent>
+            </Card>
 
             <Card>
               <CardHeader>

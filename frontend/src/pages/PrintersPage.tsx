@@ -1610,7 +1610,7 @@ function PrinterCard({
     printerId: number;
     amsId: number;
     trayId: number;
-    trayInfo: { type: string; color: string; location: string };
+    trayInfo: { type: string; color: string; location: string; material?: string; profile?: string };
   } | null>(null);
   const [configureSlotModal, setConfigureSlotModal] = useState<{
     amsId: number;
@@ -3330,7 +3330,9 @@ function PrinterCard({
                                               amsId: ams.id,
                                               trayId: slotIdx,
                                               trayInfo: {
-                                                type: filamentData.profile,
+                                                type: tray?.tray_type || filamentData.profile,
+                                                material: tray?.tray_type ?? undefined,
+                                                profile: filamentData.profile,
                                                 color: filamentData.colorHex || '',
                                                 location: `${getAmsLabel(ams.id, ams.tray.length)} Slot ${slotIdx + 1}`,
                                               },
@@ -3644,7 +3646,9 @@ function PrinterCard({
                                           amsId: ams.id,
                                           trayId: htSlotId,
                                           trayInfo: {
-                                            type: filamentData.profile,
+                                            type: tray?.tray_type || filamentData.profile,
+                                            material: tray?.tray_type ?? undefined,
+                                            profile: filamentData.profile,
                                             color: filamentData.colorHex || '',
                                             location: getAmsLabel(ams.id, ams.tray.length),
                                           },
@@ -3855,7 +3859,9 @@ function PrinterCard({
                                             amsId: 255,
                                             trayId: slotTrayId,
                                             trayInfo: {
-                                              type: extFilamentData.profile,
+                                              type: extTray.tray_type || extFilamentData.profile,
+                                              material: extTray.tray_type ?? undefined,
+                                              profile: extFilamentData.profile,
                                               color: extFilamentData.colorHex || '',
                                               location: extLabel || t('printers.external'),
                                             },

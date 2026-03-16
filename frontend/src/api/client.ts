@@ -812,6 +812,8 @@ export interface AppSettings {
   // Date/time format settings
   date_format: 'system' | 'us' | 'eu' | 'iso';
   time_format: 'system' | '12h' | '24h';
+  // Filament tracking
+  disable_filament_warnings: boolean;  // Disable filament warnings (print insufficiency and assignment mismatch)
   // Default printer
   default_printer_id: number | null;
   // Dark mode theme settings

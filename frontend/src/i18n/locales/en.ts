@@ -1330,6 +1330,9 @@ export default {
     // Filament Tracking Mode
     filamentTracking: 'Filament Tracking',
     filamentTrackingDesc: 'Choose how to track your filament spools. You can use the built-in inventory or connect an external Spoolman server.',
+    filamentChecks: 'Filament checks',
+    disableFilamentWarnings: 'Disable filament warnings',
+    disableFilamentWarningsDesc: 'Don\'t show warnings about insufficient filament when printing or queueing',
     trackingModeBuiltIn: 'Built-in Inventory',
     trackingModeBuiltInDesc: 'RFID auto-matching and usage tracking included',
     trackingModeSpoolmanDesc: 'External filament management server',
@@ -2983,6 +2986,11 @@ export default {
     historyCleared: 'Usage history cleared',
     fillSourceLabel: '(Inv)',
     lowStockThresholdError: 'Threshold must be between 0.1 and 99.9',
+    assignMismatchTitle: 'Material mismatch',
+    assignMismatchMessage: 'The selected spool material "{{spoolMaterial}}" does not match the tray material "{{trayMaterial}}" for {{location}}. Assign anyway?',
+    assignMismatchConfirm: 'Assign Anyway',
+    assignPartialMismatchMessage: 'The spool material "{{spoolMaterial}}" is similar to but not exactly matching "{{trayMaterial}}" in {{location}}. Do you want to proceed?',
+    assignProfileMismatchMessage: 'The spool profile "{{spoolProfile}}" does not match the tray profile "{{trayProfile}}" in {{location}}. Do you want to proceed?',
   },
 
   // Timelapse
@@ -3054,6 +3062,10 @@ export default {
     originalFilament: 'Original',
     overrideWith: 'Override with',
     resetToOriginal: 'Reset to original',
+    insufficientFilamentTitle: 'Not enough filament',
+    insufficientFilamentMessage: 'Some assigned spools have less filament remaining than this print needs:',
+    insufficientFilamentLine: '{{printer}} - {{slot}}: needs {{required}}g, remaining {{remaining}}g',
+    printAnyway: 'Print anyway',
     forceColorMatch: 'Force color match',
   },
 

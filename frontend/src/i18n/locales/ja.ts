@@ -112,7 +112,6 @@ export default {
     left: '左',
     right: '右',
   },
-
   // Printers page
   printers: {
     title: 'プリンター',
@@ -1330,6 +1329,9 @@ export default {
     // Filament Tracking Mode
     filamentTracking: 'フィラメント追跡',
     filamentTrackingDesc: 'フィラメントスプールの追跡方法を選択してください。内蔵インベントリまたは外部Spoolmanサーバーを使用できます。',
+    filamentChecks: 'フィラメントチェック',
+    disableFilamentWarnings: 'フィラメント警告を無効化',
+    disableFilamentWarningsDesc: '印刷またはキュー追加時にフィラメント不足の警告を表示しない',
     trackingModeBuiltIn: '内蔵インベントリ',
     trackingModeBuiltInDesc: 'RFID自動検出と使用量追跡を含む',
     trackingModeSpoolmanDesc: '外部フィラメント管理サーバー',
@@ -2983,6 +2985,11 @@ export default {
     historyCleared: '使用履歴がクリアされました',
     fillSourceLabel: '(Inv)',
     lowStockThresholdError: 'しきい値は0.1から99.9の間でなければなりません',
+    assignMismatchTitle: '材料の不一致',
+    assignMismatchMessage: '選択したスプールの材料「{{spoolMaterial}}」は、{{location}} のトレイ材料「{{trayMaterial}}」と一致しません。割り当てますか？',
+    assignMismatchConfirm: '強制的に割り当て',
+    assignPartialMismatchMessage: 'スプールの材料「{{spoolMaterial}}」は「{{trayMaterial}}」に似ていますが、{{location}} と完全には一致しません。続行しますか？',
+    assignProfileMismatchMessage: 'スプールのプロファイル「{{spoolProfile}}」は {{location}} のトレイプロファイル「{{trayProfile}}」と一致しません。続行しますか？',
   },
 
   // Timelapse
@@ -3054,6 +3061,10 @@ export default {
     originalFilament: 'オリジナル',
     overrideWith: '変更先',
     resetToOriginal: 'オリジナルに戻す',
+    insufficientFilamentTitle: 'フィラメントが不足しています',
+    insufficientFilamentMessage: '割り当てられたスプールの一部は、この印刷に必要な量より残量が少ないです:',
+    insufficientFilamentLine: '{{printer}} - {{slot}}: 必要 {{required}}g、残り {{remaining}}g',
+    printAnyway: 'それでも印刷',
     forceColorMatch: 'カラーマッチを強制',
   },
 

@@ -1330,6 +1330,9 @@ export default {
     // Filament Tracking Mode
     filamentTracking: 'Rastreamento de Filamento',
     filamentTrackingDesc: 'Escolha como rastrear seus rolos de filamento. Você pode usar o inventário interno ou conectar a um servidor Spoolman externo.',
+    filamentChecks: 'Verificações de filamento',
+    disableFilamentWarnings: 'Desativar avisos de filamento',
+    disableFilamentWarningsDesc: 'Não mostrar avisos sobre filamento insuficiente ao imprimir ou adicionar à fila',
     trackingModeBuiltIn: 'Inventário Interno',
     trackingModeBuiltInDesc: 'Correspondência automática de RFID e rastreamento de uso incluídos',
     trackingModeSpoolmanDesc: 'Servidor de gerenciamento de filamento externo',
@@ -2969,6 +2972,11 @@ export default {
     historyCleared: 'Histórico de uso limpo',
     fillSourceLabel: '(Inv)',
     lowStockThresholdError: 'O limite deve estar entre 0.1 e 99.9',
+    assignMismatchTitle: 'Incompatibilidade de material',
+    assignMismatchMessage: 'O material do carretel selecionado "{{spoolMaterial}}" não corresponde ao material da bandeja "{{trayMaterial}}" para {{location}}. Atribuir mesmo assim?',
+    assignMismatchConfirm: 'Atribuir mesmo assim',
+    assignPartialMismatchMessage: 'O material do carretel "{{spoolMaterial}}" é semelhante, mas não corresponde exatamente a "{{trayMaterial}}" em {{location}}. Deseja prosseguir?',
+    assignProfileMismatchMessage: 'O perfil do carretel "{{spoolProfile}}" não corresponde ao perfil da bandeja "{{trayProfile}}" em {{location}}. Deseja prosseguir?',
   },
 
   // Timelapse
@@ -3040,6 +3048,10 @@ export default {
     originalFilament: 'Original',
     overrideWith: 'Substituir por',
     resetToOriginal: 'Restaurar original',
+    insufficientFilamentTitle: 'Filamento insuficiente',
+    insufficientFilamentMessage: 'Alguns dos carretéis atribuídos têm menos filamento restante do que o necessário para esta impressão:',
+    insufficientFilamentLine: '{{printer}} - {{slot}}: necessário {{required}}g, restante {{remaining}}g',
+    printAnyway: 'Imprimir mesmo assim',
     forceColorMatch: 'Forçar correspondência de cor',
   },
 

@@ -1612,7 +1612,7 @@ function PrinterCard({
     printerId: number;
     amsId: number;
     trayId: number;
-    trayInfo: { type: string; color: string; location: string };
+    trayInfo: { type: string; color: string; location: string; material?: string; profile?: string };
   } | null>(null);
   const [configureSlotModal, setConfigureSlotModal] = useState<{
     amsId: number;
@@ -3202,7 +3202,7 @@ function PrinterCard({
                                 // Build filament data for hover card
                                 const filamentData = tray?.tray_type ? {
                                   vendor: (isBambuLabSpool(tray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
-                                  profile: slotPreset?.preset_name || cloudInfo?.name || tray.tray_sub_brands || tray.tray_type,
+                                  profile: slotPreset?.preset_name || cloudInfo?.name || inventoryAssignment?.spool?.slicer_filament_name || tray.tray_sub_brands || tray.tray_type,
                                   colorName: getBambuColorName(tray.tray_id_name) || hexToColorName(tray.tray_color),
                                   colorHex: tray.tray_color || null,
                                   kFactor: formatKValue(tray.k),
@@ -3333,7 +3333,9 @@ function PrinterCard({
                                               amsId: ams.id,
                                               trayId: slotIdx,
                                               trayInfo: {
-                                                type: filamentData.profile,
+                                                type: tray?.tray_type || filamentData.profile,
+                                                material: tray?.tray_type ?? undefined,
+                                                profile: filamentData.profile,
                                                 color: filamentData.colorHex || '',
                                                 location: `${getAmsLabel(ams.id, ams.tray.length)} Slot ${slotIdx + 1}`,
                                               },
@@ -3368,6 +3370,18 @@ function PrinterCard({
                                             trayId: slotIdx,
                                             trayCount: ams.tray.length,
                                             extruderId: mappedExtruderId,
+                                          }),
+                                        }}
+                                        inventory={spoolmanEnabled ? undefined : {
+                                          onAssignSpool: () => setAssignSpoolModal({
+                                            printerId: printer.id,
+                                            amsId: ams.id,
+                                            trayId: slotIdx,
+                                            trayInfo: {
+                                              type: '',
+                                              color: '',
+                                              location: `${getAmsLabel(ams.id, ams.tray.length)} Slot ${slotIdx + 1}`,
+                                            },
                                           }),
                                         }}
                                       >
@@ -3430,7 +3444,7 @@ function PrinterCard({
                         // Build filament data for hover card
                         const filamentData = tray?.tray_type ? {
                           vendor: (isBambuLabSpool(tray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
-                          profile: slotPreset?.preset_name || cloudInfo?.name || tray.tray_sub_brands || tray.tray_type,
+                          profile: slotPreset?.preset_name || cloudInfo?.name || htInventoryAssignment?.spool?.slicer_filament_name || tray.tray_sub_brands || tray.tray_type,
                           colorName: getBambuColorName(tray.tray_id_name) || hexToColorName(tray.tray_color),
                           colorHex: tray.tray_color || null,
                           kFactor: formatKValue(tray.k),
@@ -3636,7 +3650,9 @@ function PrinterCard({
                                           amsId: ams.id,
                                           trayId: htSlotId,
                                           trayInfo: {
-                                            type: filamentData.profile,
+                                            type: tray?.tray_type || filamentData.profile,
+                                            material: tray?.tray_type ?? undefined,
+                                            profile: filamentData.profile,
                                             color: filamentData.colorHex || '',
                                             location: getAmsLabel(ams.id, ams.tray.length),
                                           },
@@ -3671,6 +3687,18 @@ function PrinterCard({
                                         trayId: htSlotId,
                                         trayCount: ams.tray.length,
                                         extruderId: mappedExtruderId,
+                                      }),
+                                    }}
+                                    inventory={spoolmanEnabled ? undefined : {
+                                      onAssignSpool: () => setAssignSpoolModal({
+                                        printerId: printer.id,
+                                        amsId: ams.id,
+                                        trayId: htSlotId,
+                                        trayInfo: {
+                                          type: '',
+                                          color: '',
+                                          location: getAmsLabel(ams.id, ams.tray.length),
+                                        },
                                       }),
                                     }}
                                   >
@@ -3759,7 +3787,7 @@ function PrinterCard({
 
                               const extFilamentData = {
                                 vendor: (isBambuLabSpool(extTray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
-                                profile: extSlotPreset?.preset_name || extCloudInfo?.name || extTray.tray_sub_brands || extTray.tray_type || 'Unknown',
+                                profile: extSlotPreset?.preset_name || extCloudInfo?.name || extInventoryAssignment?.spool?.slicer_filament_name || extTray.tray_sub_brands || extTray.tray_type || 'Unknown',
                                 colorName: getBambuColorName(extTray.tray_id_name) || hexToColorName(extTray.tray_color),
                                 colorHex: extTray.tray_color || null,
                                 kFactor: formatKValue(extTray.k),
@@ -3836,7 +3864,9 @@ function PrinterCard({
                                             amsId: 255,
                                             trayId: slotTrayId,
                                             trayInfo: {
-                                              type: extFilamentData.profile,
+                                              type: extTray.tray_type || extFilamentData.profile,
+                                              material: extTray.tray_type ?? undefined,
+                                              profile: extFilamentData.profile,
                                               color: extFilamentData.colorHex || '',
                                               location: extLabel || t('printers.external'),
                                             },
@@ -3871,6 +3901,18 @@ function PrinterCard({
                                           trayId: slotTrayId,
                                           trayCount: 1,
                                           extruderId: isDualNozzle ? (extTrayId === 254 ? 1 : 0) : undefined,
+                                        }),
+                                      }}
+                                      inventory={spoolmanEnabled ? undefined : {
+                                        onAssignSpool: () => setAssignSpoolModal({
+                                          printerId: printer.id,
+                                          amsId: 255,
+                                          trayId: slotTrayId,
+                                          trayInfo: {
+                                            type: '',
+                                            color: '',
+                                            location: extLabel || t('printers.external'),
+                                          },
                                         }),
                                       }}
                                     >

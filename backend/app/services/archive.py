@@ -795,16 +795,21 @@ class ArchiveService:
                 )
 
         # Then, find similar matches by print name or MakerWorld ID
-        # Only match by name if they also have the same content hash (same file, different metadata)
+        # Prefer strict name+hash matching when hash exists; fallback to name-only for legacy/manual
+        # archives that may not have a content_hash.
         if print_name or makerworld_model_id:
             conditions = [PrintArchive.id != archive_id]
 
             name_conditions = []
-            if print_name and content_hash:
-                # Match if print names are similar AND have the same hash (same file)
-                name_conditions.append(
-                    and_(PrintArchive.print_name.ilike(print_name), PrintArchive.content_hash == content_hash)
-                )
+            if print_name:
+                if content_hash:
+                    # Match if print names are similar AND have the same hash (same file)
+                    name_conditions.append(
+                        and_(PrintArchive.print_name.ilike(print_name), PrintArchive.content_hash == content_hash)
+                    )
+                else:
+                    # Fallback for archives without hash data: match by print name only.
+                    name_conditions.append(PrintArchive.print_name.ilike(print_name))
             if makerworld_model_id:
                 # Match by MakerWorld model ID stored in extra_data (same design from MakerWorld)
                 # Use json_extract for SQLite compatibility (astext is PostgreSQL-only)

@@ -914,7 +914,7 @@ function ArchiveCard({
               className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-bambu-dark-tertiary/50 text-bambu-gray-light opacity-0 transition-opacity duration-150 group-hover:opacity-100"
               title={`SHA256: ${archive.content_hash}`}
             >
-            {archive.content_hash.slice(0, 8).toUpperCase()}
+              {archive.content_hash.slice(0, 8).toUpperCase()}
             </span>
           )}
           {archive.project_name && (

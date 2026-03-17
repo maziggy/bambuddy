@@ -487,7 +487,7 @@ export function Layout() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-2">
+        <nav className="flex-1 p-2 overflow-y-auto">
           <ul className="space-y-2">
             {orderedSidebarIds.map((id) => {
               const isExternal = isExternalLinkId(id);

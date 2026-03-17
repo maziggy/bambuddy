@@ -265,7 +265,7 @@ export function CalendarView({ archives, onArchiveClick, highlightedArchiveId }:
                             {archive.filament_color.split(',').map((color, i) => (
                               <div
                                 key={i}
-                                className="w-3 h-3 rounded-full border border-white/20"
+                                className="w-3 h-3 rounded-full border border-black/20"
                                 style={{ backgroundColor: color }}
                               />
                             ))}

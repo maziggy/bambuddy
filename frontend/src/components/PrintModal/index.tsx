@@ -2,18 +2,19 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, AlertTriangle, Calendar, Loader2, Pencil, Printer, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { PrintQueueItemCreate, PrintQueueItemUpdate } from '../../api/client';
+import type { PrintQueueItemCreate, PrintQueueItemUpdate, SpoolAssignment } from '../../api/client';
 import { api } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
+import { Card, CardContent } from '../Card';
+import { Button } from '../Button';
+import { ConfirmModal } from '../ConfirmModal';
 import { useToast } from '../../contexts/ToastContext';
-import { useFilamentMapping } from '../../hooks/useFilamentMapping';
+import { buildLoadedFilaments, useFilamentMapping } from '../../hooks/useFilamentMapping';
 import { useMultiPrinterFilamentMapping, type PerPrinterConfig } from '../../hooks/useMultiPrinterFilamentMapping';
 import { getColorName } from '../../utils/colors';
-import { isPlaceholderDate } from '../../utils/amsHelpers';
 import { getCurrencySymbol } from '../../utils/currency';
 import { toDateTimeLocalValue, parseUTCDate } from '../../utils/date';
-import { Button } from '../Button';
-import { Card, CardContent } from '../Card';
+import { getGlobalTrayId, isPlaceholderDate } from '../../utils/amsHelpers';
 import { FilamentMapping } from './FilamentMapping';
 import { FilamentOverride } from './FilamentOverride';
 import { PlateSelector } from './PlateSelector';
@@ -55,6 +56,13 @@ export function PrintModal({
 
   // Determine if we're printing a library file
   const isLibraryFile = !!libraryFileId && !archiveId;
+
+  type FilamentWarningItem = {
+    printerName: string;
+    slotLabel: string;
+    requiredGrams: number;
+    remainingGrams: number;
+  };
 
   // Multiple printer selection (used for all modes now)
   const [selectedPrinters, setSelectedPrinters] = useState<number[]>(() => {
@@ -191,6 +199,8 @@ export function PrintModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitProgress, setSubmitProgress] = useState({ current: 0, total: 0 });
 
+  const [filamentWarningItems, setFilamentWarningItems] = useState<FilamentWarningItem[] | null>(null);
+
   // Track which printers have had the "Expand custom mapping by default" setting applied
   // This ensures the setting only affects initial state, not preventing unchecking
   const [initialExpandApplied, setInitialExpandApplied] = useState<Set<number>>(new Set());
@@ -212,6 +222,13 @@ export function PrintModal({
   const { data: printers, isLoading: loadingPrinters } = useQuery({
     queryKey: ['printers'],
     queryFn: api.getPrinters,
+  });
+
+  const { data: spoolAssignments } = useQuery({
+    queryKey: ['spool-assignments'],
+    queryFn: () => api.getAssignments(),
+    staleTime: 30 * 1000,
+    enabled: ((mode === 'reprint' || mode === 'add-to-queue') && assignmentMode === 'printer') || (isLibraryFile && mode === 'reprint'),
   });
 
   // Fetch archive details to get sliced_for_model
@@ -396,6 +413,36 @@ export function PrintModal({
   const isMultiPlate = platesData?.is_multi_plate ?? false;
   const plates = platesData?.plates ?? [];
 
+  const spoolAssignmentsByPrinter = useMemo(() => {
+    const map = new Map<number, Map<number, SpoolAssignment>>();
+    if (!spoolAssignments) return map;
+    spoolAssignments.forEach((assignment) => {
+      const isExternal = assignment.ams_id === 255;
+      const globalTrayId = getGlobalTrayId(
+        assignment.ams_id,
+        assignment.tray_id,
+        isExternal
+      );
+      const printerMap = map.get(assignment.printer_id) ?? new Map();
+      printerMap.set(globalTrayId, assignment);
+      map.set(assignment.printer_id, printerMap);
+    });
+    return map;
+  }, [spoolAssignments]);
+
+  const filamentWarningMessage = useMemo(() => {
+    if (!filamentWarningItems || filamentWarningItems.length === 0) return '';
+    const lines = filamentWarningItems.map((item) =>
+      t('printModal.insufficientFilamentLine', {
+        printer: item.printerName,
+        slot: item.slotLabel,
+        required: Math.round(item.requiredGrams),
+        remaining: Math.round(item.remainingGrams),
+      })
+    );
+    return [t('printModal.insufficientFilamentMessage'), ...lines].join('\n');
+  }, [filamentWarningItems, t]);
+
   // Add to queue mutation (single printer)
   const addToQueueMutation = useMutation({
     mutationFn: (data: PrintQueueItemCreate) => api.addToQueue(data),
@@ -415,8 +462,70 @@ export function PrintModal({
     },
   });
 
-  const handleSubmit = async (e?: React.FormEvent) => {
+  const handleSubmit = async (e?: React.FormEvent, options?: { skipFilamentCheck?: boolean }) => {
     e?.preventDefault();
+
+    if (
+      !options?.skipFilamentCheck &&
+      !settings?.disable_filament_warnings &&
+      (mode === 'reprint' || mode === 'add-to-queue') &&
+      assignmentMode === 'printer'
+    ) {
+      const warningItems: FilamentWarningItem[] = [];
+      const filamentReqs = effectiveFilamentReqs?.filaments ?? [];
+
+      if (filamentReqs.length > 0 && spoolAssignmentsByPrinter.size > 0) {
+        const getRemainingWeight = (labelWeight: number, weightUsed: number) => {
+          if (!Number.isFinite(labelWeight) || labelWeight <= 0) return null;
+          if (!Number.isFinite(weightUsed) || weightUsed < 0) return null;
+          return Math.max(0, labelWeight - weightUsed);
+        };
+
+        for (const printerId of selectedPrinters) {
+          const printerMapping = selectedPrinters.length > 1
+            ? multiPrinterMapping.getFinalMapping(printerId)
+            : amsMapping;
+          if (!printerMapping) continue;
+
+          const printerStatusForWarning = selectedPrinters.length > 1
+            ? multiPrinterMapping.printerResults.find((result) => result.printerId === printerId)?.status
+            : printerStatus;
+
+          const loadedFilaments = buildLoadedFilaments(printerStatusForWarning);
+          const slotLabelByTray = new Map(loadedFilaments.map((f) => [f.globalTrayId, f.label]));
+          const assignments = spoolAssignmentsByPrinter.get(printerId);
+          const printerName = printers?.find((p) => p.id === printerId)?.name ?? `Printer ${printerId}`;
+
+          if (!assignments) continue;
+
+          filamentReqs.forEach((req) => {
+            if (!req.slot_id || req.slot_id <= 0) return;
+            const globalTrayId = printerMapping[req.slot_id - 1];
+            if (!Number.isFinite(globalTrayId) || globalTrayId < 0) return;
+
+            const assignment = assignments.get(globalTrayId);
+            const spool = assignment?.spool;
+            if (!spool) return;
+
+            const remainingGrams = getRemainingWeight(spool.label_weight, spool.weight_used);
+            if (remainingGrams === null) return;
+            if (remainingGrams >= req.used_grams) return;
+
+            warningItems.push({
+              printerName,
+              slotLabel: slotLabelByTray.get(globalTrayId) ?? `Slot ${req.slot_id}`,
+              requiredGrams: req.used_grams,
+              remainingGrams,
+            });
+          });
+        }
+      }
+
+      if (warningItems.length > 0) {
+        setFilamentWarningItems(warningItems);
+        return;
+      }
+    }
 
     // Validate printer/model selection
     if (assignmentMode === 'printer' && selectedPrinters.length === 0) {
@@ -892,6 +1001,21 @@ export function PrintModal({
           </form>
         </CardContent>
       </Card>
+
+      {filamentWarningItems && filamentWarningItems.length > 0 && (
+        <ConfirmModal
+          title={t('printModal.insufficientFilamentTitle')}
+          message={filamentWarningMessage}
+          confirmText={t('printModal.printAnyway')}
+          cancelText={t('common.cancel')}
+          variant="warning"
+          onConfirm={() => {
+            setFilamentWarningItems(null);
+            void handleSubmit(undefined, { skipFilamentCheck: true });
+          }}
+          onCancel={() => setFilamentWarningItems(null)}
+        />
+      )}
     </div>
   );
 }

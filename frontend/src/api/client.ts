@@ -99,6 +99,7 @@ export interface Printer {
   external_camera_url: string | null;
   external_camera_type: string | null;  // "mjpeg", "rtsp", "snapshot"
   external_camera_enabled: boolean;
+  camera_rotation: number;  // 0, 90, 180, 270 degrees
   plate_detection_enabled: boolean;  // Check plate before print
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
   created_at: string;
@@ -279,6 +280,7 @@ export interface PrinterCreate {
   external_camera_url?: string | null;
   external_camera_type?: string | null;
   external_camera_enabled?: boolean;
+  camera_rotation?: number;
   plate_detection_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
 }
@@ -349,6 +351,8 @@ export interface Archive {
   f3d_path: string | null;
   duplicates: ArchiveDuplicate[] | null;
   duplicate_count: number;
+  duplicate_sequence: number;  // 0 = original, 1+ = nth duplicate
+  original_archive_id: number | null;  // ID of the first/original archive
   object_count: number | null;
   print_name: string | null;
   print_time_seconds: number | null;
@@ -811,6 +815,8 @@ export interface AppSettings {
   // Date/time format settings
   date_format: 'system' | 'us' | 'eu' | 'iso';
   time_format: 'system' | '12h' | '24h';
+  // Filament tracking
+  disable_filament_warnings: boolean;  // Disable filament warnings (print insufficiency and assignment mismatch)
   // Default printer
   default_printer_id: number | null;
   // Dark mode theme settings
@@ -857,6 +863,8 @@ export interface AppSettings {
   bed_cooled_threshold: number;
   // Inventory low stock threshold
   low_stock_threshold: number;
+  // User email notifications toggle
+  user_notifications_enabled: boolean;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
@@ -2048,7 +2056,7 @@ export type Permission =
   | 'camera:view'
   | 'maintenance:read' | 'maintenance:create' | 'maintenance:update' | 'maintenance:delete'
   | 'kprofiles:read' | 'kprofiles:create' | 'kprofiles:update' | 'kprofiles:delete'
-  | 'notifications:read' | 'notifications:create' | 'notifications:update' | 'notifications:delete'
+  | 'notifications:read' | 'notifications:create' | 'notifications:update' | 'notifications:delete' | 'notifications:user_email'
   | 'notification_templates:read' | 'notification_templates:update'
   | 'external_links:read' | 'external_links:create' | 'external_links:update' | 'external_links:delete'
   | 'discovery:scan'
@@ -2110,6 +2118,14 @@ export interface PermissionCategory {
 export interface PermissionsListResponse {
   categories: PermissionCategory[];
   all_permissions: Permission[];
+}
+
+// User email notification preferences
+export interface UserEmailPreferences {
+  notify_print_start: boolean;
+  notify_print_complete: boolean;
+  notify_print_failed: boolean;
+  notify_print_stopped: boolean;
 }
 
 // Auth types
@@ -2289,6 +2305,15 @@ export const api = {
     request<{ message: string }>('/users/me/change-password', {
       method: 'POST',
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
+
+  // User Email Notifications
+  getUserEmailPreferences: () =>
+    request<UserEmailPreferences>('/user-notifications/preferences'),
+  updateUserEmailPreferences: (data: UserEmailPreferences) =>
+    request<UserEmailPreferences>('/user-notifications/preferences', {
+      method: 'PUT',
+      body: JSON.stringify(data),
     }),
 
   // Groups

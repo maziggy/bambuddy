@@ -178,7 +178,7 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
   rgba: ({ spool }) => (
     <div className="flex items-center justify-center">
       <span
-        className="w-5 h-5 rounded-full border border-white/20 flex-shrink-0"
+        className="w-5 h-5 rounded-full border border-black/20 flex-shrink-0"
         style={{ backgroundColor: spool.rgba ? `#${spool.rgba.substring(0, 6)}` : '#808080' }}
         title={spool.rgba ? `#${spool.rgba.substring(0, 6)}` : undefined}
       />

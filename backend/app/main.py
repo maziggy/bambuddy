@@ -45,6 +45,7 @@ from backend.app.api.routes import (
     support,
     system,
     updates,
+    user_notifications,
     users,
     virtual_printers,
     webhook,
@@ -280,6 +281,28 @@ _timelapse_baselines: dict[int, set[str]] = {}
 # Track active bed cooldown monitoring tasks: {printer_id: asyncio.Task}
 _bed_cooldown_tasks: dict[int, asyncio.Task] = {}
 
+# Track printers where the user explicitly stopped the print from the queue UI.
+# When on_print_complete fires with status "failed" for these printers we treat it
+# as "cancelled" (stopped by user) so the correct notification email is sent.
+_user_stopped_printers: set[int] = set()
+
+# Track created_by_id for expected prints so the user email can be sent even when
+# the archive itself doesn't have created_by_id set (e.g. library-file-based prints).
+# {(printer_id, filename): created_by_id}
+_expected_print_creators: dict[tuple[int, str], int] = {}
+
+# TTL for expected-print entries: evict registrations older than this to prevent
+# unbounded growth when a print is registered but never starts (e.g. printer
+# disconnect, app restart, print started from the printer panel).
+_EXPECTED_PRINT_TTL_SECONDS: int = 2 * 60 * 60  # 2 hours
+
+# Registration timestamps used for TTL eviction: {(printer_id, filename): monotonic_time}
+_expected_print_registered_at: dict[tuple[int, str], float] = {}
+
+# Cleanup loop interval
+_EXPECTED_PRINT_CLEANUP_INTERVAL: int = 15 * 60  # 15 minutes
+_expected_prints_cleanup_task: asyncio.Task | None = None
+
 
 async def _get_plug_energy(plug, db) -> dict | None:
     """Get energy from plug regardless of type (Tasmota, Home Assistant, or MQTT).
@@ -308,7 +331,13 @@ async def _get_plug_energy(plug, db) -> dict | None:
         return await tasmota_service.get_energy(plug)
 
 
-def register_expected_print(printer_id: int, filename: str, archive_id: int, ams_mapping: list[int] | None = None):
+def register_expected_print(
+    printer_id: int,
+    filename: str,
+    archive_id: int,
+    ams_mapping: list[int] | None = None,
+    created_by_id: int | None = None,
+):
     """Register an expected print from reprint/scheduled so we don't create duplicate archives."""
     # Store with multiple filename variations to catch different naming patterns
     _expected_prints[(printer_id, filename)] = archive_id
@@ -320,6 +349,21 @@ def register_expected_print(printer_id: int, filename: str, archive_id: int, ams
     # Store AMS mapping for usage tracking at print completion
     if ams_mapping is not None:
         _print_ams_mappings[archive_id] = ams_mapping
+    # Store created_by_id so the user start email can be sent even when the archive
+    # itself has no created_by_id (e.g. library-file-based queue prints)
+    if created_by_id is not None:
+        _expected_print_creators[(printer_id, filename)] = created_by_id
+        if filename.endswith(".3mf"):
+            base = filename[:-4]
+            _expected_print_creators[(printer_id, base)] = created_by_id
+            _expected_print_creators[(printer_id, f"{base}.gcode")] = created_by_id
+    # Record registration time for TTL-based eviction
+    _registered_at = time.monotonic()
+    _expected_print_registered_at[(printer_id, filename)] = _registered_at
+    if filename.endswith(".3mf"):
+        base = filename[:-4]
+        _expected_print_registered_at[(printer_id, base)] = _registered_at
+        _expected_print_registered_at[(printer_id, f"{base}.gcode")] = _registered_at
     logging.getLogger(__name__).info(
         f"Registered expected print: printer={printer_id}, file={filename}, archive={archive_id}, ams_mapping={ams_mapping}"
     )
@@ -331,6 +375,17 @@ def _get_start_ams_mapping(data: dict, archive_id: int | None) -> list[int] | No
     if not stored_ams_mapping and archive_id:
         stored_ams_mapping = _print_ams_mappings.get(archive_id)
     return stored_ams_mapping
+
+
+def mark_printer_stopped_by_user(printer_id: int) -> None:
+    """Mark that the active print on this printer was stopped by the user from the queue UI.
+
+    When on_print_complete fires with status 'failed' for a printer in this set we
+    reclassify it as 'cancelled' so the correct 'print stopped' notification is sent
+    rather than a 'print failed' notification.
+    """
+    _user_stopped_printers.add(printer_id)
+    logging.getLogger(__name__).info("Marked printer %s as user-stopped from queue", printer_id)
 
 
 _last_status_broadcast: dict[int, str] = {}
@@ -978,7 +1033,7 @@ async def _capture_snapshot_for_notification(printer_id: int, printer, logger) -
             frame_data = await capture_frame(printer.external_camera_url, printer.external_camera_type or "mjpeg")
             if frame_data and len(frame_data) <= 2_500_000:
                 logger.info("[SNAPSHOT] External camera frame: %s bytes", len(frame_data))
-                return frame_data
+                return _apply_camera_rotation(frame_data, printer, logger)
 
         # Try buffered frame from active stream
         from backend.app.api.routes.camera import _active_chamber_streams, _active_streams, get_buffered_frame
@@ -990,7 +1045,7 @@ async def _capture_snapshot_for_notification(printer_id: int, printer, logger) -
         if (active_for_printer or active_chamber) and buffered_frame:
             logger.info("[SNAPSHOT] Using buffered frame for printer %s: %s bytes", printer_id, len(buffered_frame))
             if len(buffered_frame) <= 2_500_000:
-                return buffered_frame
+                return _apply_camera_rotation(buffered_frame, printer, logger)
 
         # Fresh capture from printer camera
         logger.info("[SNAPSHOT] Capturing fresh frame for printer %s", printer_id)
@@ -1001,12 +1056,36 @@ async def _capture_snapshot_for_notification(printer_id: int, printer, logger) -
         )
         if frame_data and len(frame_data) <= 2_500_000:
             logger.info("[SNAPSHOT] Fresh camera frame: %s bytes", len(frame_data))
-            return frame_data
+            return _apply_camera_rotation(frame_data, printer, logger)
 
     except Exception as e:
         logger.warning("[SNAPSHOT] Failed to capture snapshot for printer %s: %s", printer_id, e)
 
     return None
+
+
+def _apply_camera_rotation(image_data: bytes, printer, logger) -> bytes:
+    """Apply camera rotation to snapshot image if configured."""
+    rotation = getattr(printer, "camera_rotation", 0)
+    if not rotation or rotation == 0:
+        return image_data
+
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        img = Image.open(BytesIO(image_data))
+        # PIL rotate is counter-clockwise, so negate for clockwise rotation
+        img = img.rotate(-rotation, expand=True)
+        buf = BytesIO()
+        img.save(buf, format="JPEG", quality=90)
+        rotated = buf.getvalue()
+        logger.info("[SNAPSHOT] Applied %d° rotation: %s → %s bytes", rotation, len(image_data), len(rotated))
+        return rotated
+    except Exception as e:
+        logger.warning("[SNAPSHOT] Failed to apply rotation: %s", e)
+        return image_data
 
 
 async def _send_print_start_notification(
@@ -1035,8 +1114,53 @@ async def _send_print_start_notification(
                 archive_data["image_data"] = image_data
 
             await notification_service.on_print_start(printer_id, printer_name, data, db, archive_data=archive_data)
+
+            # Send user-specific email notification for print start
+            if archive_data and archive_data.get("created_by_id"):
+                await notification_service.send_user_print_email(
+                    event_type="user_print_start",
+                    created_by_id=archive_data["created_by_id"],
+                    printer_name=printer_name,
+                    filename=data.get("subtask_name") or data.get("filename", "Unknown"),
+                    db=db,
+                )
     except Exception as e:
         logger.warning("Notification on_print_start failed: %s", e)
+
+
+async def _dispatch_user_print_email(
+    status: str,
+    created_by_id: int | None,
+    printer_name: str,
+    filename: str,
+    db,
+) -> None:
+    """Send a user-specific print-completion email based on print status.
+
+    Maps the normalised print status to the correct event type and delegates
+    to :meth:`NotificationService.send_user_print_email`.  A single helper
+    avoids duplicating the ``if status == "completed" / elif "failed" / elif
+    "stopped"`` dispatch block at every call site.
+
+    Does nothing if *created_by_id* is ``None``.
+    """
+    if created_by_id is None:
+        return
+    if status == "completed":
+        event_type = "user_print_complete"
+    elif status == "failed":
+        event_type = "user_print_failed"
+    elif status in ("stopped", "aborted", "cancelled"):
+        event_type = "user_print_stopped"
+    else:
+        return
+    await notification_service.send_user_print_email(
+        event_type=event_type,
+        created_by_id=created_by_id,
+        printer_name=printer_name,
+        filename=filename,
+        db=db,
+    )
 
 
 def _load_objects_from_archive(archive, printer_id: int, logger) -> None:
@@ -1066,6 +1190,9 @@ async def on_print_start(printer_id: int, data: dict):
     logger = logging.getLogger(__name__)
 
     logger.info("[CALLBACK] on_print_start called for printer %s, data keys: %s", printer_id, list(data.keys()))
+
+    # Clear any stale user-stopped flag from previous print cycles
+    _user_stopped_printers.discard(printer_id)
 
     # Cancel any active bed cooldown task for this printer
     existing_task = _bed_cooldown_tasks.pop(printer_id, None)
@@ -1222,7 +1349,36 @@ async def on_print_start(printer_id: int, data: dict):
                 f"[CALLBACK] Skipping archive - printer: {printer is not None}, auto_archive: {printer.auto_archive if printer else 'N/A'}"
             )
             if not notification_sent:
-                await _send_print_start_notification(printer_id, data, logger=logger)
+                # Even with auto-archive disabled, try to recover created_by_id from
+                # a registered expected print (e.g. a library-file queue item) so the
+                # user start email can still be sent.
+                _fn = data.get("filename", "")
+                _sn = data.get("subtask_name", "")
+                _no_archive_creator_keys: list[tuple[int, str]] = []
+                if _sn:
+                    _no_archive_creator_keys += [
+                        (printer_id, _sn),
+                        (printer_id, f"{_sn}.3mf"),
+                        (printer_id, f"{_sn}.gcode.3mf"),
+                    ]
+                if _fn:
+                    _base_fn = _fn.split("/")[-1] if "/" in _fn else _fn
+                    _no_archive_creator_keys.append((printer_id, _base_fn))
+                    _no_archive_base = _base_fn.replace(".gcode", "").replace(".3mf", "")
+                    _no_archive_creator_keys += [
+                        (printer_id, _no_archive_base),
+                        (printer_id, f"{_no_archive_base}.3mf"),
+                    ]
+                _no_archive_creator: int | None = None
+                for _key in _no_archive_creator_keys:
+                    # Clean up all dicts for every key to avoid memory leaks
+                    _expected_prints.pop(_key, None)
+                    _expected_print_registered_at.pop(_key, None)
+                    popped_creator = _expected_print_creators.pop(_key, None)
+                    if _no_archive_creator is None:
+                        _no_archive_creator = popped_creator
+                _creator_data = {"created_by_id": _no_archive_creator} if _no_archive_creator else None
+                await _send_print_start_notification(printer_id, data, _creator_data, logger)
             return
 
         # Get the filename and subtask_name
@@ -1264,10 +1420,12 @@ async def on_print_start(printer_id: int, data: dict):
         expected_archive_id = None
         for key in expected_keys:
             expected_archive_id = _expected_prints.pop(key, None)
+            _expected_print_registered_at.pop(key, None)
             if expected_archive_id:
                 # Clean up other possible keys for this print
                 for other_key in expected_keys:
                     _expected_prints.pop(other_key, None)
+                    _expected_print_registered_at.pop(other_key, None)
                 break
 
         if expected_archive_id:
@@ -1320,7 +1478,19 @@ async def on_print_start(printer_id: int, data: dict):
 
                 # Send notification with archive data (reprint/scheduled)
                 if not notification_sent:
-                    archive_data = {"print_time_seconds": archive.print_time_seconds}
+                    # Use archive's created_by_id; fall back to the creator registered via
+                    # register_expected_print (handles library-file-based queue items where
+                    # the freshly-created archive has no created_by_id yet).
+                    # Pop ALL matching keys so no stale entries remain in the dict.
+                    fallback_creator = None
+                    for key in expected_keys:
+                        popped = _expected_print_creators.pop(key, None)
+                        if fallback_creator is None:
+                            fallback_creator = popped
+                    archive_data = {
+                        "print_time_seconds": archive.print_time_seconds,
+                        "created_by_id": archive.created_by_id or fallback_creator,
+                    }
                     await _send_print_start_notification(printer_id, data, archive_data, logger)
 
                 # Extract printable objects from the archived 3MF file
@@ -1401,7 +1571,10 @@ async def on_print_start(printer_id: int, data: dict):
                         logger.warning("Failed to record starting energy for existing archive: %s", e)
                 # Send notification with archive data (existing archive)
                 if not notification_sent:
-                    archive_data = {"print_time_seconds": existing_archive.print_time_seconds}
+                    archive_data = {
+                        "print_time_seconds": existing_archive.print_time_seconds,
+                        "created_by_id": existing_archive.created_by_id,
+                    }
                     await _send_print_start_notification(printer_id, data, archive_data, logger)
                 # Extract printable objects from the archived 3MF file
                 _load_objects_from_archive(existing_archive, printer_id, logger)
@@ -1749,7 +1922,10 @@ async def on_print_start(printer_id: int, data: dict):
 
                 # Send notification with archive data (new archive created)
                 if not notification_sent:
-                    archive_data = {"print_time_seconds": archive.print_time_seconds}
+                    archive_data = {
+                        "print_time_seconds": archive.print_time_seconds,
+                        "created_by_id": archive.created_by_id,
+                    }
                     await _send_print_start_notification(printer_id, data, archive_data, logger)
 
                 # Extract printable objects for skip object functionality
@@ -2059,6 +2235,19 @@ async def on_print_complete(printer_id: int, data: dict):
 
     # Clear current print user tracking (Issue #206)
     printer_manager.clear_current_print_user(printer_id)
+
+    # If the user explicitly stopped this print from the queue UI the printer will
+    # report "failed" or "aborted" via MQTT.  Override that to "cancelled" so the
+    # correct "print stopped" notification/email is sent instead of a failure alert.
+    _raw_status = data.get("status", "completed")
+    if printer_id in _user_stopped_printers and _raw_status in ("failed", "aborted"):
+        logger.info(
+            "[CALLBACK] Overriding status '%s' -> 'cancelled' for printer %s (print was stopped from queue by user)",
+            _raw_status,
+            printer_id,
+        )
+        data = {**data, "status": "cancelled"}
+    _user_stopped_printers.discard(printer_id)
 
     # MQTT relay - publish print complete
     try:
@@ -2421,6 +2610,76 @@ async def on_print_complete(printer_id: int, data: dict):
 
     if not archive_id:
         logger.warning("Could not find archive for print complete: filename=%s, subtask=%s", filename, subtask_name)
+
+        # Still send print-complete/failed/stopped notifications even without an archive.
+        # Try to enrich with queue/library-file data so user-specific emails work too.
+        async def _notify_no_archive():
+            try:
+                async with async_session() as db:
+                    from backend.app.models.library import LibraryFile
+                    from backend.app.models.print_queue import PrintQueueItem
+                    from backend.app.models.printer import Printer
+
+                    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+                    printer_obj = result.scalar_one_or_none()
+                    p_name = printer_obj.name if printer_obj else f"Printer {printer_id}"
+
+                    # Try to find the most-recent queue item for this printer so we can
+                    # recover created_by_id and estimated print time.
+                    # NOTE: By the time this task runs the queue item status has already
+                    # been updated to a terminal state (completed/failed/cancelled), so
+                    # we look for recently-completed items (within the last 5 minutes).
+                    no_archive_data: dict | None = None
+                    try:
+                        cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+                        q_result = await db.execute(
+                            select(PrintQueueItem)
+                            .where(PrintQueueItem.printer_id == printer_id)
+                            .where(PrintQueueItem.status.in_(["completed", "failed", "cancelled"]))
+                            .where(PrintQueueItem.completed_at >= cutoff)
+                            .order_by(PrintQueueItem.completed_at.desc())
+                            .limit(1)
+                        )
+                        queue_item = q_result.scalar_one_or_none()
+                        if queue_item:
+                            no_archive_data = {"created_by_id": queue_item.created_by_id}
+                            # Pull estimated time from library file when available
+                            if queue_item.library_file_id:
+                                lib_result = await db.execute(
+                                    select(LibraryFile).where(LibraryFile.id == queue_item.library_file_id)
+                                )
+                                lib_file = lib_result.scalar_one_or_none()
+                                if lib_file and lib_file.print_time_seconds:
+                                    no_archive_data["print_time_seconds"] = lib_file.print_time_seconds
+                    except Exception as lookup_err:
+                        logger.debug(
+                            "[NOTIFY-BG] Could not look up queue item for no-archive notification: %s", lookup_err
+                        )
+
+                    ps = data.get("status", "completed")
+                    logger.info(
+                        "[NOTIFY-BG] Sending notification without archive: printer=%s, status=%s", printer_id, ps
+                    )
+                    await notification_service.on_print_complete(
+                        printer_id, p_name, ps, data, db, archive_data=no_archive_data
+                    )
+
+                    # Send user-specific email if we have a created_by_id
+                    if no_archive_data and no_archive_data.get("created_by_id"):
+                        raw_filename = data.get("subtask_name") or data.get("filename", "Unknown")
+                        await _dispatch_user_print_email(
+                            ps,
+                            no_archive_data["created_by_id"],
+                            p_name,
+                            raw_filename,
+                            db,
+                        )
+                    logger.info("[NOTIFY-BG] Completed (no-archive path)")
+            except Exception as e:
+                logger.warning("[NOTIFY-BG] Failed to send notification without archive: %s", e, exc_info=True)
+
+        task = asyncio.create_task(_notify_no_archive())
+        task.add_done_callback(lambda _t: None)
         return
 
     log_timing("Archive lookup")
@@ -2760,6 +3019,7 @@ async def on_print_complete(printer_id: int, data: dict):
                             "print_time_seconds": archive.print_time_seconds,
                             "actual_filament_grams": archive.filament_used_grams,
                             "failure_reason": archive.failure_reason,
+                            "created_by_id": archive.created_by_id,
                         }
 
                         # Scale filament usage for partial prints
@@ -2822,6 +3082,19 @@ async def on_print_complete(printer_id: int, data: dict):
                 await notification_service.on_print_complete(
                     printer_id, printer_name, print_status, data, db, archive_data=archive_data
                 )
+
+                # Send user-specific email notification
+                if archive_data:
+                    created_by_id = archive_data.get("created_by_id")
+                    raw_filename = data.get("subtask_name") or data.get("filename", "Unknown")
+                    await _dispatch_user_print_email(
+                        print_status,
+                        created_by_id,
+                        printer_name,
+                        raw_filename,
+                        db,
+                    )
+
                 logger.info("[NOTIFY-BG] Completed")
         except Exception as e:
             logger.warning("[NOTIFY-BG] Failed: %s", e)
@@ -3315,6 +3588,74 @@ def stop_camera_cleanup():
         logging.getLogger(__name__).info("Camera stream cleanup stopped")
 
 
+# ---------------------------------------------------------------------------
+# Expected-print TTL eviction
+# ---------------------------------------------------------------------------
+
+
+def _evict_stale_expected_prints() -> None:
+    """Remove entries from _expected_prints / _expected_print_creators that are
+    older than _EXPECTED_PRINT_TTL_SECONDS.
+
+    This prevents unbounded growth when a print is registered (via
+    register_expected_print) but on_print_start never fires — e.g. because the
+    printer disconnects, the app restarts, or the print is started directly from
+    the printer panel without going through the queue.
+    """
+    # Use monotonic time so the TTL is unaffected by system clock adjustments
+    # (e.g. NTP sync, DST changes).
+    cutoff = time.monotonic() - _EXPECTED_PRINT_TTL_SECONDS
+    stale_keys = [k for k, t in _expected_print_registered_at.items() if t < cutoff]
+    if not stale_keys:
+        return
+
+    evicted_archive_ids: set[int] = set()
+    for key in stale_keys:
+        archive_id = _expected_prints.pop(key, None)
+        if archive_id is not None:
+            evicted_archive_ids.add(archive_id)
+        _expected_print_creators.pop(key, None)
+        _expected_print_registered_at.pop(key, None)
+
+    # Also clean up _print_ams_mappings for archive_ids that have no remaining
+    # live keys in _expected_prints (i.e. all variants were just evicted).
+    live_archive_ids = set(_expected_prints.values())
+    for archive_id in evicted_archive_ids:
+        if archive_id not in live_archive_ids:
+            _print_ams_mappings.pop(archive_id, None)
+
+    logging.getLogger(__name__).info(
+        "Evicted %d stale expected-print entries (TTL=%ds)", len(stale_keys), _EXPECTED_PRINT_TTL_SECONDS
+    )
+
+
+async def _expected_prints_cleanup_loop() -> None:
+    """Background task: periodically evict stale expected-print entries."""
+    while True:
+        try:
+            _evict_stale_expected_prints()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logging.getLogger(__name__).warning("Expected prints cleanup failed: %s", e)
+        await asyncio.sleep(_EXPECTED_PRINT_CLEANUP_INTERVAL)
+
+
+def start_expected_prints_cleanup() -> None:
+    global _expected_prints_cleanup_task
+    if _expected_prints_cleanup_task is None:
+        _expected_prints_cleanup_task = asyncio.create_task(_expected_prints_cleanup_loop())
+        logging.getLogger(__name__).info("Expected prints cleanup started")
+
+
+def stop_expected_prints_cleanup() -> None:
+    global _expected_prints_cleanup_task
+    if _expected_prints_cleanup_task:
+        _expected_prints_cleanup_task.cancel()
+        _expected_prints_cleanup_task = None
+        logging.getLogger(__name__).info("Expected prints cleanup stopped")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -3469,6 +3810,10 @@ async def lifespan(app: FastAPI):
     # Start camera stream orphan cleanup
     start_camera_cleanup()
 
+    # Start expected-print TTL eviction (prevents memory leak when prints are
+    # registered but on_print_start never fires)
+    start_expected_prints_cleanup()
+
     # Initialize virtual printer manager and sync from DB
     from backend.app.services.virtual_printer import virtual_printer_manager
 
@@ -3491,6 +3836,7 @@ async def lifespan(app: FastAPI):
     stop_runtime_tracking()
     stop_spoolbuddy_watchdog()
     stop_camera_cleanup()
+    stop_expected_prints_cleanup()
     printer_manager.disconnect_all()
     await close_spoolman_client()
 
@@ -3686,6 +4032,7 @@ app.include_router(background_dispatch_routes.router, prefix=app_settings.api_pr
 app.include_router(kprofiles.router, prefix=app_settings.api_prefix)
 app.include_router(notifications.router, prefix=app_settings.api_prefix)
 app.include_router(notification_templates.router, prefix=app_settings.api_prefix)
+app.include_router(user_notifications.router, prefix=app_settings.api_prefix)
 app.include_router(spoolman.router, prefix=app_settings.api_prefix)
 app.include_router(updates.router, prefix=app_settings.api_prefix)
 app.include_router(maintenance.router, prefix=app_settings.api_prefix)

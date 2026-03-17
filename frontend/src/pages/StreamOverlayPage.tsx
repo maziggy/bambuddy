@@ -202,6 +202,7 @@ export function StreamOverlayPage() {
           src={streamUrl}
           alt={t('streamOverlay.cameraStream')}
           className="absolute inset-0 w-full h-full object-contain"
+          style={printer?.camera_rotation ? { transform: `rotate(${printer.camera_rotation}deg)` } : undefined}
           onError={handleStreamError}
         />
       )}

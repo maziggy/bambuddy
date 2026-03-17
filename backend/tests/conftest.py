@@ -88,6 +88,7 @@ async def test_engine():
         spool_catalog,
         spool_usage_history,
         user,
+        user_email_pref,
         virtual_printer,
     )
 

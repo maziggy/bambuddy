@@ -86,7 +86,7 @@ describe('SettingsPage', () => {
         // Use getAllByText since "General" appears both as tab and section heading
         expect(screen.getAllByText('General').length).toBeGreaterThan(0);
         expect(screen.getByText('Smart Plugs')).toBeInTheDocument();
-        expect(screen.getByText('Notifications')).toBeInTheDocument();
+        expect(screen.getAllByText('Notifications').length).toBeGreaterThan(0);
         expect(screen.getAllByText('Filament').length).toBeGreaterThan(0);
         expect(screen.getByText('Network')).toBeInTheDocument();
         expect(screen.getByText('API Keys')).toBeInTheDocument();
@@ -193,10 +193,13 @@ describe('SettingsPage', () => {
       render(<SettingsPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Notifications')).toBeInTheDocument();
+        expect(screen.getAllByText('Notifications').length).toBeGreaterThan(0);
       });
 
-      await user.click(screen.getByText('Notifications'));
+      // Click the tab button (not the mobile dropdown option)
+      const notificationButtons = screen.getAllByText('Notifications');
+      const tabButton = notificationButtons.find(el => el.tagName === 'BUTTON') || notificationButtons[0];
+      await user.click(tabButton);
 
       await waitFor(() => {
         expect(screen.getByText('Add Provider')).toBeInTheDocument();

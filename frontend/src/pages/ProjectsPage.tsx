@@ -367,7 +367,7 @@ function ProjectCard({ project, onClick, onEdit, onDelete, hasPermission, t }: P
                         {colors.slice(0, 5).map((col) => (
                           <div
                             key={col}
-                            className="w-3 h-3 rounded-full border border-white/20"
+                            className="w-3 h-3 rounded-full border border-black/20"
                             style={{ backgroundColor: col.startsWith('#') ? col : `#${col}` }}
                             title={col}
                           />

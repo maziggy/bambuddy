@@ -107,7 +107,7 @@ function PresetCard({
               {/* 1) Color dot — always shown for filament presets, dimmed if no explicit colour */}
               {preset.preset_type === 'filament' && (
                 <div
-                  className={`w-4 h-4 rounded-full border border-white/20 flex-shrink-0 ${
+                  className={`w-4 h-4 rounded-full border border-black/20 flex-shrink-0 ${
                     !hasExplicitColour && !colourHex ? 'opacity-25' : !hasExplicitColour ? 'opacity-50' : ''
                   }`}
                   style={{ backgroundColor: colourHex ? `#${colourHex}` : '#666' }}

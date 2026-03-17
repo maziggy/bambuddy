@@ -286,6 +286,61 @@ async def update_spoolman_settings(
     return await get_spoolman_settings(db)
 
 
+@router.get("/filaman")
+async def get_filaman_settings(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+):
+    """Get FilaMan integration settings."""
+    filaman_enabled = await get_setting(db, "filaman_enabled") or "false"
+    filaman_url = await get_setting(db, "filaman_url") or ""
+    filaman_sync_mode = await get_setting(db, "filaman_sync_mode") or "auto"
+    filaman_disable_weight_sync = await get_setting(db, "filaman_disable_weight_sync") or "false"
+    filaman_report_partial_usage = await get_setting(db, "filaman_report_partial_usage") or "true"
+
+    return {
+        "filaman_enabled": filaman_enabled,
+        "filaman_url": filaman_url,
+        "filaman_sync_mode": filaman_sync_mode,
+        "filaman_disable_weight_sync": filaman_disable_weight_sync,
+        "filaman_report_partial_usage": filaman_report_partial_usage,
+    }
+
+
+@router.put("/filaman")
+async def update_filaman_settings(
+    settings: dict,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+):
+    """Update FilaMan integration settings."""
+    if "filaman_enabled" in settings:
+        old_val = await get_setting(db, "filaman_enabled") or "false"
+        new_val = settings["filaman_enabled"]
+        await set_setting(db, "filaman_enabled", new_val)
+
+        # Switching to FilaMan: clear built-in inventory slot assignments
+        if old_val.lower() != "true" and new_val.lower() == "true":
+            from backend.app.models.spool_assignment import SpoolAssignment
+
+            result = await db.execute(delete(SpoolAssignment))
+            logger.info("Cleared %d spool assignments on switch to FilaMan mode", result.rowcount)
+    if "filaman_url" in settings:
+        await set_setting(db, "filaman_url", settings["filaman_url"])
+    if "filaman_sync_mode" in settings:
+        await set_setting(db, "filaman_sync_mode", settings["filaman_sync_mode"])
+    if "filaman_disable_weight_sync" in settings:
+        await set_setting(db, "filaman_disable_weight_sync", settings["filaman_disable_weight_sync"])
+    if "filaman_report_partial_usage" in settings:
+        await set_setting(db, "filaman_report_partial_usage", settings["filaman_report_partial_usage"])
+
+    await db.commit()
+    db.expire_all()
+
+    # Return updated settings
+    return await get_filaman_settings(db)
+
+
 async def get_homeassistant_settings(db: AsyncSession) -> dict:
     """
     Get Home Assistant integration settings.

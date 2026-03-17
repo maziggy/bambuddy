@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Check, X, RefreshCw, Link2, Link2Off, Database, ChevronDown, Info, AlertTriangle, Package, ExternalLink } from 'lucide-react';
 import { api } from '../api/client';
-import type { SpoolmanSyncResult, Printer } from '../api/client';
+import type { SpoolmanSyncResult, FilaManSyncResult, Printer } from '../api/client';
 import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
@@ -13,11 +13,19 @@ export function SpoolmanSettings() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const [localEnabled, setLocalEnabled] = useState(false);
+  const [trackingMode, setTrackingMode] = useState<'builtin' | 'spoolman' | 'filaman'>('builtin');
   const [localUrl, setLocalUrl] = useState('');
   const [localSyncMode, setLocalSyncMode] = useState('auto');
   const [localDisableWeightSync, setLocalDisableWeightSync] = useState(false);
   const [localReportPartialUsage, setLocalReportPartialUsage] = useState(true);
+  
+  // FilaMan local state
+  const [filamanUrl, setFilamanUrl] = useState('');
+  const [filamanApiKey, setFilamanApiKey] = useState('');
+  const [filamanSyncMode, setFilamanSyncMode] = useState('auto');
+  const [filamanDisableWeightSync, setFilamanDisableWeightSync] = useState(false);
+  const [filamanReportPartialUsage, setFilamanReportPartialUsage] = useState(true);
+
   const [selectedPrinterId, setSelectedPrinterId] = useState<number | 'all'>('all');
   const [isInitialized, setIsInitialized] = useState(false);
   const [showAllSkipped, setShowAllSkipped] = useState(false);
@@ -29,10 +37,23 @@ export function SpoolmanSettings() {
     queryFn: api.getSpoolmanSettings,
   });
 
+  // Fetch FilaMan settings
+  const { data: filamanSettings, isLoading: filamanSettingsLoading } = useQuery({
+    queryKey: ['filaman-settings'],
+    queryFn: api.getFilaManSettings,
+  });
+
   // Fetch Spoolman status
   const { data: status, isLoading: statusLoading, refetch: refetchStatus } = useQuery({
     queryKey: ['spoolman-status'],
     queryFn: api.getSpoolmanStatus,
+    refetchInterval: 30000, // Refresh every 30 seconds
+  });
+
+  // Fetch FilaMan status
+  const { data: filamanStatus, isLoading: filamanStatusLoading, refetch: refetchFilamanStatus } = useQuery({
+    queryKey: ['filaman-status'],
+    queryFn: api.getFilaManStatus,
     refetchInterval: 30000, // Refresh every 30 seconds
   });
 
@@ -44,42 +65,63 @@ export function SpoolmanSettings() {
 
   // Initialize local state from settings
   useEffect(() => {
-    if (settings) {
-      setLocalEnabled(settings.spoolman_enabled === 'true');
+    if (settings && filamanSettings) {
+      if (filamanSettings.filaman_enabled === 'true') {
+        setTrackingMode('filaman');
+      } else if (settings.spoolman_enabled === 'true') {
+        setTrackingMode('spoolman');
+      } else {
+        setTrackingMode('builtin');
+      }
+      
       setLocalUrl(settings.spoolman_url || '');
       setLocalSyncMode(settings.spoolman_sync_mode || 'auto');
       setLocalDisableWeightSync(settings.spoolman_disable_weight_sync === 'true');
       setLocalReportPartialUsage(settings.spoolman_report_partial_usage !== 'false');
+      
+      setFilamanUrl(filamanSettings.filaman_url || '');
+      setFilamanSyncMode(filamanSettings.filaman_sync_mode || 'auto');
+      setFilamanDisableWeightSync(filamanSettings.filaman_disable_weight_sync === 'true');
+      setFilamanReportPartialUsage(filamanSettings.filaman_report_partial_usage !== 'false');
+      
       setIsInitialized(true);
     }
-  }, [settings]);
+  }, [settings, filamanSettings]);
 
   // Auto-save when settings change (after initial load)
   // Intentionally omit saveMutation and settings from deps to avoid infinite loops
   useEffect(() => {
-    if (!isInitialized || !settings) return;
+    if (!isInitialized || !settings || !filamanSettings) return;
 
-    const hasChanges =
-      (settings.spoolman_enabled === 'true') !== localEnabled ||
+    const hasSpoolmanChanges =
+      (settings.spoolman_enabled === 'true') !== (trackingMode === 'spoolman') ||
       (settings.spoolman_url || '') !== localUrl ||
       (settings.spoolman_sync_mode || 'auto') !== localSyncMode ||
       (settings.spoolman_disable_weight_sync === 'true') !== localDisableWeightSync ||
       (settings.spoolman_report_partial_usage !== 'false') !== localReportPartialUsage;
 
-    if (hasChanges) {
+    const hasFilamanChanges =
+      (filamanSettings.filaman_enabled === 'true') !== (trackingMode === 'filaman') ||
+      (filamanSettings.filaman_url || '') !== filamanUrl ||
+      (filamanSettings.filaman_sync_mode || 'auto') !== filamanSyncMode ||
+      (filamanSettings.filaman_disable_weight_sync === 'true') !== filamanDisableWeightSync ||
+      (filamanSettings.filaman_report_partial_usage !== 'false') !== filamanReportPartialUsage;
+
+    if (hasSpoolmanChanges || hasFilamanChanges) {
       const timeoutId = setTimeout(() => {
-        saveMutation.mutate();
+        if (hasSpoolmanChanges) saveMutation.mutate();
+        if (hasFilamanChanges) saveFilamanMutation.mutate();
       }, 500);
       return () => clearTimeout(timeoutId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [localEnabled, localUrl, localSyncMode, localDisableWeightSync, localReportPartialUsage, isInitialized]);
+  }, [trackingMode, localUrl, localSyncMode, localDisableWeightSync, localReportPartialUsage, filamanUrl, filamanSyncMode, filamanDisableWeightSync, filamanReportPartialUsage, isInitialized]);
 
   // Save mutation
   const saveMutation = useMutation({
     mutationFn: () =>
       api.updateSpoolmanSettings({
-        spoolman_enabled: localEnabled ? 'true' : 'false',
+        spoolman_enabled: trackingMode === 'spoolman' ? 'true' : 'false',
         spoolman_url: localUrl,
         spoolman_sync_mode: localSyncMode,
         spoolman_disable_weight_sync: localDisableWeightSync ? 'true' : 'false',
@@ -88,6 +130,24 @@ export function SpoolmanSettings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['spoolman-settings'] });
       queryClient.invalidateQueries({ queryKey: ['spoolman-status'] });
+      queryClient.invalidateQueries({ queryKey: ['spool-assignments'] });
+      showToast(t('settings.toast.settingsSaved'));
+    },
+  });
+
+  // Save FilaMan mutation
+  const saveFilamanMutation = useMutation({
+    mutationFn: () =>
+      api.updateFilaManSettings({
+        filaman_enabled: trackingMode === 'filaman' ? 'true' : 'false',
+        filaman_url: filamanUrl,
+        filaman_sync_mode: filamanSyncMode,
+        filaman_disable_weight_sync: filamanDisableWeightSync ? 'true' : 'false',
+        filaman_report_partial_usage: filamanReportPartialUsage ? 'true' : 'false',
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['filaman-settings'] });
+      queryClient.invalidateQueries({ queryKey: ['filaman-status'] });
       queryClient.invalidateQueries({ queryKey: ['spool-assignments'] });
       showToast(t('settings.toast.settingsSaved'));
     },
@@ -109,10 +169,27 @@ export function SpoolmanSettings() {
     },
   });
 
+  // FilaMan Connect mutation
+  const connectFilamanMutation = useMutation({
+    mutationFn: () => api.connectFilaMan(filamanUrl, filamanApiKey),
+    onSuccess: () => {
+      refetchFilamanStatus();
+      setFilamanApiKey(''); // Clear API key after successful connection
+    },
+  });
+
+  // FilaMan Disconnect mutation
+  const disconnectFilamanMutation = useMutation({
+    mutationFn: api.disconnectFilaMan,
+    onSuccess: () => {
+      refetchFilamanStatus();
+    },
+  });
+
   // Sync all mutation
   const syncAllMutation = useMutation({
-    mutationFn: api.syncAllPrintersAms,
-    onSuccess: (data: SpoolmanSyncResult) => {
+    mutationFn: () => trackingMode === 'filaman' ? api.syncFilaManAll() : api.syncAllPrintersAms(),
+    onSuccess: (data: SpoolmanSyncResult | FilaManSyncResult) => {
       if (data.success) {
         // Show success message
       }
@@ -121,13 +198,27 @@ export function SpoolmanSettings() {
 
   // Sync single printer mutation
   const syncPrinterMutation = useMutation({
-    mutationFn: (printerId: number) => api.syncPrinterAms(printerId),
-    onSuccess: (data: SpoolmanSyncResult) => {
+    mutationFn: (printerId: number) => trackingMode === 'filaman' ? api.syncFilaManPrinter(printerId) : api.syncPrinterAms(printerId),
+    onSuccess: (data: SpoolmanSyncResult | FilaManSyncResult) => {
       if (data.success) {
         // Show success message
       }
     },
   });
+
+  // Helper to handle mode change and disconnect old integration
+  const handleModeChange = (newMode: 'builtin' | 'spoolman' | 'filaman') => {
+    if (trackingMode === newMode) return;
+
+    // Disconnect old integration if switching away from it
+    if (trackingMode === 'spoolman' && status?.connected) {
+      disconnectMutation.mutate();
+    } else if (trackingMode === 'filaman' && filamanStatus?.connected) {
+      disconnectFilamanMutation.mutate();
+    }
+
+    setTrackingMode(newMode);
+  };
 
   // Helper to handle sync based on selection
   const handleSync = () => {
@@ -158,7 +249,7 @@ export function SpoolmanSettings() {
   const syncResult = selectedPrinterId === 'all' ? syncAllMutation.data : syncPrinterMutation.data;
   const syncSuccess = selectedPrinterId === 'all' ? syncAllMutation.isSuccess : syncPrinterMutation.isSuccess;
 
-  if (settingsLoading) {
+  if (settingsLoading || filamanSettingsLoading) {
     return (
       <Card>
         <CardHeader>
@@ -184,7 +275,7 @@ export function SpoolmanSettings() {
             <Database className="w-5 h-5 text-bambu-green" />
             <h2 className="text-lg font-semibold text-white">{t('settings.filamentTracking')}</h2>
           </div>
-          {saveMutation.isPending && (
+          {(saveMutation.isPending || saveFilamanMutation.isPending) && (
             <Loader2 className="w-4 h-4 text-bambu-green animate-spin" />
           )}
         </div>
@@ -195,27 +286,27 @@ export function SpoolmanSettings() {
         </p>
 
         {/* Mode selector cards */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           {/* Built-in Inventory */}
           <button
             type="button"
-            onClick={() => setLocalEnabled(false)}
+            onClick={() => handleModeChange('builtin')}
             className={`p-3 rounded-lg border-2 text-left transition-colors ${
-              !localEnabled
+              trackingMode === 'builtin'
                 ? 'border-bambu-green bg-bambu-green/10'
                 : 'border-bambu-dark-tertiary bg-bambu-dark hover:border-bambu-gray/50'
             }`}
           >
             <div className="flex items-center gap-2 mb-1.5">
-              <Package className={`w-4 h-4 ${!localEnabled ? 'text-bambu-green' : 'text-bambu-gray'}`} />
-              <span className={`text-sm font-medium ${!localEnabled ? 'text-white' : 'text-bambu-gray'}`}>
+              <Package className={`w-4 h-4 ${trackingMode === 'builtin' ? 'text-bambu-green' : 'text-bambu-gray'}`} />
+              <span className={`text-sm font-medium ${trackingMode === 'builtin' ? 'text-white' : 'text-bambu-gray'}`}>
                 {t('settings.trackingModeBuiltIn')}
               </span>
             </div>
-            <p className={`text-xs ${!localEnabled ? 'text-bambu-gray' : 'text-bambu-gray/60'}`}>
+            <p className={`text-xs ${trackingMode === 'builtin' ? 'text-bambu-gray' : 'text-bambu-gray/60'}`}>
               {t('settings.trackingModeBuiltInDesc')}
             </p>
-            {!localEnabled && (
+            {trackingMode === 'builtin' && (
               <div className="flex items-center gap-1 mt-2">
                 <Check className="w-3 h-3 text-bambu-green" />
                 <span className="text-xs text-bambu-green">{t('common.enabled')}</span>
@@ -226,23 +317,50 @@ export function SpoolmanSettings() {
           {/* Spoolman */}
           <button
             type="button"
-            onClick={() => setLocalEnabled(true)}
+            onClick={() => handleModeChange('spoolman')}
             className={`p-3 rounded-lg border-2 text-left transition-colors ${
-              localEnabled
+              trackingMode === 'spoolman'
                 ? 'border-bambu-green bg-bambu-green/10'
                 : 'border-bambu-dark-tertiary bg-bambu-dark hover:border-bambu-gray/50'
             }`}
           >
             <div className="flex items-center gap-2 mb-1.5">
-              <ExternalLink className={`w-4 h-4 ${localEnabled ? 'text-bambu-green' : 'text-bambu-gray'}`} />
-              <span className={`text-sm font-medium ${localEnabled ? 'text-white' : 'text-bambu-gray'}`}>
+              <ExternalLink className={`w-4 h-4 ${trackingMode === 'spoolman' ? 'text-bambu-green' : 'text-bambu-gray'}`} />
+              <span className={`text-sm font-medium ${trackingMode === 'spoolman' ? 'text-white' : 'text-bambu-gray'}`}>
                 Spoolman
               </span>
             </div>
-            <p className={`text-xs ${localEnabled ? 'text-bambu-gray' : 'text-bambu-gray/60'}`}>
+            <p className={`text-xs ${trackingMode === 'spoolman' ? 'text-bambu-gray' : 'text-bambu-gray/60'}`}>
               {t('settings.trackingModeSpoolmanDesc')}
             </p>
-            {localEnabled && (
+            {trackingMode === 'spoolman' && (
+              <div className="flex items-center gap-1 mt-2">
+                <Check className="w-3 h-3 text-bambu-green" />
+                <span className="text-xs text-bambu-green">{t('common.enabled')}</span>
+              </div>
+            )}
+          </button>
+
+          {/* FilaMan */}
+          <button
+            type="button"
+            onClick={() => handleModeChange('filaman')}
+            className={`p-3 rounded-lg border-2 text-left transition-colors ${
+              trackingMode === 'filaman'
+                ? 'border-bambu-green bg-bambu-green/10'
+                : 'border-bambu-dark-tertiary bg-bambu-dark hover:border-bambu-gray/50'
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-1.5">
+              <ExternalLink className={`w-4 h-4 ${trackingMode === 'filaman' ? 'text-bambu-green' : 'text-bambu-gray'}`} />
+              <span className={`text-sm font-medium ${trackingMode === 'filaman' ? 'text-white' : 'text-bambu-gray'}`}>
+                FilaMan
+              </span>
+            </div>
+            <p className={`text-xs ${trackingMode === 'filaman' ? 'text-bambu-gray' : 'text-bambu-gray/60'}`}>
+              {t('settings.filaman.trackingModeDesc', 'Sync filament usage with FilaMan')}
+            </p>
+            {trackingMode === 'filaman' && (
               <div className="flex items-center gap-1 mt-2">
                 <Check className="w-3 h-3 text-bambu-green" />
                 <span className="text-xs text-bambu-green">{t('common.enabled')}</span>
@@ -252,7 +370,7 @@ export function SpoolmanSettings() {
         </div>
 
         {/* Built-in Inventory details */}
-        {!localEnabled && (
+        {trackingMode === 'builtin' && (
           <div className="space-y-3">
             <div className="p-3 bg-bambu-green/5 border border-bambu-green/20 rounded-lg">
               <div className="flex gap-2">
@@ -285,7 +403,7 @@ export function SpoolmanSettings() {
         )}
 
         {/* Spoolman settings - only shown when Spoolman mode is selected */}
-        {localEnabled && (
+        {trackingMode === 'spoolman' && (
           <div className="space-y-4">
             {/* Info banner about sync requirements */}
             <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
@@ -523,7 +641,301 @@ export function SpoolmanSettings() {
                         )}
                       </div>
                       <ul className="text-xs text-amber-300/80 space-y-0.5">
-                        {(showAllSkipped ? syncResult.skipped : syncResult.skipped.slice(0, 5)).map((s, i) => (
+                        {'skipped' in syncResult && (showAllSkipped ? (syncResult as SpoolmanSyncResult).skipped : (syncResult as SpoolmanSyncResult).skipped.slice(0, 5)).map((s: any, i: number) => (
+                          <li key={i} className="flex items-center gap-2">
+                            {s.color && (
+                              <span
+                                className="w-3 h-3 rounded-full border border-white/20"
+                                style={{ backgroundColor: `#${s.color}` }}
+                              />
+                            )}
+                            <span>{s.location}</span>
+                            <span className="text-amber-300/60">- {s.reason}</span>
+                          </li>
+                        ))}
+                        {!showAllSkipped && syncResult.skipped_count > 5 && (
+                          <li className="text-amber-300/60 italic">
+                            ...and {syncResult.skipped_count - 5} more
+                          </li>
+                        )}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Errors */}
+                  {syncResult.errors.length > 0 && (
+                    <div className="p-2 bg-red-500/10 border border-red-500/30 rounded text-sm">
+                      <div className="text-red-400 font-medium mb-1">Errors:</div>
+                      <ul className="text-xs text-red-300/80 space-y-0.5">
+                        {syncResult.errors.map((err, i) => (
+                          <li key={i}>{err}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* FilaMan settings - only shown when FilaMan mode is selected */}
+        {trackingMode === 'filaman' && (
+          <div className="space-y-4">
+            {/* Info banner about sync requirements */}
+            <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+              <div className="flex gap-2">
+                <Info className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+                <div className="text-xs text-blue-300">
+                  <p className="font-medium mb-1">{t('settings.howSyncWorks')}</p>
+                  <ul className="list-disc list-inside space-y-0.5 text-blue-300/80">
+                    <li>{t('settings.syncInfoRfidOnly')}</li>
+                    <li>{t('settings.syncInfoAutoCreate')}</li>
+                    <li>{t('settings.syncInfoThirdPartySkipped')}</li>
+                  </ul>
+                  <p className="font-medium mt-2 mb-1">{t('settings.linkingExistingSpools')}</p>
+                  <p className="text-blue-300/80">
+                    {t('settings.linkingExistingSpoolsDesc')}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* URL input */}
+            <div>
+              <label className="block text-sm text-bambu-gray mb-1">
+                {t('settings.filaman.url', 'FilaMan URL')}
+              </label>
+              <input
+                type="text"
+                placeholder="http://192.168.1.100:8000"
+                value={filamanUrl}
+                onChange={(e) => setFilamanUrl(e.target.value)}
+                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray/50 focus:border-bambu-green focus:outline-none"
+              />
+              <p className="text-xs text-bambu-gray mt-1">
+                {t('settings.filaman.urlHint', 'The URL of your FilaMan instance')}
+              </p>
+            </div>
+
+            {/* API Key input */}
+            <div>
+              <label className="block text-sm text-bambu-gray mb-1">
+                {t('settings.filaman.apiKey', 'API Key')}
+              </label>
+              <input
+                type="password"
+                placeholder="uak.xxx.xxx"
+                value={filamanApiKey}
+                onChange={(e) => setFilamanApiKey(e.target.value)}
+                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray/50 focus:border-bambu-green focus:outline-none"
+              />
+              <p className="text-xs text-bambu-gray mt-1">
+                {t('settings.filaman.apiKeyHint', 'Create an API key in FilaMan under Settings > API Keys')}
+              </p>
+            </div>
+
+            {/* Sync mode */}
+            <div>
+              <label className="block text-sm text-bambu-gray mb-1">
+                {t('settings.syncMode')}
+              </label>
+              <select
+                value={filamanSyncMode}
+                onChange={(e) => setFilamanSyncMode(e.target.value)}
+                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              >
+                <option value="auto">{t('settings.syncModeAuto')}</option>
+                <option value="manual">{t('settings.syncModeManual')}</option>
+              </select>
+              <p className="text-xs text-bambu-gray mt-1">
+                {filamanSyncMode === 'auto'
+                  ? t('settings.syncModeAutoDesc')
+                  : t('settings.syncModeManualDesc')}
+              </p>
+            </div>
+
+            {/* Disable Weight Sync toggle - only show when sync mode is auto */}
+            {filamanSyncMode === 'auto' && (
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-white">{t('spoolman.disableWeightSync')}</p>
+                  <p className="text-sm text-bambu-gray">
+                    {t('spoolman.disableWeightSyncDesc')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={filamanDisableWeightSync}
+                    onChange={(e) => setFilamanDisableWeightSync(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
+            )}
+
+            {/* Report Partial Usage toggle - only show when weight sync is disabled */}
+            {filamanDisableWeightSync && (
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-white">{t('spoolman.reportPartialUsage')}</p>
+                  <p className="text-sm text-bambu-gray">
+                    {t('spoolman.reportPartialUsageDesc')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={filamanReportPartialUsage}
+                    onChange={(e) => setFilamanReportPartialUsage(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
+            )}
+
+            {/* Connection status */}
+            <div className="pt-2 border-t border-bambu-dark-tertiary">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-bambu-gray">{t('settings.status')}:</span>
+                  {filamanStatusLoading ? (
+                    <Loader2 className="w-4 h-4 text-bambu-gray animate-spin" />
+                  ) : filamanStatus?.connected ? (
+                    <span className="flex items-center gap-1 text-sm text-green-500">
+                      <Check className="w-4 h-4" />
+                      {t('settings.filaman.connected', 'Connected to FilaMan')}
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-sm text-red-500">
+                      <X className="w-4 h-4" />
+                      {t('settings.filaman.disconnected', 'Not connected to FilaMan')}
+                    </span>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  {filamanStatus?.connected ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => disconnectFilamanMutation.mutate()}
+                      disabled={disconnectFilamanMutation.isPending}
+                    >
+                      {disconnectFilamanMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Link2Off className="w-4 h-4" />
+                      )}
+                      {t('settings.disconnect')}
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      onClick={() => connectFilamanMutation.mutate()}
+                      disabled={connectFilamanMutation.isPending || !filamanUrl || !filamanApiKey}
+                    >
+                      {connectFilamanMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Link2 className="w-4 h-4" />
+                      )}
+                      {t('settings.connect')}
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Error display */}
+              {connectFilamanMutation.isError && (
+                <div className="mb-3 p-2 bg-red-500/20 border border-red-500/50 rounded text-sm text-red-400">
+                  {(connectFilamanMutation.error as Error).message}
+                </div>
+              )}
+
+              {/* Manual sync section */}
+              {filamanStatus?.connected && (
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm text-white">{t('settings.syncAmsData')}</p>
+                    <p className="text-xs text-bambu-gray">
+                      {t('settings.syncAmsDataDesc')}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {/* Printer selector */}
+                    <div className="relative flex-1">
+                      <select
+                        value={selectedPrinterId}
+                        onChange={(e) => setSelectedPrinterId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                        className="w-full px-3 py-2 pr-8 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
+                      >
+                        <option value="all">{t('settings.allPrinters')}</option>
+                        {printers?.map((printer: Printer) => (
+                          <option key={printer.id} value={printer.id}>
+                            {printer.name}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+                    </div>
+                    {/* Sync button */}
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleSync}
+                      disabled={isSyncing}
+                    >
+                      {isSyncing ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4" />
+                      )}
+                      {t('spoolman.sync')}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Sync result */}
+              {syncSuccess && syncResult && (
+                <div className="mt-3 space-y-2">
+                  {/* Main result */}
+                  <div
+                    className={`p-2 rounded text-sm ${
+                      syncResult.success
+                        ? 'bg-green-500/20 border border-green-500/50 text-green-400'
+                        : 'bg-yellow-500/20 border border-yellow-500/50 text-yellow-400'
+                    }`}
+                  >
+                    {syncResult.success
+                      ? `Synced ${syncResult.synced_count} spool${syncResult.synced_count !== 1 ? 's' : ''} successfully`
+                      : `Synced ${syncResult.synced_count} spool${syncResult.synced_count !== 1 ? 's' : ''} with ${syncResult.errors.length} error${syncResult.errors.length !== 1 ? 's' : ''}`}
+                  </div>
+
+                  {/* Skipped spools */}
+                  {syncResult.skipped_count > 0 && (
+                    <div className="p-2 bg-amber-500/10 border border-amber-500/30 rounded text-sm">
+                      <div className="flex items-center justify-between text-amber-400 mb-1">
+                        <div className="flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          <span className="font-medium">
+                            {syncResult.skipped_count} spool{syncResult.skipped_count !== 1 ? 's' : ''} skipped
+                          </span>
+                        </div>
+                        {syncResult.skipped_count > 5 && (
+                          <button
+                            onClick={() => setShowAllSkipped(!showAllSkipped)}
+                            className="text-xs text-amber-400 hover:text-amber-300 underline"
+                          >
+                            {showAllSkipped ? 'Show less' : 'Show all'}
+                          </button>
+                        )}
+                      </div>
+                      <ul className="text-xs text-amber-300/80 space-y-0.5">
+                        {'skipped' in syncResult && (showAllSkipped ? (syncResult as SpoolmanSyncResult).skipped : (syncResult as SpoolmanSyncResult).skipped?.slice(0, 5))?.map((s: any, i: number) => (
                           <li key={i} className="flex items-center gap-2">
                             {s.color && (
                               <span

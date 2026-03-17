@@ -3607,6 +3607,13 @@ export const api = {
     }),
 
   // FilaMan Integration
+  getFilaManSettings: () =>
+    request<{ filaman_enabled: string; filaman_url: string; filaman_sync_mode: string; filaman_disable_weight_sync: string; filaman_report_partial_usage: string; }>('/settings/filaman'),
+  updateFilaManSettings: (data: { filaman_enabled?: string; filaman_url?: string; filaman_sync_mode?: string; filaman_disable_weight_sync?: string; filaman_report_partial_usage?: string; }) =>
+    request<{ filaman_enabled: string; filaman_url: string; filaman_sync_mode: string; filaman_disable_weight_sync: string; filaman_report_partial_usage: string; }>('/settings/filaman', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
   getFilaManStatus: () => request<FilaManStatus>('/filaman/status'),
   connectFilaMan: (url: string, apiKey: string) =>
     request<{ success: boolean; message: string }>('/filaman/connect', {

@@ -15,7 +15,7 @@ class FilaManClient:
 
         Args:
             base_url: The base URL of the FilaMan server (e.g., http://192.168.1.x:8000)
-            api_key: FilaMan API key for authentication (X-API-Key header)
+            api_key: FilaMan API key for authentication (Authorization: ApiKey header)
         """
         self.base_url = base_url.rstrip("/")
         self.api_url = f"{self.base_url}/api/v1"
@@ -27,7 +27,7 @@ class FilaManClient:
         if self._client is None:
             self._client = httpx.AsyncClient(
                 timeout=30.0,
-                headers={"X-API-Key": self._api_key},
+                headers={"Authorization": f"ApiKey {self._api_key}"},
                 limits=httpx.Limits(
                     max_keepalive_connections=5,
                     max_connections=10,
@@ -225,11 +225,7 @@ class FilaManClient:
             name = designation or manufacturer_name or "Unknown"
 
         # Determine weight: prefer initial_total_weight_g, fallback to label_weight
-        initial_weight = (
-            spool.get("initial_total_weight_g")
-            or spool.get("label_weight")
-            or 0
-        )
+        initial_weight = spool.get("initial_total_weight_g") or spool.get("label_weight") or 0
 
         return {
             "id": spool.get("id"),

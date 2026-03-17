@@ -138,6 +138,11 @@ async def connect_filaman(
         raise HTTPException(status_code=400, detail="FilaMan URL is required")
     if not api_key:
         raise HTTPException(status_code=400, detail="FilaMan API key is required")
+    if not api_key.startswith("uak."):
+        raise HTTPException(
+            status_code=400,
+            detail="API key must be a FilaMan user API key (format: uak.xxx.xxx). Create one in FilaMan under Settings > API Keys.",
+        )
 
     try:
         client = init_filaman_client(url, api_key)
@@ -373,9 +378,7 @@ async def sync_printer_ams(
 
     # Build rfid_uid → spool lookup for fast access
     spool_by_rfid = {
-        (s.get("rfid_uid") or "").strip().upper(): s
-        for s in all_spools
-        if (s.get("rfid_uid") or "").strip()
+        (s.get("rfid_uid") or "").strip().upper(): s for s in all_spools if (s.get("rfid_uid") or "").strip()
     }
 
     ams_units = _extract_ams_units(ams_data)
@@ -459,9 +462,7 @@ async def sync_all_printers(
         raise HTTPException(status_code=503, detail=f"Failed to fetch spools from FilaMan: {e}")
 
     spool_by_rfid = {
-        (s.get("rfid_uid") or "").strip().upper(): s
-        for s in all_spools
-        if (s.get("rfid_uid") or "").strip()
+        (s.get("rfid_uid") or "").strip().upper(): s for s in all_spools if (s.get("rfid_uid") or "").strip()
     }
 
     disable_weight_sync = fm["disable_weight_sync"]
@@ -514,7 +515,9 @@ async def sync_all_printers(
                             await client.report_consumption(spool["id"], round(delta, 2))
                     total_synced += 1
                 except Exception as e:
-                    all_errors.append(f"{printer.name} AMS {ams_unit.get('id', '?')} tray {tray_data.get('id', '?')}: {e}")
+                    all_errors.append(
+                        f"{printer.name} AMS {ams_unit.get('id', '?')} tray {tray_data.get('id', '?')}: {e}"
+                    )
 
     return SyncResult(
         success=len(all_errors) == 0,

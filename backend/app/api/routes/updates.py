@@ -99,8 +99,8 @@ def parse_version(version: str) -> tuple:
         micro = int(match.group(4)) if match.group(4) else 0
         prerelease_num = int(match.group(5)) if match.group(5) else 0
 
-        # Check if this is a prerelease (has b/beta/alpha/rc suffix)
-        is_prerelease = 1 if re.search(r"[a-zA-Z]", version.split(".")[-1]) else 0
+        # Check if this is a prerelease (has b/beta/alpha/rc/daily suffix anywhere)
+        is_prerelease = 1 if re.search(r"[a-zA-Z]", version) else 0
 
         return (major, minor, patch, micro, is_prerelease, prerelease_num)
 

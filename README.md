@@ -213,6 +213,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Admin creates users with email — system sends secure random password automatically
 - Users can reset their own password from the login screen (no admin needed)
 - Customizable email templates (welcome email, password reset)
+- **Per-user email notifications** — Users receive email alerts for their own print jobs (start, complete, failed, stopped) with individual toggle controls
 
 </td>
 </tr>

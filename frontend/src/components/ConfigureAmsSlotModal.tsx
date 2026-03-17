@@ -841,7 +841,7 @@ export function ConfigureAmsSlotModal({
                 <span className="text-white/30">|</span>
                 {slotInfo.trayColor && (
                   <span
-                    className="w-4 h-4 rounded-full border border-white/20"
+                    className="w-4 h-4 rounded-full border border-black/20"
                     style={{ backgroundColor: `#${slotInfo.trayColor.slice(0, 6)}` }}
                   />
                 )}
@@ -882,7 +882,7 @@ export function ConfigureAmsSlotModal({
               <div className="flex items-center gap-2">
                 {slotInfo.trayColor && (
                   <span
-                    className="w-4 h-4 rounded-full border border-white/20"
+                    className="w-4 h-4 rounded-full border border-black/20"
                     style={{ backgroundColor: `#${slotInfo.trayColor.slice(0, 6)}` }}
                   />
                 )}
@@ -1034,7 +1034,7 @@ export function ConfigureAmsSlotModal({
                             title={entry.color_name}
                           >
                             <span
-                              className="w-4 h-4 rounded-full border border-white/30 flex-shrink-0"
+                              className="w-4 h-4 rounded-full border border-black/20 flex-shrink-0"
                               style={{ backgroundColor: entry.hex_color }}
                             />
                             <span className="text-xs text-white/80 whitespace-nowrap">{entry.color_name}</span>
@@ -1269,7 +1269,7 @@ export function ConfigureAmsSlotModal({
                           title={entry.color_name}
                         >
                           <span
-                            className="w-4 h-4 rounded-full border border-white/30 flex-shrink-0"
+                            className="w-4 h-4 rounded-full border border-black/20 flex-shrink-0"
                             style={{ backgroundColor: entry.hex_color }}
                           />
                           <span className="text-xs text-white/80 whitespace-nowrap">{entry.color_name}</span>

@@ -11,3 +11,6 @@ CVE-2026-3184
 CVE-2025-61143
 CVE-2025-61144
 CVE-2025-61145
+
+# iptables --syn flag bypass (LOW, no fix available, not relevant — container doesn't use iptables).
+CVE-2012-2663

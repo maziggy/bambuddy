@@ -476,7 +476,7 @@ export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: F
                     const percent = colorTotal > 0 ? ((entry.value / colorTotal) * 100).toFixed(0) : 0;
                     return (
                       <div key={entry.hex} className="flex items-center gap-1.5 text-xs min-w-0">
-                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 border border-white/20"
+                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 border border-black/20"
                           style={{ backgroundColor: entry.hex }} />
                         <span className="text-bambu-gray truncate">
                           {percent}%

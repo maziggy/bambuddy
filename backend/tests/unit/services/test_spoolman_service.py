@@ -298,11 +298,15 @@ class TestSpoolmanClient:
     async def test_clear_location_for_removed_spools_with_cached_spools(self, client):
         """Verify clear_location_for_removed_spools uses cached spools."""
         cached = [
-            {"id": 1, "location": "Printer1 - AMS A1", "extra": {"tag": '"TAG1"'}},
-            {"id": 2, "location": "Printer1 - AMS A2", "extra": {"tag": '"TAG2"'}},
-            {"id": 3, "location": "Printer1 - AMS A3", "extra": {"tag": '"TAG3"'}},
+            {"id": 1, "location": "Printer1 - AMS A1", "extra": {"tag": '"A1B2C3D4E5F60718293A4B5C6D7E8F90"'}},
+            {"id": 2, "location": "Printer1 - AMS A2", "extra": {"tag": '"B1C2D3E4F5061728394A5B6C7D8E9F01"'}},
+            {"id": 3, "location": "Printer1 - AMS A3", "extra": {"tag": '"C1D2E3F40516273849A5B6C7D8E9F012"'}},
         ]
-        current_tags = {"TAG1", "TAG2"}  # TAG3 was removed
+        # Tag 3 was cleared, so only tags 1 and 2 are current
+        current_tags = {
+            "A1B2C3D4E5F60718293A4B5C6D7E8F90",
+            "B1C2D3E4F5061728394A5B6C7D8E9F01",
+        }
 
         with (
             patch.object(client, "get_spools", AsyncMock()) as mock_get,

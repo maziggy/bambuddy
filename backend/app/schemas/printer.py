@@ -18,6 +18,7 @@ class PrinterBase(BaseModel):
     external_camera_url: str | None = None
     external_camera_type: str | None = None  # "mjpeg", "rtsp", "snapshot", "usb"
     external_camera_enabled: bool = False
+    camera_rotation: int = 0  # 0, 90, 180, 270 degrees
 
 
 class PrinterCreate(PrinterBase):
@@ -49,6 +50,7 @@ class PrinterUpdate(BaseModel):
     external_camera_url: str | None = None
     external_camera_type: str | None = None
     external_camera_enabled: bool | None = None
+    camera_rotation: int | None = None  # 0, 90, 180, 270 degrees
     plate_detection_enabled: bool | None = None
     plate_detection_roi: PlateDetectionROI | None = None
 
@@ -61,6 +63,7 @@ class PrinterResponse(PrinterBase):
     external_camera_url: str | None = None
     external_camera_type: str | None = None
     external_camera_enabled: bool = False
+    camera_rotation: int = 0  # 0, 90, 180, 270 degrees
     plate_detection_enabled: bool = False
     plate_detection_roi: PlateDetectionROI | None = None
     created_at: datetime
@@ -84,6 +87,7 @@ class PrinterResponse(PrinterBase):
             "external_camera_url": printer.external_camera_url,
             "external_camera_type": printer.external_camera_type,
             "external_camera_enabled": printer.external_camera_enabled,
+            "camera_rotation": printer.camera_rotation,
             "is_active": printer.is_active,
             "nozzle_count": printer.nozzle_count,
             "print_hours_offset": printer.print_hours_offset,

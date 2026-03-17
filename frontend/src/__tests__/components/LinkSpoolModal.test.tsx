@@ -117,8 +117,27 @@ describe('LinkSpoolModal', () => {
   });
 
   describe('linking', () => {
-    it('calls linkSpool on spool click', async () => {
+    it('uses trayUuid when linking if present (Bambu spool path)', async () => {
       render(<LinkSpoolModal {...defaultProps} />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Generic PLA Red/)).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByText(/Generic PLA Red/).closest('button')!);
+
+      await waitFor(() => {
+        expect(api.linkSpool).toHaveBeenCalledWith(1, {
+          spoolTag: 'A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4',
+          printerId: 1,
+          amsId: 0,
+          trayId: 0,
+        });
+      });
+    });
+
+    it('falls back to tagUid when trayUuid is missing (generic spool path)', async () => {
+      render(<LinkSpoolModal {...defaultProps} trayUuid="" />);
 
       await waitFor(() => {
         expect(screen.getByText(/Generic PLA Red/)).toBeInTheDocument();

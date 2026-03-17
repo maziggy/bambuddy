@@ -46,7 +46,7 @@ export function NotificationsPage() {
     if ((advancedAuthStatus && !advancedAuthStatus.advanced_auth_enabled) || (settings && !settings.user_notifications_enabled)) {
       navigate('/settings', { replace: true });
     }
-  }, [advancedAuthStatus, navigate]);
+  }, [advancedAuthStatus, settings, navigate]);
 
   // Populate form when preferences load
   useEffect(() => {

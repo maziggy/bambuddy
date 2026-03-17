@@ -2654,7 +2654,7 @@ async def on_print_complete(printer_id: int, data: dict):
                 logger.warning("[NOTIFY-BG] Failed to send notification without archive: %s", e, exc_info=True)
 
         task = asyncio.create_task(_notify_no_archive())
-        task.add_done_callback(lambda t: t.result() if not t.cancelled() else None)
+        task.add_done_callback(lambda t: None)
         return
 
     log_timing("Archive lookup")

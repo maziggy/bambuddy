@@ -15,6 +15,7 @@ All notable changes to Bambuddy will be documented in this file.
 ### Changed
 
 ### Improved
+- **Compact Assign Spool Modal** ([#725](https://github.com/maziggy/bambuddy/issues/725)) — The "Assign Spool" modal now uses a compact 3-column grid layout instead of a vertical list, showing more spools at once without scrolling. Each card displays the spool name, color, and remaining/total weight. The modal is wider with a taller scroll area. Requested by @RosdasHH.
 
 ### Security
 

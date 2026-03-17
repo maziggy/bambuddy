@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { X, Loader2, Package, Check, Search } from 'lucide-react';
+import { X, Loader2, Package, Search } from 'lucide-react';
 import { api } from '../api/client';
 import type { InventorySpool, SpoolAssignment } from '../api/client';
 import { Button } from './Button';
@@ -198,7 +198,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
           onClick={onClose}
         />
 
-      <div className="relative w-full max-w-md mx-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl">
+      <div className="relative w-full max-w-2xl mx-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
           <div className="flex items-center gap-2">
@@ -251,38 +251,34 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
                 <Loader2 className="w-6 h-6 text-bambu-green animate-spin" />
               </div>
             ) : filteredSpools && filteredSpools.length > 0 ? (
-              <div className="max-h-64 overflow-y-auto space-y-2">
+              <div className="max-h-96 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {filteredSpools.map((spool: InventorySpool) => (
                   <button
                     key={spool.id}
                     onClick={() => setSelectedSpoolId(spool.id)}
-                    className={`w-full p-3 rounded-lg border text-left transition-colors ${
+                    className={`p-2.5 rounded-lg border text-left transition-colors ${
                       selectedSpoolId === spool.id
                         ? 'bg-bambu-green/20 border-bambu-green'
                         : 'bg-bambu-dark border-bambu-dark-tertiary hover:border-bambu-gray'
                     }`}
                   >
-                    <div className="flex items-center gap-2">
+                    <p className="text-white text-sm font-medium truncate">
+                      {spool.brand ? `${spool.brand} ` : ''}{spool.material}{spool.subtype ? ` ${spool.subtype}` : ''}
+                    </p>
+                    <div className="flex items-center gap-1.5 mt-1">
                       {spool.rgba && (
                         <span
-                          className="w-4 h-4 rounded-full border border-white/20 flex-shrink-0"
+                          className="w-3 h-3 rounded-full border border-white/20 flex-shrink-0"
                           style={{ backgroundColor: `#${spool.rgba.substring(0, 6)}` }}
                         />
                       )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white font-medium truncate">
-                          {spool.brand ? `${spool.brand} ` : ''}{spool.material}{spool.subtype ? ` ${spool.subtype}` : ''}
-                        </p>
-                        <p className="text-xs text-bambu-gray">
-                          {spool.color_name || ''}
-                          {spool.label_weight ? ` - ${spool.label_weight}g` : ''}
-                          {spool.label_weight ? ` (${Math.max(0, Math.round(spool.label_weight - spool.weight_used))}g ${t('ams.remainingUnit')})` : ''}
-                        </p>
-                      </div>
-                      {selectedSpoolId === spool.id && (
-                        <Check className="w-4 h-4 text-bambu-green flex-shrink-0" />
-                      )}
+                      <span className="text-xs text-bambu-gray truncate">{spool.color_name || ''}</span>
                     </div>
+                    {spool.label_weight && (
+                      <p className="text-xs text-bambu-gray mt-1">
+                        {Math.max(0, Math.round(spool.label_weight - spool.weight_used))} / {spool.label_weight}g
+                      </p>
+                    )}
                   </button>
                 ))}
               </div>

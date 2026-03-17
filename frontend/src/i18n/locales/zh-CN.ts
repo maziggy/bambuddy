@@ -2670,6 +2670,7 @@ export default {
       filamentCost: '耗材成本',
       energy: '能源',
       totalCost: '总成本',
+      total: '总计',
       includesBom: '含物料清单',
       budget: '预算',
       remaining: '剩余',

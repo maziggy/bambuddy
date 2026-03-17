@@ -121,6 +121,7 @@ class ProjectListResponse(BaseModel):
     status: str
     target_count: int | None
     target_parts_count: int | None = None
+    budget: float | None = None
     created_at: datetime
     # Quick stats
     archive_count: int = 0  # Number of print jobs

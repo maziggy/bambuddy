@@ -608,6 +608,7 @@ export interface ProjectListItem {
   status: string;
   target_count: number | null;  // Target number of plates/print jobs
   target_parts_count: number | null;  // Target number of parts/objects
+  budget: number | null;
   created_at: string;
   archive_count: number;  // Number of print jobs (plates)
   total_items: number;  // Sum of quantities (total items printed, including failed)

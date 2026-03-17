@@ -610,7 +610,10 @@ export function ProjectDetailPage() {
       )}
 
       {/* Cost tracking */}
-      {stats && (stats.estimated_cost > 0 || project.budget) && (
+      {stats && (() => {
+        const totalCost = stats.estimated_cost + stats.total_energy_cost + stats.bom_cost;
+        return (stats.estimated_cost > 0 || totalCost > 0 || project.budget !== null);
+      })() && (
         <Card>
           <CardContent className="p-4">
             <h2 className="text-lg font-semibold text-white mb-3">
@@ -651,20 +654,21 @@ export function ProjectDetailPage() {
                   </div>
                 );
               })()}
-              {project.budget && (
-                <>
+              {project.budget !== null && (() => {
+                const totalCost = stats.estimated_cost + stats.total_energy_cost + stats.bom_cost;
+                const remaining = project.budget - totalCost;
+                return (
                   <div>
                     <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.cost.budget')}</p>
-                    <p className="text-lg font-semibold text-white">{currency}{project.budget.toFixed(2)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.cost.remaining')}</p>
-                    <p className={`text-lg font-semibold ${project.budget - stats.estimated_cost >= 0 ? 'text-bambu-green' : 'text-red-400'}`}>
-                      {currency}{(project.budget - stats.estimated_cost).toFixed(2)}
+                    <p className="text-sm text-bambu-gray">
+                      {t('projectDetail.cost.total')}: <span className="text-white font-semibold">{currency}{project.budget.toFixed(2)}</span>
+                    </p>
+                    <p className={`text-sm ${remaining >= 0 ? 'text-bambu-green' : 'text-red-400'}`}>
+                      {t('projectDetail.cost.remaining')}: <span className="font-semibold">{currency}{remaining.toFixed(2)}</span>
                     </p>
                   </div>
-                </>
-              )}
+                );
+              })()}
             </div>
           </CardContent>
         </Card>
@@ -1285,6 +1289,7 @@ export function ProjectDetailPage() {
       {showEditModal && (
         <ProjectModal
           t={t}
+          currencySymbol={currency}
           project={{
             ...project,
             archive_count: stats?.total_archives || 0,

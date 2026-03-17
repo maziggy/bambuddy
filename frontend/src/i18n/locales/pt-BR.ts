@@ -2670,6 +2670,7 @@ export default {
       filamentCost: 'Custo do Filamento',
       energy: 'Energia',
       totalCost: 'Custo Total',
+      total: 'Total',
       includesBom: 'incl. lista de materiais',
       budget: 'Orçamento',
       remaining: 'Restante',

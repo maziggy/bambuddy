@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Loader2, Search, Link } from 'lucide-react';
 import { api } from '../api/client';
-import type { UnlinkedSpool } from '../api/client';
+import type { UnlinkedSpool, FilaManUnlinkedSpool } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 
@@ -15,25 +15,33 @@ interface LinkSpoolModalProps {
   printerId: number;
   amsId: number;
   trayId: number;
+  backend?: 'spoolman' | 'filaman';
 }
 
-export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, amsId, trayId }: LinkSpoolModalProps) {
+export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, amsId, trayId, backend = 'spoolman' }: LinkSpoolModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [search, setSearch] = useState('');
   const spoolTag = tagUid || trayUuid;
 
-  const { data: spools, isLoading } = useQuery({
-    queryKey: ['unlinked-spools'],
-    queryFn: api.getUnlinkedSpools,
-    enabled: isOpen,
-  });
+  const { data: spools, isLoading } = useQuery(
+    backend === 'filaman'
+      ? {
+          queryKey: ['filaman-unlinked-spools'],
+          queryFn: api.getFilaManUnlinkedSpools,
+          enabled: isOpen,
+        }
+      : {
+          queryKey: ['unlinked-spools'],
+          queryFn: api.getUnlinkedSpools,
+          enabled: isOpen,
+        }
+  );
 
-  // Filter Spoolman unlinked spools matching search
   const filteredSpools = useMemo(() => {
     if (!spools) return [];
-    return spools.filter((s: UnlinkedSpool) => {
+    return (spools as (UnlinkedSpool | FilaManUnlinkedSpool)[]).filter((s) => {
       if (!search) return true;
       const q = search.toLowerCase();
       return (
@@ -46,15 +54,22 @@ export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, a
 
   const linkMutation = useMutation({
     mutationFn: (spoolId: number) =>
-      api.linkSpool(spoolId, {
-        spoolTag: spoolTag!,
-        printerId,
-        amsId,
-        trayId,
-      }),
+      backend === 'filaman'
+        ? api.linkFilaManSpool(spoolId, spoolTag!)
+        : api.linkSpool(spoolId, {
+            spoolTag: spoolTag!,
+            printerId,
+            amsId,
+            trayId,
+          }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['unlinked-spools'] });
-      queryClient.invalidateQueries({ queryKey: ['linked-spools'] });
+      if (backend === 'filaman') {
+        queryClient.invalidateQueries({ queryKey: ['filaman-unlinked-spools'] });
+        queryClient.invalidateQueries({ queryKey: ['filaman-linked-spools'] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['unlinked-spools'] });
+        queryClient.invalidateQueries({ queryKey: ['linked-spools'] });
+      }
       showToast(t('spoolman.linkSuccess'), 'success');
       onClose();
     },
@@ -115,7 +130,7 @@ export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, a
               {t('inventory.noSpoolsMatch')}
             </p>
           ) : (
-            filteredSpools.map((spool: UnlinkedSpool) => (
+            filteredSpools.map((spool: UnlinkedSpool | FilaManUnlinkedSpool) => (
               <button
                 key={spool.id}
                 onClick={() => linkMutation.mutate(spool.id)}

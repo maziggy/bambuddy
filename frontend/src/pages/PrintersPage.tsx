@@ -1649,6 +1649,12 @@ function PrinterCard({
     refetchInterval: 30000, // Fallback polling, WebSocket handles real-time
   });
 
+  const { data: filamanSettings } = useQuery({
+    queryKey: ['filaman-settings'],
+    queryFn: api.getFilaManSettings,
+  });
+  const isFilaManActive = filamanSettings?.filaman_enabled === 'true';
+
   // Check for firmware updates (cached for 5 minutes, can be disabled in settings)
   const { data: firmwareInfo } = useQuery({
     queryKey: ['firmwareUpdate', printer.id],
@@ -4589,6 +4595,7 @@ function PrinterCard({
           printerId={linkSpoolModal.printerId}
           amsId={linkSpoolModal.amsId}
           trayId={linkSpoolModal.trayId}
+          backend={isFilaManActive ? 'filaman' : 'spoolman'}
         />
       )}
 

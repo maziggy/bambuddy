@@ -213,7 +213,15 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
           { key: 'field_message', label: 'Message Field Name', placeholder: 'message', type: 'text', required: false, showIf: (cfg: Record<string, string>) => cfg.payload_format !== 'slack' },
         ];
       case 'homeassistant':
-        return [];
+        return [
+          {
+            key: 'service',
+            label: 'Home Assistant Service',
+            placeholder: 'notify.mobile_app_myphone',
+            type: 'text',
+            required: false,
+          },
+        ];
       default:
         return [];
     }

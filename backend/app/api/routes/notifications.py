@@ -58,6 +58,8 @@ def _provider_to_dict(provider: NotificationProvider) -> dict:
         "on_plate_not_empty": provider.on_plate_not_empty,
         # Bed cooled
         "on_bed_cooled": provider.on_bed_cooled,
+        # First layer complete
+        "on_first_layer_complete": provider.on_first_layer_complete,
         # Print queue events
         "on_queue_job_added": provider.on_queue_job_added,
         "on_queue_job_assigned": provider.on_queue_job_assigned,
@@ -133,6 +135,18 @@ async def create_notification_provider(
         on_ams_ht_temperature_high=provider_data.on_ams_ht_temperature_high,
         # Build plate detection
         on_plate_not_empty=provider_data.on_plate_not_empty,
+        # Bed cooled
+        on_bed_cooled=provider_data.on_bed_cooled,
+        # First layer complete
+        on_first_layer_complete=provider_data.on_first_layer_complete,
+        # Print queue events
+        on_queue_job_added=provider_data.on_queue_job_added,
+        on_queue_job_assigned=provider_data.on_queue_job_assigned,
+        on_queue_job_started=provider_data.on_queue_job_started,
+        on_queue_job_waiting=provider_data.on_queue_job_waiting,
+        on_queue_job_skipped=provider_data.on_queue_job_skipped,
+        on_queue_job_failed=provider_data.on_queue_job_failed,
+        on_queue_completed=provider_data.on_queue_completed,
         # Quiet hours
         quiet_hours_enabled=provider_data.quiet_hours_enabled,
         quiet_hours_start=provider_data.quiet_hours_start,

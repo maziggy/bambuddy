@@ -430,7 +430,7 @@ class TestSpoolmanAPI:
             json={"tray_uuid": "ABC123"},  # Too short
         )
         assert response.status_code == 400
-        assert "32 hex characters" in response.json()["detail"]
+        assert "16 or 32 hex characters" in response.json()["detail"]
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -464,6 +464,24 @@ class TestSpoolmanAPI:
 
         # Verify update_spool was called
         mock_spoolman_client.update_spool.assert_called_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unlink_spool_success(self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client):
+        """Verify successfully unlinking a spool clears extra.tag."""
+        mock_spoolman_client.update_spool = AsyncMock(return_value={"id": 1, "extra": {"tag": '""'}})
+
+        response = await async_client.post("/api/v1/spoolman/spools/1/unlink")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "unlinked" in data["message"].lower()
+
+        mock_spoolman_client.update_spool.assert_called_once_with(
+            spool_id=1,
+            clear_location=True,
+            extra={"tag": '""'},
+        )
 
     # =========================================================================
     # Sync Tests

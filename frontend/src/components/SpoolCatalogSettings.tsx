@@ -22,6 +22,10 @@ export function SpoolCatalogSettings() {
   const [formWeight, setFormWeight] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // Selection state
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+
   // Confirmation modals
   const [deleteEntry, setDeleteEntry] = useState<SpoolCatalogEntry | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -123,6 +127,36 @@ export function SpoolCatalogSettings() {
     }
   };
 
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredCatalog.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredCatalog.map(e => e.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    setShowBulkDeleteConfirm(false);
+    if (selectedIds.size === 0) return;
+    try {
+      const result = await api.bulkDeleteCatalogEntries([...selectedIds]);
+      setCatalog(prev => prev.filter(e => !selectedIds.has(e.id)));
+      setSelectedIds(new Set());
+      showToast(t('settings.catalog.bulkDeleted', { count: result.deleted }), 'success');
+    } catch {
+      showToast(t('settings.catalog.bulkDeleteFailed'), 'error');
+    }
+  };
+
   const handleExport = () => {
     const exportData = catalog.map(({ name, weight }) => ({ name, weight }));
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
@@ -206,6 +240,26 @@ export function SpoolCatalogSettings() {
             <span className="hidden sm:inline">{t('common.add')}</span>
           </button>
         </div>
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-2 mt-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-lg">
+            <span className="text-sm text-red-400">
+              {t('settings.catalog.selectedCount', { count: selectedIds.size })}
+            </span>
+            <button
+              onClick={() => setShowBulkDeleteConfirm(true)}
+              className="ml-auto px-3 py-1.5 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors flex items-center gap-1.5"
+            >
+              <Trash2 className="w-4 h-4" />
+              {t('settings.catalog.deleteSelected')}
+            </button>
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="px-3 py-1.5 text-sm text-bambu-gray hover:text-white transition-colors"
+            >
+              {t('common.cancel')}
+            </button>
+          </div>
+        )}
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-bambu-gray">
@@ -275,6 +329,14 @@ export function SpoolCatalogSettings() {
             <table className="w-full text-sm">
               <thead className="bg-bambu-dark sticky top-0">
                 <tr>
+                  <th className="px-2 py-2 w-10">
+                    <input
+                      type="checkbox"
+                      checked={filteredCatalog.length > 0 && selectedIds.size === filteredCatalog.length}
+                      onChange={toggleSelectAll}
+                      className="w-4 h-4 accent-bambu-green cursor-pointer"
+                    />
+                  </th>
                   <th className="px-4 py-2 text-left text-bambu-gray font-medium">{t('common.name')}</th>
                   <th className="px-4 py-2 text-right text-bambu-gray font-medium w-24">{t('settings.catalog.weight')}</th>
                   <th className="px-4 py-2 text-center text-bambu-gray font-medium w-20">{t('settings.catalog.type')}</th>
@@ -284,15 +346,23 @@ export function SpoolCatalogSettings() {
               <tbody>
                 {filteredCatalog.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-4 py-8 text-center text-bambu-gray">
+                    <td colSpan={5} className="px-4 py-8 text-center text-bambu-gray">
                       {search ? t('settings.catalog.noMatch') : t('settings.catalog.empty')}
                     </td>
                   </tr>
                 ) : (
                   filteredCatalog.map(entry => (
-                    <tr key={entry.id} className="border-t border-bambu-dark-tertiary hover:bg-bambu-dark">
+                    <tr key={entry.id} className={`border-t border-bambu-dark-tertiary hover:bg-bambu-dark ${selectedIds.has(entry.id) ? 'bg-bambu-dark' : ''}`}>
                       {editingId === entry.id ? (
                         <>
+                          <td className="px-2 py-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(entry.id)}
+                              onChange={() => toggleSelect(entry.id)}
+                              className="w-4 h-4 accent-bambu-green cursor-pointer"
+                            />
+                          </td>
                           <td className="px-4 py-2">
                             <input
                               type="text"
@@ -329,6 +399,14 @@ export function SpoolCatalogSettings() {
                         </>
                       ) : (
                         <>
+                          <td className="px-2 py-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(entry.id)}
+                              onChange={() => toggleSelect(entry.id)}
+                              className="w-4 h-4 accent-bambu-green cursor-pointer"
+                            />
+                          </td>
                           <td className="px-4 py-2 text-white">{entry.name}</td>
                           <td className="px-4 py-2 text-right font-mono text-white">{entry.weight}g</td>
                           <td className="px-4 py-2 text-center">
@@ -378,6 +456,18 @@ export function SpoolCatalogSettings() {
           variant="danger"
           onConfirm={handleDelete}
           onCancel={() => setDeleteEntry(null)}
+        />
+      )}
+
+      {/* Bulk delete confirmation */}
+      {showBulkDeleteConfirm && (
+        <ConfirmModal
+          title={t('settings.catalog.deleteSelected')}
+          message={t('settings.catalog.bulkDeleteConfirm', { count: selectedIds.size })}
+          confirmText={t('common.delete')}
+          variant="danger"
+          onConfirm={handleBulkDelete}
+          onCancel={() => setShowBulkDeleteConfirm(false)}
         />
       )}
 

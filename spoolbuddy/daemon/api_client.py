@@ -67,6 +67,9 @@ class APIClient:
         has_scale: bool = True,
         tare_offset: int = 0,
         calibration_factor: float = 1.0,
+        nfc_reader_type: str | None = None,
+        nfc_connection: str | None = None,
+        has_backlight: bool = False,
     ) -> dict | None:
         while True:
             result = await self._post(
@@ -80,6 +83,9 @@ class APIClient:
                     "has_scale": has_scale,
                     "tare_offset": tare_offset,
                     "calibration_factor": calibration_factor,
+                    "nfc_reader_type": nfc_reader_type,
+                    "nfc_connection": nfc_connection,
+                    "has_backlight": has_backlight,
                 },
             )
             if result is not None:
@@ -90,7 +96,15 @@ class APIClient:
             self._backoff = min(self._backoff * 2, self._max_backoff)
 
     async def heartbeat(
-        self, device_id: str, nfc_ok: bool, scale_ok: bool, uptime_s: int, ip_address: str | None = None
+        self,
+        device_id: str,
+        nfc_ok: bool,
+        scale_ok: bool,
+        uptime_s: int,
+        ip_address: str | None = None,
+        firmware_version: str | None = None,
+        nfc_reader_type: str | None = None,
+        nfc_connection: str | None = None,
     ) -> dict | None:
         result = await self._post(
             f"/devices/{device_id}/heartbeat",
@@ -99,6 +113,9 @@ class APIClient:
                 "scale_ok": scale_ok,
                 "uptime_s": uptime_s,
                 "ip_address": ip_address,
+                "firmware_version": firmware_version,
+                "nfc_reader_type": nfc_reader_type,
+                "nfc_connection": nfc_connection,
             },
         )
         if result and self._buffer:
@@ -133,6 +150,12 @@ class APIClient:
             },
         )
 
+    async def update_tare(self, device_id: str, tare_offset: int) -> dict | None:
+        return await self._post(
+            f"/devices/{device_id}/calibration/set-tare",
+            {"tare_offset": tare_offset},
+        )
+
     async def scale_reading(
         self, device_id: str, weight_grams: float, stable: bool, raw_adc: int | None = None
     ) -> dict | None:
@@ -143,5 +166,19 @@ class APIClient:
                 "weight_grams": weight_grams,
                 "stable": stable,
                 "raw_adc": raw_adc,
+            },
+        )
+
+    async def write_tag_result(
+        self, device_id: str, spool_id: int, tag_uid: str, success: bool, message: str | None = None
+    ) -> dict | None:
+        return await self._post(
+            "/nfc/write-result",
+            {
+                "device_id": device_id,
+                "spool_id": spool_id,
+                "tag_uid": tag_uid,
+                "success": success,
+                "message": message,
             },
         )

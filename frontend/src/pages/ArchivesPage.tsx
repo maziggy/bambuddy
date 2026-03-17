@@ -7,6 +7,7 @@ import {
   Trash2,
   Clock,
   Package,
+  Coins,
   Layers,
   Search,
   Filter,
@@ -48,7 +49,7 @@ import {
   User,
   Play,
   ClipboardList,
-  Coins,
+  Zap,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { openInSlicer, type SlicerType } from '../utils/slicer';
@@ -81,14 +82,20 @@ import { formatFileSize } from '../utils/file';
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
 
 /**
- * Check if an archive filename represents a sliced/printable file.
- * Matches: .gcode, .gcode.3mf, .gcode.anything
+ * Check if an archive represents a sliced/printable file.
+ * Uses filename (.gcode, .gcode.3mf) as primary check, then falls back to
+ * metadata — a .3mf with total_layers or print_time is sliced (contains gcode),
+ * while a raw source .3mf (CAD export) has neither.
  */
-function isSlicedFile(filename: string | null | undefined): boolean {
-  if (!filename) return false;
-  const lower = filename.toLowerCase();
-  // Match .gcode at end OR .gcode. followed by anything (like .gcode.3mf)
-  return lower.endsWith('.gcode') || lower.includes('.gcode.');
+function isSlicedFile(archive: { filename?: string | null; total_layers?: number | null; print_time_seconds?: number | null }): boolean {
+  const filename = archive.filename;
+  if (filename) {
+    const lower = filename.toLowerCase();
+    if (lower.endsWith('.gcode') || lower.includes('.gcode.')) return true;
+  }
+  // .3mf can be either sliced or source — check for gcode metadata
+  if (archive.total_layers || archive.print_time_seconds) return true;
+  return false;
 }
 
 function getArchiveFileType(filename: string | null | undefined): string | undefined {
@@ -341,7 +348,7 @@ function ArchiveCard({
     setContextMenu({ x: e.clientX, y: e.clientY });
   };
 
-  const isGcodeFile = isSlicedFile(archive.filename);
+  const isGcodeFile = isSlicedFile(archive);
 
   const contextMenuItems: ContextMenuItem[] = [
     // For gcode files: show Print option
@@ -866,17 +873,17 @@ function ArchiveCard({
           {/* File type badge */}
           <span
             className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-              isSlicedFile(archive.filename)
+              isSlicedFile(archive)
                 ? 'bg-bambu-green/20 text-bambu-green'
                 : 'bg-orange-500/20 text-orange-400'
             }`}
             title={
-              isSlicedFile(archive.filename)
+              isSlicedFile(archive)
                 ? t('archives.card.slicedFile')
                 : t('archives.card.sourceFile')
             }
           >
-            {isSlicedFile(archive.filename) ? t('archives.card.gcode') : t('archives.card.source')}
+            {isSlicedFile(archive) ? t('archives.card.gcode') : t('archives.card.source')}
           </span>
           {archive.project_name && (
             <span
@@ -923,10 +930,20 @@ function ArchiveCard({
               {archive.filament_used_grams.toFixed(1)}g
             </div>
           )}
-          {archive.cost != null && (
-            <div className="flex items-center gap-1.5 text-bambu-gray">
-              <Coins className="w-3 h-3" />
-              {currency}{archive.cost.toFixed(2)}
+          {(archive.cost != null || archive.energy_cost != null) && (
+            <div className="flex items-center gap-3 text-bambu-gray">
+              {archive.cost != null && (
+                <div className="flex items-center gap-1.5">
+                  <Coins className="w-3 h-3" />
+                  {currency}{archive.cost.toFixed(2)}
+                </div>
+              )}
+                {archive.energy_cost != null && (
+                  <div className="flex items-center gap-1.5" title={`${t('stats.energyUsed')}: ${archive.energy_kwh?.toFixed(3) || 'N/A'} kWh`}>
+                    <Zap className="w-3 h-3" />
+                    {currency}{archive.energy_cost.toFixed(2)}
+                  </div>
+                )}
             </div>
           )}
           {(archive.layer_height || archive.total_layers) && (
@@ -1009,30 +1026,30 @@ function ArchiveCard({
 
         {/* Actions */}
         <div className="flex gap-1 mt-3">
-          {isSlicedFile(archive.filename) ? (
+          {isSlicedFile(archive) ? (
             // Sliced file - can print directly
             <>
               <Button
                 variant="primary"
                 size="sm"
-                className="flex-1 min-w-0"
+                className="flex-1 min-w-0 overflow-hidden"
                 onClick={() => setShowReprint(true)}
                 disabled={!archive.file_path || !canModify('archives', 'reprint', archive.created_by_id)}
                 title={!archive.file_path ? t('archives.card.noFileForReprint') : !canModify('archives', 'reprint', archive.created_by_id) ? t('archives.card.noPermissionReprint') : undefined}
               >
                 <Printer className="w-3 h-3 flex-shrink-0" />
-                <span className="hidden sm:inline">{t('archives.card.reprint')}</span>
+                <span className="hidden sm:inline truncate">{t('archives.card.reprint')}</span>
               </Button>
               <Button
                 variant="secondary"
                 size="sm"
-                className="flex-1 min-w-0"
+                className="flex-1 min-w-0 overflow-hidden"
                 onClick={() => setShowSchedule(true)}
                 disabled={!archive.file_path || !hasPermission('queue:create')}
                 title={!archive.file_path ? t('archives.card.noFileForReprint') : !hasPermission('queue:create') ? t('archives.permission.noAddToQueue') : t('archives.card.schedulePrint')}
               >
                 <Calendar className="w-3 h-3 flex-shrink-0" />
-                <span className="hidden sm:inline">{t('archives.card.schedule')}</span>
+                <span className="hidden sm:inline truncate">{t('archives.card.schedule')}</span>
               </Button>
               <Button
                 variant="secondary"
@@ -1052,7 +1069,7 @@ function ArchiveCard({
             <Button
               variant="primary"
               size="sm"
-              className="flex-1 min-w-0"
+              className="flex-1 min-w-0 overflow-hidden"
               onClick={() => {
                 const filename = archive.print_name || archive.filename || 'model';
                 openInSlicerWithToken(archive.id, filename, 'file', preferredSlicer);
@@ -1060,7 +1077,7 @@ function ArchiveCard({
               title={t('archives.card.openInBambuStudioToSlice')}
             >
               <ExternalLink className="w-3 h-3 flex-shrink-0" />
-              <span className="hidden sm:inline">{t('archives.card.slice')}</span>
+              <span className="hidden sm:inline truncate">{t('archives.card.slice')}</span>
             </Button>
           )}
           <Button
@@ -1553,7 +1570,7 @@ function ArchiveListRow({
     setContextMenu({ x: e.clientX, y: e.clientY });
   };
 
-  const isGcodeFile = isSlicedFile(archive.filename);
+  const isGcodeFile = isSlicedFile(archive);
 
   const contextMenuItems: ContextMenuItem[] = [
     ...(isGcodeFile ? [
@@ -1911,7 +1928,7 @@ function ArchiveListRow({
           {formatFileSize(archive.file_size)}
         </div>
         <div className="col-span-2 flex justify-end gap-1">
-          {isSlicedFile(archive.filename) && (
+          {isSlicedFile(archive) && (
             <Button
               variant="ghost"
               size="sm"
@@ -2588,7 +2605,7 @@ export function ArchivesPage() {
       const matchesTag = !filterTag || archiveTags.includes(filterTag);
 
       // File type filter (gcode = sliced, source = project file only)
-      const isGcodeFile = isSlicedFile(a.filename);
+      const isGcodeFile = isSlicedFile(a);
       const matchesFileType = filterFileType === 'all' ||
         (filterFileType === 'gcode' && isGcodeFile) ||
         (filterFileType === 'source' && !isGcodeFile);

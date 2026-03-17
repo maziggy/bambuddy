@@ -470,8 +470,23 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     });
   };
 
+  const handleDragTouchStart = (e: React.TouchEvent) => {
+    if ((e.target as HTMLElement).closest('.no-drag')) return;
+    const touch = e.touches[0];
+    setIsDragging(true);
+    setDragOffset({
+      x: touch.clientX - state.x,
+      y: touch.clientY - state.y,
+    });
+  };
+
   // Resize handlers
   const handleResizeMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsResizing(true);
+  };
+
+  const handleResizeTouchStart = (e: React.TouchEvent) => {
     e.stopPropagation();
     setIsResizing(true);
   };
@@ -494,6 +509,26 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
       }
     };
 
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isDragging && !isResizing) return;
+      e.preventDefault();
+      const touch = e.touches[0];
+      if (isDragging) {
+        setState((prev) => ({
+          ...prev,
+          x: Math.max(0, Math.min(touch.clientX - dragOffset.x, window.innerWidth - prev.width)),
+          y: Math.max(0, Math.min(touch.clientY - dragOffset.y, window.innerHeight - prev.height)),
+        }));
+      } else if (isResizing && containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        setState((prev) => ({
+          ...prev,
+          width: Math.max(200, Math.min(touch.clientX - rect.left, window.innerWidth - prev.x - 10)),
+          height: Math.max(150, Math.min(touch.clientY - rect.top, window.innerHeight - prev.y - 10)),
+        }));
+      }
+    };
+
     const handleMouseUp = () => {
       setIsDragging(false);
       setIsResizing(false);
@@ -502,9 +537,15 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     if (isDragging || isResizing) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
+      document.addEventListener('touchmove', handleTouchMove, { passive: false });
+      document.addEventListener('touchend', handleMouseUp);
+      document.addEventListener('touchcancel', handleMouseUp);
       return () => {
         document.removeEventListener('mousemove', handleMouseMove);
         document.removeEventListener('mouseup', handleMouseUp);
+        document.removeEventListener('touchmove', handleTouchMove);
+        document.removeEventListener('touchend', handleMouseUp);
+        document.removeEventListener('touchcancel', handleMouseUp);
       };
     }
   }, [isDragging, isResizing, dragOffset]);
@@ -527,6 +568,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
       <div
         className="flex items-center justify-between px-3 py-2 bg-bambu-dark border-b border-bambu-dark-tertiary cursor-grab active:cursor-grabbing"
         onMouseDown={handleMouseDown}
+        onTouchStart={handleDragTouchStart}
       >
         <div className="flex items-center gap-2 text-sm text-white truncate">
           <GripVertical className="w-4 h-4 text-bambu-gray flex-shrink-0" />
@@ -685,6 +727,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
             <div
               className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize no-drag hover:bg-white/10 rounded-tl transition-colors"
               onMouseDown={handleResizeMouseDown}
+              onTouchStart={handleResizeTouchStart}
               title="Drag to resize"
             >
               <svg

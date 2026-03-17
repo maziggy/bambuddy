@@ -20,6 +20,8 @@ def _set_sqlite_pragmas(dbapi_conn, connection_record):
 engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
+    pool_size=10,
+    max_overflow=20,
 )
 
 # Register the pragma listener on the underlying sync engine
@@ -44,6 +46,8 @@ async def reinitialize_database():
     engine = create_async_engine(
         settings.database_url,
         echo=settings.debug,
+        pool_size=10,
+        max_overflow=20,
     )
     event.listen(engine.sync_engine, "connect", _set_sqlite_pragmas)
     async_session = async_sessionmaker(
@@ -74,8 +78,10 @@ async def init_db():
     from backend.app.models import (  # noqa: F401
         active_print_spoolman,
         ams_history,
+        ams_label,
         api_key,
         archive,
+        bug_report,
         color_catalog,
         external_link,
         filament,
@@ -838,10 +844,31 @@ async def run_migrations(conn):
     # This allows HA scripts to coexist with regular plugs (scripts are for multi-device control)
     # SQLite requires table recreation to drop constraints
     try:
-        # Check if we need to migrate (if UNIQUE constraint exists)
+        # Check if we need to migrate — look for UNIQUE on printer_id in the
+        # CREATE TABLE statement OR as a separate UNIQUE index.
+        needs_migration = False
         result = await conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='smart_plugs'"))
         row = result.fetchone()
-        if row and "printer_id INTEGER UNIQUE" in (row[0] or ""):
+        table_sql = (row[0] or "").upper() if row else ""
+        if "PRINTER_ID" in table_sql and "UNIQUE" in table_sql:
+            # Check if UNIQUE appears near printer_id — inline or table-level constraint.
+            # Handle quoted ("PRINTER_ID") and unquoted column names.
+            import re
+
+            if re.search(r'"?PRINTER_ID"?\s+\w+\s+UNIQUE', table_sql) or re.search(
+                r'UNIQUE\s*\([^)]*"?PRINTER_ID"?', table_sql
+            ):
+                needs_migration = True
+        # Also check for separate UNIQUE indexes on printer_id
+        idx_result = await conn.execute(
+            text("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='smart_plugs' AND sql IS NOT NULL")
+        )
+        for idx_row in idx_result.fetchall():
+            idx_sql = (idx_row[0] or "").upper()
+            if "UNIQUE" in idx_sql and "PRINTER_ID" in idx_sql:
+                needs_migration = True
+                break
+        if needs_migration:
             # Create new table without UNIQUE constraint on printer_id
             await conn.execute(
                 text("""
@@ -1224,9 +1251,27 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already applied
 
+    # Migration: Add first layer complete notification column to notification_providers
+    try:
+        await conn.execute(
+            text("ALTER TABLE notification_providers ADD COLUMN on_first_layer_complete BOOLEAN DEFAULT 0")
+        )
+    except OperationalError:
+        pass  # Already applied
+
     # Migration: Add weight_locked flag to spool table (skip AMS auto-sync for manually-entered weights)
     try:
         await conn.execute(text("ALTER TABLE spool ADD COLUMN weight_locked BOOLEAN DEFAULT 0"))
+    except OperationalError:
+        pass  # Already applied
+
+    # Migration: Add SpoolBuddy scale weight tracking columns to spool table
+    try:
+        await conn.execute(text("ALTER TABLE spool ADD COLUMN last_scale_weight INTEGER"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE spool ADD COLUMN last_weighed_at DATETIME"))
     except OperationalError:
         pass  # Already applied
 
@@ -1317,6 +1362,98 @@ async def run_migrations(conn):
         await conn.execute(text("ALTER TABLE print_queue ADD COLUMN filament_overrides TEXT"))
     except OperationalError:
         pass  # Already applied
+
+    # Migration: Add NFC reader and display control columns to spoolbuddy_devices
+    try:
+        await conn.execute(text("ALTER TABLE spoolbuddy_devices ADD COLUMN nfc_reader_type VARCHAR(20)"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE spoolbuddy_devices ADD COLUMN nfc_connection VARCHAR(20)"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE spoolbuddy_devices ADD COLUMN display_brightness INTEGER DEFAULT 100"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE spoolbuddy_devices ADD COLUMN display_blank_timeout INTEGER DEFAULT 0"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE spoolbuddy_devices ADD COLUMN has_backlight BOOLEAN DEFAULT 0"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE spoolbuddy_devices ADD COLUMN last_calibrated_at DATETIME"))
+    except OperationalError:
+        pass  # Already applied
+
+    # Migration: Add NFC tag write payload column to spoolbuddy_devices
+    try:
+        await conn.execute(text("ALTER TABLE spoolbuddy_devices ADD COLUMN pending_write_payload TEXT"))
+    except OperationalError:
+        pass  # Already applied
+
+    # Migration: Convert ams_labels table from (printer_id, ams_id) key to ams_serial_number key
+    # Labels are now keyed by AMS serial number so they persist when the AMS is moved to another printer.
+    try:
+        await conn.execute(text("DROP TABLE IF EXISTS ams_labels_new"))
+        result = await conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='ams_labels'"))
+        row = result.fetchone()
+        if row and "printer_id" in (row[0] or ""):
+            # Old schema: rebuild the table with ams_serial_number as the unique key.
+            # Existing rows get a synthetic serial "p{printer_id}a{ams_id}" so data is preserved.
+            await conn.execute(
+                text("""
+                CREATE TABLE ams_labels_new (
+                    id INTEGER PRIMARY KEY,
+                    ams_serial_number VARCHAR(50) NOT NULL,
+                    ams_id INTEGER,
+                    label VARCHAR(100) NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT uq_ams_label_serial UNIQUE (ams_serial_number)
+                )
+            """)
+            )
+            await conn.execute(
+                text("""
+                INSERT INTO ams_labels_new (id, ams_serial_number, ams_id, label, created_at, updated_at)
+                SELECT id,
+                       'p' || CAST(printer_id AS TEXT) || 'a' || CAST(ams_id AS TEXT),
+                       ams_id,
+                       label,
+                       created_at,
+                       updated_at
+                FROM ams_labels
+            """)
+            )
+            await conn.execute(text("DROP TABLE ams_labels"))
+            await conn.execute(text("ALTER TABLE ams_labels_new RENAME TO ams_labels"))
+    except OperationalError:
+        pass  # Already migrated or table does not exist yet
+
+    # Migration: Add auto_dispatch column to virtual_printers
+    try:
+        await conn.execute(text("ALTER TABLE virtual_printers ADD COLUMN auto_dispatch BOOLEAN DEFAULT 1"))
+    except OperationalError:
+        pass  # Already applied
+
+    # Migration: Add per-user Bambu Cloud credential columns
+    try:
+        await conn.execute(text("ALTER TABLE users ADD COLUMN cloud_token VARCHAR(500)"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE users ADD COLUMN cloud_email VARCHAR(255)"))
+    except OperationalError:
+        pass  # Already applied
+
+    # Cleanup: Remove obsolete settings keys that are no longer used
+    obsolete_keys = ["slicer_binary_path"]
+    for key in obsolete_keys:
+        await conn.execute(text("DELETE FROM settings WHERE key = :key"), {"key": key})
 
 
 async def seed_notification_templates():

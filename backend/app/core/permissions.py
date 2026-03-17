@@ -4,7 +4,7 @@ This module defines all permissions using a string enum with `resource:action` n
 Permissions are additive across groups - a user has all permissions from all their groups.
 """
 
-from enum import StrEnum
+from backend.app.core.compat import StrEnum
 
 
 class Permission(StrEnum):
@@ -68,6 +68,7 @@ class Permission(StrEnum):
     INVENTORY_CREATE = "inventory:create"
     INVENTORY_UPDATE = "inventory:update"
     INVENTORY_DELETE = "inventory:delete"
+    INVENTORY_VIEW_ASSIGNMENTS = "inventory:view_assignments"  # View spool-to-AMS assignments on printer cards
 
     # Smart Plugs
     SMART_PLUGS_READ = "smart_plugs:read"
@@ -214,6 +215,7 @@ PERMISSION_CATEGORIES = {
         Permission.INVENTORY_CREATE,
         Permission.INVENTORY_UPDATE,
         Permission.INVENTORY_DELETE,
+        Permission.INVENTORY_VIEW_ASSIGNMENTS,
     ],
     "Smart Plugs": [
         Permission.SMART_PLUGS_READ,
@@ -355,6 +357,7 @@ DEFAULT_GROUPS = {
             Permission.INVENTORY_CREATE.value,
             Permission.INVENTORY_UPDATE.value,
             Permission.INVENTORY_DELETE.value,
+            Permission.INVENTORY_VIEW_ASSIGNMENTS.value,
             # Smart Plugs - full access
             Permission.SMART_PLUGS_READ.value,
             Permission.SMART_PLUGS_CREATE.value,
@@ -411,6 +414,7 @@ DEFAULT_GROUPS = {
             Permission.PROJECTS_READ.value,
             Permission.FILAMENTS_READ.value,
             Permission.INVENTORY_READ.value,
+            Permission.INVENTORY_VIEW_ASSIGNMENTS.value,
             Permission.SMART_PLUGS_READ.value,
             Permission.CAMERA_VIEW.value,
             Permission.MAINTENANCE_READ.value,

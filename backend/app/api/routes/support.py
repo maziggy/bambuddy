@@ -10,7 +10,7 @@ import os
 import platform
 import re
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
@@ -63,6 +63,8 @@ async def _get_debug_setting(db: AsyncSession) -> tuple[bool, datetime | None]:
     if enabled_at_setting and enabled_at_setting.value:
         try:
             enabled_at = datetime.fromisoformat(enabled_at_setting.value)
+            if enabled_at.tzinfo is None:
+                enabled_at = enabled_at.replace(tzinfo=timezone.utc)
         except ValueError:
             pass  # Ignore malformed timestamp; enabled_at stays None
 
@@ -80,7 +82,7 @@ async def _set_debug_setting(db: AsyncSession, enabled: bool) -> datetime | None
         db.add(Settings(key="debug_logging_enabled", value=str(enabled).lower()))
 
     # Update enabled_at timestamp
-    enabled_at = datetime.now() if enabled else None
+    enabled_at = datetime.now(tz=timezone.utc) if enabled else None
     result = await db.execute(select(Settings).where(Settings.key == "debug_logging_enabled_at"))
     at_setting = result.scalar_one_or_none()
     if at_setting:
@@ -127,7 +129,7 @@ async def get_debug_logging_state(
 
     duration = None
     if enabled and enabled_at:
-        duration = int((datetime.now() - enabled_at).total_seconds())
+        duration = int((datetime.now(tz=timezone.utc) - enabled_at).total_seconds())
 
     return DebugLoggingState(
         enabled=enabled,
@@ -149,7 +151,7 @@ async def toggle_debug_logging(
 
     duration = None
     if toggle.enabled and enabled_at:
-        duration = int((datetime.now() - enabled_at).total_seconds())
+        duration = int((datetime.now(tz=timezone.utc) - enabled_at).total_seconds())
 
     return DebugLoggingState(
         enabled=toggle.enabled,
@@ -325,6 +327,37 @@ def _sanitize_path(path: str) -> str:
     return path
 
 
+def _detect_docker_network_mode() -> str:
+    """Detect Docker network mode by checking for host-level interfaces.
+
+    In host mode the container shares the host network namespace, so Docker
+    infrastructure interfaces (docker0, br-*, veth*) are visible.  In bridge
+    mode the container is isolated and only sees its own veth (named eth0).
+    """
+    try:
+        import socket
+
+        for _idx, name in socket.if_nameindex():
+            if name.startswith(("docker", "br-", "veth", "virbr")):
+                return "host"
+    except Exception:
+        pass
+    return "bridge"
+
+
+def _mask_subnet(subnet: str) -> str:
+    """Mask the first two octets of a subnet string. e.g. '192.168.1.0/24' -> 'x.x.1.0/24'."""
+    try:
+        parts = subnet.split(".")
+        if len(parts) >= 4:
+            parts[0] = "x"
+            parts[1] = "x"
+            return ".".join(parts)
+    except Exception:
+        pass
+    return subnet
+
+
 def _anonymize_mqtt_broker(broker: str) -> str:
     """Anonymize MQTT broker address. IPs become [IP], hostnames become *.domain."""
     if not broker:
@@ -418,11 +451,10 @@ async def _collect_support_info() -> dict:
     if in_docker:
         try:
             mem_limit = _get_container_memory_limit()
-            interfaces = get_network_interfaces()
             info["docker"] = {
                 "container_memory_limit_bytes": mem_limit,
                 "container_memory_limit_formatted": _format_bytes(mem_limit) if mem_limit else None,
-                "network_mode_hint": "host" if len(interfaces) > 2 else "bridge",
+                "network_mode_hint": _detect_docker_network_mode(),
             }
         except Exception:
             logger.debug("Failed to collect Docker info", exc_info=True)
@@ -499,6 +531,34 @@ async def _collect_support_info() -> dict:
                     "nozzle_rack_count": len(state.nozzle_rack) if state else 0,
                 }
             )
+
+        # Virtual printers
+        try:
+            from backend.app.models.virtual_printer import VirtualPrinter
+            from backend.app.services.virtual_printer import VIRTUAL_PRINTER_MODELS, virtual_printer_manager
+
+            result = await db.execute(select(VirtualPrinter).order_by(VirtualPrinter.id))
+            vps = result.scalars().all()
+            info["virtual_printers"] = []
+            for vp in vps:
+                instance = virtual_printer_manager.get_instance(vp.id)
+                status = instance.get_status() if instance else None
+                model_code = vp.model or "C12"
+                info["virtual_printers"].append(
+                    {
+                        "index": vp.id,
+                        "enabled": vp.enabled,
+                        "mode": vp.mode,
+                        "model": model_code,
+                        "model_name": VIRTUAL_PRINTER_MODELS.get(model_code, model_code),
+                        "has_target_printer": vp.target_printer_id is not None,
+                        "has_bind_ip": bool(vp.bind_ip),
+                        "running": status.get("running", False) if status else False,
+                        "pending_files": status.get("pending_files", 0) if status else 0,
+                    }
+                )
+        except Exception:
+            logger.debug("Failed to collect virtual printer info", exc_info=True)
 
         # Non-sensitive settings
         result = await db.execute(select(Settings))
@@ -642,12 +702,12 @@ async def _collect_support_info() -> dict:
     except Exception:
         logger.debug("Failed to collect log file info", exc_info=True)
 
-    # Network interfaces (subnets only — already anonymized)
+    # Network interfaces (subnets with first two octets masked)
     try:
         interfaces = get_network_interfaces()
         info["network"] = {
             "interface_count": len(interfaces),
-            "interfaces": [{"name": iface["name"], "subnet": iface["subnet"]} for iface in interfaces],
+            "interfaces": [{"name": iface["name"], "subnet": _mask_subnet(iface["subnet"])} for iface in interfaces],
         }
     except Exception:
         logger.debug("Failed to collect network info", exc_info=True)
@@ -675,8 +735,8 @@ def _sanitize_log_content(content: str, sensitive_strings: dict[str, str] | None
                 continue  # Skip very short strings to prevent over-redaction
             content = re.sub(re.escape(value), label, content)
 
-    # Replace credentials in URLs (e.g. http://user:pass@host)
-    content = re.sub(r"(https?://)[^/:@\s]+:[^/@\s]+@", r"\1[CREDENTIALS]@", content)
+    # Replace credentials in URLs (e.g. http://user:pass@host, rtsps://bblp:code@host)
+    content = re.sub(r"((?:https?|rtsps?)://)[^/:@\s]+:[^/@\s]+@", r"\1[CREDENTIALS]@", content)
 
     # Replace email addresses
     content = re.sub(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "[EMAIL]", content)
@@ -721,6 +781,47 @@ def _get_log_content(max_bytes: int = 10 * 1024 * 1024, sensitive_strings: dict[
     return content.encode("utf-8")
 
 
+async def _get_recent_sanitized_logs(max_lines: int = 200) -> str:
+    """Get recent log lines, sanitized for inclusion in bug reports."""
+    # Collect sensitive strings from DB for redaction
+    sensitive_strings: dict[str, str] = {}
+    async with async_session() as db:
+        result = await db.execute(select(Printer.name, Printer.serial_number, Printer.ip_address, Printer.access_code))
+        for name, serial, ip_address, access_code in result.all():
+            if name:
+                sensitive_strings[name] = "[PRINTER]"
+            if serial:
+                sensitive_strings[serial] = "[SERIAL]"
+            if ip_address:
+                sensitive_strings[ip_address] = "[IP]"
+            if access_code:
+                sensitive_strings[access_code] = "[ACCESS_CODE]"
+
+        result = await db.execute(select(User.username))
+        for (username,) in result.all():
+            if username:
+                sensitive_strings[username] = "[USER]"
+
+        result = await db.execute(select(Settings.value).where(Settings.key == "bambu_cloud_email"))
+        cloud_email = result.scalar_one_or_none()
+        if cloud_email:
+            sensitive_strings[cloud_email] = "[EMAIL]"
+
+    log_file = settings.log_dir / "bambuddy.log"
+    if not log_file.exists():
+        return ""
+
+    # Read last portion of log file
+    try:
+        content = log_file.read_text(encoding="utf-8", errors="replace")
+        lines = content.splitlines()
+        recent = "\n".join(lines[-max_lines:])
+        return _sanitize_log_content(recent, sensitive_strings)
+    except Exception:
+        logger.debug("Failed to read logs for bug report", exc_info=True)
+        return ""
+
+
 @router.get("/bundle")
 async def generate_support_bundle(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
@@ -740,15 +841,17 @@ async def generate_support_bundle(
         # Collect known sensitive values for log redaction
         sensitive_strings: dict[str, str] = {}
 
-        # Printer names, serial numbers, and IP addresses
-        result = await db.execute(select(Printer.name, Printer.serial_number, Printer.ip_address))
-        for name, serial, ip_address in result.all():
+        # Printer names, serial numbers, IP addresses, and access codes
+        result = await db.execute(select(Printer.name, Printer.serial_number, Printer.ip_address, Printer.access_code))
+        for name, serial, ip_address, access_code in result.all():
             if name:
                 sensitive_strings[name] = "[PRINTER]"
             if serial:
                 sensitive_strings[serial] = "[SERIAL]"
             if ip_address:
                 sensitive_strings[ip_address] = "[IP]"
+            if access_code:
+                sensitive_strings[access_code] = "[ACCESS_CODE]"
 
         # Auth usernames
         result = await db.execute(select(User.username))

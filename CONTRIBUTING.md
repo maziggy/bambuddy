@@ -5,6 +5,7 @@ Thank you for your interest in contributing to Bambuddy! This document provides 
 ## Table of Contents
 
 - [Code of Conduct](#code-of-conduct)
+- [Before You Start](#before-you-start)
 - [Getting Started](#getting-started)
 - [Development Setup](#development-setup)
 - [Making Changes](#making-changes)
@@ -20,6 +21,19 @@ Thank you for your interest in contributing to Bambuddy! This document provides 
 ## Code of Conduct
 
 Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md) to keep our community welcoming and respectful.
+
+## Before You Start
+
+**Every contribution starts with an issue.** Before writing any code or opening a pull request:
+
+1. **Open a new issue** or **comment on an existing one** describing what you'd like to work on
+2. **Wait for agreement** — discuss the approach with a maintainer so we're aligned on scope and direction
+3. **Get assigned** — once we agree, a maintainer will assign the issue to you
+4. **Then start coding** — only open a PR for an issue that is assigned to you
+
+**No assigned issue = no PR.** Pull requests without a corresponding assigned issue will be closed.
+
+This keeps everyone on the same page, avoids wasted effort on changes that may not fit the project's direction, and prevents multiple contributors from working on the same thing.
 
 ## Getting Started
 

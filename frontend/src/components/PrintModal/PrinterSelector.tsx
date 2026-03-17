@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useQueries } from '@tanstack/react-query';
 import {
   Printer as PrinterIcon,
   Loader2,
@@ -11,11 +11,13 @@ import {
   Wand2,
   Users,
 } from 'lucide-react';
-import { api } from '../../api/client';
+import { api, type PrinterStatus } from '../../api/client';
 import { getColorName } from '../../utils/colors';
 import {
   normalizeColorForCompare,
   colorsAreSimilar,
+  autoMatchFilament,
+  filterFilamentsByNozzle,
 } from '../../utils/amsHelpers';
 import type { PrinterSelectorProps, AssignmentMode } from './types';
 import type { PrinterMappingResult, PerPrinterConfig } from '../../hooks/useMultiPrinterFilamentMapping';
@@ -45,6 +47,9 @@ interface PrinterSelectorWithMappingProps extends PrinterSelectorProps {
   /** Suggested model from sliced file (for pre-selection) */
   slicedForModel?: string | null;
 }
+
+/** States where the printer is available to accept a new print */
+const AVAILABLE_STATES = new Set(['IDLE', 'FINISH', 'FAILED']);
 
 /**
  * Inline AMS mapping editor for a single printer.
@@ -101,30 +106,8 @@ function InlineMappingEditor({
       loaded = printerResult.loadedFilaments.find((f) => f.globalTrayId === currentMapping);
       isManual = true;
     } else {
-      // Auto-match logic
       const usedTrayIds = new Set<number>(Object.values(printerResult.config.manualMappings));
-
-      const exactMatch = printerResult.loadedFilaments.find(
-        (f) =>
-          !usedTrayIds.has(f.globalTrayId) &&
-          f.type?.toUpperCase() === req.type?.toUpperCase() &&
-          normalizeColorForCompare(f.color) === normalizeColorForCompare(req.color)
-      );
-      const similarMatch = exactMatch
-        ? undefined
-        : printerResult.loadedFilaments.find(
-            (f) =>
-              !usedTrayIds.has(f.globalTrayId) &&
-              f.type?.toUpperCase() === req.type?.toUpperCase() &&
-              colorsAreSimilar(f.color, req.color)
-          );
-      const typeOnlyMatch =
-        exactMatch || similarMatch
-          ? undefined
-          : printerResult.loadedFilaments.find(
-              (f) => !usedTrayIds.has(f.globalTrayId) && f.type?.toUpperCase() === req.type?.toUpperCase()
-            );
-      loaded = exactMatch ?? similarMatch ?? typeOnlyMatch;
+      loaded = autoMatchFilament(req, printerResult.loadedFilaments, usedTrayIds) as LoadedFilament | undefined;
     }
 
     // Determine status
@@ -188,9 +171,10 @@ function InlineMappingEditor({
             <option value="" className="bg-bambu-dark text-bambu-gray">
               -- Select slot --
             </option>
-            {printerResult.loadedFilaments.map((f) => (
+            {filterFilamentsByNozzle(printerResult.loadedFilaments, req.nozzle_id)
+              .map((f) => (
               <option key={f.globalTrayId} value={f.globalTrayId} className="bg-bambu-dark text-white">
-                {f.label}: {f.type} ({f.colorName})
+                {f.label}: {f.traySubBrands || f.type} ({f.colorName})
               </option>
             ))}
           </select>
@@ -223,6 +207,7 @@ export function PrinterSelector({
   isLoading = false,
   allowMultiple = false,
   showInactive = false,
+  disableBusy = false,
   printerMappingResults,
   filamentReqs,
   onAutoConfigurePrinter,
@@ -240,6 +225,49 @@ export function PrinterSelector({
 
   // Filter printers based on showInactive flag
   const activePrinters = showInactive ? printers : printers.filter((p) => p.is_active);
+
+  // Fetch printer statuses to determine busy/idle state
+  const statusQueries = useQueries({
+    queries: activePrinters.map((printer) => ({
+      queryKey: ['printerStatus', printer.id],
+      queryFn: () => api.getPrinterStatus(printer.id),
+      staleTime: 5000,
+    })),
+  });
+
+  // Build a map of printer ID -> status for quick lookup
+  const printerStatusMap = useMemo(() => {
+    const map = new Map<number, PrinterStatus>();
+    activePrinters.forEach((printer, idx) => {
+      const query = statusQueries[idx];
+      if (query?.data) {
+        map.set(printer.id, query.data);
+      }
+    });
+    return map;
+  }, [activePrinters, statusQueries]);
+
+  const isPrinterBusy = (printerId: number): boolean => {
+    const status = printerStatusMap.get(printerId);
+    if (!status) return false; // Unknown state — don't block
+    if (!status.connected) return true;
+    return !AVAILABLE_STATES.has(status.state ?? '');
+  };
+
+  const getPrinterStateLabel = (printerId: number): string | null => {
+    const status = printerStatusMap.get(printerId);
+    if (!status) return null;
+    if (!status.connected) return 'Offline';
+    const state = status.state;
+    if (!state) return null;
+    if (state === 'RUNNING') return status.stg_cur_name || 'Printing';
+    if (state === 'PREPARE') return 'Preparing';
+    if (state === 'PAUSE') return 'Paused';
+    if (state === 'IDLE') return 'Idle';
+    if (state === 'FINISH') return 'Finished';
+    if (state === 'FAILED') return 'Failed';
+    return state;
+  };
 
   // Filter by sliced model (only in printer mode, when slicedForModel is set)
   const displayPrinters = useMemo(() => {
@@ -302,6 +330,8 @@ export function PrinterSelector({
   }
 
   const handlePrinterClick = (printerId: number) => {
+    if (disableBusy && isPrinterBusy(printerId)) return;
+
     if (allowMultiple) {
       if (selectedPrinterIds.includes(printerId)) {
         onMultiSelect(selectedPrinterIds.filter((id) => id !== printerId));
@@ -314,7 +344,10 @@ export function PrinterSelector({
   };
 
   const handleSelectAll = () => {
-    onMultiSelect(displayPrinters.map((p) => p.id));
+    const selectable = disableBusy
+      ? displayPrinters.filter((p) => !isPrinterBusy(p.id))
+      : displayPrinters;
+    onMultiSelect(selectable.map((p) => p.id));
   };
 
   const handleDeselectAll = () => {
@@ -479,6 +512,9 @@ export function PrinterSelector({
         const selected = isSelected(printer.id);
         const mappingResult = getPrinterMappingResult(printer.id);
         const hasOverride = mappingResult && !mappingResult.config.useDefault;
+        const busy = isPrinterBusy(printer.id);
+        const disabled = disableBusy && busy;
+        const stateLabel = getPrinterStateLabel(printer.id);
 
         return (
           <div key={printer.id}>
@@ -486,25 +522,28 @@ export function PrinterSelector({
             <button
               type="button"
               onClick={() => handlePrinterClick(printer.id)}
+              disabled={disabled}
               className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-colors ${
-                selected
+                disabled
+                  ? 'border-bambu-dark-tertiary bg-bambu-dark opacity-50 cursor-not-allowed'
+                  : selected
                   ? 'border-bambu-green bg-bambu-green/10'
                   : 'border-bambu-dark-tertiary bg-bambu-dark hover:border-bambu-gray'
               } ${!printer.is_active ? 'opacity-60' : ''}`}
             >
               <div
                 className={`p-2 rounded-lg ${
-                  selected ? 'bg-bambu-green/20' : 'bg-bambu-dark-tertiary'
+                  disabled ? 'bg-bambu-dark-tertiary' : selected ? 'bg-bambu-green/20' : 'bg-bambu-dark-tertiary'
                 }`}
               >
                 <PrinterIcon
                   className={`w-5 h-5 ${
-                    selected ? 'text-bambu-green' : 'text-bambu-gray'
+                    disabled ? 'text-bambu-gray/50' : selected ? 'text-bambu-green' : 'text-bambu-gray'
                   }`}
                 />
               </div>
               <div className="text-left flex-1">
-                <p className="text-white font-medium">
+                <p className={`font-medium ${disabled ? 'text-bambu-gray' : 'text-white'}`}>
                   {printer.name}
                   {!printer.is_active && <span className="text-bambu-gray text-xs ml-2">(inactive)</span>}
                 </p>
@@ -512,10 +551,21 @@ export function PrinterSelector({
                   {printer.model || 'Unknown model'} • {printer.ip_address}
                 </p>
               </div>
+              {stateLabel && (
+                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                  busy
+                    ? 'bg-yellow-500/20 text-yellow-400'
+                    : 'bg-bambu-green/20 text-bambu-green'
+                }`}>
+                  {stateLabel}
+                </span>
+              )}
               {allowMultiple && (
                 <div
                   className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
-                    selected
+                    disabled
+                      ? 'border-bambu-gray/30'
+                      : selected
                       ? 'bg-bambu-green border-bambu-green'
                       : 'border-bambu-gray/50'
                   }`}

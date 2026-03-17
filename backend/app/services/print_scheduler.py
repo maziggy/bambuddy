@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import time
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,25 +18,59 @@ from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
+from backend.app.models.settings import Settings
 from backend.app.models.smart_plug import SmartPlug
 from backend.app.services.bambu_ftp import delete_file_async, get_ftp_retry_settings, upload_file_async, with_ftp_retry
 from backend.app.services.notification_service import notification_service
-from backend.app.services.printer_manager import printer_manager
+from backend.app.services.printer_manager import printer_manager, supports_drying
 from backend.app.services.smart_plug_manager import smart_plug_manager
 from backend.app.utils.printer_models import normalize_printer_model
 from backend.app.utils.threemf_tools import extract_nozzle_mapping_from_3mf
 
 logger = logging.getLogger(__name__)
 
+# Filament type equivalence groups — types within the same group are
+# interchangeable on the printer side (Bambu Lab firmware treats them as compatible).
+_FILAMENT_TYPE_GROUPS: list[list[str]] = [
+    ["PA-CF", "PA12-CF", "PAHT-CF"],
+]
+_FILAMENT_EQUIV_MAP: dict[str, str] = {}
+for _group in _FILAMENT_TYPE_GROUPS:
+    _canonical = _group[0].upper()
+    for _t in _group:
+        _FILAMENT_EQUIV_MAP[_t.upper()] = _canonical
+
+
+def _canonical_filament_type(ftype: str) -> str:
+    """Return canonical type for equivalence matching."""
+    upper = ftype.upper()
+    return _FILAMENT_EQUIV_MAP.get(upper, upper)
+
 
 class PrintScheduler:
     """Background scheduler that processes the print queue."""
+
+    # Built-in drying presets per filament type (from BambuStudio filament profiles)
+    # Format: { n3f_temp, n3s_temp, n3f_hours, n3s_hours }
+    DEFAULT_DRYING_PRESETS: dict[str, dict[str, int]] = {
+        "PLA": {"n3f": 45, "n3s": 45, "n3f_hours": 12, "n3s_hours": 12},
+        "PETG": {"n3f": 65, "n3s": 65, "n3f_hours": 12, "n3s_hours": 12},
+        "TPU": {"n3f": 65, "n3s": 75, "n3f_hours": 12, "n3s_hours": 18},
+        "ABS": {"n3f": 65, "n3s": 80, "n3f_hours": 12, "n3s_hours": 8},
+        "ASA": {"n3f": 65, "n3s": 80, "n3f_hours": 12, "n3s_hours": 8},
+        "PA": {"n3f": 65, "n3s": 85, "n3f_hours": 12, "n3s_hours": 12},
+        "PC": {"n3f": 65, "n3s": 80, "n3f_hours": 12, "n3s_hours": 8},
+        "PVA": {"n3f": 65, "n3s": 85, "n3f_hours": 12, "n3s_hours": 18},
+    }
 
     def __init__(self):
         self._running = False
         self._check_interval = 30  # seconds
         self._power_on_wait_time = 180  # seconds to wait for printer after power on (3 min)
         self._power_on_check_interval = 10  # seconds between connection checks
+        self._min_drying_seconds = 1800  # 30 minutes minimum before humidity re-check can stop drying
+        # Track which printers are currently auto-drying (printer_id -> start timestamp)
+        self._drying_in_progress: dict[int, float] = {}
 
     async def run(self):
         """Main loop - check queue every interval."""
@@ -67,6 +102,8 @@ class PrintScheduler:
             items = list(result.scalars().all())
 
             if not items:
+                # No pending items — still check auto-drying on idle printers
+                await self._check_auto_drying(db, [], set())
                 return
 
             logger.info(
@@ -78,6 +115,9 @@ class PrintScheduler:
             # Track busy printers to avoid assigning multiple items to same printer
             busy_printers: set[int] = set()
 
+            # Log skip reasons once per queue check (not per item)
+            skip_reasons: dict[str, int] = {}
+
             for item in items:
                 # Check scheduled time first (scheduled_time is stored in UTC from ISO string)
                 if item.scheduled_time:
@@ -85,10 +125,12 @@ class PrintScheduler:
                     if sched.tzinfo is None:
                         sched = sched.replace(tzinfo=timezone.utc)
                     if sched > datetime.now(timezone.utc):
+                        skip_reasons["scheduled_future"] = skip_reasons.get("scheduled_future", 0) + 1
                         continue
 
                 # Skip items that require manual start
                 if item.manual_start:
+                    skip_reasons["manual_start"] = skip_reasons.get("manual_start", 0) + 1
                     continue
 
                 if item.printer_id:
@@ -120,8 +162,24 @@ class PrintScheduler:
 
                     # Check if printer is idle (busy with another print)
                     if not printer_idle:
-                        busy_printers.add(item.printer_id)
-                        continue
+                        # If printer is drying (not truly busy), handle based on queue_drying_block
+                        if self._drying_in_progress.get(item.printer_id):
+                            block_for_drying = await self._get_bool_setting(db, "queue_drying_block")
+                            if block_for_drying:
+                                # Drying blocks queue — skip this printer
+                                busy_printers.add(item.printer_id)
+                                continue
+                            else:
+                                # Print takes priority — stop drying
+                                await self._stop_drying(item.printer_id)
+                                # Re-check idle after stopping drying
+                                printer_idle = self._is_printer_idle(item.printer_id)
+                                if not printer_idle:
+                                    busy_printers.add(item.printer_id)
+                                    continue
+                        else:
+                            busy_printers.add(item.printer_id)
+                            continue
 
                     # Check condition (previous print success)
                     if item.require_previous_success:
@@ -261,6 +319,27 @@ class PrintScheduler:
                         await self._start_print(db, item)
                         busy_printers.add(printer_id)
 
+            # Log summary of skip reasons (helps diagnose why queue items aren't starting)
+            if skip_reasons:
+                logger.info("Queue skip summary: %s", skip_reasons)
+            if busy_printers:
+                # Log why each printer was busy (first time it was checked)
+                for pid in busy_printers:
+                    state = printer_manager.get_status(pid)
+                    connected = printer_manager.is_connected(pid)
+                    plate_cleared = printer_manager.is_plate_cleared(pid)
+                    state_name = state.state if state else "NO_STATUS"
+                    logger.info(
+                        "Queue: printer %d not available — connected=%s, state=%s, plate_cleared=%s",
+                        pid,
+                        connected,
+                        state_name,
+                        plate_cleared,
+                    )
+
+            # Auto-drying: start drying on idle printers that have no pending queue items
+            await self._check_auto_drying(db, items, busy_printers)
+
     async def _find_idle_printer_for_model(
         self,
         db: AsyncSession,
@@ -279,6 +358,10 @@ class PrintScheduler:
             required_filament_types: Optional list of filament types needed (e.g., ["PLA", "PETG"])
                                      If provided, only printers with all required types loaded will match.
             target_location: Optional location filter. If provided, only printers in this location are considered.
+            filament_overrides: Optional list of override dicts. Each entry may include
+                                 ``force_color_match: true`` to require an exact type+color match
+                                 on the printer for that slot. Without the flag the existing
+                                 colour-preference logic applies.
 
         Returns:
             Tuple of (printer_id, waiting_reason):
@@ -304,14 +387,27 @@ class PrintScheduler:
         if not printers:
             return None, f"No active {normalized_model} printers{location_suffix} configured"
 
+        # Separate force-matched overrides from preference-only overrides
+        force_overrides = [o for o in (filament_overrides or []) if o.get("force_color_match")]
+        pref_overrides = [o for o in (filament_overrides or []) if not o.get("force_color_match")]
+
         # Track reasons for skipping printers
         printers_busy = []
         printers_offline = []
-        printers_missing_filament = []
+        printers_missing_filament: list[tuple[str, list[str]]] = []
         candidates: list[tuple[int, int]] = []  # (printer_id, color_match_count)
 
         for printer in printers:
             if printer.id in exclude_ids:
+                # Printer is already claimed by another job in this scheduling run.
+                # For force-color jobs, still check if the color would match — if not,
+                # report it as a color mismatch rather than plain "Busy" so the user
+                # knows the job needs a filament change, not just to wait for availability.
+                if force_overrides and not pref_overrides:
+                    missing_colors = self._get_missing_force_color_slots(printer.id, force_overrides)
+                    if missing_colors:
+                        printers_missing_filament.append((printer.name, missing_colors))
+                        continue
                 printers_busy.append(printer.name)
                 continue
 
@@ -323,6 +419,21 @@ class PrintScheduler:
                 continue
 
             if not is_idle:
+                # Printer is currently printing.  For force-color jobs, check whether the
+                # loaded color would satisfy the requirement — if not, surface it as a
+                # color-mismatch reason rather than plain "Busy" so the user understands
+                # that the job is waiting for a filament change, not just printer availability.
+                if force_overrides and not pref_overrides:
+                    missing_colors = self._get_missing_force_color_slots(printer.id, force_overrides)
+                    if missing_colors:
+                        printers_missing_filament.append((printer.name, missing_colors))
+                        logger.debug(
+                            "Printer %s (%s) is busy but also has wrong force-color: %s",
+                            printer.id,
+                            printer.name,
+                            missing_colors,
+                        )
+                        continue
                 printers_busy.append(printer.name)
                 continue
 
@@ -330,25 +441,54 @@ class PrintScheduler:
             if required_filament_types:
                 missing = self._get_missing_filament_types(printer.id, required_filament_types)
                 if missing:
-                    printers_missing_filament.append((printer.name, missing))
+                    # When force_overrides are present, enrich missing entries with color info
+                    # so the "Waiting on" message includes "TYPE (color)" instead of just "TYPE"
+                    if force_overrides:
+                        force_color_map = {
+                            (o.get("type") or "").upper(): o.get("color_name") or o.get("color", "?")
+                            for o in force_overrides
+                        }
+                        missing_enriched = [
+                            f"{t} ({force_color_map[t_upper]})" if (t_upper := t.upper()) in force_color_map else t
+                            for t in missing
+                        ]
+                        printers_missing_filament.append((printer.name, missing_enriched))
+                    else:
+                        printers_missing_filament.append((printer.name, missing))
                     logger.debug("Skipping printer %s (%s) - missing filaments: %s", printer.id, printer.name, missing)
                     continue
 
-            # If filament overrides with colors, only consider printers that have at least one color match
-            if filament_overrides:
-                color_matches = self._count_override_color_matches(printer.id, filament_overrides)
+            # Force color match: ALL flagged slots must have an exact type+color match
+            if force_overrides:
+                missing_colors = self._get_missing_force_color_slots(printer.id, force_overrides)
+                if missing_colors:
+                    printers_missing_filament.append((printer.name, missing_colors))
+                    logger.debug(
+                        "Skipping printer %s (%s) - missing force-matched colors: %s",
+                        printer.id,
+                        printer.name,
+                        missing_colors,
+                    )
+                    continue
+
+            # If preference-only overrides exist, rank by color matches (existing behaviour)
+            if pref_overrides:
+                color_matches = self._count_override_color_matches(printer.id, pref_overrides)
                 if color_matches > 0:
                     candidates.append((printer.id, color_matches))
                 else:
-                    override_colors = [f"{o.get('type', '?')} ({o.get('color', '?')})" for o in filament_overrides]
+                    override_colors = [f"{o.get('type', '?')} ({o.get('color', '?')})" for o in pref_overrides]
                     printers_missing_filament.append((printer.name, override_colors))
                     logger.debug("Skipping printer %s (%s) - no matching override colors", printer.id, printer.name)
                     continue
+            elif force_overrides:
+                # Passed all force checks — immediately eligible (no preference ordering needed)
+                return printer.id, None
             else:
-                # No overrides - take first available (existing behavior)
+                # No overrides at all - take first available (existing behavior)
                 return printer.id, None
 
-        # If we have candidates from override matching, pick the one with most color matches
+        # If we have candidates from preference override matching, pick the one with most color matches
         if candidates:
             candidates.sort(key=lambda c: c[1], reverse=True)
             return candidates[0][0], None
@@ -356,15 +496,65 @@ class PrintScheduler:
         # Build waiting reason from what we found
         reasons = []
         if printers_missing_filament:
-            # Filament mismatch is most actionable - show first
-            names_and_missing = [f"{name} (needs {', '.join(missing)})" for name, missing in printers_missing_filament]
-            reasons.append(f"Waiting for filament: {'; '.join(names_and_missing)}")
+            # Filament/color mismatch is most actionable - show first
+            if force_overrides and not pref_overrides:
+                # All mismatches are force-color failures — use descriptive message only;
+                # but only if there are no busy printers that DO have the matching color.
+                # If a printer has the right color but is busy, surface "Busy" instead so
+                # the user knows the job will start automatically once that printer is free.
+                if not printers_busy:
+                    all_missing = sorted({c for _, cols in printers_missing_filament for c in cols})
+                    return None, f"No matching material/color. Waiting on {', '.join(all_missing)}"
+                # else: fall through — printers_busy will be appended below
+            else:
+                names_and_missing = [
+                    f"{name} (needs {', '.join(missing)})" for name, missing in printers_missing_filament
+                ]
+                reasons.append(f"Waiting for filament: {'; '.join(names_and_missing)}")
         if printers_busy:
             reasons.append(f"Busy: {', '.join(printers_busy)}")
         if printers_offline:
             reasons.append(f"Offline: {', '.join(printers_offline)}")
 
         return None, " | ".join(reasons) if reasons else f"No available {model} printers{location_suffix}"
+
+    def _get_missing_force_color_slots(self, printer_id: int, force_overrides: list[dict]) -> list[str]:
+        """Return descriptive strings for force_color_match slots not satisfied by the printer.
+
+        Each entry in ``force_overrides`` must have ``type`` and ``color`` fields and is expected
+        to carry ``force_color_match: True``.  The printer must have **every** such slot loaded
+        with an exact type+color match.
+
+        Returns:
+            List of ``"TYPE (color)"`` strings for unmatched slots (empty list means all match).
+        """
+        status = printer_manager.get_status(printer_id)
+        if not status:
+            return [f"{o.get('type', '?')} ({o.get('color_name') or o.get('color', '?')})" for o in force_overrides]
+
+        # Build set of loaded type+colour pairs from AMS and external spool
+        loaded: set[tuple[str, str]] = set()
+        for ams_unit in status.raw_data.get("ams", []):
+            for tray in ams_unit.get("tray", []):
+                tray_type = tray.get("tray_type")
+                tray_color = tray.get("tray_color", "")
+                if tray_type:
+                    color_norm = tray_color.replace("#", "").lower()[:6]
+                    loaded.add((_canonical_filament_type(tray_type), color_norm))
+        for vt in status.raw_data.get("vt_tray") or []:
+            vt_type = vt.get("tray_type")
+            if vt_type:
+                color_norm = (vt.get("tray_color", "") or "").replace("#", "").lower()[:6]
+                loaded.add((_canonical_filament_type(vt_type), color_norm))
+
+        missing = []
+        for o in force_overrides:
+            o_type = _canonical_filament_type(o.get("type") or "")
+            o_color = (o.get("color") or "").replace("#", "").lower()[:6]
+            if (o_type, o_color) not in loaded:
+                color_label = o.get("color_name") or o.get("color", "?")
+                missing.append(f"{o_type} ({color_label})")
+        return missing
 
     def _get_missing_filament_types(self, printer_id: int, required_types: list[str]) -> list[str]:
         """Get the list of required filament types that are not loaded on the printer.
@@ -381,6 +571,7 @@ class PrintScheduler:
             return required_types  # Can't determine, assume all missing
 
         # Collect all filament types loaded on this printer (AMS units + external spool)
+        # Use canonical types so equivalence groups (e.g. PA-CF/PA12-CF/PAHT-CF) match.
         loaded_types: set[str] = set()
 
         # Check AMS units (stored in raw_data["ams"])
@@ -390,18 +581,18 @@ class PrintScheduler:
                 for tray in ams_unit.get("tray", []):
                     tray_type = tray.get("tray_type")
                     if tray_type:
-                        loaded_types.add(tray_type.upper())
+                        loaded_types.add(_canonical_filament_type(tray_type))
 
         # Check external spool(s) (virtual tray, stored in raw_data["vt_tray"] as list)
         for vt in status.raw_data.get("vt_tray") or []:
             vt_type = vt.get("tray_type")
             if vt_type:
-                loaded_types.add(vt_type.upper())
+                loaded_types.add(_canonical_filament_type(vt_type))
 
-        # Find which required types are missing (case-insensitive comparison)
+        # Find which required types are missing (using canonical type for equivalence)
         missing = []
         for req_type in required_types:
-            if req_type.upper() not in loaded_types:
+            if _canonical_filament_type(req_type) not in loaded_types:
                 missing.append(req_type)
 
         return missing
@@ -781,7 +972,7 @@ class PrintScheduler:
             if not idx_match and not exact_match and not similar_match and not type_only_match:
                 for f in available:
                     f_type = (f.get("type") or "").upper()
-                    if f_type != req_type:
+                    if _canonical_filament_type(f_type) != _canonical_filament_type(req_type):
                         continue
 
                     # Type matches - check color
@@ -821,17 +1012,319 @@ class PrintScheduler:
     def _is_printer_idle(self, printer_id: int) -> bool:
         """Check if a printer is connected and idle."""
         if not printer_manager.is_connected(printer_id):
+            logger.debug("Printer %d: not connected", printer_id)
             return False
 
         state = printer_manager.get_status(printer_id)
         if not state:
+            logger.debug("Printer %d: no status available", printer_id)
             return False
 
         # IDLE = ready for next print
         # FINISH/FAILED = ready only if user confirmed plate is cleared
-        return state.state == "IDLE" or (
+        idle = state.state == "IDLE" or (
             state.state in ("FINISH", "FAILED") and printer_manager.is_plate_cleared(printer_id)
         )
+        if not idle:
+            logger.debug(
+                "Printer %d: not idle — state=%s, plate_cleared=%s",
+                printer_id,
+                state.state,
+                printer_manager.is_plate_cleared(printer_id),
+            )
+        return idle
+
+    async def _get_bool_setting(self, db: AsyncSession, key: str, default: bool = False) -> bool:
+        """Read a boolean setting from the database."""
+        result = await db.execute(select(Settings).where(Settings.key == key))
+        setting = result.scalar_one_or_none()
+        if setting:
+            return setting.value.lower() == "true"
+        return default
+
+    async def _get_drying_presets(self, db: AsyncSession) -> dict[str, dict[str, int]]:
+        """Get drying presets (user-configured or built-in defaults)."""
+        result = await db.execute(select(Settings).where(Settings.key == "drying_presets"))
+        setting = result.scalar_one_or_none()
+        if setting and setting.value:
+            try:
+                presets = json.loads(setting.value)
+                if isinstance(presets, dict) and presets:
+                    return presets
+            except json.JSONDecodeError:
+                pass
+        return self.DEFAULT_DRYING_PRESETS
+
+    def _get_conservative_drying_params(
+        self, trays: list[dict], module_type: str, presets: dict[str, dict[str, int]]
+    ) -> tuple[int, int, str] | None:
+        """Get the most conservative drying params for mixed filament types in an AMS unit.
+
+        Returns (temp, duration_hours, filament_type) or None if no drying-eligible filaments.
+        """
+        temp_key = module_type if module_type in ("n3f", "n3s") else "n3f"
+        hours_key = f"{temp_key}_hours"
+
+        min_temp = None
+        max_hours = None
+        filament_type = ""
+
+        for tray in trays:
+            tray_type = tray.get("tray_type", "")
+            if not tray_type:
+                continue
+            # Normalize filament type for preset lookup (e.g., "PLA Basic" -> "PLA")
+            base_type = tray_type.split()[0].upper()
+            preset = presets.get(base_type)
+            if not preset:
+                continue
+
+            temp = preset.get(temp_key, 55)
+            hours = preset.get(hours_key, 12)
+
+            # Conservative: lowest temp, longest duration
+            if min_temp is None or temp < min_temp:
+                min_temp = temp
+            if max_hours is None or hours > max_hours:
+                max_hours = hours
+            if not filament_type:
+                filament_type = base_type
+
+        if min_temp is None:
+            return None
+        return (min_temp, max_hours or 12, filament_type)
+
+    async def _check_auto_drying(self, db: AsyncSession, queue_items: list[PrintQueueItem], busy_printers: set[int]):
+        """Start drying on idle printers based on humidity.
+
+        Two modes (can both be enabled):
+        - queue_drying_enabled: Dry between scheduled queue prints
+        - ambient_drying_enabled: Dry any idle printer when humidity is high, regardless of queue
+        """
+        queue_drying_enabled = await self._get_bool_setting(db, "queue_drying_enabled")
+        ambient_drying_enabled = await self._get_bool_setting(db, "ambient_drying_enabled")
+        if not queue_drying_enabled and not ambient_drying_enabled:
+            # Stop active drying on all printers if both features disabled
+            if self._drying_in_progress:
+                for pid in list(self._drying_in_progress):
+                    logger.info("Auto-drying: printer %d — stopping, auto-drying disabled", pid)
+                    await self._stop_drying(pid)
+            return
+
+        # Update drying state from printer status (handles backend restart)
+        self._sync_drying_state()
+
+        # Find printers with scheduled items (for queue drying mode)
+        printers_with_scheduled: set[int] = set()
+        printers_with_items: set[int] = set()
+        for item in queue_items:
+            if item.printer_id:
+                printers_with_items.add(item.printer_id)
+                if item.scheduled_time and not item.manual_start:
+                    printers_with_scheduled.add(item.printer_id)
+
+        # If only queue mode is on and no printers have scheduled items, stop drying
+        if not ambient_drying_enabled and not printers_with_scheduled:
+            for pid in list(self._drying_in_progress):
+                logger.info("Auto-drying: printer %d — stopping, no scheduled prints in queue", pid)
+                await self._stop_drying(pid)
+            return
+
+        # Get humidity threshold
+        result = await db.execute(select(Settings).where(Settings.key == "ams_humidity_fair"))
+        setting = result.scalar_one_or_none()
+        humidity_threshold = int(setting.value) if setting else 60
+
+        # Get drying presets
+        presets = await self._get_drying_presets(db)
+
+        # Determine if drying should be skipped for printers with pending items
+        block_for_drying = await self._get_bool_setting(db, "queue_drying_block")
+
+        # Get all active printers
+        all_printers = await db.execute(select(Printer).where(Printer.is_active.is_(True)))
+        for printer in all_printers.scalars():
+            pid = printer.id
+            if pid in busy_printers:
+                logger.debug("Auto-drying: printer %d skipped — busy", pid)
+                continue
+            # In queue-only mode, only dry printers that have scheduled prints
+            if not ambient_drying_enabled and pid not in printers_with_scheduled:
+                if self._drying_in_progress.get(pid):
+                    logger.info("Auto-drying: printer %d — stopping, no scheduled prints for this printer", pid)
+                    await self._stop_drying(pid)
+                logger.debug("Auto-drying: printer %d skipped — no scheduled prints", pid)
+                continue
+            # When block mode is on, don't START new drying on printers with pending items.
+            # But allow already-drying printers through so humidity auto-stop logic still runs.
+            if block_for_drying and pid in printers_with_items and not self._drying_in_progress.get(pid):
+                logger.debug("Auto-drying: printer %d skipped — has pending items (block mode)", pid)
+                continue
+            if not printer_manager.is_connected(pid):
+                logger.debug("Auto-drying: printer %d skipped — not connected", pid)
+                continue
+            if not self._is_printer_idle(pid):
+                logger.debug("Auto-drying: printer %d skipped — not idle", pid)
+                continue
+
+            # Check if this printer supports drying
+            state = printer_manager.get_status(pid)
+            if not state:
+                logger.debug("Auto-drying: printer %d skipped — no state", pid)
+                continue
+            model = printer_manager.get_model(pid)
+            firmware = state.firmware_version
+            if not supports_drying(model, firmware):
+                logger.debug("Auto-drying: printer %d skipped — model %s does not support drying", pid, model)
+                continue
+
+            # Check each AMS unit from raw_data
+            ams_list = state.raw_data.get("ams", [])
+            logger.debug("Auto-drying: printer %d — checking %d AMS units", pid, len(ams_list))
+            for ams_data in ams_list:
+                module_type = str(ams_data.get("module_type") or "")
+                ams_id = int(ams_data.get("id", 0))
+                # Only n3f/n3s support drying
+                if module_type not in ("n3f", "n3s"):
+                    logger.debug("Auto-drying: printer %d AMS %d skipped — module_type=%s", pid, ams_id, module_type)
+                    continue
+
+                dry_time = int(ams_data.get("dry_time") or 0)
+
+                # Read humidity — prefer humidity_raw (actual %) over humidity (index 1-5)
+                humidity = None
+                h_raw = ams_data.get("humidity_raw")
+                if h_raw is not None:
+                    try:
+                        humidity = int(h_raw)
+                    except (ValueError, TypeError):
+                        pass
+                if humidity is None:
+                    h_idx = ams_data.get("humidity")
+                    if h_idx is not None:
+                        try:
+                            humidity = int(h_idx)
+                        except (ValueError, TypeError):
+                            pass
+                # Already drying — check if humidity dropped below threshold (with minimum drying time)
+                if dry_time > 0:
+                    if pid not in self._drying_in_progress:
+                        # Drying we didn't start (manual or from before restart) — track but don't stop
+                        self._drying_in_progress[pid] = time.monotonic()
+                    started_at = self._drying_in_progress[pid]
+                    elapsed = time.monotonic() - started_at
+                    if humidity is not None and humidity <= humidity_threshold and elapsed >= self._min_drying_seconds:
+                        logger.info(
+                            "Auto-drying: printer %d AMS %d — humidity %d%% <= threshold %d%% after %dm, stopping drying",
+                            pid,
+                            ams_id,
+                            humidity,
+                            humidity_threshold,
+                            int(elapsed / 60),
+                        )
+                        printer_manager.send_drying_command(pid, ams_id, temp=0, duration=0, mode=0)
+                    else:
+                        logger.debug(
+                            "Auto-drying: printer %d AMS %d — drying (%dm left, humidity %s%%, elapsed %dm/%dm min)",
+                            pid,
+                            ams_id,
+                            dry_time,
+                            humidity,
+                            int(elapsed / 60),
+                            self._min_drying_seconds // 60,
+                        )
+                    continue
+
+                # Humidity below threshold — no need to start drying
+                if humidity is None or humidity <= humidity_threshold:
+                    logger.debug(
+                        "Auto-drying: printer %d AMS %d skipped — humidity %s <= threshold %d",
+                        pid,
+                        ams_id,
+                        humidity,
+                        humidity_threshold,
+                    )
+                    continue
+
+                # Check cannot-dry reasons (power constraints etc.)
+                sf_reasons = ams_data.get("dry_sf_reason", [])
+                if sf_reasons:
+                    logger.debug(
+                        "Auto-drying: printer %d AMS %d skipped — cannot dry reasons: %s",
+                        pid,
+                        ams_id,
+                        sf_reasons,
+                    )
+                    continue
+
+                # Get conservative drying params for mixed filaments
+                trays = ams_data.get("tray", [])
+                params = self._get_conservative_drying_params(trays, module_type, presets)
+                if not params:
+                    logger.debug(
+                        "Auto-drying: printer %d AMS %d skipped — no drying-eligible filaments in trays", pid, ams_id
+                    )
+                    continue
+
+                temp, duration_hours, filament_type = params
+
+                # Start drying
+                logger.info(
+                    "Auto-drying: printer %d AMS %d — humidity %d%% > threshold %d%%, "
+                    "starting %s drying at %d°C for %dh",
+                    pid,
+                    ams_id,
+                    humidity,
+                    humidity_threshold,
+                    filament_type,
+                    temp,
+                    duration_hours,
+                )
+                success = printer_manager.send_drying_command(
+                    pid, ams_id, temp, duration_hours, mode=1, filament=filament_type
+                )
+                if success:
+                    self._drying_in_progress[pid] = time.monotonic()
+
+    def _sync_drying_state(self):
+        """Sync in-memory drying state with actual printer status.
+
+        Handles backend restart — if a printer is drying but we don't know about it,
+        update our state. If we think it's drying but it's not, clear it.
+        """
+        to_remove = []
+        for pid in self._drying_in_progress:
+            state = printer_manager.get_status(pid)
+            if not state:
+                to_remove.append(pid)
+                continue
+            # Check if any AMS unit is still drying
+            ams_list = state.raw_data.get("ams", [])
+            any_drying = any(int(a.get("dry_time") or 0) > 0 for a in ams_list)
+            if not any_drying:
+                to_remove.append(pid)
+        for pid in to_remove:
+            self._drying_in_progress.pop(pid, None)
+
+    async def _stop_drying(self, printer_id: int):
+        """Stop all active drying on a printer (print takes priority)."""
+        state = printer_manager.get_status(printer_id)
+        if not state:
+            self._drying_in_progress.pop(printer_id, None)
+            return
+
+        ams_list = state.raw_data.get("ams", [])
+        for ams_data in ams_list:
+            dry_time = int(ams_data.get("dry_time") or 0)
+            if dry_time > 0:
+                ams_id = int(ams_data.get("id", 0))
+                logger.info(
+                    "Auto-drying: stopping drying on printer %d AMS %d — print takes priority",
+                    printer_id,
+                    ams_id,
+                )
+                printer_manager.send_drying_command(printer_id, ams_id, 0, 0, mode=0)
+        self._drying_in_progress.pop(printer_id, None)
 
     async def _get_smart_plug(self, db: AsyncSession, printer_id: int) -> SmartPlug | None:
         """Get the smart plug associated with a printer."""

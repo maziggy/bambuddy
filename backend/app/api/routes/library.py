@@ -415,7 +415,7 @@ async def create_folder(
         archive_id=data.archive_id,
     )
     db.add(folder)
-    await db.flush()
+    await db.commit()
     await db.refresh(folder)
 
     return FolderResponse(
@@ -531,7 +531,7 @@ async def update_folder(
                 raise HTTPException(status_code=404, detail="Archive not found")
             folder.archive_id = data.archive_id
 
-    await db.flush()
+    await db.commit()
     await db.refresh(folder)
 
     # Get file count and names
@@ -813,7 +813,7 @@ async def upload_file(
             created_by_id=current_user.id if current_user else None,
         )
         db.add(library_file)
-        await db.flush()
+        await db.commit()
         await db.refresh(library_file)
 
         return FileUploadResponse(
@@ -1962,7 +1962,7 @@ async def update_file(
     if data.notes is not None:
         file.notes = data.notes if data.notes else None
 
-    await db.flush()
+    await db.commit()
     await db.refresh(file)
 
     # Return full response (reuse get_file logic)

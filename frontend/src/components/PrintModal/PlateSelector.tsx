@@ -1,4 +1,5 @@
 import { Layers, Check, AlertTriangle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { PlateSelectorProps } from './types';
 import { formatDuration } from '../../utils/date';
 
@@ -11,7 +12,11 @@ export function PlateSelector({
   isMultiPlate,
   selectedPlate,
   onSelect,
+  queueAll,
+  onQueueAllChange,
 }: PlateSelectorProps) {
+  const { t } = useTranslation();
+
   // Only show for multi-plate files with multiple plates
   if (!isMultiPlate || plates.length <= 1) {
     return null;
@@ -22,11 +27,24 @@ export function PlateSelector({
       <div className="flex items-center gap-2 mb-2">
         <Layers className="w-4 h-4 text-bambu-gray" />
         <span className="text-sm text-bambu-gray">Select Plate to Print</span>
-        {!selectedPlate && (
+        {!selectedPlate && !queueAll && (
           <span className="text-xs text-orange-400 flex items-center gap-1">
             <AlertTriangle className="w-3 h-3" />
             Selection required
           </span>
+        )}
+        {onQueueAllChange && (
+          <button
+            type="button"
+            onClick={() => onQueueAllChange(!queueAll)}
+            className={`ml-auto text-xs px-2 py-0.5 rounded-full border transition-colors ${
+              queueAll
+                ? 'border-bambu-green bg-bambu-green/10 text-bambu-green'
+                : 'border-bambu-dark-tertiary text-bambu-gray hover:border-bambu-gray'
+            }`}
+          >
+            {t('queue.queueAllPlates', { count: plates.length })}
+          </button>
         )}
       </div>
       <div className="grid grid-cols-2 gap-2">
@@ -34,9 +52,14 @@ export function PlateSelector({
           <button
             key={plate.index}
             type="button"
-            onClick={() => onSelect(plate.index)}
+            onClick={() => {
+              if (queueAll && onQueueAllChange) {
+                onQueueAllChange(false);
+              }
+              onSelect(plate.index);
+            }}
             className={`flex items-center gap-2 p-2 rounded-lg border transition-colors text-left ${
-              selectedPlate === plate.index
+              queueAll || selectedPlate === plate.index
                 ? 'border-bambu-green bg-bambu-green/10'
                 : 'border-bambu-dark-tertiary bg-bambu-dark hover:border-bambu-gray'
             }`}
@@ -64,7 +87,7 @@ export function PlateSelector({
                 {plate.print_time_seconds != null ? ` • ${formatDuration(plate.print_time_seconds)}` : ''}
               </p>
             </div>
-            {selectedPlate === plate.index && (
+            {(queueAll || selectedPlate === plate.index) && (
               <Check className="w-4 h-4 text-bambu-green flex-shrink-0" />
             )}
           </button>

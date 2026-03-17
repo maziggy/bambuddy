@@ -168,6 +168,27 @@ class TestSettingsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_update_low_stock_threshold(self, async_client: AsyncClient):
+        """Verify low stock threshold setting can be updated."""
+        # Get default value
+        response = await async_client.get("/api/v1/settings/")
+        assert response.status_code == 200
+        assert response.json()["low_stock_threshold"] == 20.0
+
+        # Update to custom value
+        response = await async_client.put("/api/v1/settings/", json={"low_stock_threshold": 15.5})
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["low_stock_threshold"] == 15.5
+
+        # Verify persistence
+        response = await async_client.get("/api/v1/settings/")
+        assert response.status_code == 200
+        assert response.json()["low_stock_threshold"] == 15.5
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_update_notification_language(self, async_client: AsyncClient):
         """Verify notification language can be updated."""
         response = await async_client.put("/api/v1/settings/", json={"notification_language": "de"})

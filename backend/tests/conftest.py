@@ -50,8 +50,12 @@ def event_loop():
     """Create an instance of the default event loop for each test session."""
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
-    # Drain pending callbacks so aiosqlite threads can finish before loop closes
-    loop.run_until_complete(asyncio.sleep(0.1))
+    # Dispose the module-level engine so aiosqlite worker threads finish
+    # before the event loop closes, preventing "Event loop is closed" errors.
+    from backend.app.core.database import engine
+
+    loop.run_until_complete(engine.dispose())
+    loop.run_until_complete(asyncio.sleep(0.05))
     loop.close()
 
 
@@ -63,8 +67,10 @@ async def test_engine():
     # Import all models to register them
     from backend.app.models import (
         ams_history,
+        ams_label,
         api_key,
         archive,
+        color_catalog,
         external_link,
         filament,
         group,
@@ -79,8 +85,10 @@ async def test_engine():
         smart_plug,
         spool,
         spool_assignment,
+        spool_catalog,
         spool_usage_history,
         user,
+        virtual_printer,
     )
 
     async with engine.begin() as conn:

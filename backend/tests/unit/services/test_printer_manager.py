@@ -15,6 +15,7 @@ from backend.app.services.printer_manager import (
     init_printer_connections,
     printer_state_to_dict,
     supports_chamber_temp,
+    supports_drying,
 )
 
 
@@ -673,6 +674,7 @@ class TestPrinterStateToDict:
         state.wifi_signal = -50
         state.raw_data = {}
         state.stg_cur = -1  # No calibration stage active
+        state.firmware_version = None
         return state
 
     def test_basic_conversion(self, mock_state):
@@ -885,6 +887,79 @@ class TestPrinterStateToDict:
         # Let's check the actual behavior
         assert "chamber" not in result["temperatures"]
 
+    def test_ams_drying_fields_included(self, mock_state):
+        """Verify AMS drying fields (dry_time, module_type) are included in output."""
+        mock_state.raw_data = {
+            "ams": [
+                {
+                    "id": 0,
+                    "dry_time": 42,
+                    "module_type": "n3f",
+                    "tray": [
+                        {
+                            "id": 0,
+                            "tray_color": "FF0000",
+                            "tray_type": "PLA",
+                            "drying_temp": 55,
+                            "drying_time": 240,
+                        }
+                    ],
+                }
+            ]
+        }
+
+        result = printer_state_to_dict(mock_state)
+
+        ams_unit = result["ams"][0]
+        assert ams_unit["dry_time"] == 42
+        assert ams_unit["module_type"] == "n3f"
+        # Tray-level drying fields
+        tray = ams_unit["tray"][0]
+        assert tray["drying_temp"] == 55
+        assert tray["drying_time"] == 240
+
+
+class TestStatusKeyDryingDedup:
+    """Regression tests for WebSocket dedup including drying fields.
+
+    The WebSocket broadcast deduplication uses printer_state_to_dict output
+    to detect changes. If drying fields (like dry_time) are missing from
+    the dict, changes to those fields won't trigger broadcasts.
+    """
+
+    def test_dry_time_change_changes_status_key(self):
+        """Verify dry_time is present in AMS unit data so dedup can detect changes."""
+        state = MagicMock()
+        state.connected = True
+        state.state = "IDLE"
+        state.current_print = None
+        state.subtask_name = None
+        state.gcode_file = None
+        state.progress = 0
+        state.remaining_time = 0
+        state.layer_num = 0
+        state.total_layers = 0
+        state.temperatures = {"nozzle": 25, "bed": 25}
+        state.hms_errors = []
+        state.ams_status_main = 0
+        state.ams_status_sub = 0
+        state.tray_now = None
+        state.wifi_signal = -50
+        state.stg_cur = -1
+
+        # First state: drying active with 30 minutes remaining
+        state.raw_data = {"ams": [{"id": 0, "dry_time": 30, "module_type": "n3f", "tray": [{"id": 0}]}]}
+        result1 = printer_state_to_dict(state)
+
+        # Second state: drying time decreased
+        state.raw_data = {"ams": [{"id": 0, "dry_time": 29, "module_type": "n3f", "tray": [{"id": 0}]}]}
+        result2 = printer_state_to_dict(state)
+
+        # The dicts should differ — dry_time changed
+        assert result1["ams"][0]["dry_time"] == 30
+        assert result2["ams"][0]["dry_time"] == 29
+        assert result1["ams"] != result2["ams"]
+
 
 class TestSupportsChamberTemp:
     """Tests for supports_chamber_temp helper function."""
@@ -953,6 +1028,53 @@ class TestSupportsChamberTemp:
         assert supports_chamber_temp("N2S") is False
         # A1 Mini
         assert supports_chamber_temp("N1") is False
+
+
+class TestSupportsDrying:
+    """Tests for supports_drying helper function."""
+
+    def test_known_supported_with_firmware(self):
+        """Verify known models with sufficient firmware return True."""
+        assert supports_drying("X1C", "01.09.00.00") is True
+        assert supports_drying("P1S", "01.08.00.00") is True
+        assert supports_drying("H2D", "01.02.30.00") is True
+
+    def test_known_supported_old_firmware(self):
+        """Verify known models with old firmware return False."""
+        assert supports_drying("X1C", "01.08.00.00") is False
+        assert supports_drying("P1S", "01.07.00.00") is False
+
+    def test_known_supported_no_firmware(self):
+        """Verify known models with no firmware return False."""
+        assert supports_drying("X1C", None) is False
+
+    def test_unsupported_models(self):
+        """Verify models without AMS drying support return False regardless of firmware."""
+        for model in ["P2S", "A1", "A1MINI", "A1-MINI", "H2S", "H2C", "N7", "N1", "N2S"]:
+            assert supports_drying(model, "99.99.99.99") is False, f"Expected False for {model}"
+
+    def test_unknown_models_allowed(self):
+        """Verify unknown models are allowed (graceful fallback).
+
+        Models not in the unsupported set AND not matching any known firmware-gated
+        model substring get the benefit of the doubt and return True.
+        "H2D Pro" contains "H2D" so it IS firmware-gated (needs firmware).
+        """
+        # Truly unknown models: no substring match in _DRYING_MIN_FIRMWARE
+        assert supports_drying("FUTURE_MODEL", None) is True
+        # X1E contains "X1" substring, so it IS firmware-gated
+        assert supports_drying("X1E", "01.09.00.00") is True
+        # H2D Pro contains "H2D" substring, so it IS firmware-gated
+        assert supports_drying("H2D Pro", "01.02.30.00") is True
+
+    def test_none_model(self):
+        """Verify None model returns False."""
+        assert supports_drying(None, "01.09.00.00") is False
+
+    def test_case_insensitive(self):
+        """Verify model matching is case-insensitive."""
+        assert supports_drying("x1c", "01.09.00.00") is True
+        assert supports_drying("p2s", "99.99.99.99") is False
 
 
 class TestGetDerivedStatusName:

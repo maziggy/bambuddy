@@ -22,6 +22,10 @@ describe('getCurrencySymbol', () => {
     expect(getCurrencySymbol('HKD')).toBe('HK$');
   });
 
+  it('returns RM for MYR', () => {
+    expect(getCurrencySymbol('MYR')).toBe('RM');
+  });
+
   it('returns the code itself for unknown currencies', () => {
     expect(getCurrencySymbol('XYZ')).toBe('XYZ');
   });
@@ -37,7 +41,11 @@ describe('SUPPORTED_CURRENCIES', () => {
     expect(SUPPORTED_CURRENCIES.find((c) => c.code === 'INR')).toBeDefined();
   });
 
-  it('has 25 entries', () => {
-    expect(SUPPORTED_CURRENCIES).toHaveLength(25);
+  it('contains MYR', () => {
+    expect(SUPPORTED_CURRENCIES.find((c) => c.code === 'MYR')).toBeDefined();
+  });
+
+  it('has 28 entries', () => {
+    expect(SUPPORTED_CURRENCIES).toHaveLength(28);
   });
 });

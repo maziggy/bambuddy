@@ -5,15 +5,14 @@ import { api } from '../api/client';
 import type { SpoolUsageRecord } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
-
-interface SpoolUsageHistoryProps {
-  spoolId: number;
-}
-
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
   return date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' }) +
     ' ' + date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+interface SpoolUsageHistoryProps {
+  spoolId: number;
 }
 
 const STATUS_COLORS: Record<string, string> = {

@@ -97,11 +97,11 @@ async def compute_project_stats(
     )
     in_progress_prints = in_progress_result.scalar() or 0
 
-    # Sum completed items (parts) - sum of quantities for successful prints
+    # Sum completed items (parts) - sum of quantities for actually printed jobs
     completed_items_result = await db.execute(
         select(func.coalesce(func.sum(PrintArchive.quantity), 0)).where(
             PrintArchive.project_id == project_id,
-            PrintArchive.status.in_(["completed", "archived"]),
+            PrintArchive.status == "completed",
         )
     )
     completed_items = int(completed_items_result.scalar() or 0)
@@ -192,11 +192,11 @@ async def list_projects(
         )
         queue_count = queue_count_result.scalar() or 0
 
-        # Sum completed parts (quantities) - includes "archived" as successful
+        # Sum completed parts (quantities) - only actually printed jobs
         completed_result = await db.execute(
             select(func.coalesce(func.sum(PrintArchive.quantity), 0)).where(
                 PrintArchive.project_id == project.id,
-                PrintArchive.status.in_(["completed", "archived"]),
+                PrintArchive.status == "completed",
             )
         )
         completed_count = int(completed_result.scalar() or 0)

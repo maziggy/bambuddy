@@ -126,6 +126,8 @@ export interface AMSTray {
   tray_uuid: string | null;  // Bambu Lab spool UUID (32-char hex, only valid for Bambu Lab spools)
   nozzle_temp_min: number | null;  // Min nozzle temperature
   nozzle_temp_max: number | null;  // Max nozzle temperature
+  drying_temp: number | null;      // RFID-recommended drying temp
+  drying_time: number | null;      // RFID-recommended drying time (hours)
 }
 
 export interface AMSUnit {
@@ -134,6 +136,13 @@ export interface AMSUnit {
   temp: number | null;
   is_ams_ht: boolean;  // True for AMS-HT (single spool), False for regular AMS (4 spools)
   tray: AMSTray[];
+  serial_number: string;  // AMS unit serial number (from MQTT sn field)
+  sw_ver: string;         // AMS firmware version (from get_version info.module ams/* entry)
+  dry_time: number;       // Minutes remaining (0 = not drying, >0 = drying active)
+  dry_status: number;     // 0=Off, 1=Checking, 2=Drying, 3=Cooling, 4=Stopping, 5=Error
+  dry_sub_status: number; // 0=Off, 1=Heating, 2=Dehumidify
+  dry_sf_reason: number[]; // Cannot-dry reasons (1=InsufficientPower, 8=NeedPluginPower)
+  module_type: string;    // "ams", "n3f", "n3s"
 }
 
 export interface NozzleInfo {
@@ -210,6 +219,7 @@ export interface PrinterStatus {
   timelapse: boolean;  // Timelapse recording active
   ipcam: boolean;  // Live view enabled
   wifi_signal: number | null;  // WiFi signal strength in dBm
+  wired_network: boolean;  // Ethernet connection detected
   nozzles: NozzleInfo[];  // Nozzle hardware info (index 0=left/primary, 1=right)
   nozzle_rack: NozzleRackSlot[];  // H2C 6-nozzle tool-changer rack
   print_options: PrintOptions | null;  // AI detection and print options
@@ -254,6 +264,8 @@ export interface PrinterStatus {
   developer_mode: boolean | null;
   // Queue: user has acknowledged plate is cleared for next queued print
   plate_cleared: boolean;
+  // AMS drying support
+  supports_drying: boolean;
 }
 
 export interface PrinterCreate {
@@ -371,6 +383,22 @@ export interface Archive {
   // User tracking (Issue #206)
   created_by_id: number | null;
   created_by_username: string | null;
+}
+
+export interface ArchiveSlim {
+  printer_id: number | null;
+  print_name: string | null;
+  print_time_seconds: number | null;
+  actual_time_seconds: number | null;
+  filament_used_grams: number | null;
+  filament_type: string | null;
+  filament_color: string | null;
+  status: string;
+  started_at: string | null;
+  completed_at: string | null;
+  cost: number | null;
+  quantity: number;
+  created_at: string;
 }
 
 export interface PrintLogEntry {
@@ -764,6 +792,7 @@ export interface AppSettings {
   check_updates: boolean;
   check_printer_firmware: boolean;
   include_beta_updates: boolean;
+  language: string;
   notification_language: string;
   // AMS threshold settings
   ams_humidity_good: number;  // <= this is green
@@ -771,6 +800,11 @@ export interface AppSettings {
   ams_temp_good: number;      // <= this is green/blue
   ams_temp_fair: number;      // <= this is orange, > is red
   ams_history_retention_days: number;  // days to keep AMS sensor history
+  // Queue auto-drying settings
+  queue_drying_enabled: boolean;  // Auto-dry AMS between queued prints
+  queue_drying_block: boolean;  // Block queue until drying completes
+  ambient_drying_enabled: boolean;  // Auto-dry idle printers based on humidity regardless of queue
+  drying_presets: string;  // JSON blob of drying presets per filament type
   // Print modal settings
   per_printer_mapping_expanded: boolean;  // Whether custom mapping is expanded by default in print modal
   // Date/time format settings
@@ -820,6 +854,8 @@ export interface AppSettings {
   prometheus_token: string;
   // Bed cooled threshold
   bed_cooled_threshold: number;
+  // Inventory low stock threshold
+  low_stock_threshold: number;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
@@ -1222,7 +1258,7 @@ export interface PrintQueueItem {
   auto_off_after: boolean;
   manual_start: boolean;  // Requires manual trigger to start (staged)
   ams_mapping: number[] | null;  // AMS slot mapping for multi-color prints
-  filament_overrides: Array<{ slot_id: number; type: string; color: string }> | null;  // Filament overrides for model-based assignment
+  filament_overrides: Array<{ slot_id: number; type: string; color: string; color_name?: string; force_color_match?: boolean }> | null;  // Filament overrides for model-based assignment
   plate_id: number | null;  // Plate ID for multi-plate 3MF files
   // Print options
   bed_levelling: boolean;
@@ -1252,8 +1288,7 @@ export interface PrintQueueItemCreate {
   printer_id?: number | null;  // null = unassigned
   target_model?: string | null;  // Target printer model (mutually exclusive with printer_id)
   target_location?: string | null;  // Target location filter (only used with target_model)
-  filament_overrides?: Array<{ slot_id: number; type: string; color: string }> | null;
-  // Either archive_id OR library_file_id must be provided
+  filament_overrides?: Array<{ slot_id: number; type: string; color: string; color_name?: string; force_color_match?: boolean }> | null;
   archive_id?: number | null;
   library_file_id?: number | null;
   scheduled_time?: string | null;
@@ -1275,7 +1310,7 @@ export interface PrintQueueItemUpdate {
   printer_id?: number | null;  // null = unassign
   target_model?: string | null;  // Target printer model (mutually exclusive with printer_id)
   target_location?: string | null;  // Target location filter (only used with target_model)
-  filament_overrides?: Array<{ slot_id: number; type: string; color: string }> | null;
+  filament_overrides?: Array<{ slot_id: number; type: string; color: string; color_name?: string; force_color_match?: boolean }> | null;
   position?: number;
   scheduled_time?: string | null;
   require_previous_success?: boolean;
@@ -1408,7 +1443,7 @@ export interface Filament {
 }
 
 // Notification Provider types
-export type ProviderType = 'callmebot' | 'ntfy' | 'pushover' | 'telegram' | 'email' | 'discord' | 'webhook';
+export type ProviderType = 'callmebot' | 'ntfy' | 'pushover' | 'telegram' | 'email' | 'discord' | 'webhook' | 'homeassistant';
 
 export interface NotificationProvider {
   id: number;
@@ -1437,6 +1472,8 @@ export interface NotificationProvider {
   on_plate_not_empty: boolean;
   // Bed cooled
   on_bed_cooled: boolean;
+  // First layer complete
+  on_first_layer_complete: boolean;
   // Print queue events
   on_queue_job_added: boolean;
   on_queue_job_assigned: boolean;
@@ -1489,6 +1526,8 @@ export interface NotificationProviderCreate {
   on_plate_not_empty?: boolean;
   // Bed cooled
   on_bed_cooled?: boolean;
+  // First layer complete
+  on_first_layer_complete?: boolean;
   // Print queue events
   on_queue_job_added?: boolean;
   on_queue_job_assigned?: boolean;
@@ -1534,6 +1573,8 @@ export interface NotificationProviderUpdate {
   on_plate_not_empty?: boolean;
   // Bed cooled
   on_bed_cooled?: boolean;
+  // First layer complete
+  on_first_layer_complete?: boolean;
   // Print queue events
   on_queue_job_added?: boolean;
   on_queue_job_assigned?: boolean;
@@ -1804,6 +1845,8 @@ export interface InventorySpool {
   created_at: string;
   updated_at: string;
   cost_per_kg: number | null;
+  last_scale_weight: number | null;
+  last_weighed_at: string | null;
   k_profiles?: SpoolKProfile[];
 }
 
@@ -1856,6 +1899,7 @@ export interface SpoolAssignment {
   spool?: InventorySpool | null;
   configured: boolean;
   created_at: string;
+  ams_label?: string | null;  // User-defined friendly name for the AMS unit
 }
 
 // Update types
@@ -1998,7 +2042,7 @@ export type Permission =
   | 'library:update_own' | 'library:update_all' | 'library:delete_own' | 'library:delete_all'
   | 'projects:read' | 'projects:create' | 'projects:update' | 'projects:delete'
   | 'filaments:read' | 'filaments:create' | 'filaments:update' | 'filaments:delete'
-  | 'inventory:read' | 'inventory:create' | 'inventory:update' | 'inventory:delete'
+  | 'inventory:read' | 'inventory:create' | 'inventory:update' | 'inventory:delete' | 'inventory:view_assignments'
   | 'smart_plugs:read' | 'smart_plugs:create' | 'smart_plugs:update' | 'smart_plugs:delete' | 'smart_plugs:control'
   | 'camera:view'
   | 'maintenance:read' | 'maintenance:create' | 'maintenance:update' | 'maintenance:delete'
@@ -2142,13 +2186,6 @@ export interface SMTPSettings {
 }
 
 export interface TestSMTPRequest {
-  smtp_host: string;
-  smtp_port: number;
-  smtp_username?: string;
-  smtp_password?: string;
-  smtp_security: 'starttls' | 'ssl' | 'none';
-  smtp_auth_enabled: boolean;
-  smtp_from_email: string;
   test_recipient: string;
 }
 
@@ -2303,7 +2340,7 @@ export const api = {
   getAvailableFilaments: (model: string, location?: string) => {
     const params = new URLSearchParams({ model });
     if (location) params.set('location', location);
-    return request<Array<{ type: string; color: string; tray_info_idx: string; extruder_id: number | null }>>(`/printers/available-filaments?${params}`);
+    return request<Array<{ type: string; color: string; tray_info_idx: string; tray_sub_brands: string; extruder_id: number | null }>>(`/printers/available-filaments?${params}`);
   },
   getPrinterStatus: (id: number) =>
     request<PrinterStatus>(`/printers/${id}/status`),
@@ -2352,6 +2389,18 @@ export const api = {
     request<{ success: boolean; message: string }>(`/printers/${printerId}/chamber-light?on=${on}`, {
       method: 'POST',
     }),
+
+  // AMS Drying Control
+  startDrying: (printerId: number, amsId: number, temp: number, duration: number, filament: string = '') =>
+    request<{ status: string; ams_id: number; temp: number; duration: number }>(
+      `/printers/${printerId}/drying/start?ams_id=${amsId}&temp=${temp}&duration=${duration}&filament=${encodeURIComponent(filament)}`,
+      { method: 'POST' }
+    ),
+  stopDrying: (printerId: number, amsId: number) =>
+    request<{ status: string; ams_id: number }>(
+      `/printers/${printerId}/drying/stop?ams_id=${amsId}`,
+      { method: 'POST' }
+    ),
 
   // Skip Objects
   getPrintableObjects: (printerId: number) =>
@@ -2489,13 +2538,22 @@ export const api = {
     request<{ used_bytes: number | null; free_bytes: number | null }>(`/printers/${printerId}/storage`),
 
   // Archives
-  getArchives: (printerId?: number, projectId?: number, limit = 50, offset = 0) => {
+  getArchives: (printerId?: number, projectId?: number, limit = 50, offset = 0, dateFrom?: string, dateTo?: string) => {
     const params = new URLSearchParams();
     if (printerId) params.set('printer_id', String(printerId));
     if (projectId) params.set('project_id', String(projectId));
     params.set('limit', String(limit));
     params.set('offset', String(offset));
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
     return request<Archive[]>(`/archives/?${params}`);
+  },
+  getArchivesSlim: (dateFrom?: string, dateTo?: string) => {
+    const params = new URLSearchParams();
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+    const qs = params.toString();
+    return request<ArchiveSlim[]>(`/archives/slim${qs ? `?${qs}` : ''}`);
   },
   getArchive: (id: number) => request<Archive>(`/archives/${id}`),
   searchArchives: (query: string, options?: {
@@ -2536,7 +2594,13 @@ export const api = {
     request<Archive>(`/archives/${id}/favorite`, { method: 'POST' }),
   deleteArchive: (id: number) =>
     request<void>(`/archives/${id}`, { method: 'DELETE' }),
-  getArchiveStats: () => request<ArchiveStats>('/archives/stats'),
+  getArchiveStats: (options?: { dateFrom?: string; dateTo?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.dateFrom) params.set('date_from', options.dateFrom);
+    if (options?.dateTo) params.set('date_to', options.dateTo);
+    const qs = params.toString();
+    return request<ArchiveStats>(`/archives/stats${qs ? `?${qs}` : ''}`);
+  },
   // Tag management
   getTags: () => request<TagInfo[]>('/archives/tags'),
   renameTag: (oldName: string, newName: string) =>
@@ -2550,12 +2614,15 @@ export const api = {
     }),
   recalculateCosts: () =>
     request<{ message: string; updated: number }>('/archives/recalculate-costs', { method: 'POST' }),
-  getFailureAnalysis: (options?: { days?: number; printerId?: number; projectId?: number }) => {
+  getFailureAnalysis: (options?: { days?: number; dateFrom?: string; dateTo?: string; printerId?: number; projectId?: number }) => {
     const params = new URLSearchParams();
     if (options?.days) params.set('days', String(options.days));
+    if (options?.dateFrom) params.set('date_from', options.dateFrom);
+    if (options?.dateTo) params.set('date_to', options.dateTo);
     if (options?.printerId) params.set('printer_id', String(options.printerId));
     if (options?.projectId) params.set('project_id', String(options.projectId));
-    return request<FailureAnalysis>(`/archives/analysis/failures?${params}`);
+    const qs = params.toString();
+    return request<FailureAnalysis>(`/archives/analysis/failures${qs ? `?${qs}` : ''}`);
   },
   compareArchives: (archiveIds: number[]) =>
     request<ArchiveComparison>(`/archives/compare?archive_ids=${archiveIds.join(',')}`),
@@ -3305,6 +3372,23 @@ export const api = {
     request<{ success: boolean }>(`/printers/${printerId}/slot-presets/${amsId}/${trayId}`, {
       method: 'DELETE',
     }),
+
+  // AMS Labels (user-defined friendly names)
+  getAmsLabels: (printerId: number) =>
+    request<Record<number, string>>(`/printers/${printerId}/ams-labels`),
+  saveAmsLabel: (printerId: number, amsId: number, label: string, amsSerial = '') =>
+    request<{ ams_id: number; label: string }>(
+      `/printers/${printerId}/ams-labels/${amsId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ label, ams_serial: amsSerial }),
+      }
+    ),
+  deleteAmsLabel: (printerId: number, amsId: number, amsSerial = '') =>
+    request<{ success: boolean }>(`/printers/${printerId}/ams-labels/${amsId}?ams_serial=${encodeURIComponent(amsSerial)}`, {
+      method: 'DELETE',
+    }),
+
   configureAmsSlot: (
     printerId: number,
     amsId: number,
@@ -3469,10 +3553,27 @@ export const api = {
     request<UnlinkedSpool[]>('/spoolman/spools/unlinked'),
   getLinkedSpools: () =>
     request<LinkedSpoolsMap>('/spoolman/spools/linked'),
-  linkSpool: (spoolId: number, trayUuid: string) =>
+  linkSpool: (
+    spoolId: number,
+    context: {
+      spoolTag: string;
+      printerId: number;
+      amsId: number;
+      trayId: number;
+    }
+  ) =>
     request<{ success: boolean; message: string }>(`/spoolman/spools/${spoolId}/link`, {
       method: 'POST',
-      body: JSON.stringify({ tray_uuid: trayUuid }),
+      body: JSON.stringify({
+        spool_tag: context.spoolTag,
+        printer_id: context.printerId,
+        ams_id: context.amsId,
+        tray_id: context.trayId,
+      }),
+    }),
+  unlinkSpool: (spoolId: number) =>
+    request<{ success: boolean; message: string }>(`/spoolman/spools/${spoolId}/unlink`, {
+      method: 'POST',
     }),
   getSpoolmanSettings: () =>
     request<{ spoolman_enabled: string; spoolman_url: string; spoolman_sync_mode: string; spoolman_disable_weight_sync: string; spoolman_report_partial_usage: string; }>('/settings/spoolman'),
@@ -3531,6 +3632,8 @@ export const api = {
     request<SpoolCatalogEntry>(`/inventory/catalog/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteCatalogEntry: (id: number) =>
     request<{ status: string }>(`/inventory/catalog/${id}`, { method: 'DELETE' }),
+  bulkDeleteCatalogEntries: (ids: number[]) =>
+    request<{ deleted: number }>('/inventory/catalog/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }),
   resetSpoolCatalog: () =>
     request<{ status: string }>('/inventory/catalog/reset', { method: 'POST' }),
   getColorCatalog: () =>
@@ -3541,6 +3644,8 @@ export const api = {
     request<ColorCatalogEntry>(`/inventory/colors/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteColorEntry: (id: number) =>
     request<{ status: string }>(`/inventory/colors/${id}`, { method: 'DELETE' }),
+  bulkDeleteColorEntries: (ids: number[]) =>
+    request<{ deleted: number }>('/inventory/colors/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }),
   resetColorCatalog: () =>
     request<{ status: string }>('/inventory/colors/reset', { method: 'POST' }),
   lookupColor: (manufacturer: string, colorName: string, material?: string) =>
@@ -4617,6 +4722,7 @@ export interface VirtualPrinterConfig {
   access_code_set: boolean;
   serial: string;
   target_printer_id: number | null;
+  auto_dispatch: boolean;
   bind_ip: string | null;
   remote_interface_ip: string | null;
   position: number;
@@ -4640,6 +4746,7 @@ export const multiVirtualPrinterApi = {
     model?: string;
     access_code?: string;
     target_printer_id?: number;
+    auto_dispatch?: boolean;
     bind_ip?: string;
     remote_interface_ip?: string;
   }) =>
@@ -4655,6 +4762,7 @@ export const multiVirtualPrinterApi = {
     model?: string;
     access_code?: string;
     target_printer_id?: number;
+    auto_dispatch?: boolean;
     bind_ip?: string;
     remote_interface_ip?: string;
   }) =>
@@ -4828,12 +4936,25 @@ export interface SpoolBuddyDevice {
   has_scale: boolean;
   tare_offset: number;
   calibration_factor: number;
+  nfc_reader_type: string | null;
+  nfc_connection: string | null;
+  display_brightness: number;
+  display_blank_timeout: number;
+  has_backlight: boolean;
+  last_calibrated_at: string | null;
   last_seen: string | null;
   pending_command: string | null;
   nfc_ok: boolean;
   scale_ok: boolean;
   uptime_s: number;
   online: boolean;
+}
+
+export interface DaemonUpdateCheck {
+  current_version: string;
+  latest_version: string | null;
+  update_available: boolean;
+  release_url: string | null;
 }
 
 // SpoolBuddy API
@@ -4850,15 +4971,58 @@ export const spoolbuddyApi = {
   getCalibration: (deviceId: string) =>
     request<{ tare_offset: number; calibration_factor: number }>(`/spoolbuddy/devices/${deviceId}/calibration`),
 
-  setCalibrationFactor: (deviceId: string, knownWeightGrams: number, rawAdc: number) =>
+  setCalibrationFactor: (deviceId: string, knownWeightGrams: number, rawAdc: number, tareRawAdc?: number) =>
     request<{ tare_offset: number; calibration_factor: number }>(`/spoolbuddy/devices/${deviceId}/calibration/set-factor`, {
       method: 'POST',
-      body: JSON.stringify({ known_weight_grams: knownWeightGrams, raw_adc: rawAdc }),
+      body: JSON.stringify({ known_weight_grams: knownWeightGrams, raw_adc: rawAdc, tare_raw_adc: tareRawAdc }),
     }),
 
   updateSpoolWeight: (spoolId: number, weightGrams: number) =>
     request<{ status: string; weight_used: number }>('/spoolbuddy/scale/update-spool-weight', {
       method: 'POST',
       body: JSON.stringify({ spool_id: spoolId, weight_grams: weightGrams }),
+    }),
+
+  updateDisplay: (deviceId: string, brightness: number, blankTimeout: number) =>
+    request<{ status: string }>(`/spoolbuddy/devices/${deviceId}/display`, {
+      method: 'PUT',
+      body: JSON.stringify({ brightness, blank_timeout: blankTimeout }),
+    }),
+
+  checkDaemonUpdate: (deviceId: string, includeBeta?: boolean) =>
+    request<DaemonUpdateCheck>(`/spoolbuddy/devices/${deviceId}/update-check?include_beta=${includeBeta ?? false}`),
+
+  writeTag: (deviceId: string, spoolId: number) =>
+    request<{ status: string }>('/spoolbuddy/nfc/write-tag', {
+      method: 'POST',
+      body: JSON.stringify({ device_id: deviceId, spool_id: spoolId }),
+    }),
+
+  cancelWrite: (deviceId: string) =>
+    request<{ status: string }>(`/spoolbuddy/devices/${deviceId}/cancel-write`, {
+      method: 'POST',
+      body: '{}',
+    }),
+};
+
+export interface BugReportRequest {
+  description: string;
+  email?: string;
+  screenshot_base64?: string;
+  include_support_info?: boolean;
+}
+
+export interface BugReportResponse {
+  success: boolean;
+  message: string;
+  issue_url?: string;
+  issue_number?: number;
+}
+
+export const bugReportApi = {
+  submit: (data: BugReportRequest) =>
+    request<BugReportResponse>('/bug-report/submit', {
+      method: 'POST',
+      body: JSON.stringify(data),
     }),
 };

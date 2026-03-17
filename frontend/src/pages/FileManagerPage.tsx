@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo, useEffect, type DragEvent } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -27,8 +27,6 @@ import {
   AlertTriangle,
   Filter,
   X,
-  CheckCircle,
-  XCircle,
   Link2,
   Unlink,
   Archive as ArchiveIcon,
@@ -54,6 +52,7 @@ import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { PrintModal } from '../components/PrintModal';
 import { ModelViewerModal } from '../components/ModelViewerModal';
+import { FileUploadModal } from '../components/FileUploadModal';
 import { useToast } from '../contexts/ToastContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useAuth } from '../contexts/AuthContext';
@@ -398,332 +397,6 @@ function LinkFolderModal({ folder, onClose, onLink, isLoading, t }: LinkFolderMo
               {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('fileManager.link')}
             </Button>
           </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Upload Modal with Drag & Drop
-interface UploadModalProps {
-  folderId: number | null;
-  onClose: () => void;
-  onUploadComplete: () => void;
-  t: TFunction;
-}
-
-interface UploadFile {
-  file: File;
-  status: 'pending' | 'uploading' | 'success' | 'error';
-  error?: string;
-  isZip?: boolean;
-  is3mf?: boolean;
-  extractedCount?: number;
-}
-
-function UploadModal({ folderId, onClose, onUploadComplete, t }: UploadModalProps) {
-  const [files, setFiles] = useState<UploadFile[]>([]);
-  const [isDragging, setIsDragging] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [preserveZipStructure, setPreserveZipStructure] = useState(true);
-  const [createFolderFromZip, setCreateFolderFromZip] = useState(false);
-  const [generateStlThumbnails, setGenerateStlThumbnails] = useState(true);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const droppedFiles = Array.from(e.dataTransfer.files);
-    addFiles(droppedFiles);
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      addFiles(Array.from(e.target.files));
-    }
-  };
-
-  const addFiles = (newFiles: File[]) => {
-    const uploadFiles: UploadFile[] = newFiles.map((file) => ({
-      file,
-      status: 'pending',
-      isZip: file.name.toLowerCase().endsWith('.zip'),
-      is3mf: file.name.toLowerCase().endsWith('.3mf'),
-    }));
-    setFiles((prev) => [...prev, ...uploadFiles]);
-  };
-
-  const removeFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const hasZipFiles = files.some((f) => f.isZip && f.status === 'pending');
-  const hasStlFiles = files.some((f) => f.file.name.toLowerCase().endsWith('.stl') && f.status === 'pending');
-  const has3mfFiles = files.some((f) => f.is3mf && f.status === 'pending');
-
-  const handleUpload = async () => {
-    if (files.length === 0) return;
-
-    setIsUploading(true);
-
-    // Handle all files with library upload (ZIP and regular files including .3mf)
-    for (let i = 0; i < files.length; i++) {
-      if (files[i].status !== 'pending') continue;
-
-      setFiles((prev) =>
-        prev.map((f, idx) => (idx === i ? { ...f, status: 'uploading' } : f))
-      );
-
-      try {
-        if (files[i].isZip) {
-          // Extract ZIP file
-          const result = await api.extractZipFile(files[i].file, folderId, preserveZipStructure, createFolderFromZip, generateStlThumbnails);
-          setFiles((prev) =>
-            prev.map((f, idx) =>
-              idx === i
-                ? {
-                    ...f,
-                    status: result.errors.length > 0 && result.extracted === 0 ? 'error' : 'success',
-                    extractedCount: result.extracted,
-                    error: result.errors.length > 0 ? `${result.errors.length} files failed` : undefined,
-                  }
-                : f
-            )
-          );
-        } else {
-          // Regular file upload (STL, .3mf, etc.) - .3mf files automatically get metadata extracted
-          await api.uploadLibraryFile(files[i].file, folderId, generateStlThumbnails);
-          setFiles((prev) =>
-            prev.map((f, idx) => (idx === i ? { ...f, status: 'success' } : f))
-          );
-        }
-      } catch (err) {
-        setFiles((prev) =>
-          prev.map((f, idx) =>
-            idx === i
-              ? { ...f, status: 'error', error: err instanceof Error ? err.message : 'Upload failed' }
-              : f
-          )
-        );
-      }
-    }
-
-    setIsUploading(false);
-    onUploadComplete();
-    // Auto-close modal after upload completes
-    onClose();
-  };
-
-  const pendingCount = files.filter((f) => f.status === 'pending').length;
-  const successCount = files.filter((f) => f.status === 'success').length;
-  const errorCount = files.filter((f) => f.status === 'error').length;
-  const allDone = files.length > 0 && pendingCount === 0 && !isUploading;
-
-  return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-lg border border-bambu-dark-tertiary">
-        <div className="p-4 border-b border-bambu-dark-tertiary flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">{t('fileManager.uploadFiles')}</h2>
-          <button onClick={onClose} className="p-1 hover:bg-bambu-dark rounded">
-            <X className="w-5 h-5 text-bambu-gray" />
-          </button>
-        </div>
-
-        <div className="p-4 space-y-4">
-          {/* Drop Zone */}
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
-              isDragging
-                ? 'border-bambu-green bg-bambu-green/10'
-                : 'border-bambu-dark-tertiary hover:border-bambu-green/50'
-            }`}
-          >
-            <Upload className={`w-10 h-10 mx-auto mb-3 ${isDragging ? 'text-bambu-green' : 'text-bambu-gray'}`} />
-            <p className="text-white font-medium">
-              {isDragging ? t('fileManager.dropFilesHere') : t('fileManager.dragDropFiles')}
-            </p>
-            <p className="text-sm text-bambu-gray mt-1">{t('fileManager.orClickToBrowse')}</p>
-            <p className="text-xs text-bambu-gray/70 mt-2">{t('fileManager.allFileTypesSupported')}</p>
-          </div>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={handleFileSelect}
-          />
-
-          {/* ZIP Options */}
-          {hasZipFiles && (
-            <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-              <div className="flex items-start gap-3">
-                <ArchiveIcon className="w-5 h-5 text-blue-400 mt-0.5 flex-shrink-0" />
-                <div className="flex-1">
-                  <p className="text-sm text-blue-300 font-medium">{t('fileManager.zipFilesDetected')}</p>
-                  <p className="text-xs text-blue-300/70 mt-1">
-                    {t('fileManager.zipExtractOptions')}
-                  </p>
-                  <label className="flex items-center gap-2 mt-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={preserveZipStructure}
-                      onChange={(e) => setPreserveZipStructure(e.target.checked)}
-                      className="w-4 h-4 rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
-                    />
-                    <span className="text-sm text-white">{t('fileManager.preserveZipStructure')}</span>
-                  </label>
-                  <label className="flex items-center gap-2 mt-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={createFolderFromZip}
-                      onChange={(e) => setCreateFolderFromZip(e.target.checked)}
-                      className="w-4 h-4 rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
-                    />
-                    <span className="text-sm text-white">{t('fileManager.createFolderFromZip')}</span>
-                  </label>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* 3MF File Info - Advanced Extraction */}
-          {has3mfFiles && (
-            <div className="p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
-              <div className="flex items-start gap-3">
-                <Printer className="w-5 h-5 text-purple-400 mt-0.5 flex-shrink-0" />
-                <div className="flex-1">
-                  <p className="text-sm text-purple-300 font-medium">{t('fileManager.threemfDetected')}</p>
-                  <p className="text-xs text-purple-300/70 mt-1">
-                    {t('fileManager.threemfExtractionInfo')}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* STL Thumbnail Options - show for STL files or ZIP files (which may contain STLs) */}
-          {(hasStlFiles || hasZipFiles) && (
-            <div className="p-3 bg-bambu-green/10 border border-bambu-green/30 rounded-lg">
-              <div className="flex items-start gap-3">
-                <Image className="w-5 h-5 text-bambu-green mt-0.5 flex-shrink-0" />
-                <div className="flex-1">
-                  <p className="text-sm text-bambu-green font-medium">{t('fileManager.stlThumbnailGeneration')}</p>
-                  <p className="text-xs text-bambu-green/70 mt-1">
-                    {hasZipFiles && !hasStlFiles
-                      ? t('fileManager.zipMayContainStl')
-                      : t('fileManager.thumbnailsCanBeGenerated')}
-                  </p>
-                  <label className="flex items-center gap-2 mt-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={generateStlThumbnails}
-                      onChange={(e) => setGenerateStlThumbnails(e.target.checked)}
-                      className="w-4 h-4 rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
-                    />
-                    <span className="text-sm text-white">{t('fileManager.generateThumbnailsForStl')}</span>
-                  </label>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* File List */}
-          {files.length > 0 && (
-            <div className="max-h-48 overflow-y-auto space-y-2">
-              {files.map((uploadFile, index) => (
-                <div
-                  key={index}
-                  className="flex items-center gap-3 p-2 bg-bambu-dark rounded-lg"
-                >
-                  {uploadFile.isZip ? (
-                    <ArchiveIcon className="w-4 h-4 text-blue-400 flex-shrink-0" />
-                  ) : (
-                    <File className="w-4 h-4 text-bambu-gray flex-shrink-0" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-white truncate">{uploadFile.file.name}</p>
-                    <p className="text-xs text-bambu-gray">
-                      {(uploadFile.file.size / 1024 / 1024).toFixed(2)} MB
-                      {uploadFile.isZip && uploadFile.status === 'pending' && (
-                        <span className="text-blue-400 ml-2">• {t('fileManager.willBeExtracted')}</span>
-                      )}
-                      {uploadFile.extractedCount !== undefined && (
-                        <span className="text-green-400 ml-2">• {t('fileManager.filesExtracted', { count: uploadFile.extractedCount })}</span>
-                      )}
-                    </p>
-                  </div>
-                  {uploadFile.status === 'pending' && (
-                    <button
-                      onClick={() => removeFile(index)}
-                      className="p-1 hover:bg-bambu-dark-tertiary rounded"
-                    >
-                      <X className="w-4 h-4 text-bambu-gray" />
-                    </button>
-                  )}
-                  {uploadFile.status === 'uploading' && (
-                    <Loader2 className="w-4 h-4 text-bambu-green animate-spin" />
-                  )}
-                  {uploadFile.status === 'success' && (
-                    <CheckCircle className="w-4 h-4 text-green-500" />
-                  )}
-                  {uploadFile.status === 'error' && (
-                    <span title={uploadFile.error}>
-                      <XCircle className="w-4 h-4 text-red-500" />
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Summary */}
-          {allDone && (
-            <div className="p-3 bg-bambu-dark rounded-lg">
-              <p className="text-sm text-white">
-                {t('fileManager.uploadComplete', { succeeded: successCount })}
-                {errorCount > 0 && <span className="text-red-400">, {t('fileManager.uploadFailed', { count: errorCount })}</span>}
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className="p-4 border-t border-bambu-dark-tertiary flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose}>
-            {allDone ? t('common.close') : t('common.cancel')}
-          </Button>
-          {!allDone && (
-            <Button
-              onClick={handleUpload}
-              disabled={pendingCount === 0 || isUploading}
-            >
-              {isUploading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  {t('fileManager.uploading')}
-                </>
-              ) : (
-                <>
-                  <Upload className="w-4 h-4 mr-2" />
-                  {t('common.upload')} {pendingCount > 0 ? `(${pendingCount})` : ''}
-                </>
-              )}
-            </Button>
-          )}
         </div>
       </div>
     </div>
@@ -2228,11 +1901,10 @@ export function FileManagerPage() {
       )}
 
       {showUploadModal && (
-        <UploadModal
+        <FileUploadModal
           folderId={selectedFolderId}
           onClose={() => setShowUploadModal(false)}
           onUploadComplete={handleUploadComplete}
-          t={t}
         />
       )}
 

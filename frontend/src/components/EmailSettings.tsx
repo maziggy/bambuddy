@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import { useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 
 const SECURITY_PORT_MAP: Record<string, number> = {
   starttls: 587,
@@ -44,6 +45,8 @@ export function EmailSettings() {
     queryFn: () => api.getSMTPSettings(),
   });
 
+  // Fetch global auth status
+  const { authEnabled } = useAuth();
   // Fetch advanced auth status
   const { data: advancedAuthStatus } = useQuery({
     queryKey: ['advancedAuthStatus'],
@@ -141,28 +144,16 @@ export function EmailSettings() {
       showToast(t('settings.email.errors.enterTestEmail'), 'error');
       return;
     }
-    if (!smtpSettings.smtp_host || !smtpSettings.smtp_from_email) {
-      showToast(t('settings.email.errors.smtpServerAndEmail'), 'error');
-      return;
-    }
-    // Validate auth fields when authentication is enabled
-    if (smtpSettings.smtp_auth_enabled && (!smtpSettings.smtp_username || !smtpSettings.smtp_password)) {
-      showToast(t('settings.email.errors.usernamePasswordRequired'), 'error');
-      return;
-    }
     testMutation.mutate({
-      smtp_host: smtpSettings.smtp_host,
-      smtp_port: smtpSettings.smtp_port,
-      smtp_username: smtpSettings.smtp_username,
-      smtp_password: smtpSettings.smtp_password,
-      smtp_security: smtpSettings.smtp_security,
-      smtp_auth_enabled: smtpSettings.smtp_auth_enabled,
-      smtp_from_email: smtpSettings.smtp_from_email,
       test_recipient: testEmail,
     });
   };
 
   const handleToggleAdvancedAuth = () => {
+    if (!authEnabled) {
+      showToast(t('settings.email.errors.enableAuthFirst'), 'error');
+      return;
+    }
     if (!advancedAuthStatus?.advanced_auth_enabled && !advancedAuthStatus?.smtp_configured) {
       showToast(t('settings.email.errors.configureSmtpFirst'), 'error');
       return;
@@ -251,8 +242,8 @@ export function EmailSettings() {
         </CardContent>
       </Card>
 
-      {/* SMTP Configuration - dimmed when advanced auth is disabled */}
-      <div className={!advancedEnabled ? 'opacity-50 pointer-events-none' : ''}>
+      {/* SMTP Configuration */}
+      <div>
         <Card>
           <CardHeader>
             <h2 className="text-lg font-semibold text-white">
@@ -399,8 +390,8 @@ export function EmailSettings() {
         </Card>
       </div>
 
-      {/* Test SMTP - dimmed when advanced auth is disabled */}
-      <div className={!advancedEnabled ? 'opacity-50 pointer-events-none' : ''}>
+      {/* Test SMTP */}
+      <div>
         <Card>
           <CardHeader>
             <h2 className="text-lg font-semibold text-white">

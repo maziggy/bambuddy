@@ -589,6 +589,154 @@ class TestNotificationProviderTypes:
             assert "source" not in payload
 
 
+class TestHomeAssistantProvider:
+    """Tests for Home Assistant notification provider."""
+
+    @pytest.fixture
+    def service(self):
+        return NotificationService()
+
+    @pytest.mark.asyncio
+    async def test_send_homeassistant_success(self, service):
+        """Verify HA provider sends persistent notification to correct endpoint."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        mock_db = AsyncMock()
+
+        with (
+            patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client,
+            patch(
+                "backend.app.api.routes.settings.get_homeassistant_settings",
+                new_callable=AsyncMock,
+            ) as mock_ha_settings,
+        ):
+            mock_get_client.return_value = mock_client
+            mock_ha_settings.return_value = {
+                "ha_url": "http://ha.local:8123",
+                "ha_token": "test-token-123",
+                "ha_enabled": True,
+            }
+
+            success, message = await service._send_homeassistant({}, "Test Title", "Test Message", db=mock_db)
+
+            assert success is True
+            mock_client.post.assert_called_once()
+            call_args = mock_client.post.call_args
+            assert call_args[0][0] == "http://ha.local:8123/api/services/persistent_notification/create"
+            payload = call_args.kwargs.get("json") or call_args[1].get("json")
+            assert payload["title"] == "Test Title"
+            assert payload["message"] == "Test Message"
+
+    @pytest.mark.asyncio
+    async def test_send_homeassistant_no_db_no_env(self, service):
+        """Verify HA provider fails gracefully without DB or env vars."""
+        with patch.dict("os.environ", {}, clear=True):
+            success, message = await service._send_homeassistant({}, "Test", "Test", db=None)
+
+        assert success is False
+        assert "not configured" in message.lower()
+
+    @pytest.mark.asyncio
+    async def test_send_homeassistant_auth_failure(self, service):
+        """Verify HA provider reports auth failure."""
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        mock_db = AsyncMock()
+
+        with (
+            patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client,
+            patch(
+                "backend.app.api.routes.settings.get_homeassistant_settings",
+                new_callable=AsyncMock,
+            ) as mock_ha_settings,
+        ):
+            mock_get_client.return_value = mock_client
+            mock_ha_settings.return_value = {
+                "ha_url": "http://ha.local:8123",
+                "ha_token": "bad-token",
+                "ha_enabled": True,
+            }
+
+            success, message = await service._send_homeassistant({}, "Test", "Test", db=mock_db)
+
+        assert success is False
+        assert "authentication" in message.lower()
+
+    @pytest.mark.asyncio
+    async def test_send_homeassistant_env_fallback(self, service):
+        """Verify HA provider falls back to env vars when no DB session."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with (
+            patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client,
+            patch.dict("os.environ", {"HA_URL": "http://env-ha:8123", "HA_TOKEN": "env-token"}),
+        ):
+            mock_get_client.return_value = mock_client
+
+            success, message = await service._send_homeassistant({}, "Test", "Test", db=None)
+
+        assert success is True
+        call_args = mock_client.post.call_args
+        assert "env-ha:8123" in call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_send_homeassistant_empty_config_accepted(self, service):
+        """Verify HA provider works with empty config dict (no fields needed)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        mock_db = AsyncMock()
+
+        with (
+            patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client,
+            patch(
+                "backend.app.api.routes.settings.get_homeassistant_settings",
+                new_callable=AsyncMock,
+            ) as mock_ha_settings,
+        ):
+            mock_get_client.return_value = mock_client
+            mock_ha_settings.return_value = {
+                "ha_url": "http://ha.local:8123",
+                "ha_token": "token",
+                "ha_enabled": True,
+            }
+
+            success, _ = await service._send_homeassistant({}, "Title", "Body", db=mock_db)
+
+        assert success is True
+
+    @pytest.mark.asyncio
+    async def test_send_to_provider_dispatches_homeassistant(self, service):
+        """Verify _send_to_provider dispatches to _send_homeassistant."""
+        provider = MagicMock()
+        provider.provider_type = "homeassistant"
+        provider.config = "{}"
+        provider.quiet_hours_enabled = False
+
+        with patch.object(service, "_send_homeassistant", new_callable=AsyncMock) as mock_send:
+            mock_send.return_value = (True, "OK")
+
+            success, _ = await service._send_to_provider(provider, "Title", "Message", db=AsyncMock())
+
+        assert success is True
+        mock_send.assert_called_once()
+
+
 class TestNotificationVariableFallbacks:
     """Tests for notification variable fallback values."""
 
@@ -738,6 +886,7 @@ class TestNotificationVariableFallbacks:
             patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
             patch.object(service, "_send_to_providers", new_callable=AsyncMock),
             patch.object(service, "_build_message_from_template", side_effect=capture_build),
+            patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=None),
         ):
             # Need at least one provider to trigger message building
             mock_get.return_value = [mock_provider]
@@ -772,6 +921,7 @@ class TestNotificationVariableFallbacks:
             patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
             patch.object(service, "_send_to_providers", new_callable=AsyncMock),
             patch.object(service, "_build_message_from_template", side_effect=capture_build),
+            patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=None),
         ):
             # Need at least one provider to trigger message building
             mock_get.return_value = [mock_provider]
@@ -837,6 +987,7 @@ class TestNotificationVariableFallbacks:
             patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
             patch.object(service, "_send_to_providers", new_callable=AsyncMock),
             patch.object(service, "_build_message_from_template", side_effect=capture_build),
+            patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=None),
         ):
             mock_get.return_value = [mock_provider]
 
@@ -869,6 +1020,7 @@ class TestNotificationVariableFallbacks:
             patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
             patch.object(service, "_send_to_providers", new_callable=AsyncMock),
             patch.object(service, "_build_message_from_template", side_effect=capture_build),
+            patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=None),
         ):
             mock_get.return_value = [mock_provider]
 
@@ -905,6 +1057,7 @@ class TestNotificationVariableFallbacks:
             patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
             patch.object(service, "_send_to_providers", new_callable=AsyncMock),
             patch.object(service, "_build_message_from_template", side_effect=capture_build),
+            patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=None),
         ):
             mock_get.return_value = [mock_provider]
 
@@ -922,6 +1075,105 @@ class TestNotificationVariableFallbacks:
 
             # Should use MQTT remaining_time
             assert captured_variables.get("estimated_time") == "30m"
+
+    @pytest.mark.asyncio
+    async def test_print_start_eta_calculated_from_estimated_time(self, service):
+        """Verify ETA is calculated as wall-clock time from estimated_time."""
+        mock_db = AsyncMock()
+        mock_provider = MagicMock()
+        mock_provider.id = 1
+
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+            patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=None),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_print_start(
+                printer_id=1,
+                printer_name="Test",
+                data={"subtask_name": "test"},
+                db=mock_db,
+                archive_data={"print_time_seconds": 3600},  # 1 hour
+            )
+
+            # ETA should be a time string in HH:MM format
+            eta = captured_variables.get("eta")
+            assert eta is not None
+            assert eta != "Unknown"
+            assert ":" in eta  # HH:MM format
+
+    @pytest.mark.asyncio
+    async def test_print_start_eta_unknown_when_no_time(self, service):
+        """Verify ETA shows 'Unknown' when no time data available."""
+        mock_db = AsyncMock()
+        mock_provider = MagicMock()
+        mock_provider.id = 1
+
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+            patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=None),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_print_start(
+                printer_id=1,
+                printer_name="Test",
+                data={"subtask_name": "test"},
+                db=mock_db,
+            )
+
+            assert captured_variables.get("eta") == "Unknown"
+
+    @pytest.mark.asyncio
+    async def test_print_start_eta_respects_12h_format(self, service):
+        """Verify ETA uses 12-hour format when time_format is '12h'."""
+        mock_db = AsyncMock()
+        mock_provider = MagicMock()
+        mock_provider.id = 1
+
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+            patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value="12h"),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_print_start(
+                printer_id=1,
+                printer_name="Test",
+                data={"subtask_name": "test"},
+                db=mock_db,
+                archive_data={"print_time_seconds": 3600},
+            )
+
+            eta = captured_variables.get("eta")
+            assert eta is not None
+            # 12h format should contain AM or PM
+            assert "AM" in eta or "PM" in eta
 
 
 class TestNotificationTemplates:
@@ -1321,3 +1573,127 @@ class TestBedCooledNotifications:
             )
 
             assert captured_variables["filename"] == "Unknown"
+
+
+class TestFirstLayerCompleteNotifications:
+    """Tests for first layer complete notifications."""
+
+    @pytest.fixture
+    def service(self):
+        return NotificationService()
+
+    @pytest.fixture
+    def mock_provider(self):
+        """Create a mock notification provider with first layer complete enabled."""
+        provider = MagicMock()
+        provider.id = 1
+        provider.name = "Test Provider"
+        provider.provider_type = "webhook"
+        provider.enabled = True
+        provider.config = json.dumps({"webhook_url": "http://test.local/webhook"})
+        provider.on_first_layer_complete = True
+        provider.quiet_hours_enabled = False
+        provider.daily_digest_enabled = False
+        provider.printer_id = None
+        return provider
+
+    @pytest.fixture
+    def mock_db(self):
+        """Create a mock database session."""
+        db = AsyncMock()
+        db.commit = AsyncMock()
+        return db
+
+    @pytest.mark.asyncio
+    async def test_on_first_layer_complete_sends_notification(self, service, mock_provider, mock_db):
+        """Verify first layer complete notification is sent when triggered."""
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
+        ):
+            mock_get.return_value = [mock_provider]
+            mock_build.return_value = ("First Layer Complete", "Test Printer: benchy.3mf")
+
+            await service.on_first_layer_complete(
+                printer_id=1,
+                printer_name="Test Printer",
+                filename="benchy.3mf",
+                total_layers=50,
+                db=mock_db,
+            )
+
+            mock_get.assert_called_once()
+            mock_send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_on_first_layer_complete_skipped_when_no_providers(self, service, mock_db):
+        """Verify notification is skipped when no providers have first layer complete enabled."""
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+        ):
+            mock_get.return_value = []
+
+            await service.on_first_layer_complete(
+                printer_id=1,
+                printer_name="Test Printer",
+                filename="benchy.3mf",
+                total_layers=50,
+                db=mock_db,
+            )
+
+            mock_send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_on_first_layer_complete_includes_correct_variables(self, service, mock_provider, mock_db):
+        """Verify printer name, filename, and total_layers are passed to template variables."""
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_first_layer_complete(
+                printer_id=1,
+                printer_name="X1 Carbon",
+                filename="benchy.gcode.3mf",
+                total_layers=120,
+                db=mock_db,
+            )
+
+            assert captured_variables["printer"] == "X1 Carbon"
+            assert captured_variables["filename"] == "benchy"
+            assert captured_variables["total_layers"] == "120"
+
+    @pytest.mark.asyncio
+    async def test_on_first_layer_complete_passes_image_data(self, service, mock_provider, mock_db):
+        """Verify image_data is passed through to _send_to_providers."""
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
+        ):
+            mock_get.return_value = [mock_provider]
+            mock_build.return_value = ("First Layer Complete", "Test message")
+            fake_image = b"\x89PNG\r\n\x1a\nfakeimage"
+
+            await service.on_first_layer_complete(
+                printer_id=1,
+                printer_name="Test Printer",
+                filename="benchy.3mf",
+                total_layers=50,
+                db=mock_db,
+                image_data=fake_image,
+            )
+
+            mock_send.assert_called_once()
+            call_kwargs = mock_send.call_args
+            assert call_kwargs.kwargs.get("image_data") == fake_image

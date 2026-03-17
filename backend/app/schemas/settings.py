@@ -38,6 +38,7 @@ class AppSettings(BaseModel):
     include_beta_updates: bool = Field(default=False, description="Include beta/prerelease versions in update checks")
 
     # Language
+    language: str = Field(default="en", description="UI language (en, de, fr, ja, it, pt-BR)")
     notification_language: str = Field(default="en", description="Language for push notifications (en, de)")
 
     # Bed cooled notification threshold
@@ -55,6 +56,23 @@ class AppSettings(BaseModel):
         default=35.0, description="Temperature threshold for fair (orange): <= this value, > is red"
     )
     ams_history_retention_days: int = Field(default=30, description="Number of days to keep AMS sensor history data")
+
+    # Queue auto-drying settings
+    queue_drying_enabled: bool = Field(
+        default=False, description="Automatically dry AMS filament between queued prints"
+    )
+    queue_drying_block: bool = Field(
+        default=False,
+        description="Block queue until drying completes (when disabled, prints take priority over drying)",
+    )
+    ambient_drying_enabled: bool = Field(
+        default=False,
+        description="Automatically dry AMS filament on idle printers when humidity exceeds threshold, regardless of queue",
+    )
+    drying_presets: str = Field(
+        default="",
+        description="JSON blob of drying presets per filament type (empty = use built-in defaults)",
+    )
 
     # Print modal settings
     per_printer_mapping_expanded: bool = Field(
@@ -92,7 +110,7 @@ class AppSettings(BaseModel):
     ftp_retry_enabled: bool = Field(default=True, description="Enable automatic retry for FTP operations")
     ftp_retry_count: int = Field(default=3, description="Number of retry attempts for FTP operations (1-10)")
     ftp_retry_delay: int = Field(default=2, description="Seconds to wait between FTP retry attempts (1-30)")
-    ftp_timeout: int = Field(default=30, description="FTP connection timeout in seconds (10-120)")
+    ftp_timeout: int = Field(default=30, description="FTP connection timeout in seconds (10-300)")
 
     # MQTT Relay settings for publishing events to external broker
     mqtt_enabled: bool = Field(default=False, description="Enable MQTT event publishing to external broker")
@@ -148,6 +166,14 @@ class AppSettings(BaseModel):
         default="", description="Bearer token for Prometheus metrics authentication (optional)"
     )
 
+    # Inventory low stock threshold
+    low_stock_threshold: float = Field(
+        default=20.0,
+        ge=0.1,
+        le=99.9,
+        description="Low stock threshold percentage (%) for inventory filtering and display",
+    )
+
 
 class AppSettingsUpdate(BaseModel):
     """Schema for updating settings (all fields optional)."""
@@ -167,6 +193,7 @@ class AppSettingsUpdate(BaseModel):
     check_updates: bool | None = None
     check_printer_firmware: bool | None = None
     include_beta_updates: bool | None = None
+    language: str | None = None
     notification_language: str | None = None
     bed_cooled_threshold: float | None = None
     ams_humidity_good: int | None = None
@@ -174,6 +201,10 @@ class AppSettingsUpdate(BaseModel):
     ams_temp_good: float | None = None
     ams_temp_fair: float | None = None
     ams_history_retention_days: int | None = None
+    queue_drying_enabled: bool | None = None
+    queue_drying_block: bool | None = None
+    ambient_drying_enabled: bool | None = None
+    drying_presets: str | None = None
     per_printer_mapping_expanded: bool | None = None
     date_format: str | None = None
     time_format: str | None = None
@@ -208,3 +239,4 @@ class AppSettingsUpdate(BaseModel):
     preferred_slicer: str | None = None
     prometheus_enabled: bool | None = None
     prometheus_token: str | None = None
+    low_stock_threshold: float | None = Field(default=None, ge=0.1, le=99.9)

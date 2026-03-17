@@ -16,8 +16,8 @@ import { LinkSpoolModal } from '../../components/LinkSpoolModal';
 // Mock the API client
 vi.mock('../../api/client', () => ({
   api: {
-    getSpools: vi.fn(),
-    linkTagToSpool: vi.fn(),
+    getUnlinkedSpools: vi.fn(),
+    linkSpool: vi.fn(),
     getSettings: vi.fn().mockResolvedValue({}),
     getAuthStatus: vi.fn().mockResolvedValue({ auth_enabled: false }),
   },
@@ -50,46 +50,26 @@ describe('LinkSpoolModal', () => {
   const mockSpools = [
     {
       id: 1,
-      material: 'PLA',
-      brand: 'Generic',
-      subtype: '',
-      color_name: 'Red',
-      rgba: 'FF0000FF',
-      label_weight: 1000,
-      weight_used: 200,
-      tag_uid: null,
-      tray_uuid: null,
+      filament_name: 'Generic PLA Red',
+      filament_material: 'PLA',
+      filament_color_hex: 'FF0000',
+      remaining_weight: 800,
+      location: null,
     },
     {
       id: 2,
-      material: 'PETG',
-      brand: 'Bambu',
-      subtype: 'Basic',
-      color_name: 'Blue',
-      rgba: '0000FFFF',
-      label_weight: 1000,
-      weight_used: 500,
-      tag_uid: null,
-      tray_uuid: null,
-    },
-    {
-      id: 3,
-      material: 'ABS',
-      brand: 'Brand',
-      subtype: '',
-      color_name: 'White',
-      rgba: 'FFFFFFFF',
-      label_weight: 1000,
-      weight_used: 0,
-      tag_uid: 'EXISTING_TAG',
-      tray_uuid: 'EXISTING_UUID',
+      filament_name: 'Bambu PETG Blue',
+      filament_material: 'PETG',
+      filament_color_hex: '0000FF',
+      remaining_weight: 500,
+      location: null,
     },
   ];
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(api.getSpools).mockResolvedValue(mockSpools);
-    vi.mocked(api.linkTagToSpool).mockResolvedValue({});
+    vi.mocked(api.getUnlinkedSpools).mockResolvedValue(mockSpools);
+    vi.mocked(api.linkSpool).mockResolvedValue({ success: true, message: 'ok' });
   });
 
   describe('rendering', () => {
@@ -97,7 +77,7 @@ describe('LinkSpoolModal', () => {
       render(<LinkSpoolModal {...defaultProps} />);
 
       await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /link to spool/i })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: /select spool/i })).toBeInTheDocument();
       });
     });
 
@@ -111,7 +91,7 @@ describe('LinkSpoolModal', () => {
     });
 
     it('shows loading state while fetching spools', async () => {
-      vi.mocked(api.getSpools).mockImplementation(() => new Promise(() => {}));
+      vi.mocked(api.getUnlinkedSpools).mockImplementation(() => new Promise(() => {}));
 
       render(<LinkSpoolModal {...defaultProps} />);
 
@@ -120,41 +100,38 @@ describe('LinkSpoolModal', () => {
       });
     });
 
-    it('displays untagged spools only', async () => {
+    it('displays unlinked spools from Spoolman', async () => {
       render(<LinkSpoolModal {...defaultProps} />);
 
       await waitFor(() => {
-        // Spools 1 and 2 have no tag_uid/tray_uuid — should be shown
-        expect(screen.getByText(/Generic PLA/)).toBeInTheDocument();
-        expect(screen.getByText(/Bambu PETG/)).toBeInTheDocument();
+        // Should show spools from getUnlinkedSpools
+        expect(screen.getByText(/Generic PLA Red/)).toBeInTheDocument();
+        expect(screen.getByText(/Bambu PETG Blue/)).toBeInTheDocument();
       });
-
-      // Spool 3 has tag_uid — should be filtered out
-      expect(screen.queryByText(/Brand ABS/)).not.toBeInTheDocument();
     });
 
     it('does not render when isOpen is false', () => {
       render(<LinkSpoolModal {...defaultProps} isOpen={false} />);
-      expect(screen.queryByRole('heading', { name: /link to spool/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: /select spool/i })).not.toBeInTheDocument();
     });
   });
 
   describe('linking', () => {
-    it('calls linkTagToSpool on spool click', async () => {
+    it('calls linkSpool on spool click', async () => {
       render(<LinkSpoolModal {...defaultProps} />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Generic PLA/)).toBeInTheDocument();
+        expect(screen.getByText(/Generic PLA Red/)).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByText(/Generic PLA/).closest('button')!);
+      fireEvent.click(screen.getByText(/Generic PLA Red/).closest('button')!);
 
       await waitFor(() => {
-        expect(api.linkTagToSpool).toHaveBeenCalledWith(1, {
-          tag_uid: 'ABCD1234',
-          tray_uuid: 'A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4',
-          tag_type: 'bambulab',
-          data_origin: 'nfc_link',
+        expect(api.linkSpool).toHaveBeenCalledWith(1, {
+          spoolTag: 'ABCD1234',
+          printerId: 1,
+          amsId: 0,
+          trayId: 0,
         });
       });
     });
@@ -163,10 +140,10 @@ describe('LinkSpoolModal', () => {
       render(<LinkSpoolModal {...defaultProps} />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Generic PLA/)).toBeInTheDocument();
+        expect(screen.getByText(/Generic PLA Red/)).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByText(/Generic PLA/).closest('button')!);
+      fireEvent.click(screen.getByText(/Generic PLA Red/).closest('button')!);
 
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalled();
@@ -175,15 +152,15 @@ describe('LinkSpoolModal', () => {
     });
 
     it('shows error toast on failure', async () => {
-      vi.mocked(api.linkTagToSpool).mockRejectedValue(new Error('Link failed'));
+      vi.mocked(api.linkSpool).mockRejectedValue(new Error('Link failed'));
 
       render(<LinkSpoolModal {...defaultProps} />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Generic PLA/)).toBeInTheDocument();
+        expect(screen.getByText(/Generic PLA Red/)).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByText(/Generic PLA/).closest('button')!);
+      fireEvent.click(screen.getByText(/Generic PLA Red/).closest('button')!);
 
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith(
@@ -199,7 +176,7 @@ describe('LinkSpoolModal', () => {
       render(<LinkSpoolModal {...defaultProps} />);
 
       await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /link to spool/i })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: /select spool/i })).toBeInTheDocument();
       });
 
       const backdrop = document.querySelector('.bg-black\\/60');
@@ -213,7 +190,7 @@ describe('LinkSpoolModal', () => {
       render(<LinkSpoolModal {...defaultProps} />);
 
       await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /link to spool/i })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: /select spool/i })).toBeInTheDocument();
       });
 
       const closeButtons = screen.getAllByRole('button');

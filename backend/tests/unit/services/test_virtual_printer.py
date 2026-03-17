@@ -156,6 +156,127 @@ class TestVirtualPrinterInstance:
 
             assert "verify_job" not in instance._pending_files
 
+    # ========================================================================
+    # Tests for auto_dispatch
+    # ========================================================================
+
+    def test_auto_dispatch_defaults_to_true(self, tmp_path):
+        """Verify auto_dispatch defaults to True when not specified."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        inst = VirtualPrinterInstance(
+            vp_id=10,
+            name="DefaultDispatch",
+            mode="print_queue",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800010",
+            base_dir=tmp_path,
+        )
+        assert inst.auto_dispatch is True
+
+    @pytest.mark.asyncio
+    async def test_add_to_print_queue_with_auto_dispatch_on(self, tmp_path):
+        """Verify queue items have manual_start=False when auto_dispatch=True."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        mock_db = AsyncMock()
+        added_items = []
+
+        def capture_add(item):
+            added_items.append(item)
+
+        mock_db.add = MagicMock(side_effect=capture_add)
+        mock_db.commit = AsyncMock()
+
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=11,
+            name="AutoDispatchOn",
+            mode="print_queue",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800011",
+            auto_dispatch=True,
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        # Create a temp 3mf file
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        mock_archive = MagicMock()
+        mock_archive.id = 1
+        mock_archive.print_name = "test"
+
+        with patch(
+            "backend.app.services.archive.ArchiveService.archive_print",
+            new_callable=AsyncMock,
+            return_value=mock_archive,
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        assert len(added_items) == 1
+        queue_item = added_items[0]
+        assert queue_item.manual_start is False
+
+    @pytest.mark.asyncio
+    async def test_add_to_print_queue_with_auto_dispatch_off(self, tmp_path):
+        """Verify queue items have manual_start=True when auto_dispatch=False."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        mock_db = AsyncMock()
+        added_items = []
+
+        def capture_add(item):
+            added_items.append(item)
+
+        mock_db.add = MagicMock(side_effect=capture_add)
+        mock_db.commit = AsyncMock()
+
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=12,
+            name="AutoDispatchOff",
+            mode="print_queue",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800012",
+            auto_dispatch=False,
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        # Create a temp 3mf file
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        mock_archive = MagicMock()
+        mock_archive.id = 1
+        mock_archive.print_name = "test"
+
+        with patch(
+            "backend.app.services.archive.ArchiveService.archive_print",
+            new_callable=AsyncMock,
+            return_value=mock_archive,
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        assert len(added_items) == 1
+        queue_item = added_items[0]
+        assert queue_item.manual_start is True
+
 
 class TestVirtualPrinterManager:
     """Tests for VirtualPrinterManager orchestrator."""
@@ -309,6 +430,193 @@ class TestVirtualPrinterManager:
 
         await manager.stop_all()
         assert len(manager._instances) == 0
+
+    # ========================================================================
+    # Tests for sync_from_db config change detection
+    # ========================================================================
+
+    def _make_db_vp(self, **overrides):
+        """Create a mock VirtualPrinter DB object."""
+        defaults = {
+            "id": 1,
+            "name": "TestVP",
+            "enabled": True,
+            "mode": "immediate",
+            "model": "C11",
+            "access_code": "12345678",
+            "serial_suffix": "391800001",
+            "bind_ip": "",
+            "remote_interface_ip": "",
+            "target_printer_id": None,
+            "auto_dispatch": True,
+            "position": 0,
+        }
+        defaults.update(overrides)
+        vp = MagicMock()
+        for k, v in defaults.items():
+            setattr(vp, k, v)
+        return vp
+
+    def _setup_sync_mocks(self, manager, enabled_vps, tmp_path):
+        """Wire up session_factory mock for sync_from_db."""
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = enabled_vps
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_db.__aexit__ = AsyncMock(return_value=False)
+
+        manager._session_factory = MagicMock(return_value=mock_db)
+        manager._base_dir = tmp_path
+
+    @pytest.mark.asyncio
+    async def test_sync_from_db_restarts_on_mode_change(self, manager, tmp_path):
+        """Verify sync_from_db restarts VP when mode changes."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        inst = VirtualPrinterInstance(
+            vp_id=1,
+            name="TestVP",
+            mode="immediate",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800001",
+            base_dir=tmp_path,
+        )
+        inst.stop_server = AsyncMock()
+        manager._instances[1] = inst
+
+        # DB says mode changed to "archive"
+        db_vp = self._make_db_vp(mode="archive")
+        self._setup_sync_mocks(manager, [db_vp], tmp_path)
+
+        with patch.object(manager, "remove_instance", new_callable=AsyncMock) as mock_remove:
+            # Patch VirtualPrinterInstance to prevent actual start
+            with patch("backend.app.services.virtual_printer.manager.VirtualPrinterInstance") as MockInst:
+                mock_new = MagicMock()
+                mock_new.start_server = AsyncMock()
+                MockInst.return_value = mock_new
+
+                await manager.sync_from_db()
+
+            mock_remove.assert_called_once_with(1)
+
+    @pytest.mark.asyncio
+    async def test_sync_from_db_restarts_on_access_code_change(self, manager, tmp_path):
+        """Verify sync_from_db restarts VP when access_code changes."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        inst = VirtualPrinterInstance(
+            vp_id=1,
+            name="TestVP",
+            mode="immediate",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800001",
+            base_dir=tmp_path,
+        )
+        inst.stop_server = AsyncMock()
+        manager._instances[1] = inst
+
+        db_vp = self._make_db_vp(access_code="newcode99")
+        self._setup_sync_mocks(manager, [db_vp], tmp_path)
+
+        with patch.object(manager, "remove_instance", new_callable=AsyncMock) as mock_remove:
+            with patch("backend.app.services.virtual_printer.manager.VirtualPrinterInstance") as MockInst:
+                mock_new = MagicMock()
+                mock_new.start_server = AsyncMock()
+                MockInst.return_value = mock_new
+
+                await manager.sync_from_db()
+
+            mock_remove.assert_called_once_with(1)
+
+    @pytest.mark.asyncio
+    async def test_sync_from_db_skips_unchanged_instance(self, manager, tmp_path):
+        """Verify sync_from_db does NOT restart when config is identical."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        inst = VirtualPrinterInstance(
+            vp_id=1,
+            name="TestVP",
+            mode="immediate",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800001",
+            base_dir=tmp_path,
+        )
+        manager._instances[1] = inst
+
+        # DB matches running config exactly
+        db_vp = self._make_db_vp()
+        self._setup_sync_mocks(manager, [db_vp], tmp_path)
+
+        with patch.object(manager, "remove_instance", new_callable=AsyncMock) as mock_remove:
+            await manager.sync_from_db()
+
+            mock_remove.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_sync_from_db_restarts_on_bind_ip_change(self, manager, tmp_path):
+        """Verify sync_from_db restarts VP when bind_ip changes."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        inst = VirtualPrinterInstance(
+            vp_id=1,
+            name="TestVP",
+            mode="immediate",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800001",
+            bind_ip="192.168.1.10",
+            base_dir=tmp_path,
+        )
+        inst.stop_server = AsyncMock()
+        manager._instances[1] = inst
+
+        db_vp = self._make_db_vp(bind_ip="192.168.1.20")
+        self._setup_sync_mocks(manager, [db_vp], tmp_path)
+
+        with patch.object(manager, "remove_instance", new_callable=AsyncMock) as mock_remove:
+            with patch("backend.app.services.virtual_printer.manager.VirtualPrinterInstance") as MockInst:
+                mock_new = MagicMock()
+                mock_new.start_server = AsyncMock()
+                MockInst.return_value = mock_new
+
+                await manager.sync_from_db()
+
+            mock_remove.assert_called_once_with(1)
+
+    @pytest.mark.asyncio
+    async def test_sync_from_db_restarts_on_model_change(self, manager, tmp_path):
+        """Verify sync_from_db restarts VP when model changes."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        inst = VirtualPrinterInstance(
+            vp_id=1,
+            name="TestVP",
+            mode="immediate",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800001",
+            base_dir=tmp_path,
+        )
+        inst.stop_server = AsyncMock()
+        manager._instances[1] = inst
+
+        db_vp = self._make_db_vp(model="C12")
+        self._setup_sync_mocks(manager, [db_vp], tmp_path)
+
+        with patch.object(manager, "remove_instance", new_callable=AsyncMock) as mock_remove:
+            with patch("backend.app.services.virtual_printer.manager.VirtualPrinterInstance") as MockInst:
+                mock_new = MagicMock()
+                mock_new.start_server = AsyncMock()
+                MockInst.return_value = mock_new
+
+                await manager.sync_from_db()
+
+            mock_remove.assert_called_once_with(1)
 
 
 class TestFTPSession:
@@ -1219,4 +1527,6 @@ class TestBindServer:
                 model="3DPrinter-X1-Carbon",
                 name="Bambuddy",
                 bind_address="192.168.1.50",
+                cert_path=Path("/tmp/cert.pem"),  # nosec B108
+                key_path=Path("/tmp/key.pem"),  # nosec B108
             )

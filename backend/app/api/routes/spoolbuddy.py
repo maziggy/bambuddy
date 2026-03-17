@@ -17,13 +17,17 @@ from backend.app.schemas.spoolbuddy import (
     CalibrationResponse,
     DeviceRegisterRequest,
     DeviceResponse,
+    DisplaySettingsRequest,
     HeartbeatRequest,
     HeartbeatResponse,
     ScaleReadingRequest,
     SetCalibrationFactorRequest,
+    SetTareRequest,
     TagRemovedRequest,
     TagScannedRequest,
     UpdateSpoolWeightRequest,
+    WriteTagRequest,
+    WriteTagResultRequest,
 )
 from backend.app.services.spool_tag_matcher import get_spool_by_tag
 
@@ -53,6 +57,12 @@ def _device_to_response(device: SpoolBuddyDevice) -> DeviceResponse:
         has_scale=device.has_scale,
         tare_offset=device.tare_offset,
         calibration_factor=device.calibration_factor,
+        nfc_reader_type=device.nfc_reader_type,
+        nfc_connection=device.nfc_connection,
+        display_brightness=device.display_brightness,
+        display_blank_timeout=device.display_blank_timeout,
+        has_backlight=device.has_backlight,
+        last_calibrated_at=device.last_calibrated_at,
         last_seen=device.last_seen,
         pending_command=device.pending_command,
         nfc_ok=device.nfc_ok,
@@ -84,6 +94,9 @@ async def register_device(
         device.firmware_version = req.firmware_version
         device.has_nfc = req.has_nfc
         device.has_scale = req.has_scale
+        device.nfc_reader_type = req.nfc_reader_type
+        device.nfc_connection = req.nfc_connection
+        device.has_backlight = req.has_backlight
         device.last_seen = now
         logger.info("SpoolBuddy device re-registered: %s (%s)", req.device_id, req.hostname)
     else:
@@ -96,6 +109,9 @@ async def register_device(
             has_scale=req.has_scale,
             tare_offset=req.tare_offset,
             calibration_factor=req.calibration_factor,
+            nfc_reader_type=req.nfc_reader_type,
+            nfc_connection=req.nfc_connection,
+            has_backlight=req.has_backlight,
             last_seen=now,
         )
         db.add(device)
@@ -150,10 +166,25 @@ async def device_heartbeat(
         device.firmware_version = req.firmware_version
     if req.ip_address:
         device.ip_address = req.ip_address
+    if req.nfc_reader_type:
+        device.nfc_reader_type = req.nfc_reader_type
+    if req.nfc_connection:
+        device.nfc_connection = req.nfc_connection
 
     # Return and clear pending command
     pending = device.pending_command
-    device.pending_command = None
+    pending_write = None
+    if pending == "write_tag" and device.pending_write_payload:
+        # Parse the stored JSON payload to include in response
+        import json
+
+        try:
+            pending_write = json.loads(device.pending_write_payload)
+        except (json.JSONDecodeError, TypeError):
+            pending_write = None
+        # Don't clear write_tag command — it gets cleared by write-result
+    else:
+        device.pending_command = None
 
     await db.commit()
 
@@ -168,8 +199,11 @@ async def device_heartbeat(
 
     return HeartbeatResponse(
         pending_command=pending,
+        pending_write_payload=pending_write,
         tare_offset=device.tare_offset,
         calibration_factor=device.calibration_factor,
+        display_brightness=device.display_brightness,
+        display_blank_timeout=device.display_blank_timeout,
     )
 
 
@@ -236,6 +270,121 @@ async def nfc_tag_removed(
     return {"status": "ok"}
 
 
+@router.post("/nfc/write-tag")
+async def nfc_write_tag(
+    req: WriteTagRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Queue an NFC tag write command for a SpoolBuddy device."""
+    import json
+
+    from backend.app.models.spool import Spool
+    from backend.app.services.opentag3d import encode_opentag3d
+
+    # Find the spool
+    result = await db.execute(select(Spool).where(Spool.id == req.spool_id))
+    spool = result.scalar_one_or_none()
+    if not spool:
+        raise HTTPException(status_code=404, detail="Spool not found")
+
+    # Find the device
+    result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == req.device_id))
+    device = result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not registered")
+
+    # Encode OpenTag3D NDEF data
+    ndef_data = encode_opentag3d(spool)
+
+    # Store write payload and set pending command
+    device.pending_write_payload = json.dumps(
+        {
+            "spool_id": spool.id,
+            "ndef_data_hex": ndef_data.hex(),
+        }
+    )
+    device.pending_command = "write_tag"
+    await db.commit()
+
+    logger.info("Write tag queued for device %s, spool %d (%d bytes)", req.device_id, spool.id, len(ndef_data))
+    return {"status": "queued"}
+
+
+@router.post("/nfc/write-result")
+async def nfc_write_result(
+    req: WriteTagResultRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Handle NFC tag write result from SpoolBuddy daemon."""
+    # Find the device and clear pending state
+    result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == req.device_id))
+    device = result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not registered")
+
+    device.pending_command = None
+    device.pending_write_payload = None
+
+    if req.success:
+        # Link the tag to the spool
+        from backend.app.models.spool import Spool
+
+        result = await db.execute(select(Spool).where(Spool.id == req.spool_id))
+        spool = result.scalar_one_or_none()
+        if spool:
+            spool.tag_uid = req.tag_uid.upper()
+            spool.tag_type = "ntag"
+            spool.data_origin = "opentag3d"
+            spool.encode_time = datetime.now(timezone.utc)
+            logger.info("Tag written and linked: spool %d -> tag %s", spool.id, req.tag_uid)
+
+        await db.commit()
+        await ws_manager.broadcast(
+            {
+                "type": "spoolbuddy_tag_written",
+                "device_id": req.device_id,
+                "spool_id": req.spool_id,
+                "tag_uid": req.tag_uid,
+            }
+        )
+    else:
+        await db.commit()
+        await ws_manager.broadcast(
+            {
+                "type": "spoolbuddy_tag_write_failed",
+                "device_id": req.device_id,
+                "spool_id": req.spool_id,
+                "message": req.message,
+            }
+        )
+        logger.warning("Tag write failed for device %s: %s", req.device_id, req.message)
+
+    return {"status": "ok"}
+
+
+@router.post("/devices/{device_id}/cancel-write")
+async def cancel_write(
+    device_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Cancel a pending write-tag command."""
+    result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
+    device = result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not registered")
+
+    if device.pending_command == "write_tag":
+        device.pending_command = None
+        device.pending_write_payload = None
+        await db.commit()
+        logger.info("Write tag cancelled for device %s", device_id)
+
+    return {"status": "ok"}
+
+
 # --- Scale endpoints ---
 
 
@@ -274,6 +423,8 @@ async def update_spool_weight(
     # net weight = total on scale minus empty spool core
     net_filament = max(0, req.weight_grams - spool.core_weight)
     spool.weight_used = max(0, spool.label_weight - net_filament)
+    spool.last_scale_weight = req.weight_grams
+    spool.last_weighed_at = datetime.now(timezone.utc)
     await db.commit()
 
     logger.info(
@@ -305,6 +456,30 @@ async def tare_scale(
     return {"status": "ok", "message": "Tare command queued"}
 
 
+@router.post("/devices/{device_id}/calibration/set-tare")
+async def set_tare_offset(
+    device_id: str,
+    req: SetTareRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Store tare offset reported by the daemon after executing a tare."""
+    result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
+    device = result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not registered")
+
+    device.tare_offset = req.tare_offset
+    device.last_calibrated_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    logger.info("SpoolBuddy %s tare offset set to %d", device_id, req.tare_offset)
+    return CalibrationResponse(
+        tare_offset=device.tare_offset,
+        calibration_factor=device.calibration_factor,
+    )
+
+
 @router.post("/devices/{device_id}/calibration/set-factor")
 async def set_calibration_factor(
     device_id: str,
@@ -318,11 +493,15 @@ async def set_calibration_factor(
     if not device:
         raise HTTPException(status_code=404, detail="Device not registered")
 
-    raw_delta = req.raw_adc - device.tare_offset
+    tare = req.tare_raw_adc if req.tare_raw_adc is not None else device.tare_offset
+    raw_delta = req.raw_adc - tare
     if raw_delta == 0:
         raise HTTPException(status_code=400, detail="Raw ADC value equals tare offset — place weight on scale")
 
     device.calibration_factor = req.known_weight_grams / raw_delta
+    if req.tare_raw_adc is not None:
+        device.tare_offset = tare
+    device.last_calibrated_at = datetime.now(timezone.utc)
     await db.commit()
 
     logger.info(
@@ -331,7 +510,7 @@ async def set_calibration_factor(
         device.calibration_factor,
         req.known_weight_grams,
         req.raw_adc,
-        device.tare_offset,
+        tare,
     )
     return CalibrationResponse(
         tare_offset=device.tare_offset,
@@ -355,6 +534,106 @@ async def get_calibration(
         tare_offset=device.tare_offset,
         calibration_factor=device.calibration_factor,
     )
+
+
+# --- Display settings ---
+
+
+@router.put("/devices/{device_id}/display")
+async def update_display_settings(
+    device_id: str,
+    req: DisplaySettingsRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Update display brightness and screen blank timeout for a device."""
+    result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
+    device = result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not registered")
+
+    device.display_brightness = req.brightness
+    device.display_blank_timeout = req.blank_timeout
+    await db.commit()
+
+    logger.info(
+        "SpoolBuddy %s display updated: brightness=%d%%, blank_timeout=%ds",
+        device_id,
+        req.brightness,
+        req.blank_timeout,
+    )
+    return {"status": "ok", "brightness": req.brightness, "blank_timeout": req.blank_timeout}
+
+
+# --- Update check ---
+
+
+@router.get("/devices/{device_id}/update-check")
+async def check_daemon_update(
+    device_id: str,
+    include_beta: bool = False,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+):
+    """Check if a newer daemon version is available on GitHub."""
+    import httpx
+
+    from backend.app.api.routes.updates import is_newer_version, parse_version
+    from backend.app.core.config import GITHUB_REPO
+
+    result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
+    device = result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not registered")
+
+    current = device.firmware_version or "0.0.0"
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page=20",
+                headers={"Accept": "application/vnd.github.v3+json"},
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            releases = response.json()
+
+            release_data = None
+            for release in releases:
+                tag = release.get("tag_name", "")
+                if include_beta:
+                    release_data = release
+                    break
+                else:
+                    parsed = parse_version(tag)
+                    if parsed[4] == 0:  # is_prerelease == 0
+                        release_data = release
+                        break
+
+            if not release_data:
+                return {
+                    "current_version": current,
+                    "latest_version": None,
+                    "update_available": False,
+                    "release_url": None,
+                }
+
+            latest = release_data.get("tag_name", "").lstrip("v")
+            return {
+                "current_version": current,
+                "latest_version": latest,
+                "update_available": is_newer_version(latest, current),
+                "release_url": release_data.get("html_url"),
+            }
+    except Exception as e:
+        logger.warning("Failed to check for daemon updates: %s", e)
+        return {
+            "current_version": current,
+            "latest_version": None,
+            "update_available": False,
+            "release_url": None,
+            "error": str(e),
+        }
 
 
 # --- Background watchdog ---

@@ -35,7 +35,7 @@ def _permission_label(perm: Permission) -> str:
     if len(parts) == 2:
         resource, action = parts
         resource = resource.replace("_", " ").title()
-        action = action.title()
+        action = action.replace("_", " ").title()
         return f"{action} {resource}"
     return perm.value
 

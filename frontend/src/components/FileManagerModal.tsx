@@ -247,7 +247,6 @@ function formatStorageSize(bytes: number): string {
   return `${mb.toFixed(0)} MB`;
 }
 
-
 function getFileIcon(filename: string, isDirectory: boolean) {
   if (isDirectory) return Folder;
 
@@ -304,6 +303,7 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['printerFiles', printerId, currentPath],
     queryFn: () => api.getPrinterFiles(printerId, currentPath),
+    refetchInterval: 30000,
   });
 
   const { data: storageData } = useQuery({

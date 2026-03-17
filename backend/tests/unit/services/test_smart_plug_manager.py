@@ -325,6 +325,98 @@ class TestSmartPlugManager:
             mock_loop.assert_not_called()  # Should not call _schedule_loop
 
 
+class TestGetPlugForPrinter:
+    """Tests for _get_plug_for_printer with multiple plugs per printer."""
+
+    @pytest.fixture
+    def manager(self):
+        return SmartPlugManager()
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_plugs(self, manager):
+        """Verify None is returned when no plugs are linked to printer."""
+        mock_db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        result = await manager._get_plug_for_printer(1, mock_db)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_single_plug(self, manager):
+        """Verify single plug is returned directly."""
+        plug = MagicMock()
+        plug.plug_type = "tasmota"
+        plug.ha_entity_id = None
+
+        mock_db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [plug]
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        result = await manager._get_plug_for_printer(1, mock_db)
+        assert result is plug
+
+    @pytest.mark.asyncio
+    async def test_prefers_main_plug_over_script(self, manager):
+        """Verify main power plug is returned when both main and script exist."""
+        script_plug = MagicMock()
+        script_plug.plug_type = "homeassistant"
+        script_plug.ha_entity_id = "script.pre_print"
+
+        main_plug = MagicMock()
+        main_plug.plug_type = "tasmota"
+        main_plug.ha_entity_id = None
+
+        mock_db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [script_plug, main_plug]
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        result = await manager._get_plug_for_printer(1, mock_db)
+        assert result is main_plug
+
+    @pytest.mark.asyncio
+    async def test_handles_multiple_non_script_plugs(self, manager):
+        """Verify no crash when multiple non-script plugs exist (e.g., Tasmota + HA switch)."""
+        tasmota_plug = MagicMock()
+        tasmota_plug.plug_type = "tasmota"
+        tasmota_plug.ha_entity_id = None
+
+        ha_switch = MagicMock()
+        ha_switch.plug_type = "homeassistant"
+        ha_switch.ha_entity_id = "switch.bathroom"
+
+        mock_db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [tasmota_plug, ha_switch]
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        result = await manager._get_plug_for_printer(1, mock_db)
+        # Should return first non-script plug (tasmota), not crash
+        assert result is tasmota_plug
+
+    @pytest.mark.asyncio
+    async def test_returns_first_script_when_all_are_scripts(self, manager):
+        """Verify first script is returned when only scripts are linked."""
+        script1 = MagicMock()
+        script1.plug_type = "homeassistant"
+        script1.ha_entity_id = "script.heat_chamber"
+
+        script2 = MagicMock()
+        script2.plug_type = "homeassistant"
+        script2.ha_entity_id = "script.exhaust_fan"
+
+        mock_db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [script1, script2]
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        result = await manager._get_plug_for_printer(1, mock_db)
+        assert result is script1
+
+
 class TestScheduleLoop:
     """Tests for the schedule-based plug control."""
 

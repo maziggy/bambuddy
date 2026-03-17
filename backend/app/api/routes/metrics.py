@@ -1,9 +1,12 @@
 """Prometheus metrics endpoint for external monitoring."""
 
+import platform
+
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.config import APP_VERSION
 from backend.app.core.database import get_db
 from backend.app.models.archive import PrintArchive
 from backend.app.models.print_queue import PrintQueueItem
@@ -76,6 +79,20 @@ async def get_metrics(
             raise HTTPException(status_code=401, detail="Invalid token")
 
     lines: list[str] = []
+
+    # =========================================================================
+    # Build info
+    # =========================================================================
+
+    lines.append("# HELP bambuddy_build_info Build and version information")
+    lines.append("# TYPE bambuddy_build_info gauge")
+    build_labels = format_labels(
+        version=APP_VERSION,
+        python_version=platform.python_version(),
+        platform=platform.system(),
+        architecture=platform.machine(),
+    )
+    lines.append(f"bambuddy_build_info{build_labels} 1")
 
     # =========================================================================
     # Printer metrics

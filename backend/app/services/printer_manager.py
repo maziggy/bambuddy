@@ -82,6 +82,41 @@ def has_stg_cur_idle_bug(model: str | None) -> bool:
     return model_upper in A1_MODELS
 
 
+# Minimum firmware versions for AMS drying support (confirmed via capture testing)
+# Keys are exact model names (upper-cased). Do NOT use substring matching — it would
+# incorrectly gate X1E (matched by "X1") and H2D Pro (matched by "H2D").
+_DRYING_MIN_FIRMWARE: dict[str, str] = {
+    "H2D": "01.02.30.00",
+    "X1": "01.09.00.00",
+    "X1C": "01.09.00.00",
+    "P1P": "01.08.00.00",
+    "P1S": "01.08.00.00",
+}
+# Models that definitely don't support AMS drying (no AMS 2 Pro / AMS-HT compatibility)
+_DRYING_UNSUPPORTED_MODELS = frozenset(
+    {"P2S", "A1", "A1MINI", "A1-MINI", "A1 MINI", "H2S", "H2C", "N7", "O1C", "O1C2", "O1S", "N1", "N2S"}
+)
+
+
+def supports_drying(model: str | None, firmware: str | None) -> bool:
+    """Check if a printer model supports AMS drying commands.
+
+    Known models with confirmed min firmware get version-gated.
+    Known unsupported models are blocked.
+    All other models (H2D Pro, X1E, future models) are allowed —
+    the command fails gracefully with result: "fail" if unsupported.
+    """
+    if not model:
+        return False
+    model_upper = model.strip().upper()
+    if model_upper in _DRYING_UNSUPPORTED_MODELS:
+        return False
+    if model_upper in _DRYING_MIN_FIRMWARE:
+        return bool(firmware and firmware >= _DRYING_MIN_FIRMWARE[model_upper])
+    # For all other models: allow
+    return True
+
+
 class PrinterInfo:
     """Basic printer info for callbacks."""
 
@@ -409,6 +444,20 @@ class PrinterManager:
             return self._clients[printer_id].logging_enabled
         return False
 
+    def send_drying_command(
+        self,
+        printer_id: int,
+        ams_id: int,
+        temp: int,
+        duration: int,
+        mode: int = 1,
+        filament: str = "",
+    ) -> bool:
+        """Send AMS drying command to printer."""
+        if printer_id not in self._clients:
+            return False
+        return self._clients[printer_id].send_drying_command(ams_id, temp, duration, mode, filament)
+
     def request_status_update(self, printer_id: int) -> bool:
         """Request a full status update from the printer.
 
@@ -560,6 +609,8 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
                         "tray_uuid": tray_uuid,
                         "nozzle_temp_min": tray.get("nozzle_temp_min"),
                         "nozzle_temp_max": tray.get("nozzle_temp_max"),
+                        "drying_temp": tray.get("drying_temp"),
+                        "drying_time": tray.get("drying_time"),
                     }
                 )
             # Prefer humidity_raw (actual percentage) over humidity (index 1-5)
@@ -589,6 +640,19 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
                     "temp": ams_data.get("temp"),
                     "is_ams_ht": is_ams_ht,
                     "tray": trays,
+                    # Serial number: Bambu MQTT uses "sn" key on AMS unit objects
+                    "serial_number": str(ams_data.get("sn") or ams_data.get("serial_number") or ""),
+                    # Firmware version: populated by _handle_version_info from get_version
+                    "sw_ver": str(ams_data.get("sw_ver") or ""),
+                    # Drying: dry_time > 0 means drying is active (minutes remaining)
+                    "dry_time": int(ams_data.get("dry_time") or 0),
+                    # Drying status from info hex bits (0=Off, 1=Checking, 2=Drying, 3=Cooling, etc.)
+                    "dry_status": int(ams_data.get("dry_status") or 0),
+                    "dry_sub_status": int(ams_data.get("dry_sub_status") or 0),
+                    # Cannot-dry reasons from firmware (e.g. 1=InsufficientPower, 8=NeedPluginPower)
+                    "dry_sf_reason": list(ams_data.get("dry_sf_reason") or []),
+                    # Module type: "ams", "n3f", "n3s" (from get_version)
+                    "module_type": str(ams_data.get("module_type") or ""),
                 }
             )
 
@@ -664,6 +728,7 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
         "ams_extruder_map": ams_extruder_map,
         # WiFi signal strength
         "wifi_signal": state.wifi_signal,
+        "wired_network": state.wired_network,
         # Calibration stage tracking
         "stg_cur": state.stg_cur,
         "stg_cur_name": get_derived_status_name(state, model),
@@ -694,6 +759,8 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
             }
             for n in (state.nozzle_rack or [])
         ],
+        # AMS drying support
+        "supports_drying": supports_drying(model, state.firmware_version),
     }
     # Add cover URL if there's an active print and printer_id is provided
     # Include PAUSE state so skip objects modal can show cover

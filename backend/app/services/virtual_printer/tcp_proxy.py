@@ -129,6 +129,9 @@ class TLSProxy:
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
         ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+        # Bambu printers use plain RSA key exchange (no ECDHE/DHE),
+        # which modern OpenSSL 3.x defaults exclude. Add them back.
+        ctx.set_ciphers("DEFAULT:AES256-GCM-SHA384:AES128-GCM-SHA256")
         return ctx
 
     async def start(self) -> None:
@@ -346,7 +349,7 @@ class TLSProxy:
 class TCPProxy:
     """Raw TCP proxy that forwards data without TLS termination.
 
-    Used for protocols where the printer doesn't use TLS (e.g., port 3002
+    Used for protocols where the printer doesn't use TLS (e.g., port 3000
     binding/authentication protocol).
     """
 
@@ -1123,18 +1126,30 @@ class SlicerProxyManager:
             bind_address=self.bind_address,
         )
 
-        # Bind/auth proxy (ports 3000 + 3002) - raw TCP, no TLS
-        # Different BambuStudio versions use different ports
+        # Bind/auth proxy — port 3000 plain TCP, port 3002 TLS
         for bind_port in self.PRINTER_BIND_PORTS:
-            proxy = TCPProxy(
-                name="Bind",
-                listen_port=bind_port,
-                target_host=self.target_host,
-                target_port=bind_port,
-                on_connect=lambda cid: self._log_activity("Bind", f"connected: {cid}"),
-                on_disconnect=lambda cid: self._log_activity("Bind", f"disconnected: {cid}"),
-                bind_address=self.bind_address,
-            )
+            if bind_port == 3002:
+                proxy = TLSProxy(
+                    name="Bind-TLS",
+                    listen_port=bind_port,
+                    target_host=self.target_host,
+                    target_port=bind_port,
+                    server_cert_path=self.cert_path,
+                    server_key_path=self.key_path,
+                    on_connect=lambda cid: self._log_activity("Bind", f"connected: {cid}"),
+                    on_disconnect=lambda cid: self._log_activity("Bind", f"disconnected: {cid}"),
+                    bind_address=self.bind_address,
+                )
+            else:
+                proxy = TCPProxy(
+                    name="Bind",
+                    listen_port=bind_port,
+                    target_host=self.target_host,
+                    target_port=bind_port,
+                    on_connect=lambda cid: self._log_activity("Bind", f"connected: {cid}"),
+                    on_disconnect=lambda cid: self._log_activity("Bind", f"disconnected: {cid}"),
+                    bind_address=self.bind_address,
+                )
             self._bind_proxies.append(proxy)
 
         # Start as background tasks

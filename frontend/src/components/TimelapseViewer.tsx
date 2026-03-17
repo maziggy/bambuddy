@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { X, Download, Film, Play, Pause, SkipBack, SkipForward, Pencil } from 'lucide-react';
 import { Button } from './Button';
 import { TimelapseEditorModal } from './TimelapseEditorModal';
+import { formatMediaTime } from '../utils/date';
 
 interface TimelapseViewerProps {
   src: string;
@@ -97,12 +98,6 @@ export function TimelapseViewer({
     video.currentTime = Math.min(duration, video.currentTime + 5);
   };
 
-  const formatTime = (time: number) => {
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
-
   const handleDownload = () => {
     const link = document.createElement('a');
     link.href = src;
@@ -154,7 +149,7 @@ export function TimelapseViewer({
             {/* Progress bar */}
             <div className="flex items-center gap-3">
               <span className="text-xs text-bambu-gray w-12 text-right">
-                {formatTime(currentTime)}
+                {formatMediaTime(currentTime)}
               </span>
               <input
                 type="range"
@@ -168,7 +163,7 @@ export function TimelapseViewer({
                   [&::-webkit-slider-thumb]:cursor-pointer"
               />
               <span className="text-xs text-bambu-gray w-12">
-                {formatTime(duration)}
+                {formatMediaTime(duration)}
               </span>
             </div>
 

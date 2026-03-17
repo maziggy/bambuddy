@@ -1,9 +1,10 @@
 """Pydantic schemas for notification templates."""
 
 from datetime import datetime
-from enum import StrEnum
 
 from pydantic import BaseModel, Field
+
+from backend.app.core.compat import StrEnum
 
 
 class EventType(StrEnum):
@@ -26,7 +27,7 @@ class EventType(StrEnum):
 
 # Available variables for each event type
 EVENT_VARIABLES: dict[str, list[str]] = {
-    "print_start": ["printer", "filename", "estimated_time", "timestamp", "app_name"],
+    "print_start": ["printer", "filename", "estimated_time", "eta", "timestamp", "app_name"],
     "print_complete": [
         "printer",
         "filename",
@@ -60,7 +61,7 @@ EVENT_VARIABLES: dict[str, list[str]] = {
         "timestamp",
         "app_name",
     ],
-    "print_progress": ["printer", "filename", "progress", "remaining_time", "timestamp", "app_name"],
+    "print_progress": ["printer", "filename", "progress", "remaining_time", "eta", "timestamp", "app_name"],
     "printer_offline": ["printer", "timestamp", "app_name"],
     "printer_error": ["printer", "error_type", "error_detail", "timestamp", "app_name"],
     "filament_low": ["printer", "slot", "remaining_percent", "color", "timestamp", "app_name"],
@@ -72,7 +73,7 @@ EVENT_VARIABLES: dict[str, list[str]] = {
     # Queue notifications
     "queue_job_added": ["job_name", "target", "timestamp", "app_name"],
     "queue_job_assigned": ["job_name", "printer", "target_model", "timestamp", "app_name"],
-    "queue_job_started": ["printer", "job_name", "estimated_time", "timestamp", "app_name"],
+    "queue_job_started": ["printer", "job_name", "estimated_time", "eta", "timestamp", "app_name"],
     "queue_job_waiting": ["job_name", "target_model", "waiting_reason", "timestamp", "app_name"],
     "queue_job_skipped": ["printer", "job_name", "reason", "timestamp", "app_name"],
     "queue_job_failed": ["printer", "job_name", "reason", "timestamp", "app_name"],
@@ -88,6 +89,7 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "printer": "Bambu X1C",
         "filename": "Benchy.3mf",
         "estimated_time": "1h 23m",
+        "eta": "15:53",
         "timestamp": "2024-01-15 14:30",
         "app_name": "Bambuddy",
     },
@@ -129,6 +131,7 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "filename": "Benchy.3mf",
         "progress": "50",
         "remaining_time": "0h 41m",
+        "eta": "15:41",
         "timestamp": "2024-01-15 15:00",
         "app_name": "Bambuddy",
     },
@@ -204,6 +207,7 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "printer": "Bambu X1C",
         "job_name": "Benchy.3mf",
         "estimated_time": "1h 23m",
+        "eta": "15:53",
         "timestamp": "2024-01-15 14:30",
         "app_name": "Bambuddy",
     },

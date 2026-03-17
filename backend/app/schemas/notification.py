@@ -1,10 +1,11 @@
 """Pydantic schemas for notification providers."""
 
 from datetime import datetime
-from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
+
+from backend.app.core.compat import StrEnum
 
 
 class ProviderType(StrEnum):
@@ -17,6 +18,7 @@ class ProviderType(StrEnum):
     EMAIL = "email"
     DISCORD = "discord"
     WEBHOOK = "webhook"
+    HOMEASSISTANT = "homeassistant"
 
 
 class NotificationProviderBase(BaseModel):
@@ -55,6 +57,9 @@ class NotificationProviderBase(BaseModel):
 
     # Event triggers - Bed cooled
     on_bed_cooled: bool = Field(default=False, description="Notify when bed cools after print")
+
+    # Event triggers - First layer complete
+    on_first_layer_complete: bool = Field(default=False, description="Notify when first layer completes")
 
     # Event triggers - Print queue
     on_queue_job_added: bool = Field(default=False, description="Notify when job is added to queue")
@@ -134,6 +139,9 @@ class NotificationProviderUpdate(BaseModel):
 
     # Event triggers - Bed cooled
     on_bed_cooled: bool | None = None
+
+    # Event triggers - First layer complete
+    on_first_layer_complete: bool | None = None
 
     # Event triggers - Print queue
     on_queue_job_added: bool | None = None

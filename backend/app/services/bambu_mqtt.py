@@ -22,6 +22,13 @@ import paho.mqtt.client as mqtt
 
 logger = logging.getLogger(__name__)
 
+# AMS module name prefixes used in get_version responses.
+# The numeric suffix after '/' is the AMS unit ID as reported in push_status.
+#   "ams/<id>"  – original AMS (X1C, X1E, P1S, …)
+#   "n3f/<id>"  – AMS 2 Pro (H2D Pro and similar)
+#   "n3s/<id>"  – AMS HT (H2D Pro and similar; IDs typically start at 128)
+_AMS_MODULE_PREFIXES = ("ams/", "n3f/", "n3s/")
+
 
 @dataclass
 class MQTTLogEntry:
@@ -113,6 +120,7 @@ class PrinterState:
     timelapse: bool = False  # Timelapse recording active
     ipcam: bool = False  # Live view / camera streaming enabled
     wifi_signal: int | None = None  # WiFi signal strength in dBm
+    wired_network: bool = False  # Ethernet connection detected (home_flag bit 18)
     # Nozzle hardware info (for dual nozzle printers, index 0 = left, 1 = right)
     nozzles: list = field(default_factory=lambda: [NozzleInfo(), NozzleInfo()])
     # AI detection and print options
@@ -145,7 +153,7 @@ class PrinterState:
     mc_print_sub_stage: int = 0
     # AMS mapping for dual nozzle: which slot is active (from ams.ams_exist_bits/tray_exist_bits)
     ams_mapping: list = field(default_factory=list)
-    # Per-AMS extruder map: {ams_id: extruder_id} where 0=right, 1=left
+    # Per-AMS extruder map: {ams_id: extruder_id} where 0=right/main, 1=left/deputy
     ams_extruder_map: dict = field(default_factory=dict)
     # H2D per-extruder tray_now from snow field: {extruder_id: normalized_global_tray_id}
     # snow encodes AMS ID in high byte: ams_id = snow >> 8, slot = snow & 0xFF
@@ -296,6 +304,14 @@ class BambuMQTTClient:
         self._disconnection_event: threading.Event | None = None
         self._previous_ams_hash: str | None = None  # Track AMS changes
 
+        # Cache AMS firmware/SN from get_version in case it arrives before AMS status
+        # Key: ams_id (int). Value: {'sw_ver': str, 'sn': str}
+        self._ams_version_cache: dict[int, dict[str, str]] = {}
+
+        # Track which (ams_id, field) warnings have already been emitted this connection
+        # so that missing-serial / missing-firmware warnings fire only once per connection.
+        self._ams_version_warned: set[tuple[int | str, str]] = set()
+
         # K-profile command tracking
         self._sequence_id: int = 0
         self._pending_kprofile_response: asyncio.Event | None = None
@@ -355,6 +371,8 @@ class BambuMQTTClient:
     def _on_connect(self, client, userdata, flags, rc, properties=None):
         if rc == 0:
             self.state.connected = True
+            # Reset per-connection warning state so warnings fire once per (re)connection
+            self._ams_version_warned = set()
             client.subscribe(self.topic_subscribe)
             # Subscribe to request topic for ams_mapping capture (if supported by broker)
             if self._request_topic_supported:
@@ -538,6 +556,22 @@ class BambuMQTTClient:
                 except ValueError:
                     pass  # Ignore unparseable wifi_signal strings; field is non-critical
 
+            # Detect ethernet: wifi_signal == -90 is a sentinel for "WiFi disabled/ethernet"
+            from backend.app.utils.printer_models import has_ethernet
+
+            if has_ethernet(self.model):
+                self.state.wired_network = self.state.wifi_signal == -90
+
+        # Parse developer LAN mode from top-level "fun" field
+        # Some firmware versions send "fun" at the top level, others inside "print"
+        if "fun" in payload and self.state.developer_mode is None:
+            try:
+                fun_val = payload["fun"]
+                fun_int = fun_val if isinstance(fun_val, int) else int(fun_val, 16)
+                self.state.developer_mode = (fun_int & 0x20000000) == 0
+            except (ValueError, TypeError):
+                pass
+
         if "print" in payload:
             print_data = payload["print"]
 
@@ -653,12 +687,24 @@ class BambuMQTTClient:
         """Handle version info response from get_version command.
 
         Parses firmware version from the 'ota' module in the module list.
+        Also extracts AMS unit firmware versions from AMS modules and stores
+        them on the corresponding AMS unit in raw_data so the status route can
+        expose them to the frontend.
+
+        AMS module naming conventions (numeric suffix is the AMS unit ID):
+        - ``ams/<id>``  – original AMS
+        - ``n3f/<id>``  – AMS 2 Pro (H2D Pro and similar)
+        - ``n3s/<id>``  – AMS HT (H2D Pro and similar)
+
         Message format:
         {
             "command": "get_version",
             "module": [
                 {"name": "ota", "sw_ver": "01.08.05.00"},
                 {"name": "rv1126", "sw_ver": "00.00.14.74"},
+                {"name": "ams/0", "sw_ver": "00.00.06.96", "sn": "ABC123"},
+                {"name": "n3f/0", "sw_ver": "03.00.21.29", "sn": "19C06A552504488"},
+                {"name": "n3s/128", "sw_ver": "03.00.21.29", "sn": "19F06A561801096"},
                 ...
             ]
         }
@@ -667,6 +713,7 @@ class BambuMQTTClient:
         if not isinstance(modules, list):
             return
 
+        state_changed = False
         for module in modules:
             if not isinstance(module, dict):
                 continue
@@ -677,10 +724,122 @@ class BambuMQTTClient:
                     self.state.firmware_version = version
                     if old_version != version:
                         logger.info("[%s] Firmware version: %s", self.serial_number, version)
-                    # Trigger state change callback
-                    if self.on_state_change:
-                        self.on_state_change(self.state)
+                    state_changed = True
                 break
+
+        # Extract AMS unit firmware versions from AMS modules.
+        # See module-level _AMS_MODULE_PREFIXES for supported naming conventions.
+        # Always cache regardless of whether AMS data has arrived yet — get_version
+        # often arrives before the first push_status, so caching must be unconditional.
+        ams_raw = self.state.raw_data.get("ams")
+        for module in modules:
+            if not isinstance(module, dict):
+                continue
+            name = module.get("name", "")
+            if not any(name.startswith(prefix) for prefix in _AMS_MODULE_PREFIXES):
+                continue
+            try:
+                ams_id = int(name.split("/", 1)[1])
+            except (ValueError, IndexError):
+                continue
+            sw_ver = module.get("sw_ver", "")
+            sn = module.get("sn", "")
+
+            # Extract module type from prefix (e.g. "ams/0" → "ams", "n3f/0" → "n3f")
+            module_type = name.split("/", 1)[0]
+
+            # Always cache so _apply_ams_version_cache can apply it when AMS data arrives
+            if sw_ver or sn or module_type:
+                self._ams_version_cache[ams_id] = {"sw_ver": sw_ver, "sn": sn, "module_type": module_type}
+                state_changed = True
+
+            # Also directly update any AMS unit already present in raw_data
+            if ams_raw and isinstance(ams_raw, list):
+                for ams_unit in ams_raw:
+                    if not isinstance(ams_unit, dict):
+                        continue
+                    try:
+                        unit_id = int(ams_unit.get("id")) if ams_unit.get("id") is not None else None
+                    except (ValueError, TypeError):
+                        unit_id = None
+                    if unit_id == ams_id:
+                        if sw_ver:
+                            ams_unit["sw_ver"] = sw_ver
+                            logger.debug("[%s] AMS %s firmware: %s", self.serial_number, ams_id, sw_ver)
+                        # Only set sn from version info if not already present in AMS data
+                        if sn and not ams_unit.get("sn"):
+                            ams_unit["sn"] = sn
+                        if module_type:
+                            ams_unit["module_type"] = module_type
+                        break
+
+        # Trigger state change callback AFTER both loops so AMS sn/sw_ver are
+        # included in the broadcast (not just the printer firmware version).
+        if state_changed and self.on_state_change:
+            self.on_state_change(self.state)
+
+        # Warn if any AMS unit is still missing serial number or firmware version
+        # after processing the version info response. Warn only once per connection
+        # to avoid repeated noise on older firmware that doesn't report these fields.
+        if ams_raw and isinstance(ams_raw, list):
+            for ams_unit in ams_raw:
+                if not isinstance(ams_unit, dict):
+                    continue
+                ams_id = ams_unit.get("id", "?")
+                if not ams_unit.get("sn") and not ams_unit.get("serial_number"):
+                    key = (ams_id, "sn")
+                    if key not in self._ams_version_warned:
+                        self._ams_version_warned.add(key)
+                        logger.warning(
+                            "[%s] AMS unit %s: serial number not available in version info",
+                            self.serial_number,
+                            ams_id,
+                        )
+                if not ams_unit.get("sw_ver"):
+                    key = (ams_id, "sw_ver")
+                    if key not in self._ams_version_warned:
+                        self._ams_version_warned.add(key)
+                        logger.warning(
+                            "[%s] AMS unit %s: firmware version not available in version info",
+                            self.serial_number,
+                            ams_id,
+                        )
+
+    def _apply_ams_version_cache(self, ams_list: list) -> None:
+        """Apply cached AMS firmware/SN (from get_version) onto an AMS list in-place.
+
+        get_version may arrive before pushall/AMS status, and AMS unit IDs may be
+        strings in MQTT payloads. This helper normalizes IDs and fills missing
+        sw_ver/sn fields without overwriting values already present.
+        """
+        if not ams_list or not isinstance(ams_list, list):
+            return
+        cache = self._ams_version_cache
+        if not cache:
+            return
+        for unit in ams_list:
+            if not isinstance(unit, dict):
+                continue
+            raw_id = unit.get("id")
+            try:
+                unit_id = int(raw_id) if raw_id is not None else None
+            except (ValueError, TypeError):
+                unit_id = None
+            if unit_id is None:
+                continue
+            cached = cache.get(unit_id)
+            if not cached:
+                continue
+            sw_ver = cached.get("sw_ver") or ""
+            sn = cached.get("sn") or ""
+            if sw_ver and not unit.get("sw_ver"):
+                unit["sw_ver"] = sw_ver
+            # Only set sn if not already present in AMS data
+            if sn and not unit.get("sn") and not unit.get("serial_number"):
+                unit["sn"] = sn
+            module_type = cached.get("module_type") or ""
+            if module_type and not unit.get("module_type"):
+                unit["module_type"] = module_type
 
     def _parse_xcam_data(self, xcam_data):
         """Parse xcam data for camera settings and AI detection options."""
@@ -1228,6 +1387,10 @@ class BambuMQTTClient:
                             merged_trays.append(new_tray)
                     # Update ams_unit with merged trays
                     ams_unit = {**ams_unit, "tray": merged_trays}
+                elif existing_unit:
+                    # Partial update without tray data: merge new fields into existing
+                    # unit to preserve tray, sn, sw_ver, and other accumulated data.
+                    ams_unit = {**existing_unit, **ams_unit}
                 existing_by_id[ams_id] = ams_unit
 
         # Convert back to list, sorted by ID for consistent ordering
@@ -1276,35 +1439,69 @@ class BambuMQTTClient:
 
         self.state.raw_data["ams"] = merged_ams
 
+        # Apply cached AMS firmware/SN from get_version (handles ordering and id type mismatches)
+        self._apply_ams_version_cache(merged_ams)
         # Update timestamp for RFID refresh detection (frontend can detect "new data arrived")
         self.state.last_ams_update = time.time()
         logger.debug("[%s] Merged AMS data: %s new units, %s total", self.serial_number, len(ams_list), len(merged_ams))
 
         # Extract ams_extruder_map from each AMS unit's info field
-        # According to OpenBambuAPI: info field bit 8 indicates which extruder (0=right, 1=left)
+        # BambuStudio DevFilaSystem.cpp parses info as hex string:
+        #   type_id    = get_flag_bits(info, 0, 4)   // bits 0-3: AMS type
+        #   extruder_id = get_flag_bits(info, 8, 4)  // bits 8-11: extruder assignment
+        # where get_flag_bits uses std::stoull(str, nullptr, 16) — hex parsing.
+        # extruder_id: 0=right/main, 1=left/deputy, 0xE=uninitialized (skip)
+        #
+        # Use merged_ams (not ams_list) to avoid partial MQTT updates overwriting
+        # the full map. Merge into existing map to preserve entries from prior updates.
 
-        ams_extruder_map = {}
-        for ams_unit in ams_list:
+        ams_extruder_map = dict(self.state.ams_extruder_map) if self.state.ams_extruder_map else {}
+        for ams_unit in merged_ams:
             ams_id = ams_unit.get("id")
             info = ams_unit.get("info")
             if ams_id is not None and info is not None:
                 try:
-                    info_val = int(info) if isinstance(info, str) else info
-                    # Extract bit 8 for extruder assignment
-                    # Bit 8 = 0 means LEFT extruder (id 1), bit 8 = 1 means RIGHT extruder (id 0)
-                    # So we invert: extruder_id = 1 - bit8
-                    bit8 = (info_val >> 8) & 0x1
-                    extruder_id = 1 - bit8  # 0=right, 1=left
+                    # info is a hex-encoded string in MQTT JSON (e.g. "10001003")
+                    info_val = int(str(info), 16)
+                    # Extract 4 bits starting at bit 8 for extruder assignment
+                    extruder_id = (info_val >> 8) & 0xF
+                    if extruder_id == 0xE:
+                        # 0xE = uninitialized AMS, skip
+                        continue
                     ams_extruder_map[str(ams_id)] = extruder_id
-                    logger.debug(
-                        f"[{self.serial_number}] AMS {ams_id} info={info_val} (bit8={bit8}) -> extruder {extruder_id}"
-                    )
+                    logger.debug(f"[{self.serial_number}] AMS {ams_id} info=0x{info} -> extruder {extruder_id}")
                 except (ValueError, TypeError):
                     pass  # Skip AMS units with unparseable info bitmask values
         if ams_extruder_map:
             self.state.raw_data["ams_extruder_map"] = ams_extruder_map
-            self.state.ams_extruder_map = ams_extruder_map  # Also set on state for inference logic
+            self.state.ams_extruder_map = ams_extruder_map
             logger.debug("[%s] ams_extruder_map: %s", self.serial_number, ams_extruder_map)
+
+        # Extract drying status from info hex string and dry_sf_reason per AMS unit
+        # BambuStudio DevFilaSystem.cpp parses info bits:
+        #   dry_status     = get_flag_bits(info, 4, 4)   // bits 4-7
+        #   dry_sub_status = get_flag_bits(info, 22, 4)  // bits 22-25
+        for ams_unit in merged_ams:
+            info = ams_unit.get("info")
+            if info is not None:
+                try:
+                    info_val = int(str(info), 16)
+                    ams_unit["dry_status"] = (info_val >> 4) & 0xF
+                    ams_unit["dry_sub_status"] = (info_val >> 22) & 0xF
+                except (ValueError, TypeError):
+                    pass  # Skip unparseable info values
+            # dry_sf_reason is a per-unit array of cannot-dry reason codes
+            if "dry_sf_reason" in ams_unit:
+                sf_reason = ams_unit["dry_sf_reason"]
+                if isinstance(sf_reason, list):
+                    ams_unit["dry_sf_reason"] = [
+                        int(r) for r in sf_reason if isinstance(r, int) or (isinstance(r, str) and r.isdigit())
+                    ]
+                else:
+                    ams_unit["dry_sf_reason"] = []
+
+        # Persist updated drying fields back to raw_data
+        self.state.raw_data["ams"] = merged_ams
 
         # Create a hash of relevant AMS data to detect changes
         ams_hash_data = []
@@ -1844,6 +2041,11 @@ class BambuMQTTClient:
                         severity = (attr >> 8) & 0xF
                         # Module is in attr byte 3 (bits 24-31)
                         module = (attr >> 24) & 0xFF
+                        # Skip non-error status codes — all real HMS errors
+                        # have code >= 0x4000. Lower values are status/phase
+                        # indicators that some firmware sends during normal printing.
+                        if code < 0x4000:
+                            continue
                         self.state.hms_errors.append(
                             HMSError(
                                 code=f"0x{code:x}" if code else "0x0",
@@ -1865,32 +2067,38 @@ class BambuMQTTClient:
                 module = (print_error >> 16) & 0xFFFF  # High 16 bits (e.g., 0x0500)
                 error = print_error & 0xFFFF  # Low 16 bits (e.g., 0x8061)
 
-                # Store in a format that matches the community error database
-                # attr stores the full 32-bit value for reconstruction
-                # code stores the short format string for lookup
-                short_code = f"{module:04X}_{error:04X}"
+                # Values below 0x4000 are status/phase indicators, not real errors.
+                # All known HMS errors use 0x4xxx (fatal), 0x8xxx (warning), 0xCxxx (prompt).
+                # Some firmware sends low values like 0x0002 during normal printing.
+                if error < 0x4000:
+                    pass  # Skip — not a real error
+                else:
+                    # Store in a format that matches the community error database
+                    # attr stores the full 32-bit value for reconstruction
+                    # code stores the short format string for lookup
+                    short_code = f"{module:04X}_{error:04X}"
 
-                logger.debug(
-                    f"[{self.serial_number}] print_error: {print_error} (0x{print_error:08x}) -> short_code={short_code}"
-                )
-
-                # Only add if not already in HMS errors (avoid duplicates)
-                existing_short_codes = set()
-                for e in self.state.hms_errors:
-                    # Extract short code from existing errors
-                    e_module = (e.attr >> 16) & 0xFFFF
-                    e_error = int(e.code.replace("0x", ""), 16) if e.code else 0
-                    existing_short_codes.add(f"{e_module:04X}_{e_error:04X}")
-
-                if short_code not in existing_short_codes:
-                    self.state.hms_errors.append(
-                        HMSError(
-                            code=f"0x{error:x}",
-                            attr=print_error,  # Store full value for display
-                            module=module >> 8,  # High byte of module (e.g., 0x05)
-                            severity=3,  # Warning level for print_error
-                        )
+                    logger.debug(
+                        f"[{self.serial_number}] print_error: {print_error} (0x{print_error:08x}) -> short_code={short_code}"
                     )
+
+                    # Only add if not already in HMS errors (avoid duplicates)
+                    existing_short_codes = set()
+                    for e in self.state.hms_errors:
+                        # Extract short code from existing errors
+                        e_module = (e.attr >> 16) & 0xFFFF
+                        e_error = int(e.code.replace("0x", ""), 16) if e.code else 0
+                        existing_short_codes.add(f"{e_module:04X}_{e_error:04X}")
+
+                    if short_code not in existing_short_codes:
+                        self.state.hms_errors.append(
+                            HMSError(
+                                code=f"0x{error:x}",
+                                attr=print_error,  # Store full value for display
+                                module=module >> 8,  # High byte of module (e.g., 0x05)
+                                severity=3,  # Warning level for print_error
+                            )
+                        )
 
         # Parse SD card status
         if "sdcard" in data:
@@ -1952,6 +2160,14 @@ class BambuMQTTClient:
                     self.state.wifi_signal = int(wifi_signal.replace("dBm", "").strip())
                 except ValueError:
                     pass  # Ignore unparseable wifi_signal strings; field is non-critical
+
+            # Detect ethernet connection: printers on ethernet with WiFi disabled
+            # report a hardcoded wifi_signal of -90 dBm. Real WiFi signals vary
+            # (typically -30 to -80 dBm). Only check models with an ethernet port.
+            from backend.app.utils.printer_models import has_ethernet
+
+            if has_ethernet(self.model):
+                self.state.wired_network = self.state.wifi_signal == -90
 
         # Parse print speed level (1=silent, 2=standard, 3=sport, 4=ludicrous)
         if "spd_lvl" in data:
@@ -2715,6 +2931,45 @@ class BambuMQTTClient:
     def logging_enabled(self) -> bool:
         """Check if logging is enabled."""
         return self._logging_enabled
+
+    def send_drying_command(self, ams_id: int, temp: int, duration: int, mode: int = 1, filament: str = ""):
+        """Send AMS drying start/stop command.
+
+        Args:
+            ams_id: AMS unit ID (0-3 for AMS 2 Pro, 128-135 for AMS-HT)
+            temp: Target drying temperature (45-65 for AMS 2 Pro, 45-85 for AMS-HT)
+            duration: Drying duration in hours
+            mode: 1=start, 0=stop
+            filament: Filament type string (e.g. "PLA", "PETG")
+        """
+        if not self._client:
+            return False
+        self._sequence_id += 1
+        command = {
+            "print": {
+                "sequence_id": str(self._sequence_id),
+                "command": "ams_filament_drying",
+                "ams_id": ams_id,
+                "temp": temp,
+                "cooling_temp": 20 if mode == 1 else 0,
+                "duration": duration,
+                "humidity": 0,
+                "mode": mode,
+                "rotate_tray": False,
+                "filament": filament,
+                "close_power_conflict": False,
+            }
+        }
+        self._client.publish(self.topic_publish, json.dumps(command), qos=1)
+        logger.info(
+            "[%s] Sent drying command: ams_id=%d, temp=%d, duration=%d, mode=%d",
+            self.serial_number,
+            ams_id,
+            temp,
+            duration,
+            mode,
+        )
+        return True
 
     def _handle_kprofile_response(self, data: dict):
         """Handle K-profile response from printer."""

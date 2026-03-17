@@ -97,6 +97,9 @@ async def get_settings(
                 "ha_enabled",
                 "per_printer_mapping_expanded",
                 "prometheus_enabled",
+                "queue_drying_enabled",
+                "queue_drying_block",
+                "ambient_drying_enabled",
             ]:
                 settings_dict[setting.key] = setting.value.lower() == "true"
             elif setting.key in [
@@ -105,6 +108,7 @@ async def get_settings(
                 "ams_temp_good",
                 "ams_temp_fair",
                 "library_disk_warning_gb",
+                "low_stock_threshold",
             ]:
                 settings_dict[setting.key] = float(setting.value)
             elif setting.key in [
@@ -410,7 +414,7 @@ async def restore_backup(
 
     from fastapi import HTTPException
 
-    from backend.app.core.database import close_all_connections
+    from backend.app.core.database import close_all_connections, init_db, reinitialize_database
     from backend.app.services.virtual_printer import virtual_printer_manager
 
     base_dir = app_settings.base_dir
@@ -497,8 +501,11 @@ async def restore_backup(
                         logger.warning("Could not restore %s directory: %s", name, e)
                         skipped_dirs.append(name)
 
-            # 7. Note: Virtual printer and database will be reinitialized on restart
-            # Do NOT try to restart services here - the database session is closed
+            # 7. Reinitialize the database engine and apply schema migrations so that
+            # tables added after the backup was created (e.g. ams_labels) exist
+            # immediately, without requiring a manual restart.
+            await reinitialize_database()
+            await init_db()
 
             logger.info("Restore complete - restart required")
             message = "Backup restored successfully. Please restart Bambuddy for changes to take effect."

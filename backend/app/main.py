@@ -16,6 +16,7 @@ from backend.app.api.routes import (
     archives,
     auth,
     background_dispatch as background_dispatch_routes,
+    bug_report,
     camera,
     cloud,
     discovery,
@@ -268,6 +269,9 @@ _print_ams_mappings: dict[int, list[int]] = {}
 # Milestones are 25, 50, 75. Value of 0 means no milestone notified yet for current print.
 _last_progress_milestone: dict[int, int] = {}
 
+# Track whether first layer complete notification has been sent for current print
+_first_layer_notified: dict[int, bool] = {}
+
 # Track HMS errors that have been notified: {printer_id: set of error codes}
 # This prevents sending duplicate notifications for the same error
 _notified_hms_errors: dict[int, set[str]] = {}
@@ -328,6 +332,14 @@ def register_expected_print(printer_id: int, filename: str, archive_id: int, ams
     )
 
 
+def _get_start_ams_mapping(data: dict, archive_id: int | None) -> list[int] | None:
+    """Resolve AMS mapping for print start without consuming stored queue/reprint state."""
+    stored_ams_mapping = data.get("ams_mapping")
+    if not stored_ams_mapping and archive_id:
+        stored_ams_mapping = _print_ams_mappings.get(archive_id)
+    return stored_ams_mapping
+
+
 _last_status_broadcast: dict[int, str] = {}
 # Track printers where we've updated nozzle_count
 _nozzle_count_updated: set[int] = set()
@@ -365,12 +377,15 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
 
     # Include tray_now and vt_tray hash so external spool changes trigger broadcasts
     vt_tray_key = hash(str(state.raw_data.get("vt_tray", []))) if state.raw_data else 0
+    # Include AMS dry_time values so drying status changes trigger broadcasts
+    ams_dry_key = tuple(a.get("dry_time", 0) for a in (state.raw_data.get("ams") or [])) if state.raw_data else ()
     status_key = (
         f"{state.connected}:{state.state}:{state.progress}:{state.layer_num}:"
         f"{nozzle_temp}:{bed_temp}:{nozzle_2_temp}:{chamber_temp}:"
         f"{state.stg_cur}:{bed_target}:{nozzle_target}:"
         f"{state.cooling_fan_speed}:{state.big_fan1_speed}:{state.big_fan2_speed}:"
-        f"{state.chamber_light}:{state.active_extruder}:{state.tray_now}:{vt_tray_key}"
+        f"{state.chamber_light}:{state.active_extruder}:{state.tray_now}:{vt_tray_key}:"
+        f"{ams_dry_key}"
     )
 
     # MQTT relay - publish status (before dedup check - always publish to MQTT)
@@ -435,12 +450,11 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
     elif progress < 5:
         # Reset milestone tracking when print restarts or new print begins
         _last_progress_milestone[printer_id] = 0
+        _first_layer_notified[printer_id] = False
 
-    # HMS error codes that should not trigger notifications.
-    # These are infrastructure/auth issues, not actionable print errors.
+    # HMS error codes that should not trigger notifications even though they
+    # have known descriptions (e.g. user-initiated actions, not real errors).
     _HMS_NOTIFICATION_SUPPRESS = {
-        "0500_0007",  # MQTT command verification failed (auth/bind issue, not a print error)
-        "0500_4001",  # Failed to connect to Bambu Cloud (network issue)
         "0500_400E",  # Printing was cancelled (user action, not an error)
     }
 
@@ -488,6 +502,7 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                         printer_id, printer, logging.getLogger(__name__)
                     )
 
+                    sent_count = 0
                     for error in new_errors:
                         module_name = module_names.get(error.module, f"Module 0x{error.module:02X}")
                         # Build short code like "0700_8010"
@@ -496,21 +511,24 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                         error_code_masked = error_code_int & 0xFFFF
                         short_code = f"{(error.attr >> 16) & 0xFFFF:04X}_{error_code_masked:04X}"
 
-                        if short_code in _HMS_NOTIFICATION_SUPPRESS:
+                        # Only notify for errors with known descriptions — printers
+                        # send many undocumented/phantom codes that aren't real errors.
+                        description = get_error_description(short_code)
+                        if not description or short_code in _HMS_NOTIFICATION_SUPPRESS:
                             continue
 
                         error_type = f"{module_name} Error"
-                        # Look up human-readable description
-                        description = get_error_description(short_code)
-                        error_detail = description if description else f"Error code: {short_code}"
+                        error_detail = description
 
                         await notification_service.on_printer_error(
                             printer_id, printer_name, error_type, db, error_detail, image_data=error_image_data
                         )
+                        sent_count += 1
 
-                    logging.getLogger(__name__).info(
-                        f"[HMS] Sent notification for {len(new_errors)} new error(s) on printer {printer_id}"
-                    )
+                    if sent_count:
+                        logging.getLogger(__name__).info(
+                            f"[HMS] Sent notification for {sent_count} error(s) on printer {printer_id}"
+                        )
 
                     # Also publish to MQTT relay
                     printer_info = printer_manager.get_printer(printer_id)
@@ -699,7 +717,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
             # Commit any changes (stale deletions and/or fingerprint updates)
             await db.commit()
     except Exception as e:
-        logger.warning("Spool assignment cleanup failed: %s", e)
+        logger.warning("Spool assignment cleanup failed: %s", e, exc_info=True)
 
     # Auto-manage inventory spools from AMS tray data (skip if Spoolman manages AMS)
     try:
@@ -822,7 +840,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                 }
                             )
     except Exception as e:
-        logger.warning("RFID spool auto-assign failed: %s", e)
+        logger.warning("RFID spool auto-assign failed: %s", e, exc_info=True)
 
     try:
         async with async_session() as db:
@@ -1393,7 +1411,14 @@ async def on_print_start(printer_id: int, data: dict):
 
                 # Store Spoolman tracking data for per-filament usage reporting
                 try:
-                    await _store_spoolman_print_data(printer_id, archive.id, archive.file_path, db, printer_manager)
+                    await _store_spoolman_print_data(
+                        printer_id,
+                        archive.id,
+                        archive.file_path,
+                        db,
+                        printer_manager,
+                        ams_mapping=_get_start_ams_mapping(data, archive.id),
+                    )
                 except Exception as e:
                     logger.warning("[SPOOLMAN] Failed to store tracking data: %s", e)
 
@@ -1716,7 +1741,12 @@ async def on_print_start(printer_id: int, data: dict):
                 # Store Spoolman tracking data (may not work for fallback since no 3MF)
                 try:
                     await _store_spoolman_print_data(
-                        printer_id, fallback_archive.id, fallback_archive.file_path, db, printer_manager
+                        printer_id,
+                        fallback_archive.id,
+                        fallback_archive.file_path,
+                        db,
+                        printer_manager,
+                        ams_mapping=_get_start_ams_mapping(data, fallback_archive.id),
                     )
                 except Exception as e:
                     logger.debug("[SPOOLMAN] Could not store tracking for fallback archive: %s", e)
@@ -1844,7 +1874,14 @@ async def on_print_start(printer_id: int, data: dict):
 
                 # Store Spoolman tracking data for per-filament usage reporting
                 try:
-                    await _store_spoolman_print_data(printer_id, archive.id, archive.file_path, db, printer_manager)
+                    await _store_spoolman_print_data(
+                        printer_id,
+                        archive.id,
+                        archive.file_path,
+                        db,
+                        printer_manager,
+                        ams_mapping=_get_start_ams_mapping(data, archive.id),
+                    )
                 except Exception as e:
                     logger.warning("[SPOOLMAN] Failed to store tracking data: %s", e)
 
@@ -2311,6 +2348,10 @@ async def on_print_complete(printer_id: int, data: dict):
             queue_item = printing_items[0] if printing_items else None
             if queue_item:
                 queue_status = data.get("status", "completed")
+                # MQTT sends "aborted" for cancelled prints; normalise to
+                # "cancelled" so it matches the queue schema Literal.
+                if queue_status == "aborted":
+                    queue_status = "cancelled"
                 queue_item.status = queue_status
                 queue_item.completed_at = datetime.now(timezone.utc)
                 await db.commit()
@@ -2404,9 +2445,18 @@ async def on_print_complete(printer_id: int, data: dict):
 
             logger.info("[BED-COOL] Monitoring bed temp for printer %s (threshold: %.0f°C)", printer_id, threshold)
 
+            # Request a fresh full status so we get current bed_temper
+            printer_manager.request_status_update(printer_id)
+
             max_polls = 120  # 120 * 15s = 30 min timeout
-            for _ in range(max_polls):
+            for poll_num in range(max_polls):
                 await asyncio.sleep(15)
+
+                # Request fresh temperature data every 60s — after print completion,
+                # the printer may send partial MQTT updates without bed_temper,
+                # leaving the cached value stale at the end-of-print temperature.
+                if poll_num % 4 == 0:
+                    printer_manager.request_status_update(printer_id)
 
                 # Check if printer is still connected
                 status = printer_manager.get_status(printer_id)
@@ -2425,7 +2475,15 @@ async def on_print_complete(printer_id: int, data: dict):
                     bed_temp = status.temperatures.get("bed")
 
                 if bed_temp is None:
+                    logger.debug(
+                        "[BED-COOL] Printer %s: bed temp is None (keys: %s, state: %s)",
+                        printer_id,
+                        list(status.temperatures.keys()) if isinstance(status.temperatures, dict) else "N/A",
+                        status.state if hasattr(status, "state") else "N/A",
+                    )
                     continue
+
+                logger.debug("[BED-COOL] Printer %s: bed=%.1f°C, threshold=%.0f°C", printer_id, bed_temp, threshold)
 
                 if bed_temp <= threshold:
                     logger.info(
@@ -2616,7 +2674,13 @@ async def on_print_complete(printer_id: int, data: dict):
         # Report partial usage if tracking data exists (only stored when weight sync is disabled)
         try:
             async with async_session() as db:
-                await _cleanup_spoolman_tracking(printer_id, archive_id, db)
+                await _cleanup_spoolman_tracking(
+                    printer_id,
+                    archive_id,
+                    db,
+                    last_layer_num=data.get("last_layer_num"),
+                    last_progress=data.get("last_progress"),
+                )
         except Exception as e:
             logger.debug("[SPOOLMAN] Cleanup failed: %s", e)
 
@@ -3374,6 +3438,22 @@ async def lifespan(app: FastAPI):
     # Startup
     await init_db()
 
+    # Fix queue items stuck with invalid "aborted" status (should be "cancelled").
+    # This can happen when a print was cancelled mid-print on versions before this fix.
+    try:
+        async with async_session() as db:
+            from backend.app.models.print_queue import PrintQueueItem
+
+            result = await db.execute(select(PrintQueueItem).where(PrintQueueItem.status == "aborted"))
+            aborted_items = result.scalars().all()
+            if aborted_items:
+                for item in aborted_items:
+                    item.status = "cancelled"
+                await db.commit()
+                logging.info("Fixed %d queue item(s) with invalid 'aborted' status → 'cancelled'", len(aborted_items))
+    except Exception as e:
+        logging.warning("Failed to fix aborted queue items: %s", e)
+
     # Restore debug logging state from previous session
     await init_debug_logging()
 
@@ -3387,10 +3467,36 @@ async def lifespan(app: FastAPI):
 
     # Layer change callback for external camera timelapse
     async def on_layer_change(printer_id: int, layer_num: int):
-        """Capture timelapse frame on layer change."""
+        """Capture timelapse frame on layer change + first layer notification."""
         from backend.app.services.layer_timelapse import on_layer_change as tl_layer_change
 
         await tl_layer_change(printer_id, layer_num)
+
+        # First layer complete notification (layer_num >= 2 means layer 1 is done)
+        if 2 <= layer_num <= 5 and not _first_layer_notified.get(printer_id, False):
+            _first_layer_notified[printer_id] = True
+            try:
+                async with async_session() as db:
+                    from backend.app.models.printer import Printer
+
+                    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+                    printer = result.scalar_one_or_none()
+                    if not printer:
+                        return
+                    printer_name = printer.name
+                    client = printer_manager.get_client(printer_id)
+                    state = client.state if client else None
+                    filename = (state.subtask_name or state.gcode_file or "Unknown") if state else "Unknown"
+                    total_layers = state.total_layers if state else 0
+
+                    image_data = await _capture_snapshot_for_notification(
+                        printer_id, printer, logging.getLogger(__name__)
+                    )
+                    await notification_service.on_first_layer_complete(
+                        printer_id, printer_name, filename, total_layers, db, image_data=image_data
+                    )
+            except Exception as e:
+                logging.getLogger(__name__).warning("First layer notification failed: %s", e)
 
     printer_manager.set_layer_change_callback(on_layer_change)
 
@@ -3700,6 +3806,7 @@ async def auth_middleware(request, call_next):
 
 # API routes
 app.include_router(auth.router, prefix=app_settings.api_prefix)
+app.include_router(bug_report.router, prefix=app_settings.api_prefix)
 app.include_router(users.router, prefix=app_settings.api_prefix)
 app.include_router(groups.router, prefix=app_settings.api_prefix)
 app.include_router(printers.router, prefix=app_settings.api_prefix)

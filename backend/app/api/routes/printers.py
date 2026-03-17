@@ -12,9 +12,11 @@ from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.models.ams_label import AmsLabel
 from backend.app.models.printer import Printer
 from backend.app.models.slot_preset import SlotPresetMapping
 from backend.app.schemas.printer import (
+    AmsLabelBody,
     AMSTray,
     AMSUnit,
     HMSErrorResponse,
@@ -33,7 +35,12 @@ from backend.app.services.bambu_ftp import (
     get_storage_info_async,
     list_files_async,
 )
-from backend.app.services.printer_manager import get_derived_status_name, printer_manager, supports_chamber_temp
+from backend.app.services.printer_manager import (
+    get_derived_status_name,
+    printer_manager,
+    supports_chamber_temp,
+    supports_drying,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["printers"])
@@ -120,8 +127,8 @@ async def get_available_filaments(
         return []
 
     # Collect filaments from all matching printers
-    # Dedup key includes extruder_id so same color on different nozzles appears separately
-    seen: set[tuple[str, str, int | None]] = set()  # (type_upper, color_normalized, extruder_id)
+    # Dedup key includes extruder_id and tray_sub_brands so "PLA Basic" and "PLA Matte" appear separately
+    seen: set[tuple[str, str, str, int | None]] = set()  # (type_upper, color_normalized, sub_brands_upper, extruder_id)
     filaments = []
 
     for printer in printers_list:
@@ -145,8 +152,9 @@ async def get_available_filaments(
                 hex_color = tray_color.replace("#", "")[:6] if tray_color else "808080"
                 color = f"#{hex_color}"
                 tray_info_idx = tray.get("tray_info_idx", "")
+                tray_sub_brands = tray.get("tray_sub_brands", "") or ""
 
-                key = (tray_type.upper(), hex_color.lower(), extruder_id)
+                key = (tray_type.upper(), hex_color.lower(), tray_sub_brands.upper(), extruder_id)
                 if key not in seen:
                     seen.add(key)
                     filaments.append(
@@ -154,6 +162,7 @@ async def get_available_filaments(
                             "type": tray_type,
                             "color": color,
                             "tray_info_idx": tray_info_idx,
+                            "tray_sub_brands": tray_sub_brands,
                             "extruder_id": extruder_id,
                         }
                     )
@@ -167,10 +176,11 @@ async def get_available_filaments(
             hex_color = vt_color.replace("#", "")[:6] if vt_color else "808080"
             color = f"#{hex_color}"
             tray_info_idx = vt.get("tray_info_idx", "")
+            tray_sub_brands = vt.get("tray_sub_brands", "") or ""
             vt_id = int(vt.get("id", 254))
             extruder_id = (255 - vt_id) if ams_extruder_map else None
 
-            key = (vt_type.upper(), hex_color.lower(), extruder_id)
+            key = (vt_type.upper(), hex_color.lower(), tray_sub_brands.upper(), extruder_id)
             if key not in seen:
                 seen.add(key)
                 filaments.append(
@@ -178,6 +188,7 @@ async def get_available_filaments(
                         "type": vt_type,
                         "color": color,
                         "tray_info_idx": tray_info_idx,
+                        "tray_sub_brands": tray_sub_brands,
                         "extruder_id": extruder_id,
                     }
                 )
@@ -405,6 +416,8 @@ async def get_printer_status(
                         tray_uuid=tray_uuid,
                         nozzle_temp_min=tray_data.get("nozzle_temp_min"),
                         nozzle_temp_max=tray_data.get("nozzle_temp_max"),
+                        drying_temp=tray_data.get("drying_temp"),
+                        drying_time=tray_data.get("drying_time"),
                     )
                 )
             # Prefer humidity_raw (percentage) over humidity (index 1-5)
@@ -433,6 +446,13 @@ async def get_printer_status(
                     temp=ams_data.get("temp"),
                     is_ams_ht=is_ams_ht,
                     tray=trays,
+                    # Serial number: Bambu MQTT uses "sn" key on AMS unit objects
+                    serial_number=str(ams_data.get("sn") or ams_data.get("serial_number") or ""),
+                    # Firmware version: populated by _handle_version_info from info.module ams/* entries
+                    sw_ver=str(ams_data.get("sw_ver") or ""),
+                    # Drying: dry_time > 0 means drying is active (minutes remaining)
+                    dry_time=int(ams_data.get("dry_time") or 0),
+                    module_type=str(ams_data.get("module_type") or ""),
                 )
             )
 
@@ -561,6 +581,7 @@ async def get_printer_status(
         timelapse=state.timelapse,
         ipcam=state.ipcam,
         wifi_signal=state.wifi_signal,
+        wired_network=state.wired_network,
         nozzles=nozzles,
         nozzle_rack=nozzle_rack,
         print_options=print_options,
@@ -586,6 +607,7 @@ async def get_printer_status(
         firmware_version=state.firmware_version,
         developer_mode=state.developer_mode if state else None,
         plate_cleared=printer_manager.is_plate_cleared(printer_id),
+        supports_drying=supports_drying(printer.model, state.firmware_version),
     )
 
 
@@ -1437,6 +1459,63 @@ async def clear_mqtt_logs(
 
 
 # ============================================
+# AMS Drying Endpoints
+# ============================================
+
+
+@router.post("/{printer_id}/drying/start")
+async def start_drying(
+    printer_id: int,
+    ams_id: int,
+    temp: int = 45,
+    duration: int = 4,
+    filament: str = "",
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Send AMS drying start command. temp=45-85, duration=hours."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    # Server-side guard: reject if this model/firmware doesn't support drying
+    live_state = printer_manager.get_status(printer_id)
+    firmware = live_state.firmware_version if live_state else None
+    if not supports_drying(printer.model, firmware):
+        raise HTTPException(400, "Drying not supported for this printer model or firmware version")
+
+    if temp < 45 or temp > 85:
+        raise HTTPException(400, "Temperature must be 45-85°C")
+    if duration < 1 or duration > 24:
+        raise HTTPException(400, "Duration must be 1-24 hours")
+
+    success = printer_manager.send_drying_command(printer_id, ams_id, temp, duration, mode=1, filament=filament)
+    if not success:
+        raise HTTPException(400, "Printer not connected")
+    return {"status": "drying_started", "ams_id": ams_id, "temp": temp, "duration": duration}
+
+
+@router.post("/{printer_id}/drying/stop")
+async def stop_drying(
+    printer_id: int,
+    ams_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Send AMS drying stop command."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    success = printer_manager.send_drying_command(printer_id, ams_id, temp=0, duration=0, mode=0)
+    if not success:
+        raise HTTPException(400, "Printer not connected")
+    return {"status": "drying_stopped", "ams_id": ams_id}
+
+
+# ============================================
 # Print Options (AI Detection) Endpoints
 # ============================================
 
@@ -1953,6 +2032,118 @@ async def reset_ams_slot(
         "success": True,
         "message": f"Reset AMS {ams_id} tray {tray_id}",
     }
+
+
+@router.get("/{printer_id}/ams-labels")
+async def get_ams_labels(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get all user-defined AMS labels for a printer, keyed by AMS unit ID.
+
+    Labels are stored by AMS serial number.  This endpoint resolves the current
+    serial-to-ams_id mapping from the live printer state so the response is still
+    keyed by ams_id for UI compatibility.
+    """
+    # Build serial -> ams_id map from live printer state
+    serial_to_ams_id: dict[str, int] = {}
+    state = printer_manager.get_status(printer_id)
+    if state and state.raw_data:
+        for ams_unit in state.raw_data.get("ams", []):
+            sn = str(ams_unit.get("sn") or ams_unit.get("serial_number") or "")
+            if sn:
+                serial_to_ams_id[sn] = int(ams_unit.get("id", 0))
+
+    # Collect all known serials for this printer (live + synthetic fallback keys)
+    serials_to_query = set(serial_to_ams_id.keys())
+
+    # Fetch labels for all known serials
+    labels: dict[int, str] = {}
+    if serials_to_query:
+        result = await db.execute(select(AmsLabel).where(AmsLabel.ams_serial_number.in_(serials_to_query)))
+        for lbl in result.scalars().all():
+            aid = serial_to_ams_id.get(lbl.ams_serial_number)
+            if aid is not None:
+                labels[aid] = lbl.label
+
+    # Also fetch labels stored under synthetic keys for this printer (backward compat)
+    # Collect all synthetic keys first, then query with a single IN clause.
+    if state and state.raw_data:
+        synthetic_key_to_aid: dict[str, int] = {
+            f"p{printer_id}a{int(ams_unit.get('id', 0))}": int(ams_unit.get("id", 0))
+            for ams_unit in state.raw_data.get("ams", [])
+            if int(ams_unit.get("id", 0)) not in labels
+        }
+        if synthetic_key_to_aid:
+            result = await db.execute(
+                select(AmsLabel).where(AmsLabel.ams_serial_number.in_(synthetic_key_to_aid.keys()))
+            )
+            for lbl in result.scalars().all():
+                aid = synthetic_key_to_aid.get(lbl.ams_serial_number)
+                if aid is not None:
+                    labels[aid] = lbl.label
+
+    return labels
+
+
+@router.put("/{printer_id}/ams-labels/{ams_id}")
+async def save_ams_label(
+    printer_id: int,
+    ams_id: int,
+    body: AmsLabelBody,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create or update the friendly name for a specific AMS unit.
+
+    When ``ams_serial`` is provided the label is stored under that serial number so
+    it survives the AMS being moved to a different printer.  When it is absent (e.g.
+    older firmware that does not report a serial) a synthetic key based on the
+    printer_id and ams_id is used as a fallback.
+    """
+    # Verify printer exists
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(404, "Printer not found")
+
+    # Determine the serial key to store under
+    stripped = body.ams_serial.strip() if body.ams_serial else ""
+    serial_key = stripped if stripped else f"p{printer_id}a{ams_id}"
+
+    result = await db.execute(select(AmsLabel).where(AmsLabel.ams_serial_number == serial_key))
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        existing.label = body.label
+        existing.ams_id = ams_id
+    else:
+        db.add(AmsLabel(ams_serial_number=serial_key, ams_id=ams_id, label=body.label))
+
+    await db.commit()
+    return {"ams_id": ams_id, "label": body.label}
+
+
+@router.delete("/{printer_id}/ams-labels/{ams_id}")
+async def delete_ams_label(
+    printer_id: int,
+    ams_id: int,
+    ams_serial: str = Query(default="", max_length=50),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete the friendly name for a specific AMS unit, reverting to the auto label."""
+    stripped = ams_serial.strip() if ams_serial else ""
+    serial_key = stripped if stripped else f"p{printer_id}a{ams_id}"
+
+    result = await db.execute(select(AmsLabel).where(AmsLabel.ams_serial_number == serial_key))
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        await db.delete(existing)
+        await db.commit()
+
+    return {"success": True}
 
 
 @router.post("/{printer_id}/debug/simulate-print-complete")

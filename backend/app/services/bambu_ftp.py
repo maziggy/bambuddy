@@ -4,6 +4,7 @@ import logging
 import os
 import socket
 import ssl
+import time
 from collections.abc import Awaitable, Callable
 from ftplib import FTP, FTP_TLS  # nosec B402
 from io import BytesIO
@@ -81,11 +82,10 @@ class BambuFTPClient:
     # Models that may need SSL mode fallback (try prot_p first, fall back to prot_c)
     # These models have varying FTP SSL behavior depending on firmware version
     A1_MODELS = ("A1", "A1 Mini")
-    # Chunk size for manual upload transfer (1MB)
-    # Larger chunks reduce overhead and work better with A1 printers
-    CHUNK_SIZE = 1024 * 1024
-    # Per-chunk data socket timeout during upload.
-    UPLOAD_CHUNK_TIMEOUT = 120
+    # Chunk size for manual upload transfer (64KB)
+    # Smaller chunks provide smoother progress reporting — at typical printer FTP
+    # speeds (~50-100KB/s) this gives a progress update roughly every second.
+    CHUNK_SIZE = 64 * 1024
 
     # Cache for working FTP modes per printer IP
     # Maps IP -> "prot_p" or "prot_c"
@@ -368,11 +368,16 @@ class BambuFTPClient:
             # A1 printers have issues with storbinary's voidresp() hanging after transfer
             with open(local_path, "rb") as f:
                 logger.debug("FTP STOR command starting for %s", remote_path)
+                t0 = time.monotonic()
                 conn = self._ftp.transfercmd(f"STOR {remote_path}")
+                logger.info(
+                    "FTP data channel ready in %.1fs (PASV + TLS handshake)",
+                    time.monotonic() - t0,
+                )
 
                 # Set explicit socket options for reliable transfer
                 conn.setblocking(True)
-                conn.settimeout(self.UPLOAD_CHUNK_TIMEOUT)
+                conn.settimeout(self.timeout)
 
                 try:
                     while True:
@@ -408,14 +413,30 @@ class BambuFTPClient:
                     except OSError:
                         pass
 
-            # Skip voidresp() for A1 models — they hang after transfercmd uploads
-            if self.printer_model not in self.A1_MODELS:
+            # Wait for the server's 226 "Transfer complete" response to confirm
+            # the file has been flushed to the SD card. Without this, the printer
+            # may try to read an incomplete file when the print command is sent,
+            # causing 0500-C010 "MicroSD Card read/write exception" errors.
+            # See: https://bugs.python.org/issue25458 (ftplib response desync)
+            try:
+                old_timeout = self._ftp.sock.gettimeout()
+                # Use a generous timeout — H2D printers can take 30+ seconds
+                # to send the 226 after the data channel closes.
+                self._ftp.sock.settimeout(max(self.timeout, 60))
                 try:
-                    self._ftp.voidresp()
-                except (OSError, ftplib.Error) as e:
-                    # Data transfer already completed — voidresp() failure is just a noisy
-                    # 226 acknowledgment issue, not an actual upload failure. Log and continue.
-                    logger.warning("FTP upload response for %s was not clean (data already sent): %s", remote_path, e)
+                    resp = self._ftp.voidresp()
+                    logger.info("FTP STOR confirmed for %s: %s", remote_path, resp.strip())
+                finally:
+                    self._ftp.sock.settimeout(old_timeout)
+            except Exception as e:
+                # Timeout or error reading 226 — log but proceed, the data
+                # was fully sent so the file is likely on the SD card.
+                logger.warning(
+                    "FTP STOR confirmation not received for %s (proceeding): %s (%s)",
+                    remote_path,
+                    e,
+                    type(e).__name__,
+                )
 
             if callback_exception is not None:
                 cleanup_ok = False
@@ -432,7 +453,15 @@ class BambuFTPClient:
                     f"Upload cancelled but failed to remove partial file {remote_path} from printer"
                 ) from callback_exception
 
-            logger.info("FTP upload complete: %s", remote_path)
+            elapsed = time.monotonic() - t0
+            speed_kbs = (file_size / 1024) / elapsed if elapsed > 0 else 0
+            logger.info(
+                "FTP upload complete: %s (%s bytes in %.1fs, %.0f KB/s)",
+                remote_path,
+                file_size,
+                elapsed,
+                speed_kbs,
+            )
             return True
         except ftplib.error_perm as e:
             # Permanent FTP error (4xx/5xx response)
@@ -462,7 +491,7 @@ class BambuFTPClient:
             # Use manual transfer instead of storbinary() for A1 compatibility
             conn = self._ftp.transfercmd(f"STOR {remote_path}")
             conn.setblocking(True)
-            conn.settimeout(self.UPLOAD_CHUNK_TIMEOUT)
+            conn.settimeout(self.timeout)
 
             try:
                 # Send data in chunks
@@ -479,6 +508,16 @@ class BambuFTPClient:
                     conn.close()
                 except OSError:
                     pass
+            # Wait for 226 confirmation (see upload_file for rationale)
+            try:
+                old_timeout = self._ftp.sock.gettimeout()
+                self._ftp.sock.settimeout(max(self.timeout, 60))
+                try:
+                    self._ftp.voidresp()
+                finally:
+                    self._ftp.sock.settimeout(old_timeout)
+            except Exception:
+                pass  # Best-effort — data was sent, proceed
             return True
         except (OSError, ftplib.Error):
             return False

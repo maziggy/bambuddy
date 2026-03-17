@@ -25,6 +25,10 @@ export function ColorCatalogSettings() {
   const [formMaterial, setFormMaterial] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // Selection state
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+
   // Sync state
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<{ fetched: number; total: number } | null>(null);
@@ -219,6 +223,36 @@ export function ColorCatalogSettings() {
     }
   };
 
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredCatalog.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredCatalog.map(e => e.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    setShowBulkDeleteConfirm(false);
+    if (selectedIds.size === 0) return;
+    try {
+      const result = await api.bulkDeleteColorEntries([...selectedIds]);
+      setCatalog(prev => prev.filter(e => !selectedIds.has(e.id)));
+      setSelectedIds(new Set());
+      showToast(t('settings.colorCatalog.bulkDeleted', { count: result.deleted }), 'success');
+    } catch {
+      showToast(t('settings.colorCatalog.bulkDeleteFailed'), 'error');
+    }
+  };
+
   const handleExport = () => {
     const exportData = catalog.map(({ manufacturer, color_name, hex_color, material }) => ({
       manufacturer, color_name, hex_color, material,
@@ -331,6 +365,26 @@ export function ColorCatalogSettings() {
             <span className="hidden sm:inline">{t('common.add')}</span>
           </button>
         </div>
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-2 mt-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-lg">
+            <span className="text-sm text-red-400">
+              {t('settings.colorCatalog.selectedCount', { count: selectedIds.size })}
+            </span>
+            <button
+              onClick={() => setShowBulkDeleteConfirm(true)}
+              className="ml-auto px-3 py-1.5 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors flex items-center gap-1.5"
+            >
+              <Trash2 className="w-4 h-4" />
+              {t('settings.colorCatalog.deleteSelected')}
+            </button>
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="px-3 py-1.5 text-sm text-bambu-gray hover:text-white transition-colors"
+            >
+              {t('common.cancel')}
+            </button>
+          </div>
+        )}
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-bambu-gray">
@@ -440,6 +494,14 @@ export function ColorCatalogSettings() {
             <table className="w-full text-sm">
               <thead className="bg-bambu-dark sticky top-0">
                 <tr>
+                  <th className="px-2 py-2 w-10">
+                    <input
+                      type="checkbox"
+                      checked={filteredCatalog.length > 0 && selectedIds.size === filteredCatalog.length}
+                      onChange={toggleSelectAll}
+                      className="w-4 h-4 accent-bambu-green cursor-pointer"
+                    />
+                  </th>
                   <th className="px-3 py-2 text-left text-bambu-gray font-medium w-12"></th>
                   <th className="px-3 py-2 text-left text-bambu-gray font-medium">{t('settings.colorCatalog.manufacturer')}</th>
                   <th className="px-3 py-2 text-left text-bambu-gray font-medium">{t('inventory.material')}</th>
@@ -451,15 +513,23 @@ export function ColorCatalogSettings() {
               <tbody>
                 {filteredCatalog.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-3 py-8 text-center text-bambu-gray">
+                    <td colSpan={7} className="px-3 py-8 text-center text-bambu-gray">
                       {search || filterManufacturer ? t('settings.colorCatalog.noMatch') : t('settings.colorCatalog.empty')}
                     </td>
                   </tr>
                 ) : (
                   filteredCatalog.map(entry => (
-                    <tr key={entry.id} className="border-t border-bambu-dark-tertiary hover:bg-bambu-dark">
+                    <tr key={entry.id} className={`border-t border-bambu-dark-tertiary hover:bg-bambu-dark ${selectedIds.has(entry.id) ? 'bg-bambu-dark' : ''}`}>
                       {editingId === entry.id ? (
                         <>
+                          <td className="px-2 py-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(entry.id)}
+                              onChange={() => toggleSelect(entry.id)}
+                              className="w-4 h-4 accent-bambu-green cursor-pointer"
+                            />
+                          </td>
                           <td className="px-3 py-2">
                             <input
                               type="color"
@@ -517,6 +587,14 @@ export function ColorCatalogSettings() {
                         </>
                       ) : (
                         <>
+                          <td className="px-2 py-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(entry.id)}
+                              onChange={() => toggleSelect(entry.id)}
+                              className="w-4 h-4 accent-bambu-green cursor-pointer"
+                            />
+                          </td>
                           <td className="px-3 py-2">
                             <div
                               className="w-8 h-8 rounded border border-bambu-dark-tertiary"
@@ -564,6 +642,18 @@ export function ColorCatalogSettings() {
           variant="danger"
           onConfirm={handleDelete}
           onCancel={() => setDeleteEntry(null)}
+        />
+      )}
+
+      {/* Bulk delete confirmation */}
+      {showBulkDeleteConfirm && (
+        <ConfirmModal
+          title={t('settings.colorCatalog.deleteSelected')}
+          message={t('settings.colorCatalog.bulkDeleteConfirm', { count: selectedIds.size })}
+          confirmText={t('common.delete')}
+          variant="danger"
+          onConfirm={handleBulkDelete}
+          onCancel={() => setShowBulkDeleteConfirm(false)}
         />
       )}
 

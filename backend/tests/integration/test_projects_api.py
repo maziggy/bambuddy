@@ -262,6 +262,121 @@ class TestProjectPartsTracking:
         assert data["stats"]["parts_progress_percent"] == 40.0  # parts: 10/25
 
 
+class TestProjectArchivedStatusNotCounted:
+    """Tests for bug #630: archived files added to a project should not count as printed."""
+
+    @pytest.fixture
+    async def project_factory(self, db_session):
+        """Factory to create test projects."""
+
+        async def _create_project(**kwargs):
+            from backend.app.models.project import Project
+
+            defaults = {
+                "name": "Archived Status Test",
+                "description": "Test project",
+                "color": "#FF0000",
+            }
+            defaults.update(kwargs)
+
+            project = Project(**defaults)
+            db_session.add(project)
+            await db_session.commit()
+            await db_session.refresh(project)
+            return project
+
+        return _create_project
+
+    @pytest.fixture
+    async def archive_factory(self, db_session):
+        """Factory to create test archives."""
+
+        async def _create_archive(**kwargs):
+            from backend.app.models.archive import PrintArchive
+
+            defaults = {
+                "filename": "test.3mf",
+                "file_path": "test/test.3mf",
+                "file_size": 1000,
+                "print_name": "Test Print",
+                "status": "completed",
+                "quantity": 1,
+            }
+            defaults.update(kwargs)
+
+            archive = PrintArchive(**defaults)
+            db_session.add(archive)
+            await db_session.commit()
+            await db_session.refresh(archive)
+            return archive
+
+        return _create_archive
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archived_files_not_counted_as_completed(
+        self, async_client: AsyncClient, project_factory, archive_factory, db_session
+    ):
+        """Archived files added to a project should not count in completed_prints stats."""
+        project = await project_factory(target_parts_count=20)
+
+        # 2 actually printed (completed), 3 just archived (not printed yet)
+        await archive_factory(project_id=project.id, quantity=2, status="completed")
+        await archive_factory(project_id=project.id, quantity=3, status="archived")
+        await archive_factory(project_id=project.id, quantity=5, status="archived")
+
+        response = await async_client.get(f"/api/v1/projects/{project.id}")
+        assert response.status_code == 200
+        data = response.json()
+
+        # Only the completed archive should count
+        assert data["stats"]["completed_prints"] == 2
+        assert data["stats"]["parts_progress_percent"] == 10.0  # 2/20 = 10%
+        assert data["stats"]["remaining_parts"] == 18
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archived_files_not_counted_in_project_list(
+        self, async_client: AsyncClient, project_factory, archive_factory, db_session
+    ):
+        """Project list endpoint should not count archived files as completed."""
+        project = await project_factory(name="List Archived Test", target_parts_count=50)
+
+        await archive_factory(project_id=project.id, quantity=4, status="completed")
+        await archive_factory(project_id=project.id, quantity=6, status="archived")
+
+        response = await async_client.get("/api/v1/projects/")
+        assert response.status_code == 200
+        data = response.json()
+
+        our_project = next((p for p in data if p["name"] == "List Archived Test"), None)
+        assert our_project is not None
+        assert our_project["completed_count"] == 4  # Only completed, not archived
+        assert our_project["archive_count"] == 2  # Both archives exist as plates
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_only_completed_status_counts(
+        self, async_client: AsyncClient, project_factory, archive_factory, db_session
+    ):
+        """Only 'completed' status should count in stats, not archived/failed/etc."""
+        project = await project_factory(target_parts_count=100)
+
+        await archive_factory(project_id=project.id, quantity=10, status="completed")
+        await archive_factory(project_id=project.id, quantity=5, status="archived")
+        await archive_factory(project_id=project.id, quantity=3, status="failed")
+        await archive_factory(project_id=project.id, quantity=2, status="aborted")
+
+        response = await async_client.get(f"/api/v1/projects/{project.id}")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["stats"]["completed_prints"] == 10  # Only "completed"
+        assert data["stats"]["failed_prints"] == 2  # failed + aborted (count of archives, not sum)
+        assert data["stats"]["total_archives"] == 4  # All archives
+        assert data["stats"]["total_items"] == 20  # Sum of all quantities
+
+
 class TestProjectArchivesAPI:
     """Tests for project-archive relationships."""
 

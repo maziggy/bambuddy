@@ -30,6 +30,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const checkAuthStatus = async () => {
     try {
+      // Bootstrap: if URL has ?token= param, store it and strip from URL.
+      // Allows SpoolBuddy kiosk to pass API key via URL on first load.
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlToken = urlParams.get('token');
+      if (urlToken) {
+        setAuthToken(urlToken);
+        urlParams.delete('token');
+        const cleanSearch = urlParams.toString();
+        const cleanUrl = window.location.pathname
+          + (cleanSearch ? `?${cleanSearch}` : '')
+          + window.location.hash;
+        window.history.replaceState({}, '', cleanUrl);
+      }
+
       const status = await api.getAuthStatus();
       if (!mountedRef.current) return;
       setAuthEnabled(status.auth_enabled);

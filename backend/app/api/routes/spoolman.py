@@ -1,5 +1,6 @@
 """Spoolman integration API routes."""
 
+import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -663,9 +664,14 @@ async def get_linked_spools(
 
 
 class LinkSpoolRequest(BaseModel):
-    """Request to link a Spoolman spool to an AMS tray."""
+    """Request to link a Spoolman spool to an AMS tag (tray_uuid or tag_uid)."""
 
-    tray_uuid: str
+    spool_tag: str | None = None
+    tray_uuid: str | None = None
+    tag_uid: str | None = None
+    printer_id: int | None = None
+    ams_id: int | None = None
+    tray_id: int | None = None
 
 
 @router.post("/spools/{spool_id}/link")
@@ -675,7 +681,7 @@ async def link_spool(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
 ):
-    """Link a Spoolman spool to an AMS tray by setting the tag to tray_uuid."""
+    """Link a Spoolman spool to an AMS tag by setting Spoolman extra.tag."""
     sm = await get_spoolman_settings(db)
     enabled, url = sm["enabled"], sm["url"]
     if not enabled:
@@ -691,26 +697,77 @@ async def link_spool(
     if not await client.health_check():
         raise HTTPException(status_code=503, detail="Spoolman is not reachable")
 
-    # Validate tray_uuid format (32 hex characters)
-    tray_uuid = request.tray_uuid.strip()
-    if len(tray_uuid) != 32:
-        raise HTTPException(status_code=400, detail="Invalid tray_uuid format (must be 32 hex characters)")
+    # Resolve and validate spool tag (supports tray_uuid=32 hex and tag_uid=16 hex)
+    spool_tag = (request.spool_tag or request.tray_uuid or request.tag_uid or "").strip()
+    if not spool_tag:
+        raise HTTPException(status_code=400, detail="Missing spool tag (tray_uuid or tag_uid)")
+    if len(spool_tag) not in (16, 32):
+        raise HTTPException(status_code=400, detail="Invalid spool tag format (must be 16 or 32 hex characters)")
     try:
-        int(tray_uuid, 16)
+        int(spool_tag, 16)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid tray_uuid format (must be hex)")
+        raise HTTPException(status_code=400, detail="Invalid spool tag format (must be hex)")
+
+    if set(spool_tag) == {"0"}:
+        raise HTTPException(status_code=400, detail="Invalid spool tag format (all-zero tag is not linkable)")
+
+    spool_tag = spool_tag.upper()
+
+    # Build location like: "{Printer Name} - {AMS Name} {Slot Number}"
+    location: str | None = None
+    if request.printer_id is not None and request.ams_id is not None and request.tray_id is not None:
+        printer_result = await db.execute(select(Printer).where(Printer.id == request.printer_id))
+        printer = printer_result.scalar_one_or_none()
+        if not printer:
+            raise HTTPException(status_code=404, detail="Printer not found")
+
+        location = f"{printer.name} - {client.convert_ams_slot_to_location(request.ams_id, request.tray_id)}"
 
     # Update spool with tag
     # Note: Spoolman extra field values must be valid JSON, so we encode the string
-    import json
-
     result = await client.update_spool(
         spool_id=spool_id,
-        extra={"tag": json.dumps(tray_uuid)},
+        location=location,
+        extra={"tag": json.dumps(spool_tag)},
     )
 
     if result:
-        logger.info("Linked Spoolman spool %s to tray_uuid %s", spool_id, tray_uuid)
-        return {"success": True, "message": f"Spool {spool_id} linked to AMS tray"}
+        logger.info("Linked Spoolman spool %s to tag %s", spool_id, spool_tag)
+        return {"success": True, "message": f"Spool {spool_id} linked to AMS tag"}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to update spool")
+
+
+@router.post("/spools/{spool_id}/unlink")
+async def unlink_spool(
+    spool_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
+):
+    """Unlink a Spoolman spool from AMS by clearing Spoolman extra.tag."""
+    sm = await get_spoolman_settings(db)
+    enabled, url = sm["enabled"], sm["url"]
+    if not enabled:
+        raise HTTPException(status_code=400, detail="Spoolman integration is not enabled")
+
+    client = await get_spoolman_client()
+    if not client:
+        if url:
+            client = await init_spoolman_client(url)
+        else:
+            raise HTTPException(status_code=400, detail="Spoolman URL is not configured")
+
+    if not await client.health_check():
+        raise HTTPException(status_code=503, detail="Spoolman is not reachable")
+
+    result = await client.update_spool(
+        spool_id=spool_id,
+        clear_location=True,
+        extra={"tag": json.dumps("")},
+    )
+
+    if result:
+        logger.info("Unlinked Spoolman spool %s", spool_id)
+        return {"success": True, "message": f"Spool {spool_id} unlinked from AMS"}
     else:
         raise HTTPException(status_code=500, detail="Failed to update spool")

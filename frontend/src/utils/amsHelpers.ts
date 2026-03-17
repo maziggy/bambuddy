@@ -26,6 +26,40 @@ export function normalizeColorForCompare(color: string | undefined): string {
 }
 
 /**
+ * Filament type equivalence groups.
+ * Types within the same group are interchangeable on the printer side
+ * (e.g., Bambu Lab firmware treats PA-CF and PA12-CF as compatible).
+ */
+const FILAMENT_TYPE_GROUPS: string[][] = [
+  ['PA-CF', 'PA12-CF', 'PAHT-CF'],
+];
+
+const _equivalenceMap: Record<string, string> = {};
+for (const group of FILAMENT_TYPE_GROUPS) {
+  const canonical = group[0];
+  for (const t of group) {
+    _equivalenceMap[t.toUpperCase()] = canonical.toUpperCase();
+  }
+}
+
+/**
+ * Get the canonical filament type for equivalence matching.
+ * Types in the same group (e.g., PA-CF / PA12-CF / PAHT-CF) return the same canonical type.
+ */
+export function canonicalFilamentType(type: string | undefined): string {
+  if (!type) return '';
+  const upper = type.toUpperCase();
+  return _equivalenceMap[upper] ?? upper;
+}
+
+/**
+ * Check if two filament types are compatible (same type or same equivalence group).
+ */
+export function filamentTypesCompatible(a: string | undefined, b: string | undefined): boolean {
+  return canonicalFilamentType(a) === canonicalFilamentType(b);
+}
+
+/**
  * Check if two colors are visually similar within a threshold.
  * Uses RGB component comparison with configurable tolerance.
  * @param color1 - First hex color
@@ -68,12 +102,12 @@ export function formatSlotLabel(
   isHt: boolean,
   isExternal: boolean
 ): string {
-  if (isExternal) return 'External';
+  if (isExternal) return 'Ext';
   // Convert AMS ID to letter (A, B, C, D)
   // AMS-HT uses IDs starting at 128
   const letter = String.fromCharCode(65 + (amsId >= 128 ? amsId - 128 : amsId));
   if (isHt) return `HT-${letter}`;
-  return `AMS-${letter} Slot ${trayId + 1}`;
+  return `${letter}${trayId + 1}`;
 }
 
 /**
@@ -113,4 +147,51 @@ export function isPlaceholderDate(scheduledTime: string | null | undefined): boo
   if (!scheduledTime) return false;
   const sixMonthsFromNow = Date.now() + 180 * 24 * 60 * 60 * 1000;
   return (parseUTCDate(scheduledTime)?.getTime() ?? 0) > sixMonthsFromNow;
+}
+
+/**
+ * Auto-match a filament requirement to a loaded filament, respecting nozzle constraints.
+ * Used by both single-printer (FilamentMapping) and multi-printer (InlineMappingEditor) paths.
+ */
+export function autoMatchFilament(
+  req: { type?: string; color?: string; nozzle_id?: number | null },
+  loadedFilaments: { globalTrayId: number; type?: string; color?: string; extruderId?: number }[],
+  usedTrayIds: Set<number>,
+): typeof loadedFilaments[number] | undefined {
+  const nozzleFilaments = filterFilamentsByNozzle(loadedFilaments, req.nozzle_id);
+
+  const exactMatch = nozzleFilaments.find(
+    (f) =>
+      !usedTrayIds.has(f.globalTrayId) &&
+      filamentTypesCompatible(f.type, req.type) &&
+      normalizeColorForCompare(f.color) === normalizeColorForCompare(req.color)
+  );
+  const similarMatch = exactMatch
+    ? undefined
+    : nozzleFilaments.find(
+        (f) =>
+          !usedTrayIds.has(f.globalTrayId) &&
+          filamentTypesCompatible(f.type, req.type) &&
+          colorsAreSimilar(f.color, req.color)
+      );
+  const typeOnlyMatch =
+    exactMatch || similarMatch
+      ? undefined
+      : nozzleFilaments.find(
+          (f) => !usedTrayIds.has(f.globalTrayId) && filamentTypesCompatible(f.type, req.type)
+        );
+  return exactMatch ?? similarMatch ?? typeOnlyMatch;
+}
+
+/**
+ * Filter loaded filaments to those valid for a given nozzle requirement.
+ * For single-nozzle printers (nozzle_id is null/undefined), returns all filaments.
+ */
+export function filterFilamentsByNozzle<T extends { extruderId?: number }>(
+  loadedFilaments: T[],
+  nozzleId: number | undefined | null,
+): T[] {
+  return loadedFilaments.filter(
+    (f) => nozzleId == null || f.extruderId === nozzleId
+  );
 }

@@ -130,6 +130,8 @@ class AMSTray(BaseModel):
     tray_uuid: str | None = None  # Bambu Lab spool UUID (32-char hex)
     nozzle_temp_min: int | None = None  # Min nozzle temperature
     nozzle_temp_max: int | None = None  # Max nozzle temperature
+    drying_temp: int | None = None  # RFID-recommended drying temp
+    drying_time: int | None = None  # RFID-recommended drying time (hours)
 
 
 class AMSUnit(BaseModel):
@@ -138,6 +140,13 @@ class AMSUnit(BaseModel):
     temp: float | None = None
     is_ams_ht: bool = False  # True for AMS-HT (single spool), False for regular AMS (4 spools)
     tray: list[AMSTray] = []
+    serial_number: str = ""  # AMS unit serial number (sn from MQTT)
+    sw_ver: str = ""  # AMS firmware version (from get_version info.module)
+    dry_time: int = 0  # Minutes remaining (0 = not drying, >0 = drying active)
+    dry_status: int = 0  # 0=Off, 1=Checking, 2=Drying, 3=Cooling, 4=Stopping, 5=Error
+    dry_sub_status: int = 0  # 0=Off, 1=Heating, 2=Dehumidify
+    dry_sf_reason: list[int] = []  # Cannot-dry reasons from firmware (see CannotDryReason)
+    module_type: str = ""  # "ams", "n3f", "n3s"
 
 
 class NozzleInfoResponse(BaseModel):
@@ -158,6 +167,11 @@ class NozzleRackSlot(BaseModel):
     filament_color: str = ""  # RGBA hex ("00000000" = no filament)
     filament_id: str = ""  # Bambu filament ID
     filament_type: str = ""  # Material type (e.g. "PLA", "PETG")
+
+
+class AmsLabelBody(BaseModel):
+    label: str = Field(..., min_length=1, max_length=100)
+    ams_serial: str = Field(default="", max_length=50)
 
 
 class PrintOptionsResponse(BaseModel):
@@ -205,6 +219,7 @@ class PrinterStatus(BaseModel):
     timelapse: bool = False  # Timelapse recording active
     ipcam: bool = False  # Live view enabled
     wifi_signal: int | None = None  # WiFi signal strength in dBm
+    wired_network: bool = False  # Ethernet connection detected
     nozzles: list[NozzleInfoResponse] = []  # Nozzle hardware info (index 0=left/primary, 1=right)
     nozzle_rack: list[NozzleRackSlot] = []  # H2C 6-nozzle tool-changer rack
     print_options: PrintOptionsResponse | None = None  # AI detection and print options
@@ -249,3 +264,5 @@ class PrinterStatus(BaseModel):
     developer_mode: bool | None = None
     # Queue: user has acknowledged plate is cleared for next queued print
     plate_cleared: bool = False
+    # AMS drying support
+    supports_drying: bool = False

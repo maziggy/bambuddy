@@ -26,6 +26,8 @@ export interface PrintModalProps {
   archiveName: string;
   /** Existing queue item (only for edit-queue-item mode) */
   queueItem?: PrintQueueItem;
+  /** Pre-select specific printers when opening the modal */
+  initialSelectedPrinterIds?: number[];
   /** Handler for closing the modal */
   onClose: () => void;
   /** Handler for successful operation */
@@ -122,6 +124,8 @@ export interface PrinterSelectorProps {
   allowMultiple?: boolean;
   /** Show inactive printers (for edit mode where original assignment may be inactive) */
   showInactive?: boolean;
+  /** Disable selection of busy printers (used in reprint mode) */
+  disableBusy?: boolean;
   /** Current assignment mode */
   assignmentMode?: AssignmentMode;
   /** Handler for assignment mode change */
@@ -146,6 +150,10 @@ export interface PlateSelectorProps {
   isMultiPlate: boolean;
   selectedPlate: number | null;
   onSelect: (plateIndex: number) => void;
+  /** Whether "queue all plates" is active */
+  queueAll?: boolean;
+  /** Callback to toggle queue-all mode (only shown in add-to-queue mode) */
+  onQueueAllChange?: (queueAll: boolean) => void;
 }
 
 /**

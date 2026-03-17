@@ -23,6 +23,7 @@ class VirtualPrinterCreate(BaseModel):
     model: str | None = None
     access_code: str | None = None
     target_printer_id: int | None = None
+    auto_dispatch: bool = True
     bind_ip: str | None = None
     remote_interface_ip: str | None = None
 
@@ -34,6 +35,7 @@ class VirtualPrinterUpdate(BaseModel):
     model: str | None = None
     access_code: str | None = None
     target_printer_id: int | None = None
+    auto_dispatch: bool | None = None
     bind_ip: str | None = None
     remote_interface_ip: str | None = None
 
@@ -56,6 +58,7 @@ def _vp_to_dict(vp, status: dict | None = None) -> dict:
         "access_code_set": bool(vp.access_code),
         "serial": serial,
         "target_printer_id": vp.target_printer_id,
+        "auto_dispatch": vp.auto_dispatch,
         "bind_ip": vp.bind_ip,
         "remote_interface_ip": vp.remote_interface_ip,
         "position": vp.position,
@@ -125,11 +128,13 @@ async def create_virtual_printer(
                 return JSONResponse(status_code=400, content={"detail": "Access code is required when enabling"})
 
     # Validate proxy target printer exists
+    target_printer = None
     if body.target_printer_id:
         from backend.app.models.printer import Printer
 
         result = await db.execute(select(Printer).where(Printer.id == body.target_printer_id))
-        if not result.scalar_one_or_none():
+        target_printer = result.scalar_one_or_none()
+        if not target_printer:
             return JSONResponse(
                 status_code=400, content={"detail": f"Printer with ID {body.target_printer_id} not found"}
             )
@@ -166,9 +171,12 @@ async def create_virtual_printer(
         name=body.name,
         enabled=body.enabled,
         mode=body.mode,
-        model=body.model or DEFAULT_VIRTUAL_PRINTER_MODEL,
+        model=body.model
+        or (target_printer.model if target_printer and target_printer.model and body.mode == "proxy" else None)
+        or DEFAULT_VIRTUAL_PRINTER_MODEL,
         access_code=body.access_code,
         target_printer_id=body.target_printer_id,
+        auto_dispatch=body.auto_dispatch,
         bind_ip=body.bind_ip,
         remote_interface_ip=body.remote_interface_ip,
         serial_suffix=new_suffix,
@@ -260,15 +268,30 @@ async def update_virtual_printer(
         from backend.app.models.printer import Printer
 
         result = await db.execute(select(Printer).where(Printer.id == body.target_printer_id))
-        if not result.scalar_one_or_none():
+        target_printer = result.scalar_one_or_none()
+        if not target_printer:
             return JSONResponse(
                 status_code=400, content={"detail": f"Printer with ID {body.target_printer_id} not found"}
             )
         vp.target_printer_id = body.target_printer_id
+        # Auto-inherit model from target printer in proxy mode (unless user explicitly set model)
+        if body.model is None and vp.mode == "proxy" and target_printer.model:
+            vp.model = target_printer.model
+    if body.auto_dispatch is not None:
+        vp.auto_dispatch = body.auto_dispatch
     if body.bind_ip is not None:
         vp.bind_ip = body.bind_ip
     if body.remote_interface_ip is not None:
         vp.remote_interface_ip = body.remote_interface_ip
+
+    # Auto-inherit model when switching to proxy mode with existing target printer
+    if body.mode == "proxy" and body.model is None and body.target_printer_id is None and vp.target_printer_id:
+        from backend.app.models.printer import Printer as PrinterModel
+
+        result = await db.execute(select(PrinterModel).where(PrinterModel.id == vp.target_printer_id))
+        existing_target = result.scalar_one_or_none()
+        if existing_target and existing_target.model:
+            vp.model = existing_target.model
 
     # Determine final enabled state
     explicitly_enabling = body.enabled is True

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Bell, Trash2, Settings2, Edit2, Send, Loader2, CheckCircle, XCircle, Moon, Clock, ChevronDown, ChevronUp, Calendar } from 'lucide-react';
 import { api } from '../api/client';
 import { formatDateOnly, parseUTCDate } from '../utils/date';
@@ -14,17 +15,8 @@ interface NotificationProviderCardProps {
   onEdit: (provider: NotificationProvider) => void;
 }
 
-const PROVIDER_LABELS: Record<string, string> = {
-  callmebot: 'CallMeBot/WhatsApp',
-  ntfy: 'ntfy',
-  pushover: 'Pushover',
-  telegram: 'Telegram',
-  email: 'Email',
-  discord: 'Discord',
-  webhook: 'Webhook',
-};
-
 export function NotificationProviderCard({ provider, onEdit }: NotificationProviderCardProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -84,20 +76,20 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
               </div>
               <div>
                 <h3 className="font-medium text-white">{provider.name}</h3>
-                <p className="text-sm text-bambu-gray">{PROVIDER_LABELS[provider.provider_type] || provider.provider_type}</p>
+                <p className="text-sm text-bambu-gray">{t(`notifications.providerTypes.${provider.provider_type}`, provider.provider_type)}</p>
               </div>
             </div>
 
             {/* Quick enable/disable toggle + Status indicator */}
             <div className="flex items-center gap-3">
               {provider.last_success && (
-                <span className="text-xs text-status-ok hidden sm:inline">Last: {formatDateOnly(provider.last_success)}</span>
+                <span className="text-xs text-status-ok hidden sm:inline">{t('notifications.lastSuccess', { date: formatDateOnly(provider.last_success) })}</span>
               )}
               {/* Only show error if it's more recent than last success */}
               {provider.last_error && provider.last_error_at && (
                 !provider.last_success || (parseUTCDate(provider.last_error_at)?.getTime() || 0) > (parseUTCDate(provider.last_success)?.getTime() || 0)
               ) && (
-                <span className="text-xs text-status-error" title={provider.last_error}>Error</span>
+                <span className="text-xs text-status-error" title={provider.last_error}>{t('notifications.error')}</span>
               )}
               <Toggle
                 checked={provider.enabled}
@@ -109,73 +101,76 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
           {/* Linked Printer */}
           {linkedPrinter && (
             <div className="mb-3 px-2 py-1.5 bg-bambu-dark rounded-lg">
-              <span className="text-xs text-bambu-gray">Printer: </span>
+              <span className="text-xs text-bambu-gray">{t('notifications.printer')} </span>
               <span className="text-sm text-white">{linkedPrinter.name}</span>
             </div>
           )}
           {!linkedPrinter && !provider.printer_id && (
             <div className="mb-3 px-2 py-1.5 bg-bambu-dark rounded-lg">
-              <span className="text-xs text-bambu-gray">All printers</span>
+              <span className="text-xs text-bambu-gray">{t('notifications.allPrinters')}</span>
             </div>
           )}
 
           {/* Event summary - show all event tags */}
           <div className="mb-3 flex flex-wrap gap-1">
             {provider.on_print_start && (
-              <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-xs rounded">Start</span>
+              <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-xs rounded">{t('notifications.start')}</span>
             )}
             {provider.on_plate_not_empty && (
-              <span className="px-2 py-0.5 bg-rose-600/20 text-rose-300 text-xs rounded">Plate Check</span>
+              <span className="px-2 py-0.5 bg-rose-600/20 text-rose-300 text-xs rounded">{t('notifications.plateCheck')}</span>
             )}
             {provider.on_print_complete && (
-              <span className="px-2 py-0.5 bg-bambu-green/20 text-bambu-green text-xs rounded">Complete</span>
+              <span className="px-2 py-0.5 bg-bambu-green/20 text-bambu-green text-xs rounded">{t('notifications.complete')}</span>
             )}
             {provider.on_print_failed && (
-              <span className="px-2 py-0.5 bg-red-500/20 text-red-400 text-xs rounded">Failed</span>
+              <span className="px-2 py-0.5 bg-red-500/20 text-red-400 text-xs rounded">{t('notifications.failed')}</span>
             )}
             {provider.on_print_stopped && (
-              <span className="px-2 py-0.5 bg-orange-500/20 text-orange-400 text-xs rounded">Stopped</span>
+              <span className="px-2 py-0.5 bg-orange-500/20 text-orange-400 text-xs rounded">{t('notifications.stopped')}</span>
             )}
             {provider.on_print_progress && (
-              <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-xs rounded">Progress</span>
+              <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-xs rounded">{t('notifications.progress')}</span>
             )}
             {provider.on_printer_offline && (
-              <span className="px-2 py-0.5 bg-gray-500/20 text-gray-400 text-xs rounded">Offline</span>
+              <span className="px-2 py-0.5 bg-gray-500/20 text-gray-400 text-xs rounded">{t('notifications.offline')}</span>
             )}
             {provider.on_printer_error && (
-              <span className="px-2 py-0.5 bg-rose-500/20 text-rose-400 text-xs rounded">Error</span>
+              <span className="px-2 py-0.5 bg-rose-500/20 text-rose-400 text-xs rounded">{t('notifications.error')}</span>
             )}
             {provider.on_filament_low && (
-              <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-400 text-xs rounded">Low Filament</span>
+              <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-400 text-xs rounded">{t('notifications.lowFilament')}</span>
             )}
             {provider.on_maintenance_due && (
-              <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 text-xs rounded">Maintenance</span>
+              <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 text-xs rounded">{t('notifications.maintenance')}</span>
             )}
             {provider.on_ams_humidity_high && (
-              <span className="px-2 py-0.5 bg-blue-600/20 text-blue-300 text-xs rounded">AMS Humidity</span>
+              <span className="px-2 py-0.5 bg-blue-600/20 text-blue-300 text-xs rounded">{t('notifications.amsHumidity')}</span>
             )}
             {provider.on_ams_temperature_high && (
-              <span className="px-2 py-0.5 bg-orange-600/20 text-orange-300 text-xs rounded">AMS Temp</span>
+              <span className="px-2 py-0.5 bg-orange-600/20 text-orange-300 text-xs rounded">{t('notifications.amsTemp')}</span>
             )}
             {provider.on_ams_ht_humidity_high && (
-              <span className="px-2 py-0.5 bg-cyan-600/20 text-cyan-300 text-xs rounded">AMS-HT Humidity</span>
+              <span className="px-2 py-0.5 bg-cyan-600/20 text-cyan-300 text-xs rounded">{t('notifications.amsHtHumidity')}</span>
             )}
             {provider.on_ams_ht_temperature_high && (
-              <span className="px-2 py-0.5 bg-amber-600/20 text-amber-300 text-xs rounded">AMS-HT Temp</span>
+              <span className="px-2 py-0.5 bg-amber-600/20 text-amber-300 text-xs rounded">{t('notifications.amsHtTemp')}</span>
             )}
             {provider.on_bed_cooled && (
-              <span className="px-2 py-0.5 bg-teal-500/20 text-teal-400 text-xs rounded">Bed Cooled</span>
+              <span className="px-2 py-0.5 bg-teal-500/20 text-teal-400 text-xs rounded">{t('notifications.bedCooled')}</span>
+            )}
+            {provider.on_first_layer_complete && (
+              <span className="px-2 py-0.5 bg-emerald-600/20 text-emerald-300 text-xs rounded">{t('notifications.firstLayer')}</span>
             )}
             {provider.quiet_hours_enabled && (
               <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-400 text-xs rounded flex items-center gap-1">
                 <Moon className="w-3 h-3" />
-                Quiet
+                {t('notifications.quiet')}
               </span>
             )}
             {provider.daily_digest_enabled && (
               <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 text-xs rounded flex items-center gap-1">
                 <Calendar className="w-3 h-3" />
-                Digest {provider.daily_digest_time}
+                {t('notifications.digest', { time: provider.daily_digest_time })}
               </span>
             )}
           </div>
@@ -197,7 +192,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
               ) : (
                 <Send className="w-4 h-4" />
               )}
-              Send Test Notification
+              {t('notifications.sendTestNotification')}
             </Button>
           </div>
 
@@ -224,7 +219,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
           >
             <span className="flex items-center gap-2">
               <Settings2 className="w-4 h-4" />
-              Event Settings
+              {t('notifications.eventSettings')}
             </span>
             {isExpanded ? (
               <ChevronUp className="w-4 h-4" />
@@ -239,8 +234,8 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
               {/* Enabled Toggle */}
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-white">Enabled</p>
-                  <p className="text-xs text-bambu-gray">Send notifications from this provider</p>
+                  <p className="text-sm text-white">{t('notifications.enabled')}</p>
+                  <p className="text-xs text-bambu-gray">{t('notifications.sendFromProvider')}</p>
                 </div>
                 <Toggle
                   checked={provider.enabled}
@@ -250,10 +245,10 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
               {/* Print Lifecycle Events */}
               <div className="space-y-2">
-                <p className="text-xs text-bambu-gray uppercase tracking-wide">Print Events</p>
+                <p className="text-xs text-bambu-gray uppercase tracking-wide">{t('notifications.printEvents')}</p>
 
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-white">Print Started</p>
+                  <p className="text-sm text-white">{t('notifications.printStarted')}</p>
                   <Toggle
                     checked={provider.on_print_start}
                     onChange={(checked) => updateMutation.mutate({ on_print_start: checked })}
@@ -262,8 +257,8 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-white">Plate Not Empty</p>
-                    <p className="text-xs text-bambu-gray">Objects detected before print</p>
+                    <p className="text-sm text-white">{t('notifications.plateNotEmpty')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.plateNotEmptyDescription')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_plate_not_empty ?? true}
@@ -272,7 +267,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-white">Print Completed</p>
+                  <p className="text-sm text-white">{t('notifications.printCompleted')}</p>
                   <Toggle
                     checked={provider.on_print_complete}
                     onChange={(checked) => updateMutation.mutate({ on_print_complete: checked })}
@@ -281,8 +276,8 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-white">Bed Cooled</p>
-                    <p className="text-xs text-bambu-gray">Bed cooled below threshold after print</p>
+                    <p className="text-sm text-white">{t('notifications.bedCooledLabel')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.bedCooledDescription')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_bed_cooled ?? false}
@@ -291,7 +286,18 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-white">Print Failed</p>
+                  <div>
+                    <p className="text-sm text-white">{t('notifications.firstLayerCompleteLabel')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.firstLayerCompleteDescription')}</p>
+                  </div>
+                  <Toggle
+                    checked={provider.on_first_layer_complete ?? false}
+                    onChange={(checked) => updateMutation.mutate({ on_first_layer_complete: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-white">{t('notifications.printFailed')}</p>
                   <Toggle
                     checked={provider.on_print_failed}
                     onChange={(checked) => updateMutation.mutate({ on_print_failed: checked })}
@@ -299,7 +305,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-white">Print Stopped</p>
+                  <p className="text-sm text-white">{t('notifications.printStopped')}</p>
                   <Toggle
                     checked={provider.on_print_stopped}
                     onChange={(checked) => updateMutation.mutate({ on_print_stopped: checked })}
@@ -308,8 +314,8 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-white">Progress Milestones</p>
-                    <p className="text-xs text-bambu-gray">Notify at 25%, 50%, 75%</p>
+                    <p className="text-sm text-white">{t('notifications.progressMilestones')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.progressMilestonesDescription')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_print_progress}
@@ -320,10 +326,10 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
               {/* Printer Status Events */}
               <div className="space-y-2">
-                <p className="text-xs text-bambu-gray uppercase tracking-wide">Printer Status</p>
+                <p className="text-xs text-bambu-gray uppercase tracking-wide">{t('notifications.printerStatus')}</p>
 
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-white">Printer Offline</p>
+                  <p className="text-sm text-white">{t('notifications.printerOffline')}</p>
                   <Toggle
                     checked={provider.on_printer_offline}
                     onChange={(checked) => updateMutation.mutate({ on_printer_offline: checked })}
@@ -331,7 +337,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-white">Printer Error</p>
+                  <p className="text-sm text-white">{t('notifications.printerError')}</p>
                   <Toggle
                     checked={provider.on_printer_error}
                     onChange={(checked) => updateMutation.mutate({ on_printer_error: checked })}
@@ -339,8 +345,8 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-white">Low Filament</p>
-                  <Toggle
+                  <p className="text-sm text-white">{t('notifications.lowFilamentLabel')}</p>
+<Toggle
                     checked={provider.on_filament_low}
                     onChange={(checked) => updateMutation.mutate({ on_filament_low: checked })}
                   />
@@ -348,8 +354,8 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-white">Maintenance Due</p>
-                    <p className="text-xs text-bambu-gray">Notify when maintenance is needed</p>
+                    <p className="text-sm text-white">{t('notifications.maintenanceDue')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.maintenanceDueDescription')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_maintenance_due ?? false}
@@ -360,12 +366,12 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
               {/* AMS Environmental Alarms (regular AMS) */}
               <div className="space-y-2">
-                <p className="text-xs text-bambu-gray uppercase tracking-wide">AMS Alarms</p>
+                <p className="text-xs text-bambu-gray uppercase tracking-wide">{t('notifications.amsAlarms')}</p>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-white">AMS Humidity High</p>
-                    <p className="text-xs text-bambu-gray">Regular AMS humidity exceeds threshold</p>
+                    <p className="text-sm text-white">{t('notifications.amsHumidityHigh')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.amsHumidityHighDescription')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_ams_humidity_high ?? false}
@@ -375,8 +381,8 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-white">AMS Temperature High</p>
-                    <p className="text-xs text-bambu-gray">Regular AMS temperature exceeds threshold</p>
+                    <p className="text-sm text-white">{t('notifications.amsTemperatureHigh')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.amsTemperatureHighDescription')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_ams_temperature_high ?? false}
@@ -387,12 +393,12 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
               {/* AMS-HT Environmental Alarms */}
               <div className="space-y-2">
-                <p className="text-xs text-bambu-gray uppercase tracking-wide">AMS-HT Alarms</p>
+                <p className="text-xs text-bambu-gray uppercase tracking-wide">{t('notifications.amsHtAlarms')}</p>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-white">AMS-HT Humidity High</p>
-                    <p className="text-xs text-bambu-gray">AMS-HT humidity exceeds threshold</p>
+                    <p className="text-sm text-white">{t('notifications.amsHtHumidityHigh')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.amsHtHumidityHighDescription')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_ams_ht_humidity_high ?? false}
@@ -402,8 +408,8 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-white">AMS-HT Temperature High</p>
-                    <p className="text-xs text-bambu-gray">AMS-HT temperature exceeds threshold</p>
+                    <p className="text-sm text-white">{t('notifications.amsHtTemperatureHigh')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.amsHtTemperatureHighDescription')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_ams_ht_temperature_high ?? false}
@@ -414,12 +420,12 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
               {/* Print Queue Events */}
               <div className="space-y-2">
-                <p className="text-xs text-bambu-gray uppercase tracking-wide">Print Queue</p>
+                <p className="text-xs text-bambu-gray uppercase tracking-wide">{t('notifications.printQueue')}</p>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-white">Job Added</p>
-                    <p className="text-xs text-bambu-gray">Job added to queue</p>
+                    <p className="text-sm text-white">{t('notifications.jobAdded')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.jobAddedDescription')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_queue_job_added ?? false}
@@ -429,8 +435,8 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-white">Job Assigned</p>
-                    <p className="text-xs text-bambu-gray">Model-based job assigned to printer</p>
+                    <p className="text-sm text-white">{t('notifications.jobAssigned')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.jobAssignedDescription')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_queue_job_assigned ?? false}
@@ -440,8 +446,8 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-white">Job Started</p>
-                    <p className="text-xs text-bambu-gray">Queue job started printing</p>
+                    <p className="text-sm text-white">{t('notifications.jobStarted')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.jobStartedDescription')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_queue_job_started ?? false}
@@ -451,8 +457,8 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-white">Job Waiting</p>
-                    <p className="text-xs text-bambu-gray">Job waiting for filament</p>
+                    <p className="text-sm text-white">{t('notifications.jobWaiting')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.jobWaitingDescription')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_queue_job_waiting ?? true}
@@ -462,8 +468,8 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-white">Job Skipped</p>
-                    <p className="text-xs text-bambu-gray">Job skipped (previous failed)</p>
+                    <p className="text-sm text-white">{t('notifications.jobSkipped')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.jobSkippedDescription')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_queue_job_skipped ?? true}
@@ -473,8 +479,8 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-white">Job Failed</p>
-                    <p className="text-xs text-bambu-gray">Job failed to start</p>
+                    <p className="text-sm text-white">{t('notifications.jobFailed')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.jobFailedDescription')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_queue_job_failed ?? true}
@@ -484,8 +490,8 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-white">Queue Complete</p>
-                    <p className="text-xs text-bambu-gray">All queue jobs finished</p>
+                    <p className="text-sm text-white">{t('notifications.queueComplete')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.queueCompleteDescription')}</p>
                   </div>
                   <Toggle
                     checked={provider.on_queue_completed ?? false}
@@ -499,7 +505,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Moon className="w-4 h-4 text-purple-400" />
-                    <p className="text-sm text-white">Quiet Hours</p>
+                    <p className="text-sm text-white">{t('notifications.quietHours')}</p>
                   </div>
                   <Toggle
                     checked={provider.quiet_hours_enabled}
@@ -509,14 +515,14 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
                 {provider.quiet_hours_enabled && (
                   <div className="pl-4 border-l-2 border-bambu-dark-tertiary space-y-2">
-                    <p className="text-xs text-bambu-gray">No notifications during these hours</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.noNotificationsDuring')}</p>
                     <div className="flex items-center gap-2">
                       <Clock className="w-4 h-4 text-bambu-gray" />
                       <span className="text-sm text-white">
                         {formatTime(provider.quiet_hours_start) || '22:00'} - {formatTime(provider.quiet_hours_end) || '07:00'}
                       </span>
                     </div>
-                    <p className="text-xs text-bambu-gray">Edit provider to change quiet hours</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.editProviderToChangeQuietHours')}</p>
                   </div>
                 )}
               </div>
@@ -526,7 +532,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Calendar className="w-4 h-4 text-emerald-400" />
-                    <p className="text-sm text-white">Daily Digest</p>
+                    <p className="text-sm text-white">{t('notifications.dailyDigest')}</p>
                   </div>
                   <Toggle
                     checked={provider.daily_digest_enabled}
@@ -536,14 +542,14 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
                 {provider.daily_digest_enabled && (
                   <div className="pl-4 border-l-2 border-bambu-dark-tertiary space-y-2">
-                    <p className="text-xs text-bambu-gray">Batch notifications into a single daily summary</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.batchNotifications')}</p>
                     <div className="flex items-center gap-2">
                       <Clock className="w-4 h-4 text-bambu-gray" />
                       <span className="text-sm text-white">
-                        Send at {formatTime(provider.daily_digest_time) || '08:00'}
+                        {t('notifications.sendAt', { time: formatTime(provider.daily_digest_time) || '08:00' })}
                       </span>
                     </div>
-                    <p className="text-xs text-bambu-gray">Edit provider to change digest time</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.editProviderToChangeDigestTime')}</p>
                   </div>
                 )}
               </div>
@@ -557,7 +563,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                   className="flex-1"
                 >
                   <Edit2 className="w-4 h-4" />
-                  Edit
+                  {t('notifications.edit')}
                 </Button>
                 <Button
                   size="sm"
@@ -576,9 +582,9 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
       {/* Delete Confirmation */}
       {showDeleteConfirm && (
         <ConfirmModal
-          title="Delete Notification Provider"
-          message={`Are you sure you want to delete "${provider.name}"? This cannot be undone.`}
-          confirmText="Delete"
+          title={t('notifications.deleteProvider')}
+          message={t('notifications.deleteConfirm', { name: provider.name })}
+          confirmText={t('notifications.delete')}
           variant="danger"
           onConfirm={() => {
             deleteMutation.mutate();

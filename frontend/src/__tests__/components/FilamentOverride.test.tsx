@@ -18,9 +18,9 @@ const defaultFilamentReqs: FilamentReqsData = {
 };
 
 const defaultAvailable = [
-  { type: 'PLA', color: '#FF0000', tray_info_idx: 'GFA00', extruder_id: null },
-  { type: 'PLA', color: '#00FF00', tray_info_idx: 'GFA01', extruder_id: null },
-  { type: 'PETG', color: '#0000FF', tray_info_idx: 'GFG00', extruder_id: null },
+  { type: 'PLA', color: '#FF0000', tray_info_idx: 'GFA00', tray_sub_brands: 'PLA Basic', extruder_id: null },
+  { type: 'PLA', color: '#00FF00', tray_info_idx: 'GFA01', tray_sub_brands: 'PLA Basic', extruder_id: null },
+  { type: 'PETG', color: '#0000FF', tray_info_idx: 'GFG00', tray_sub_brands: 'PETG Basic', extruder_id: null },
 ];
 
 const mockOnChange = vi.fn();
@@ -133,9 +133,9 @@ describe('FilamentOverride', () => {
 
     it('shows all same-type options regardless of color', () => {
       const threeColorAvailable = [
-        { type: 'PLA', color: '#FF0000', tray_info_idx: 'GFA00', extruder_id: null },
-        { type: 'PLA', color: '#00FF00', tray_info_idx: 'GFA01', extruder_id: null },
-        { type: 'PLA', color: '#FFFFFF', tray_info_idx: 'GFA02', extruder_id: null },
+        { type: 'PLA', color: '#FF0000', tray_info_idx: 'GFA00', tray_sub_brands: 'PLA Basic', extruder_id: null },
+        { type: 'PLA', color: '#00FF00', tray_info_idx: 'GFA01', tray_sub_brands: 'PLA Basic', extruder_id: null },
+        { type: 'PLA', color: '#FFFFFF', tray_info_idx: 'GFA02', tray_sub_brands: 'PLA Basic', extruder_id: null },
       ];
 
       render(
@@ -155,6 +155,53 @@ describe('FilamentOverride', () => {
     });
   });
 
+  describe('subtype display', () => {
+    it('shows tray_sub_brands in dropdown options when available', () => {
+      const subtypeAvailable = [
+        { type: 'PLA', color: '#000000', tray_info_idx: 'GFL99', tray_sub_brands: 'PLA Basic', extruder_id: null },
+        { type: 'PLA', color: '#000000', tray_info_idx: 'GFL05', tray_sub_brands: 'PLA Matte', extruder_id: null },
+      ];
+
+      render(
+        <FilamentOverride
+          filamentReqs={defaultFilamentReqs}
+          availableFilaments={subtypeAvailable}
+          overrides={{}}
+          onChange={mockOnChange}
+        />
+      );
+
+      const select = screen.getByRole('combobox');
+      const options = Array.from(select.querySelectorAll('option'));
+      const optionTexts = options.map((o) => o.textContent);
+
+      // Should show "PLA Basic" and "PLA Matte", not just "PLA"
+      expect(optionTexts.some((t) => t?.includes('PLA Basic'))).toBe(true);
+      expect(optionTexts.some((t) => t?.includes('PLA Matte'))).toBe(true);
+    });
+
+    it('falls back to type when tray_sub_brands is empty', () => {
+      const noSubtypeAvailable = [
+        { type: 'PLA', color: '#FF0000', tray_info_idx: 'GFA00', tray_sub_brands: '', extruder_id: null },
+      ];
+
+      render(
+        <FilamentOverride
+          filamentReqs={defaultFilamentReqs}
+          availableFilaments={noSubtypeAvailable}
+          overrides={{}}
+          onChange={mockOnChange}
+        />
+      );
+
+      const select = screen.getByRole('combobox');
+      const options = Array.from(select.querySelectorAll('option'));
+      // Non-default option should show "PLA" as the type fallback
+      const nonDefaultOptions = options.filter((o) => o.getAttribute('value') !== '');
+      expect(nonDefaultOptions[0].textContent).toContain('PLA');
+    });
+  });
+
   describe('nozzle filtering', () => {
     it('filters by extruder_id when nozzle_id is set', () => {
       const nozzleReqs: FilamentReqsData = {
@@ -164,8 +211,8 @@ describe('FilamentOverride', () => {
       };
 
       const dualExtruderAvailable = [
-        { type: 'PLA', color: '#FF0000', tray_info_idx: 'GFA00', extruder_id: 0 },
-        { type: 'PLA', color: '#00FF00', tray_info_idx: 'GFA01', extruder_id: 1 },
+        { type: 'PLA', color: '#FF0000', tray_info_idx: 'GFA00', tray_sub_brands: 'PLA Basic', extruder_id: 0 },
+        { type: 'PLA', color: '#00FF00', tray_info_idx: 'GFA01', tray_sub_brands: 'PLA Basic', extruder_id: 1 },
       ];
 
       render(
@@ -196,8 +243,8 @@ describe('FilamentOverride', () => {
       };
 
       const mixedExtruderAvailable = [
-        { type: 'PLA', color: '#FF0000', tray_info_idx: 'GFA00', extruder_id: 0 },
-        { type: 'PLA', color: '#00FF00', tray_info_idx: 'GFA01', extruder_id: 1 },
+        { type: 'PLA', color: '#FF0000', tray_info_idx: 'GFA00', tray_sub_brands: 'PLA Basic', extruder_id: 0 },
+        { type: 'PLA', color: '#00FF00', tray_info_idx: 'GFA01', tray_sub_brands: 'PLA Basic', extruder_id: 1 },
       ];
 
       render(
@@ -224,9 +271,9 @@ describe('FilamentOverride', () => {
       };
 
       const mixedAvailable = [
-        { type: 'PLA', color: '#FF0000', tray_info_idx: 'GFA00', extruder_id: 0 },
-        { type: 'PLA', color: '#00FF00', tray_info_idx: 'GFA01', extruder_id: null },
-        { type: 'PLA', color: '#FFFFFF', tray_info_idx: 'GFA02', extruder_id: 1 },
+        { type: 'PLA', color: '#FF0000', tray_info_idx: 'GFA00', tray_sub_brands: 'PLA Basic', extruder_id: 0 },
+        { type: 'PLA', color: '#00FF00', tray_info_idx: 'GFA01', tray_sub_brands: 'PLA Basic', extruder_id: null },
+        { type: 'PLA', color: '#FFFFFF', tray_info_idx: 'GFA02', tray_sub_brands: 'PLA Basic', extruder_id: 1 },
       ];
 
       render(

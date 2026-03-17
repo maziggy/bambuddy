@@ -90,6 +90,11 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Skip objects during print
 - AMS slot RFID re-read
 - AMS slot configuration (model-filtered presets, K profiles, color picker, pre-population for configured slots)
+- AMS info card (hover for serial number, firmware version) with custom friendly names that persist across printers
+- **AMS remote drying** — Start, monitor, and stop drying sessions for AMS 2 Pro and AMS-HT directly from the Printers page with filament-based temperature/duration presets; automatic PSU detection and HMS power error reporting
+- **Queue auto-drying** — Automatically dry filament between scheduled prints when humidity exceeds threshold; configurable presets per filament type, optional blocking mode
+- **Ambient drying** — Automatically keep filament dry on idle printers based on humidity, regardless of whether prints are queued
+- Configurable drying presets per filament type (temperature & duration for AMS 2 Pro and AMS-HT)
 - Dual external spool support for H2D (Ext-L / Ext-R)
 - HMS error monitoring with history and clear errors
 - Print success rates & trends
@@ -142,6 +147,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 ### 🔔 Notifications
 - WhatsApp, Telegram, Discord
 - Email, Pushover, ntfy
+- Home Assistant persistent notifications
 - Custom webhooks
 - Quiet hours & daily digest
 - Customizable message templates with per-filament usage details
@@ -149,6 +155,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Filament usage and progress in failed/cancelled print notifications
 - HMS error alerts (AMS, nozzle, etc.)
 - Build plate detection alerts
+- First layer complete alert (with camera snapshot)
 - Bed cooled alerts (configurable threshold)
 - Queue events (waiting, skipped, failed)
 
@@ -191,15 +198,17 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Debug logging toggle with live indicator
 - Live application log viewer with filtering
 - Support bundle generator with comprehensive diagnostics (privacy-filtered)
+- **In-app bug reporting** — Submit bug reports directly from the UI with optional screenshot (upload, paste, or drag & drop), automatic diagnostic log collection (30s debug capture with printer push), and system info. Reports create GitHub issues via a secure relay. Privacy-first: all logs are sanitized and sensitive data (IPs, serials, credentials) is never included.
 
 ### 🔒 Optional Authentication
 - Enable/disable authentication any time
-- Group-based permissions (50+ granular permissions)
+- Group-based permissions (80+ granular permissions)
 - Default groups: Administrators, Operators, Viewers
 - JWT tokens with secure password hashing
 - Comprehensive API protection (200+ endpoints secured)
 - User management (create, edit, delete, groups)
 - User activity tracking (who uploaded archives, library files, queued prints, started prints)
+- **Per-user Bambu Cloud accounts** — Each user has their own independent Cloud login for profiles
 - **Advanced Auth via Email** — SMTP integration for automated user onboarding and self-service password resets
 - Admin creates users with email — system sends secure random password automatically
 - Users can reset their own password from the login screen (no admin needed)
@@ -616,12 +625,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## 📄 License
 
-MIT License — see [LICENSE](LICENSE) for details.
+AGPL-3.0 License — see [LICENSE](LICENSE) for details.
 
 ---
 
 ## 🙏 Acknowledgments
 
+- [SpoolEase](https://github.com/yanshay/SpoolEase) by yanshay — early inspiration for NFC-based spool tracking and AMS inventory concepts
 - [Bambu Lab](https://bambulab.com/) for amazing printers
 - The reverse engineering community for protocol documentation
 - All testers and contributors

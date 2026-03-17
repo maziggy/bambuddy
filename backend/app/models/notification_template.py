@@ -104,6 +104,12 @@ DEFAULT_TEMPLATES = [
         "body_template": "{printer}: Bed cooled to {bed_temp}°C (threshold: {threshold}°C)",
     },
     {
+        "event_type": "first_layer_complete",
+        "name": "First Layer Complete",
+        "title_template": "First Layer Complete",
+        "body_template": "{printer}: {filename}\nLayer 1/{total_layers} done",
+    },
+    {
         "event_type": "test",
         "name": "Test Notification",
         "title_template": "Bambuddy Test",

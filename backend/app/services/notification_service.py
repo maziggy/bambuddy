@@ -5,7 +5,7 @@ import json
 import logging
 import re
 import smtplib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any
@@ -93,6 +93,21 @@ class NotificationService:
         result = re.sub(r"\{[a-z_]+\}", "", result)
         return result
 
+    async def _format_eta(self, seconds: int | None, db: AsyncSession) -> str:
+        """Format ETA as wall-clock time, respecting user's time_format setting."""
+        if not seconds or seconds <= 0:
+            return "Unknown"
+
+        from backend.app.api.routes.settings import get_setting
+
+        eta_time = datetime.now() + timedelta(seconds=seconds)
+        time_format = await get_setting(db, "time_format")
+
+        if time_format == "12h":
+            return eta_time.strftime("%I:%M %p").lstrip("0")
+        # Default to 24h for "24h", "system", or unset
+        return eta_time.strftime("%H:%M")
+
     def _format_duration(self, seconds: int | None) -> str:
         """Format duration in seconds to human-readable string."""
         if seconds is None:
@@ -162,6 +177,8 @@ class NotificationService:
                 return await self._send_discord(config, title, message)
             elif provider_type == "webhook":
                 return await self._send_webhook(config, title, message)
+            elif provider_type == "homeassistant":
+                return await self._send_homeassistant(config, title, message, db=db)
             else:
                 return False, f"Unknown provider type: {provider_type}"
         except Exception as e:
@@ -456,6 +473,59 @@ class NotificationService:
         except Exception as e:
             return False, f"Webhook error: {str(e)}"
 
+    async def _send_homeassistant(
+        self, config: dict, title: str, message: str, db: AsyncSession | None = None
+    ) -> tuple[bool, str]:
+        """Send notification via Home Assistant persistent notifications.
+
+        Uses the globally configured HA URL/token from settings,
+        and calls POST /api/services/persistent_notification/create.
+        """
+        # Get HA connection settings from global config
+        ha_url = ""
+        ha_token = ""
+
+        if db:
+            from backend.app.api.routes.settings import get_homeassistant_settings
+
+            try:
+                ha_settings = await get_homeassistant_settings(db)
+                ha_url = ha_settings.get("ha_url", "")
+                ha_token = ha_settings.get("ha_token", "")
+            except Exception as e:
+                logger.warning("Failed to read HA settings from database: %s", e)
+        else:
+            # Fallback: read directly from environment if no DB session
+            import os
+
+            ha_url = os.environ.get("HA_URL", "")
+            ha_token = os.environ.get("HA_TOKEN", "")
+
+        if not ha_url or not ha_token:
+            return False, (
+                "Home Assistant is not configured. Please set HA URL and token in Settings → Network → Home Assistant."
+            )
+
+        url = f"{ha_url.rstrip('/')}/api/services/persistent_notification/create"
+        headers = {
+            "Authorization": f"Bearer {ha_token}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "title": title,
+            "message": message,
+        }
+
+        client = await self._get_client()
+        response = await client.post(url, json=payload, headers=headers)
+
+        if response.status_code in (200, 201):
+            return True, "Notification sent via Home Assistant"
+        elif response.status_code == 401:
+            return False, "Home Assistant authentication failed - check your token"
+        else:
+            return False, f"HTTP {response.status_code}: {response.text[:200]}"
+
     async def _send_to_provider(
         self,
         provider: NotificationProvider,
@@ -487,6 +557,8 @@ class NotificationService:
                 return await self._send_discord(config, title, message, image_data=image_data)
             elif provider.provider_type == "webhook":
                 return await self._send_webhook(config, title, message)
+            elif provider.provider_type == "homeassistant":
+                return await self._send_homeassistant(config, title, message, db=db)
             else:
                 return False, f"Unknown provider type: {provider.provider_type}"
         except Exception as e:
@@ -678,11 +750,13 @@ class NotificationService:
                 logger.debug("Using mc_remaining_time from raw_data: %s", estimated_time)
 
         time_str = self._format_duration(estimated_time)
+        eta_str = await self._format_eta(estimated_time, db)
 
         variables = {
             "printer": printer_name,
             "filename": filename,
             "estimated_time": time_str,
+            "eta": eta_str,
         }
 
         # Extract image data for providers that support attachments (e.g. Pushover)
@@ -805,11 +879,14 @@ class NotificationService:
         if not providers:
             return
 
+        eta_str = await self._format_eta(remaining_time, db)
+
         variables = {
             "printer": printer_name,
             "filename": self._clean_filename(filename),
             "progress": str(progress),
             "remaining_time": self._format_duration(remaining_time) if remaining_time else "Unknown",
+            "eta": eta_str,
         }
 
         title, message = await self._build_message_from_template(db, "print_progress", variables)
@@ -1065,6 +1142,31 @@ class NotificationService:
         title, message = await self._build_message_from_template(db, "bed_cooled", variables)
         await self._send_to_providers(providers, title, message, db, "bed_cooled", printer_id, printer_name)
 
+    async def on_first_layer_complete(
+        self,
+        printer_id: int,
+        printer_name: str,
+        filename: str,
+        total_layers: int,
+        db: AsyncSession,
+        image_data: bytes | None = None,
+    ):
+        """Handle first layer complete event."""
+        providers = await self._get_providers_for_event(db, "on_first_layer_complete", printer_id)
+        if not providers:
+            return
+
+        variables = {
+            "printer": printer_name,
+            "filename": self._clean_filename(filename),
+            "total_layers": str(total_layers),
+        }
+
+        title, message = await self._build_message_from_template(db, "first_layer_complete", variables)
+        await self._send_to_providers(
+            providers, title, message, db, "first_layer_complete", printer_id, printer_name, image_data=image_data
+        )
+
     def clear_template_cache(self):
         """Clear the template cache. Call this when templates are updated."""
         self._template_cache.clear()
@@ -1128,10 +1230,13 @@ class NotificationService:
         if not providers:
             return
 
+        eta_str = await self._format_eta(estimated_time, db)
+
         variables = {
             "job_name": job_name,
             "printer": printer_name,
             "estimated_time": self._format_duration(estimated_time),
+            "eta": eta_str,
         }
 
         title, message = await self._build_message_from_template(db, "queue_job_started", variables)

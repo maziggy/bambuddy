@@ -1550,10 +1550,11 @@ class TestTrayNowDualNozzleH2DSetup:
         assert mqtt_client._is_dual_nozzle is True
 
     def test_ams_extruder_map_parsed_from_info_field(self, mqtt_client):
-        """AMS 0 info=2003 → right (ext 0), AMS 128 info=2104 → left (ext 1)."""
+        """AMS info field is hex: 0x2003 → ext 0 (right), 0x2104 → ext 1 (left)."""
+        # MQTT sends info as string; BambuStudio parses as hex via stoull(str, 16)
         ams_units = [
-            {"id": 0, "info": 2003, "tray": [{"id": i} for i in range(4)]},
-            {"id": 128, "info": 2104, "tray": [{"id": 0}]},
+            {"id": 0, "info": "2003", "tray": [{"id": i} for i in range(4)]},
+            {"id": 128, "info": "2104", "tray": [{"id": 0}]},
         ]
         payload = {
             "print": {
@@ -1566,8 +1567,80 @@ class TestTrayNowDualNozzleH2DSetup:
         }
         mqtt_client._process_message(payload)
 
-        # info=2003: bit8 = (2003>>8)&1 = 7&1 = 1 → extruder = 1-1 = 0 (right)
-        # info=2104: bit8 = (2104>>8)&1 = 8&1 = 0 → extruder = 1-0 = 1 (left)
+        # 0x2003: bits 8-11 = (0x2003 >> 8) & 0xF = 0x20 & 0xF = 0 → extruder 0 (right)
+        # 0x2104: bits 8-11 = (0x2104 >> 8) & 0xF = 0x21 & 0xF = 1 → extruder 1 (left)
+        assert mqtt_client.state.ams_extruder_map == {"0": 0, "128": 1}
+
+    def test_ams_extruder_map_real_h2d_values(self, mqtt_client):
+        """Real H2D MQTT values: AMS2 Pro on right, AMS-HT on left."""
+        ams_units = [
+            {"id": 0, "info": "10001003", "tray": [{"id": i} for i in range(4)]},
+            {"id": 128, "info": "10002104", "tray": [{"id": 0}]},
+        ]
+        payload = {
+            "print": {
+                "ams": {
+                    "ams": ams_units,
+                    "tray_now": "255",
+                    "tray_exist_bits": "1000a",
+                },
+            }
+        }
+        mqtt_client._process_message(payload)
+
+        # 0x10001003: bits 8-11 = (0x10001003 >> 8) & 0xF = 0x10 & 0xF = 0 → right
+        # 0x10002104: bits 8-11 = (0x10002104 >> 8) & 0xF = 0x21 & 0xF = 1 → left
+        assert mqtt_client.state.ams_extruder_map == {"0": 0, "128": 1}
+
+    def test_ams_extruder_map_skips_uninitialized(self, mqtt_client):
+        """extruder_id 0xE means uninitialized AMS — should be skipped."""
+        ams_units = [
+            {"id": 0, "info": "e03", "tray": [{"id": i} for i in range(4)]},
+        ]
+        payload = {
+            "print": {
+                "ams": {
+                    "ams": ams_units,
+                    "tray_now": "255",
+                    "tray_exist_bits": "f",
+                },
+            }
+        }
+        mqtt_client._process_message(payload)
+        assert mqtt_client.state.ams_extruder_map == {}
+
+    def test_ams_extruder_map_partial_update_preserves_entries(self, mqtt_client):
+        """Partial MQTT update with one AMS should not overwrite other entries."""
+        # First: full update with both AMS units
+        full_payload = {
+            "print": {
+                "ams": {
+                    "ams": [
+                        {"id": 0, "info": "2003", "tray": [{"id": i} for i in range(4)]},
+                        {"id": 128, "info": "2104", "tray": [{"id": 0}]},
+                    ],
+                    "tray_now": "255",
+                    "tray_exist_bits": "1000f",
+                },
+            }
+        }
+        mqtt_client._process_message(full_payload)
+        assert mqtt_client.state.ams_extruder_map == {"0": 0, "128": 1}
+
+        # Then: partial update with only AMS 0 (no info field this time)
+        partial_payload = {
+            "print": {
+                "ams": {
+                    "ams": [
+                        {"id": 0, "tray": [{"id": 0, "remain": 50}]},
+                    ],
+                    "tray_now": "0",
+                    "tray_exist_bits": "1000f",
+                },
+            }
+        }
+        mqtt_client._process_message(partial_payload)
+        # Both entries should still be present
         assert mqtt_client.state.ams_extruder_map == {"0": 0, "128": 1}
 
     def test_dual_nozzle_detection_before_ams_in_same_message(self, mqtt_client):
@@ -1588,7 +1661,7 @@ class TestTrayNowDualNozzleH2DSetup:
                 },
                 "ams": {
                     "ams": [
-                        {"id": 0, "info": 2003, "tray": [{"id": i} for i in range(4)]},
+                        {"id": 0, "info": "2003", "tray": [{"id": i} for i in range(4)]},
                     ],
                     "tray_now": "2",
                     "tray_exist_bits": "f",
@@ -1639,8 +1712,8 @@ class _H2DFixtureMixin:
                     },
                     "ams": {
                         "ams": [
-                            {"id": 0, "info": 2003, "tray": [{"id": i} for i in range(4)]},
-                            {"id": 128, "info": 2104, "tray": [{"id": 0}]},
+                            {"id": 0, "info": "2003", "tray": [{"id": i} for i in range(4)]},
+                            {"id": 128, "info": "2104", "tray": [{"id": 0}]},
                         ],
                         "tray_now": "255",
                         "tray_exist_bits": "1000f",

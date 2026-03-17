@@ -14,6 +14,9 @@ class DeviceRegisterRequest(BaseModel):
     has_scale: bool = True
     tare_offset: int = 0
     calibration_factor: float = 1.0
+    nfc_reader_type: str | None = None
+    nfc_connection: str | None = None
+    has_backlight: bool = False
 
 
 class DeviceResponse(BaseModel):
@@ -26,6 +29,12 @@ class DeviceResponse(BaseModel):
     has_scale: bool
     tare_offset: int
     calibration_factor: float
+    nfc_reader_type: str | None = None
+    nfc_connection: str | None = None
+    display_brightness: int = 100
+    display_blank_timeout: int = 0
+    has_backlight: bool = False
+    last_calibrated_at: datetime | None = None
     last_seen: datetime | None = None
     pending_command: str | None = None
     nfc_ok: bool
@@ -45,12 +54,17 @@ class HeartbeatRequest(BaseModel):
     uptime_s: int = 0
     firmware_version: str | None = None
     ip_address: str | None = None
+    nfc_reader_type: str | None = None
+    nfc_connection: str | None = None
 
 
 class HeartbeatResponse(BaseModel):
     pending_command: str | None = None
+    pending_write_payload: dict | None = None
     tare_offset: int
     calibration_factor: float
+    display_brightness: int = 100
+    display_blank_timeout: int = 0
 
 
 # --- NFC schemas ---
@@ -92,11 +106,37 @@ class TareRequest(BaseModel):
     pass
 
 
+class SetTareRequest(BaseModel):
+    tare_offset: int
+
+
 class SetCalibrationFactorRequest(BaseModel):
     known_weight_grams: float = Field(..., gt=0)
     raw_adc: int
+    tare_raw_adc: int | None = None
 
 
 class CalibrationResponse(BaseModel):
     tare_offset: int
     calibration_factor: float
+
+
+# --- Display schemas ---
+
+
+class WriteTagRequest(BaseModel):
+    device_id: str
+    spool_id: int
+
+
+class WriteTagResultRequest(BaseModel):
+    device_id: str
+    spool_id: int
+    tag_uid: str
+    success: bool
+    message: str | None = None
+
+
+class DisplaySettingsRequest(BaseModel):
+    brightness: int = Field(ge=0, le=100)
+    blank_timeout: int = Field(ge=0)

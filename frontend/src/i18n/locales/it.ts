@@ -2669,6 +2669,8 @@ export default {
       title: 'Tracciamento costi',
       filamentCost: 'Costo filamento',
       energy: 'Energia',
+      totalCost: 'Costo totale',
+      includesBom: 'incl. distinta materiali',
       budget: 'Budget',
       remaining: 'Rimanente',
     },

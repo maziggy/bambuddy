@@ -636,6 +636,21 @@ export function ProjectDetailPage() {
                   </p>
                 </div>
               )}
+              {(() => {
+                const totalCost = stats.estimated_cost + stats.total_energy_cost + stats.bom_cost;
+                if (totalCost <= 0) return null;
+                return (
+                  <div>
+                    <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.cost.totalCost')}</p>
+                    <p className="text-lg font-semibold text-bambu-green">
+                      {currency}{totalCost.toFixed(2)}
+                    </p>
+                    {stats.bom_cost > 0 && (
+                      <p className="text-xs text-bambu-gray/70">{t('projectDetail.cost.includesBom')}</p>
+                    )}
+                  </div>
+                );
+              })()}
               {project.budget && (
                 <>
                   <div>
@@ -1132,11 +1147,11 @@ export function ProjectDetailPage() {
                 </div>
               ))}
               {/* BOM Total */}
-              {bomItems.some(item => item.unit_price !== null) && (
+              {stats && stats.bom_cost > 0 && (
                 <div className="pt-2 mt-2 border-t border-bambu-dark-tertiary flex justify-between text-sm">
                   <span className="text-bambu-gray">{t('projectDetail.bom.totalCost')}</span>
                   <span className="text-white font-medium">
-                    {currency}{bomItems.reduce((sum, item) => sum + (item.unit_price || 0) * item.quantity_needed, 0).toFixed(2)}
+                    {currency}{stats.bom_cost.toFixed(2)}
                   </span>
                 </div>
               )}

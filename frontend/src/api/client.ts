@@ -549,6 +549,7 @@ export interface ProjectStats {
   remaining_parts: number | null;  // Remaining parts
   bom_total_items: number;
   bom_completed_items: number;
+  bom_cost: number;
 }
 
 export interface ProjectChildPreview {

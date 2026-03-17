@@ -2683,6 +2683,8 @@ export default {
       title: 'コスト追跡',
       filamentCost: 'フィラメント',
       energy: 'エネルギー',
+      totalCost: '合計コスト',
+      includesBom: 'BOM含む',
       budget: '予算',
       remaining: '残り',
     },

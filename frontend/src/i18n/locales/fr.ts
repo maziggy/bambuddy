@@ -2670,6 +2670,8 @@ export default {
       title: 'Suivi des coûts',
       filamentCost: 'Coût Filament',
       energy: 'Énergie',
+      totalCost: 'Coût Total',
+      includesBom: 'BOM incluse',
       budget: 'Budget',
       remaining: 'Restant',
     },

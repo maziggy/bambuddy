@@ -2669,6 +2669,8 @@ export default {
       title: '成本追踪',
       filamentCost: '耗材成本',
       energy: '能源',
+      totalCost: '总成本',
+      includesBom: '含物料清单',
       budget: '预算',
       remaining: '剩余',
     },

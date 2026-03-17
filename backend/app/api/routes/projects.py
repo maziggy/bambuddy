@@ -127,6 +127,7 @@ async def compute_project_stats(
             func.sum(case((ProjectBOMItem.quantity_acquired >= ProjectBOMItem.quantity_needed, 1), else_=0)).label(
                 "completed"
             ),
+            func.coalesce(func.sum(ProjectBOMItem.unit_price * ProjectBOMItem.quantity_needed), 0).label("bom_cost"),
         ).where(ProjectBOMItem.project_id == project_id)
     )
     bom_stats = bom_result.first()
@@ -149,6 +150,7 @@ async def compute_project_stats(
         remaining_parts=remaining_parts,
         bom_total_items=bom_stats.total or 0,
         bom_completed_items=int(bom_stats.completed or 0),
+        bom_cost=round(float(bom_stats.bom_cost or 0), 2),
     )
 
 

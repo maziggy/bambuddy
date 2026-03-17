@@ -548,7 +548,7 @@ async def send_user_print_notification(
     # Add common variables (username, timestamp, app_name) merged with caller-supplied variables
     all_variables = {
         "username": username,
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "app_name": "Bambuddy",
         **variables,
     }

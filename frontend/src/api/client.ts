@@ -1776,6 +1776,29 @@ export interface NotificationLogStats {
   by_provider: Record<string, number>;
 }
 
+// FilaMan types
+export interface FilaManStatus {
+  enabled: boolean;
+  connected: boolean;
+  url: string | null;
+}
+
+export interface FilaManSyncResult {
+  success: boolean;
+  synced_count: number;
+  skipped_count: number;
+  errors: string[];
+}
+
+export interface FilaManUnlinkedSpool {
+  id: number;
+  filament_name: string | null;
+  filament_material: string | null;
+  filament_color_hex: string | null;
+  remaining_weight: number | null;
+  location: string | null;
+}
+
 // Spoolman types
 export interface SpoolmanStatus {
   enabled: boolean;
@@ -3581,6 +3604,37 @@ export const api = {
     request<{ spoolman_enabled: string; spoolman_url: string; spoolman_sync_mode: string; spoolman_disable_weight_sync: string; spoolman_report_partial_usage: string; }>('/settings/spoolman', {
       method: 'PUT',
       body: JSON.stringify(data),
+    }),
+
+  // FilaMan Integration
+  getFilaManStatus: () => request<FilaManStatus>('/filaman/status'),
+  connectFilaMan: (url: string, apiKey: string) =>
+    request<{ success: boolean; message: string }>('/filaman/connect', {
+      method: 'POST',
+      body: JSON.stringify({ url, api_key: apiKey }),
+    }),
+  disconnectFilaMan: () =>
+    request<{ success: boolean; message: string }>('/filaman/disconnect', {
+      method: 'POST',
+    }),
+  getFilaManSpools: () =>
+    request<{ spools: unknown[] }>('/filaman/spools'),
+  getFilaManUnlinkedSpools: () =>
+    request<FilaManUnlinkedSpool[]>('/filaman/spools/unlinked'),
+  getFilaManLinkedSpools: () =>
+    request<{ linked: Record<string, unknown> }>('/filaman/spools/linked'),
+  linkFilaManSpool: (spoolId: number, trayUuid: string) =>
+    request<{ success: boolean; message: string }>(`/filaman/spools/${spoolId}/link`, {
+      method: 'POST',
+      body: JSON.stringify({ tray_uuid: trayUuid }),
+    }),
+  syncFilaManPrinter: (printerId: number) =>
+    request<FilaManSyncResult>(`/filaman/sync/${printerId}`, {
+      method: 'POST',
+    }),
+  syncFilaManAll: () =>
+    request<FilaManSyncResult>('/filaman/sync-all', {
+      method: 'POST',
     }),
 
   // Inventory

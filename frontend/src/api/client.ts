@@ -860,6 +860,8 @@ export interface AppSettings {
   bed_cooled_threshold: number;
   // Inventory low stock threshold
   low_stock_threshold: number;
+  // User email notifications toggle
+  user_notifications_enabled: boolean;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
@@ -2051,7 +2053,7 @@ export type Permission =
   | 'camera:view'
   | 'maintenance:read' | 'maintenance:create' | 'maintenance:update' | 'maintenance:delete'
   | 'kprofiles:read' | 'kprofiles:create' | 'kprofiles:update' | 'kprofiles:delete'
-  | 'notifications:read' | 'notifications:create' | 'notifications:update' | 'notifications:delete'
+  | 'notifications:read' | 'notifications:create' | 'notifications:update' | 'notifications:delete' | 'notifications:user_email'
   | 'notification_templates:read' | 'notification_templates:update'
   | 'external_links:read' | 'external_links:create' | 'external_links:update' | 'external_links:delete'
   | 'discovery:scan'
@@ -2113,6 +2115,14 @@ export interface PermissionCategory {
 export interface PermissionsListResponse {
   categories: PermissionCategory[];
   all_permissions: Permission[];
+}
+
+// User email notification preferences
+export interface UserEmailPreferences {
+  notify_print_start: boolean;
+  notify_print_complete: boolean;
+  notify_print_failed: boolean;
+  notify_print_stopped: boolean;
 }
 
 // Auth types
@@ -2292,6 +2302,15 @@ export const api = {
     request<{ message: string }>('/users/me/change-password', {
       method: 'POST',
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
+
+  // User Email Notifications
+  getUserEmailPreferences: () =>
+    request<UserEmailPreferences>('/user-notifications/preferences'),
+  updateUserEmailPreferences: (data: UserEmailPreferences) =>
+    request<UserEmailPreferences>('/user-notifications/preferences', {
+      method: 'PUT',
+      body: JSON.stringify(data),
     }),
 
   // Groups

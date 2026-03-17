@@ -1179,6 +1179,120 @@ class NotificationService:
         """Clear the template cache. Call this when templates are updated."""
         self._template_cache.clear()
 
+    async def send_user_print_email(
+        self,
+        event_type: str,
+        created_by_id: int | None,
+        printer_name: str,
+        filename: str,
+        db: AsyncSession,
+    ) -> None:
+        """Send a print event email notification to the user who submitted the job.
+
+        Args:
+            event_type: 'user_print_start', 'user_print_complete', 'user_print_failed', or 'user_print_stopped'
+            created_by_id: User ID who submitted the print job (from archive)
+            printer_name: Name of the printer
+            filename: Raw filename or subtask name
+            db: Database session
+        """
+        if created_by_id is None:
+            logger.debug("[EMAIL] Skipping user print email (%s): no created_by_id", event_type)
+            return
+
+        try:
+            # Check if advanced auth is enabled - required for user email notifications
+            from backend.app.models.settings import Settings
+
+            result = await db.execute(select(Settings).where(Settings.key == "advanced_auth_enabled"))
+            setting = result.scalar_one_or_none()
+            if not setting or setting.value.lower() != "true":
+                logger.debug("[EMAIL] Skipping user print email (%s): advanced_auth not enabled", event_type)
+                return
+
+            # Check if user notifications are enabled (admin-controlled toggle)
+            notif_enabled_result = await db.execute(
+                select(Settings).where(Settings.key == "user_notifications_enabled")
+            )
+            notif_enabled_setting = notif_enabled_result.scalar_one_or_none()
+            if notif_enabled_setting and notif_enabled_setting.value.lower() == "false":
+                logger.debug("[EMAIL] Skipping user print email (%s): user_notifications_enabled is false", event_type)
+                return
+
+            # Check SMTP settings are configured - required for sending emails
+            from backend.app.services.email_service import get_smtp_settings, send_user_print_notification
+
+            smtp_settings = await get_smtp_settings(db)
+            if not smtp_settings:
+                logger.debug("[EMAIL] Skipping user print email (%s): SMTP settings not configured", event_type)
+                return
+
+            # Load user preferences
+            from backend.app.models.user import User
+            from backend.app.models.user_email_pref import UserEmailPreference
+
+            user_result = await db.execute(select(User).where(User.id == created_by_id))
+            user = user_result.scalar_one_or_none()
+            if user is None or not user.email:
+                logger.debug(
+                    "[EMAIL] Skipping user print email (%s): user %s not found or has no email address",
+                    event_type,
+                    created_by_id,
+                )
+                return
+
+            # Load user's notification preferences
+            pref_result = await db.execute(
+                select(UserEmailPreference).where(UserEmailPreference.user_id == created_by_id)
+            )
+            pref = pref_result.scalar_one_or_none()
+
+            # Determine if this event type should be sent
+            should_send = False
+            if event_type == "user_print_start":
+                should_send = pref is None or pref.notify_print_start
+            elif event_type == "user_print_complete":
+                should_send = pref is None or pref.notify_print_complete
+            elif event_type == "user_print_failed":
+                should_send = pref is None or pref.notify_print_failed
+            elif event_type == "user_print_stopped":
+                should_send = pref is None or pref.notify_print_stopped
+
+            if not should_send:
+                logger.debug(
+                    "[EMAIL] Skipping user print email (%s): user %s has notifications disabled for this event",
+                    event_type,
+                    created_by_id,
+                )
+                return
+
+            logger.info(
+                "[EMAIL] Sending user print email: event=%s, user=%s (%s), printer=%s, file=%s",
+                event_type,
+                user.username,
+                user.email,
+                printer_name,
+                filename,
+            )
+
+            # Build variables
+            variables = {
+                "printer": printer_name,
+                "filename": self._clean_filename(filename),
+            }
+
+            # Send the email
+            await send_user_print_notification(
+                db=db,
+                event_type=event_type,
+                user_email=user.email,
+                username=user.username,
+                variables=variables,
+            )
+            logger.info("[EMAIL] User print email sent: event=%s → %s", event_type, user.email)
+        except Exception as e:
+            logger.warning("Failed to send user print email notification: %s", e, exc_info=True)
+
     # ==================== Queue Notifications ====================
 
     async def on_queue_job_added(

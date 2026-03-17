@@ -178,6 +178,12 @@ class AppSettings(BaseModel):
         description="Low stock threshold percentage (%) for inventory filtering and display",
     )
 
+    # User email notifications (requires Advanced Authentication)
+    user_notifications_enabled: bool = Field(
+        default=True,
+        description="Enable user email notifications for print job events (requires Advanced Authentication)",
+    )
+
 
 class AppSettingsUpdate(BaseModel):
     """Schema for updating settings (all fields optional)."""
@@ -245,3 +251,4 @@ class AppSettingsUpdate(BaseModel):
     prometheus_enabled: bool | None = None
     prometheus_token: str | None = None
     low_stock_threshold: float | None = Field(default=None, ge=0.1, le=99.9)
+    user_notifications_enabled: bool | None = None

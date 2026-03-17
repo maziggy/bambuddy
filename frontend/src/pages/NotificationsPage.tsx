@@ -29,6 +29,12 @@ export function NotificationsPage() {
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
+  const { data: settings, isLoading: isSettingsLoading } = useQuery({
+    queryKey: ['settings'],
+    queryFn: api.getSettings,
+    staleTime: 5 * 60 * 1000,
+  });
+  
   // Fetch current preferences
   const { data: preferences, isLoading } = useQuery({
     queryKey: ['user-email-preferences'],
@@ -37,7 +43,7 @@ export function NotificationsPage() {
 
   // Redirect to settings if Advanced Auth is disabled
   useEffect(() => {
-    if (advancedAuthStatus && !advancedAuthStatus.advanced_auth_enabled) {
+    if ((advancedAuthStatus && !advancedAuthStatus.advanced_auth_enabled) || (settings && !settings.user_notifications_enabled)) {
       navigate('/settings', { replace: true });
     }
   }, [advancedAuthStatus, navigate]);
@@ -80,7 +86,7 @@ export function NotificationsPage() {
     setIsDirty(true);
   };
 
-  if (isLoading || isAdvancedAuthLoading) {
+  if (isLoading || isAdvancedAuthLoading || isSettingsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-8 h-8 animate-spin text-bambu-green" />

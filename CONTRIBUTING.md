@@ -102,8 +102,10 @@ docker compose -f docker-compose.test.yml run --rm frontend-test
 
 ## Making Changes
 
-1. **Create a branch** for your changes:
+1. **Create a branch** from `dev` for your changes:
    ```bash
+   git checkout dev
+   git pull upstream dev
    git checkout -b feature/your-feature-name
    # or
    git checkout -b fix/your-bug-fix
@@ -316,6 +318,7 @@ All checks must pass before merging. Run `./test_all.sh` locally before pushing 
    ```
 
 2. **Create a Pull Request** on GitHub:
+   - **Always target the `dev` branch** as the base branch (not `main`)
    - Use a clear, descriptive title
    - Fill out the PR template completely
    - Link any related issues

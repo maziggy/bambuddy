@@ -284,6 +284,7 @@ export default {
       failedToPausePrint: 'Échec de la mise en pause',
       failedToResumePrint: 'Échec de la reprise',
       failedToControlChamberLight: 'Échec du contrôle de la lumière',
+      failedToSetSpeed: 'Échec du réglage de la vitesse',
       failedToUpdateSetting: 'Échec de mise à jour du paramètre',
       failedToSkipObjects: 'Échec du saut d\'objets',
       failedToRereadRfid: 'Échec lecture RFID',
@@ -449,6 +450,14 @@ export default {
       labelPlaceholder: 'Étiquette...',
       clickToEdit: '{{label}} - Modifier',
       clickToAddLabel: 'Ajouter une étiquette',
+    },
+    // Speed
+    speed: {
+      title: 'Vitesse d\'impression',
+      silent: 'Silencieux (50%)',
+      standard: 'Standard (100%)',
+      sport: 'Sport (124%)',
+      ludicrous: 'Ludicrous (166%)',
     },
     // Fans
     fans: {

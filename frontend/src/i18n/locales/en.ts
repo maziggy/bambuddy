@@ -284,6 +284,7 @@ export default {
       failedToPausePrint: 'Failed to pause print',
       failedToResumePrint: 'Failed to resume print',
       failedToControlChamberLight: 'Failed to control chamber light',
+      failedToSetSpeed: 'Failed to set print speed',
       failedToUpdateSetting: 'Failed to update setting',
       failedToSkipObjects: 'Failed to skip objects',
       failedToRereadRfid: 'Failed to re-read RFID',
@@ -449,6 +450,14 @@ export default {
       labelPlaceholder: 'Label...',
       clickToEdit: '{{label}} - Click to edit',
       clickToAddLabel: 'Click to add label',
+    },
+    // Speed
+    speed: {
+      title: 'Print Speed',
+      silent: 'Silent (50%)',
+      standard: 'Standard (100%)',
+      sport: 'Sport (124%)',
+      ludicrous: 'Ludicrous (166%)',
     },
     // Fans
     fans: {

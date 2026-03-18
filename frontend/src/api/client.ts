@@ -2411,6 +2411,12 @@ export const api = {
   getCurrentPrintUser: (printerId: number) =>
     request<{ user_id?: number; username?: string }>(`/printers/${printerId}/current-print-user`),
 
+  // Print Speed Control
+  setPrintSpeed: (printerId: number, mode: number) =>
+    request<{ success: boolean; message: string }>(`/printers/${printerId}/print-speed?mode=${mode}`, {
+      method: 'POST',
+    }),
+
   // Chamber Light Control
   setChamberLight: (printerId: number, on: boolean) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/chamber-light?on=${on}`, {

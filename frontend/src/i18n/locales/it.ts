@@ -284,6 +284,7 @@ export default {
       failedToPausePrint: 'Impossibile mettere in pausa stampa',
       failedToResumePrint: 'Impossibile riprendere stampa',
       failedToControlChamberLight: 'Impossibile controllare luce camera',
+      failedToSetSpeed: 'Impossibile impostare la velocità di stampa',
       failedToUpdateSetting: 'Impossibile aggiornare impostazione',
       failedToSkipObjects: 'Impossibile saltare oggetti',
       failedToRereadRfid: 'Impossibile rileggere RFID',
@@ -449,6 +450,14 @@ export default {
       labelPlaceholder: 'Etichetta...',
       clickToEdit: '{{label}} - Clicca per modificare',
       clickToAddLabel: 'Clicca per aggiungere etichetta',
+    },
+    // Speed
+    speed: {
+      title: 'Velocità di stampa',
+      silent: 'Silenzioso (50%)',
+      standard: 'Standard (100%)',
+      sport: 'Sport (124%)',
+      ludicrous: 'Ludicrous (166%)',
     },
     // Fans
     fans: {

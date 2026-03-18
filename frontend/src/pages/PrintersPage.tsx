@@ -46,6 +46,7 @@ import {
   Info,
   Cable,
   Flame,
+  Gauge,
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
@@ -1580,6 +1581,7 @@ function PrinterCard({
   const [showHMSModal, setShowHMSModal] = useState(false);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [showPauseConfirm, setShowPauseConfirm] = useState(false);
+  const [showSpeedMenu, setShowSpeedMenu] = useState<number | null>(null);
   const [showResumeConfirm, setShowResumeConfirm] = useState(false);
   const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
   const [showUploadForPrint, setShowUploadForPrint] = useState(false);
@@ -1989,6 +1991,26 @@ function PrinterCard({
         queryClient.setQueryData(['printerStatus', printer.id], context.previousStatus);
       }
       showToast(error.message || t('printers.toast.failedToControlChamberLight'), 'error');
+    },
+  });
+
+  // Print speed mutation with optimistic update
+  const printSpeedMutation = useMutation({
+    mutationFn: (mode: number) => api.setPrintSpeed(printer.id, mode),
+    onMutate: async (mode) => {
+      await queryClient.cancelQueries({ queryKey: ['printerStatus', printer.id] });
+      const previousStatus = queryClient.getQueryData(['printerStatus', printer.id]);
+      queryClient.setQueryData(['printerStatus', printer.id], (old: typeof status) => ({
+        ...old,
+        speed_level: mode,
+      }));
+      return { previousStatus };
+    },
+    onError: (error: Error, _, context) => {
+      if (context?.previousStatus) {
+        queryClient.setQueryData(['printerStatus', printer.id], context.previousStatus);
+      }
+      showToast(error.message || t('printers.toast.failedToSetSpeed'), 'error');
     },
   });
 
@@ -2973,6 +2995,66 @@ function PrinterCard({
                           {chamberFan ?? 0}%
                         </span>
                       </div>
+
+                      {/* Separator */}
+                      <div className="w-px h-5 bg-bambu-gray/30" />
+
+                      {/* Print Speed */}
+                      {(() => {
+                        const speedLabels: Record<number, string> = { 1: '50%', 2: '100%', 3: '124%', 4: '166%' };
+                        const speedPct = speedLabels[status.speed_level] || '100%';
+                        return (
+                          <div className="relative">
+                            <button
+                              onClick={() => setShowSpeedMenu(showSpeedMenu === printer.id ? null : printer.id)}
+                              disabled={!isPrinting || !hasPermission('printers:control')}
+                              className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors ${
+                                isPrinting
+                                  ? 'bg-amber-500/10 hover:bg-amber-500/20'
+                                  : 'bg-bambu-dark cursor-not-allowed'
+                              }`}
+                              title={isPrinting ? t('printers.speed.title') : undefined}
+                            >
+                              <Gauge className={`w-3.5 h-3.5 ${
+                                isPrinting ? 'text-amber-400' : 'text-bambu-gray/50'
+                              }`} />
+                              <span className={`text-[10px] ${
+                                isPrinting ? 'text-amber-400' : 'text-bambu-gray/50'
+                              }`}>
+                                {speedPct}
+                              </span>
+                            </button>
+                            {showSpeedMenu === printer.id && (
+                              <>
+                                <div className="fixed inset-0 z-40" onClick={() => setShowSpeedMenu(null)} />
+                                <div className="absolute bottom-full left-0 mb-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg py-1 min-w-[130px]">
+                                  {([
+                                    { mode: 1, label: t('printers.speed.silent') },
+                                    { mode: 2, label: t('printers.speed.standard') },
+                                    { mode: 3, label: t('printers.speed.sport') },
+                                    { mode: 4, label: t('printers.speed.ludicrous') },
+                                  ] as const).map(({ mode, label }) => (
+                                    <button
+                                      key={mode}
+                                      onClick={() => {
+                                        printSpeedMutation.mutate(mode);
+                                        setShowSpeedMenu(null);
+                                      }}
+                                      className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
+                                        status.speed_level === mode
+                                          ? 'text-bambu-green bg-bambu-green/10'
+                                          : 'text-white hover:bg-bambu-dark-tertiary'
+                                      }`}
+                                    >
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                     </div>
 

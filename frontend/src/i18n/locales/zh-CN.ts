@@ -284,6 +284,7 @@ export default {
       failedToPausePrint: '暂停打印失败',
       failedToResumePrint: '继续打印失败',
       failedToControlChamberLight: '控制腔室灯失败',
+      failedToSetSpeed: '设置打印速度失败',
       failedToUpdateSetting: '更新设置失败',
       failedToSkipObjects: '跳过对象失败',
       failedToRereadRfid: '重新读取 RFID 失败',
@@ -449,6 +450,14 @@ export default {
       labelPlaceholder: '标签...',
       clickToEdit: '{{label}} - 点击编辑',
       clickToAddLabel: '点击添加标签',
+    },
+    // Speed
+    speed: {
+      title: '打印速度',
+      silent: '静音 (50%)',
+      standard: '标准 (100%)',
+      sport: '运动 (124%)',
+      ludicrous: '疯狂 (166%)',
     },
     // Fans
     fans: {

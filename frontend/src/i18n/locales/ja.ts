@@ -283,6 +283,7 @@ export default {
       failedToPausePrint: '印刷の一時停止に失敗しました',
       failedToResumePrint: '印刷の再開に失敗しました',
       failedToControlChamberLight: 'チャンバーライトの制御に失敗しました',
+      failedToSetSpeed: '印刷速度の設定に失敗しました',
       failedToUpdateSetting: '設定の更新に失敗しました',
       failedToSkipObjects: 'オブジェクトのスキップに失敗しました',
       failedToRereadRfid: 'RFIDの再読み取りに失敗しました',
@@ -448,6 +449,14 @@ export default {
       labelPlaceholder: 'ラベル...',
       clickToEdit: '{{label}} - クリックして編集',
       clickToAddLabel: 'クリックしてラベルを追加',
+    },
+    // Speed
+    speed: {
+      title: '印刷速度',
+      silent: 'サイレント (50%)',
+      standard: 'スタンダード (100%)',
+      sport: 'スポーツ (124%)',
+      ludicrous: 'ルディクラス (166%)',
     },
     // Fans
     fans: {

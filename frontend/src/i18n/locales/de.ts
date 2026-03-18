@@ -284,6 +284,7 @@ export default {
       failedToPausePrint: 'Druck konnte nicht pausiert werden',
       failedToResumePrint: 'Druck konnte nicht fortgesetzt werden',
       failedToControlChamberLight: 'Kammerbeleuchtung konnte nicht gesteuert werden',
+      failedToSetSpeed: 'Druckgeschwindigkeit konnte nicht eingestellt werden',
       failedToUpdateSetting: 'Einstellung konnte nicht aktualisiert werden',
       failedToSkipObjects: 'Objekte konnten nicht übersprungen werden',
       failedToRereadRfid: 'RFID konnte nicht erneut gelesen werden',
@@ -449,6 +450,14 @@ export default {
       labelPlaceholder: 'Bezeichnung...',
       clickToEdit: '{{label}} - Zum Bearbeiten klicken',
       clickToAddLabel: 'Zum Hinzufügen einer Bezeichnung klicken',
+    },
+    // Speed
+    speed: {
+      title: 'Druckgeschwindigkeit',
+      silent: 'Leise (50%)',
+      standard: 'Standard (100%)',
+      sport: 'Sport (124%)',
+      ludicrous: 'Ludicrous (166%)',
     },
     // Fans
     fans: {

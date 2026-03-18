@@ -3097,7 +3097,7 @@ async def on_print_complete(printer_id: int, data: dict):
 
                 logger.info("[NOTIFY-BG] Completed")
         except Exception as e:
-            logger.warning("[NOTIFY-BG] Failed: %s", e)
+            logger.error("[NOTIFY-BG] Failed: %s", e, exc_info=True)
 
     async def _background_maintenance_check():
         """Check for maintenance due in background."""
@@ -3145,17 +3145,21 @@ async def on_print_complete(printer_id: int, data: dict):
     asyncio.create_task(_background_smart_plug())
     asyncio.create_task(_background_maintenance_check())
 
-    # Notification task waits for photo capture to complete first
+    # Notification task waits for photo capture to complete first (with timeout)
     async def _photo_then_notify():
         """Wait for photo capture, then send notification with photo URL."""
+        finish_photo = None
         try:
-            finish_photo = await photo_task
+            finish_photo = await asyncio.wait_for(photo_task, timeout=45)
             logger.info("[PHOTO-NOTIFY] Photo task returned: %s", finish_photo)
+        except TimeoutError:
+            logger.warning("[PHOTO-NOTIFY] Photo capture timed out after 45s, sending notification without photo")
+        except Exception as e:
+            logger.warning("[PHOTO-NOTIFY] Photo task failed: %s", e)
+        try:
             await _background_notifications(finish_photo)
         except Exception as e:
-            logger.warning("[PHOTO-NOTIFY] Failed: %s", e)
-            # Still try to send notification without photo
-            await _background_notifications(None)
+            logger.error("[PHOTO-NOTIFY] Notification sending failed: %s", e, exc_info=True)
 
     asyncio.create_task(_photo_then_notify())
 

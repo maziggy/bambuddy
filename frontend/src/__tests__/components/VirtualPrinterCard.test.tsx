@@ -30,7 +30,7 @@ vi.mock('../../api/client', () => ({
 import { multiVirtualPrinterApi } from '../../api/client';
 
 const models: Record<string, string> = {
-  '3DPrinter-X1-Carbon': 'X1C',
+  'BL-P001': 'X1C',
   'C12': 'P1S',
 };
 
@@ -39,7 +39,7 @@ const createMockPrinter = (overrides: Partial<VirtualPrinterConfig> = {}): Virtu
   name: 'Test VP',
   enabled: false,
   mode: 'immediate',
-  model: '3DPrinter-X1-Carbon',
+  model: 'BL-P001',
   model_name: 'X1C',
   access_code_set: false,
   serial: '00M00A391800001',

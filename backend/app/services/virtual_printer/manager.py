@@ -28,8 +28,8 @@ logger = logging.getLogger(__name__)
 #   - https://github.com/psychoticbeef/BambuLabOrcaSlicerDiscovery
 VIRTUAL_PRINTER_MODELS = {
     # X1 Series
-    "3DPrinter-X1-Carbon": "X1C",  # X1 Carbon
-    "3DPrinter-X1": "X1",  # X1
+    "BL-P001": "X1C",  # X1 Carbon
+    "BL-P002": "X1",  # X1
     "C13": "X1E",  # X1E
     # P Series
     "C11": "P1P",  # P1P
@@ -56,8 +56,8 @@ VIRTUAL_PRINTER_MODELS = {
 #   UUUUU = Unit number (5 chars)
 MODEL_SERIAL_PREFIXES = {
     # X1 Series
-    "3DPrinter-X1-Carbon": "00M00A",  # X1C
-    "3DPrinter-X1": "00M00A",  # X1
+    "BL-P001": "00M00A",  # X1C
+    "BL-P002": "00M00A",  # X1
     "C13": "03W00A",  # X1E
     # P Series
     "C11": "01S00A",  # P1P
@@ -73,8 +73,11 @@ MODEL_SERIAL_PREFIXES = {
     "O1S": "09400A",  # H2S
 }
 
+# Reverse mapping: display name → SSDP model code (for auto-inheriting from printer model)
+DISPLAY_NAME_TO_MODEL_CODE = {v: k for k, v in VIRTUAL_PRINTER_MODELS.items()}
+
 # Default model
-DEFAULT_VIRTUAL_PRINTER_MODEL = "3DPrinter-X1-Carbon"  # X1C
+DEFAULT_VIRTUAL_PRINTER_MODEL = "BL-P001"  # X1C
 
 
 def _get_serial_for_model(model: str, serial_suffix: str) -> str:
@@ -382,6 +385,7 @@ class VirtualPrinterInstance:
             key_path=key_path,
             on_file_received=self.on_file_received,
             bind_address=bind_addr,
+            vp_name=self.name,
         )
         self._tasks.append(
             asyncio.create_task(
@@ -399,6 +403,7 @@ class VirtualPrinterInstance:
             on_print_command=self.on_print_command,
             model=self.model or DEFAULT_VIRTUAL_PRINTER_MODEL,
             bind_address=bind_addr,
+            vp_name=self.name,
         )
         self._tasks.append(
             asyncio.create_task(

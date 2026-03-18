@@ -18,8 +18,8 @@ MQTT_PORT = 8883
 
 # Model code → product_name for version response (must match what slicer expects)
 MODEL_PRODUCT_NAMES = {
-    "3DPrinter-X1-Carbon": "X1 Carbon",
-    "3DPrinter-X1": "X1",
+    "BL-P001": "X1 Carbon",
+    "BL-P002": "X1",
     "C13": "X1E",
     "C11": "P1P",
     "C12": "P1S",
@@ -186,6 +186,7 @@ class SimpleMQTTServer:
         on_print_command: Callable[[str, dict], None] | None = None,
         model: str = "",
         bind_address: str = "0.0.0.0",  # nosec B104
+        vp_name: str = "",
     ):
         self.serial = serial
         self.access_code = access_code
@@ -195,6 +196,8 @@ class SimpleMQTTServer:
         self.port = port
         self.on_print_command = on_print_command
         self.bind_address = bind_address
+        self.vp_name = vp_name
+        self._log_prefix = f"[{vp_name}] " if vp_name else ""
         self._running = False
         self._server = None
         self._clients: dict[str, asyncio.StreamWriter] = {}
@@ -249,10 +252,10 @@ class SimpleMQTTServer:
                     ssl_obj = writer.get_extra_info("ssl_object")
                     if ssl_obj:
                         logger.info(
-                            f"MQTT TLS connection from {addr} - cipher={ssl_obj.cipher()}, version={ssl_obj.version()}"
+                            f"{self._log_prefix}MQTT TLS connection from {addr} - cipher={ssl_obj.cipher()}, version={ssl_obj.version()}"
                         )
                     else:
-                        logger.info("MQTT connection from %s (no TLS?)", addr)
+                        logger.info("%sMQTT connection from %s (no TLS?)", self._log_prefix, addr)
                     await self._handle_client(reader, writer)
                 except ssl.SSLError as e:
                     logger.error("MQTT SSL error: %s", e)
@@ -365,7 +368,7 @@ class SimpleMQTTServer:
         """Handle an MQTT client connection."""
         addr = writer.get_extra_info("peername")
         client_id = f"{addr[0]}:{addr[1]}" if addr else "unknown"
-        logger.info("MQTT client connected: %s", client_id)
+        logger.info("%sMQTT client connected: %s", self._log_prefix, client_id)
 
         authenticated = False
 
@@ -485,7 +488,7 @@ class SimpleMQTTServer:
                 # Send CONNACK with success
                 writer.write(bytes([0x20, 0x02, 0x00, 0x00]))
                 await writer.drain()
-                logger.info("MQTT client authenticated successfully")
+                logger.info("%sMQTT client authenticated successfully", self._log_prefix)
 
                 # Send immediate status report after auth - slicer expects this
                 await self._send_status_report(writer)
@@ -494,7 +497,7 @@ class SimpleMQTTServer:
                 # Send CONNACK with auth failure
                 writer.write(bytes([0x20, 0x02, 0x00, 0x05]))  # Not authorized
                 await writer.drain()
-                logger.warning("MQTT auth failed for user '%s'", username)
+                logger.warning("%sMQTT auth failed for user '%s' (access code mismatch)", self._log_prefix, username)
                 return False
 
         except (IndexError, ValueError) as e:
@@ -521,7 +524,7 @@ class SimpleMQTTServer:
                 requested_qos = payload[idx]
                 idx += 1
 
-                logger.info("MQTT subscribe: %s QoS=%s", topic, requested_qos)
+                logger.info("%sMQTT subscribe: %s QoS=%s", self._log_prefix, topic, requested_qos)
                 granted_qos.append(min(requested_qos, 1))  # Grant up to QoS 1
 
             # Send SUBACK

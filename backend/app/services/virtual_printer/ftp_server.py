@@ -35,6 +35,7 @@ class FTPSession:
         passive_port_range: tuple[int, int] = (50000, 50100),
         pasv_address: str = "",
         bind_address: str = "0.0.0.0",  # nosec B104
+        vp_name: str = "",
     ):
         self.reader = reader
         self.writer = writer
@@ -45,6 +46,8 @@ class FTPSession:
         self.passive_port_range = passive_port_range
         self.pasv_address = pasv_address
         self.bind_address = bind_address
+        self.vp_name = vp_name
+        self._log_prefix = f"[{vp_name}] " if vp_name else ""
 
         self.authenticated = False
         self.username: str | None = None
@@ -65,7 +68,7 @@ class FTPSession:
     async def send(self, code: int, message: str) -> None:
         """Send an FTP response."""
         response = f"{code} {message}\r\n"
-        logger.info("FTP -> %s: %s", self.remote_ip, response.strip())
+        logger.debug("%sFTP -> %s: %s", self._log_prefix, self.remote_ip, response.strip())
         self.writer.write(response.encode("utf-8"))
         await self.writer.drain()
 
@@ -82,7 +85,7 @@ class FTPSession:
                         timeout=300,  # 5 minute timeout
                     )
                 except TimeoutError:
-                    logger.debug("FTP session timeout from %s", self.remote_ip)
+                    logger.debug("%sFTP session timeout from %s", self._log_prefix, self.remote_ip)
                     break
 
                 if not line:
@@ -96,7 +99,11 @@ class FTPSession:
                 if not command_line:
                     continue
 
-                logger.info("FTP <- %s: %s", self.remote_ip, command_line)
+                # Never log passwords
+                if command_line.upper().startswith("PASS"):
+                    logger.debug("%sFTP <- %s: PASS ********", self._log_prefix, self.remote_ip)
+                else:
+                    logger.debug("%sFTP <- %s: %s", self._log_prefix, self.remote_ip, command_line)
 
                 # Parse command and argument
                 parts = command_line.split(" ", 1)
@@ -108,15 +115,15 @@ class FTPSession:
                 if handler:
                     await handler(arg)
                 else:
-                    logger.warning("FTP command not implemented: %s", cmd)
+                    logger.debug("%sFTP command not implemented: %s", self._log_prefix, cmd)
                     await self.send(502, f"Command {cmd} not implemented")
 
         except asyncio.CancelledError:
-            logger.info("FTP session cancelled from %s", self.remote_ip)
+            logger.info("%sFTP session cancelled from %s", self._log_prefix, self.remote_ip)
         except Exception as e:
-            logger.error("FTP session error from %s: %s", self.remote_ip, e)
+            logger.error("%sFTP session error from %s: %s", self._log_prefix, self.remote_ip, e)
         finally:
-            logger.info("FTP session ended from %s", self.remote_ip)
+            logger.info("%sFTP session ended from %s", self._log_prefix, self.remote_ip)
             await self._cleanup()
 
     async def _cleanup(self) -> None:
@@ -154,10 +161,10 @@ class FTPSession:
             if arg == self.access_code:
                 self.authenticated = True
                 await self.send(230, "Login successful")
-                logger.info("FTP login from %s", self.remote_ip)
+                logger.info("%sFTP login from %s", self._log_prefix, self.remote_ip)
             else:
                 await self.send(530, "Login incorrect")
-                logger.warning("FTP failed login from %s", self.remote_ip)
+                logger.warning("%sFTP failed login from %s (access code mismatch)", self._log_prefix, self.remote_ip)
         else:
             await self.send(503, "Login with USER first")
 
@@ -527,6 +534,7 @@ class VirtualPrinterFTPServer:
         port: int = FTP_PORT,
         on_file_received: Callable[[Path, str], None] | None = None,
         bind_address: str = "0.0.0.0",  # nosec B104
+        vp_name: str = "",
     ):
         """Initialize the FTPS server.
 
@@ -538,6 +546,7 @@ class VirtualPrinterFTPServer:
             port: Port to listen on (default 990)
             on_file_received: Callback when file upload completes (path, source_ip)
             bind_address: IP address to bind to (default 0.0.0.0)
+            vp_name: Virtual printer name for log identification
         """
         self.upload_dir = upload_dir
         self.access_code = access_code
@@ -546,6 +555,7 @@ class VirtualPrinterFTPServer:
         self.port = port
         self.on_file_received = on_file_received
         self.bind_address = bind_address
+        self.vp_name = vp_name
         self._server: asyncio.Server | None = None
         self._running = False
         self._ssl_context: ssl.SSLContext | None = None
@@ -613,7 +623,8 @@ class VirtualPrinterFTPServer:
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """Handle a new FTP client connection."""
         peername = writer.get_extra_info("peername")
-        logger.info("FTP connection from %s", peername)
+        log_prefix = f"[{self.vp_name}] " if self.vp_name else ""
+        logger.info("%sFTP connection from %s", log_prefix, peername)
 
         session = FTPSession(
             reader=reader,
@@ -625,6 +636,7 @@ class VirtualPrinterFTPServer:
             passive_port_range=(self.PASSIVE_PORT_MIN, self.PASSIVE_PORT_MAX),
             pasv_address=self._pasv_address,
             bind_address=self.bind_address,
+            vp_name=self.vp_name,
         )
 
         # Track the session task so we can cancel it on stop

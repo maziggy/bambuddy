@@ -27,7 +27,7 @@ vi.mock('../../api/client', () => ({
     updateSettings: vi.fn(),
     getModels: vi.fn().mockResolvedValue({
       models: {
-        '3DPrinter-X1-Carbon': 'X1C',
+        'BL-P001': 'X1C',
         'C12': 'P1S',
         'N7': 'P2S',
       },
@@ -43,7 +43,7 @@ const createMockSettings = (overrides = {}) => ({
   enabled: false,
   access_code_set: false,
   mode: 'immediate' as const,
-  model: '3DPrinter-X1-Carbon',
+  model: 'BL-P001',
   target_printer_id: null as number | null,
   remote_interface_ip: null as string | null,
   status: {
@@ -52,7 +52,7 @@ const createMockSettings = (overrides = {}) => ({
     mode: 'immediate',
     name: 'Bambuddy',
     serial: '00M00A391800001',
-    model: '3DPrinter-X1-Carbon',
+    model: 'BL-P001',
     model_name: 'X1C',
     pending_files: 0,
   },
@@ -158,7 +158,7 @@ describe('VirtualPrinterSettings', () => {
             mode: 'immediate',
             name: 'Bambuddy',
             serial: '00M00A391800001',
-            model: '3DPrinter-X1-Carbon',
+            model: 'BL-P001',
             model_name: 'X1C',
             pending_files: 0,
           },
@@ -512,7 +512,7 @@ describe('VirtualPrinterSettings', () => {
             mode: 'proxy',
             name: 'Bambuddy (Proxy)',
             serial: '00M00A391800001',
-            model: '3DPrinter-X1-Carbon',
+            model: 'BL-P001',
             model_name: 'X1C',
             pending_files: 0,
             proxy: {

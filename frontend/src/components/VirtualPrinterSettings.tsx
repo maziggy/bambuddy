@@ -17,7 +17,7 @@ export function VirtualPrinterSettings() {
   const [localEnabled, setLocalEnabled] = useState(false);
   const [localAccessCode, setLocalAccessCode] = useState('');
   const [localMode, setLocalMode] = useState<LocalMode>('immediate');
-  const [localModel, setLocalModel] = useState('3DPrinter-X1-Carbon');
+  const [localModel, setLocalModel] = useState('BL-P001');
   const [localTargetPrinterId, setLocalTargetPrinterId] = useState<number | null>(null);
   const [localRemoteInterfaceIp, setLocalRemoteInterfaceIp] = useState('');
   const [showAccessCode, setShowAccessCode] = useState(false);

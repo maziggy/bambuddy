@@ -1322,7 +1322,7 @@ async def run_migrations(conn):
 
                 result = await conn.execute(text("SELECT value FROM settings WHERE key = 'virtual_printer_model'"))
                 row = result.fetchone()
-                old_model = row[0] if row else "3DPrinter-X1-Carbon"
+                old_model = row[0] if row else "BL-P001"
 
                 result = await conn.execute(
                     text("SELECT value FROM settings WHERE key = 'virtual_printer_target_printer_id'")
@@ -1440,6 +1440,33 @@ async def run_migrations(conn):
         await conn.execute(text("ALTER TABLE virtual_printers ADD COLUMN auto_dispatch BOOLEAN DEFAULT 1"))
     except OperationalError:
         pass  # Already applied
+
+    # Migration: Fix VP model codes — convert legacy SSDP codes and display names to correct SSDP codes
+    # Legacy codes (from multi-VP refactor) and display names (from proxy auto-inherit)
+    vp_model_fixes = {
+        "3DPrinter-X1-Carbon": "BL-P001",
+        "3DPrinter-X1": "BL-P002",
+        "X1C": "BL-P001",
+        "X1": "BL-P002",
+        "X1E": "C13",
+        "P1P": "C11",
+        "P1S": "C12",
+        "P2S": "N7",
+        "A1": "N2S",
+        "A1 Mini": "N1",
+        "H2D": "O1D",
+        "H2C": "O1C",
+        "H2S": "O1S",
+    }
+    for old_val, new_val in vp_model_fixes.items():
+        await conn.execute(
+            text("UPDATE virtual_printers SET model = :new WHERE model = :old"),
+            {"old": old_val, "new": new_val},
+        )
+        await conn.execute(
+            text("UPDATE settings SET value = :new WHERE key = 'virtual_printer_model' AND value = :old"),
+            {"old": old_val, "new": new_val},
+        )
 
     # Migration: Add per-user Bambu Cloud credential columns
     try:

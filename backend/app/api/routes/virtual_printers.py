@@ -40,6 +40,23 @@ class VirtualPrinterUpdate(BaseModel):
     remote_interface_ip: str | None = None
 
 
+def _resolve_printer_model(printer_model: str | None) -> str | None:
+    """Map a printer's model (display name or SSDP code) to a valid VP SSDP model code.
+
+    Printers store display names like 'X1C' while VPs need SSDP codes like 'BL-P001'.
+    """
+    if not printer_model:
+        return None
+    from backend.app.services.virtual_printer import VIRTUAL_PRINTER_MODELS
+    from backend.app.services.virtual_printer.manager import DISPLAY_NAME_TO_MODEL_CODE
+
+    # Already a valid SSDP model code
+    if printer_model in VIRTUAL_PRINTER_MODELS:
+        return printer_model
+    # Map display name to SSDP code
+    return DISPLAY_NAME_TO_MODEL_CODE.get(printer_model)
+
+
 def _vp_to_dict(vp, status: dict | None = None) -> dict:
     """Convert VirtualPrinter model to response dict."""
     from backend.app.services.virtual_printer import VIRTUAL_PRINTER_MODELS
@@ -172,7 +189,7 @@ async def create_virtual_printer(
         enabled=body.enabled,
         mode=body.mode,
         model=body.model
-        or (target_printer.model if target_printer and target_printer.model and body.mode == "proxy" else None)
+        or _resolve_printer_model(target_printer.model if target_printer and body.mode == "proxy" else None)
         or DEFAULT_VIRTUAL_PRINTER_MODEL,
         access_code=body.access_code,
         target_printer_id=body.target_printer_id,
@@ -276,7 +293,7 @@ async def update_virtual_printer(
         vp.target_printer_id = body.target_printer_id
         # Auto-inherit model from target printer in proxy mode (unless user explicitly set model)
         if body.model is None and vp.mode == "proxy" and target_printer.model:
-            vp.model = target_printer.model
+            vp.model = _resolve_printer_model(target_printer.model) or target_printer.model
     if body.auto_dispatch is not None:
         vp.auto_dispatch = body.auto_dispatch
     if body.bind_ip is not None:
@@ -291,7 +308,7 @@ async def update_virtual_printer(
         result = await db.execute(select(PrinterModel).where(PrinterModel.id == vp.target_printer_id))
         existing_target = result.scalar_one_or_none()
         if existing_target and existing_target.model:
-            vp.model = existing_target.model
+            vp.model = _resolve_printer_model(existing_target.model) or existing_target.model
 
     # Determine final enabled state
     explicitly_enabling = body.enabled is True

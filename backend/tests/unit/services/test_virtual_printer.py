@@ -54,7 +54,7 @@ class TestVirtualPrinterInstance:
             vp_id=2,
             name="X1C",
             mode="immediate",
-            model="3DPrinter-X1-Carbon",
+            model="BL-P001",
             access_code="12345678",
             serial_suffix="391800002",
             base_dir=tmp_path,
@@ -1305,7 +1305,7 @@ class TestVirtualPrinterInstanceIPOverride:
             vp_id=20,
             name="IPTest",
             mode="immediate",
-            model="3DPrinter-X1-Carbon",
+            model="BL-P001",
             access_code="12345678",
             serial_suffix="391800020",
             bind_ip="192.168.1.50",
@@ -1342,7 +1342,7 @@ class TestVirtualPrinterInstanceIPOverride:
             vp_id=21,
             name="NoRemote",
             mode="immediate",
-            model="3DPrinter-X1-Carbon",
+            model="BL-P001",
             access_code="12345678",
             serial_suffix="391800021",
             bind_ip="192.168.1.50",
@@ -1368,7 +1368,7 @@ class TestVirtualPrinterInstanceIPOverride:
             vp_id=22,
             name="NoIPs",
             mode="immediate",
-            model="3DPrinter-X1-Carbon",
+            model="BL-P001",
             access_code="12345678",
             serial_suffix="391800022",
             base_dir=tmp_path,
@@ -1396,7 +1396,7 @@ class TestBindServer:
 
         return BindServer(
             serial="01S00C000000001",
-            model="3DPrinter-X1-Carbon",
+            model="BL-P001",
             name="Bambuddy",
         )
 
@@ -1464,7 +1464,7 @@ class TestBindServer:
     def test_bind_server_stores_config(self, bind_server):
         """Verify config is stored correctly."""
         assert bind_server.serial == "01S00C000000001"
-        assert bind_server.model == "3DPrinter-X1-Carbon"
+        assert bind_server.model == "BL-P001"
         assert bind_server.name == "Bambuddy"
         assert bind_server.version == "01.00.00.00"
 
@@ -1474,7 +1474,7 @@ class TestBindServer:
 
         server = BindServer(
             serial="01S00C000000001",
-            model="3DPrinter-X1-Carbon",
+            model="BL-P001",
             name="Bambuddy",
             version="01.09.00.10",
         )
@@ -1501,7 +1501,7 @@ class TestBindServer:
             vp_id=99,
             name="Bambuddy",
             mode="immediate",
-            model="3DPrinter-X1-Carbon",
+            model="BL-P001",
             access_code="12345678",
             serial_suffix="391800099",
             bind_ip="192.168.1.50",
@@ -1524,9 +1524,46 @@ class TestBindServer:
 
             mock_bind_cls.assert_called_once_with(
                 serial=inst.serial,
-                model="3DPrinter-X1-Carbon",
+                model="BL-P001",
                 name="Bambuddy",
                 bind_address="192.168.1.50",
                 cert_path=Path("/tmp/cert.pem"),  # nosec B108
                 key_path=Path("/tmp/key.pem"),  # nosec B108
             )
+
+
+class TestResolveModelCodes:
+    """Tests for model code resolution (display name → SSDP code)."""
+
+    def test_display_name_to_model_code_maps_all_models(self):
+        """Verify reverse mapping covers all VIRTUAL_PRINTER_MODELS entries."""
+        from backend.app.services.virtual_printer.manager import DISPLAY_NAME_TO_MODEL_CODE, VIRTUAL_PRINTER_MODELS
+
+        for _code, display_name in VIRTUAL_PRINTER_MODELS.items():
+            assert display_name in DISPLAY_NAME_TO_MODEL_CODE
+            # For non-duplicate display names, should map back to a valid code
+            assert DISPLAY_NAME_TO_MODEL_CODE[display_name] in VIRTUAL_PRINTER_MODELS
+
+    def test_resolve_printer_model_with_ssdp_code(self):
+        """SSDP codes pass through unchanged."""
+        from backend.app.api.routes.virtual_printers import _resolve_printer_model
+
+        assert _resolve_printer_model("BL-P001") == "BL-P001"
+        assert _resolve_printer_model("O1D") == "O1D"
+        assert _resolve_printer_model("N2S") == "N2S"
+
+    def test_resolve_printer_model_with_display_name(self):
+        """Display names resolve to SSDP codes."""
+        from backend.app.api.routes.virtual_printers import _resolve_printer_model
+
+        assert _resolve_printer_model("X1C") == "BL-P001"
+        assert _resolve_printer_model("H2D") == "O1D"
+        assert _resolve_printer_model("A1") == "N2S"
+        assert _resolve_printer_model("P1S") == "C12"
+
+    def test_resolve_printer_model_with_none_or_unknown(self):
+        """None and unknown values return None."""
+        from backend.app.api.routes.virtual_printers import _resolve_printer_model
+
+        assert _resolve_printer_model(None) is None
+        assert _resolve_printer_model("UnknownModel") is None

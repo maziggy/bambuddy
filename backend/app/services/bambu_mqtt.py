@@ -2404,6 +2404,14 @@ class BambuMQTTClient:
         ):
             should_trigger_completion = True
 
+        # Log when we see a terminal state but DON'T trigger completion (diagnostics)
+        if not should_trigger_completion and self.state.state in ("FINISH", "FAILED"):
+            logger.info(
+                f"[{self.serial_number}] State is {self.state.state} but completion NOT triggered: "
+                f"prev={self._previous_gcode_state}, was_running={self._was_running}, "
+                f"already_triggered={self._completion_triggered}, has_callback={bool(self.on_print_complete)}"
+            )
+
         if should_trigger_completion:
             if self.state.state == "FINISH":
                 status = "completed"

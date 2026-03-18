@@ -2844,6 +2844,7 @@ export default {
     weightUsed: '已使用',
     currentWeight: '剩余重量',
     measuredWeight: '称量重量',
+    spoolName: '线轴',
     costPerKg: '每公斤成本',
     measuredWeightError: '称量重量必须在 {{min}}g 到 {{max}}g 之间。',
     slicerFilament: '切片耗材',

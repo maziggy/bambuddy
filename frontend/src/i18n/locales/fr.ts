@@ -2845,6 +2845,7 @@ export default {
     weightUsed: 'Consommé',
     currentWeight: 'Poids restant',
     measuredWeight: 'Poids mesuré',
+    spoolName: 'Bobine',
     costPerKg: 'Coût par kg',
     measuredWeightError: 'Le poids mesuré doit être entre {{min}}g et {{max}}g.',
     slicerFilament: 'Filament Slicer',

@@ -2857,6 +2857,7 @@ export default {
     weightUsed: '使用量',
     currentWeight: '残量',
     measuredWeight: '計測重量',
+    spoolName: 'スプール',
     costPerKg: 'kgあたりのコスト',
     measuredWeightError: '計測重量は{{min}}gから{{max}}gの間で入力してください。',
     slicerFilament: 'スライサーフィラメント',

@@ -2858,6 +2858,7 @@ export default {
     weightUsed: 'Verbraucht',
     currentWeight: 'Restgewicht',
     measuredWeight: 'Gemessenes Gewicht',
+    spoolName: 'Spule',
     costPerKg: 'Kosten pro kg',
     measuredWeightError: 'Das gemessene Gewicht muss zwischen {{min}}g und {{max}}g liegen.',
     slicerFilament: 'Slicer-Filament',

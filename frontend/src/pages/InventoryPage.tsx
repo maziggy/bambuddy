@@ -8,7 +8,7 @@ import {
   ArrowUp, ArrowDown, ArrowUpDown, Group, ChevronDown, Check, RefreshCw,
 } from 'lucide-react';
 import { api, spoolbuddyApi } from '../api/client';
-import type { InventorySpool, SpoolAssignment } from '../api/client';
+import type { InventorySpool, SpoolAssignment, SpoolCatalogEntry } from '../api/client';
 import { Button } from '../components/Button';
 import { SpoolFormModal } from '../components/SpoolFormModal';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -62,6 +62,7 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'tag_type', label: 'Linked Tag Type', visible: false },
   { id: 'stock', label: 'Stock', visible: false },
   { id: 'remaining', label: 'Remaining', visible: true },
+  { id: 'spool_name', label: 'Spool', visible: false },
   { id: 'cost_per_kg', label: 'Cost/kg', visible: false },
   { id: 'weight_check', label: 'Weight Check', visible: false },
 ];
@@ -124,6 +125,7 @@ type CellCtx = {
   remaining: number;
   pct: number;
   assignmentMap: Record<number, SpoolAssignment>;
+  catalogMap: Record<number, SpoolCatalogEntry>;
   currencySymbol: string;
   dateFormat: DateFormat;
   t: TFn;
@@ -157,6 +159,7 @@ const columnHeaders: Record<string, (t: TFn) => string> = {
   tag_type: () => 'Linked Tag Type',
   stock: (t) => t('inventory.stock'),
   remaining: (t) => t('inventory.remaining'),
+  spool_name: (t) => t('inventory.spoolName'),
   cost_per_kg: (t) => t('inventory.costPerKg'),
   weight_check: (t) => t('inventory.weightCheck'),
 };
@@ -283,6 +286,10 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
       <span className="text-xs text-bambu-gray min-w-[40px] text-right">{Math.round(remaining)}g</span>
     </div>
   ),
+  spool_name: ({ spool, catalogMap }) => {
+    const entry = spool.core_weight_catalog_id != null ? catalogMap[spool.core_weight_catalog_id] : undefined;
+    return <span className="text-sm text-bambu-gray">{entry?.name || '-'}</span>;
+  },
   cost_per_kg: ({ spool, currencySymbol }) => (
     <span className="text-sm text-bambu-gray">
       {spool.cost_per_kg != null ? `${currencySymbol}${spool.cost_per_kg.toFixed(2)}` : '-'}
@@ -371,6 +378,7 @@ const columnSortValues: Record<string, (spool: InventorySpool, assignmentMap: Re
   data_origin: (s) => (s.data_origin || '').toLowerCase(),
   tag_type: (s) => (s.tag_type || '').toLowerCase(),
   stock: (s) => s.slicer_filament ? 1 : 0,
+  spool_name: (s) => s.core_weight_catalog_id ?? 0,
   cost_per_kg: (s) => s.cost_per_kg ?? 0,
   weight_check: (s) => {
     if (s.last_scale_weight == null) return -1;
@@ -433,6 +441,7 @@ function InventoryPage() {
   const [usageFilter, setUsageFilter] = useState<UsageFilter>('all');
   const [materialFilter, setMaterialFilter] = useState('');
   const [brandFilter, setBrandFilter] = useState('');
+  const [spoolFilter, setSpoolFilter] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'stock' | 'configured'>('all');
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('table');
@@ -476,6 +485,11 @@ function InventoryPage() {
     queryKey: ['spool-assignments'],
     queryFn: () => api.getAssignments(),
     refetchInterval: 30000,
+  });
+
+  const { data: catalogEntries } = useQuery({
+    queryKey: ['spool-catalog'],
+    queryFn: () => api.getSpoolCatalog(),
   });
 
   const deleteMutation = useMutation({
@@ -575,6 +589,15 @@ function InventoryPage() {
     return map;
   }, [assignments]);
 
+  // Map catalog_id -> catalog entry for spool name column
+  const catalogMap = useMemo(() => {
+    const map: Record<number, SpoolCatalogEntry> = {};
+    for (const e of catalogEntries || []) {
+      map[e.id] = e;
+    }
+    return map;
+  }, [catalogEntries]);
+
   // Top materials by weight for stat card pills
   const topMaterials = useMemo(() => {
     if (!stats) return [];
@@ -617,6 +640,12 @@ function InventoryPage() {
       filtered = filtered.filter((s) => s.brand === brandFilter);
     }
 
+    // Spool name dropdown
+    if (spoolFilter) {
+      const catalogId = Number(spoolFilter);
+      filtered = filtered.filter((s) => s.core_weight_catalog_id === catalogId);
+    }
+
     // Stock filter
     if (stockFilter === 'stock') {
       filtered = filtered.filter((s) => !s.slicer_filament);
@@ -638,7 +667,7 @@ function InventoryPage() {
     }
 
     return filtered;
-  }, [spools, archiveFilter, usageFilter, materialFilter, brandFilter, stockFilter, search, lowStockThreshold]);
+  }, [spools, archiveFilter, usageFilter, materialFilter, brandFilter, spoolFilter, stockFilter, search, lowStockThreshold]);
 
   // Reset page on filter changes
   const resetPage = () => setPageIndex(0);
@@ -646,9 +675,14 @@ function InventoryPage() {
   // Unique values for filter dropdowns
   const uniqueMaterials = [...new Set(spools?.map((s) => s.material) || [])].sort();
   const uniqueBrands = [...new Set(spools?.map((s) => s.brand).filter(Boolean) || [])].sort() as string[];
+  const uniqueSpoolCatalogIds = [...new Set(spools?.map((s) => s.core_weight_catalog_id).filter((id): id is number => id != null) || [])].sort((a, b) => {
+    const nameA = (catalogMap[a]?.name || '').toLowerCase();
+    const nameB = (catalogMap[b]?.name || '').toLowerCase();
+    return nameA.localeCompare(nameB);
+  });
 
   // Check if any filters are non-default
-  const hasActiveFilters = archiveFilter !== 'active' || usageFilter !== 'all' || !!materialFilter || !!brandFilter || stockFilter !== 'all' || !!search;
+  const hasActiveFilters = archiveFilter !== 'active' || usageFilter !== 'all' || !!materialFilter || !!brandFilter || !!spoolFilter || stockFilter !== 'all' || !!search;
 
   const handleColumnConfigSave = (config: ColumnConfig[]) => {
     setColumnConfig(config);
@@ -769,6 +803,7 @@ function InventoryPage() {
     setUsageFilter('all');
     setMaterialFilter('');
     setBrandFilter('');
+    setSpoolFilter('');
     setStockFilter('all');
     setSearch('');
     resetPage();
@@ -1124,6 +1159,24 @@ function InventoryPage() {
           ))}
         </select>
 
+        {/* Spool name dropdown chip */}
+        {uniqueSpoolCatalogIds.length > 0 && (
+          <select
+            value={spoolFilter}
+            onChange={(e) => { setSpoolFilter(e.target.value); resetPage(); }}
+            className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer focus:outline-none ${
+              spoolFilter
+                ? 'bg-bambu-green/20 text-bambu-green border-bambu-green/30'
+                : 'bg-transparent text-bambu-gray border-bambu-dark-tertiary hover:bg-bambu-dark-tertiary'
+            }`}
+          >
+            <option value="">{t('inventory.spoolName')}</option>
+            {uniqueSpoolCatalogIds.map((id) => (
+              <option key={id} value={id}>{catalogMap[id]?.name || `#${id}`}</option>
+            ))}
+          </select>
+        )}
+
         {/* Clear filters */}
         {hasActiveFilters && (
           <>
@@ -1303,6 +1356,7 @@ function InventoryPage() {
                           onDelete={(id) => setConfirmAction({ type: 'delete', spoolId: id })}
                           visibleColumns={visibleColumns}
                           assignmentMap={assignmentMap}
+                          catalogMap={catalogMap}
                           currencySymbol={currencySymbol}
                           dateFormat={dateFormat}
                           t={t}
@@ -1325,6 +1379,7 @@ function InventoryPage() {
                         onDelete={() => setConfirmAction({ type: 'delete', spoolId: spool.id })}
                         visibleColumns={visibleColumns}
                         assignmentMap={assignmentMap}
+                        catalogMap={catalogMap}
                         currencySymbol={currencySymbol}
                         dateFormat={dateFormat}
                         t={t}
@@ -1605,7 +1660,7 @@ function SpoolCard({
 /* Single spool row for table view */
 function SpoolTableRow({
   spool, remaining, pct, onEdit, onRestore, onArchive, onDelete,
-  visibleColumns, assignmentMap, currencySymbol, dateFormat, t, onSyncWeight,
+  visibleColumns, assignmentMap, catalogMap, currencySymbol, dateFormat, t, onSyncWeight,
 }: {
   spool: InventorySpool;
   remaining: number;
@@ -1616,6 +1671,7 @@ function SpoolTableRow({
   onDelete: () => void;
   visibleColumns: string[];
   assignmentMap: Record<number, SpoolAssignment>;
+  catalogMap: Record<number, SpoolCatalogEntry>;
   currencySymbol: string;
   dateFormat: DateFormat;
   t: TFn;
@@ -1630,7 +1686,7 @@ function SpoolTableRow({
     >
       {visibleColumns.map((colId) => (
         <td key={colId} className="py-3 px-4">
-          {columnCells[colId]?.({ spool, remaining, pct, assignmentMap, currencySymbol, dateFormat, t, onSyncWeight })}
+          {columnCells[colId]?.({ spool, remaining, pct, assignmentMap, catalogMap, currencySymbol, dateFormat, t, onSyncWeight })}
         </td>
       ))}
       <td className="py-3 px-4">
@@ -1660,7 +1716,7 @@ function SpoolTableRow({
 function SpoolTableGroup({
   spools, representative, remaining, pct, isExpanded, onToggle,
   onEdit, onArchive, onDelete,
-  visibleColumns, assignmentMap, currencySymbol, dateFormat, t, onSyncWeight,
+  visibleColumns, assignmentMap, catalogMap, currencySymbol, dateFormat, t, onSyncWeight,
 }: {
   spools: InventorySpool[];
   representative: InventorySpool;
@@ -1673,6 +1729,7 @@ function SpoolTableGroup({
   onDelete: (id: number) => void;
   visibleColumns: string[];
   assignmentMap: Record<number, SpoolAssignment>;
+  catalogMap: Record<number, SpoolCatalogEntry>;
   currencySymbol: string;
   dateFormat: DateFormat;
   t: TFn;
@@ -1690,14 +1747,14 @@ function SpoolTableGroup({
             {idx === 0 ? (
               <div className="flex items-center gap-2">
                 <ChevronDown className={`w-4 h-4 text-bambu-gray transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
-                {columnCells[colId]?.({ spool: representative, remaining, pct, assignmentMap, currencySymbol, dateFormat, t, onSyncWeight })}
+                {columnCells[colId]?.({ spool: representative, remaining, pct, assignmentMap, catalogMap, currencySymbol, dateFormat, t, onSyncWeight })}
               </div>
             ) : colId === 'id' ? (
               <span className="text-xs font-medium bg-bambu-green/20 text-bambu-green px-2 py-0.5 rounded-full">
                 {t('inventory.groupedSpools', { count: spools.length })}
               </span>
             ) : (
-              columnCells[colId]?.({ spool: representative, remaining, pct, assignmentMap, currencySymbol, dateFormat, t, onSyncWeight })
+              columnCells[colId]?.({ spool: representative, remaining, pct, assignmentMap, catalogMap, currencySymbol, dateFormat, t, onSyncWeight })
             )}
           </td>
         ))}
@@ -1723,6 +1780,7 @@ function SpoolTableGroup({
             onDelete={() => onDelete(spool.id)}
             visibleColumns={visibleColumns}
             assignmentMap={assignmentMap}
+            catalogMap={catalogMap}
             currencySymbol={currencySymbol}
             dateFormat={dateFormat}
             t={t}

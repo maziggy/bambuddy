@@ -19,6 +19,9 @@ All notable changes to Bambuddy will be documented in this file.
 - **User Notification Ruff/Lint Fixes** ([#693](https://github.com/maziggy/bambuddy/pull/693)) — Fixed missing `timezone` import in email timestamp, unused lambda argument, PEP 8 blank line spacing for `mark_printer_stopped_by_user`, and SQLAlchemy forward reference in `UserEmailPreference` model.
 - **Ntfy Notifications Fail With Non-ASCII Characters** ([#742](https://github.com/maziggy/bambuddy/issues/742)) — Ntfy notifications with camera snapshots failed when the printer name or filename contained non-ASCII characters (e.g. accented letters, CJK). The `Title` and `Message` HTTP headers were passed as Python strings, causing httpx to reject them with `UnicodeEncodeError`. Fixed by encoding header values as UTF-8 bytes, which ntfy handles correctly. Test notifications were unaffected because they use a hardcoded ASCII title and no image attachment. Reported by @user.
 
+### Added
+- **Spool Name Column & Filter in Filament Inventory** ([#740](https://github.com/maziggy/bambuddy/issues/740)) — Added a "Spool" column to the filament inventory table that displays the spool catalog entry name (e.g. "Bambu Lab AMS Tray", "Sunlu 1kg"). Enable it via the column visibility menu. Sortable and hidden by default. Also added a spool name filter dropdown next to the brand filter for quick filtering by spool type. Requested by @DMoenning.
+
 ### Changed
 
 ### Improved

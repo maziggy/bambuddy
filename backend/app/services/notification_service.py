@@ -518,7 +518,31 @@ class NotificationService:
                 "Home Assistant is not configured. Please set HA URL and token in Settings → Network → Home Assistant."
             )
 
-        url = f"{ha_url.rstrip('/')}/api/services/persistent_notification/create"
+        config = config or {}
+
+        # Determine which HA service to call - Default: persistent_notification.create
+        service = (config.get("service") or config.get("ha_service") or "").strip()
+        if service:
+            # Allow in different forms:
+            # - notify.mobile_app_<device>
+            # - notify/mobile_app_<device>
+            # - api/services/notify/mobile_app_<device>
+            service_str = service.lstrip("/")
+            if service_str.startswith("api/services/"):
+                endpoint = service_str
+            elif "/" in service_str:
+                endpoint = f"api/services/{service_str}"
+            elif "." in service_str:
+                domain, svc = service_str.split(".", 1)
+                endpoint = f"api/services/{domain}/{svc}"
+            else:
+                return False, (
+                    "Invalid Home Assistant service name. Use e.g. 'notify.mobile_app_yourdevice' or 'notify/your_service'."
+                )
+        else:
+            endpoint = "api/services/persistent_notification/create"
+
+        url = f"{ha_url.rstrip('/')}/{endpoint}"
         headers = {
             "Authorization": f"Bearer {ha_token}",
             "Content-Type": "application/json",
@@ -568,7 +592,7 @@ class NotificationService:
             elif provider.provider_type == "discord":
                 return await self._send_discord(config, title, message, image_data=image_data)
             elif provider.provider_type == "webhook":
-                return await self._send_webhook(config, title, message, image_data=image_data)
+                return await self._send_webhook(config, title, message)
             elif provider.provider_type == "homeassistant":
                 return await self._send_homeassistant(config, title, message, db=db)
             else:

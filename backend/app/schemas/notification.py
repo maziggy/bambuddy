@@ -236,6 +236,20 @@ class EmailConfig(BaseModel):
     use_tls: bool = Field(default=True, description="Use TLS encryption")
 
 
+class HomeAssistantConfig(BaseModel):
+    """Home Assistant notification configuration."""
+
+    service: str | None = Field(
+        default=None,
+        description="Home Assistant service to call (e.g. 'notify.mobile_app_yourdevice'). "
+        "If omitted, sends a persistent notification.",
+    )
+    data: dict[str, Any] | None = Field(
+        default=None,
+        description="Additional payload fields to pass to the Home Assistant service.",
+    )
+
+
 # Notification Log schemas
 class NotificationLogResponse(BaseModel):
     """Schema for notification log API responses."""

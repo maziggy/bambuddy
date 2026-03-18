@@ -633,7 +633,7 @@ export interface ProjectCreate {
   tags?: string;
   due_date?: string;
   priority?: string;
-  budget?: number;
+  budget?: number | null;
   parent_id?: number;
 }
 
@@ -648,7 +648,7 @@ export interface ProjectUpdate {
   tags?: string;
   due_date?: string;
   priority?: string;
-  budget?: number;
+  budget?: number | null;
   parent_id?: number;
 }
 
@@ -734,7 +734,7 @@ export interface ProjectImport {
   tags?: string;
   due_date?: string;
   priority?: string;
-  budget?: number;
+  budget?: number | null;
   bom_items?: BOMItemExport[];
   linked_folders?: LinkedFolderExport[];
 }

@@ -565,7 +565,7 @@ async def update_project(
         if data.priority not in ["low", "normal", "high", "urgent"]:
             raise HTTPException(status_code=400, detail="Invalid priority")
         project.priority = data.priority
-    if data.budget is not None:
+    if "budget" in data.model_fields_set:
         project.budget = data.budget
     if data.parent_id is not None:
         # Verify parent exists and prevent circular reference

@@ -74,7 +74,7 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
       tags: tags.trim() || undefined,
       due_date: dueDate || undefined,
       priority,
-      budget: budget.trim() ? parseFloat(budget) : undefined,
+      budget: budget.trim() ? parseFloat(budget) : null,
       ...(project && { status }),
     });
   };

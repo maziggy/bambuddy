@@ -217,7 +217,11 @@ class NotificationService:
             return False, "Topic is required"
 
         url = f"{server}/{topic}"
-        headers = {"Title": title}
+        # ntfy reads Title/Message from HTTP headers. httpx enforces ASCII
+        # for str header values, but printer names and filenames can contain
+        # non-ASCII characters (e.g. accented letters, CJK). Passing bytes
+        # bypasses the ASCII check — ntfy handles UTF-8 headers correctly.
+        headers: dict[str, str | bytes] = {"Title": title.encode("utf-8")}
 
         if auth_token:
             headers["Authorization"] = f"Bearer {auth_token}"
@@ -229,16 +233,16 @@ class NotificationService:
             # HTTP headers cannot contain newlines, but ntfy interprets
             # literal \n (backslash-n) as newlines in the Message header.
             headers["Filename"] = "photo.jpg"
-            headers["Message"] = message.replace("\n", "\\n")
+            headers["Message"] = message.replace("\n", "\\n").encode("utf-8")
             response = await client.put(url, content=image_data, headers=headers)
 
             if response.status_code == 400 and "attachments not allowed" in response.text:
                 # Server has attachments disabled — retry without the image
                 headers.pop("Filename", None)
                 headers.pop("Message", None)
-                response = await client.post(url, content=message, headers=headers)
+                response = await client.post(url, content=message.encode("utf-8"), headers=headers)
         else:
-            response = await client.post(url, content=message, headers=headers)
+            response = await client.post(url, content=message.encode("utf-8"), headers=headers)
 
         if response.status_code in (200, 204):
             return True, "Message sent successfully"

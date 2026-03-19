@@ -1730,7 +1730,7 @@ export default {
     slicerOrcaSlicer: 'OrcaSlicer',
     sidebarOrderDescription: 'Drag items in the sidebar to reorder. Reset to default order here.',
     setDefault: 'Set Default',
-    sidebarOrderSetDefaultHint: 'Set Default to set default menu order for all users.',
+    sidebarOrderSetDefaultHint: 'Set default applies menu as configured to all users.',
     sidebarDefaultSet: 'Default menu order set for all users.',
     sidebarDefaultFailed: 'Failed to set default menu order.',
     reset: 'Reset',

@@ -1729,7 +1729,7 @@ export default {
     slicerOrcaSlicer: 'OrcaSlicer',
     sidebarOrderDescription: '拖拽侧边栏项目以重新排序。在此处重置为默认顺序。',
     setDefault: '设为默认',
-    sidebarOrderSetDefaultHint: '设为默认以为所有用户设置默认菜单顺序。',
+    sidebarOrderSetDefaultHint: '设为默认将当前菜单配置应用于所有用户。',
     sidebarDefaultSet: '已为所有用户设置默认菜单顺序。',
     sidebarDefaultFailed: '设置默认菜单顺序失败。',
     reset: '重置',

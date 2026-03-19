@@ -1729,7 +1729,7 @@ export default {
     slicerOrcaSlicer: 'OrcaSlicer',
     sidebarOrderDescription: 'Arraste itens na barra lateral para reordenar. Restaurar ordem padrão aqui.',
     setDefault: 'Definir padrão',
-    sidebarOrderSetDefaultHint: 'Definir padrão para definir a ordem padrão do menu para todos os usuários.',
+    sidebarOrderSetDefaultHint: 'Definir padrão aplica o menu conforme configurado a todos os usuários.',
     sidebarDefaultSet: 'Ordem padrão do menu definida para todos os usuários.',
     sidebarDefaultFailed: 'Falha ao definir a ordem padrão do menu.',
     reset: 'Redefinir',

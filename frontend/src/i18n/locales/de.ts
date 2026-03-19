@@ -1730,7 +1730,7 @@ export default {
     slicerOrcaSlicer: 'OrcaSlicer',
     sidebarOrderDescription: 'Elemente in der Seitenleiste per Drag & Drop neu anordnen. Hier auf Standardreihenfolge zurücksetzen.',
     setDefault: 'Standard setzen',
-    sidebarOrderSetDefaultHint: 'Standard setzen, um die Standard-Menüreihenfolge für alle Benutzer festzulegen.',
+    sidebarOrderSetDefaultHint: 'Standard setzen übernimmt die konfigurierte Menüreihenfolge für alle Benutzer.',
     sidebarDefaultSet: 'Standard-Menüreihenfolge für alle Benutzer festgelegt.',
     sidebarDefaultFailed: 'Festlegen der Standard-Menüreihenfolge fehlgeschlagen.',
     reset: 'Zurücksetzen',

@@ -521,7 +521,7 @@ class NotificationService:
         config = config or {}
 
         # Determine which HA service to call - Default: persistent_notification.create
-        service = (config.get("service") or config.get("ha_service") or "").strip()
+        service = (config.get("service") or "").strip()
         if service:
             # Allow in different forms:
             # - notify.mobile_app_<device>
@@ -538,6 +538,11 @@ class NotificationService:
             else:
                 return False, (
                     "Invalid Home Assistant service name. Use e.g. 'notify.mobile_app_yourdevice' or 'notify/your_service'."
+                )
+
+            if not re.match(r"^api/services/[a-zA-Z0-9_]+/[a-zA-Z0-9_]+$", endpoint):
+                return False, (
+                    "Invalid Home Assistant service name. Domain and service must only contain letters, numbers, and underscores."
                 )
         else:
             endpoint = "api/services/persistent_notification/create"
@@ -592,7 +597,7 @@ class NotificationService:
             elif provider.provider_type == "discord":
                 return await self._send_discord(config, title, message, image_data=image_data)
             elif provider.provider_type == "webhook":
-                return await self._send_webhook(config, title, message)
+                return await self._send_webhook(config, title, message, image_data=image_data)
             elif provider.provider_type == "homeassistant":
                 return await self._send_homeassistant(config, title, message, db=db)
             else:

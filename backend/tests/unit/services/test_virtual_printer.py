@@ -1089,6 +1089,8 @@ class TestSlicerProxyManager:
         assert proxy_manager.LOCAL_MQTT_PORT == 8883
         assert proxy_manager.PRINTER_FTP_PORT == 990
         assert proxy_manager.PRINTER_MQTT_PORT == 8883
+        assert proxy_manager.PRINTER_FILE_TRANSFER_PORT == 6000
+        assert proxy_manager.PRINTER_RTSP_PORT == 322
         # Bind ports: both 3000 and 3002 for slicer compatibility
         assert proxy_manager.PRINTER_BIND_PORTS == [3000, 3002]
 

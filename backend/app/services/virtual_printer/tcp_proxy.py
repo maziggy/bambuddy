@@ -540,7 +540,6 @@ class TLSProxy:
                 await writer.drain()
 
                 total_bytes += len(data)
-                logger.debug("%s proxy %s: %s bytes", self.name, direction, len(data))
 
         except asyncio.CancelledError:
             pass  # Expected when the other forwarding direction closes first
@@ -1289,6 +1288,7 @@ class SlicerProxyManager:
     PRINTER_FTP_PORT = 990
     PRINTER_MQTT_PORT = 8883
     PRINTER_FILE_TRANSFER_PORT = 6000
+    PRINTER_RTSP_PORT = 322  # X1/H2/P2 series camera (A1/P1 use port 6000)
     PRINTER_BIND_PORTS = [3000, 3002]
 
     # Local listen ports - must match what Bambu Studio expects
@@ -1328,6 +1328,7 @@ class SlicerProxyManager:
         self._ftp_proxy: TLSProxy | None = None
         self._mqtt_proxy: TLSProxy | None = None
         self._file_transfer_proxy: TLSProxy | None = None
+        self._rtsp_proxy: TLSProxy | None = None
         self._bind_proxies: list[TCPProxy] = []
         self._bind_server = None
         self._tasks: list[asyncio.Task] = []
@@ -1387,6 +1388,21 @@ class SlicerProxyManager:
             server_key_path=self.key_path,
             on_connect=lambda cid: self._log_activity("FileTransfer", f"connected: {cid}"),
             on_disconnect=lambda cid: self._log_activity("FileTransfer", f"disconnected: {cid}"),
+            bind_address=self.bind_address,
+        )
+
+        # RTSP camera proxy — port 322 (TLS)
+        # X1/H2/P2 series use RTSP on port 322 for camera streaming.
+        # A1/P1 series use port 6000 (already proxied via file transfer proxy).
+        self._rtsp_proxy = TLSProxy(
+            name="RTSP",
+            listen_port=self.PRINTER_RTSP_PORT,
+            target_host=self.target_host,
+            target_port=self.PRINTER_RTSP_PORT,
+            server_cert_path=self.cert_path,
+            server_key_path=self.key_path,
+            on_connect=lambda cid: self._log_activity("RTSP", f"connected: {cid}"),
+            on_disconnect=lambda cid: self._log_activity("RTSP", f"disconnected: {cid}"),
             bind_address=self.bind_address,
         )
 
@@ -1453,6 +1469,10 @@ class SlicerProxyManager:
                 run_with_logging(self._file_transfer_proxy),
                 name="slicer_proxy_file_transfer",
             ),
+            asyncio.create_task(
+                run_with_logging(self._rtsp_proxy),
+                name="slicer_proxy_rtsp",
+            ),
         ]
         if self._bind_server:
             self._tasks.append(
@@ -1494,6 +1514,10 @@ class SlicerProxyManager:
         if self._file_transfer_proxy:
             await self._file_transfer_proxy.stop()
             self._file_transfer_proxy = None
+
+        if self._rtsp_proxy:
+            await self._rtsp_proxy.stop()
+            self._rtsp_proxy = None
 
         if self._bind_server:
             await self._bind_server.stop()

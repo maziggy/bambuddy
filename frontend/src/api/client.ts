@@ -866,6 +866,8 @@ export interface AppSettings {
   low_stock_threshold: number;
   // User email notifications toggle
   user_notifications_enabled: boolean;
+  // Locked sidebar order (admin-enforced)
+  locked_sidebar_order: string;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;

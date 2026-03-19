@@ -1729,6 +1729,12 @@ export default {
     slicerBambuStudio: 'Bambu Studio',
     slicerOrcaSlicer: 'OrcaSlicer',
     sidebarOrderDescription: 'Elemente in der Seitenleiste per Drag & Drop neu anordnen. Hier auf Standardreihenfolge zurücksetzen.',
+    lockSidebarOrder: 'Reihenfolge sperren',
+    unlockSidebarOrder: 'Reihenfolge entsperren',
+    sidebarOrderLocked: 'Seitenleisten-Reihenfolge für alle Benutzer gesperrt.',
+    sidebarOrderUnlocked: 'Seitenleisten-Reihenfolge entsperrt. Benutzer können ihre Reihenfolge anpassen.',
+    sidebarOrderLockFailed: 'Sperren der Seitenleisten-Reihenfolge fehlgeschlagen.',
+    sidebarOrderUnlockFailed: 'Entsperren der Seitenleisten-Reihenfolge fehlgeschlagen.',
     reset: 'Zurücksetzen',
     // Appearance
     darkMode: 'Dunkelmodus',

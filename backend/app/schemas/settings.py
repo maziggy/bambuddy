@@ -184,6 +184,12 @@ class AppSettings(BaseModel):
         description="Enable user email notifications for print job events (requires Advanced Authentication)",
     )
 
+    # Locked sidebar order (admin-enforced for all non-admin users)
+    locked_sidebar_order: str = Field(
+        default="",
+        description="JSON array of sidebar item IDs to enforce for all non-admin users (empty = unlocked)",
+    )
+
 
 class AppSettingsUpdate(BaseModel):
     """Schema for updating settings (all fields optional)."""
@@ -252,3 +258,4 @@ class AppSettingsUpdate(BaseModel):
     prometheus_token: str | None = None
     low_stock_threshold: float | None = Field(default=None, ge=0.1, le=99.9)
     user_notifications_enabled: bool | None = None
+    locked_sidebar_order: str | None = None

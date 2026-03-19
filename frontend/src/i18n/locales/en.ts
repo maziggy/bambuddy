@@ -1729,6 +1729,12 @@ export default {
     slicerBambuStudio: 'Bambu Studio',
     slicerOrcaSlicer: 'OrcaSlicer',
     sidebarOrderDescription: 'Drag items in the sidebar to reorder. Reset to default order here.',
+    lockSidebarOrder: 'Lock Order',
+    unlockSidebarOrder: 'Unlock Order',
+    sidebarOrderLocked: 'Sidebar order locked for all users.',
+    sidebarOrderUnlocked: 'Sidebar order unlocked. Users can now customize their order.',
+    sidebarOrderLockFailed: 'Failed to lock sidebar order.',
+    sidebarOrderUnlockFailed: 'Failed to unlock sidebar order.',
     reset: 'Reset',
     // Appearance
     darkMode: 'Dark Mode',

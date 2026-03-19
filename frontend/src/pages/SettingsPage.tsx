@@ -179,6 +179,28 @@ export function SettingsPage() {
     window.location.reload();
   };
 
+  const handleLockSidebarOrder = async () => {
+    const stored = localStorage.getItem('sidebarOrder');
+    const order = stored ? stored : JSON.stringify(defaultNavItems.map(i => i.id));
+    try {
+      await api.updateSettings({ locked_sidebar_order: order });
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      showToast(t('settings.sidebarOrderLocked'), 'success');
+    } catch {
+      showToast(t('settings.sidebarOrderLockFailed'), 'error');
+    }
+  };
+
+  const handleUnlockSidebarOrder = async () => {
+    try {
+      await api.updateSettings({ locked_sidebar_order: '' });
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      showToast(t('settings.sidebarOrderUnlocked'), 'success');
+    } catch {
+      showToast(t('settings.sidebarOrderUnlockFailed'), 'error');
+    }
+  };
+
   const { data: settings, isLoading } = useQuery({
     queryKey: ['settings'],
     queryFn: api.getSettings,
@@ -1179,14 +1201,37 @@ export function SettingsPage() {
                     {t('settings.sidebarOrderDescription')}
                   </p>
                 </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleResetSidebarOrder}
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  {t('settings.reset')}
-                </Button>
+                <div className="flex items-center gap-2">
+                  {authEnabled && (
+                    settings?.locked_sidebar_order ? (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleUnlockSidebarOrder}
+                      >
+                        <Unlock className="w-4 h-4" />
+                        {t('settings.unlockSidebarOrder')}
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleLockSidebarOrder}
+                      >
+                        <Lock className="w-4 h-4" />
+                        {t('settings.lockSidebarOrder')}
+                      </Button>
+                    )
+                  )}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleResetSidebarOrder}
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    {t('settings.reset')}
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

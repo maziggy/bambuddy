@@ -35,6 +35,7 @@ class VirtualPrinterSSDPServer:
         model: str = "BL-P001",  # X1C model code for best compatibility
         advertise_ip: str = "",
         bind_ip: str = "",
+        extra_interfaces: list[str] | None = None,
     ):
         """Initialize the SSDP server.
 
@@ -44,6 +45,10 @@ class VirtualPrinterSSDPServer:
             model: Model code
             advertise_ip: Override IP to advertise instead of auto-detecting
             bind_ip: IP address to bind the SSDP socket to
+            extra_interfaces: Additional interface IPs to broadcast on (e.g. VPN).
+                NOTIFY and M-SEARCH responses are sent on these interfaces too,
+                but Location always points to the bind IP so the slicer connects
+                to the correct address for MQTT/FTP.
         """
         self.name = name
         self.serial = serial
@@ -51,6 +56,8 @@ class VirtualPrinterSSDPServer:
         self._bind_ip = bind_ip
         self._running = False
         self._socket: socket.socket | None = None
+        self._extra_sockets: list[socket.socket] = []
+        self._extra_interfaces = extra_interfaces or []
         self._local_ip: str | None = advertise_ip or bind_ip or None
 
     def _get_local_ip(self) -> str:
@@ -163,6 +170,30 @@ class VirtualPrinterSSDPServer:
             logger.info("SSDP server listening on port %s, advertising IP: %s", SSDP_PORT, local_ip)
             logger.info("Virtual printer: %s (%s) model=%s", self.name, self.serial, self.model)
 
+            # Create extra sockets for additional interfaces (VPN, etc.)
+            # If no explicit extra interfaces given and we're bound to a
+            # specific IP, add a wildcard socket to catch M-SEARCH from
+            # other subnets (VPN tunnels, secondary NICs, etc.)
+            extra_ips = list(self._extra_interfaces)
+            if not extra_ips and self._bind_ip:
+                extra_ips.append("0.0.0.0")  # nosec B104
+
+            for iface_ip in extra_ips:
+                try:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    try:
+                        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+                    except (AttributeError, OSError):
+                        pass
+                    sock.setblocking(False)
+                    sock.bind((iface_ip, SSDP_PORT))
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                    self._extra_sockets.append(sock)
+                    logger.info("SSDP server also listening on %s:%s", iface_ip, SSDP_PORT)
+                except OSError as e:
+                    logger.warning("SSDP server: failed to bind extra interface %s: %s", iface_ip, e)
+
             # Send initial NOTIFY
             await self._send_notify()
             logger.info("Sent initial SSDP NOTIFY announcement")
@@ -172,7 +203,7 @@ class VirtualPrinterSSDPServer:
             notify_interval = 30.0  # Send NOTIFY every 30 seconds
 
             while self._running:
-                # Try to receive M-SEARCH requests
+                # Try to receive M-SEARCH requests on primary socket
                 try:
                     data, addr = self._socket.recvfrom(4096)
                     message = data.decode("utf-8", errors="ignore")
@@ -182,6 +213,17 @@ class VirtualPrinterSSDPServer:
                 except OSError as e:
                     if self._running:
                         logger.debug("SSDP receive error: %s", e)
+
+                # Try to receive M-SEARCH requests on extra sockets
+                for sock in self._extra_sockets:
+                    try:
+                        data, addr = sock.recvfrom(4096)
+                        message = data.decode("utf-8", errors="ignore")
+                        await self._handle_message(message, addr, sock)
+                    except BlockingIOError:
+                        pass
+                    except OSError:
+                        pass
 
                 # Send periodic NOTIFY
                 now = asyncio.get_event_loop().time()
@@ -224,23 +266,35 @@ class VirtualPrinterSSDPServer:
                 pass  # Best-effort socket close; may already be released
             self._socket = None
 
-    async def _send_notify(self) -> None:
-        """Send SSDP NOTIFY message via broadcast."""
-        if not self._socket:
-            return
+        for sock in self._extra_sockets:
+            try:
+                sock.close()
+            except OSError:
+                pass
+        self._extra_sockets = []
 
-        try:
-            msg = self._build_notify_message()
-            self._socket.sendto(msg, (SSDP_BROADCAST_ADDR, SSDP_PORT))
-            logger.debug(
-                "Sent SSDP NOTIFY for %s (Location=%s, USN=%s, bind=%s)",
-                self.name,
-                self._get_local_ip(),
-                self.serial,
-                self._bind_ip,
-            )
-        except OSError as e:
-            logger.debug("Failed to send NOTIFY for %s: %s", self.name, e)
+    async def _send_notify(self) -> None:
+        """Send SSDP NOTIFY message via broadcast on all sockets."""
+        msg = self._build_notify_message()
+
+        if self._socket:
+            try:
+                self._socket.sendto(msg, (SSDP_BROADCAST_ADDR, SSDP_PORT))
+                logger.debug(
+                    "Sent SSDP NOTIFY for %s (Location=%s, USN=%s, bind=%s)",
+                    self.name,
+                    self._get_local_ip(),
+                    self.serial,
+                    self._bind_ip,
+                )
+            except OSError as e:
+                logger.debug("Failed to send NOTIFY for %s: %s", self.name, e)
+
+        for sock in self._extra_sockets:
+            try:
+                sock.sendto(msg, (SSDP_BROADCAST_ADDR, SSDP_PORT))
+            except OSError:
+                pass  # Best-effort broadcast on extra interfaces
 
     async def _send_byebye(self) -> None:
         """Send SSDP byebye message when shutting down."""
@@ -262,12 +316,15 @@ class VirtualPrinterSSDPServer:
         except OSError:
             pass  # Best-effort byebye send; network may be unavailable during shutdown
 
-    async def _handle_message(self, message: str, addr: tuple[str, int]) -> None:
+    async def _handle_message(
+        self, message: str, addr: tuple[str, int], reply_socket: socket.socket | None = None
+    ) -> None:
         """Handle incoming SSDP message.
 
         Args:
             message: The SSDP message content
             addr: Tuple of (ip_address, port) of sender
+            reply_socket: Socket to send the response on (defaults to primary)
         """
         # Check if this is an M-SEARCH request for Bambu printers
         if "M-SEARCH" not in message:
@@ -279,11 +336,12 @@ class VirtualPrinterSSDPServer:
 
         logger.debug("Received M-SEARCH from %s", addr[0])
 
-        # Send response
-        if self._socket:
+        # Send response on the socket that received the request
+        sock = reply_socket or self._socket
+        if sock:
             try:
                 response = self._build_response_message()
-                self._socket.sendto(response, addr)
+                sock.sendto(response, addr)
                 logger.info(
                     "Sent SSDP response to %s for '%s' (Location=%s, USN=%s)",
                     addr[0],
@@ -310,6 +368,7 @@ class SSDPProxy:
         local_interface_ip: str,
         remote_interface_ip: str,
         target_printer_ip: str,
+        name: str | None = None,
     ):
         """Initialize the SSDP proxy.
 
@@ -317,10 +376,12 @@ class SSDPProxy:
             local_interface_ip: IP of interface on printer's network (LAN A)
             remote_interface_ip: IP of interface on slicer's network (LAN B)
             target_printer_ip: IP of the real printer to proxy SSDP for
+            name: Optional VP name to advertise (replaces printer's real name)
         """
         self.local_interface_ip = local_interface_ip
         self.remote_interface_ip = remote_interface_ip
         self.target_printer_ip = target_printer_ip
+        self.proxy_name = name
         self._running = False
         self._local_socket: socket.socket | None = None
         self._remote_socket: socket.socket | None = None
@@ -365,13 +426,21 @@ class SSDPProxy:
                 text,
                 flags=re.IGNORECASE,
             )
-            # Append " - Proxy" to printer name so it's distinguishable
-            text = re.sub(
-                r"(DevName\.bambu\.com:\s*)(.+)",
-                r"\g<1>\g<2> - Proxy",
-                text,
-                flags=re.IGNORECASE,
-            )
+            # Replace printer name with configured VP name, or append " - Proxy"
+            if self.proxy_name:
+                text = re.sub(
+                    r"(DevName\.bambu\.com:\s*)[^\r\n]+",
+                    rf"\g<1>{self.proxy_name}",
+                    text,
+                    flags=re.IGNORECASE,
+                )
+            else:
+                text = re.sub(
+                    r"(DevName\.bambu\.com:\s*)([^\r\n]+)",
+                    r"\g<1>\g<2> - Proxy",
+                    text,
+                    flags=re.IGNORECASE,
+                )
             if text != original:
                 logger.debug("Rewrote SSDP for proxy:\n%s", text)
             else:

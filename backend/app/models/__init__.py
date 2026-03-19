@@ -25,6 +25,7 @@ from backend.app.models.spool_k_profile import SpoolKProfile
 from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.spoolbuddy_device import SpoolBuddyDevice
 from backend.app.models.user import User
+from backend.app.models.user_email_pref import UserEmailPreference
 
 __all__ = [
     "Printer",
@@ -59,4 +60,5 @@ __all__ = [
     "SpoolUsageHistory",
     "ColorCatalogEntry",
     "SpoolBuddyDevice",
+    "UserEmailPreference",
 ]

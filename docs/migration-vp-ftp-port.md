@@ -1,11 +1,11 @@
-# Migration: Virtual Printer FTP Port Change (9990 -> 990)
+# Migration: Virtual Printer Port Changes
 
-## What Changed
+## FTP Port Change (9990 → 990)
 
 The Virtual Printer FTP server now binds **directly to port 990** instead of port 9990.
 Previously, an iptables `REDIRECT` rule was required to forward port 990 to 9990.
 
-## Why
+### Why
 
 The iptables `REDIRECT` target rewrites the destination IP to the **primary address
 of the incoming network interface**. When running multiple virtual printers on
@@ -15,6 +15,18 @@ when VPs have different access codes.
 
 By binding directly to port 990, iptables is no longer involved and each VP's
 FTP server correctly receives only its own traffic.
+
+## New Proxy Mode Ports (6000, 322)
+
+Proxy mode now requires two additional ports:
+
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| 6000 | TCP | File transfer tunnel (transparent proxy, end-to-end TLS) |
+| 322 | TCP | RTSP camera streaming (transparent proxy, end-to-end TLS) |
+
+These ports are proxied automatically — no iptables rules needed. If you have
+a firewall, ensure these ports are open between the slicer and Bambuddy.
 
 ## Migration Steps
 

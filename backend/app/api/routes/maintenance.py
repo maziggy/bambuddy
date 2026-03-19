@@ -35,12 +35,8 @@ router = APIRouter(prefix="/maintenance", tags=["maintenance"])
 # Default maintenance types
 DEFAULT_MAINTENANCE_TYPES = [
     # Carbon rod models only (X1/P1)
-    {
-        "name": "Lubricate Carbon Rods",
-        "description": "Apply lubricant to carbon rods for smooth motion",
-        "default_interval_hours": 50.0,
-        "icon": "Droplet",
-    },
+    # Note: carbon rods must NOT be lubricated — they use plain bearings
+    # and lubrication degrades print quality. Only cleaning is offered.
     {
         "name": "Clean Carbon Rods",
         "description": "Wipe carbon rods with a dry cloth",
@@ -104,7 +100,6 @@ DEFAULT_MAINTENANCE_TYPES = [
 # "carbon" = X1/P1 series (carbon rods), "steel_rod" = P2S (steel rods),
 # "linear_rail" = A1/H2 series. Types not listed here apply to all printers.
 _ROD_TYPE_REQUIREMENTS: dict[str, str] = {
-    "Lubricate Carbon Rods": "carbon",
     "Clean Carbon Rods": "carbon",
     "Lubricate Steel Rods": "steel_rod",
     "Clean Steel Rods": "steel_rod",

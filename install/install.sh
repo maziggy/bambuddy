@@ -532,6 +532,9 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
+# Allow binding to privileged ports (322, 990) for Virtual Printer proxy mode
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
 # Security hardening
 NoNewPrivileges=true
 PrivateTmp=true

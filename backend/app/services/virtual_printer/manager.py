@@ -473,6 +473,12 @@ class VirtualPrinterInstance:
             key_path=key_path,
             on_activity=lambda n, m: logger.info("[VP %s] Proxy %s: %s", self.name, n, m),
             bind_address=self.bind_ip or "0.0.0.0",  # nosec B104
+            bind_identity={
+                "serial": self.target_printer_serial or self.serial,
+                "model": self.model or DEFAULT_VIRTUAL_PRINTER_MODEL,
+                "name": self.name,
+                "version": "01.00.00.00",
+            },
         )
 
         async def run_with_logging(coro, svc_name):
@@ -494,6 +500,7 @@ class VirtualPrinterInstance:
                     local_interface_ip=local_iface["ip"],
                     remote_interface_ip=self.remote_interface_ip,
                     target_printer_ip=self.target_printer_ip,
+                    name=self.name,
                 )
                 self._tasks.append(
                     asyncio.create_task(

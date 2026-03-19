@@ -512,9 +512,11 @@ export function ConfigureAmsSlotModal({
       for (const cp of cloudSettings.filament) {
         coveredIds.add(cp.setting_id);
         // Keep preset if it matches the slot's saved mapping or current tray_info_idx
-        const isCurrentPreset = savedId === cp.setting_id
+        const isSavedPreset = savedId === cp.setting_id;
+        const isCurrentPreset = isSavedPreset
           || (trayIdx && (cp.setting_id === trayIdx || convertToTrayInfoIdx(cp.setting_id) === trayIdx));
-        if (!isCurrentPreset && query && !cp.name.toLowerCase().includes(query)) continue;
+        // Only the exact saved preset bypasses search — trayIdx matches are too broad
+        if (!isSavedPreset && query && !cp.name.toLowerCase().includes(query)) continue;
         // Filter by printer model if set (skip for current preset)
         if (!isCurrentPreset && printerModel) {
           const presetModel = extractPresetModel(cp.name);

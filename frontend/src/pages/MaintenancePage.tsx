@@ -141,12 +141,6 @@ function getMaintenanceWikiUrl(typeName: string, printerModel: string | null): s
   const isP2S = model.includes('P2S');
 
   switch (typeName) {
-    case 'Lubricate Carbon Rods':
-      // X1, P1 series have carbon rods
-      if (isX1) return 'https://wiki.bambulab.com/en/x1/maintenance/basic-maintenance';
-      if (isP1) return 'https://wiki.bambulab.com/en/p1/maintenance/p1p-maintenance';
-      return null;
-
     case 'Lubricate Steel Rods':
       // P2S has hardened steel rods
       if (isP2S) return 'https://wiki.bambulab.com/en/p2s/maintenance/lubricate-x-y-z-axis';

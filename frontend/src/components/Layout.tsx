@@ -117,26 +117,34 @@ export function Layout() {
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
+  // Fetch locked sidebar order via a public endpoint (no settings:read needed)
+  const { data: lockedSidebarData } = useQuery({
+    queryKey: ['locked-sidebar-order'],
+    queryFn: api.getLockedSidebarOrder,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
   // Apply admin-locked sidebar order only when the lock value changes
   // (admin locks or re-locks). Once applied, the user's own reordering
   // persists in localStorage across refreshes until the next lock change.
   useEffect(() => {
-    if (settings?.locked_sidebar_order) {
+    const locked = lockedSidebarData?.locked_sidebar_order;
+    if (locked) {
       const lastApplied = localStorage.getItem('appliedLockedSidebarOrder');
-      if (lastApplied !== settings.locked_sidebar_order) {
+      if (lastApplied !== locked) {
         try {
-          const lockedOrder = JSON.parse(settings.locked_sidebar_order);
+          const lockedOrder = JSON.parse(locked);
           if (Array.isArray(lockedOrder) && lockedOrder.length > 0) {
             setSidebarOrder(lockedOrder);
             saveSidebarOrder(lockedOrder);
-            localStorage.setItem('appliedLockedSidebarOrder', settings.locked_sidebar_order);
+            localStorage.setItem('appliedLockedSidebarOrder', locked);
           }
         } catch {
           // Invalid JSON, ignore
         }
       }
     }
-  }, [settings?.locked_sidebar_order]);
+  }, [lockedSidebarData?.locked_sidebar_order]);
 
   // Check advanced auth status for conditional nav items
   const { data: advancedAuthStatus } = useQuery({

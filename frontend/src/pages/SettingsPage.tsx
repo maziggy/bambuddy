@@ -185,6 +185,7 @@ export function SettingsPage() {
     try {
       await api.updateSettings({ locked_sidebar_order: order });
       queryClient.invalidateQueries({ queryKey: ['settings'] });
+      queryClient.invalidateQueries({ queryKey: ['locked-sidebar-order'] });
       showToast(t('settings.sidebarOrderLocked'), 'success');
     } catch {
       showToast(t('settings.sidebarOrderLockFailed'), 'error');
@@ -195,6 +196,7 @@ export function SettingsPage() {
     try {
       await api.updateSettings({ locked_sidebar_order: '' });
       queryClient.invalidateQueries({ queryKey: ['settings'] });
+      queryClient.invalidateQueries({ queryKey: ['locked-sidebar-order'] });
       showToast(t('settings.sidebarOrderUnlocked'), 'success');
     } catch {
       showToast(t('settings.sidebarOrderUnlockFailed'), 'error');

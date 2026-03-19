@@ -3161,6 +3161,7 @@ export const api = {
 
   // Settings
   getSettings: () => request<AppSettings>('/settings/'),
+  getLockedSidebarOrder: () => request<{ locked_sidebar_order: string }>('/settings/locked-sidebar-order'),
   updateSettings: (data: AppSettingsUpdate) =>
     request<AppSettings>('/settings/', {
       method: 'PUT',

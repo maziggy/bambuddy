@@ -220,6 +220,15 @@ async def reset_settings(
     return DEFAULT_SETTINGS
 
 
+@router.get("/locked-sidebar-order")
+async def get_locked_sidebar_order(
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the admin-locked sidebar order. No permission required so all users can apply it."""
+    value = await get_setting(db, "locked_sidebar_order")
+    return {"locked_sidebar_order": value or ""}
+
+
 @router.get("/check-ffmpeg")
 async def check_ffmpeg():
     """Check if ffmpeg is installed and available."""

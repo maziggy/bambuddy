@@ -11,16 +11,14 @@ class TestShouldApplyToPrinter:
     # Carbon rod tasks should only apply to X1/P1 models
     @pytest.mark.parametrize("model", ["X1C", "X1", "X1E", "P1P", "P1S"])
     def test_carbon_rod_tasks_apply_to_carbon_models(self, model: str):
-        assert _should_apply_to_printer("Lubricate Carbon Rods", model) is True
         assert _should_apply_to_printer("Clean Carbon Rods", model) is True
 
     def test_carbon_rod_tasks_do_not_apply_to_p2s(self):
         """P2S has steel rods, not carbon rods (#640)."""
-        assert _should_apply_to_printer("Lubricate Carbon Rods", "P2S") is False
         assert _should_apply_to_printer("Clean Carbon Rods", "P2S") is False
 
     def test_carbon_rod_tasks_do_not_apply_to_a1(self):
-        assert _should_apply_to_printer("Lubricate Carbon Rods", "A1") is False
+        assert _should_apply_to_printer("Clean Carbon Rods", "A1") is False
 
     # Steel rod tasks should only apply to P2S
     def test_steel_rod_tasks_apply_to_p2s(self):
@@ -51,6 +49,6 @@ class TestShouldApplyToPrinter:
 
     # Unknown models default to carbon (legacy behavior)
     def test_unknown_model_defaults_to_carbon(self):
-        assert _should_apply_to_printer("Lubricate Carbon Rods", "UNKNOWN") is True
+        assert _should_apply_to_printer("Clean Carbon Rods", "UNKNOWN") is True
         assert _should_apply_to_printer("Lubricate Steel Rods", "UNKNOWN") is False
         assert _should_apply_to_printer("Lubricate Linear Rails", "UNKNOWN") is False

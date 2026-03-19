@@ -672,6 +672,10 @@ class BackgroundDispatchService:
                     )
                     raise RuntimeError("Failed to start print")
 
+                pre_state = getattr(printer_manager.get_status(job.printer_id), "state", None)
+                if pre_state:
+                    asyncio.create_task(self._verify_print_response(job.printer_id, printer_name, pre_state))
+
                 if job.requested_by_user_id and job.requested_by_username:
                     printer_manager.set_current_print_user(
                         job.printer_id,
@@ -837,11 +841,45 @@ class BackgroundDispatchService:
                     await db.rollback()
                     raise RuntimeError("Failed to start print")
 
+                pre_state = getattr(printer_manager.get_status(job.printer_id), "state", None)
+                if pre_state:
+                    asyncio.create_task(self._verify_print_response(job.printer_id, printer_name, pre_state))
+
                 await db.commit()
             except DispatchJobCancelled:
                 await db.rollback()
                 await self._set_active_message(job, f"Cancelled upload on {printer_name}.")
                 raise
+
+    @staticmethod
+    async def _verify_print_response(
+        printer_id: int,
+        printer_name: str,
+        pre_state: str,
+        timeout: float = 15.0,
+        poll_interval: float = 3.0,
+    ):
+        """Check if the printer responded to a print command.
+
+        Runs as a fire-and-forget background task after start_print() succeeds.
+        If the printer's gcode_state hasn't changed within the timeout, logs a
+        warning for diagnostics (visible in support packages).
+        """
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            await asyncio.sleep(poll_interval)
+            state = printer_manager.get_status(printer_id)
+            if not state:
+                return  # Printer disconnected
+            if state.state != pre_state:
+                return  # Printer responded
+        logger.warning(
+            "Printer %s (%d) did not respond to print command within %.0fs (state still %s) — printer may need restart",
+            printer_name,
+            printer_id,
+            timeout,
+            pre_state,
+        )
 
     @staticmethod
     async def _cleanup_sd_card_file(

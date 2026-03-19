@@ -39,11 +39,11 @@
 
 **Print from anywhere in the world** — Bambuddy's new Proxy Mode acts as a secure relay between your slicer and printer:
 
-- 🔒 **TLS-encrypted control channels** — MQTT and FTP control fully encrypted
+- 🔒 **End-to-end TLS encryption** — FTP, file transfer, and camera are transparently proxied with the printer's real TLS certificate
 - 🛡️ **VPN recommended** — Use Tailscale/WireGuard for full data encryption ([details](https://wiki.bambuddy.cool/features/virtual-printer/))
 - 🌍 **No cloud dependency** — Direct connection through your own Bambuddy server
 - 🔑 **Uses printer's access code** — No additional credentials needed
-- ⚡ **Full-speed printing** — FTP and MQTT protocols proxied transparently
+- ⚡ **Full-speed printing** — Transparent TCP proxy, only MQTT is decrypted for IP rewriting
 
 Perfect for remote print farms, traveling makers, or accessing your home printer from work.
 

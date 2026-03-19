@@ -184,10 +184,10 @@ class AppSettings(BaseModel):
         description="Enable user email notifications for print job events (requires Advanced Authentication)",
     )
 
-    # Locked sidebar order (admin-enforced for all non-admin users)
+    # Default sidebar order (admin-set for all users)
     locked_sidebar_order: str = Field(
         default="",
-        description="JSON array of sidebar item IDs to enforce for all non-admin users (empty = unlocked)",
+        description="JSON array of sidebar item IDs set as default menu order for all users (empty = no default)",
     )
 
 

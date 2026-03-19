@@ -124,16 +124,17 @@ export function Layout() {
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
-  // Apply admin-locked sidebar order only when the lock value changes
-  // (admin locks or re-locks). Once applied, the user's own reordering
-  // persists in localStorage across refreshes until the next lock change.
+  // Apply admin default sidebar order when it changes (includes a timestamp
+  // so repeated pushes of the same order still trigger an update).
   useEffect(() => {
     const locked = lockedSidebarData?.locked_sidebar_order;
     if (locked) {
       const lastApplied = localStorage.getItem('appliedLockedSidebarOrder');
       if (lastApplied !== locked) {
         try {
-          const lockedOrder = JSON.parse(locked);
+          const parsed = JSON.parse(locked);
+          // Support both { order: [...], ts } wrapper and plain array
+          const lockedOrder = Array.isArray(parsed) ? parsed : parsed.order;
           if (Array.isArray(lockedOrder) && lockedOrder.length > 0) {
             setSidebarOrder(lockedOrder);
             saveSidebarOrder(lockedOrder);

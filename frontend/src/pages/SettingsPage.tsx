@@ -179,27 +179,17 @@ export function SettingsPage() {
     window.location.reload();
   };
 
-  const handleLockSidebarOrder = async () => {
+  const handleSetDefaultSidebarOrder = async () => {
     const stored = localStorage.getItem('sidebarOrder');
-    const order = stored ? stored : JSON.stringify(defaultNavItems.map(i => i.id));
+    const orderArr = stored ? JSON.parse(stored) : defaultNavItems.map(i => i.id);
+    const payload = JSON.stringify({ order: orderArr, ts: Date.now() });
     try {
-      await api.updateSettings({ locked_sidebar_order: order });
+      await api.updateSettings({ locked_sidebar_order: payload });
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       queryClient.invalidateQueries({ queryKey: ['locked-sidebar-order'] });
-      showToast(t('settings.sidebarOrderLocked'), 'success');
+      showToast(t('settings.sidebarDefaultSet'), 'success');
     } catch {
-      showToast(t('settings.sidebarOrderLockFailed'), 'error');
-    }
-  };
-
-  const handleUnlockSidebarOrder = async () => {
-    try {
-      await api.updateSettings({ locked_sidebar_order: '' });
-      queryClient.invalidateQueries({ queryKey: ['settings'] });
-      queryClient.invalidateQueries({ queryKey: ['locked-sidebar-order'] });
-      showToast(t('settings.sidebarOrderUnlocked'), 'success');
-    } catch {
-      showToast(t('settings.sidebarOrderUnlockFailed'), 'error');
+      showToast(t('settings.sidebarDefaultFailed'), 'error');
     }
   };
 
@@ -1201,29 +1191,19 @@ export function SettingsPage() {
                   <p className="text-white">{t('settings.sidebarOrder')}</p>
                   <p className="text-sm text-bambu-gray">
                     {t('settings.sidebarOrderDescription')}
+                    {authEnabled && ` ${t('settings.sidebarOrderSetDefaultHint')}`}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
                   {authEnabled && (
-                    settings?.locked_sidebar_order ? (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={handleUnlockSidebarOrder}
-                      >
-                        <Unlock className="w-4 h-4" />
-                        {t('settings.unlockSidebarOrder')}
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={handleLockSidebarOrder}
-                      >
-                        <Lock className="w-4 h-4" />
-                        {t('settings.lockSidebarOrder')}
-                      </Button>
-                    )
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleSetDefaultSidebarOrder}
+                    >
+                      <Save className="w-4 h-4" />
+                      {t('settings.setDefault')}
+                    </Button>
                   )}
                   <Button
                     variant="secondary"

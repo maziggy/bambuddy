@@ -79,7 +79,7 @@ export function Layout() {
   const { mode, toggleMode } = useTheme();
   const { t } = useTranslation();
   const isSidebarCompact = useIsSidebarCompact();
-  const { user, authEnabled, isAdmin, logout, hasPermission } = useAuth();
+  const { user, authEnabled, logout, hasPermission } = useAuth();
   const { showToast } = useToast();
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [changePasswordData, setChangePasswordData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
@@ -117,22 +117,26 @@ export function Layout() {
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
-  // Determine if sidebar order is locked for this user
-  const sidebarLocked = !!(settings?.locked_sidebar_order && !isAdmin);
-
-  // Apply locked sidebar order for non-admin users
+  // Apply admin-locked sidebar order only when the lock value changes
+  // (admin locks or re-locks). Once applied, the user's own reordering
+  // persists in localStorage across refreshes until the next lock change.
   useEffect(() => {
-    if (settings?.locked_sidebar_order && !isAdmin) {
-      try {
-        const lockedOrder = JSON.parse(settings.locked_sidebar_order);
-        if (Array.isArray(lockedOrder) && lockedOrder.length > 0) {
-          setSidebarOrder(lockedOrder);
+    if (settings?.locked_sidebar_order) {
+      const lastApplied = localStorage.getItem('appliedLockedSidebarOrder');
+      if (lastApplied !== settings.locked_sidebar_order) {
+        try {
+          const lockedOrder = JSON.parse(settings.locked_sidebar_order);
+          if (Array.isArray(lockedOrder) && lockedOrder.length > 0) {
+            setSidebarOrder(lockedOrder);
+            saveSidebarOrder(lockedOrder);
+            localStorage.setItem('appliedLockedSidebarOrder', settings.locked_sidebar_order);
+          }
+        } catch {
+          // Invalid JSON, ignore
         }
-      } catch {
-        // Invalid JSON, ignore
       }
     }
-  }, [settings?.locked_sidebar_order, isAdmin]);
+  }, [settings?.locked_sidebar_order]);
 
   // Check advanced auth status for conditional nav items
   const { data: advancedAuthStatus } = useQuery({
@@ -518,12 +522,12 @@ export function Layout() {
                 return (
                   <li
                     key={id}
-                    draggable={!sidebarLocked}
-                    onDragStart={!sidebarLocked ? (e) => handleDragStart(e, id) : undefined}
-                    onDragOver={!sidebarLocked ? (e) => handleDragOver(e, id) : undefined}
-                    onDragLeave={!sidebarLocked ? handleDragLeave : undefined}
-                    onDrop={!sidebarLocked ? (e) => handleDrop(e, id) : undefined}
-                    onDragEnd={!sidebarLocked ? handleDragEnd : undefined}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, id)}
+                    onDragOver={(e) => handleDragOver(e, id)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, id)}
+                    onDragEnd={handleDragEnd}
                     className={`relative ${
                       draggedId === id ? 'opacity-50' : ''
                     } ${
@@ -540,7 +544,7 @@ export function Layout() {
                         className={`flex items-center ${isSidebarCompact || sidebarExpanded ? 'gap-3 px-4' : 'justify-center px-2'} py-3 rounded-lg transition-colors group text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white`}
                         title={!isSidebarCompact && !sidebarExpanded ? link.name : undefined}
                       >
-                        {sidebarExpanded && !isSidebarCompact && !sidebarLocked && (
+                        {sidebarExpanded && !isSidebarCompact && (
                           <GripVertical className="w-4 h-4 flex-shrink-0 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing -ml-1" />
                         )}
                         {link.custom_icon ? (
@@ -566,7 +570,7 @@ export function Layout() {
                         }
                         title={!isSidebarCompact && !sidebarExpanded ? link.name : undefined}
                       >
-                        {sidebarExpanded && !isSidebarCompact && !sidebarLocked && (
+                        {sidebarExpanded && !isSidebarCompact && (
                           <GripVertical className="w-4 h-4 flex-shrink-0 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing -ml-1" />
                         )}
                         {link.custom_icon ? (
@@ -598,12 +602,12 @@ export function Layout() {
                 return (
                   <li
                     key={id}
-                    draggable={!sidebarLocked}
-                    onDragStart={!sidebarLocked ? (e) => handleDragStart(e, id) : undefined}
-                    onDragOver={!sidebarLocked ? (e) => handleDragOver(e, id) : undefined}
-                    onDragLeave={!sidebarLocked ? handleDragLeave : undefined}
-                    onDrop={!sidebarLocked ? (e) => handleDrop(e, id) : undefined}
-                    onDragEnd={!sidebarLocked ? handleDragEnd : undefined}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, id)}
+                    onDragOver={(e) => handleDragOver(e, id)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, id)}
+                    onDragEnd={handleDragEnd}
                     className={`relative ${
                       draggedId === id ? 'opacity-50' : ''
                     } ${
@@ -623,7 +627,7 @@ export function Layout() {
                       }
                       title={!isSidebarCompact && !sidebarExpanded ? t(labelKey) : undefined}
                     >
-                      {sidebarExpanded && !isSidebarCompact && !sidebarLocked && (
+                      {sidebarExpanded && !isSidebarCompact && (
                         <GripVertical className="w-4 h-4 flex-shrink-0 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing -ml-1" />
                       )}
                       <div className="relative">

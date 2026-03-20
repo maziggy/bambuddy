@@ -65,7 +65,7 @@ class NotificationProviderBase(BaseModel):
     on_queue_job_added: bool = Field(default=False, description="Notify when job is added to queue")
     on_queue_job_assigned: bool = Field(default=False, description="Notify when model-based job is assigned to printer")
     on_queue_job_started: bool = Field(default=False, description="Notify when queue job starts printing")
-    on_queue_job_waiting: bool = Field(default=True, description="Notify when job is waiting for filament")
+    on_queue_job_waiting: bool = Field(default=True, description="Notify when job is waiting for filament or printer")
     on_queue_job_skipped: bool = Field(default=True, description="Notify when job is skipped")
     on_queue_job_failed: bool = Field(default=True, description="Notify when job fails to start")
     on_queue_completed: bool = Field(default=False, description="Notify when all queue jobs finish")

@@ -137,7 +137,7 @@ DEFAULT_TEMPLATES = [
     {
         "event_type": "queue_job_waiting",
         "name": "Queue Job Waiting",
-        "title_template": "Job Waiting for Filament",
+        "title_template": "Queue Job Waiting",
         "body_template": "{job_name} waiting for {target_model}\n{waiting_reason}",
     },
     {

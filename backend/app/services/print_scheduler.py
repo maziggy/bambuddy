@@ -258,7 +258,8 @@ class PrintScheduler:
                         await db.commit()
 
                         # Send waiting notification only when transitioning to waiting state
-                        if waiting_reason and not was_waiting:
+                        # and the reason requires user action (not just "all printers busy")
+                        if waiting_reason and not was_waiting and not self._is_busy_only(waiting_reason):
                             job_name = await self._get_job_name(db, item)
                             await notification_service.on_queue_job_waiting(
                                 job_name=job_name,
@@ -517,6 +518,17 @@ class PrintScheduler:
             reasons.append(f"Offline: {', '.join(printers_offline)}")
 
         return None, " | ".join(reasons) if reasons else f"No available {model} printers{location_suffix}"
+
+    @staticmethod
+    def _is_busy_only(waiting_reason: str) -> bool:
+        """Check if the waiting reason only contains 'Busy' entries.
+
+        When all matching printers are simply busy printing, the queued job
+        will start automatically once a printer finishes — no user action
+        is required, so we skip the notification.
+        """
+        parts = [p.strip() for p in waiting_reason.split(" | ")]
+        return all(p.startswith("Busy:") for p in parts)
 
     def _get_missing_force_color_slots(self, printer_id: int, force_overrides: list[dict]) -> list[str]:
         """Return descriptive strings for force_color_match slots not satisfied by the printer.

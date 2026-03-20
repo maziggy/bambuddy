@@ -3819,7 +3819,7 @@ export default {
     jobStarted: 'Tâche démarrée',
     jobStartedDescription: 'La tâche de la file a commencé l\'impression',
     jobWaiting: 'Tâche en attente',
-    jobWaitingDescription: 'Tâche en attente de filament',
+    jobWaitingDescription: 'Tâche en attente de filament ou imprimante',
     jobSkipped: 'Tâche ignorée',
     jobSkippedDescription: 'Tâche ignorée (échec précédent)',
     jobFailed: 'Tâche échouée',

@@ -3827,7 +3827,7 @@ export default {
     jobStarted: 'Auftrag gestartet',
     jobStartedDescription: 'Warteschlangenauftrag hat Druck begonnen',
     jobWaiting: 'Auftrag wartet',
-    jobWaitingDescription: 'Auftrag wartet auf Filament',
+    jobWaitingDescription: 'Auftrag wartet auf Filament oder Drucker',
     jobSkipped: 'Auftrag übersprungen',
     jobSkippedDescription: 'Auftrag übersprungen (vorheriger fehlgeschlagen)',
     jobFailed: 'Auftrag fehlgeschlagen',

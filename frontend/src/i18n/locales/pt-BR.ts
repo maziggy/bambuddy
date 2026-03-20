@@ -3818,7 +3818,7 @@ export default {
     jobStarted: 'Trabalho Iniciado',
     jobStartedDescription: 'Trabalho da fila começou a imprimir',
     jobWaiting: 'Trabalho Aguardando',
-    jobWaitingDescription: 'Trabalho aguardando filamento',
+    jobWaitingDescription: 'Trabalho aguardando filamento ou impressora',
     jobSkipped: 'Trabalho Pulado',
     jobSkippedDescription: 'Trabalho pulado (anterior falhou)',
     jobFailed: 'Trabalho Falhou',

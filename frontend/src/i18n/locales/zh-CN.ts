@@ -3818,7 +3818,7 @@ export default {
     jobStarted: '任务已开始',
     jobStartedDescription: '队列任务已开始打印',
     jobWaiting: '任务等待中',
-    jobWaitingDescription: '任务正在等待耗材',
+    jobWaitingDescription: '任务正在等待耗材或打印机',
     jobSkipped: '任务已跳过',
     jobSkippedDescription: '任务已跳过（上一个失败）',
     jobFailed: '任务失败',

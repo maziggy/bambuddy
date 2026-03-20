@@ -3832,7 +3832,7 @@ export default {
     jobStarted: 'Job Started',
     jobStartedDescription: 'Queue job started printing',
     jobWaiting: 'Job Waiting',
-    jobWaitingDescription: 'Job waiting for filament',
+    jobWaitingDescription: 'Job waiting for filament or printer',
     jobSkipped: 'Job Skipped',
     jobSkippedDescription: 'Job skipped (previous failed)',
     jobFailed: 'Job Failed',

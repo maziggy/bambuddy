@@ -3831,7 +3831,7 @@ export default {
     jobStarted: 'ジョブ開始',
     jobStartedDescription: 'キュージョブの印刷が開始されました',
     jobWaiting: 'ジョブ待機中',
-    jobWaitingDescription: 'フィラメント待ちのジョブ',
+    jobWaitingDescription: 'フィラメントまたはプリンター待ちのジョブ',
     jobSkipped: 'ジョブスキップ',
     jobSkippedDescription: 'ジョブがスキップされました（前のジョブが失敗）',
     jobFailed: 'ジョブ失敗',

@@ -1470,6 +1470,7 @@ async def start_drying(
     temp: int = 45,
     duration: int = 4,
     filament: str = "",
+    rotate_tray: bool = False,
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1490,7 +1491,9 @@ async def start_drying(
     if duration < 1 or duration > 24:
         raise HTTPException(400, "Duration must be 1-24 hours")
 
-    success = printer_manager.send_drying_command(printer_id, ams_id, temp, duration, mode=1, filament=filament)
+    success = printer_manager.send_drying_command(
+        printer_id, ams_id, temp, duration, mode=1, filament=filament, rotate_tray=rotate_tray
+    )
     if not success:
         raise HTTPException(400, "Printer not connected")
     return {"status": "drying_started", "ams_id": ams_id, "temp": temp, "duration": duration}

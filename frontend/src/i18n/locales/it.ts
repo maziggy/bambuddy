@@ -419,6 +419,7 @@ export default {
       powerRequired: 'Collegare l\'alimentatore AMS per abilitare l\'asciugatura',
       startingDrying: 'Avvio essiccazione...',
       stoppingDrying: 'Arresto essiccazione...',
+      rotateTray: 'Ruota la bobina durante l\'essiccazione',
     },
     // Filaments section
     filaments: 'Filamenti',

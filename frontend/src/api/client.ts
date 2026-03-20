@@ -2426,9 +2426,9 @@ export const api = {
     }),
 
   // AMS Drying Control
-  startDrying: (printerId: number, amsId: number, temp: number, duration: number, filament: string = '') =>
+  startDrying: (printerId: number, amsId: number, temp: number, duration: number, filament: string = '', rotateTray: boolean = false) =>
     request<{ status: string; ams_id: number; temp: number; duration: number }>(
-      `/printers/${printerId}/drying/start?ams_id=${amsId}&temp=${temp}&duration=${duration}&filament=${encodeURIComponent(filament)}`,
+      `/printers/${printerId}/drying/start?ams_id=${amsId}&temp=${temp}&duration=${duration}&filament=${encodeURIComponent(filament)}&rotate_tray=${rotateTray}`,
       { method: 'POST' }
     ),
   stopDrying: (printerId: number, amsId: number) =>

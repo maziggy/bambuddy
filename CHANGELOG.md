@@ -30,6 +30,7 @@ All notable changes to Bambuddy will be documented in this file.
 
 ### Added
 - **Quick Print Speed Control** ([#256](https://github.com/maziggy/bambuddy/issues/256)) — Added a print speed control badge to the printer card controls row, next to the fan status badges. Click to choose between Silent (50%), Standard (100%), Sport (124%), and Ludicrous (166%) speed presets. The badge shows the current speed percentage with a gauge icon, always visible but disabled when no print is active. Includes optimistic UI updates for instant feedback. Requested by @Sllepper.
+- **Spool Rotation During AMS Drying** — Added a "Rotate spool during drying" checkbox to the manual drying popover for AMS 2 Pro and AMS-HT units. Rotates the spool for more even heat distribution. Off by default; resets when opening the popover for a different AMS unit. The firmware silently disables rotation if filament is currently loaded from the unit.
 - **Spool Name Column & Filter in Filament Inventory** ([#740](https://github.com/maziggy/bambuddy/issues/740)) — Added a "Spool" column to the filament inventory table that displays the spool catalog entry name (e.g. "Bambu Lab AMS Tray", "Sunlu 1kg"). Enable it via the column visibility menu. Sortable and hidden by default. Also added a spool name filter dropdown next to the brand filter for quick filtering by spool type. Requested by @DMoenning.
 
 ### Changed

@@ -419,6 +419,7 @@ export default {
       powerRequired: '连接AMS电源适配器以启用干燥',
       startingDrying: '正在启动干燥...',
       stoppingDrying: '正在停止干燥...',
+      rotateTray: '干燥时旋转料盘',
     },
     // Filaments section
     filaments: '耗材',

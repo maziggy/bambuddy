@@ -419,6 +419,7 @@ export default {
       powerRequired: 'Conecte o adaptador de energia AMS para ativar a secagem',
       startingDrying: 'Iniciando secagem...',
       stoppingDrying: 'Parando secagem...',
+      rotateTray: 'Girar o carretel durante a secagem',
     },
     // Filaments section
     filaments: 'Filamentos',

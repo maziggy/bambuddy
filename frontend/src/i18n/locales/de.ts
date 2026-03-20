@@ -419,6 +419,7 @@ export default {
       powerRequired: 'AMS-Netzteil anschließen, um Trocknung zu aktivieren',
       startingDrying: 'Trocknung wird gestartet...',
       stoppingDrying: 'Trocknung wird gestoppt...',
+      rotateTray: 'Spule während der Trocknung drehen',
     },
     // Filaments section
     filaments: 'Filamente',

@@ -4,6 +4,8 @@ Tests for the BambuMQTTClient service.
 These tests focus on timelapse tracking during prints.
 """
 
+import json
+
 import pytest
 
 
@@ -2376,3 +2378,74 @@ class TestDeveloperModeDetection:
                 }
             )
         assert mqtt_client.state.developer_mode is False
+
+
+class TestSendDryingCommand:
+    """Tests for send_drying_command MQTT payload construction."""
+
+    @pytest.fixture
+    def mqtt_client(self):
+        """Create a BambuMQTTClient with a mock MQTT client."""
+        from unittest.mock import MagicMock
+
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        client._client = MagicMock()
+        return client
+
+    def test_rotate_tray_false_by_default(self, mqtt_client):
+        """Verify rotate_tray defaults to False in the MQTT payload."""
+        mqtt_client.send_drying_command(ams_id=0, temp=55, duration=4, mode=1, filament="PLA")
+
+        call_args = mqtt_client._client.publish.call_args
+        payload = json.loads(call_args[0][1])
+        assert payload["print"]["rotate_tray"] is False
+
+    def test_rotate_tray_true_when_enabled(self, mqtt_client):
+        """Verify rotate_tray is True when explicitly enabled."""
+        mqtt_client.send_drying_command(ams_id=0, temp=55, duration=4, mode=1, filament="PLA", rotate_tray=True)
+
+        call_args = mqtt_client._client.publish.call_args
+        payload = json.loads(call_args[0][1])
+        assert payload["print"]["rotate_tray"] is True
+
+    def test_rotate_tray_false_on_stop(self, mqtt_client):
+        """Verify rotate_tray is False when stopping drying (mode=0)."""
+        mqtt_client.send_drying_command(ams_id=0, temp=0, duration=0, mode=0)
+
+        call_args = mqtt_client._client.publish.call_args
+        payload = json.loads(call_args[0][1])
+        assert payload["print"]["rotate_tray"] is False
+
+    def test_all_required_fields_present(self, mqtt_client):
+        """Verify all required MQTT fields are present in the drying command."""
+        mqtt_client.send_drying_command(ams_id=128, temp=75, duration=8, mode=1, filament="ABS", rotate_tray=True)
+
+        call_args = mqtt_client._client.publish.call_args
+        payload = json.loads(call_args[0][1])
+        cmd = payload["print"]
+        assert cmd["command"] == "ams_filament_drying"
+        assert cmd["ams_id"] == 128
+        assert cmd["temp"] == 75
+        assert cmd["duration"] == 8
+        assert cmd["mode"] == 1
+        assert cmd["rotate_tray"] is True
+        assert cmd["filament"] == "ABS"
+        assert cmd["cooling_temp"] == 20
+        assert cmd["humidity"] == 0
+        assert cmd["close_power_conflict"] is False
+        assert "sequence_id" in cmd
+
+    def test_publishes_with_qos_1(self, mqtt_client):
+        """Verify drying commands are published with QoS 1."""
+        mqtt_client.send_drying_command(ams_id=0, temp=55, duration=4)
+
+        call_args = mqtt_client._client.publish.call_args
+        # qos may be positional arg [2] or keyword
+        qos = call_args.kwargs.get("qos", call_args[0][2] if len(call_args[0]) > 2 else None)
+        assert qos == 1

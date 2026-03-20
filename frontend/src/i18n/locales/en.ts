@@ -419,6 +419,7 @@ export default {
       powerRequired: 'Connect AMS power adapter to enable drying',
       startingDrying: 'Starting drying...',
       stoppingDrying: 'Stopping drying...',
+      rotateTray: 'Rotate spool during drying',
     },
     // Filaments section
     filaments: 'Filaments',

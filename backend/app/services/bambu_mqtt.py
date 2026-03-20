@@ -2940,7 +2940,9 @@ class BambuMQTTClient:
         """Check if logging is enabled."""
         return self._logging_enabled
 
-    def send_drying_command(self, ams_id: int, temp: int, duration: int, mode: int = 1, filament: str = ""):
+    def send_drying_command(
+        self, ams_id: int, temp: int, duration: int, mode: int = 1, filament: str = "", rotate_tray: bool = False
+    ):
         """Send AMS drying start/stop command.
 
         Args:
@@ -2949,6 +2951,7 @@ class BambuMQTTClient:
             duration: Drying duration in hours
             mode: 1=start, 0=stop
             filament: Filament type string (e.g. "PLA", "PETG")
+            rotate_tray: Whether to rotate the spool during drying for even heat
         """
         if not self._client:
             return False
@@ -2963,7 +2966,7 @@ class BambuMQTTClient:
                 "duration": duration,
                 "humidity": 0,
                 "mode": mode,
-                "rotate_tray": False,
+                "rotate_tray": rotate_tray,
                 "filament": filament,
                 "close_power_conflict": False,
             }

@@ -327,11 +327,14 @@ ${CHANGELOG_NOTES}
 EOF
     )
 
-    # Delete existing release so the new one gets today's date
-    # (gh release edit only updates title/notes, not the creation timestamp)
-    if gh release view "v${DAILY_TAG}" >/dev/null 2>&1; then
-        echo "  Deleting old release v${DAILY_TAG} (will recreate with today's date)..."
-        gh release delete "v${DAILY_TAG}" --yes --cleanup-tag
+    # Delete ALL old daily releases — only the latest daily build should exist
+    echo "  Cleaning up old daily releases..."
+    OLD_DAILY_RELEASES=$(gh release list --limit 100 --json tagName --jq '.[] | select(.tagName | test("-daily\\.")) | .tagName' 2>/dev/null || true)
+    if [ -n "$OLD_DAILY_RELEASES" ]; then
+        while IFS= read -r old_tag; do
+            echo "  Deleting old daily release: ${old_tag}..."
+            gh release delete "$old_tag" --yes --cleanup-tag 2>/dev/null || true
+        done <<< "$OLD_DAILY_RELEASES"
     fi
 
     # Create/move tag to current HEAD and push

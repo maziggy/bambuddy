@@ -220,13 +220,16 @@ async def reset_settings(
     return DEFAULT_SETTINGS
 
 
-@router.get("/locked-sidebar-order")
-async def get_locked_sidebar_order(
+@router.get("/default-sidebar-order")
+async def get_default_sidebar_order(
     db: AsyncSession = Depends(get_db),
 ):
-    """Get the admin-locked sidebar order. No permission required so all users can apply it."""
-    value = await get_setting(db, "locked_sidebar_order")
-    return {"locked_sidebar_order": value or ""}
+    """Get the admin-set default sidebar order. No permission required so all users can apply it."""
+    value = await get_setting(db, "default_sidebar_order")
+    # Fallback: read legacy key for existing installs that haven't written with the new key yet
+    if not value:
+        value = await get_setting(db, "locked_sidebar_order")
+    return {"default_sidebar_order": value or ""}
 
 
 @router.get("/check-ffmpeg")

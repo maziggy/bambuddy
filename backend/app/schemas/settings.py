@@ -185,7 +185,7 @@ class AppSettings(BaseModel):
     )
 
     # Default sidebar order (admin-set for all users)
-    locked_sidebar_order: str = Field(
+    default_sidebar_order: str = Field(
         default="",
         description="JSON array of sidebar item IDs set as default menu order for all users (empty = no default)",
     )
@@ -258,4 +258,4 @@ class AppSettingsUpdate(BaseModel):
     prometheus_token: str | None = None
     low_stock_threshold: float | None = Field(default=None, ge=0.1, le=99.9)
     user_notifications_enabled: bool | None = None
-    locked_sidebar_order: str | None = None
+    default_sidebar_order: str | None = None

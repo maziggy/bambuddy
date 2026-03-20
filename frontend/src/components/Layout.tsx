@@ -117,35 +117,35 @@ export function Layout() {
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
-  // Fetch locked sidebar order via a public endpoint (no settings:read needed)
-  const { data: lockedSidebarData } = useQuery({
-    queryKey: ['locked-sidebar-order'],
-    queryFn: api.getLockedSidebarOrder,
+  // Fetch default sidebar order via a public endpoint (no settings:read needed)
+  const { data: defaultSidebarData } = useQuery({
+    queryKey: ['default-sidebar-order'],
+    queryFn: api.getDefaultSidebarOrder,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   // Apply admin default sidebar order when it changes (includes a timestamp
   // so repeated pushes of the same order still trigger an update).
   useEffect(() => {
-    const locked = lockedSidebarData?.locked_sidebar_order;
-    if (locked) {
-      const lastApplied = localStorage.getItem('appliedLockedSidebarOrder');
-      if (lastApplied !== locked) {
+    const defaultOrder = defaultSidebarData?.default_sidebar_order;
+    if (defaultOrder) {
+      const lastApplied = localStorage.getItem('appliedDefaultSidebarOrder');
+      if (lastApplied !== defaultOrder) {
         try {
-          const parsed = JSON.parse(locked);
+          const parsed = JSON.parse(defaultOrder);
           // Support both { order: [...], ts } wrapper and plain array
-          const lockedOrder = Array.isArray(parsed) ? parsed : parsed.order;
-          if (Array.isArray(lockedOrder) && lockedOrder.length > 0) {
-            setSidebarOrder(lockedOrder);
-            saveSidebarOrder(lockedOrder);
-            localStorage.setItem('appliedLockedSidebarOrder', locked);
+          const orderArr = Array.isArray(parsed) ? parsed : parsed.order;
+          if (Array.isArray(orderArr) && orderArr.length > 0) {
+            setSidebarOrder(orderArr);
+            saveSidebarOrder(orderArr);
+            localStorage.setItem('appliedDefaultSidebarOrder', defaultOrder);
           }
         } catch {
           // Invalid JSON, ignore
         }
       }
     }
-  }, [lockedSidebarData?.locked_sidebar_order]);
+  }, [defaultSidebarData?.default_sidebar_order]);
 
   // Check advanced auth status for conditional nav items
   const { data: advancedAuthStatus } = useQuery({

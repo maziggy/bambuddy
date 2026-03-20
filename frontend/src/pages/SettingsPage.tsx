@@ -75,7 +75,7 @@ export function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { t, i18n } = useTranslation();
   const { showToast } = useToast();
-  const { authEnabled, user, refreshAuth } = useAuth();
+  const { authEnabled, user, refreshAuth, hasPermission } = useAuth();
   const {
     mode,
     darkStyle, darkBackground, darkAccent,
@@ -174,19 +174,31 @@ export function SettingsPage() {
     showToast(t('settings.toast.settingsSaved'), 'success');
   };
 
-  const handleResetSidebarOrder = () => {
+  const handleResetSidebarOrder = async () => {
     localStorage.removeItem('sidebarOrder');
+    localStorage.removeItem('appliedDefaultSidebarOrder');
+    if (authEnabled && hasPermission('settings:update')) {
+      try {
+        const defaultOrder = defaultNavItems.map(i => i.id);
+        const payload = JSON.stringify({ order: defaultOrder, ts: Date.now() });
+        await api.updateSettings({ default_sidebar_order: payload });
+        queryClient.invalidateQueries({ queryKey: ['settings'] });
+        queryClient.invalidateQueries({ queryKey: ['default-sidebar-order'] });
+      } catch {
+        // Still reset locally even if API fails
+      }
+    }
     window.location.reload();
   };
 
   const handleSetDefaultSidebarOrder = async () => {
-    const stored = localStorage.getItem('sidebarOrder');
-    const orderArr = stored ? JSON.parse(stored) : defaultNavItems.map(i => i.id);
-    const payload = JSON.stringify({ order: orderArr, ts: Date.now() });
     try {
-      await api.updateSettings({ locked_sidebar_order: payload });
+      const stored = localStorage.getItem('sidebarOrder');
+      const orderArr = stored ? JSON.parse(stored) : defaultNavItems.map(i => i.id);
+      const payload = JSON.stringify({ order: orderArr, ts: Date.now() });
+      await api.updateSettings({ default_sidebar_order: payload });
       queryClient.invalidateQueries({ queryKey: ['settings'] });
-      queryClient.invalidateQueries({ queryKey: ['locked-sidebar-order'] });
+      queryClient.invalidateQueries({ queryKey: ['default-sidebar-order'] });
       showToast(t('settings.sidebarDefaultSet'), 'success');
     } catch {
       showToast(t('settings.sidebarDefaultFailed'), 'error');
@@ -1191,11 +1203,11 @@ export function SettingsPage() {
                   <p className="text-white">{t('settings.sidebarOrder')}</p>
                   <p className="text-sm text-bambu-gray">
                     {t('settings.sidebarOrderDescription')}
-                    {authEnabled && ` ${t('settings.sidebarOrderSetDefaultHint')}`}
+                    {authEnabled && hasPermission('settings:update') && ` ${t('settings.sidebarOrderSetDefaultHint')}`}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  {authEnabled && (
+                  {authEnabled && hasPermission('settings:update') && (
                     <Button
                       variant="secondary"
                       size="sm"

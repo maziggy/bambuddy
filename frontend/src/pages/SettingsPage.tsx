@@ -189,9 +189,11 @@ export function SettingsPage() {
         const orderArr = stored ? JSON.parse(stored) : defaultNavItems.map(i => i.id);
         const payload = JSON.stringify({ order: orderArr });
         await api.updateSettings({ default_sidebar_order: payload });
+        setLocalSettings(prev => prev ? { ...prev, default_sidebar_order: payload } : prev);
         showToast(t('settings.sidebarDefaultSet'), 'success');
       } else {
         await api.updateSettings({ default_sidebar_order: '' });
+        setLocalSettings(prev => prev ? { ...prev, default_sidebar_order: '' } : prev);
         showToast(t('settings.sidebarDefaultCleared'), 'success');
       }
       queryClient.invalidateQueries({ queryKey: ['settings'] });

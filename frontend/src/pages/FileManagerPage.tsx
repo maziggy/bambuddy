@@ -126,12 +126,17 @@ interface RenameModalProps {
 }
 
 function RenameModal({ type, currentName, onClose, onSave, isLoading, t }: RenameModalProps) {
-  const [name, setName] = useState(currentName);
+  // For files, separate the extension so users can only edit the base name
+  // Handle compound extensions like .gcode.3mf
+  const fileExtension = type === 'file' ? (currentName.match(/(\.gcode\.3mf|\.3mf|\.gcode)$/i)?.[1] ?? '') : '';
+  const baseName = type === 'file' && fileExtension ? currentName.slice(0, -fileExtension.length) : currentName;
+  const [name, setName] = useState(baseName);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (name.trim() && name.trim() !== currentName) {
-      onSave(name.trim());
+    const fullName = type === 'file' ? name.trim() + fileExtension : name.trim();
+    if (name.trim() && fullName !== currentName) {
+      onSave(fullName);
     }
   };
 
@@ -146,20 +151,25 @@ function RenameModal({ type, currentName, onClose, onSave, isLoading, t }: Renam
             <label className="block text-sm font-medium text-white mb-1">
               {t('common.name')}
             </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-              autoFocus
-              required
-            />
+            <div className="flex items-center bg-bambu-dark border border-bambu-dark-tertiary rounded focus-within:border-bambu-green">
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="flex-1 bg-transparent px-3 py-2 text-white placeholder-bambu-gray focus:outline-none min-w-0"
+                autoFocus
+                required
+              />
+              {fileExtension && (
+                <span className="pr-3 text-bambu-gray text-sm select-none whitespace-nowrap">{fileExtension}</span>
+              )}
+            </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={onClose}>
               {t('common.cancel')}
             </Button>
-            <Button type="submit" disabled={!name.trim() || name.trim() === currentName || isLoading}>
+            <Button type="submit" disabled={!name.trim() || name.trim() === baseName || isLoading}>
               {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('common.rename')}
             </Button>
           </div>

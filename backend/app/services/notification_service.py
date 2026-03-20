@@ -488,10 +488,11 @@ class NotificationService:
     async def _send_homeassistant(
         self, config: dict, title: str, message: str, db: AsyncSession | None = None
     ) -> tuple[bool, str]:
-        """Send notification via Home Assistant persistent notifications.
+        """Send notification via Home Assistant.
 
-        Uses the globally configured HA URL/token from settings,
-        and calls POST /api/services/persistent_notification/create.
+        Uses the globally configured HA URL/token from settings.
+        Defaults to persistent_notification/create, but supports
+        custom services via config["service"] (e.g. notify.mobile_app_myphone).
         """
         # Get HA connection settings from global config
         ha_url = ""
@@ -518,7 +519,34 @@ class NotificationService:
                 "Home Assistant is not configured. Please set HA URL and token in Settings → Network → Home Assistant."
             )
 
-        url = f"{ha_url.rstrip('/')}/api/services/persistent_notification/create"
+        # Determine which HA service to call - Default: persistent_notification.create
+        service = (config.get("service") or "").strip()
+        if service:
+            # Allow in different forms:
+            # - notify.mobile_app_<device>
+            # - notify/mobile_app_<device>
+            # - api/services/notify/mobile_app_<device>
+            service_str = service.lstrip("/")
+            if service_str.startswith("api/services/"):
+                endpoint = service_str
+            elif "/" in service_str:
+                endpoint = f"api/services/{service_str}"
+            elif "." in service_str:
+                domain, svc = service_str.split(".", 1)
+                endpoint = f"api/services/{domain}/{svc}"
+            else:
+                return False, (
+                    "Invalid Home Assistant service name. Use e.g. 'notify.mobile_app_yourdevice' or 'notify/your_service'."
+                )
+
+            if not re.match(r"^api/services/[a-zA-Z0-9_]+/[a-zA-Z0-9_]+$", endpoint):
+                return False, (
+                    "Invalid Home Assistant service name. Domain and service must only contain letters, numbers, and underscores."
+                )
+        else:
+            endpoint = "api/services/persistent_notification/create"
+
+        url = f"{ha_url.rstrip('/')}/{endpoint}"
         headers = {
             "Authorization": f"Bearer {ha_token}",
             "Content-Type": "application/json",

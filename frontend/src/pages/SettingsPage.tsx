@@ -398,8 +398,6 @@ export function SettingsPage() {
   });
 
   // User management queries and mutations
-  const { hasPermission } = useAuth();
-
   const { data: usersData = [], isLoading: usersLoading } = useQuery({
     queryKey: ['users'],
     queryFn: () => api.getUsers(),

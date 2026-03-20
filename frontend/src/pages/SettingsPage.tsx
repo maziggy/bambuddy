@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, ListOrdered } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -25,6 +25,7 @@ import { VirtualPrinterList } from '../components/VirtualPrinterList';
 import { GitHubBackupSettings } from '../components/GitHubBackupSettings';
 import { EmailSettings } from '../components/EmailSettings';
 import { APIBrowser } from '../components/APIBrowser';
+import { Toggle } from '../components/Toggle';
 import { virtualPrinterApi } from '../api/client';
 import { defaultNavItems, getDefaultView, setDefaultView } from '../components/Layout';
 import { availableLanguages } from '../i18n';
@@ -174,32 +175,27 @@ export function SettingsPage() {
     showToast(t('settings.toast.settingsSaved'), 'success');
   };
 
-  const handleResetSidebarOrder = async () => {
+  const handleResetSidebarOrder = () => {
     localStorage.removeItem('sidebarOrder');
-    localStorage.removeItem('appliedDefaultSidebarOrder');
-    if (authEnabled && hasPermission('settings:update')) {
-      try {
-        const defaultOrder = defaultNavItems.map(i => i.id);
-        const payload = JSON.stringify({ order: defaultOrder, ts: Date.now() });
-        await api.updateSettings({ default_sidebar_order: payload });
-        queryClient.invalidateQueries({ queryKey: ['settings'] });
-        queryClient.invalidateQueries({ queryKey: ['default-sidebar-order'] });
-      } catch {
-        // Still reset locally even if API fails
-      }
-    }
     window.location.reload();
   };
 
-  const handleSetDefaultSidebarOrder = async () => {
+  const isDefaultSidebarEnabled = !!localSettings?.default_sidebar_order;
+
+  const handleToggleDefaultSidebarOrder = async (enabled: boolean) => {
     try {
-      const stored = localStorage.getItem('sidebarOrder');
-      const orderArr = stored ? JSON.parse(stored) : defaultNavItems.map(i => i.id);
-      const payload = JSON.stringify({ order: orderArr, ts: Date.now() });
-      await api.updateSettings({ default_sidebar_order: payload });
+      if (enabled) {
+        const stored = localStorage.getItem('sidebarOrder');
+        const orderArr = stored ? JSON.parse(stored) : defaultNavItems.map(i => i.id);
+        const payload = JSON.stringify({ order: orderArr });
+        await api.updateSettings({ default_sidebar_order: payload });
+        showToast(t('settings.sidebarDefaultSet'), 'success');
+      } else {
+        await api.updateSettings({ default_sidebar_order: '' });
+        showToast(t('settings.sidebarDefaultCleared'), 'success');
+      }
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       queryClient.invalidateQueries({ queryKey: ['default-sidebar-order'] });
-      showToast(t('settings.sidebarDefaultSet'), 'success');
     } catch {
       showToast(t('settings.sidebarDefaultFailed'), 'error');
     }
@@ -1207,17 +1203,6 @@ export function SettingsPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  {authEnabled && hasPermission('settings:update') && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="whitespace-nowrap"
-                      onClick={handleSetDefaultSidebarOrder}
-                    >
-                      <ListOrdered className="w-4 h-4" />
-                      {t('settings.setDefault')}
-                    </Button>
-                  )}
                   <Button
                     variant="secondary"
                     size="sm"
@@ -1226,6 +1211,15 @@ export function SettingsPage() {
                     <RotateCcw className="w-4 h-4" />
                     {t('settings.reset')}
                   </Button>
+                  {authEnabled && hasPermission('settings:update') && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-bambu-gray whitespace-nowrap">{t('settings.setDefault')}</span>
+                      <Toggle
+                        checked={isDefaultSidebarEnabled}
+                        onChange={handleToggleDefaultSidebarOrder}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             </CardContent>

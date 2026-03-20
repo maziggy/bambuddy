@@ -1729,8 +1729,9 @@ export default {
     slicerOrcaSlicer: 'OrcaSlicer',
     sidebarOrderDescription: 'サイドバーの項目をドラッグして並べ替え。ここでデフォルトの順序にリセット。',
     setDefault: 'デフォルト設定',
-    sidebarOrderSetDefaultHint: 'デフォルト設定は現在のメニュー構成を全ユーザーに適用します。',
-    sidebarDefaultSet: '全ユーザーのデフォルトメニュー順序を設定しました。',
+    sidebarOrderSetDefaultHint: 'デフォルト設定は現在のメニュー構成を全新規ユーザーに適用します。',
+    sidebarDefaultSet: '新規ユーザーのデフォルトメニュー順序を設定しました。',
+    sidebarDefaultCleared: 'デフォルトメニュー順序をクリアしました。',
     sidebarDefaultFailed: 'デフォルトメニュー順序の設定に失敗しました。',
     reset: 'リセット',
     // Appearance

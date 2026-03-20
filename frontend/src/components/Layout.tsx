@@ -124,28 +124,22 @@ export function Layout() {
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
-  // Apply admin default sidebar order when it changes (includes a timestamp
-  // so repeated pushes of the same order still trigger an update).
+  // Apply admin default sidebar order to new users only (no existing sidebarOrder in localStorage).
   useEffect(() => {
     const defaultOrder = defaultSidebarData?.default_sidebar_order;
-    if (defaultOrder) {
-      const lastApplied = localStorage.getItem('appliedDefaultSidebarOrder');
-      if (lastApplied !== defaultOrder) {
-        try {
-          const parsed = JSON.parse(defaultOrder);
-          // Support both { order: [...], ts } wrapper and plain array
-          const orderArr = Array.isArray(parsed) ? parsed : parsed.order;
-          if (Array.isArray(orderArr) && orderArr.length > 0) {
-            setSidebarOrder(orderArr);
-            saveSidebarOrder(orderArr);
-            localStorage.setItem('appliedDefaultSidebarOrder', defaultOrder);
-          }
-        } catch {
-          // Invalid JSON, ignore
+    if (defaultOrder && !localStorage.getItem('sidebarOrder')) {
+      try {
+        const parsed = JSON.parse(defaultOrder);
+        const orderArr = Array.isArray(parsed) ? parsed : parsed.order;
+        if (Array.isArray(orderArr) && orderArr.length > 0) {
+          setSidebarOrder(orderArr);
+          saveSidebarOrder(orderArr);
         }
+      } catch {
+        // Invalid JSON, ignore
       }
     }
-  }, [defaultSidebarData?.default_sidebar_order]);
+  }, [defaultSidebarData?.default_sidebar_order, setSidebarOrder]);
 
   // Check advanced auth status for conditional nav items
   const { data: advancedAuthStatus } = useQuery({

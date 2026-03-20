@@ -226,9 +226,6 @@ async def get_default_sidebar_order(
 ):
     """Get the admin-set default sidebar order. No permission required so all users can apply it."""
     value = await get_setting(db, "default_sidebar_order")
-    # Fallback: read legacy key for existing installs that haven't written with the new key yet
-    if not value:
-        value = await get_setting(db, "locked_sidebar_order")
     return {"default_sidebar_order": value or ""}
 
 

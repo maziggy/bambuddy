@@ -1463,6 +1463,7 @@ class SlicerProxyManager:
         self._rtsp_proxy: TCPProxy | None = None
         self._bind_proxies: list[TCPProxy] = []
         self._bind_server = None
+        self._probe_servers: list[asyncio.Server] = []
         self._tasks: list[asyncio.Task] = []
 
     # FTP passive data port range — Bambu printers typically use ports in
@@ -1650,6 +1651,23 @@ class SlicerProxyManager:
                 )
             )
 
+        # Diagnostic probe: listen on common un-proxied ports to detect
+        # if the slicer tries to reach a service we don't handle.
+        if self.bind_address and self.bind_address != "0.0.0.0":
+            for probe_port in (21, 80, 443):
+                try:
+                    srv = await asyncio.start_server(
+                        lambda r, w, p=probe_port: self._probe_handler(r, w, p),
+                        self.bind_address,
+                        probe_port,
+                    )
+                    self._probe_servers.append(srv)
+                except OSError:
+                    pass  # Port in use or no permission — skip
+            if self._probe_servers:
+                probed = [s.sockets[0].getsockname()[1] for s in self._probe_servers if s.sockets]
+                logger.info("Proxy diagnostic: probing un-proxied ports %s on %s", probed, self.bind_address)
+
         logger.info(
             "Slicer proxy started for %s (transparent TCP + MQTT TLS, %d FTP data ports)",
             self.target_host,
@@ -1696,6 +1714,10 @@ class SlicerProxyManager:
             await dp.stop()
         self._ftp_data_proxies = []
 
+        for srv in self._probe_servers:
+            srv.close()
+        self._probe_servers = []
+
         # Cancel tasks
         for task in self._tasks:
             task.cancel()
@@ -1711,6 +1733,21 @@ class SlicerProxyManager:
 
         self._tasks = []
         logger.info("Slicer proxy stopped")
+
+    async def _probe_handler(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, port: int) -> None:
+        """Log unexpected connections on un-proxied ports for diagnostics."""
+        peername = writer.get_extra_info("peername")
+        client = f"{peername[0]}:{peername[1]}" if peername else "unknown"
+        logger.warning(
+            "PROBE: slicer connected to un-proxied port %d from %s — this port may need proxying",
+            port,
+            client,
+        )
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except OSError:
+            pass
 
     def _log_activity(self, name: str, message: str) -> None:
         """Log activity via callback if configured."""

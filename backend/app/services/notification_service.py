@@ -488,10 +488,11 @@ class NotificationService:
     async def _send_homeassistant(
         self, config: dict, title: str, message: str, db: AsyncSession | None = None
     ) -> tuple[bool, str]:
-        """Send notification via Home Assistant persistent notifications.
+        """Send notification via Home Assistant.
 
-        Uses the globally configured HA URL/token from settings,
-        and calls POST /api/services/persistent_notification/create.
+        Uses the globally configured HA URL/token from settings.
+        Defaults to persistent_notification/create, but supports
+        custom services via config["service"] (e.g. notify.mobile_app_myphone).
         """
         # Get HA connection settings from global config
         ha_url = ""
@@ -517,8 +518,6 @@ class NotificationService:
             return False, (
                 "Home Assistant is not configured. Please set HA URL and token in Settings → Network → Home Assistant."
             )
-
-        config = config or {}
 
         # Determine which HA service to call - Default: persistent_notification.create
         service = (config.get("service") or "").strip()

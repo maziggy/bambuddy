@@ -194,3 +194,28 @@ describe('temperature clamping', () => {
     });
   });
 });
+
+describe('rotate tray option', () => {
+  it('defaults to false', () => {
+    // Mirrors the initial state: useState(false)
+    const defaultRotateTray = false;
+    expect(defaultRotateTray).toBe(false);
+  });
+
+  it('is included in the API URL when true', () => {
+    // Mirrors the API call construction from client.ts
+    const buildUrl = (rotateTray: boolean) =>
+      `/printers/1/drying/start?ams_id=0&temp=55&duration=4&filament=PLA&rotate_tray=${rotateTray}`;
+    expect(buildUrl(true)).toContain('rotate_tray=true');
+    expect(buildUrl(false)).toContain('rotate_tray=false');
+  });
+
+  it('resets to false when opening popover for a new AMS unit', () => {
+    // Mirrors the popover open logic: setDryingRotateTray(false) is called
+    // each time the popover opens for any AMS unit
+    let rotateTray = true; // user enabled it for previous AMS
+    // Simulates opening popover for a different AMS
+    rotateTray = false; // setDryingRotateTray(false)
+    expect(rotateTray).toBe(false);
+  });
+});

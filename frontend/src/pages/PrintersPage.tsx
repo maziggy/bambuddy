@@ -1594,6 +1594,7 @@ function PrinterCard({
   const [dryingFilament, setDryingFilament] = useState('PLA');
   const [dryingTemp, setDryingTemp] = useState(50);
   const [dryingDuration, setDryingDuration] = useState(4);
+  const [dryingRotateTray, setDryingRotateTray] = useState(false);
   const [dryingPopoverPos, setDryingPopoverPos] = useState<{ top: number; left: number } | null>(null);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [isDropUploading, setIsDropUploading] = useState(false);
@@ -1894,8 +1895,8 @@ function PrinterCard({
 
   // AMS drying mutations
   const startDryingMutation = useMutation({
-    mutationFn: ({ amsId, temp, duration, filament }: { amsId: number; temp: number; duration: number; filament: string }) =>
-      api.startDrying(printer.id, amsId, temp, duration, filament),
+    mutationFn: ({ amsId, temp, duration, filament, rotateTray }: { amsId: number; temp: number; duration: number; filament: string; rotateTray: boolean }) =>
+      api.startDrying(printer.id, amsId, temp, duration, filament, rotateTray),
     onSuccess: () => {
       setDryingPopoverAmsId(null);
       queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
@@ -3199,6 +3200,7 @@ function PrinterCard({
                                           setDryingFilament(filType);
                                           setDryingTemp(preset[moduleType] || preset.n3f);
                                           setDryingDuration(moduleType === 'n3s' ? preset.n3s_hours : preset.n3f_hours);
+                                          setDryingRotateTray(false);
                                           setDryingPopoverModuleType(ams.module_type);
                                           setDryingPopoverAmsId(ams.id);
                                           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -3607,6 +3609,7 @@ function PrinterCard({
                                         setDryingFilament(filType);
                                         setDryingTemp(preset[moduleType] || preset.n3f);
                                         setDryingDuration(moduleType === 'n3s' ? preset.n3s_hours : preset.n3f_hours);
+                                        setDryingRotateTray(false);
                                         setDryingPopoverModuleType(ams.module_type);
                                         setDryingPopoverAmsId(ams.id);
                                         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -4841,13 +4844,23 @@ function PrinterCard({
                     <span>24h</span>
                   </div>
                 </div>
+                {/* Rotate tray */}
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={dryingRotateTray}
+                    onChange={e => setDryingRotateTray(e.target.checked)}
+                    className="w-3.5 h-3.5 accent-amber-500 rounded cursor-pointer"
+                  />
+                  <span className="text-[11px] text-bambu-gray">{t('printers.drying.rotateTray')}</span>
+                </label>
               </div>
               {/* Footer */}
               <div className="px-3 pb-3">
                 <button
                   onClick={() => {
                     if (dryingPopoverAmsId !== null) {
-                      startDryingMutation.mutate({ amsId: dryingPopoverAmsId, temp: dryingTemp, duration: dryingDuration, filament: dryingFilament });
+                      startDryingMutation.mutate({ amsId: dryingPopoverAmsId, temp: dryingTemp, duration: dryingDuration, filament: dryingFilament, rotateTray: dryingRotateTray });
                     }
                   }}
                   disabled={startDryingMutation.isPending}

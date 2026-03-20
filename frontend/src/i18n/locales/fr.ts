@@ -419,6 +419,7 @@ export default {
       powerRequired: 'Brancher l\'adaptateur secteur AMS pour activer le séchage',
       startingDrying: 'Démarrage du séchage...',
       stoppingDrying: 'Arrêt du séchage...',
+      rotateTray: 'Tourner la bobine pendant le séchage',
     },
     // Filaments section
     filaments: 'Filaments',

@@ -418,6 +418,7 @@ export default {
       powerRequired: 'AMS電源アダプターを接続して乾燥を有効にしてください',
       startingDrying: '乾燥を開始しています...',
       stoppingDrying: '乾燥を停止しています...',
+      rotateTray: '乾燥中にスプールを回転',
     },
     // Filaments section
     filaments: 'フィラメント',

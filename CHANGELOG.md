@@ -34,6 +34,7 @@ All notable changes to Bambuddy will be documented in this file.
 - **Spool Name Column & Filter in Filament Inventory** ([#740](https://github.com/maziggy/bambuddy/issues/740)) — Added a "Spool" column to the filament inventory table that displays the spool catalog entry name (e.g. "Bambu Lab AMS Tray", "Sunlu 1kg"). Enable it via the column visibility menu. Sortable and hidden by default. Also added a spool name filter dropdown next to the brand filter for quick filtering by spool type. Requested by @DMoenning.
 
 ### Changed
+- **Redesigned Bug Report Debug Log Flow** — Replaced the fixed 30-second debug log collection with an interactive 3-step flow: start debug logging, reproduce the issue at your own pace, then stop & submit. An elapsed timer shows recording duration with auto-stop at 5 minutes. Users now have full control over when to capture logs instead of racing a countdown. The backend splits log collection into separate start/stop endpoints, and the frontend shows a step progress indicator with pulsing active state.
 
 ### Improved
 - **Print Command Response Verification** ([#737](https://github.com/maziggy/bambuddy/issues/737)) — After sending a print command, BambuBuddy now monitors whether the printer's state changes within 15 seconds. If the printer silently ignores the command (observed on some P1S firmware versions where the MQTT command handler becomes unresponsive), a warning is logged for diagnostics. This aids debugging when users report prints not starting despite BambuBuddy showing success.

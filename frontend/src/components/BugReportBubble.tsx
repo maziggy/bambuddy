@@ -1,14 +1,13 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Bug, X, Loader2, CheckCircle, AlertCircle, Trash2, Upload } from 'lucide-react';
+import { Bug, X, Loader2, CheckCircle, AlertCircle, Trash2, Upload, Circle, CheckCircle2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { bugReportApi } from '../api/client';
 
-type ViewState = 'form' | 'collecting' | 'submitting' | 'success' | 'error';
-
-const LOG_COLLECTION_SECONDS = 30;
+type ViewState = 'form' | 'logging' | 'stopping' | 'submitting' | 'success' | 'error';
 
 const MAX_DIMENSION = 1920;
 const JPEG_QUALITY = 0.7;
+const MAX_LOG_SECONDS = 300; // 5 minutes
 
 function compressImage(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -34,6 +33,12 @@ function compressImage(file: File): Promise<string> {
   });
 }
 
+function formatElapsed(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
 export function BugReportBubble() {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
@@ -45,20 +50,22 @@ export function BugReportBubble() {
   const [issueUrl, setIssueUrl] = useState<string | null>(null);
   const [issueNumber, setIssueNumber] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
-  const [countdown, setCountdown] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [wasDebug, setWasDebug] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const handleStopLoggingRef = useRef<() => void>(() => {});
 
-  // Countdown timer for log collection phase
+  // Elapsed timer for logging phase — auto-stop at 5 minutes
   useEffect(() => {
-    if (viewState !== 'collecting') return;
-    if (countdown <= 0) {
-      setViewState('submitting');
+    if (viewState !== 'logging') return;
+    if (elapsedSeconds >= MAX_LOG_SECONDS) {
+      handleStopLoggingRef.current();
       return;
     }
-    const timer = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    const timer = setTimeout(() => setElapsedSeconds((s) => s + 1), 1000);
     return () => clearTimeout(timer);
-  }, [viewState, countdown]);
+  }, [viewState, elapsedSeconds]);
 
   const handleOpen = () => {
     setIsOpen(true);
@@ -69,6 +76,8 @@ export function BugReportBubble() {
     setIssueUrl(null);
     setIssueNumber(null);
     setErrorMessage('');
+    setElapsedSeconds(0);
+    setWasDebug(false);
   };
 
   const handleClose = () => {
@@ -114,16 +123,40 @@ export function BugReportBubble() {
     if (file) handleFile(file);
   }, [handleFile]);
 
-  const handleSubmit = async () => {
+  const handleStartLogging = async () => {
     if (!description.trim()) return;
-    setCountdown(LOG_COLLECTION_SECONDS);
-    setViewState('collecting');
+    try {
+      const result = await bugReportApi.startLogging();
+      setWasDebug(result.was_debug);
+      setElapsedSeconds(0);
+      setViewState('logging');
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : t('bugReport.unexpectedError'));
+      setViewState('error');
+    }
+  };
+
+  const handleStopLogging = async () => {
+    setViewState('stopping');
+    try {
+      const stopResult = await bugReportApi.stopLogging(wasDebug);
+      await handleSubmitReport(stopResult.logs);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : t('bugReport.unexpectedError'));
+      setViewState('error');
+    }
+  };
+  handleStopLoggingRef.current = handleStopLogging;
+
+  const handleSubmitReport = async (debugLogs: string) => {
+    setViewState('submitting');
     try {
       const result = await bugReportApi.submit({
         description: description.trim(),
         email: email.trim() || undefined,
         screenshot_base64: screenshot || undefined,
         include_support_info: true,
+        debug_logs: debugLogs || undefined,
       });
       if (result.success) {
         setIssueUrl(result.issue_url || null);
@@ -281,30 +314,64 @@ export function BugReportBubble() {
                       {t('common.cancel')}
                     </button>
                     <button
-                      onClick={handleSubmit}
+                      onClick={handleStartLogging}
                       disabled={!description.trim()}
                       className="px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
                     >
-                      {t('bugReport.submit')}
+                      {t('bugReport.startLogging')}
                     </button>
                   </div>
                 </>
               )}
 
-              {(viewState === 'collecting' || viewState === 'submitting') && (
+              {viewState === 'logging' && (
+                <div className="py-6 space-y-6">
+                  {/* 3-step progress indicator */}
+                  <div className="space-y-3 px-2">
+                    {/* Step 1: Completed */}
+                    <div className="flex items-center gap-3">
+                      <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" />
+                      <span className="text-sm text-green-700 dark:text-green-400">{t('bugReport.stepEnableLogging')}</span>
+                    </div>
+                    {/* Step 2: Active */}
+                    <div className="flex items-center gap-3">
+                      <span className="relative flex h-5 w-5 flex-shrink-0 items-center justify-center">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                      </span>
+                      <span className="text-sm font-medium text-blue-700 dark:text-blue-300">{t('bugReport.stepReproduce')}</span>
+                    </div>
+                    {/* Step 3: Upcoming */}
+                    <div className="flex items-center gap-3">
+                      <Circle className="w-5 h-5 text-gray-300 dark:text-gray-600 flex-shrink-0" />
+                      <span className="text-sm text-gray-400 dark:text-gray-500">{t('bugReport.stepStopLogging')}</span>
+                    </div>
+                  </div>
+
+                  {/* Elapsed timer */}
+                  <div className="text-center">
+                    <p className="text-3xl font-mono text-blue-500">{formatElapsed(elapsedSeconds)}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{t('bugReport.maxDuration', { minutes: 5 })}</p>
+                  </div>
+
+                  {/* Stop & Submit button */}
+                  <div className="flex justify-center">
+                    <button
+                      onClick={handleStopLogging}
+                      className="px-6 py-2.5 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors"
+                    >
+                      {t('bugReport.stopAndSubmit')}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {(viewState === 'stopping' || viewState === 'submitting') && (
                 <div className="flex flex-col items-center justify-center py-8 gap-3">
                   <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-                  {viewState === 'collecting' ? (
-                    <>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">{t('bugReport.collectingLogs')}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{t('bugReport.collectingLogsHint')}</p>
-                      {countdown > 0 && (
-                        <p className="text-lg font-mono text-blue-500">{t('bugReport.countdownSeconds', { seconds: countdown })}</p>
-                      )}
-                    </>
-                  ) : (
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{t('bugReport.submitting')}</p>
-                  )}
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    {viewState === 'stopping' ? t('bugReport.stoppingLogs') : t('bugReport.submitting')}
+                  </p>
                 </div>
               )}
 

@@ -12,15 +12,30 @@ Key learnings from pico-nfc-bridge.ino:
 
 import hashlib
 import hmac
+import os
 import sys
 import time
 
 import gpiod
 import spidev
 
-BUSY_PIN = 25
-RST_PIN = 24
-NSS_PIN = 23  # Manual CS (moved from GPIO8)
+
+def _env_int(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None or value == "":
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+BUSY_PIN = _env_int("SPOOLBUDDY_NFC_BUSY_PIN", 25)
+RST_PIN = _env_int("SPOOLBUDDY_NFC_RST_PIN", 24)
+NSS_PIN = _env_int("SPOOLBUDDY_NFC_NSS_PIN", 23)  # Manual CS by default
+SPI_BUS = _env_int("SPOOLBUDDY_NFC_SPI_BUS", 0)
+SPI_DEVICE = _env_int("SPOOLBUDDY_NFC_SPI_DEVICE", 0)
+SPI_SPEED_HZ = _env_int("SPOOLBUDDY_NFC_SPI_SPEED_HZ", 500_000)
 
 # Bambu Lab MIFARE Classic key derivation constants (from pico-nfc-bridge.ino)
 BAMBU_MASTER_KEY = bytes(
@@ -102,8 +117,8 @@ class PN5180:
             },
         )
         self._spi = spidev.SpiDev()
-        self._spi.open(0, 0)
-        self._spi.max_speed_hz = 500_000  # 500kHz like Pico firmware
+        self._spi.open(SPI_BUS, SPI_DEVICE)
+        self._spi.max_speed_hz = SPI_SPEED_HZ
         self._spi.mode = 0b00
         self._spi.no_cs = True
 

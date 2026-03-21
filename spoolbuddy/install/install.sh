@@ -423,6 +423,9 @@ SPOOLBUDDY_BACKEND_URL=$BAMBUDDY_URL
 
 # API key (create one in Bambuddy Settings -> API Keys)
 SPOOLBUDDY_API_KEY=$API_KEY
+
+# NAU7802 scale bus (RPi GPIO2/GPIO3)
+SPOOLBUDDY_I2C_BUS=1
 EOF
 
     chown "$SPOOLBUDDY_SERVICE_USER:$SPOOLBUDDY_SERVICE_USER" "$env_file"
@@ -666,6 +669,15 @@ setup_kiosk() {
     info "Kiosk user: $KIOSK_USER (home: $KIOSK_HOME)"
     info "Kiosk URL:  $KIOSK_URL"
 
+    # Allow kiosk user to read SpoolBuddy env so launcher can resolve backend URL
+    # and API key dynamically instead of using stale install-time fallback values.
+    local spoolbuddy_env="$INSTALL_PATH/spoolbuddy/.env"
+    if [[ -f "$spoolbuddy_env" ]]; then
+        usermod -aG "$SPOOLBUDDY_SERVICE_USER" "$KIOSK_USER" 2>/dev/null || true
+        chgrp "$SPOOLBUDDY_SERVICE_USER" "$spoolbuddy_env" 2>/dev/null || true
+        chmod 640 "$spoolbuddy_env" 2>/dev/null || true
+    fi
+
     # ── Install kiosk packages ────────────────────────────────────────────
     run_with_progress "Installing kiosk packages" apt-get install -y labwc chromium plymouth wlr-randr
 
@@ -840,7 +852,9 @@ if [[ -r "\$ENV_FILE" ]]; then
     api_key="\${api_key%\"}"
     api_key="\${api_key#\"}"
 elif [[ -f "\$ENV_FILE" ]]; then
-    echo "spoolbuddy-kiosk-launch: \$ENV_FILE exists but is not readable; using fallback URL" >&2
+    echo "spoolbuddy-kiosk-launch: ERROR: \$ENV_FILE exists but is not readable" >&2
+    echo "spoolbuddy-kiosk-launch: Fix permissions (group-readable by kiosk user) and restart kiosk" >&2
+    exit 1
 fi
 
 if [[ -n "\$backend_url" && -n "\$api_key" ]]; then

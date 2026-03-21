@@ -500,7 +500,10 @@ SPOOLBUDDY_I2C_BUS=1
 EOF
 
     chown "$SPOOLBUDDY_SERVICE_USER:$SPOOLBUDDY_SERVICE_USER" "$env_file"
-    chmod 600 "$env_file"
+    # Keep secrets owner-writable while allowing kiosk user (in spoolbuddy group)
+    # to read backend URL/API key for dynamic launcher URL resolution.
+    chgrp "$SPOOLBUDDY_SERVICE_USER" "$env_file"
+    chmod 640 "$env_file"
     success "Configuration saved to $env_file"
 }
 

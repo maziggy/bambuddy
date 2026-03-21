@@ -1137,6 +1137,30 @@ class LinkTagRequest(BaseModel):
     data_origin: str | None = "nfc_link"
 
 
+def _normalize_hex(value: str | None) -> str:
+    if not value:
+        return ""
+    return "".join(ch for ch in str(value).strip() if ch in "0123456789abcdefABCDEF").upper()
+
+
+def _normalize_tag_uid(value: str | None) -> str | None:
+    uid = _normalize_hex(value)
+    if not uid:
+        return None
+    if len(uid) > 16:
+        uid = uid[-16:]
+    return uid
+
+
+def _normalize_tray_uuid(value: str | None) -> str | None:
+    uuid = _normalize_hex(value)
+    if not uuid:
+        return None
+    if len(uuid) >= 32:
+        uuid = uuid[:32]
+    return uuid
+
+
 @router.patch("/spools/{spool_id}/link-tag", response_model=SpoolResponse)
 async def link_tag_to_spool(
     spool_id: int,
@@ -1152,11 +1176,14 @@ async def link_tag_to_spool(
     if spool.archived_at:
         raise HTTPException(400, "Cannot link tag to archived spool")
 
+    normalized_tag_uid = _normalize_tag_uid(data.tag_uid) if data.tag_uid is not None else None
+    normalized_tray_uuid = _normalize_tray_uuid(data.tray_uuid) if data.tray_uuid is not None else None
+
     # Check for conflicts: tag already linked to another active spool
-    if data.tag_uid:
+    if normalized_tag_uid:
         conflict = await db.execute(
             select(Spool).where(
-                Spool.tag_uid == data.tag_uid,
+                func.upper(Spool.tag_uid) == normalized_tag_uid,
                 Spool.id != spool_id,
                 Spool.archived_at.is_(None),
             )
@@ -1166,7 +1193,7 @@ async def link_tag_to_spool(
         # Auto-clear from archived spools (tag recycling)
         archived_with_tag = await db.execute(
             select(Spool).where(
-                Spool.tag_uid == data.tag_uid,
+                func.upper(Spool.tag_uid) == normalized_tag_uid,
                 Spool.id != spool_id,
                 Spool.archived_at.is_not(None),
             )
@@ -1174,10 +1201,10 @@ async def link_tag_to_spool(
         for old_spool in archived_with_tag.scalars().all():
             old_spool.tag_uid = None
 
-    if data.tray_uuid:
+    if normalized_tray_uuid:
         conflict = await db.execute(
             select(Spool).where(
-                Spool.tray_uuid == data.tray_uuid,
+                func.upper(Spool.tray_uuid) == normalized_tray_uuid,
                 Spool.id != spool_id,
                 Spool.archived_at.is_(None),
             )
@@ -1186,7 +1213,7 @@ async def link_tag_to_spool(
             raise HTTPException(409, "Tray UUID already linked to another active spool")
         archived_with_uuid = await db.execute(
             select(Spool).where(
-                Spool.tray_uuid == data.tray_uuid,
+                func.upper(Spool.tray_uuid) == normalized_tray_uuid,
                 Spool.id != spool_id,
                 Spool.archived_at.is_not(None),
             )
@@ -1195,9 +1222,9 @@ async def link_tag_to_spool(
             old_spool.tray_uuid = None
 
     if data.tag_uid is not None:
-        spool.tag_uid = data.tag_uid
+        spool.tag_uid = normalized_tag_uid
     if data.tray_uuid is not None:
-        spool.tray_uuid = data.tray_uuid
+        spool.tray_uuid = normalized_tray_uuid
     if data.tag_type is not None:
         spool.tag_type = data.tag_type
     if data.data_origin is not None:

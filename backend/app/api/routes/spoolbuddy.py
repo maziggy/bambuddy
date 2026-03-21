@@ -251,7 +251,15 @@ async def nfc_tag_scanned(
                 "tag_type": req.tag_type,
             }
         )
-        logger.info("SpoolBuddy unknown tag: %s", req.tag_uid)
+        logger.info(
+            "SpoolBuddy unknown tag: uid=%s (len=%d), tray_uuid=%s (len=%d), type=%s, sak=%s",
+            req.tag_uid,
+            len(req.tag_uid or ""),
+            req.tray_uuid,
+            len(req.tray_uuid or ""),
+            req.tag_type,
+            req.sak,
+        )
 
     return {"status": "ok", "matched": spool is not None, "spool_id": spool.id if spool else None}
 

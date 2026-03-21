@@ -16,16 +16,42 @@ ZERO_TAG_UID = "0000000000000000"
 ZERO_TRAY_UUID = "00000000000000000000000000000000"
 
 
+def _normalize_hex(value: str | None) -> str:
+    if not value:
+        return ""
+    hex_chars = "".join(ch for ch in str(value).strip() if ch in "0123456789abcdefABCDEF")
+    return hex_chars.upper()
+
+
+def _normalize_tag_uid(value: str | None) -> str:
+    uid = _normalize_hex(value)
+    # DB column is VARCHAR(16), so keep the least-significant bytes if longer.
+    if len(uid) > 16:
+        uid = uid[-16:]
+    return uid
+
+
+def _normalize_tray_uuid(value: str | None) -> str:
+    uuid = _normalize_hex(value)
+    # DB column is VARCHAR(32). Keep canonical 32-char UUID when possible.
+    if len(uuid) >= 32:
+        uuid = uuid[:32]
+    return uuid
+
+
 def is_valid_tag(tag_uid: str, tray_uuid: str) -> bool:
     """Check if a tag/UUID pair contains a non-zero, non-empty value."""
-    uid_valid = bool(tag_uid) and tag_uid != ZERO_TAG_UID and tag_uid != "0" * len(tag_uid)
-    uuid_valid = bool(tray_uuid) and tray_uuid != ZERO_TRAY_UUID and tray_uuid != "0" * len(tray_uuid)
+    uid = _normalize_tag_uid(tag_uid)
+    uuid = _normalize_tray_uuid(tray_uuid)
+    uid_valid = bool(uid) and uid != ZERO_TAG_UID and uid != "0" * len(uid)
+    uuid_valid = bool(uuid) and uuid != ZERO_TRAY_UUID and uuid != "0" * len(uuid)
     return uid_valid or uuid_valid
 
 
 def is_bambu_tag(tag_uid: str, tray_uuid: str, tray_info_idx: str) -> bool:
     """Check if an AMS tray contains a Bambu Lab RFID spool (has valid UUID or slicer preset)."""
-    uuid_valid = bool(tray_uuid) and tray_uuid != ZERO_TRAY_UUID and tray_uuid != "0" * len(tray_uuid)
+    uuid = _normalize_tray_uuid(tray_uuid)
+    uuid_valid = bool(uuid) and uuid != ZERO_TRAY_UUID and uuid != "0" * len(uuid)
     has_preset = bool(tray_info_idx)
     return uuid_valid or (is_valid_tag(tag_uid, tray_uuid) and has_preset)
 
@@ -43,8 +69,8 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     tray_sub_brands = tray_data.get("tray_sub_brands", "")  # "PLA Basic"
     tray_color = tray_data.get("tray_color", "FFFFFFFF")  # RRGGBBAA
     tray_id_name = tray_data.get("tray_id_name", "")  # Color name e.g. "Jade White"
-    tag_uid = tray_data.get("tag_uid", "")
-    tray_uuid = tray_data.get("tray_uuid", "")
+    tag_uid = _normalize_tag_uid(tray_data.get("tag_uid", ""))
+    tray_uuid = _normalize_tray_uuid(tray_data.get("tray_uuid", ""))
     tray_info_idx = tray_data.get("tray_info_idx", "")
     nozzle_min = tray_data.get("nozzle_temp_min", 0)
     nozzle_max = tray_data.get("nozzle_temp_max", 0)
@@ -170,12 +196,15 @@ async def get_spool_by_tag(db: AsyncSession, tag_uid: str, tray_uuid: str) -> Sp
 
     Prefers tray_uuid match over tag_uid (more reliable).
     """
+    tray_uuid_norm = _normalize_tray_uuid(tray_uuid)
+    tag_uid_norm = _normalize_tag_uid(tag_uid)
+
     # Try tray_uuid first (Bambu Lab spools — more reliable)
-    if tray_uuid and tray_uuid != ZERO_TRAY_UUID and tray_uuid != "0" * len(tray_uuid):
+    if tray_uuid_norm and tray_uuid_norm != ZERO_TRAY_UUID and tray_uuid_norm != "0" * len(tray_uuid_norm):
         result = await db.execute(
             select(Spool)
             .options(selectinload(Spool.k_profiles), selectinload(Spool.assignments))
-            .where(Spool.tray_uuid == tray_uuid, Spool.archived_at.is_(None))
+            .where(func.upper(Spool.tray_uuid) == tray_uuid_norm, Spool.archived_at.is_(None))
             .limit(1)
         )
         spool = result.scalar_one_or_none()
@@ -183,16 +212,35 @@ async def get_spool_by_tag(db: AsyncSession, tag_uid: str, tray_uuid: str) -> Sp
             return spool
 
     # Fall back to tag_uid
-    if tag_uid and tag_uid != ZERO_TAG_UID and tag_uid != "0" * len(tag_uid):
+    if tag_uid_norm and tag_uid_norm != ZERO_TAG_UID and tag_uid_norm != "0" * len(tag_uid_norm):
         result = await db.execute(
             select(Spool)
             .options(selectinload(Spool.k_profiles), selectinload(Spool.assignments))
-            .where(Spool.tag_uid == tag_uid, Spool.archived_at.is_(None))
+            .where(func.upper(Spool.tag_uid) == tag_uid_norm, Spool.archived_at.is_(None))
             .limit(1)
         )
         spool = result.scalar_one_or_none()
         if spool:
             return spool
+
+        # Compatibility fallback: some readers report 4-byte UID (8 hex) while
+        # stored values may contain longer forms. Prefer suffix match only.
+        if len(tag_uid_norm) >= 8:
+            candidates = await db.execute(
+                select(Spool)
+                .options(selectinload(Spool.k_profiles), selectinload(Spool.assignments))
+                .where(Spool.tag_uid.is_not(None), Spool.archived_at.is_(None))
+            )
+            for candidate in candidates.scalars().all():
+                candidate_uid = _normalize_tag_uid(candidate.tag_uid)
+                if not candidate_uid:
+                    continue
+                if candidate_uid == tag_uid_norm:
+                    return candidate
+                if len(candidate_uid) > len(tag_uid_norm) and candidate_uid.endswith(tag_uid_norm):
+                    return candidate
+                if len(tag_uid_norm) > len(candidate_uid) and tag_uid_norm.endswith(candidate_uid):
+                    return candidate
 
     return None
 

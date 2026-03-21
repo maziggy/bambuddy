@@ -315,6 +315,17 @@ configure_boot_config() {
 
     info "Configuring $boot_config..."
 
+    # Migrate legacy SpoolBuddy setting (bus 0 / i2c_vc) to bus 1 / i2c_arm.
+    if grep -q "^dtparam=i2c_vc=on" "$boot_config"; then
+        sed -i "s/^dtparam=i2c_vc=on$/# dtparam=i2c_vc=on (disabled by SpoolBuddy installer; use i2c_arm bus 1)/" "$boot_config"
+        REBOOT_NEEDED="true"
+        success "Disabled legacy dtparam=i2c_vc=on"
+    fi
+
+    if grep -q "^# SpoolBuddy: I2C bus 0 for NAU7802 scale (GPIO0/GPIO1)" "$boot_config"; then
+        sed -i "s/^# SpoolBuddy: I2C bus 0 for NAU7802 scale (GPIO0\/GPIO1)$/# SpoolBuddy: I2C bus 1 for NAU7802 scale (GPIO2\/GPIO3)/" "$boot_config"
+    fi
+
     # Ensure I2C bus 1 (GPIO2/GPIO3) is enabled for NAU7802 scale
     if ! grep -q "^dtparam=i2c_arm=on" "$boot_config"; then
         echo "" >> "$boot_config"

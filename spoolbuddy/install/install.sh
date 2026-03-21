@@ -916,8 +916,8 @@ backend_url=""
 api_key=""
 
 if [[ -r "\$ENV_FILE" ]]; then
-    backend_url="$(sed -n 's/^SPOOLBUDDY_BACKEND_URL=//p' "\$ENV_FILE" | tail -n1 | tr -d '\r')"
-    api_key="$(sed -n 's/^SPOOLBUDDY_API_KEY=//p' "\$ENV_FILE" | tail -n1 | tr -d '\r')"
+    backend_url="\$(sed -n 's/^SPOOLBUDDY_BACKEND_URL=//p' "\$ENV_FILE" | tail -n1 | tr -d '\r')"
+    api_key="\$(sed -n 's/^SPOOLBUDDY_API_KEY=//p' "\$ENV_FILE" | tail -n1 | tr -d '\r')"
     backend_url="\${backend_url%\"}"
     backend_url="\${backend_url#\"}"
     api_key="\${api_key%\"}"
@@ -944,6 +944,12 @@ exec chromium --kiosk --no-first-run --disable-infobars \
 EOF
 
         chmod 755 "$kiosk_launcher"
+
+        # Tiny self-check: ensure sed command substitutions were not expanded
+        # while generating the launcher script.
+        if ! grep -Fq 'backend_url="$(sed -n' "$kiosk_launcher" || ! grep -Fq 'api_key="$(sed -n' "$kiosk_launcher"; then
+            error "Kiosk launcher generation failed: dynamic env parsing commands were expanded unexpectedly"
+        fi
 
         # ── labwc autostart ───────────────────────────────────────────────────
         cat > "$labwc_dir/autostart" << EOF

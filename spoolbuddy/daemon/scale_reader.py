@@ -25,7 +25,13 @@ class ScaleReader:
             self._scale = NAU7802()
             self._scale.init()
             self._ok = True
-            logger.info("Scale initialized (tare=%d, cal=%.6f)", tare_offset, calibration_factor)
+            bus_num = getattr(self._scale, "_bus_num", "?")
+            logger.info(
+                "Scale initialized on I2C bus %s (tare=%d, cal=%.6f)",
+                bus_num,
+                tare_offset,
+                calibration_factor,
+            )
         except Exception as e:
             logger.info("Scale not available: %s", e)
 

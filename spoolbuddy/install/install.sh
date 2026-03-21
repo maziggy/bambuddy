@@ -309,21 +309,21 @@ configure_boot_config() {
 
     if [[ ! -f "$boot_config" ]]; then
         warn "Boot config not found at /boot/firmware/config.txt or /boot/config.txt"
-        warn "You may need to manually add: dtparam=i2c_vc=on and dtoverlay=spi0-0cs"
+        warn "You may need to manually add: dtparam=i2c_arm=on and dtoverlay=spi0-0cs"
         return
     fi
 
     info "Configuring $boot_config..."
 
-    # Enable I2C bus 0 (GPIO0/GPIO1) for NAU7802 scale
-    if ! grep -q "^dtparam=i2c_vc=on" "$boot_config"; then
+    # Ensure I2C bus 1 (GPIO2/GPIO3) is enabled for NAU7802 scale
+    if ! grep -q "^dtparam=i2c_arm=on" "$boot_config"; then
         echo "" >> "$boot_config"
-        echo "# SpoolBuddy: I2C bus 0 for NAU7802 scale (GPIO0/GPIO1)" >> "$boot_config"
-        echo "dtparam=i2c_vc=on" >> "$boot_config"
+        echo "# SpoolBuddy: I2C bus 1 for NAU7802 scale (GPIO2/GPIO3)" >> "$boot_config"
+        echo "dtparam=i2c_arm=on" >> "$boot_config"
         REBOOT_NEEDED="true"
-        success "Added dtparam=i2c_vc=on"
+        success "Added dtparam=i2c_arm=on"
     else
-        success "dtparam=i2c_vc=on already set"
+        success "dtparam=i2c_arm=on already set"
     fi
 
     # Disable SPI auto chip-select (manual CS on GPIO23 for PN5180)
@@ -809,18 +809,49 @@ EOF
 </labwc_config>
 EOF
 
-    # ── labwc autostart ───────────────────────────────────────────────────
-    cat > "$labwc_dir/autostart" << EOF
+        # ── kiosk launcher (dynamic URL from spoolbuddy/.env) ─────────────────
+        local kiosk_launcher="/usr/local/bin/spoolbuddy-kiosk-launch"
+        cat > "$kiosk_launcher" << EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+ENV_FILE="$INSTALL_PATH/spoolbuddy/.env"
+FALLBACK_URL="$KIOSK_URL"
+
+if [[ -f "\$ENV_FILE" ]]; then
+    set -a
+    # shellcheck source=/dev/null
+    . "\$ENV_FILE"
+    set +a
+fi
+
+backend_url="\${SPOOLBUDDY_BACKEND_URL:-}"
+api_key="\${SPOOLBUDDY_API_KEY:-}"
+
+if [[ -n "\$backend_url" && -n "\$api_key" ]]; then
+    backend_url="\${backend_url%/}"
+    kiosk_url="\${backend_url}/spoolbuddy?token=\${api_key}"
+else
+    kiosk_url="\$FALLBACK_URL"
+fi
+
+exec chromium --kiosk --no-first-run --disable-infobars \
+    --disable-session-crashed-bubble --disable-features=TranslateUI \
+    --noerrdialogs --disable-component-update \
+    --overscroll-history-navigation=0 \
+    --ozone-platform=wayland \
+    "\$kiosk_url"
+EOF
+
+        chmod 755 "$kiosk_launcher"
+
+        # ── labwc autostart ───────────────────────────────────────────────────
+        cat > "$labwc_dir/autostart" << EOF
 # Force 1024x600 (panel doesn't advertise this natively)
 wlr-randr --output HDMI-A-1 --custom-mode 1024x600@60 &
 
-# Launch Chromium in kiosk mode (virtual keyboard is embedded in the web app)
-chromium --kiosk --no-first-run --disable-infobars \\
-  --disable-session-crashed-bubble --disable-features=TranslateUI \\
-  --noerrdialogs --disable-component-update \\
-  --overscroll-history-navigation=0 \\
-  --ozone-platform=wayland \\
-  $KIOSK_URL &
+# Launch Chromium via helper that resolves URL from spoolbuddy/.env
+$kiosk_launcher &
 EOF
 
     chown -R "$KIOSK_USER:$KIOSK_USER" "$labwc_dir"

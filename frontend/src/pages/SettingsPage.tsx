@@ -185,8 +185,16 @@ export function SettingsPage() {
   const handleToggleDefaultSidebarOrder = async (enabled: boolean) => {
     try {
       if (enabled) {
+        let orderArr: string[];
         const stored = localStorage.getItem('sidebarOrder');
-        const orderArr = stored ? JSON.parse(stored) : defaultNavItems.map(i => i.id);
+        try {
+          orderArr = stored ? JSON.parse(stored) : defaultNavItems.map(i => i.id);
+        } catch {
+          orderArr = defaultNavItems.map(i => i.id);
+        }
+        if (!Array.isArray(orderArr) || orderArr.length === 0) {
+          orderArr = defaultNavItems.map(i => i.id);
+        }
         const payload = JSON.stringify({ order: orderArr });
         await api.updateSettings({ default_sidebar_order: payload });
         setLocalSettings(prev => prev ? { ...prev, default_sidebar_order: payload } : prev);
@@ -1217,6 +1225,7 @@ export function SettingsPage() {
                       <Toggle
                         checked={isDefaultSidebarEnabled}
                         onChange={handleToggleDefaultSidebarOrder}
+                        disabled={isLoading}
                       />
                     </div>
                   )}

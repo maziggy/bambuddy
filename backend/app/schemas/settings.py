@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field
+import json
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class AppSettings(BaseModel):
@@ -187,7 +189,7 @@ class AppSettings(BaseModel):
     # Default sidebar order (admin-set for all users)
     default_sidebar_order: str = Field(
         default="",
-        description="JSON array of sidebar item IDs set as default menu order for all users (empty = no default)",
+        description="JSON object with 'order' key containing array of sidebar item IDs (empty = no default)",
     )
 
 
@@ -259,3 +261,22 @@ class AppSettingsUpdate(BaseModel):
     low_stock_threshold: float | None = Field(default=None, ge=0.1, le=99.9)
     user_notifications_enabled: bool | None = None
     default_sidebar_order: str | None = None
+
+    @field_validator("default_sidebar_order")
+    @classmethod
+    def validate_default_sidebar_order(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return v
+        try:
+            parsed = json.loads(v)
+        except json.JSONDecodeError:
+            raise ValueError("default_sidebar_order must be valid JSON or empty")
+        if isinstance(parsed, dict):
+            order = parsed.get("order")
+        elif isinstance(parsed, list):
+            order = parsed
+        else:
+            raise ValueError("default_sidebar_order must be a JSON object with 'order' key or a JSON array")
+        if not isinstance(order, list) or not all(isinstance(item, str) for item in order):
+            raise ValueError("sidebar order must be an array of strings")
+        return v

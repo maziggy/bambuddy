@@ -124,24 +124,31 @@ export function Layout() {
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
-  // Apply admin default sidebar order to new users only (per-user flag tracks who's already received it).
+  // Apply admin default sidebar order once per user (skipped if already applied).
+  // Uses a per-user localStorage flag to prevent re-application.
   useEffect(() => {
     const defaultOrder = defaultSidebarData?.default_sidebar_order;
     if (!defaultOrder) return;
+    // Wait for auth state to settle before applying to avoid double-execution
+    if (authEnabled && !user) return;
     const appliedKey = user ? `sidebarDefaultApplied_${user.id}` : 'sidebarDefaultApplied';
     if (localStorage.getItem(appliedKey)) return;
     try {
       const parsed = JSON.parse(defaultOrder);
       const orderArr = Array.isArray(parsed) ? parsed : parsed.order;
-      if (Array.isArray(orderArr) && orderArr.length > 0) {
-        setSidebarOrder(orderArr);
-        saveSidebarOrder(orderArr);
+      if (!Array.isArray(orderArr) || orderArr.length === 0) return;
+      // Filter to valid sidebar item IDs only
+      const validIds = new Set(defaultNavItems.map(i => i.id));
+      const filtered = orderArr.filter((id: string) => typeof id === 'string' && (validIds.has(id) || isExternalLinkId(id)));
+      if (filtered.length > 0) {
+        setSidebarOrder(filtered);
+        saveSidebarOrder(filtered);
         localStorage.setItem(appliedKey, '1');
       }
-    } catch {
-      // Invalid JSON, ignore
+    } catch (e) {
+      console.error('Failed to apply default sidebar order:', e);
     }
-  }, [defaultSidebarData?.default_sidebar_order, setSidebarOrder, user]);
+  }, [defaultSidebarData?.default_sidebar_order, setSidebarOrder, user, authEnabled]);
 
   // Check advanced auth status for conditional nav items
   const { data: advancedAuthStatus } = useQuery({

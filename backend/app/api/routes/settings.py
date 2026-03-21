@@ -224,7 +224,12 @@ async def reset_settings(
 async def get_default_sidebar_order(
     db: AsyncSession = Depends(get_db),
 ):
-    """Get the admin-set default sidebar order. No permission required so all users can apply it."""
+    """Get the admin-set default sidebar order.
+
+    Intentionally unauthenticated: non-admin users need to read this value to apply
+    the default sidebar order, but may lack SETTINGS_READ permission.
+    The value is non-sensitive (sidebar item IDs only).
+    """
     value = await get_setting(db, "default_sidebar_order")
     return {"default_sidebar_order": value or ""}
 

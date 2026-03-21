@@ -818,15 +818,19 @@ set -euo pipefail
 ENV_FILE="$INSTALL_PATH/spoolbuddy/.env"
 FALLBACK_URL="$KIOSK_URL"
 
-if [[ -f "\$ENV_FILE" ]]; then
-    set -a
-    # shellcheck source=/dev/null
-    . "\$ENV_FILE"
-    set +a
-fi
+backend_url=""
+api_key=""
 
-backend_url="\${SPOOLBUDDY_BACKEND_URL:-}"
-api_key="\${SPOOLBUDDY_API_KEY:-}"
+if [[ -r "\$ENV_FILE" ]]; then
+    backend_url="$(sed -n 's/^SPOOLBUDDY_BACKEND_URL=//p' "\$ENV_FILE" | tail -n1 | tr -d '\r')"
+    api_key="$(sed -n 's/^SPOOLBUDDY_API_KEY=//p' "\$ENV_FILE" | tail -n1 | tr -d '\r')"
+    backend_url="\${backend_url%\"}"
+    backend_url="\${backend_url#\"}"
+    api_key="\${api_key%\"}"
+    api_key="\${api_key#\"}"
+elif [[ -f "\$ENV_FILE" ]]; then
+    echo "spoolbuddy-kiosk-launch: \$ENV_FILE exists but is not readable; using fallback URL" >&2
+fi
 
 if [[ -n "\$backend_url" && -n "\$api_key" ]]; then
     backend_url="\${backend_url%/}"

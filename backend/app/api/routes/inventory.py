@@ -1161,6 +1161,22 @@ def _normalize_tray_uuid(value: str | None) -> str | None:
     return uuid
 
 
+def _validate_tag_input(
+    raw_value: str | None, normalized_value: str | None, field_name: str, exact_len: int | None = None
+) -> None:
+    if raw_value is None:
+        return
+    raw = str(raw_value).strip()
+    if not raw:
+        return
+    if normalized_value is None:
+        raise HTTPException(422, f"{field_name} must contain hexadecimal characters")
+    if len(normalized_value) % 2 != 0:
+        raise HTTPException(422, f"{field_name} must have an even number of hex characters")
+    if exact_len is not None and len(normalized_value) != exact_len:
+        raise HTTPException(422, f"{field_name} must be exactly {exact_len} hex characters")
+
+
 @router.patch("/spools/{spool_id}/link-tag", response_model=SpoolResponse)
 async def link_tag_to_spool(
     spool_id: int,
@@ -1178,6 +1194,9 @@ async def link_tag_to_spool(
 
     normalized_tag_uid = _normalize_tag_uid(data.tag_uid) if data.tag_uid is not None else None
     normalized_tray_uuid = _normalize_tray_uuid(data.tray_uuid) if data.tray_uuid is not None else None
+
+    _validate_tag_input(data.tag_uid, normalized_tag_uid, "tag_uid")
+    _validate_tag_input(data.tray_uuid, normalized_tray_uuid, "tray_uuid", exact_len=32)
 
     # Check for conflicts: tag already linked to another active spool
     if normalized_tag_uid:

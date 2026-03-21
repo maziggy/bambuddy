@@ -2,7 +2,7 @@
 
 import logging
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -226,10 +226,19 @@ async def get_spool_by_tag(db: AsyncSession, tag_uid: str, tray_uuid: str) -> Sp
         # Compatibility fallback: some readers report 4-byte UID (8 hex) while
         # stored values may contain longer forms. Prefer suffix match only.
         if len(tag_uid_norm) >= 8:
+            suffix8 = tag_uid_norm[-8:]
             candidates = await db.execute(
                 select(Spool)
                 .options(selectinload(Spool.k_profiles), selectinload(Spool.assignments))
-                .where(Spool.tag_uid.is_not(None), Spool.archived_at.is_(None))
+                .where(
+                    Spool.tag_uid.is_not(None),
+                    Spool.archived_at.is_(None),
+                    or_(
+                        func.upper(Spool.tag_uid).like(f"%{tag_uid_norm}"),
+                        func.upper(Spool.tag_uid).like(f"%{suffix8}"),
+                    ),
+                )
+                .limit(100)
             )
             for candidate in candidates.scalars().all():
                 candidate_uid = _normalize_tag_uid(candidate.tag_uid)

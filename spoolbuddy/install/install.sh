@@ -12,6 +12,8 @@
 #
 # Options:
 #   --mode MODE          Installation mode: "spoolbuddy" (companion only) or "full" (both)
+#   --repo URL           Git repository URL to install from (default: upstream repo)
+#   --ref REF            Git ref to install (branch/tag/commit, default: main)
 #   --bambuddy-url URL   Bambuddy server URL (required for spoolbuddy mode)
 #   --api-key KEY        Bambuddy API key (required for spoolbuddy mode)
 #   --path PATH          Installation directory (default: /opt/spoolbuddy or /opt/bambuddy)
@@ -49,6 +51,10 @@ SPOOLBUDDY_PIP_PACKAGES="spidev gpiod smbus2 httpx"
 
 INSTALL_MODE=""          # "spoolbuddy" or "full"
 INSTALL_PATH=""
+INSTALL_REPO=""
+INSTALL_REF=""
+DETECTED_INSTALLER_REPO=""
+DETECTED_INSTALLER_REF=""
 BAMBUDDY_URL=""
 API_KEY=""
 BAMBUDDY_PORT="8000"
@@ -186,6 +192,8 @@ show_help() {
     echo ""
     echo "Options:"
     echo "  --mode MODE          \"spoolbuddy\" (companion only) or \"full\" (Bambuddy + SpoolBuddy)"
+    echo "  --repo URL           Git repository URL to install from"
+    echo "  --ref REF            Git ref to install (branch/tag/commit)"
     echo "  --bambuddy-url URL   Bambuddy server URL (required for spoolbuddy mode)"
     echo "  --api-key KEY        Bambuddy API key (required for spoolbuddy mode)"
     echo "  --path PATH          Installation directory (default: /opt/spoolbuddy or /opt/bambuddy)"
@@ -203,6 +211,70 @@ show_help() {
     echo "  Full install (unattended):"
     echo "    sudo ./install.sh --mode full --port 8000 -y"
     exit 0
+}
+
+normalize_github_repo_url() {
+    local url="$1"
+    if [[ -z "$url" ]]; then
+        echo ""
+        return
+    fi
+
+    # Convert git@github.com:owner/repo(.git) to https://github.com/owner/repo.git
+    if [[ "$url" =~ ^git@github.com:(.+)$ ]]; then
+        url="https://github.com/${BASH_REMATCH[1]}"
+    fi
+
+    # Keep remote URL style consistent.
+    url="${url%.git}"
+    echo "${url}.git"
+}
+
+detect_installer_source_context() {
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    if git -C "$script_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        DETECTED_INSTALLER_REF="$(git -C "$script_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+        local origin_url
+        origin_url="$(git -C "$script_dir" remote get-url origin 2>/dev/null || true)"
+        DETECTED_INSTALLER_REPO="$(normalize_github_repo_url "$origin_url")"
+    fi
+
+    # Optional environment overrides for raw-download installs.
+    if [[ -n "${SPOOLBUDDY_INSTALL_REPO:-}" ]]; then
+        DETECTED_INSTALLER_REPO="$(normalize_github_repo_url "$SPOOLBUDDY_INSTALL_REPO")"
+    fi
+    if [[ -n "${SPOOLBUDDY_INSTALL_REF:-}" ]]; then
+        DETECTED_INSTALLER_REF="$SPOOLBUDDY_INSTALL_REF"
+    fi
+
+    if [[ -z "$INSTALL_REPO" ]]; then
+        if [[ -n "$DETECTED_INSTALLER_REPO" ]]; then
+            INSTALL_REPO="$DETECTED_INSTALLER_REPO"
+        else
+            INSTALL_REPO="$GITHUB_REPO"
+        fi
+    fi
+
+    if [[ -z "$INSTALL_REF" ]]; then
+        if [[ -n "$DETECTED_INSTALLER_REF" && "$DETECTED_INSTALLER_REF" != "HEAD" ]]; then
+            INSTALL_REF="$DETECTED_INSTALLER_REF"
+        else
+            INSTALL_REF="main"
+        fi
+    fi
+}
+
+resolve_install_ref() {
+    local ref="$1"
+    # If ref exists on origin as a branch, track/reset it. Otherwise treat it as tag/commit.
+    if git ls-remote --exit-code --heads origin "$ref" >/dev/null 2>&1; then
+        git checkout -B "$ref" "origin/$ref" > /dev/null 2>&1
+        git reset --hard "origin/$ref" > /dev/null 2>&1
+    else
+        git checkout "$ref" > /dev/null 2>&1
+    fi
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -385,15 +457,14 @@ download_spoolbuddy() {
         info "Existing installation found, updating..."
         git config --global --add safe.directory "$INSTALL_PATH" 2>/dev/null || true
         cd "$INSTALL_PATH"
+        git remote set-url origin "$INSTALL_REPO" 2>/dev/null || true
         run_with_progress "Fetching updates" git fetch origin
-        git reset --hard origin/main > /dev/null 2>&1
-	cd "$INSTALL_PATH"
-        git checkout 0.2.2b1
+        resolve_install_ref "$INSTALL_REF"
     else
         mkdir -p "$INSTALL_PATH"
-        run_with_progress "Cloning repository" git clone "$GITHUB_REPO" "$INSTALL_PATH"
+        run_with_progress "Cloning repository" git clone "$INSTALL_REPO" "$INSTALL_PATH"
         cd "$INSTALL_PATH"
-        git checkout 0.2.2b1
+        resolve_install_ref "$INSTALL_REF"
     fi
 
     chown -R "$SPOOLBUDDY_SERVICE_USER:$SPOOLBUDDY_SERVICE_USER" "$INSTALL_PATH"
@@ -915,6 +986,14 @@ parse_args() {
                 INSTALL_MODE="$2"
                 shift 2
                 ;;
+            --repo)
+                INSTALL_REPO="$(normalize_github_repo_url "$2")"
+                shift 2
+                ;;
+            --ref)
+                INSTALL_REF="$2"
+                shift 2
+                ;;
             --bambuddy-url)
                 BAMBUDDY_URL="$2"
                 shift 2
@@ -987,6 +1066,47 @@ gather_config() {
     fi
     prompt "Installation directory" "$INSTALL_PATH" INSTALL_PATH
 
+    if [[ -z "$INSTALL_REPO" ]]; then
+        INSTALL_REPO="$GITHUB_REPO"
+    fi
+    prompt "Git repository URL" "$INSTALL_REPO" INSTALL_REPO
+    INSTALL_REPO="$(normalize_github_repo_url "$INSTALL_REPO")"
+
+    if [[ -z "$INSTALL_REF" ]]; then
+        INSTALL_REF="main"
+    fi
+
+    if [[ "$NON_INTERACTIVE" != "true" && -n "$DETECTED_INSTALLER_REF" && "$DETECTED_INSTALLER_REF" != "HEAD" ]]; then
+        echo ""
+        echo -e "${BOLD}Install Source Ref${NC}"
+        echo "1) main"
+        echo "2) $DETECTED_INSTALLER_REF (detected from installer context)"
+        echo "3) custom"
+        while true; do
+            echo -en "${BOLD}Choose${NC} [1/2/3]: "
+            read -r ref_choice
+            case "$ref_choice" in
+                ""|1)
+                    INSTALL_REF="main"
+                    break
+                    ;;
+                2)
+                    INSTALL_REF="$DETECTED_INSTALLER_REF"
+                    break
+                    ;;
+                3)
+                    prompt "Git ref (branch/tag/commit)" "$INSTALL_REF" INSTALL_REF
+                    break
+                    ;;
+                *)
+                    echo "Please enter 1, 2, or 3."
+                    ;;
+            esac
+        done
+    else
+        prompt "Git ref (branch/tag/commit)" "$INSTALL_REF" INSTALL_REF
+    fi
+
     if [[ "$INSTALL_MODE" == "spoolbuddy" ]]; then
         # Need remote Bambuddy URL and API key
         echo ""
@@ -1024,6 +1144,8 @@ gather_config() {
     echo -e "${CYAN}─────────────────────────────────────────${NC}"
     echo -e "  Mode:           ${GREEN}$([ "$INSTALL_MODE" == "full" ] && echo "Bambuddy + SpoolBuddy" || echo "SpoolBuddy only")${NC}"
     echo -e "  Install path:   ${GREEN}$INSTALL_PATH${NC}"
+    echo -e "  Git repo:       ${GREEN}$INSTALL_REPO${NC}"
+    echo -e "  Git ref:        ${GREEN}$INSTALL_REF${NC}"
     if [[ "$INSTALL_MODE" == "full" ]]; then
         echo -e "  Bambuddy port:  ${GREEN}$BAMBUDDY_PORT${NC}"
         echo -e "  Bambuddy URL:   ${GREEN}$BAMBUDDY_URL${NC}"
@@ -1044,6 +1166,7 @@ gather_config() {
 
 main() {
     parse_args "$@"
+    detect_installer_source_context
 
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════╗${NC}"

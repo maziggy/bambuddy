@@ -61,8 +61,8 @@ class NAU7802:
         time.sleep(0.010)
         self.write_reg(REG_PU_CTRL, 0x00)
 
-        # Power up digital + analog
-        self.write_reg(REG_PU_CTRL, PU_PUD | PU_PUA)
+        # Power up digital + analog, select internal AVDD source (AVDDS=1)
+        self.write_reg(REG_PU_CTRL, PU_PUD | PU_PUA | PU_AVDDS)
 
         # Wait for power-up ready
         for _ in range(100):
@@ -84,14 +84,14 @@ class NAU7802:
         self.write_reg(REG_CTRL1, (ctrl1 & 0xF8) | 7)
         print("  Gain: 128x")
 
-        # LDO: 3.3V (bits 5:3 of CTRL1 = 0b100)
+        # LDO reference: bits 5:3 of CTRL1 = 0b101
         ctrl1 = self.read_reg(REG_CTRL1)
-        self.write_reg(REG_CTRL1, (ctrl1 & 0xC7) | (0b100 << 3))
+        self.write_reg(REG_CTRL1, (ctrl1 & 0xC7) | (0b101 << 3))
 
         # Enable internal LDO (bit 7 of CTRL1)
         ctrl1 = self.read_reg(REG_CTRL1)
         self.write_reg(REG_CTRL1, ctrl1 | 0x80)
-        print("  LDO: 3.3V (internal)")
+        print("  LDO: internal, VLDO bits=101")
 
         # Start conversion cycle
         pu_ctrl = self.read_reg(REG_PU_CTRL)

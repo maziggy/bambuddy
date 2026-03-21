@@ -1,17 +1,29 @@
 #!/usr/bin/env python3
-"""NAU7802 Scale Diagnostic — ported from SpoolBuddy Rust firmware.
+"""NAU7802 Scale Diagnostic - ported from SpoolBuddy Rust firmware.
 
 I2C address: 0x2A
-Bus: /dev/i2c-0 (GPIO0/GPIO1 on RPi)
+Bus: /dev/i2c-1 (GPIO2/GPIO3 on RPi)
 """
 
+import os
 import struct
 import sys
 import time
 
 import smbus2
 
-I2C_BUS = 0
+
+def _env_int(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None or value == "":
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+I2C_BUS = _env_int("SPOOLBUDDY_I2C_BUS", 1)
 NAU7802_ADDR = 0x2A
 
 # Register addresses
@@ -39,6 +51,7 @@ PU_AVDDS = 0x80  # AVDD source select
 
 class NAU7802:
     def __init__(self, bus=I2C_BUS, addr=NAU7802_ADDR):
+        self._bus_num = bus
         self._bus = smbus2.SMBus(bus)
         self._addr = addr
 
@@ -51,20 +64,37 @@ class NAU7802:
     def write_reg(self, reg: int, val: int):
         self._bus.write_byte_data(self._addr, reg, val & 0xFF)
 
+    def _update_bits(self, reg: int, mask: int, value: int):
+        cur = self.read_reg(reg)
+        self.write_reg(reg, (cur & ~mask) | (value & mask))
+
+    def _set_bit(self, reg: int, bit: int, enabled: bool):
+        mask = 1 << bit
+        self._update_bits(reg, mask, mask if enabled else 0)
+
+    def _set_field(self, reg: int, shift: int, width: int, value: int):
+        mask = ((1 << width) - 1) << shift
+        self._update_bits(reg, mask, value << shift)
+
     def init(self):
-        """Initialize NAU7802 — matches Rust firmware init sequence."""
-        revision = self.read_reg(REG_REVISION)
-        print(f"  Revision: 0x{revision:02X}")
+        """Initialize NAU7802 using the Adafruit library startup sequence."""
 
         # Reset
-        self.write_reg(REG_PU_CTRL, PU_RR)
+        self._set_bit(REG_PU_CTRL, 0, True)  # RR=1
         time.sleep(0.010)
-        self.write_reg(REG_PU_CTRL, 0x00)
+        self._set_bit(REG_PU_CTRL, 0, False)  # RR=0
+        self._set_bit(REG_PU_CTRL, 1, True)  # PUD=1
+        time.sleep(0.001)
 
-        # Power up digital + analog, select internal AVDD source (AVDDS=1)
-        self.write_reg(REG_PU_CTRL, PU_PUD | PU_PUA | PU_AVDDS)
+        # Enable digital + analog and allow analog section to settle.
+        self._set_bit(REG_PU_CTRL, 1, True)  # PUD=1
+        self._set_bit(REG_PU_CTRL, 2, True)  # PUA=1
+        time.sleep(0.600)
 
-        # Wait for power-up ready
+        # Start conversion cycle (PU_CS bit 4) after power-up.
+        self._set_bit(REG_PU_CTRL, 4, True)
+
+        # Wait for power-up ready (PU_PUR bit 3)
         for _ in range(100):
             status = self.read_reg(REG_PU_CTRL)
             if status & PU_PUR:
@@ -74,28 +104,33 @@ class NAU7802:
         else:
             raise TimeoutError("NAU7802 power-up timeout")
 
-        # Sample rate: 10 SPS (bits 6:4 of CTRL2 = 0b000)
-        ctrl2 = self.read_reg(REG_CTRL2)
-        self.write_reg(REG_CTRL2, (ctrl2 & 0x8F) | (0 << 4))
-        print("  Sample rate: 10 SPS")
+        # Check revision register low nibble (Adafruit expects 0xF).
+        revision = self.read_reg(REG_REVISION)
+        print(f"  Revision: 0x{revision:02X}")
+        if (revision & 0x0F) != 0x0F:
+            raise RuntimeError(f"Unexpected NAU7802 revision register: 0x{revision:02X}")
+
+        # Internal LDO enable is PU_CTRL.AVDDS (bit 7); set LDO voltage to 3.0V.
+        self._set_bit(REG_PU_CTRL, 7, True)  # AVDDS=1 (internal LDO)
+        self._set_field(REG_CTRL1, shift=3, width=3, value=0b101)  # VLDO=3.0V
+        print("  LDO: 3.0V (internal)")
 
         # Gain: 128x (bits 2:0 of CTRL1 = 0b111)
-        ctrl1 = self.read_reg(REG_CTRL1)
-        self.write_reg(REG_CTRL1, (ctrl1 & 0xF8) | 7)
+        self._set_field(REG_CTRL1, shift=0, width=3, value=0b111)
         print("  Gain: 128x")
 
-        # LDO reference: bits 5:3 of CTRL1 = 0b101
-        ctrl1 = self.read_reg(REG_CTRL1)
-        self.write_reg(REG_CTRL1, (ctrl1 & 0xC7) | (0b101 << 3))
+        # Sample rate: 10 SPS (CTRL2 bits 6:4 = 0b000)
+        self._set_field(REG_CTRL2, shift=4, width=3, value=0b000)
+        print("  Sample rate: 10 SPS")
 
-        # Enable internal LDO (bit 7 of CTRL1)
-        ctrl1 = self.read_reg(REG_CTRL1)
-        self.write_reg(REG_CTRL1, ctrl1 | 0x80)
-        print("  LDO: internal, VLDO bits=101")
+        # Adafruit tuning: disable ADC chopper clock (ADC bits 5:4 = 0b11)
+        self._set_field(REG_ADC, shift=4, width=2, value=0b11)
+
+        # Adafruit tuning: use low ESR caps (PGA bit 6 = 0)
+        self._set_bit(REG_PGA, 6, False)
 
         # Start conversion cycle
-        pu_ctrl = self.read_reg(REG_PU_CTRL)
-        self.write_reg(REG_PU_CTRL, pu_ctrl | PU_CS)
+        self._set_bit(REG_PU_CTRL, 4, True)
         print("  Conversion started")
 
     def data_ready(self) -> bool:
@@ -118,6 +153,39 @@ def main():
     print("=" * 60)
     print("NAU7802 Scale Diagnostic")
     print("=" * 60)
+
+    print(f"Configured bus: {I2C_BUS}, address: 0x{NAU7802_ADDR:02X}")
+
+    # Probe both common I2C buses and show where devices are actually visible.
+    found_by_bus: dict[int, list[int]] = {}
+    for bus_num in (0, 1):
+        found_by_bus[bus_num] = []
+        try:
+            with smbus2.SMBus(bus_num) as probe_bus:
+                for addr in range(0x03, 0x78):
+                    try:
+                        probe_bus.read_byte(addr)
+                        found_by_bus[bus_num].append(addr)
+                    except OSError:
+                        continue
+        except FileNotFoundError:
+            continue
+        except PermissionError:
+            continue
+
+    for bus_num, addrs in found_by_bus.items():
+        if addrs:
+            pretty = " ".join(f"0x{a:02X}" for a in addrs)
+            print(f"Bus {bus_num} devices: {pretty}")
+        else:
+            print(f"Bus {bus_num} devices: (none)")
+
+    if NAU7802_ADDR not in found_by_bus.get(I2C_BUS, []):
+        for alt in (1, 0):
+            if alt != I2C_BUS and NAU7802_ADDR in found_by_bus.get(alt, []):
+                print(f"\nHint: NAU7802 (0x{NAU7802_ADDR:02X}) appears on bus {alt}, not configured bus {I2C_BUS}.")
+                print(f"Try: SPOOLBUDDY_I2C_BUS={alt} .../scale_diag.py")
+                break
 
     scale = NAU7802()
     try:
@@ -158,6 +226,13 @@ def main():
 
     except Exception as e:
         print(f"\nERROR: {e}")
+        if isinstance(e, OSError) and e.errno == 121:
+            print("\nI2C NACK (Errno 121): the device did not acknowledge reads at 0x2A.")
+            print("Check:")
+            print("  - NAU7802 SDA/SCL are on the configured bus pins")
+            print("  - 3.3V and GND are correct and stable")
+            print("  - Sensor address is really 0x2A")
+            print("  - No loose wire or swapped SDA/SCL")
         import traceback
 
         traceback.print_exc()

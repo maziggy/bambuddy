@@ -122,28 +122,38 @@ class PN5180:
         # GPIO setup via libgpiod
         self._chip = _find_gpio_chip()
 
-        self._busy_line = self._chip.request_lines(
-            consumer="pn5180-diag",
-            config={busy_pin: gpiod.LineSettings(direction=gpiod.line.Direction.INPUT)},
-        )
-        self._rst_line = self._chip.request_lines(
-            consumer="pn5180-diag",
-            config={
-                rst_pin: gpiod.LineSettings(
-                    direction=gpiod.line.Direction.OUTPUT,
-                    output_value=gpiod.line.Value.ACTIVE,
-                )
-            },
-        )
-        self._nss_line = self._chip.request_lines(
-            consumer="pn5180-diag",
-            config={
-                nss_pin: gpiod.LineSettings(
-                    direction=gpiod.line.Direction.OUTPUT,
-                    output_value=gpiod.line.Value.ACTIVE,
-                )
-            },
-        )
+        try:
+            self._busy_line = self._chip.request_lines(
+                consumer="pn5180-diag",
+                config={busy_pin: gpiod.LineSettings(direction=gpiod.line.Direction.INPUT)},
+            )
+            self._rst_line = self._chip.request_lines(
+                consumer="pn5180-diag",
+                config={
+                    rst_pin: gpiod.LineSettings(
+                        direction=gpiod.line.Direction.OUTPUT,
+                        output_value=gpiod.line.Value.ACTIVE,
+                    )
+                },
+            )
+            self._nss_line = self._chip.request_lines(
+                consumer="pn5180-diag",
+                config={
+                    nss_pin: gpiod.LineSettings(
+                        direction=gpiod.line.Direction.OUTPUT,
+                        output_value=gpiod.line.Value.ACTIVE,
+                    )
+                },
+            )
+        except OSError as e:
+            self._chip.close()
+            if getattr(e, "errno", None) == 16:
+                raise RuntimeError(
+                    "GPIO line is busy (another process owns PN5180 pins). "
+                    "Stop spoolbuddy service before running diagnostics: "
+                    "sudo systemctl stop spoolbuddy"
+                ) from e
+            raise
         self._busy_pin = busy_pin
         self._rst_pin = rst_pin
         self._nss_pin = nss_pin
@@ -303,8 +313,9 @@ def run_diagnostics():
     print("PN5180 NFC Reader Diagnostics")
     print("=" * 60)
 
-    nfc = PN5180()
+    nfc = None
     try:
+        nfc = PN5180()
         # Reset
         print("\n[1] Hardware reset...")
         nfc.reset()
@@ -372,7 +383,8 @@ def run_diagnostics():
         print(f"\nERROR: {e}")
         sys.exit(1)
     finally:
-        nfc.close()
+        if nfc is not None:
+            nfc.close()
 
 
 if __name__ == "__main__":

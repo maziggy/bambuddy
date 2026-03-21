@@ -10,7 +10,7 @@ Wiring (from spoolbuddy/README.md):
     PN5180 SCK  -> Pi Pin 23 (GPIO11)
     PN5180 MISO -> Pi Pin 21 (GPIO9)
     PN5180 MOSI -> Pi Pin 19 (GPIO10)
-    PN5180 NSS  -> Pi Pin 24 (GPIO8 / CE0)
+    PN5180 NSS  -> Pi Pin 16 (GPIO23, manual CS)
     PN5180 BUSY -> Pi Pin 22 (GPIO25)
     PN5180 RST  -> Pi Pin 18 (GPIO24)
 """
@@ -26,6 +26,7 @@ import spidev
 # ---------------------------------------------------------------------------
 BUSY_PIN = 25  # Pin 22
 RST_PIN = 24  # Pin 18
+NSS_PIN = 23  # Pin 16 (manual CS)
 
 # ---------------------------------------------------------------------------
 # SPI command instruction codes (NXP PN5180 datasheet Table 5)
@@ -109,7 +110,15 @@ def _find_gpio_chip():
 class PN5180:
     """Low-level driver for the PN5180 NFC frontend over SPI."""
 
-    def __init__(self, spi_bus=0, spi_device=0, spi_speed_hz=1_000_000, busy_pin=BUSY_PIN, rst_pin=RST_PIN):
+    def __init__(
+        self,
+        spi_bus=0,
+        spi_device=0,
+        spi_speed_hz=500_000,
+        busy_pin=BUSY_PIN,
+        rst_pin=RST_PIN,
+        nss_pin=NSS_PIN,
+    ):
         # GPIO setup via libgpiod
         self._chip = _find_gpio_chip()
 
@@ -126,20 +135,32 @@ class PN5180:
                 )
             },
         )
+        self._nss_line = self._chip.request_lines(
+            consumer="pn5180-diag",
+            config={
+                nss_pin: gpiod.LineSettings(
+                    direction=gpiod.line.Direction.OUTPUT,
+                    output_value=gpiod.line.Value.ACTIVE,
+                )
+            },
+        )
         self._busy_pin = busy_pin
         self._rst_pin = rst_pin
+        self._nss_pin = nss_pin
 
-        # SPI setup – mode 0 (CPOL=0, CPHA=0), MSB first
+        # SPI setup - mode 0 (CPOL=0, CPHA=0), MSB first
         self._spi = spidev.SpiDev()
         self._spi.open(spi_bus, spi_device)
         self._spi.max_speed_hz = spi_speed_hz
         self._spi.mode = 0b00
         self._spi.bits_per_word = 8
+        self._spi.no_cs = True
 
     def close(self):
         self._spi.close()
         self._busy_line.release()
         self._rst_line.release()
+        self._nss_line.release()
         self._chip.close()
 
     # -- low-level helpers --------------------------------------------------
@@ -155,6 +176,14 @@ class PN5180:
                 raise TimeoutError("PN5180 BUSY line did not go low")
             time.sleep(0.001)
 
+    def _cs_low(self):
+        self._nss_line.set_value(self._nss_pin, gpiod.line.Value.INACTIVE)
+        time.sleep(0.000005)
+
+    def _cs_high(self):
+        self._nss_line.set_value(self._nss_pin, gpiod.line.Value.ACTIVE)
+        time.sleep(0.000100)
+
     def _send_command(self, tx_data, rx_len=0):
         """Send an SPI command frame and optionally read a response frame.
 
@@ -165,11 +194,13 @@ class PN5180:
         """
         self._wait_busy()
 
-        # Transmit command
+        # Transmit command (manual CS)
+        self._cs_low()
         self._spi.xfer2(list(tx_data))
+        self._cs_high()
 
         if rx_len == 0:
-            # Write-only command – wait for processing
+            # Write-only command - wait for processing
             time.sleep(0.001)
             self._wait_busy()
             return None
@@ -178,8 +209,10 @@ class PN5180:
         time.sleep(0.001)
         self._wait_busy()
 
-        # Read response
+        # Read response (manual CS)
+        self._cs_low()
         rx = self._spi.xfer2([0xFF] * rx_len)
+        self._cs_high()
         time.sleep(0.001)
         self._wait_busy()
         return bytes(rx)

@@ -1399,8 +1399,11 @@ class BambuMQTTClient:
         # Check tray_exist_bits to clear empty slots (Issue #147)
         # New AMS models don't send empty tray data - they just update tray_exist_bits
         # Each bit in tray_exist_bits represents a slot: bit=0 means empty, bit=1 means has spool
+        # Skip when power_on_flag=False: printer shutdown sends all-zero bits which would
+        # wipe all slot data and cause auto-unlink to remove spool assignments (#765)
         tray_exist_bits_str = ams_data.get("tray_exist_bits") if isinstance(ams_data, dict) else None
-        if tray_exist_bits_str:
+        power_on = ams_data.get("power_on_flag", True) if isinstance(ams_data, dict) else True
+        if tray_exist_bits_str and power_on:
             try:
                 tray_exist_bits = int(tray_exist_bits_str, 16)
                 for ams_unit in merged_ams:

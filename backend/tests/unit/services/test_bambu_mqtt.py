@@ -606,6 +606,133 @@ class TestAMSDataMerging:
         assert ams_data[0]["tray"][0]["tray_type"] == "PLA", "A1 should still have PLA"
         assert ams_data[1]["tray"][0]["tray_type"] == "PLA", "B1 should still have PLA"
 
+    def test_shutdown_message_preserves_ams_data(self, mqtt_client):
+        """Printer shutdown (power_on_flag=False) must not wipe AMS slot data (#765).
+
+        When a printer shuts down it sends a final MQTT message with
+        tray_exist_bits='0' and power_on_flag=False. This all-zero value
+        previously caused every slot to be cleared, which then triggered
+        auto-unlink of all spool assignments on reconnect.
+        """
+        # Initial state: two AMS units with loaded spools
+        initial_ams = {
+            "ams": [
+                {
+                    "id": 0,
+                    "tray": [
+                        {"id": 0, "tray_type": "PLA", "tray_color": "FF0000FF", "remain": 80},
+                        {"id": 1, "tray_type": "PETG", "tray_color": "00FF00FF", "remain": 60},
+                    ],
+                },
+                {
+                    "id": 1,
+                    "tray": [
+                        {"id": 0, "tray_type": "PETG", "tray_color": "DBDDD9FF", "remain": 90},
+                        {"id": 1, "tray_type": "PETG", "tray_color": "67DB25FF", "remain": 70},
+                    ],
+                },
+            ],
+            "tray_exist_bits": "33",  # Slots 0,1 of each AMS (0b00110011)
+            "power_on_flag": True,
+        }
+        mqtt_client._handle_ams_data(initial_ams)
+
+        # Verify initial state
+        ams_data = mqtt_client.state.raw_data["ams"]
+        assert ams_data[0]["tray"][0]["tray_type"] == "PLA"
+        assert ams_data[1]["tray"][0]["tray_type"] == "PETG"
+
+        # Simulate printer shutdown — all-zero bits with power_on_flag=False
+        shutdown_ams = {
+            "ams_exist_bits": "0",
+            "tray_exist_bits": "0",
+            "power_on_flag": False,
+            "insert_flag": False,
+            "tray_now": "0",
+            "version": 0,
+        }
+        mqtt_client._handle_ams_data(shutdown_ams)
+
+        # AMS slot data MUST be preserved — shutdown should not clear it
+        ams_data = mqtt_client.state.raw_data["ams"]
+        assert ams_data[0]["tray"][0]["tray_type"] == "PLA", "Shutdown must not clear AMS 0 slot 0"
+        assert ams_data[0]["tray"][0]["tray_color"] == "FF0000FF", "Shutdown must not clear AMS 0 slot 0 color"
+        assert ams_data[0]["tray"][1]["tray_type"] == "PETG", "Shutdown must not clear AMS 0 slot 1"
+        assert ams_data[1]["tray"][0]["tray_type"] == "PETG", "Shutdown must not clear AMS 1 slot 0"
+        assert ams_data[1]["tray"][1]["tray_type"] == "PETG", "Shutdown must not clear AMS 1 slot 1"
+
+    def test_genuine_removal_still_clears_with_power_on(self, mqtt_client):
+        """Genuine spool removal (power_on_flag=True) must still clear slot data.
+
+        Ensures the #765 fix doesn't break normal spool removal detection.
+        """
+        # Initial state: AMS with loaded spool
+        initial_ams = {
+            "ams": [
+                {
+                    "id": 0,
+                    "tray": [
+                        {"id": 0, "tray_type": "PLA", "tray_color": "FF0000", "remain": 80},
+                        {"id": 1, "tray_type": "PETG", "tray_color": "00FF00", "remain": 60},
+                    ],
+                },
+            ],
+            "tray_exist_bits": "3",  # Both slots occupied (0b11)
+            "power_on_flag": True,
+        }
+        mqtt_client._handle_ams_data(initial_ams)
+
+        # Spool removed from slot 1 while printer is running
+        removal_ams = {
+            "ams": [
+                {
+                    "id": 0,
+                    "tray": [{"id": 0}, {"id": 1}],
+                },
+            ],
+            "tray_exist_bits": "1",  # Only slot 0 occupied (0b01)
+            "power_on_flag": True,
+        }
+        mqtt_client._handle_ams_data(removal_ams)
+
+        # Slot 0 preserved, slot 1 cleared
+        ams_data = mqtt_client.state.raw_data["ams"]
+        assert ams_data[0]["tray"][0]["tray_type"] == "PLA", "Slot 0 should be preserved"
+        assert ams_data[0]["tray"][1]["tray_type"] == "", "Slot 1 should be cleared on removal"
+        assert ams_data[0]["tray"][1]["tray_color"] == "", "Slot 1 color should be cleared"
+
+    def test_power_on_flag_defaults_true_when_absent(self, mqtt_client):
+        """When power_on_flag is not in the MQTT data, clearing must proceed normally.
+
+        Ensures backwards compatibility with firmware that doesn't send power_on_flag.
+        """
+        # Initial state
+        initial_ams = {
+            "ams": [
+                {
+                    "id": 0,
+                    "tray": [
+                        {"id": 0, "tray_type": "PLA", "tray_color": "FF0000", "remain": 80},
+                    ],
+                },
+            ],
+            "tray_exist_bits": "1",
+        }
+        mqtt_client._handle_ams_data(initial_ams)
+
+        # Update WITHOUT power_on_flag — should still clear when bit=0
+        update_ams = {
+            "ams": [{"id": 0, "tray": [{"id": 0}]}],
+            "tray_exist_bits": "0",
+            # No power_on_flag key at all
+        }
+        mqtt_client._handle_ams_data(update_ams)
+
+        ams_data = mqtt_client.state.raw_data["ams"]
+        assert ams_data[0]["tray"][0]["tray_type"] == "", (
+            "Without power_on_flag, clearing should proceed (defaults to True)"
+        )
+
 
 class TestNozzleRackData:
     """Tests for nozzle rack data parsing from H2 series device.nozzle.info."""

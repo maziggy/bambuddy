@@ -41,14 +41,19 @@ def _get_ip() -> str:
 
 async def nfc_poll_loop(config: Config, api: APIClient, shared: dict):
     """Continuous NFC polling loop — runs in asyncio with blocking reads offloaded."""
-    nfc: NFCReader = shared["nfc"]
     display: DisplayControl = shared["display"]
-    if not nfc.ok:
-        logger.warning("NFC reader not available, skipping NFC polling")
-        return
 
     try:
         while True:
+            if shared.get("nfc_scan_paused", False):
+                await asyncio.sleep(config.nfc_poll_interval)
+                continue
+
+            nfc: NFCReader | None = shared.get("nfc")
+            if not nfc or not nfc.ok:
+                await asyncio.sleep(config.nfc_poll_interval)
+                continue
+
             event_type, event_data = await asyncio.to_thread(nfc.poll)
 
             if event_type == "tag_detected":
@@ -100,7 +105,9 @@ async def nfc_poll_loop(config: Config, api: APIClient, shared: dict):
 
             await asyncio.sleep(config.nfc_poll_interval)
     finally:
-        nfc.close()
+        nfc: NFCReader | None = shared.get("nfc")
+        if nfc:
+            nfc.close()
 
 
 async def scale_poll_loop(config: Config, api: APIClient, shared: dict):
@@ -277,6 +284,14 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
                 script_name = "read_tag.py" if diagnostic == "nfc" else "scale_diag.py"
                 script_path = Path(__file__).resolve().parent.parent / "scripts" / script_name
 
+                if diagnostic == "nfc":
+                    logger.info("Pausing NFC continuous scan for diagnostic")
+                    shared["nfc_scan_paused"] = True
+                    nfc_for_diag = shared.get("nfc")
+                    if nfc_for_diag:
+                        await asyncio.to_thread(nfc_for_diag.close)
+                        shared["nfc"] = None
+
                 logger.info("Running %s diagnostic via %s", diagnostic, script_path)
                 try:
                     proc = await asyncio.to_thread(
@@ -310,6 +325,11 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
                         f"Diagnostic execution failed: {e}",
                         -1,
                     )
+                finally:
+                    if diagnostic == "nfc":
+                        logger.info("Reinitializing NFC continuous scan after diagnostic")
+                        shared["nfc"] = NFCReader()
+                        shared["nfc_scan_paused"] = False
                 continue
             elif cmd == "write_tag":
                 write_payload = result.get("pending_write_payload")
@@ -382,7 +402,7 @@ async def main():
 
     logger.info("Device registered, starting poll loops")
 
-    shared: dict = {"nfc": nfc, "scale": scale, "display": display}
+    shared: dict = {"nfc": nfc, "scale": scale, "display": display, "nfc_scan_paused": False}
     try:
         await asyncio.gather(
             nfc_poll_loop(config, api, shared),

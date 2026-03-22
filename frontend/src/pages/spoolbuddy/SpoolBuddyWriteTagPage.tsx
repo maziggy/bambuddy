@@ -370,6 +370,7 @@ function SpoolListItem({ spool, selected, showTag, onClick }: {
 }
 
 type NewSpoolSubTab = 'filament' | 'pa-profile';
+type NewSpoolViewMode = 'simple' | 'full';
 
 // --- New spool touch form (mirrors Add Spool fields/options in kiosk-friendly layout) ---
 function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
@@ -378,6 +379,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
   selectedSpool: InventorySpool | null;
   t: (key: string, fallback: string) => string;
 }) {
+  const [viewMode, setViewMode] = useState<NewSpoolViewMode>('simple');
   const [activeSubTab, setActiveSubTab] = useState<NewSpoolSubTab>('filament');
   const [formData, setFormData] = useState<SpoolFormData>(defaultFormData);
   const [errors, setErrors] = useState<Partial<Record<keyof SpoolFormData, string>>>({});
@@ -603,7 +605,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
 
   const handleCreate = async () => {
     setCreateError(null);
-    const validation = validateForm(formData, quickAdd);
+    const validation = validateForm(formData, viewMode === 'simple' ? true : quickAdd);
     if (!validation.isValid) {
       setErrors(validation.errors);
       setActiveSubTab('filament');
@@ -649,8 +651,99 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
     }
   };
 
+  const simpleColorHex = `#${(formData.rgba || '808080FF').slice(0, 6)}`;
+
   return (
     <div className="p-3 space-y-3 overflow-y-auto h-full">
+      <div className="flex items-center justify-between px-2 py-2 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary">
+        <span className="text-sm text-zinc-200">{t('spoolbuddy.writeTag.viewMode', 'View')}</span>
+        <div className="flex rounded-lg overflow-hidden border border-bambu-dark-tertiary">
+          <button
+            type="button"
+            onClick={() => setViewMode('simple')}
+            className={`px-3 py-1.5 text-xs font-medium ${
+              viewMode === 'simple' ? 'bg-bambu-green/20 text-bambu-green' : 'bg-bambu-dark text-zinc-400'
+            }`}
+          >
+            {t('spoolbuddy.writeTag.simpleView', 'Simple')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('full')}
+            className={`px-3 py-1.5 text-xs font-medium ${
+              viewMode === 'full' ? 'bg-bambu-green/20 text-bambu-green' : 'bg-bambu-dark text-zinc-400'
+            }`}
+          >
+            {t('spoolbuddy.writeTag.fullView', 'Full')}
+          </button>
+        </div>
+      </div>
+
+      {viewMode === 'simple' ? (
+        <>
+          <div className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg p-3 space-y-3">
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.material', 'Material')}</label>
+              <select
+                value={formData.material}
+                onChange={(e) => updateField('material', e.target.value)}
+                className="w-full px-3 py-3 bg-bambu-dark border border-bambu-dark-tertiary rounded text-sm text-white focus:outline-none focus:border-bambu-green"
+              >
+                <option value="">{t('spoolbuddy.writeTag.selectMaterial', 'Select material')}</option>
+                {MATERIALS.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.colorName', 'Color Name')}</label>
+                <input
+                  type="text"
+                  value={formData.color_name}
+                  onChange={(e) => updateField('color_name', e.target.value)}
+                  placeholder="Jade White"
+                  className="w-full px-3 py-3 bg-bambu-dark border border-bambu-dark-tertiary rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-bambu-green"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.color', 'Color')}</label>
+                <input
+                  type="color"
+                  value={simpleColorHex}
+                  onChange={(e) => updateField('rgba', e.target.value.replace('#', '').toUpperCase() + 'FF')}
+                  className="w-12 h-12 bg-transparent border border-bambu-dark-tertiary rounded cursor-pointer"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.brand', 'Brand')}</label>
+              <input
+                type="text"
+                value={formData.brand}
+                onChange={(e) => updateField('brand', e.target.value)}
+                placeholder="Polymaker"
+                className="w-full px-3 py-3 bg-bambu-dark border border-bambu-dark-tertiary rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-bambu-green"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.weight', 'Weight (g)')}</label>
+              <input
+                type="number"
+                value={formData.label_weight}
+                min={0}
+                max={10000}
+                onChange={(e) => updateField('label_weight', parseInt(e.target.value) || 0)}
+                className="w-full px-3 py-3 bg-bambu-dark border border-bambu-dark-tertiary rounded text-sm text-white focus:outline-none focus:border-bambu-green"
+              />
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
       <div className="flex items-center justify-between px-2 py-2 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary">
         <span className="text-sm text-zinc-200">{t('inventory.quickAdd')}</span>
         <button
@@ -732,6 +825,8 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
           />
         )}
       </div>
+        </>
+      )}
 
       {createError && (
         <div className="text-sm text-red-400 bg-red-900/20 border border-red-900/40 rounded-lg px-3 py-2">

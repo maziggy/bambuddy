@@ -741,3 +741,273 @@ class TestCalibrationEndpoints:
         data = resp.json()
         assert data["tare_offset"] == 11111
         assert data["calibration_factor"] == pytest.approx(0.0042)
+
+
+# ============================================================================
+# Display endpoints
+# ============================================================================
+
+
+class TestDisplayEndpoints:
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_display_settings(self, async_client: AsyncClient, device_factory):
+        await device_factory(device_id="sb-disp", display_brightness=100, display_blank_timeout=0)
+
+        resp = await async_client.put(
+            f"{API}/devices/sb-disp/display",
+            json={"brightness": 75, "blank_timeout": 300},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["brightness"] == 75
+        assert data["blank_timeout"] == 300
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_display_persists_via_heartbeat(self, async_client: AsyncClient, device_factory):
+        await device_factory(device_id="sb-disp-hb")
+
+        await async_client.put(
+            f"{API}/devices/sb-disp-hb/display",
+            json={"brightness": 50, "blank_timeout": 600},
+        )
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            hb = await async_client.post(
+                f"{API}/devices/sb-disp-hb/heartbeat",
+                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 10},
+            )
+
+        assert hb.json()["display_brightness"] == 50
+        assert hb.json()["display_blank_timeout"] == 600
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_display_unknown_device_404(self, async_client: AsyncClient):
+        resp = await async_client.put(
+            f"{API}/devices/ghost/display",
+            json={"brightness": 50, "blank_timeout": 60},
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_display_validates_brightness(self, async_client: AsyncClient, device_factory):
+        await device_factory(device_id="sb-disp-val")
+
+        resp = await async_client.put(
+            f"{API}/devices/sb-disp-val/display",
+            json={"brightness": 150, "blank_timeout": 0},
+        )
+        assert resp.status_code == 422  # Validation error: brightness > 100
+
+
+# ============================================================================
+# Update endpoints
+# ============================================================================
+
+
+class TestUpdateEndpoints:
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_trigger_update_queues_command(self, async_client: AsyncClient, device_factory):
+        await device_factory(device_id="sb-upd")
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(f"{API}/devices/sb-upd/update")
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+
+        # Verify heartbeat returns update command
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            hb = await async_client.post(
+                f"{API}/devices/sb-upd/heartbeat",
+                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 10},
+            )
+
+        # update command is NOT cleared by heartbeat (cleared by update-status)
+        assert hb.json()["pending_command"] == "update"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_trigger_update_offline_device_409(self, async_client: AsyncClient, device_factory):
+        await device_factory(
+            device_id="sb-upd-off",
+            last_seen=datetime.now(timezone.utc) - timedelta(seconds=120),
+        )
+
+        resp = await async_client.post(f"{API}/devices/sb-upd-off/update")
+        assert resp.status_code == 409
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_trigger_update_unknown_device_404(self, async_client: AsyncClient):
+        resp = await async_client.post(f"{API}/devices/ghost/update")
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_trigger_update_already_updating(self, async_client: AsyncClient, device_factory):
+        await device_factory(device_id="sb-upd-dup", update_status="updating")
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(f"{API}/devices/sb-upd-dup/update")
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "already_updating"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_report_update_status_updating(self, async_client: AsyncClient, device_factory):
+        await device_factory(device_id="sb-upd-st", pending_command="update", update_status="pending")
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                f"{API}/devices/sb-upd-st/update-status",
+                json={"status": "updating", "message": "Fetching latest code..."},
+            )
+
+        assert resp.status_code == 200
+        mock_ws.broadcast.assert_called_once()
+        msg = mock_ws.broadcast.call_args[0][0]
+        assert msg["type"] == "spoolbuddy_update"
+        assert msg["update_status"] == "updating"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_report_update_status_complete_clears_command(self, async_client: AsyncClient, device_factory):
+        await device_factory(device_id="sb-upd-done", pending_command="update", update_status="updating")
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            await async_client.post(
+                f"{API}/devices/sb-upd-done/update-status",
+                json={"status": "complete", "message": "Update complete, restarting..."},
+            )
+
+        # Heartbeat should have no pending command
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            hb = await async_client.post(
+                f"{API}/devices/sb-upd-done/heartbeat",
+                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 10},
+            )
+
+        assert hb.json()["pending_command"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_report_update_status_error(self, async_client: AsyncClient, device_factory):
+        await device_factory(device_id="sb-upd-err", pending_command="update", update_status="updating")
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                f"{API}/devices/sb-upd-err/update-status",
+                json={"status": "error", "message": "git fetch failed: network unreachable"},
+            )
+
+        assert resp.status_code == 200
+        msg = mock_ws.broadcast.call_args[0][0]
+        assert msg["update_status"] == "error"
+        assert "git fetch failed" in msg["update_message"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_report_update_status_unknown_device_404(self, async_client: AsyncClient):
+        resp = await async_client.post(
+            f"{API}/devices/ghost/update-status",
+            json={"status": "updating", "message": "test"},
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_device_response_includes_update_fields(self, async_client: AsyncClient, device_factory):
+        await device_factory(device_id="sb-upd-resp", update_status="complete", update_message="Done!")
+
+        resp = await async_client.get(f"{API}/devices")
+        assert resp.status_code == 200
+        device = next(d for d in resp.json() if d["device_id"] == "sb-upd-resp")
+        assert device["update_status"] == "complete"
+        assert device["update_message"] == "Done!"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_check_returns_version_info(self, async_client: AsyncClient, device_factory):
+        """GET /devices/{id}/update-check queries GitHub and returns version comparison."""
+        await device_factory(device_id="sb-uc", firmware_version="0.1.0")
+
+        mock_releases = [{"tag_name": "v0.2.0", "html_url": "https://github.com/test/releases/0.2.0"}]
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = mock_releases
+        mock_resp.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_resp
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            resp = await async_client.get(f"{API}/devices/sb-uc/update-check")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["current_version"] == "0.1.0"
+        assert data["latest_version"] == "0.2.0"
+        assert data["update_available"] is True
+        assert data["release_url"] == "https://github.com/test/releases/0.2.0"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_check_up_to_date(self, async_client: AsyncClient, device_factory):
+        await device_factory(device_id="sb-uc2", firmware_version="0.2.0")
+
+        mock_releases = [{"tag_name": "v0.2.0", "html_url": "https://github.com/test/releases/0.2.0"}]
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = mock_releases
+        mock_resp.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_resp
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            resp = await async_client.get(f"{API}/devices/sb-uc2/update-check")
+
+        assert resp.status_code == 200
+        assert resp.json()["update_available"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_check_unknown_device_404(self, async_client: AsyncClient):
+        resp = await async_client.get(f"{API}/devices/ghost/update-check")
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_trigger_update_broadcasts_websocket(self, async_client: AsyncClient, device_factory):
+        await device_factory(device_id="sb-upd-ws")
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            await async_client.post(f"{API}/devices/sb-upd-ws/update")
+
+        mock_ws.broadcast.assert_called_once()
+        msg = mock_ws.broadcast.call_args[0][0]
+        assert msg["type"] == "spoolbuddy_update"
+        assert msg["device_id"] == "sb-upd-ws"
+        assert msg["update_status"] == "pending"

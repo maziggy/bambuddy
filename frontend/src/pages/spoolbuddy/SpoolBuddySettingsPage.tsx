@@ -64,19 +64,12 @@ function DeviceTab({ device }: { device: SpoolBuddyDevice }) {
         backendUrl.trim(),
         apiToken.trim() || undefined
       );
-      setSystemMsg({ type: 'ok', text: t('spoolbuddy.settings.systemQueued', 'Config queued. Reboot the SpoolBuddy device to apply new backend/auth values.') });
+      setSystemMsg({ type: 'ok', text: t('spoolbuddy.settings.systemQueued', 'Config queued.') });
     } catch (e) {
       setSystemMsg({ type: 'error', text: e instanceof Error ? e.message : t('common.error', 'Error') });
     } finally {
       setSystemBusy(false);
     }
-  };
-
-  const showRebootHelp = () => {
-    setSystemMsg({
-      type: 'ok',
-      text: t('spoolbuddy.settings.rebootHelp', 'Reboot manually on the device host: sudo reboot'),
-    });
   };
 
   return (
@@ -207,17 +200,7 @@ function DeviceTab({ device }: { device: SpoolBuddyDevice }) {
             >
               {t('spoolbuddy.settings.saveConfig', 'Save Config')}
             </button>
-            <button
-              onClick={showRebootHelp}
-              className="px-3 py-2 rounded bg-zinc-700 hover:bg-zinc-600 text-sm font-medium text-zinc-100"
-            >
-              {t('spoolbuddy.settings.rebootDevice', 'Reboot Device')}
-            </button>
           </div>
-
-          <p className="text-xs text-zinc-500">
-            {t('spoolbuddy.settings.rebootHint', 'After saving, reboot the SpoolBuddy device from the host OS when ready.')}
-          </p>
 
           {systemMsg && (
             <div className={`text-xs ${systemMsg.type === 'ok' ? 'text-green-400' : 'text-red-400'}`}>

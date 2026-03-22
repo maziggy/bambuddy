@@ -469,7 +469,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
     const onMissingSpoolAssignment = (event: Event) => {
       const detail = (event as CustomEvent<MissingSpoolAssignmentDetail>).detail;
-      if (!detail?.printer_id || !detail.missing_slots || detail.missing_slots.length === 0) {
+      if (detail?.printer_id == null || !detail.missing_slots || detail.missing_slots.length === 0) {
         return;
       }
 

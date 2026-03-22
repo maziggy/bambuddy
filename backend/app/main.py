@@ -1146,13 +1146,88 @@ def _tray_profile_for_global_id(state: PrinterState | None, global_tray_id: int)
     return "Unknown"
 
 
+def _tray_color_for_global_id(state: PrinterState | None, global_tray_id: int) -> str:
+    """Resolve expected tray color for a global tray ID from current printer state."""
+    if not state or not state.raw_data:
+        return "Unknown"
+
+    ams_raw = state.raw_data.get("ams", {})
+    ams_units = ams_raw.get("ams", []) if isinstance(ams_raw, dict) else ams_raw if isinstance(ams_raw, list) else []
+
+    vt_trays = state.raw_data.get("vt_tray", [])
+    if not isinstance(vt_trays, list):
+        vt_trays = []
+
+    for tray in vt_trays:
+        if not isinstance(tray, dict):
+            continue
+        if int(tray.get("id", -1)) == global_tray_id:
+            return tray.get("tray_color") or "Unknown"
+
+    for ams in ams_units:
+        if not isinstance(ams, dict):
+            continue
+        ams_id = int(ams.get("id", -1))
+        trays = ams.get("tray", [])
+        if not isinstance(trays, list):
+            continue
+        for tray in trays:
+            if not isinstance(tray, dict):
+                continue
+            tray_id = int(tray.get("id", -1))
+            candidate = ams_id if ams_id >= 128 else (ams_id * 4 + tray_id)
+            if candidate == global_tray_id:
+                return tray.get("tray_color") or "Unknown"
+
+    return "Unknown"
+
+
+def _decode_mqtt_mapping_to_global_trays(mapping_raw: object) -> list[int]:
+    """Decode printer MQTT mapping values into Bambuddy global tray IDs."""
+    if not isinstance(mapping_raw, list) or not mapping_raw:
+        return []
+
+    decoded: list[int] = []
+    for value in mapping_raw:
+        try:
+            if isinstance(value, int):
+                encoded = value
+            elif isinstance(value, str):
+                encoded = int(value, 10)
+            else:
+                continue
+        except ValueError:
+            continue
+
+        if encoded >= 65535:
+            continue
+
+        ams_hw_id = (encoded >> 8) & 0xFF
+        slot = encoded & 0xFF
+
+        if 0 <= ams_hw_id <= 3:
+            decoded.append(ams_hw_id * 4 + (slot & 0x03))
+        elif 128 <= ams_hw_id <= 135:
+            decoded.append(ams_hw_id)
+        elif ams_hw_id in (254, 255):
+            decoded.append(255 if slot == 255 else 254)
+
+    return decoded
+
+
 async def _notify_missing_spool_assignments_on_print_start(printer_id: int, data: dict, logger) -> None:
     """Send push notification when print-start mapping references unassigned trays."""
-    mapping_raw = data.get("ams_mapping")
-    if not isinstance(mapping_raw, list) or not mapping_raw:
-        return
+    explicit_mapping = data.get("ams_mapping")
+    explicit_values = (
+        [int(value) for value in explicit_mapping if isinstance(value, int)]
+        if isinstance(explicit_mapping, list)
+        else []
+    )
+    raw_mapping = data.get("raw_data", {}).get("mapping") if isinstance(data.get("raw_data"), dict) else None
+    decoded_values = _decode_mqtt_mapping_to_global_trays(raw_mapping)
+    mapping_values = explicit_values if explicit_values else decoded_values
 
-    used_global_trays = {int(value) for value in mapping_raw if isinstance(value, int) and value >= 0 and value != 255}
+    used_global_trays = {value for value in mapping_values if value >= 0 and value != 255}
     if not used_global_trays:
         return
 
@@ -1184,6 +1259,7 @@ async def _notify_missing_spool_assignments_on_print_start(printer_id: int, data
                     {
                         "slot": _slot_label_from_global_tray(global_id),
                         "profile": _tray_profile_for_global_id(state, global_id),
+                        "color": _tray_color_for_global_id(state, global_id),
                     }
                 )
 

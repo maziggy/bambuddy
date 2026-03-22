@@ -9,6 +9,43 @@ interface WebSocketMessage {
   data?: Record<string, unknown>;
 }
 
+function decodeMqttMapping(mappingRaw: unknown): number[] {
+  if (!Array.isArray(mappingRaw) || mappingRaw.length === 0) {
+    return [];
+  }
+
+  const decoded: number[] = [];
+  for (const entry of mappingRaw) {
+    const value =
+      typeof entry === 'number'
+        ? entry
+        : typeof entry === 'string'
+          ? Number.parseInt(entry, 10)
+          : Number.NaN;
+
+    if (!Number.isFinite(value)) {
+      continue;
+    }
+
+    if (value >= 65535) {
+      continue;
+    }
+
+    const amsHwId = (value >> 8) & 0xff;
+    const slot = value & 0xff;
+
+    if (amsHwId >= 0 && amsHwId <= 3) {
+      decoded.push(amsHwId * 4 + (slot & 0x03));
+    } else if (amsHwId >= 128 && amsHwId <= 135) {
+      decoded.push(amsHwId);
+    } else if (amsHwId === 254 || amsHwId === 255) {
+      decoded.push(slot === 255 ? 255 : 254);
+    }
+  }
+
+  return decoded;
+}
+
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
@@ -184,19 +221,16 @@ export function useWebSocket() {
   }, [queryClient]);
 
   const checkMissingSpoolAssignments = useCallback(async (printerId: number, data?: Record<string, unknown>) => {
-    const mappingRaw = data?.ams_mapping;
-    if (!Array.isArray(mappingRaw) || mappingRaw.length === 0) {
-      return;
-    }
+    const explicitMapping = Array.isArray(data?.ams_mapping)
+      ? data.ams_mapping
+          .map((value) => (typeof value === 'number' ? value : Number.NaN))
+          .filter((value) => Number.isFinite(value))
+      : [];
 
-    const usedTrayIds = Array.from(
-      new Set(
-        mappingRaw.filter(
-          (value): value is number =>
-            typeof value === 'number' && Number.isFinite(value) && value >= 0 && value !== 255
-        )
-      )
-    );
+    const mqttMapping = decodeMqttMapping((data?.raw_data as Record<string, unknown> | undefined)?.mapping);
+    const mappingToUse = explicitMapping.length > 0 ? explicitMapping : mqttMapping;
+
+    const usedTrayIds = Array.from(new Set(mappingToUse.filter((value) => value >= 0 && value !== 255)));
     if (usedTrayIds.length === 0) {
       return;
     }

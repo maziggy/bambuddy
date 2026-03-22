@@ -950,9 +950,13 @@ class NotificationService:
             return
 
         missing_slot_names = ", ".join(slot.get("slot", "Unknown") for slot in missing_slots)
-        missing_profile_details = "\n".join(
-            f"- {slot.get('slot', 'Unknown')}: {slot.get('profile', 'Unknown')}" for slot in missing_slots
-        )
+        detail_lines = []
+        for slot in missing_slots:
+            slot_name = slot.get("slot", "Unknown")
+            profile = slot.get("profile", "Unknown")
+            color = slot.get("color", "Unknown")
+            detail_lines.append(f"- {slot_name}: {profile} | Color: {color}")
+        missing_profile_details = "\n".join(detail_lines)
 
         variables = {
             "printer": printer_name,

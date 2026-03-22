@@ -230,6 +230,7 @@ export function SpoolBuddyWriteTagPage() {
         <DiagnosticModal
           type={diagnosticOpen}
           onClose={() => setDiagnosticOpen(null)}
+          deviceId={device?.device_id || ''}
         />
       )}
 

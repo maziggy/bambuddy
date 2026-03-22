@@ -1406,6 +1406,16 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already applied
 
+    # Migration: Persist SpoolBuddy backend URL and queued system payload
+    try:
+        await conn.execute(text("ALTER TABLE spoolbuddy_devices ADD COLUMN backend_url VARCHAR(255)"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE spoolbuddy_devices ADD COLUMN pending_system_payload TEXT"))
+    except OperationalError:
+        pass  # Already applied
+
     # Migration: Convert ams_labels table from (printer_id, ams_id) key to ams_serial_number key
     # Labels are now keyed by AMS serial number so they persist when the AMS is moved to another printer.
     try:

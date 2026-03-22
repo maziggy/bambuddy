@@ -1,5 +1,6 @@
 """SpoolBuddy device management API routes."""
 
+import json
 import logging
 import time
 from datetime import datetime, timedelta, timezone
@@ -44,8 +45,6 @@ OFFLINE_THRESHOLD_SECONDS = 30
 ONLINE_BROADCAST_INTERVAL_SECONDS = 10
 _spoolbuddy_online_last_broadcast: dict[str, float] = {}
 _diagnostic_results: dict[tuple[str, str], dict] = {}
-_system_command_payloads: dict[str, dict] = {}
-_runtime_backend_urls: dict[str, str] = {}
 
 
 def _is_online(device: SpoolBuddyDevice) -> bool:
@@ -69,7 +68,7 @@ def _device_to_response(device: SpoolBuddyDevice) -> DeviceResponse:
         calibration_factor=device.calibration_factor,
         nfc_reader_type=device.nfc_reader_type,
         nfc_connection=device.nfc_connection,
-        backend_url=_runtime_backend_urls.get(device.device_id),
+        backend_url=device.backend_url,
         display_brightness=device.display_brightness,
         display_blank_timeout=device.display_blank_timeout,
         has_backlight=device.has_backlight,
@@ -123,7 +122,7 @@ async def register_device(
         device.nfc_reader_type = req.nfc_reader_type
         device.nfc_connection = req.nfc_connection
         if req.backend_url:
-            _runtime_backend_urls[req.device_id] = req.backend_url
+            device.backend_url = req.backend_url
         device.has_backlight = req.has_backlight
         device.last_seen = now
         logger.info("SpoolBuddy device re-registered: %s (%s)", req.device_id, req.hostname)
@@ -144,7 +143,7 @@ async def register_device(
         )
         db.add(device)
         if req.backend_url:
-            _runtime_backend_urls[req.device_id] = req.backend_url
+            device.backend_url = req.backend_url
         logger.info("SpoolBuddy device registered: %s (%s)", req.device_id, req.hostname)
 
     await db.commit()
@@ -202,7 +201,7 @@ async def device_heartbeat(
     if req.nfc_connection:
         device.nfc_connection = req.nfc_connection
     if req.backend_url:
-        _runtime_backend_urls[device_id] = req.backend_url
+        device.backend_url = req.backend_url
 
     # Return and clear pending command
     pending = device.pending_command
@@ -210,15 +209,16 @@ async def device_heartbeat(
     pending_system = None
     if pending == "write_tag" and device.pending_write_payload:
         # Parse the stored JSON payload to include in response
-        import json
-
         try:
             pending_write = json.loads(device.pending_write_payload)
         except (json.JSONDecodeError, TypeError):
             pending_write = None
         # Don't clear write_tag command — it gets cleared by write-result
-    elif pending == "apply_system_config":
-        pending_system = _system_command_payloads.get(device_id)
+    elif pending == "apply_system_config" and device.pending_system_payload:
+        try:
+            pending_system = json.loads(device.pending_system_payload)
+        except (json.JSONDecodeError, TypeError):
+            pending_system = None
         # Don't clear config command — it gets cleared by daemon command-result callback
     elif pending and pending.startswith("run_") and pending.endswith("_diag"):
         # Don't clear diagnostic commands — they get cleared by the device reporting results
@@ -617,7 +617,7 @@ async def queue_system_config_update(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
-    """Queue update of SpoolBuddy .env config and service restart on the device."""
+    """Queue update of SpoolBuddy .env config on the device."""
     result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
     device = result.scalar_one_or_none()
     if not device:
@@ -636,7 +636,7 @@ async def queue_system_config_update(
     if req.api_key is not None and req.api_key.strip():
         payload["api_key"] = req.api_key.strip()
 
-    _system_command_payloads[device_id] = payload
+    device.pending_system_payload = json.dumps(payload)
     device.pending_command = "apply_system_config"
     await db.commit()
 
@@ -657,9 +657,19 @@ async def system_command_result(
     if not device:
         raise HTTPException(status_code=404, detail="Device not registered")
 
-    device.pending_command = None
+    if not device.pending_command:
+        logger.info("System command result from %s with no pending command: %s", device_id, req.command)
+        return {"status": "ok", "message": "No pending command"}
+
+    if req.command != device.pending_command:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Command mismatch: pending '{device.pending_command}', got '{req.command}'",
+        )
+
     if req.command == "apply_system_config":
-        _system_command_payloads.pop(device_id, None)
+        device.pending_system_payload = None
+    device.pending_command = None
     await db.commit()
 
     logger.info(

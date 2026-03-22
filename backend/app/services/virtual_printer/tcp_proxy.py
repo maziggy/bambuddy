@@ -1535,7 +1535,7 @@ class SlicerProxyManager:
             on_connect=lambda cid: self._log_activity("MQTT", f"connected: {cid}"),
             on_disconnect=lambda cid: self._log_activity("MQTT", f"disconnected: {cid}"),
             bind_address=self.bind_address,
-            rewrite_ip=(self.target_host, self.bind_address) if self.bind_address != "0.0.0.0" else None,
+            rewrite_ip=(self.target_host, self.bind_address) if self.bind_address != "0.0.0.0" else None,  # nosec B104
         )
 
         # File transfer — raw TCP pass-through (port 6000)
@@ -1653,7 +1653,7 @@ class SlicerProxyManager:
 
         # Diagnostic probe: listen on common un-proxied ports to detect
         # if the slicer tries to reach a service we don't handle.
-        if self.bind_address and self.bind_address != "0.0.0.0":
+        if self.bind_address and self.bind_address != "0.0.0.0":  # nosec B104
             for probe_port in (21, 80, 443):
                 try:
                     srv = await asyncio.start_server(

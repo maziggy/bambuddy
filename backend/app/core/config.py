@@ -5,7 +5,7 @@ from pathlib import Path
 from pydantic_settings import BaseSettings
 
 # Application version - single source of truth
-APP_VERSION = "0.2.3b1"
+APP_VERSION = "0.2.3.b1"
 GITHUB_REPO = "maziggy/bambuddy"
 BUG_REPORT_RELAY_URL = os.environ.get("BUG_REPORT_RELAY_URL", "https://bambuddy.cool/api/bug-report")
 

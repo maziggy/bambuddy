@@ -36,9 +36,7 @@ async def get_user_email_preferences(
             notify_print_stopped=True,
         )
 
-    result = await db.execute(
-        select(UserEmailPreference).where(UserEmailPreference.user_id == current_user.id)
-    )
+    result = await db.execute(select(UserEmailPreference).where(UserEmailPreference.user_id == current_user.id))
     pref = result.scalar_one_or_none()
 
     if pref is None:
@@ -72,9 +70,7 @@ async def update_user_email_preferences(
             detail="User must have an email address to receive notifications",
         )
 
-    result = await db.execute(
-        select(UserEmailPreference).where(UserEmailPreference.user_id == current_user.id)
-    )
+    result = await db.execute(select(UserEmailPreference).where(UserEmailPreference.user_id == current_user.id))
     pref = result.scalar_one_or_none()
 
     if pref is None:

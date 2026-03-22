@@ -1,6 +1,8 @@
 """SpoolBuddy device management API routes."""
 
 import logging
+import subprocess
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -587,13 +589,66 @@ async def update_display_settings(
     device.display_blank_timeout = req.blank_timeout
     await db.commit()
 
-    logger.info(
-        "SpoolBuddy %s display updated: brightness=%d%%, blank_timeout=%ds",
-        device_id,
-        req.brightness,
-        req.blank_timeout,
-    )
-    return {"status": "ok", "brightness": req.brightness, "blank_timeout": req.blank_timeout}
+
+# --- Diagnostics ---
+
+
+@router.post("/diagnostics/run")
+async def run_diagnostic(
+    diagnostic: str,
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+):
+    """Run a hardware diagnostic script and return output.
+
+    Args:
+        diagnostic: 'scale' or 'nfc' to select which diagnostic to run
+
+    Returns:
+        Dictionary with success status, output, and exit code
+    """
+    if diagnostic == "scale":
+        script = "/opt/bambuddy/spoolbuddy/scripts/scale_diag.py"
+    elif diagnostic == "nfc":
+        script = "/opt/bambuddy/spoolbuddy/scripts/read_tag.py"
+    else:
+        raise HTTPException(status_code=400, detail="Unknown diagnostic. Must be 'scale' or 'nfc'")
+
+    try:
+        result = subprocess.run(
+            [sys.executable, script],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        # Combine stdout and stderr for complete output
+        output = result.stdout
+        if result.stderr:
+            output += result.stderr
+
+        return {
+            "success": result.returncode == 0,
+            "output": output,
+            "exit_code": result.returncode,
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "success": False,
+            "output": "Diagnostic timeout: Script did not complete within 30 seconds",
+            "exit_code": -1,
+        }
+    except FileNotFoundError:
+        return {
+            "success": False,
+            "output": f"Diagnostic script not found: {script}",
+            "exit_code": -1,
+        }
+    except Exception as e:
+        logger.exception("Diagnostic error: %s", e)
+        return {
+            "success": False,
+            "output": f"Diagnostic error: {str(e)}",
+            "exit_code": -1,
+        }
 
 
 # --- Update check ---

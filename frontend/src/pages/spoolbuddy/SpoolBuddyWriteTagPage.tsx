@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { DiagnosticModal } from '../../components/spoolbuddy/DiagnosticModal';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 import {
   api,
@@ -44,6 +45,7 @@ export function SpoolBuddyWriteTagPage() {
   const [untagging, setUntagging] = useState(false);
   const [tagOnReader, setTagOnReader] = useState(false);
   const [tagUid, setTagUid] = useState<string | null>(null);
+  const [diagnosticOpen, setDiagnosticOpen] = useState<'scale' | 'nfc' | null>(null);
 
   const { data: spools = [], refetch: refetchSpools } = useQuery({
     queryKey: ['inventory-spools'],
@@ -214,8 +216,23 @@ export function SpoolBuddyWriteTagPage() {
 
   const canWrite = selectedSpool && deviceOnline && writeStatus !== 'writing' && writeStatus !== 'success';
 
+  const handleOpenNfcDiagnostics = useCallback(() => {
+    setDiagnosticOpen('nfc');
+  }, []);
+
+  const handleOpenScaleDiagnostics = useCallback(() => {
+    setDiagnosticOpen('scale');
+  }, []);
+
   return (
     <div className="flex flex-col h-full">
+      {diagnosticOpen && (
+        <DiagnosticModal
+          type={diagnosticOpen}
+          onClose={() => setDiagnosticOpen(null)}
+        />
+      )}
+
       {/* Tab bar */}
       <div className="flex border-b border-bambu-dark-tertiary shrink-0">
         {([
@@ -306,6 +323,8 @@ export function SpoolBuddyWriteTagPage() {
             onUntag={handleUntagSpool}
             onCancel={handleCancelWrite}
             onRetry={() => { setWriteStatus('idle'); setWriteMessage(''); }}
+            onOpenNfcDiagnostics={handleOpenNfcDiagnostics}
+            onOpenScaleDiagnostics={handleOpenScaleDiagnostics}
             t={t}
           />
         </div>
@@ -884,7 +903,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
 }
 
 // --- NFC status panel ---
-function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader, tagUid, deviceOnline, canWrite, isReplace, canUntag, untagging, onWrite, onUntag, onCancel, onRetry, t }: {
+function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader, tagUid, deviceOnline, canWrite, isReplace, canUntag, untagging, onWrite, onUntag, onCancel, onRetry, onOpenNfcDiagnostics, onOpenScaleDiagnostics, t }: {
   writeStatus: WriteStatus;
   writeMessage: string;
   selectedSpool: InventorySpool | null;
@@ -899,6 +918,8 @@ function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader,
   onUntag: () => void;
   onCancel: () => void;
   onRetry: () => void;
+  onOpenNfcDiagnostics: () => void;
+  onOpenScaleDiagnostics: () => void;
   t: (key: string, fallback: string) => string;
 }) {
   // Success state
@@ -1060,6 +1081,22 @@ function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader,
             : t('spoolbuddy.writeTag.untagSpool', 'Untag Selected Spool')}
         </button>
       )}
+
+      {/* Diagnostic buttons */}
+      <div className="w-full flex gap-2 pt-2">
+        <button
+          onClick={onOpenNfcDiagnostics}
+          className="flex-1 py-2 px-2 bg-bambu-dark-tertiary hover:bg-bambu-dark-secondary text-zinc-300 text-xs rounded transition-colors"
+        >
+          {t('spoolbuddy.writeTag.nfcDiagnostics', 'NFC Diag')}
+        </button>
+        <button
+          onClick={onOpenScaleDiagnostics}
+          className="flex-1 py-2 px-2 bg-bambu-dark-tertiary hover:bg-bambu-dark-secondary text-zinc-300 text-xs rounded transition-colors"
+        >
+          {t('spoolbuddy.writeTag.scaleDiagnostics', 'Scale Diag')}
+        </button>
+      </div>
     </div>
   );
 }

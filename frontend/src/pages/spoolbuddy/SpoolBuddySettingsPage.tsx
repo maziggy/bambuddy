@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useOutletContext } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
-import { spoolbuddyApi, type SpoolBuddyDevice, type DaemonUpdateCheck } from '../../api/client';
+import { spoolbuddyApi, type SpoolBuddyDevice } from '../../api/client';
 import { DiagnosticModal } from '../../components/spoolbuddy/DiagnosticModal';
 import { FileText, Wand2, Zap } from 'lucide-react';
 function formatUptime(seconds: number): string {

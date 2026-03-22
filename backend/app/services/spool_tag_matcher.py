@@ -227,6 +227,7 @@ async def get_spool_by_tag(db: AsyncSession, tag_uid: str, tray_uuid: str) -> Sp
         # stored values may contain longer forms. Prefer suffix match only.
         if len(tag_uid_norm) >= 8:
             suffix8 = tag_uid_norm[-8:]
+            short_uid_body = tag_uid_norm[1:] if len(tag_uid_norm) == 8 else ""
             candidates = await db.execute(
                 select(Spool)
                 .options(selectinload(Spool.k_profiles), selectinload(Spool.assignments))
@@ -236,6 +237,9 @@ async def get_spool_by_tag(db: AsyncSession, tag_uid: str, tray_uuid: str) -> Sp
                     or_(
                         func.upper(Spool.tag_uid).like(f"%{tag_uid_norm}"),
                         func.upper(Spool.tag_uid).like(f"%{suffix8}"),
+                        # Backward-compatibility: short UID scans can differ in first
+                        # character across reader paths for the same physical tag.
+                        func.upper(Spool.tag_uid).like(f"%{short_uid_body}%") if short_uid_body else False,
                     ),
                 )
                 .limit(100)
@@ -250,6 +254,11 @@ async def get_spool_by_tag(db: AsyncSession, tag_uid: str, tray_uuid: str) -> Sp
                     return candidate
                 if len(tag_uid_norm) > len(candidate_uid) and tag_uid_norm.endswith(candidate_uid):
                     return candidate
+                # Backward-compatible short UID matching: allow first-character
+                # mismatch when remaining 7 chars match the candidate's first 8.
+                if len(tag_uid_norm) == 8 and len(candidate_uid) >= 8:
+                    if candidate_uid[:8][1:] == tag_uid_norm[1:]:
+                        return candidate
 
     return None
 

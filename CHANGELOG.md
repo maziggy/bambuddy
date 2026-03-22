@@ -2,6 +2,9 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
+## [0.2.3.b1] - Unreleased
+
+
 ## [0.2.2.1] - 2026-03-22
 
 ### New Features

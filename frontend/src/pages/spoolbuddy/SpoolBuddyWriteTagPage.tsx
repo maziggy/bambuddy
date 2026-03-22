@@ -19,6 +19,7 @@ export function SpoolBuddyWriteTagPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [writeStatus, setWriteStatus] = useState<WriteStatus>('idle');
   const [writeMessage, setWriteMessage] = useState('');
+  const [untagging, setUntagging] = useState(false);
   const [tagOnReader, setTagOnReader] = useState(false);
   const [tagUid, setTagUid] = useState<string | null>(null);
 
@@ -51,7 +52,7 @@ export function SpoolBuddyWriteTagPage() {
     if (activeTab === 'existing') {
       list = spools.filter(s => !s.tag_uid && !s.archived_at);
     } else if (activeTab === 'replace') {
-      list = spools.filter(s => s.tag_uid && !s.archived_at);
+      list = spools.filter(s => (s.tag_uid || s.tray_uuid) && !s.archived_at);
     } else {
       return [];
     }
@@ -155,6 +156,33 @@ export function SpoolBuddyWriteTagPage() {
     } catch { /* ignore */ }
     setWriteStatus('idle');
     setWriteMessage('');
+  };
+
+  const handleUntagSpool = async () => {
+    if (!selectedSpool || !isReplaceTagged(selectedSpool)) return;
+    setUntagging(true);
+    setWriteStatus('idle');
+    setWriteMessage('');
+    try {
+      await api.linkTagToSpool(selectedSpool.id, {
+        tag_uid: '',
+        tray_uuid: '',
+        data_origin: 'manual',
+      });
+      await refetchSpools();
+      setSelectedSpool(null);
+      setWriteStatus('success');
+      setWriteMessage(t('spoolbuddy.writeTag.untagSuccess', 'Tag removed from spool'));
+      setTimeout(() => {
+        setWriteStatus('idle');
+        setWriteMessage('');
+      }, 2500);
+    } catch {
+      setWriteStatus('error');
+      setWriteMessage(t('spoolbuddy.writeTag.untagFailed', 'Failed to remove tag from spool'));
+    } finally {
+      setUntagging(false);
+    }
   };
 
   const handleCreateAndSelect = async () => {
@@ -295,7 +323,10 @@ export function SpoolBuddyWriteTagPage() {
             deviceOnline={deviceOnline}
             canWrite={!!canWrite}
             isReplace={activeTab === 'replace'}
+            canUntag={activeTab === 'replace' && !!selectedSpool && isReplaceTagged(selectedSpool)}
+            untagging={untagging}
             onWrite={handleWriteTag}
+            onUntag={handleUntagSpool}
             onCancel={handleCancelWrite}
             onRetry={() => { setWriteStatus('idle'); setWriteMessage(''); }}
             t={t}
@@ -304,6 +335,10 @@ export function SpoolBuddyWriteTagPage() {
       </div>
     </div>
   );
+}
+
+function isReplaceTagged(spool: InventorySpool): boolean {
+  return !!(spool.tag_uid || spool.tray_uuid);
 }
 
 // --- Spool list item ---
@@ -469,7 +504,7 @@ function NewSpoolForm({ material, setMaterial, colorName, setColorName, colorHex
 }
 
 // --- NFC status panel ---
-function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader, tagUid, deviceOnline, canWrite, isReplace, onWrite, onCancel, onRetry, t }: {
+function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader, tagUid, deviceOnline, canWrite, isReplace, canUntag, untagging, onWrite, onUntag, onCancel, onRetry, t }: {
   writeStatus: WriteStatus;
   writeMessage: string;
   selectedSpool: InventorySpool | null;
@@ -478,7 +513,10 @@ function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader,
   deviceOnline: boolean;
   canWrite: boolean;
   isReplace: boolean;
+  canUntag: boolean;
+  untagging: boolean;
   onWrite: () => void;
+  onUntag: () => void;
   onCancel: () => void;
   onRetry: () => void;
   t: (key: string, fallback: string) => string;
@@ -630,6 +668,18 @@ function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader,
           ? t('spoolbuddy.writeTag.replaceTag', 'Replace Tag')
           : t('spoolbuddy.writeTag.writeTag', 'Write Tag')}
       </button>
+
+      {isReplace && canUntag && (
+        <button
+          onClick={onUntag}
+          disabled={untagging || writeStatus === 'writing'}
+          className="w-full py-2.5 bg-bambu-dark-tertiary hover:bg-bambu-dark-secondary disabled:opacity-40 disabled:cursor-not-allowed text-zinc-200 rounded-lg transition-colors text-sm"
+        >
+          {untagging
+            ? t('spoolbuddy.writeTag.untagging', 'Removing tag...')
+            : t('spoolbuddy.writeTag.untagSpool', 'Untag Selected Spool')}
+        </button>
+      )}
     </div>
   );
 }

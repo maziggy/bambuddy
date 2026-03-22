@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 BAMBU_RFID_TAG_LENGTH = 32
 
+
 @dataclass
 class SpoolmanSpool:
     """Represents a spool in Spoolman."""

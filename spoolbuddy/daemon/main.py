@@ -288,7 +288,7 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
                     script_name = "read_tag.py"
                 else:
                     diagnostic = "nfc"
-                    script_name = "read_tag.py"
+                    script_name = "pn5180_diag.py"
                 script_path = Path(__file__).resolve().parent.parent / "scripts" / script_name
 
                 if diagnostic in ("nfc", "read_tag"):

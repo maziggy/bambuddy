@@ -4700,66 +4700,72 @@ export function SettingsPage() {
                 {t('settings.device.description', 'Run hardware diagnostics to troubleshoot device connectivity and functionality issues.')}
               </p>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-4">
               {/* NFC Reader Diagnostic */}
-              <div className="flex items-start justify-between p-4 bg-bambu-dark-secondary rounded-lg">
+              <div className="flex items-center justify-between p-4 bg-bambu-dark-secondary rounded-lg">
                 <div>
                   <h3 className="text-white font-medium flex items-center gap-2">
-                    <Wand2 className="w-4 h-4 text-blue-400" />
+                    <Wand2 className="w-4 h-4" />
                     {t('settings.device.nfcDiagnostic', 'NFC Reader Diagnostic')}
                   </h3>
-                  <p className="text-sm text-bambu-gray mt-1">
+                  <p className="text-xs text-bambu-gray mt-1">
                     {t('settings.device.nfcDescription', 'Test NFC reader connectivity and functionality')}
                   </p>
                 </div>
-                <button
+                <Button
+                  variant="primary"
+                  size="sm"
                   onClick={() => setDiagnosticOpen('nfc')}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors shrink-0"
+                  className="shrink-0"
                 >
                   {t('settings.device.runDiagnostic', 'Run Diagnostic')}
-                </button>
+                </Button>
               </div>
 
               {/* Scale Diagnostic */}
-              <div className="flex items-start justify-between p-4 bg-bambu-dark-secondary rounded-lg">
+              <div className="flex items-center justify-between p-4 bg-bambu-dark-secondary rounded-lg">
                 <div>
                   <h3 className="text-white font-medium flex items-center gap-2">
-                    <Zap className="w-4 h-4 text-yellow-400" />
+                    <Zap className="w-4 h-4" />
                     {t('settings.device.scaleDiagnostic', 'Scale Diagnostic')}
                   </h3>
-                  <p className="text-sm text-bambu-gray mt-1">
+                  <p className="text-xs text-bambu-gray mt-1">
                     {t('settings.device.scaleDescription', 'Test scale connectivity and weight reading accuracy')}
                   </p>
                 </div>
-                <button
+                <Button
+                  variant="primary"
+                  size="sm"
                   onClick={() => setDiagnosticOpen('scale')}
-                  className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-sm font-medium transition-colors shrink-0"
+                  className="shrink-0"
                 >
                   {t('settings.device.runDiagnostic', 'Run Diagnostic')}
-                </button>
+                </Button>
               </div>
 
               {/* Read Tags */}
-              <div className="flex items-start justify-between p-4 bg-bambu-dark-secondary rounded-lg">
+              <div className="flex items-center justify-between p-4 bg-bambu-dark-secondary rounded-lg">
                 <div>
                   <h3 className="text-white font-medium flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-purple-400" />
+                    <FileText className="w-4 h-4" />
                     {t('settings.device.readTags', 'Read Tags')}
                   </h3>
-                  <p className="text-sm text-bambu-gray mt-1">
+                  <p className="text-xs text-bambu-gray mt-1">
                     {t('settings.device.readTagsDescription', 'Navigate to SpoolBuddy to read and write tags')}
                   </p>
                 </div>
-                <button
+                <Button
+                  variant="primary"
+                  size="sm"
                   onClick={() => navigate('/spoolbuddy/read-tags')}
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors shrink-0"
+                  className="shrink-0"
                 >
                   {t('settings.device.goToSpoolbuddy', 'Go to SpoolBuddy')}
-                </button>
+                </Button>
               </div>
 
               {/* Troubleshooting tip */}
-              <div className="p-3 bg-bambu-dark-tertiary border border-bambu-dark-secondary rounded-lg">
+              <div className="p-3 bg-bambu-dark-tertiary border border-bambu-dark-secondary rounded-lg mt-4">
                 <p className="text-xs text-bambu-gray">
                   <span className="font-medium text-white">{t('settings.device.tip', 'Tip:')}</span> {t('settings.device.tipDescription', 'If diagnostics show hardware issues, ensure proper USB connections, power supply, and device drivers are installed.')}
                 </p>

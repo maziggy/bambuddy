@@ -2,7 +2,7 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
-## [0.2.2.1] - 2026-03-22
+## [0.2.3b1] - Unreleased
 
 ### New Features
 - **SpoolBuddy OTA Updates** — SpoolBuddy devices can now be updated directly from the Settings → Updates tab without SSH access. Click "Check for Updates" to see if a newer version is available, then "Apply Update" to trigger the update. The daemon picks up the command via its heartbeat, pulls the latest code from GitHub, installs dependencies, and restarts automatically via systemd. Live progress is shown in the UI with status messages from the device. The status bar at the bottom automatically checks for updates every 5 minutes and shows a prominent message when one is available. Requires the device to be online.

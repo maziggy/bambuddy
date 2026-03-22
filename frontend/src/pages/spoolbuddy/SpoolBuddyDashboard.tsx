@@ -15,6 +15,20 @@ const SPOOL_COLORS = [
   '#FBBF24', '#14B8A6', '#EC4899', '#F97316', '#22C55E',
 ];
 
+function normalizeHexTag(value: string | null | undefined): string {
+  if (!value) return '';
+  return value.replace(/[^0-9a-f]/gi, '').toUpperCase();
+}
+
+function tagsEquivalent(a: string | null | undefined, b: string | null | undefined): boolean {
+  const aNorm = normalizeHexTag(a);
+  const bNorm = normalizeHexTag(b);
+  if (!aNorm || !bNorm) return false;
+  if (aNorm === bNorm) return true;
+  // Some readers report shortened UID forms.
+  return aNorm.endsWith(bNorm) || bNorm.endsWith(aNorm);
+}
+
 // --- Idle state with color-cycling spool and NFC waves ---
 function ColorCyclingSpool() {
   const { t } = useTranslation();
@@ -156,9 +170,13 @@ export function SpoolBuddyDashboard() {
 
   // Find spool by tag_id in the loaded spools list
   const displayedSpool = useMemo(() => {
+    if (sbState.matchedSpool?.id) {
+      const byId = spools.find((s) => s.id === sbState.matchedSpool?.id);
+      if (byId) return byId;
+    }
     if (!displayedTagId) return null;
-    return spools.find((s) => s.tag_uid === displayedTagId) ?? null;
-  }, [displayedTagId, spools]);
+    return spools.find((s) => tagsEquivalent(s.tag_uid, displayedTagId)) ?? null;
+  }, [displayedTagId, sbState.matchedSpool, spools]);
 
   // Untagged spools for the Link feature
   const untaggedSpools = useMemo(() => {
@@ -363,26 +381,26 @@ export function SpoolBuddyDashboard() {
             <div className="flex-1 flex items-center justify-center min-h-0">
               {!sbState.deviceOnline ? (
                 <DeviceOfflineState />
-              ) : displayedSpool && displayedTagId && hiddenTagId !== displayedTagId ? (
+              ) : (displayedSpool || sbState.matchedSpool) && displayedTagId && hiddenTagId !== displayedTagId ? (
                 <SpoolInfoCard
                   spool={{
-                    id: displayedSpool.id,
+                    id: displayedSpool?.id ?? sbState.matchedSpool!.id,
                     tag_uid: displayedTagId,
-                    material: displayedSpool.material,
-                    subtype: displayedSpool.subtype,
-                    color_name: displayedSpool.color_name,
-                    rgba: displayedSpool.rgba,
-                    brand: displayedSpool.brand,
-                    label_weight: displayedSpool.label_weight,
-                    core_weight: displayedSpool.core_weight,
-                    weight_used: displayedSpool.weight_used,
+                    material: displayedSpool?.material ?? sbState.matchedSpool!.material,
+                    subtype: displayedSpool?.subtype ?? sbState.matchedSpool!.subtype,
+                    color_name: displayedSpool?.color_name ?? sbState.matchedSpool!.color_name,
+                    rgba: displayedSpool?.rgba ?? sbState.matchedSpool!.rgba,
+                    brand: displayedSpool?.brand ?? sbState.matchedSpool!.brand,
+                    label_weight: displayedSpool?.label_weight ?? sbState.matchedSpool!.label_weight,
+                    core_weight: displayedSpool?.core_weight ?? sbState.matchedSpool!.core_weight,
+                    weight_used: displayedSpool?.weight_used ?? sbState.matchedSpool!.weight_used,
                   }}
                   scaleWeight={liveWeight ?? displayedWeight}
                   onSyncWeight={() => refetchSpools()}
                   onAssignToAms={() => setShowAssignAmsModal(true)}
                   onClose={handleCloseSpoolCard}
                 />
-              ) : displayedTagId && !displayedSpool && hiddenTagId !== displayedTagId ? (
+              ) : displayedTagId && !displayedSpool && !sbState.matchedSpool && hiddenTagId !== displayedTagId ? (
                 <UnknownTagCard
                   tagUid={displayedTagId}
                   scaleWeight={liveWeight ?? displayedWeight}

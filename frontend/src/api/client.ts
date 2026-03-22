@@ -5028,10 +5028,10 @@ export const spoolbuddyApi = {
       body: JSON.stringify({ brightness, blank_timeout: blankTimeout }),
     }),
 
-  updateSystemConfig: (deviceId: string, backendUrl: string, apiKey: string) =>
+  updateSystemConfig: (deviceId: string, backendUrl: string, apiKey?: string) =>
     request<{ status: string; message: string }>(`/spoolbuddy/devices/${deviceId}/system/config`, {
       method: 'POST',
-      body: JSON.stringify({ backend_url: backendUrl, api_key: apiKey }),
+      body: JSON.stringify({ backend_url: backendUrl, ...(apiKey ? { api_key: apiKey } : {}) }),
     }),
 
   restartServices: (deviceId: string) =>

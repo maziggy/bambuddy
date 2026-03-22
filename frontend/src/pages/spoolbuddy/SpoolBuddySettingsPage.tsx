@@ -51,15 +51,19 @@ function DeviceTab({ device }: { device: SpoolBuddyDevice }) {
   }, [device.backend_url, backendUrl]);
 
   const saveAndRestart = async () => {
-    if (!backendUrl.trim() || !apiToken.trim()) {
-      setSystemMsg({ type: 'error', text: t('spoolbuddy.settings.systemFieldsRequired', 'Backend URL and API token are required.') });
+    if (!backendUrl.trim()) {
+      setSystemMsg({ type: 'error', text: t('spoolbuddy.settings.systemFieldsRequired', 'Backend URL is required.') });
       return;
     }
 
     setSystemBusy(true);
     setSystemMsg(null);
     try {
-      await spoolbuddyApi.updateSystemConfig(device.device_id, backendUrl.trim(), apiToken.trim());
+      await spoolbuddyApi.updateSystemConfig(
+        device.device_id,
+        backendUrl.trim(),
+        apiToken.trim() || undefined
+      );
       setSystemMsg({ type: 'ok', text: t('spoolbuddy.settings.systemQueued', 'Config queued. Device services will restart shortly.') });
     } catch (e) {
       setSystemMsg({ type: 'error', text: e instanceof Error ? e.message : t('common.error', 'Error') });

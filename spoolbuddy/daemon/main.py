@@ -326,21 +326,23 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
             elif cmd == "apply_system_config":
                 payload = result.get("pending_system_payload") or {}
                 backend_url = str(payload.get("backend_url", "")).strip()
-                api_key = str(payload.get("api_key", "")).strip()
+                api_key_value = payload.get("api_key")
+                api_key = str(api_key_value).strip() if api_key_value is not None else ""
 
-                if not backend_url or not api_key:
+                if not backend_url:
                     await api.system_command_result(
                         config.device_id,
                         "apply_system_config",
                         False,
-                        "Missing backend_url or api_key payload",
+                        "Missing backend_url payload",
                     )
                     continue
 
                 try:
                     env_path = _spoolbuddy_env_path()
                     await asyncio.to_thread(_set_env_value, env_path, "SPOOLBUDDY_BACKEND_URL", backend_url)
-                    await asyncio.to_thread(_set_env_value, env_path, "SPOOLBUDDY_API_KEY", api_key)
+                    if api_key:
+                        await asyncio.to_thread(_set_env_value, env_path, "SPOOLBUDDY_API_KEY", api_key)
 
                     await api.system_command_result(
                         config.device_id,

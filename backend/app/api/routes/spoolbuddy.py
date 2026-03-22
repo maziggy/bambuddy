@@ -633,10 +633,13 @@ async def queue_system_config_update(
             detail="backend_url must be a full URL with scheme and port, e.g. http://192.168.1.100:5000",
         )
 
-    _system_command_payloads[device_id] = {
+    payload = {
         "backend_url": req.backend_url.strip(),
-        "api_key": req.api_key.strip(),
     }
+    if req.api_key is not None and req.api_key.strip():
+        payload["api_key"] = req.api_key.strip()
+
+    _system_command_payloads[device_id] = payload
     device.pending_command = "apply_system_config"
     await db.commit()
 

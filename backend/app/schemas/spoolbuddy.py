@@ -150,7 +150,7 @@ class DisplaySettingsRequest(BaseModel):
 
 class SystemConfigRequest(BaseModel):
     backend_url: str = Field(..., min_length=1, max_length=255)
-    api_key: str = Field(..., min_length=1, max_length=255)
+    api_key: str | None = Field(default=None, max_length=255)
 
 
 class SystemCommandResultRequest(BaseModel):

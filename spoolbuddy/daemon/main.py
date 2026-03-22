@@ -3,6 +3,7 @@
 
 import asyncio
 import logging
+import os
 import shutil
 import socket
 import subprocess
@@ -26,6 +27,48 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("spoolbuddy")
+
+
+def _spoolbuddy_env_path() -> Path:
+    # installer writes this at <install>/spoolbuddy/.env; allow override for custom setups/tests
+    override = os.environ.get("SPOOLBUDDY_ENV_FILE", "").strip()
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parent.parent / ".env"
+
+
+def _set_env_value(path: Path, key: str, value: str):
+    lines: list[str] = []
+    if path.exists():
+        lines = path.read_text(encoding="utf-8").splitlines()
+
+    updated = False
+    new_lines: list[str] = []
+    for line in lines:
+        if line.startswith(f"{key}="):
+            new_lines.append(f"{key}={value}")
+            updated = True
+        else:
+            new_lines.append(line)
+
+    if not updated:
+        new_lines.append(f"{key}={value}")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+
+
+def _schedule_service_restart():
+    # Restart getty and spoolbuddy shortly after responding, so this process can finish current cycle.
+    subprocess.Popen(
+        [
+            "sh",
+            "-c",
+            "sleep 1; systemctl restart getty@tty1; systemctl restart spoolbuddy",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 
 def _get_ip() -> str:
@@ -256,6 +299,7 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
             firmware_version=__version__,
             nfc_reader_type=nfc.reader_type if nfc else None,
             nfc_connection=nfc.connection if nfc else None,
+            backend_url=config.backend_url,
         )
 
         if result:
@@ -278,6 +322,62 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
                 else:
                     logger.warning("Tare command received but scale not available")
                 # Skip calibration sync — this heartbeat response predates the tare
+                continue
+            elif cmd == "apply_system_config":
+                payload = result.get("pending_system_payload") or {}
+                backend_url = str(payload.get("backend_url", "")).strip()
+                api_key = str(payload.get("api_key", "")).strip()
+
+                if not backend_url or not api_key:
+                    await api.system_command_result(
+                        config.device_id,
+                        "apply_system_config",
+                        False,
+                        "Missing backend_url or api_key payload",
+                    )
+                    continue
+
+                try:
+                    env_path = _spoolbuddy_env_path()
+                    await asyncio.to_thread(_set_env_value, env_path, "SPOOLBUDDY_BACKEND_URL", backend_url)
+                    await asyncio.to_thread(_set_env_value, env_path, "SPOOLBUDDY_API_KEY", api_key)
+
+                    await api.system_command_result(
+                        config.device_id,
+                        "apply_system_config",
+                        True,
+                        f"Updated {env_path}",
+                    )
+
+                    logger.info("Applied system config update; scheduling service restart")
+                    await asyncio.to_thread(_schedule_service_restart)
+                except Exception as e:
+                    logger.exception("Failed to apply system config")
+                    await api.system_command_result(
+                        config.device_id,
+                        "apply_system_config",
+                        False,
+                        str(e),
+                    )
+                continue
+            elif cmd == "restart_services":
+                try:
+                    await api.system_command_result(
+                        config.device_id,
+                        "restart_services",
+                        True,
+                        "Restart scheduled",
+                    )
+                    logger.info("Restart command received; scheduling service restart")
+                    await asyncio.to_thread(_schedule_service_restart)
+                except Exception as e:
+                    logger.exception("Failed to schedule service restart")
+                    await api.system_command_result(
+                        config.device_id,
+                        "restart_services",
+                        False,
+                        str(e),
+                    )
                 continue
             elif cmd in ("run_nfc_diag", "run_scale_diag", "run_read_tag_diag"):
                 if cmd == "run_scale_diag":
@@ -398,6 +498,7 @@ async def main():
         calibration_factor=config.calibration_factor,
         nfc_reader_type=nfc.reader_type,
         nfc_connection=nfc.connection,
+        backend_url=config.backend_url,
         has_backlight=display.has_backlight,
     )
 

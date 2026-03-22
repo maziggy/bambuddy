@@ -3,6 +3,7 @@
 import logging
 import time
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -25,6 +26,8 @@ from backend.app.schemas.spoolbuddy import (
     ScaleReadingRequest,
     SetCalibrationFactorRequest,
     SetTareRequest,
+    SystemCommandResultRequest,
+    SystemConfigRequest,
     TagRemovedRequest,
     TagScannedRequest,
     UpdateSpoolWeightRequest,
@@ -41,6 +44,8 @@ OFFLINE_THRESHOLD_SECONDS = 30
 ONLINE_BROADCAST_INTERVAL_SECONDS = 10
 _spoolbuddy_online_last_broadcast: dict[str, float] = {}
 _diagnostic_results: dict[tuple[str, str], dict] = {}
+_system_command_payloads: dict[str, dict] = {}
+_runtime_backend_urls: dict[str, str] = {}
 
 
 def _is_online(device: SpoolBuddyDevice) -> bool:
@@ -64,6 +69,7 @@ def _device_to_response(device: SpoolBuddyDevice) -> DeviceResponse:
         calibration_factor=device.calibration_factor,
         nfc_reader_type=device.nfc_reader_type,
         nfc_connection=device.nfc_connection,
+        backend_url=_runtime_backend_urls.get(device.device_id),
         display_brightness=device.display_brightness,
         display_blank_timeout=device.display_blank_timeout,
         has_backlight=device.has_backlight,
@@ -116,6 +122,8 @@ async def register_device(
         device.has_scale = req.has_scale
         device.nfc_reader_type = req.nfc_reader_type
         device.nfc_connection = req.nfc_connection
+        if req.backend_url:
+            _runtime_backend_urls[req.device_id] = req.backend_url
         device.has_backlight = req.has_backlight
         device.last_seen = now
         logger.info("SpoolBuddy device re-registered: %s (%s)", req.device_id, req.hostname)
@@ -135,6 +143,8 @@ async def register_device(
             last_seen=now,
         )
         db.add(device)
+        if req.backend_url:
+            _runtime_backend_urls[req.device_id] = req.backend_url
         logger.info("SpoolBuddy device registered: %s (%s)", req.device_id, req.hostname)
 
     await db.commit()
@@ -191,10 +201,13 @@ async def device_heartbeat(
         device.nfc_reader_type = req.nfc_reader_type
     if req.nfc_connection:
         device.nfc_connection = req.nfc_connection
+    if req.backend_url:
+        _runtime_backend_urls[device_id] = req.backend_url
 
     # Return and clear pending command
     pending = device.pending_command
     pending_write = None
+    pending_system = None
     if pending == "write_tag" and device.pending_write_payload:
         # Parse the stored JSON payload to include in response
         import json
@@ -204,6 +217,12 @@ async def device_heartbeat(
         except (json.JSONDecodeError, TypeError):
             pending_write = None
         # Don't clear write_tag command — it gets cleared by write-result
+    elif pending == "apply_system_config":
+        pending_system = _system_command_payloads.get(device_id)
+        # Don't clear config command — it gets cleared by daemon command-result callback
+    elif pending == "restart_services":
+        # No payload needed for restart command.
+        pass
     elif pending and pending.startswith("run_") and pending.endswith("_diag"):
         # Don't clear diagnostic commands — they get cleared by the device reporting results
         pass
@@ -228,6 +247,7 @@ async def device_heartbeat(
     return HeartbeatResponse(
         pending_command=pending,
         pending_write_payload=pending_write,
+        pending_system_payload=pending_system,
         tare_offset=device.tare_offset,
         calibration_factor=device.calibration_factor,
         display_brightness=device.display_brightness,
@@ -591,6 +611,84 @@ async def update_display_settings(
     device.display_brightness = req.brightness
     device.display_blank_timeout = req.blank_timeout
     await db.commit()
+
+
+@router.post("/devices/{device_id}/system/config")
+async def queue_system_config_update(
+    device_id: str,
+    req: SystemConfigRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Queue update of SpoolBuddy .env config and service restart on the device."""
+    result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
+    device = result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not registered")
+
+    parsed = urlparse(req.backend_url.strip())
+    if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.port is None:
+        raise HTTPException(
+            status_code=400,
+            detail="backend_url must be a full URL with scheme and port, e.g. http://192.168.1.100:5000",
+        )
+
+    _system_command_payloads[device_id] = {
+        "backend_url": req.backend_url.strip(),
+        "api_key": req.api_key.strip(),
+    }
+    device.pending_command = "apply_system_config"
+    await db.commit()
+
+    logger.info("Queued system config update for device %s", device_id)
+    return {"status": "queued", "message": "System config update queued"}
+
+
+@router.post("/devices/{device_id}/system/restart")
+async def queue_system_restart(
+    device_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Queue service restart command for the device."""
+    result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
+    device = result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not registered")
+
+    device.pending_command = "restart_services"
+    await db.commit()
+
+    logger.info("Queued service restart for device %s", device_id)
+    return {"status": "queued", "message": "Service restart queued"}
+
+
+@router.post("/devices/{device_id}/system/command-result")
+async def system_command_result(
+    device_id: str,
+    req: SystemCommandResultRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Receive completion status for queued system command from daemon."""
+    result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
+    device = result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not registered")
+
+    device.pending_command = None
+    if req.command == "apply_system_config":
+        _system_command_payloads.pop(device_id, None)
+    await db.commit()
+
+    logger.info(
+        "System command result from %s: %s success=%s message=%s",
+        device_id,
+        req.command,
+        req.success,
+        req.message,
+    )
+    return {"status": "ok"}
 
 
 # --- Diagnostics ---

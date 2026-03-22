@@ -39,6 +39,47 @@ const BLANK_OPTIONS = [
 function DeviceTab({ device }: { device: SpoolBuddyDevice }) {
   const { t } = useTranslation();
   const [diagnosticOpen, setDiagnosticOpen] = useState<'nfc' | 'scale' | 'read_tag' | null>(null);
+  const [backendUrl, setBackendUrl] = useState('');
+  const [apiToken, setApiToken] = useState('');
+  const [systemBusy, setSystemBusy] = useState(false);
+  const [systemMsg, setSystemMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!backendUrl && device.backend_url) {
+      setBackendUrl(device.backend_url);
+    }
+  }, [device.backend_url, backendUrl]);
+
+  const saveAndRestart = async () => {
+    if (!backendUrl.trim() || !apiToken.trim()) {
+      setSystemMsg({ type: 'error', text: t('spoolbuddy.settings.systemFieldsRequired', 'Backend URL and API token are required.') });
+      return;
+    }
+
+    setSystemBusy(true);
+    setSystemMsg(null);
+    try {
+      await spoolbuddyApi.updateSystemConfig(device.device_id, backendUrl.trim(), apiToken.trim());
+      setSystemMsg({ type: 'ok', text: t('spoolbuddy.settings.systemQueued', 'Config queued. Device services will restart shortly.') });
+    } catch (e) {
+      setSystemMsg({ type: 'error', text: e instanceof Error ? e.message : t('common.error', 'Error') });
+    } finally {
+      setSystemBusy(false);
+    }
+  };
+
+  const restartServices = async () => {
+    setSystemBusy(true);
+    setSystemMsg(null);
+    try {
+      await spoolbuddyApi.restartServices(device.device_id);
+      setSystemMsg({ type: 'ok', text: t('spoolbuddy.settings.restartQueued', 'Restart queued for spoolbuddy and getty@tty1.') });
+    } catch (e) {
+      setSystemMsg({ type: 'error', text: e instanceof Error ? e.message : t('common.error', 'Error') });
+    } finally {
+      setSystemBusy(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -126,6 +167,61 @@ function DeviceTab({ device }: { device: SpoolBuddyDevice }) {
       <div className="bg-zinc-800 rounded-lg px-3 py-2 flex justify-between items-center text-xs">
         <span className="text-zinc-500">Device ID</span>
         <span className="text-zinc-400 font-mono">{device.device_id}</span>
+      </div>
+
+      {/* Backend/Auth Config */}
+      <div className="bg-zinc-800 rounded-lg p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-zinc-300">
+          {t('spoolbuddy.settings.systemConfig', 'Backend & Auth')}
+        </h3>
+
+        <div className="space-y-2">
+          <label className="text-xs text-zinc-500 block">
+            {t('spoolbuddy.settings.backendUrl', 'Bambuddy Backend URL')}
+          </label>
+          <input
+            value={backendUrl}
+            onChange={(e) => setBackendUrl(e.target.value)}
+            placeholder="http://192.168.1.100:5000"
+            className="w-full px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-zinc-100 text-sm"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-xs text-zinc-500 block">
+            {t('spoolbuddy.settings.apiToken', 'API Token')}
+          </label>
+          <input
+            type="password"
+            value={apiToken}
+            onChange={(e) => setApiToken(e.target.value)}
+            placeholder={t('spoolbuddy.settings.apiTokenPlaceholder', 'Enter API token')}
+            className="w-full px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-zinc-100 text-sm"
+          />
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={saveAndRestart}
+            disabled={systemBusy}
+            className="px-3 py-2 rounded bg-green-700 hover:bg-green-600 disabled:bg-zinc-700 text-sm font-medium text-zinc-100"
+          >
+            {t('spoolbuddy.settings.saveAndRestart', 'Save & Restart')}
+          </button>
+          <button
+            onClick={restartServices}
+            disabled={systemBusy}
+            className="px-3 py-2 rounded bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-700 text-sm font-medium text-zinc-100"
+          >
+            {t('spoolbuddy.settings.restartServices', 'Restart Services')}
+          </button>
+        </div>
+
+        {systemMsg && (
+          <div className={`text-xs ${systemMsg.type === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
+            {systemMsg.text}
+          </div>
+        )}
       </div>
 
       {/* Diagnostic Buttons */}

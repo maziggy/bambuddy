@@ -650,6 +650,15 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
       nozzle_temp_max: null,
       note: formData.note || null,
       cost_per_kg: formData.cost_per_kg,
+      added_full: null,
+      last_used: null,
+      encode_time: null,
+      tag_uid: null,
+      tray_uuid: null,
+      data_origin: null,
+      tag_type: null,
+      last_scale_weight: null,
+      last_weighed_at: null,
     };
 
     setCreating(true);
@@ -786,7 +795,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
       ) : (
         <>
       <div className="flex items-center justify-between px-2 py-2 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary">
-        <span className="text-sm text-zinc-200">{t('inventory.quickAdd')}</span>
+        <span className="text-sm text-zinc-200">{t('inventory.quickAdd', 'Quick Add')}</span>
         <button
           type="button"
           onClick={() => setQuickAdd((prev) => !prev)}
@@ -805,7 +814,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
             activeSubTab === 'filament' ? 'bg-bambu-green/15 text-bambu-green' : 'bg-bambu-dark-secondary text-zinc-400'
           }`}
         >
-          {t('inventory.filamentInfoTab')}
+          {t('inventory.filamentInfoTab', 'Filament')}
         </button>
         {!quickAdd && (
           <button
@@ -814,7 +823,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
               activeSubTab === 'pa-profile' ? 'bg-bambu-green/15 text-bambu-green' : 'bg-bambu-dark-secondary text-zinc-400'
             }`}
           >
-            {t('inventory.paProfileTab')}
+            {t('inventory.paProfileTab', 'PA Profile')}
           </button>
         )}
       </div>
@@ -1074,7 +1083,7 @@ function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader,
       {isReplace && canUntag && (
         <button
           onClick={onUntag}
-          disabled={untagging || writeStatus === 'writing'}
+          disabled={untagging}
           className="w-full py-2.5 bg-bambu-dark-tertiary hover:bg-bambu-dark-secondary disabled:opacity-40 disabled:cursor-not-allowed text-zinc-200 rounded-lg transition-colors text-sm"
         >
           {untagging

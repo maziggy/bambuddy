@@ -7,6 +7,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes import spoolbuddy as spoolbuddy_routes
 from backend.app.models.spool import Spool
 from backend.app.models.spoolbuddy_device import SpoolBuddyDevice
 
@@ -154,6 +155,7 @@ class TestDeviceEndpoints:
     @pytest.mark.integration
     async def test_heartbeat_updates_status(self, async_client: AsyncClient, device_factory):
         device = await device_factory(device_id="sb-hb")
+        spoolbuddy_routes._spoolbuddy_online_last_broadcast.clear()
 
         with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
             mock_ws.broadcast = AsyncMock()
@@ -166,6 +168,10 @@ class TestDeviceEndpoints:
         data = resp.json()
         assert data["tare_offset"] == device.tare_offset
         assert data["calibration_factor"] == pytest.approx(device.calibration_factor)
+        mock_ws.broadcast.assert_called_once()
+        msg = mock_ws.broadcast.call_args[0][0]
+        assert msg["type"] == "spoolbuddy_online"
+        assert msg["device_id"] == "sb-hb"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -208,6 +214,7 @@ class TestDeviceEndpoints:
     @pytest.mark.integration
     async def test_heartbeat_broadcasts_online_when_was_offline(self, async_client: AsyncClient, device_factory):
         # Create device with last_seen far in the past (offline)
+        spoolbuddy_routes._spoolbuddy_online_last_broadcast.clear()
         await device_factory(
             device_id="sb-offline",
             last_seen=datetime.now(timezone.utc) - timedelta(seconds=120),
@@ -226,6 +233,55 @@ class TestDeviceEndpoints:
         msg = mock_ws.broadcast.call_args[0][0]
         assert msg["type"] == "spoolbuddy_online"
         assert msg["device_id"] == "sb-offline"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_heartbeat_broadcasts_online_when_already_online(self, async_client: AsyncClient, device_factory):
+        spoolbuddy_routes._spoolbuddy_online_last_broadcast.clear()
+        await device_factory(
+            device_id="sb-already-online",
+            last_seen=datetime.now(timezone.utc),
+        )
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                f"{API}/devices/sb-already-online/heartbeat",
+                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 42},
+            )
+
+        assert resp.status_code == 200
+        mock_ws.broadcast.assert_called_once()
+        msg = mock_ws.broadcast.call_args[0][0]
+        assert msg["type"] == "spoolbuddy_online"
+        assert msg["device_id"] == "sb-already-online"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_heartbeat_online_broadcast_is_throttled(self, async_client: AsyncClient, device_factory):
+        spoolbuddy_routes._spoolbuddy_online_last_broadcast.clear()
+        await device_factory(
+            device_id="sb-throttle",
+            last_seen=datetime.now(timezone.utc),
+        )
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            resp1 = await async_client.post(
+                f"{API}/devices/sb-throttle/heartbeat",
+                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 10},
+            )
+            resp2 = await async_client.post(
+                f"{API}/devices/sb-throttle/heartbeat",
+                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 11},
+            )
+
+        assert resp1.status_code == 200
+        assert resp2.status_code == 200
+        mock_ws.broadcast.assert_called_once()
+        msg = mock_ws.broadcast.call_args[0][0]
+        assert msg["type"] == "spoolbuddy_online"
+        assert msg["device_id"] == "sb-throttle"
 
 
 # ============================================================================

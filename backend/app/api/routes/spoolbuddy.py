@@ -1,6 +1,7 @@
 """SpoolBuddy device management API routes."""
 
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -36,6 +37,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/spoolbuddy", tags=["spoolbuddy"])
 
 OFFLINE_THRESHOLD_SECONDS = 30
+ONLINE_BROADCAST_INTERVAL_SECONDS = 10
+_spoolbuddy_online_last_broadcast: dict[str, float] = {}
 
 
 def _is_online(device: SpoolBuddyDevice) -> bool:
@@ -74,6 +77,19 @@ def _device_to_response(device: SpoolBuddyDevice) -> DeviceResponse:
         created_at=device.created_at,
         updated_at=device.updated_at,
     )
+
+
+def _should_broadcast_online(device_id: str, force: bool = False) -> bool:
+    if force:
+        _spoolbuddy_online_last_broadcast[device_id] = time.time()
+        return True
+
+    now_ts = time.time()
+    last_ts = _spoolbuddy_online_last_broadcast.get(device_id, 0.0)
+    if now_ts - last_ts >= ONLINE_BROADCAST_INTERVAL_SECONDS:
+        _spoolbuddy_online_last_broadcast[device_id] = now_ts
+        return True
+    return False
 
 
 # --- Device endpoints ---
@@ -122,6 +138,7 @@ async def register_device(
     await db.commit()
     await db.refresh(device)
 
+    _spoolbuddy_online_last_broadcast[device.device_id] = time.time()
     await ws_manager.broadcast(
         {
             "type": "spoolbuddy_online",
@@ -190,7 +207,9 @@ async def device_heartbeat(
 
     await db.commit()
 
-    if was_offline:
+    # Emit online presence on offline->online transitions immediately, and
+    # periodically while online so newly connected UIs can bootstrap state.
+    if _should_broadcast_online(device.device_id, force=was_offline):
         await ws_manager.broadcast(
             {
                 "type": "spoolbuddy_online",
@@ -198,6 +217,8 @@ async def device_heartbeat(
                 "hostname": device.hostname,
             }
         )
+    if was_offline:
+        logger.info("SpoolBuddy device back online: %s", device.device_id)
 
     return HeartbeatResponse(
         pending_command=pending,

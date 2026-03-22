@@ -5,6 +5,7 @@ import asyncio
 import logging
 import shutil
 import socket
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -270,6 +271,45 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
                 else:
                     logger.warning("Tare command received but scale not available")
                 # Skip calibration sync — this heartbeat response predates the tare
+                continue
+            elif cmd in ("run_nfc_diag", "run_scale_diag"):
+                diagnostic = "nfc" if cmd == "run_nfc_diag" else "scale"
+                script_name = "read_tag.py" if diagnostic == "nfc" else "scale_diag.py"
+                script_path = Path(__file__).resolve().parent.parent / "scripts" / script_name
+
+                logger.info("Running %s diagnostic via %s", diagnostic, script_path)
+                try:
+                    proc = await asyncio.to_thread(
+                        subprocess.run,
+                        [sys.executable, str(script_path)],
+                        capture_output=True,
+                        text=True,
+                        timeout=45,
+                    )
+                    output = (proc.stdout or "") + (("\n" + proc.stderr) if proc.stderr else "")
+                    await api.diagnostic_result(
+                        config.device_id,
+                        diagnostic,
+                        proc.returncode == 0,
+                        output,
+                        proc.returncode,
+                    )
+                except subprocess.TimeoutExpired:
+                    await api.diagnostic_result(
+                        config.device_id,
+                        diagnostic,
+                        False,
+                        "Diagnostic timed out after 45 seconds",
+                        -1,
+                    )
+                except Exception as e:
+                    await api.diagnostic_result(
+                        config.device_id,
+                        diagnostic,
+                        False,
+                        f"Diagnostic execution failed: {e}",
+                        -1,
+                    )
                 continue
             elif cmd == "write_tag":
                 write_payload = result.get("pending_write_payload")

@@ -5,10 +5,11 @@ import { useTranslation } from 'react-i18next';
 
 interface DiagnosticModalProps {
   type: 'scale' | 'nfc';
+  deviceId: string;
   onClose: () => void;
 }
 
-export function DiagnosticModal({ type, onClose }: DiagnosticModalProps) {
+export function DiagnosticModal({ type, deviceId, onClose }: DiagnosticModalProps) {
   const { t } = useTranslation();
   const [isRunning, setIsRunning] = useState(false);
   const [output, setOutput] = useState<string>('');
@@ -33,7 +34,35 @@ export function DiagnosticModal({ type, onClose }: DiagnosticModalProps) {
     setHasRun(true);
 
     try {
-      const result = await spoolbuddyApi.runDiagnostics(type);
+      // Step 1: Queue the diagnostic on the device
+      setOutput('Queuing diagnostic on device...\n');
+      await spoolbuddyApi.queueDiagnostics(deviceId, type);
+
+      // Step 2: Poll for results with timeout
+      let result = null;
+      const maxRetries = 60; // 30s timeout with 500ms polling
+      let retryCount = 0;
+
+      while (retryCount < maxRetries && !result) {
+        // Wait a bit before polling
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        try {
+          result = await spoolbuddyApi.getDiagnosticResult(deviceId, type);
+          break;
+        } catch (e) {
+          // Not ready yet, continue polling
+          retryCount++;
+          if (retryCount % 4 === 0) {
+            // Update every 2 seconds (after 4 retries of 500ms)
+            setOutput(prev => prev + '.');
+          }
+        }
+      }
+
+      if (!result) {
+        throw new Error('Diagnostic timed out - device did not report results');
+      }
 
       setOutput(result.output);
       if (!result.success) {
@@ -45,7 +74,7 @@ export function DiagnosticModal({ type, onClose }: DiagnosticModalProps) {
     } finally {
       setIsRunning(false);
     }
-  }, [type]);
+  }, [type, deviceId]);
 
   const title = type === 'scale'
     ? t('spoolbuddy.diagnostic.scaleTitle', 'Scale Diagnostic')
@@ -77,7 +106,7 @@ export function DiagnosticModal({ type, onClose }: DiagnosticModalProps) {
           {isRunning ? (
             <div className="flex items-center gap-2 text-green-400">
               <div className="animate-spin w-4 h-4 border-2 border-green-400 border-t-transparent rounded-full" />
-              <span>Running diagnostic...</span>
+              <span>Running diagnostic on device...</span>
             </div>
           ) : output ? (
             <div className="text-green-400 whitespace-pre-wrap break-words">
@@ -93,7 +122,7 @@ export function DiagnosticModal({ type, onClose }: DiagnosticModalProps) {
             </div>
           ) : (
             <div className="text-zinc-500">
-              Click "Run Diagnostic" to start the hardware diagnostic.
+              Click "Run Diagnostic" to start the hardware diagnostic on {deviceId}.
             </div>
           )}
           {error && (

@@ -253,6 +253,11 @@ export function SettingsPage() {
     queryFn: api.getSmartPlugs,
   });
 
+  const { data: spoolbuddyDevices } = useQuery({
+    queryKey: ['spoolbuddy-devices'],
+    queryFn: spoolbuddyApi.getDevices,
+  });
+
   // Fetch energy data for all smart plugs when on the plugs tab
   const { data: plugEnergySummary, isLoading: energyLoading } = useQuery({
     queryKey: ['smart-plugs-energy', smartPlugs?.map(p => p.id)],
@@ -1085,9 +1090,10 @@ export function SettingsPage() {
       </div>
 
       {/* Diagnostic Modal */}
-      {diagnosticOpen && (
+      {diagnosticOpen && spoolbuddyDevices && spoolbuddyDevices.length > 0 && (
         <DiagnosticModal
           type={diagnosticOpen}
+          deviceId={spoolbuddyDevices[0].device_id}
           onClose={() => setDiagnosticOpen(null)}
         />
       )}

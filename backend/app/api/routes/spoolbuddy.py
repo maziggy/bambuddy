@@ -1,8 +1,6 @@
 """SpoolBuddy device management API routes."""
 
 import logging
-import subprocess
-import sys
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -20,6 +18,7 @@ from backend.app.schemas.spoolbuddy import (
     CalibrationResponse,
     DeviceRegisterRequest,
     DeviceResponse,
+    DiagnosticResultRequest,
     DisplaySettingsRequest,
     HeartbeatRequest,
     HeartbeatResponse,
@@ -41,6 +40,7 @@ router = APIRouter(prefix="/spoolbuddy", tags=["spoolbuddy"])
 OFFLINE_THRESHOLD_SECONDS = 30
 ONLINE_BROADCAST_INTERVAL_SECONDS = 10
 _spoolbuddy_online_last_broadcast: dict[str, float] = {}
+_diagnostic_results: dict[tuple[str, str], dict] = {}
 
 
 def _is_online(device: SpoolBuddyDevice) -> bool:
@@ -204,6 +204,9 @@ async def device_heartbeat(
         except (json.JSONDecodeError, TypeError):
             pending_write = None
         # Don't clear write_tag command — it gets cleared by write-result
+    elif pending and pending.startswith("run_") and pending.endswith("_diag"):
+        # Don't clear diagnostic commands — they get cleared by the device reporting results
+        pass
     else:
         device.pending_command = None
 
@@ -593,62 +596,96 @@ async def update_display_settings(
 # --- Diagnostics ---
 
 
-@router.post("/diagnostics/run")
-async def run_diagnostic(
+@router.post("/diagnostics/{device_id}/run")
+async def queue_diagnostic(
+    device_id: str,
     diagnostic: str,
+    db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ):
-    """Run a hardware diagnostic script and return output.
+    """Queue a hardware diagnostic to run on the SpoolBuddy device.
 
     Args:
+        device_id: The device ID
         diagnostic: 'scale' or 'nfc' to select which diagnostic to run
 
     Returns:
-        Dictionary with success status, output, and exit code
+        Status message indicating diagnostic was queued
     """
-    if diagnostic == "scale":
-        script = "/opt/bambuddy/spoolbuddy/scripts/scale_diag.py"
-    elif diagnostic == "nfc":
-        script = "/opt/bambuddy/spoolbuddy/scripts/read_tag.py"
-    else:
+    if diagnostic not in ("scale", "nfc"):
         raise HTTPException(status_code=400, detail="Unknown diagnostic. Must be 'scale' or 'nfc'")
 
-    try:
-        result = subprocess.run(
-            [sys.executable, script],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        # Combine stdout and stderr for complete output
-        output = result.stdout
-        if result.stderr:
-            output += result.stderr
+    result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
+    device = result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not registered")
 
-        return {
-            "success": result.returncode == 0,
-            "output": output,
-            "exit_code": result.returncode,
-        }
-    except subprocess.TimeoutExpired:
-        return {
-            "success": False,
-            "output": "Diagnostic timeout: Script did not complete within 30 seconds",
-            "exit_code": -1,
-        }
-    except FileNotFoundError:
-        return {
-            "success": False,
-            "output": f"Diagnostic script not found: {script}",
-            "exit_code": -1,
-        }
-    except Exception as e:
-        logger.exception("Diagnostic error: %s", e)
-        return {
-            "success": False,
-            "output": f"Diagnostic error: {str(e)}",
-            "exit_code": -1,
-        }
+    device.pending_command = f"run_{diagnostic}_diag"
+    _diagnostic_results.pop((device_id, diagnostic), None)
+    await db.commit()
+
+    logger.info("Diagnostic queued for device %s: %s", device_id, diagnostic)
+    return {"status": "queued", "diagnostic": diagnostic, "message": f"Diagnostic '{diagnostic}' queued for device"}
+
+
+@router.get("/diagnostics/{device_id}/result")
+async def get_diagnostic_result(
+    device_id: str,
+    diagnostic: str,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+):
+    """Get the latest diagnostic result for a device.
+
+    Args:
+        device_id: The device ID
+        diagnostic: 'scale' or 'nfc'
+
+    Returns:
+        Diagnostic result or 404 if not found
+    """
+    if diagnostic not in ("scale", "nfc"):
+        raise HTTPException(status_code=400, detail="Unknown diagnostic. Must be 'scale' or 'nfc'")
+
+    result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
+    device = result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not registered")
+
+    diag_result = _diagnostic_results.get((device_id, diagnostic))
+    if not diag_result:
+        raise HTTPException(status_code=404, detail=f"No {diagnostic} diagnostic results available yet")
+    return diag_result
+
+
+@router.post("/diagnostics/{device_id}/result")
+async def report_diagnostic_result(
+    device_id: str,
+    req: DiagnosticResultRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Report diagnostic result from SpoolBuddy device."""
+    result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
+    device = result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not registered")
+
+    if req.diagnostic not in ("nfc", "scale"):
+        raise HTTPException(status_code=400, detail="Unknown diagnostic. Must be 'scale' or 'nfc'")
+
+    _diagnostic_results[(device_id, req.diagnostic)] = {
+        "diagnostic": req.diagnostic,
+        "success": req.success,
+        "output": req.output,
+        "exit_code": req.exit_code,
+    }
+
+    device.pending_command = None
+    await db.commit()
+
+    logger.info("Diagnostic result received for device %s: %s (success=%s)", device_id, req.diagnostic, req.success)
+    return {"status": "ok", "message": "Diagnostic result recorded"}
 
 
 # --- Update check ---

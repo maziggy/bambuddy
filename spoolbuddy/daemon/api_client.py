@@ -188,3 +188,21 @@ class APIClient:
             f"/devices/{device_id}/update-status",
             {"status": status, "message": message},
         )
+
+    async def diagnostic_result(
+        self,
+        device_id: str,
+        diagnostic: str,
+        success: bool,
+        output: str,
+        exit_code: int,
+    ) -> dict | None:
+        return await self._post(
+            f"/diagnostics/{device_id}/result",
+            {
+                "diagnostic": diagnostic,
+                "success": success,
+                "output": output,
+                "exit_code": exit_code,
+            },
+        )

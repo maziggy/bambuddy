@@ -3,7 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useOutletContext } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
-import { spoolbuddyApi, type SpoolBuddyDevice } from '../../api/client';
+import { spoolbuddyApi, type SpoolBuddyDevice, type DaemonUpdateCheck } from '../../api/client';
+import { DiagnosticModal } from '../../components/spoolbuddy/DiagnosticModal';
+import { Wand2, Zap } from 'lucide-react';
 function formatUptime(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
@@ -36,6 +38,7 @@ const BLANK_OPTIONS = [
 
 function DeviceTab({ device }: { device: SpoolBuddyDevice }) {
   const { t } = useTranslation();
+  const [diagnosticOpen, setDiagnosticOpen] = useState<'nfc' | 'scale' | null>(null);
 
   return (
     <div className="space-y-4">
@@ -124,6 +127,50 @@ function DeviceTab({ device }: { device: SpoolBuddyDevice }) {
         <span className="text-zinc-500">Device ID</span>
         <span className="text-zinc-400 font-mono">{device.device_id}</span>
       </div>
+
+      {/* Diagnostic Buttons */}
+      <div className="grid grid-cols-2 gap-3">
+        {/* NFC Diagnostic Button */}
+        <button
+          onClick={() => setDiagnosticOpen('nfc')}
+          className="bg-blue-700 hover:bg-blue-600 transition-colors rounded-lg p-3 text-left"
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <Wand2 className="w-4 h-4 text-blue-300" />
+            <span className="text-sm font-semibold text-blue-100">
+              {t('spoolbuddy.settings.nfcDiagnostic', 'NFC Diagnostic')}
+            </span>
+          </div>
+          <p className="text-xs text-blue-200/70">
+            {t('spoolbuddy.settings.testNfc', 'Test reader')}
+          </p>
+        </button>
+
+        {/* Scale Diagnostic Button */}
+        <button
+          onClick={() => setDiagnosticOpen('scale')}
+          className="bg-yellow-700 hover:bg-yellow-600 transition-colors rounded-lg p-3 text-left"
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <Zap className="w-4 h-4 text-yellow-300" />
+            <span className="text-sm font-semibold text-yellow-100">
+              {t('spoolbuddy.settings.scaleDiagnostic', 'Scale Diagnostic')}
+            </span>
+          </div>
+          <p className="text-xs text-yellow-200/70">
+            {t('spoolbuddy.settings.testScale', 'Test accuracy')}
+          </p>
+        </button>
+      </div>
+
+      {/* Diagnostic Modal */}
+      {diagnosticOpen && device && (
+        <DiagnosticModal
+          type={diagnosticOpen}
+          deviceId={device.device_id}
+          onClose={() => setDiagnosticOpen(null)}
+        />
+      )}
     </div>
   );
 }

@@ -142,3 +142,13 @@ class WriteTagResultRequest(BaseModel):
 class DisplaySettingsRequest(BaseModel):
     brightness: int = Field(ge=0, le=100)
     blank_timeout: int = Field(ge=0)
+
+
+# --- Diagnostics schemas ---
+
+
+class DiagnosticResultRequest(BaseModel):
+    diagnostic: str  # 'nfc' or 'scale'
+    success: bool
+    output: str
+    exit_code: int

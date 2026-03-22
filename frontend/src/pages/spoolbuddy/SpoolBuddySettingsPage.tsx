@@ -173,110 +173,112 @@ function DeviceTab({ device }: { device: SpoolBuddyDevice }) {
         <span className="text-zinc-400 font-mono">{device.device_id}</span>
       </div>
 
-      {/* Backend/Auth Config */}
-      <div className="bg-zinc-800 rounded-lg p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-zinc-300">
-          {t('spoolbuddy.settings.systemConfig', 'Backend & Auth')}
-        </h3>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {/* Backend/Auth Config */}
+        <div className="bg-zinc-800 rounded-lg p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-zinc-300">
+            {t('spoolbuddy.settings.systemConfig', 'Backend & Auth')}
+          </h3>
 
-        <div className="space-y-2">
-          <label className="text-xs text-zinc-500 block">
-            {t('spoolbuddy.settings.backendUrl', 'Bambuddy Backend URL')}
-          </label>
-          <input
-            value={backendUrl}
-            onChange={(e) => setBackendUrl(e.target.value)}
-            placeholder="http://192.168.1.100:5000"
-            className="w-full px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-zinc-100 text-sm"
-          />
+          <div className="space-y-2">
+            <label className="text-xs text-zinc-500 block">
+              {t('spoolbuddy.settings.backendUrl', 'Bambuddy Backend URL')}
+            </label>
+            <input
+              value={backendUrl}
+              onChange={(e) => setBackendUrl(e.target.value)}
+              placeholder="http://192.168.1.100:5000"
+              className="w-full px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-zinc-100 text-sm"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs text-zinc-500 block">
+              {t('spoolbuddy.settings.apiToken', 'API Token')}
+            </label>
+            <input
+              type="password"
+              value={apiToken}
+              onChange={(e) => setApiToken(e.target.value)}
+              placeholder={t('spoolbuddy.settings.apiTokenPlaceholder', 'Enter API token')}
+              className="w-full px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-zinc-100 text-sm"
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={saveAndRestart}
+              disabled={systemBusy}
+              className="px-3 py-2 rounded bg-green-700 hover:bg-green-600 disabled:bg-zinc-700 text-sm font-medium text-zinc-100"
+            >
+              {t('spoolbuddy.settings.saveAndRestart', 'Save & Restart')}
+            </button>
+            <button
+              onClick={restartServices}
+              disabled={systemBusy}
+              className="px-3 py-2 rounded bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-700 text-sm font-medium text-zinc-100"
+            >
+              {t('spoolbuddy.settings.restartServices', 'Restart Services')}
+            </button>
+          </div>
+
+          {systemMsg && (
+            <div className={`text-xs ${systemMsg.type === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
+              {systemMsg.text}
+            </div>
+          )}
         </div>
 
-        <div className="space-y-2">
-          <label className="text-xs text-zinc-500 block">
-            {t('spoolbuddy.settings.apiToken', 'API Token')}
-          </label>
-          <input
-            type="password"
-            value={apiToken}
-            onChange={(e) => setApiToken(e.target.value)}
-            placeholder={t('spoolbuddy.settings.apiTokenPlaceholder', 'Enter API token')}
-            className="w-full px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-zinc-100 text-sm"
-          />
-        </div>
-
-        <div className="flex gap-2">
+        {/* Diagnostic Buttons */}
+        <div className="bg-zinc-800 rounded-lg p-4 space-y-3">
+          {/* NFC Diagnostic Button */}
           <button
-            onClick={saveAndRestart}
-            disabled={systemBusy}
-            className="px-3 py-2 rounded bg-green-700 hover:bg-green-600 disabled:bg-zinc-700 text-sm font-medium text-zinc-100"
+            onClick={() => setDiagnosticOpen('nfc')}
+            className="w-full bg-blue-700 hover:bg-blue-600 transition-colors rounded-lg p-3 text-left"
           >
-            {t('spoolbuddy.settings.saveAndRestart', 'Save & Restart')}
+            <div className="flex items-center gap-2 mb-1">
+              <Wand2 className="w-4 h-4 text-blue-300" />
+              <span className="text-sm font-semibold text-blue-100">
+                {t('spoolbuddy.settings.nfcDiagnostic', 'NFC Diagnostic')}
+              </span>
+            </div>
+            <p className="text-xs text-blue-200/70">
+              {t('spoolbuddy.settings.testNfc', 'Test reader')}
+            </p>
           </button>
+
+          {/* Scale Diagnostic Button */}
           <button
-            onClick={restartServices}
-            disabled={systemBusy}
-            className="px-3 py-2 rounded bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-700 text-sm font-medium text-zinc-100"
+            onClick={() => setDiagnosticOpen('scale')}
+            className="w-full bg-yellow-700 hover:bg-yellow-600 transition-colors rounded-lg p-3 text-left"
           >
-            {t('spoolbuddy.settings.restartServices', 'Restart Services')}
+            <div className="flex items-center gap-2 mb-1">
+              <Zap className="w-4 h-4 text-yellow-300" />
+              <span className="text-sm font-semibold text-yellow-100">
+                {t('spoolbuddy.settings.scaleDiagnostic', 'Scale Diagnostic')}
+              </span>
+            </div>
+            <p className="text-xs text-yellow-200/70">
+              {t('spoolbuddy.settings.testScale', 'Test accuracy')}
+            </p>
+          </button>
+
+          {/* Read Tag Diagnostic Button */}
+          <button
+            onClick={() => setDiagnosticOpen('read_tag')}
+            className="w-full bg-emerald-700 hover:bg-emerald-600 transition-colors rounded-lg p-3 text-left"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <FileText className="w-4 h-4 text-emerald-300" />
+              <span className="text-sm font-semibold text-emerald-100">
+                {t('spoolbuddy.settings.readTagDiagnostic', 'Read Tag Diagnostic')}
+              </span>
+            </div>
+            <p className="text-xs text-emerald-200/70">
+              {t('spoolbuddy.settings.testReadTag', 'Run read_tag.py')}
+            </p>
           </button>
         </div>
-
-        {systemMsg && (
-          <div className={`text-xs ${systemMsg.type === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
-            {systemMsg.text}
-          </div>
-        )}
-      </div>
-
-      {/* Diagnostic Buttons */}
-      <div className="grid grid-cols-2 gap-3">
-        {/* NFC Diagnostic Button */}
-        <button
-          onClick={() => setDiagnosticOpen('nfc')}
-          className="bg-blue-700 hover:bg-blue-600 transition-colors rounded-lg p-3 text-left"
-        >
-          <div className="flex items-center gap-2 mb-1">
-            <Wand2 className="w-4 h-4 text-blue-300" />
-            <span className="text-sm font-semibold text-blue-100">
-              {t('spoolbuddy.settings.nfcDiagnostic', 'NFC Diagnostic')}
-            </span>
-          </div>
-          <p className="text-xs text-blue-200/70">
-            {t('spoolbuddy.settings.testNfc', 'Test reader')}
-          </p>
-        </button>
-
-        {/* Scale Diagnostic Button */}
-        <button
-          onClick={() => setDiagnosticOpen('scale')}
-          className="bg-yellow-700 hover:bg-yellow-600 transition-colors rounded-lg p-3 text-left"
-        >
-          <div className="flex items-center gap-2 mb-1">
-            <Zap className="w-4 h-4 text-yellow-300" />
-            <span className="text-sm font-semibold text-yellow-100">
-              {t('spoolbuddy.settings.scaleDiagnostic', 'Scale Diagnostic')}
-            </span>
-          </div>
-          <p className="text-xs text-yellow-200/70">
-            {t('spoolbuddy.settings.testScale', 'Test accuracy')}
-          </p>
-        </button>
-
-        {/* Read Tag Diagnostic Button */}
-        <button
-          onClick={() => setDiagnosticOpen('read_tag')}
-          className="bg-emerald-700 hover:bg-emerald-600 transition-colors rounded-lg p-3 text-left"
-        >
-          <div className="flex items-center gap-2 mb-1">
-            <FileText className="w-4 h-4 text-emerald-300" />
-            <span className="text-sm font-semibold text-emerald-100">
-              {t('spoolbuddy.settings.readTagDiagnostic', 'Read Tag Diagnostic')}
-            </span>
-          </div>
-          <p className="text-xs text-emerald-200/70">
-            {t('spoolbuddy.settings.testReadTag', 'Run read_tag.py')}
-          </p>
-        </button>
       </div>
 
       {/* Diagnostic Modal */}

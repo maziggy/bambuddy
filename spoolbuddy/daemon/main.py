@@ -67,17 +67,35 @@ async def nfc_poll_loop(config: Config, api: APIClient, shared: dict):
 
             # Check for pending write command
             pending = shared.get("pending_write")
-            if pending and nfc.state == NFCState.TAG_PRESENT and nfc.current_sak == 0x00:
-                logger.info("Executing pending tag write for spool %d", pending["spool_id"])
-                success, msg = await asyncio.to_thread(nfc.write_ntag, pending["ndef_data"])
-                await api.write_tag_result(
-                    device_id=config.device_id,
-                    spool_id=pending["spool_id"],
-                    tag_uid=nfc.current_uid or "",
-                    success=success,
-                    message=msg,
-                )
-                shared.pop("pending_write", None)
+            if pending and nfc.state == NFCState.TAG_PRESENT:
+                if nfc.current_sak == 0x00:
+                    logger.info("Executing pending tag write for spool %d", pending["spool_id"])
+                    success, msg = await asyncio.to_thread(nfc.write_ntag, pending["ndef_data"])
+                    await api.write_tag_result(
+                        device_id=config.device_id,
+                        spool_id=pending["spool_id"],
+                        tag_uid=nfc.current_uid or "",
+                        success=success,
+                        message=msg,
+                    )
+                    shared.pop("pending_write", None)
+                else:
+                    # Fail fast when a non-NTAG is presented during write mode.
+                    # Without this, UI can appear stuck on "waiting for SpoolBuddy".
+                    sak = nfc.current_sak
+                    await api.write_tag_result(
+                        device_id=config.device_id,
+                        spool_id=pending["spool_id"],
+                        tag_uid=nfc.current_uid or "",
+                        success=False,
+                        message=f"Incompatible tag type (SAK=0x{sak:02X}). Place an NTAG tag to write.",
+                    )
+                    logger.warning(
+                        "Write aborted for spool %d: incompatible tag type SAK=0x%02X",
+                        pending["spool_id"],
+                        sak,
+                    )
+                    shared.pop("pending_write", None)
 
             await asyncio.sleep(config.nfc_poll_interval)
     finally:

@@ -400,7 +400,7 @@ export function SpoolBuddyDashboard() {
                   onAssignToAms={() => setShowAssignAmsModal(true)}
                   onClose={handleCloseSpoolCard}
                 />
-              ) : displayedTagId && !displayedSpool && !sbState.matchedSpool && hiddenTagId !== displayedTagId ? (
+              ) : currentTagId && displayedTagId && !displayedSpool && !sbState.matchedSpool && hiddenTagId !== displayedTagId ? (
                 <UnknownTagCard
                   tagUid={displayedTagId}
                   scaleWeight={liveWeight ?? displayedWeight}

@@ -4,11 +4,11 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 import { api, spoolbuddyApi, type InventorySpool } from '../../api/client';
+import { SpoolFormModal } from '../../components/SpoolFormModal';
+import { getCurrencySymbol } from '../../utils/currency';
 
 type Tab = 'existing' | 'new' | 'replace';
 type WriteStatus = 'idle' | 'selected' | 'writing' | 'success' | 'error';
-
-const COMMON_MATERIALS = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'PA', 'PC', 'PVA', 'HIPS'];
 
 export function SpoolBuddyWriteTagPage() {
   const { t } = useTranslation();
@@ -22,14 +22,7 @@ export function SpoolBuddyWriteTagPage() {
   const [untagging, setUntagging] = useState(false);
   const [tagOnReader, setTagOnReader] = useState(false);
   const [tagUid, setTagUid] = useState<string | null>(null);
-
-  // New spool form state
-  const [newMaterial, setNewMaterial] = useState('PLA');
-  const [newColorName, setNewColorName] = useState('');
-  const [newColorHex, setNewColorHex] = useState('#00AE42');
-  const [newBrand, setNewBrand] = useState('');
-  const [newWeight, setNewWeight] = useState(1000);
-  const [creating, setCreating] = useState(false);
+  const [showCreateSpoolModal, setShowCreateSpoolModal] = useState(false);
 
   const { data: spools = [], refetch: refetchSpools } = useQuery({
     queryKey: ['inventory-spools'],
@@ -43,8 +36,14 @@ export function SpoolBuddyWriteTagPage() {
     refetchInterval: 5000,
   });
 
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: api.getSettings,
+  });
+
   const device = devices[0];
   const deviceOnline = sbState.deviceOnline;
+  const currencySymbol = getCurrencySymbol(settings?.currency || 'USD');
 
   // Filter spools based on tab
   const filteredSpools = useMemo(() => {
@@ -185,45 +184,13 @@ export function SpoolBuddyWriteTagPage() {
     }
   };
 
-  const handleCreateAndSelect = async () => {
-    setCreating(true);
-    try {
-      const rgba = newColorHex.replace('#', '') + 'FF';
-      const spool = await api.createSpool({
-        material: newMaterial,
-        subtype: null,
-        color_name: newColorName || null,
-        rgba,
-        brand: newBrand || null,
-        label_weight: newWeight,
-        core_weight: 250,
-        core_weight_catalog_id: null,
-        weight_used: 0,
-        slicer_filament: null,
-        slicer_filament_name: null,
-        nozzle_temp_min: null,
-        nozzle_temp_max: null,
-        note: null,
-        added_full: true,
-        last_used: null,
-        encode_time: null,
-        tag_uid: null,
-        tray_uuid: null,
-        data_origin: null,
-        tag_type: null,
-        cost_per_kg: null,
-        last_scale_weight: null,
-        last_weighed_at: null,
-      });
-      setSelectedSpool(spool);
-      refetchSpools();
-    } catch {
-      setWriteMessage(t('spoolbuddy.writeTag.createFailed', 'Failed to create spool'));
-      setWriteStatus('error');
-    } finally {
-      setCreating(false);
-    }
-  };
+  const handleSpoolsCreated = useCallback((createdSpools: InventorySpool[]) => {
+    if (!createdSpools.length) return;
+    setSelectedSpool(createdSpools[0]);
+    setWriteStatus('idle');
+    setWriteMessage('');
+    void refetchSpools();
+  }, [refetchSpools]);
 
   const canWrite = selectedSpool && deviceOnline && writeStatus !== 'writing' && writeStatus !== 'success';
 
@@ -255,19 +222,8 @@ export function SpoolBuddyWriteTagPage() {
         {/* Left panel — spool list or form */}
         <div className="flex-1 flex flex-col overflow-hidden border-r border-bambu-dark-tertiary">
           {activeTab === 'new' ? (
-            <NewSpoolForm
-              material={newMaterial}
-              setMaterial={setNewMaterial}
-              colorName={newColorName}
-              setColorName={setNewColorName}
-              colorHex={newColorHex}
-              setColorHex={setNewColorHex}
-              brand={newBrand}
-              setBrand={setNewBrand}
-              weight={newWeight}
-              setWeight={setNewWeight}
-              creating={creating}
-              onSubmit={handleCreateAndSelect}
+            <NewSpoolFormLauncher
+              onOpenCreate={() => setShowCreateSpoolModal(true)}
               selectedSpool={selectedSpool}
               t={t}
             />
@@ -333,6 +289,13 @@ export function SpoolBuddyWriteTagPage() {
           />
         </div>
       </div>
+
+      <SpoolFormModal
+        isOpen={showCreateSpoolModal}
+        onClose={() => setShowCreateSpoolModal(false)}
+        currencySymbol={currencySymbol}
+        onSpoolsCreated={handleSpoolsCreated}
+      />
     </div>
   );
 }
@@ -393,112 +356,42 @@ function SpoolListItem({ spool, selected, showTag, onClick }: {
   );
 }
 
-// --- New spool form ---
-function NewSpoolForm({ material, setMaterial, colorName, setColorName, colorHex, setColorHex, brand, setBrand, weight, setWeight, creating, onSubmit, selectedSpool, t }: {
-  material: string;
-  setMaterial: (v: string) => void;
-  colorName: string;
-  setColorName: (v: string) => void;
-  colorHex: string;
-  setColorHex: (v: string) => void;
-  brand: string;
-  setBrand: (v: string) => void;
-  weight: number;
-  setWeight: (v: number) => void;
-  creating: boolean;
-  onSubmit: () => void;
+// --- New spool launcher (uses shared SpoolFormModal) ---
+function NewSpoolFormLauncher({ onOpenCreate, selectedSpool, t }: {
+  onOpenCreate: () => void;
   selectedSpool: InventorySpool | null;
   t: (key: string, fallback: string) => string;
 }) {
-  if (selectedSpool) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full p-6 text-center">
-        <div
-          className="w-12 h-12 rounded-full mb-4 border border-white/10"
-          style={{ backgroundColor: selectedSpool.rgba ? `#${selectedSpool.rgba.slice(0, 6)}` : '#666' }}
-        />
-        <p className="text-white font-medium">
-          {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}
-        </p>
-        {selectedSpool.color_name && <p className="text-zinc-400 text-sm">{selectedSpool.color_name}</p>}
-        <p className="text-zinc-500 text-xs mt-1">{selectedSpool.label_weight}g</p>
-        <p className="text-bambu-green text-sm mt-4">{t('spoolbuddy.writeTag.spoolCreated', 'Spool created! Ready to write.')}</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="p-4 space-y-4 overflow-y-auto">
-      {/* Material */}
-      <div>
-        <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.material', 'Material')}</label>
-        <select
-          value={material}
-          onChange={(e) => setMaterial(e.target.value)}
-          className="w-full px-3 py-2 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded text-sm text-white focus:outline-none focus:border-bambu-green"
-        >
-          {COMMON_MATERIALS.map(m => <option key={m} value={m}>{m}</option>)}
-        </select>
+    <div className="p-4 space-y-4 overflow-y-auto h-full flex flex-col justify-center">
+      <div className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg p-4 text-sm text-zinc-300">
+        {t(
+          'spoolbuddy.writeTag.fullFormHint',
+          'Use the full Add Spool form to create a new spool with all available fields and options.'
+        )}
       </div>
 
-      {/* Color name + picker */}
-      <div className="flex gap-3">
-        <div className="flex-1">
-          <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.colorName', 'Color Name')}</label>
-          <input
-            type="text"
-            value={colorName}
-            onChange={(e) => setColorName(e.target.value)}
-            placeholder="Jade White"
-            className="w-full px-3 py-2 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-bambu-green"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.color', 'Color')}</label>
-          <input
-            type="color"
-            value={colorHex}
-            onChange={(e) => setColorHex(e.target.value)}
-            className="w-10 h-9 bg-transparent border border-bambu-dark-tertiary rounded cursor-pointer"
-          />
-        </div>
-      </div>
-
-      {/* Brand */}
-      <div>
-        <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.brand', 'Brand')}</label>
-        <input
-          type="text"
-          value={brand}
-          onChange={(e) => setBrand(e.target.value)}
-          placeholder="Polymaker"
-          className="w-full px-3 py-2 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-bambu-green"
-        />
-      </div>
-
-      {/* Weight */}
-      <div>
-        <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.weight', 'Weight (g)')}</label>
-        <input
-          type="number"
-          value={weight}
-          onChange={(e) => setWeight(parseInt(e.target.value) || 0)}
-          min={0}
-          max={10000}
-          className="w-full px-3 py-2 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded text-sm text-white focus:outline-none focus:border-bambu-green"
-        />
-      </div>
-
-      {/* Create button */}
       <button
-        onClick={onSubmit}
-        disabled={creating || !material}
-        className="w-full py-2.5 bg-bambu-green hover:bg-bambu-green/80 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded transition-colors"
+        onClick={onOpenCreate}
+        className="w-full py-2.5 bg-bambu-green hover:bg-bambu-green/80 text-white text-sm font-medium rounded transition-colors"
       >
-        {creating
-          ? t('spoolbuddy.writeTag.creating', 'Creating...')
-          : t('spoolbuddy.writeTag.createSpool', 'Create Spool')}
+        {t('spoolbuddy.writeTag.openAddSpoolForm', 'Open Add Spool Form')}
       </button>
+
+      {selectedSpool && (
+        <div className="flex flex-col items-center justify-center p-4 text-center bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
+          <div
+            className="w-12 h-12 rounded-full mb-4 border border-white/10"
+            style={{ backgroundColor: selectedSpool.rgba ? `#${selectedSpool.rgba.slice(0, 6)}` : '#666' }}
+          />
+          <p className="text-white font-medium">
+            {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}
+          </p>
+          {selectedSpool.color_name && <p className="text-zinc-400 text-sm">{selectedSpool.color_name}</p>}
+          <p className="text-zinc-500 text-xs mt-1">{selectedSpool.label_weight}g</p>
+          <p className="text-bambu-green text-sm mt-4">{t('spoolbuddy.writeTag.spoolCreated', 'Spool created! Ready to write.')}</p>
+        </div>
+      )}
     </div>
   );
 }

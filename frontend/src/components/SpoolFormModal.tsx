@@ -24,9 +24,17 @@ interface SpoolFormModalProps {
   spool?: InventorySpool | null;
   printersWithCalibrations?: PrinterWithCalibrations[];
   currencySymbol: string;
+  onSpoolsCreated?: (spools: InventorySpool[]) => void;
 }
 
-export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibrations = [], currencySymbol }: SpoolFormModalProps) {
+export function SpoolFormModal({
+  isOpen,
+  onClose,
+  spool,
+  printersWithCalibrations = [],
+  currencySymbol,
+  onSpoolsCreated,
+}: SpoolFormModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -317,6 +325,7 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
         await saveKProfiles(newSpool.id);
       }
       await queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
+      if (onSpoolsCreated) onSpoolsCreated([newSpool]);
       showToast(t('inventory.spoolCreated'), 'success');
       onClose();
     },
@@ -335,6 +344,7 @@ export function SpoolFormModal({ isOpen, onClose, spool, printersWithCalibration
         }
       }
       await queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
+      if (onSpoolsCreated) onSpoolsCreated(newSpools);
       showToast(t('inventory.spoolsCreated', { count: newSpools.length }), 'success');
       onClose();
     },

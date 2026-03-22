@@ -562,7 +562,32 @@ def main():
     print("  Supports: Bambu (MIFARE Classic) + NTAG (SpoolEase/OpenPrintTag)")
     print("=" * 60)
 
-    nfc = PN5180()
+    try:
+        nfc = PN5180()
+    except (OSError, RuntimeError, PermissionError) as e:
+        print(f"\nERROR: Failed to initialize NFC reader: {e}")
+
+        # Check if it's a resource conflict
+        error_str = str(e).lower()
+        if any(x in error_str for x in ["busy", "resource", "already in use", "permission denied"]):
+            print("\nGPIO/SPI RESOURCE IN USE: Another process is using the NFC reader.")
+            print("This typically means the SpoolBuddy daemon is already reading tags.")
+            print("\nTo run this diagnostic, stop the daemon first:")
+            print("  sudo systemctl stop bambuddy")
+            print("  # Run diagnostic")
+            print("  .../read_tag.py")
+            print("  # Restart daemon when done:")
+            print("  sudo systemctl start bambuddy")
+        else:
+            print("\nCheck:")
+            print("  - Correct GPIO chip is available (/dev/gpiochip0 or /dev/gpiochip4)")
+            print(f"  - SPI device is available (SPI_BUS={SPI_BUS}, SPI_DEVICE={SPI_DEVICE})")
+            print("  - GPIO and SPI permissions are correct")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
     try:
         nfc.reset()
         ver = nfc.read_eeprom(0x10, 2)

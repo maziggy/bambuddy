@@ -226,13 +226,25 @@ def main():
 
     except Exception as e:
         print(f"\nERROR: {e}")
-        if isinstance(e, OSError) and e.errno == 121:
-            print("\nI2C NACK (Errno 121): the device did not acknowledge reads at 0x2A.")
-            print("Check:")
-            print("  - NAU7802 SDA/SCL are on the configured bus pins")
-            print("  - 3.3V and GND are correct and stable")
-            print("  - Sensor address is really 0x2A")
-            print("  - No loose wire or swapped SDA/SCL")
+        if isinstance(e, OSError):
+            if e.errno == 16:  # Device or resource busy
+                print("\nI2C DEVICE BUSY (Errno 16): Another process is using the I2C bus.")
+                print("This typically means the SpoolBuddy daemon is already reading the scale.")
+                print("\nTo run this diagnostic, stop the daemon first:")
+                print("  sudo systemctl stop bambuddy")
+                print("  # Run diagnostic")
+                print("  .../scale_diag.py")
+                print("  # Restart daemon when done:")
+                print("  sudo systemctl start bambuddy")
+            elif e.errno == 121:
+                print("\nI2C NACK (Errno 121): the device did not acknowledge reads at 0x2A.")
+                print("Check:")
+                print("  - NAU7802 SDA/SCL are on the configured bus pins")
+                print("  - 3.3V and GND are correct and stable")
+                print("  - Sensor address is really 0x2A")
+                print("  - No loose wire or swapped SDA/SCL")
+            else:
+                print(f"\nI2C Error (Errno {e.errno}): {e}")
         import traceback
 
         traceback.print_exc()

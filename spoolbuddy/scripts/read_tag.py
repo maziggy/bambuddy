@@ -569,7 +569,9 @@ def main():
 
         # Check if it's a resource conflict
         error_str = str(e).lower()
-        if any(x in error_str for x in ["busy", "resource", "already in use", "permission denied"]):
+        is_resource_conflict = any(x in error_str for x in ["busy", "resource", "already in use", "permission denied"])
+
+        if is_resource_conflict:
             print("\nGPIO/SPI RESOURCE IN USE: Another process is using the NFC reader.")
             print("This typically means the SpoolBuddy daemon is already reading tags.")
             print("\nTo run this diagnostic, stop the daemon first:")
@@ -583,9 +585,11 @@ def main():
             print("  - Correct GPIO chip is available (/dev/gpiochip0 or /dev/gpiochip4)")
             print(f"  - SPI device is available (SPI_BUS={SPI_BUS}, SPI_DEVICE={SPI_DEVICE})")
             print("  - GPIO and SPI permissions are correct")
-        import traceback
+            # Only print full traceback for unexpected errors
+            import traceback
 
-        traceback.print_exc()
+            traceback.print_exc()
+
         sys.exit(1)
 
     try:

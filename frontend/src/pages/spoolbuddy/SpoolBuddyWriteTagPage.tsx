@@ -30,6 +30,7 @@ import { MATERIALS } from '../../components/spool-form/constants';
 
 type Tab = 'existing' | 'new' | 'replace';
 type WriteStatus = 'idle' | 'selected' | 'writing' | 'success' | 'error';
+const SIMPLE_COMMON_MATERIALS = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'PA', 'PC', 'PVA', 'HIPS'];
 
 export function SpoolBuddyWriteTagPage() {
   const { t } = useTranslation();
@@ -680,17 +681,29 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
       </div>
 
       {viewMode === 'simple' ? (
-        <>
-          <div className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg p-3 space-y-3">
+        selectedSpool ? (
+          <div className="flex flex-col items-center justify-center h-full p-6 text-center bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
+            <div
+              className="w-12 h-12 rounded-full mb-4 border border-white/10"
+              style={{ backgroundColor: selectedSpool.rgba ? `#${selectedSpool.rgba.slice(0, 6)}` : '#666' }}
+            />
+            <p className="text-white font-medium">
+              {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}
+            </p>
+            {selectedSpool.color_name && <p className="text-zinc-400 text-sm">{selectedSpool.color_name}</p>}
+            <p className="text-zinc-500 text-xs mt-1">{selectedSpool.label_weight}g</p>
+            <p className="text-bambu-green text-sm mt-4">{t('spoolbuddy.writeTag.spoolCreated', 'Spool created! Ready to write.')}</p>
+          </div>
+        ) : (
+          <div className="p-4 space-y-4 overflow-y-auto bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
             <div>
               <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.material', 'Material')}</label>
               <select
                 value={formData.material}
                 onChange={(e) => updateField('material', e.target.value)}
-                className="w-full px-3 py-3 bg-bambu-dark border border-bambu-dark-tertiary rounded text-sm text-white focus:outline-none focus:border-bambu-green"
+                className="w-full px-3 py-2 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded text-sm text-white focus:outline-none focus:border-bambu-green"
               >
-                <option value="">{t('spoolbuddy.writeTag.selectMaterial', 'Select material')}</option>
-                {MATERIALS.map((m) => (
+                {SIMPLE_COMMON_MATERIALS.map((m) => (
                   <option key={m} value={m}>{m}</option>
                 ))}
               </select>
@@ -704,7 +717,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
                   value={formData.color_name}
                   onChange={(e) => updateField('color_name', e.target.value)}
                   placeholder="Jade White"
-                  className="w-full px-3 py-3 bg-bambu-dark border border-bambu-dark-tertiary rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-bambu-green"
+                  className="w-full px-3 py-2 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-bambu-green"
                 />
               </div>
               <div>
@@ -713,7 +726,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
                   type="color"
                   value={simpleColorHex}
                   onChange={(e) => updateField('rgba', e.target.value.replace('#', '').toUpperCase() + 'FF')}
-                  className="w-12 h-12 bg-transparent border border-bambu-dark-tertiary rounded cursor-pointer"
+                  className="w-10 h-9 bg-transparent border border-bambu-dark-tertiary rounded cursor-pointer"
                 />
               </div>
             </div>
@@ -725,7 +738,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
                 value={formData.brand}
                 onChange={(e) => updateField('brand', e.target.value)}
                 placeholder="Polymaker"
-                className="w-full px-3 py-3 bg-bambu-dark border border-bambu-dark-tertiary rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-bambu-green"
+                className="w-full px-3 py-2 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-bambu-green"
               />
             </div>
 
@@ -734,14 +747,22 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
               <input
                 type="number"
                 value={formData.label_weight}
+                onChange={(e) => updateField('label_weight', parseInt(e.target.value) || 0)}
                 min={0}
                 max={10000}
-                onChange={(e) => updateField('label_weight', parseInt(e.target.value) || 0)}
-                className="w-full px-3 py-3 bg-bambu-dark border border-bambu-dark-tertiary rounded text-sm text-white focus:outline-none focus:border-bambu-green"
+                className="w-full px-3 py-2 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded text-sm text-white focus:outline-none focus:border-bambu-green"
               />
             </div>
+
+            <button
+              onClick={handleCreate}
+              disabled={creating || !formData.material}
+              className="w-full py-2.5 bg-bambu-green hover:bg-bambu-green/80 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded transition-colors"
+            >
+              {creating ? t('spoolbuddy.writeTag.creating', 'Creating...') : t('spoolbuddy.writeTag.createSpool', 'Create Spool')}
+            </button>
           </div>
-        </>
+        )
       ) : (
         <>
       <div className="flex items-center justify-between px-2 py-2 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary">
@@ -834,15 +855,17 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
         </div>
       )}
 
-      <button
-        onClick={handleCreate}
-        disabled={creating}
-        className="w-full py-3 bg-bambu-green hover:bg-bambu-green/80 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded transition-colors"
-      >
-        {creating ? t('spoolbuddy.writeTag.creating', 'Creating...') : t('spoolbuddy.writeTag.createSpool', 'Create Spool')}
-      </button>
+      {viewMode === 'full' && (
+        <button
+          onClick={handleCreate}
+          disabled={creating}
+          className="w-full py-3 bg-bambu-green hover:bg-bambu-green/80 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded transition-colors"
+        >
+          {creating ? t('spoolbuddy.writeTag.creating', 'Creating...') : t('spoolbuddy.writeTag.createSpool', 'Create Spool')}
+        </button>
+      )}
 
-      {selectedSpool && (
+      {viewMode === 'full' && selectedSpool && (
         <div className="flex flex-col items-center justify-center p-4 text-center bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
           <div
             className="w-12 h-12 rounded-full mb-4 border border-white/10"

@@ -228,19 +228,22 @@ async def get_spool_by_tag(db: AsyncSession, tag_uid: str, tray_uuid: str) -> Sp
         if len(tag_uid_norm) >= 8:
             suffix8 = tag_uid_norm[-8:]
             short_uid_body = tag_uid_norm[1:] if len(tag_uid_norm) == 8 else ""
+
+            # Build LIKE patterns for candidates search
+            like_patterns = [
+                func.upper(Spool.tag_uid).like(f"%{tag_uid_norm}"),
+                func.upper(Spool.tag_uid).like(f"%{suffix8}"),
+            ]
+            if short_uid_body:
+                like_patterns.append(func.upper(Spool.tag_uid).like(f"%{short_uid_body}%"))
+
             candidates = await db.execute(
                 select(Spool)
                 .options(selectinload(Spool.k_profiles), selectinload(Spool.assignments))
                 .where(
                     Spool.tag_uid.is_not(None),
                     Spool.archived_at.is_(None),
-                    or_(
-                        func.upper(Spool.tag_uid).like(f"%{tag_uid_norm}"),
-                        func.upper(Spool.tag_uid).like(f"%{suffix8}"),
-                        # Backward-compatibility: short UID scans can differ in first
-                        # character across reader paths for the same physical tag.
-                        func.upper(Spool.tag_uid).like(f"%{short_uid_body}%") if short_uid_body else False,
-                    ),
+                    or_(*like_patterns),
                 )
                 .limit(100)
             )
@@ -254,10 +257,30 @@ async def get_spool_by_tag(db: AsyncSession, tag_uid: str, tray_uuid: str) -> Sp
                     return candidate
                 if len(tag_uid_norm) > len(candidate_uid) and tag_uid_norm.endswith(candidate_uid):
                     return candidate
-                # Backward-compatible short UID matching: allow first-character
-                # mismatch when remaining 7 chars match the candidate's first 8.
+                # Backward-compatible matching: allow first-character mismatch
+                # when remaining characters match. This handles cases where the same
+                # physical tag reports different first bytes across different readers
+                # (e.g., one reader reports "A45012F", another reports "B45012F").
+                if len(tag_uid_norm) == len(candidate_uid) and len(tag_uid_norm) > 1:
+                    # Same length: check if all chars except the first match
+                    if candidate_uid[1:] == tag_uid_norm[1:]:
+                        logger.info(
+                            "Matched spool %d via first-char variance: stored=%s → scanned=%s",
+                            candidate.id,
+                            candidate_uid,
+                            tag_uid_norm,
+                        )
+                        return candidate
+                # Short UID (8 chars) matching: allow first-character mismatch
+                # within the first 8 bytes when remaining 7 chars match.
                 if len(tag_uid_norm) == 8 and len(candidate_uid) >= 8:
                     if candidate_uid[:8][1:] == tag_uid_norm[1:]:
+                        logger.info(
+                            "Matched spool %d via short UID variance: stored=%s → scanned=%s",
+                            candidate.id,
+                            candidate_uid,
+                            tag_uid_norm,
+                        )
                         return candidate
 
     return None

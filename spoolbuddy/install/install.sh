@@ -507,6 +507,33 @@ EOF
     success "Configuration saved to $env_file"
 }
 
+ensure_kiosk_env_access() {
+    local env_file="$INSTALL_PATH/spoolbuddy/.env"
+
+    if [[ ! -f "$env_file" ]]; then
+        warn "SpoolBuddy env file not found at $env_file"
+        return
+    fi
+
+    # Ensure kiosk user is known even when this function is called outside setup_kiosk.
+    if [[ -z "$KIOSK_USER" ]]; then
+        KIOSK_USER="${SUDO_USER:-$(logname 2>/dev/null || echo pi)}"
+    fi
+
+    if id "$KIOSK_USER" &>/dev/null; then
+        usermod -aG "$SPOOLBUDDY_SERVICE_USER" "$KIOSK_USER" 2>/dev/null || true
+    fi
+
+    chgrp "$SPOOLBUDDY_SERVICE_USER" "$env_file"
+    chmod 640 "$env_file"
+
+    if ! su -s /bin/sh -c "test -r '$env_file'" "$KIOSK_USER"; then
+        error "Kiosk user '$KIOSK_USER' cannot read $env_file (required for dynamic kiosk URL). Check groups/permissions."
+    fi
+
+    success "Verified kiosk user '$KIOSK_USER' can read SpoolBuddy env"
+}
+
 create_spoolbuddy_service() {
     info "Creating SpoolBuddy systemd service..."
 
@@ -1250,6 +1277,7 @@ main() {
     info "Setting up SpoolBuddy..."
     setup_spoolbuddy_venv
     create_spoolbuddy_env
+    ensure_kiosk_env_access
     create_spoolbuddy_service
     echo ""
 

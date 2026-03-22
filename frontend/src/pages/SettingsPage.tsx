@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Wrench, Wand2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -33,8 +33,10 @@ import { useToast } from '../contexts/ToastContext';
 import { useTheme, type ThemeStyle, type DarkBackground, type LightBackground, type ThemeAccent } from '../contexts/ThemeContext';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Palette } from 'lucide-react';
+import { DiagnosticModal } from '../components/spoolbuddy/DiagnosticModal';
+import { spoolbuddyApi } from '../api/client';
 
-const validTabs = ['general', 'network', 'plugs', 'notifications', 'filament', 'apikeys', 'virtual-printer', 'users', 'backup'] as const;
+const validTabs = ['general', 'network', 'plugs', 'notifications', 'filament', 'apikeys', 'virtual-printer', 'users', 'backup', 'device'] as const;
 type TabType = typeof validTabs[number];
 type UsersSubTab = 'users' | 'email';
 
@@ -168,6 +170,9 @@ export function SettingsPage() {
   // External camera test state
   const [extCameraTestResults, setExtCameraTestResults] = useState<Record<number, { success: boolean; error?: string; resolution?: string } | null>>({});
   const [extCameraTestLoading, setExtCameraTestLoading] = useState<Record<number, boolean>>({});
+
+  // Device tab diagnostics state
+  const [diagnosticOpen, setDiagnosticOpen] = useState<'nfc' | 'scale' | null>(null);
 
   const handleDefaultViewChange = (path: string) => {
     setDefaultViewState(path);
@@ -1066,9 +1071,26 @@ export function SettingsPage() {
           {t('settings.tabs.backup')}
           <span className={`w-2 h-2 rounded-full ${cloudAuthStatus?.is_authenticated && githubBackupStatus?.configured && githubBackupStatus?.enabled ? 'bg-green-400' : 'bg-gray-500'}`} />
         </button>
+        <button
+          onClick={() => handleTabChange('device')}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
+            activeTab === 'device'
+              ? 'text-bambu-green border-bambu-green'
+              : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
+          }`}
+        >
+          <Wrench className="w-4 h-4" />
+          {t('settings.tabs.device')}
+        </button>
       </div>
 
-      {/* General Tab */}
+      {/* Diagnostic Modal */}
+      {diagnosticOpen && (
+        <DiagnosticModal
+          type={diagnosticOpen}
+          onClose={() => setDiagnosticOpen(null)}
+        />
+      )}
       {activeTab === 'general' && (
       <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
         {/* Left Column - General Settings */}
@@ -4663,6 +4685,88 @@ export function SettingsPage() {
       {/* Backup Tab */}
       {activeTab === 'backup' && (
         <GitHubBackupSettings />
+      )}
+
+      {/* Device Tab - Hardware Diagnostics */}
+      {activeTab === 'device' && (
+        <div className="max-w-2xl">
+          <Card>
+            <CardHeader>
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Wrench className="w-5 h-5 text-bambu-green" />
+                {t('settings.device.title', 'Device Diagnostics')}
+              </h2>
+              <p className="text-sm text-bambu-gray mt-2">
+                {t('settings.device.description', 'Run hardware diagnostics to troubleshoot device connectivity and functionality issues.')}
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* NFC Reader Diagnostic */}
+              <div className="flex items-start justify-between p-4 bg-bambu-dark-secondary rounded-lg">
+                <div>
+                  <h3 className="text-white font-medium flex items-center gap-2">
+                    <Wand2 className="w-4 h-4 text-blue-400" />
+                    {t('settings.device.nfcDiagnostic', 'NFC Reader Diagnostic')}
+                  </h3>
+                  <p className="text-sm text-bambu-gray mt-1">
+                    {t('settings.device.nfcDescription', 'Test NFC reader connectivity and functionality')}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setDiagnosticOpen('nfc')}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors shrink-0"
+                >
+                  {t('settings.device.runDiagnostic', 'Run Diagnostic')}
+                </button>
+              </div>
+
+              {/* Scale Diagnostic */}
+              <div className="flex items-start justify-between p-4 bg-bambu-dark-secondary rounded-lg">
+                <div>
+                  <h3 className="text-white font-medium flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-yellow-400" />
+                    {t('settings.device.scaleDiagnostic', 'Scale Diagnostic')}
+                  </h3>
+                  <p className="text-sm text-bambu-gray mt-1">
+                    {t('settings.device.scaleDescription', 'Test scale connectivity and weight reading accuracy')}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setDiagnosticOpen('scale')}
+                  className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-sm font-medium transition-colors shrink-0"
+                >
+                  {t('settings.device.runDiagnostic', 'Run Diagnostic')}
+                </button>
+              </div>
+
+              {/* Read Tags */}
+              <div className="flex items-start justify-between p-4 bg-bambu-dark-secondary rounded-lg">
+                <div>
+                  <h3 className="text-white font-medium flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-purple-400" />
+                    {t('settings.device.readTags', 'Read Tags')}
+                  </h3>
+                  <p className="text-sm text-bambu-gray mt-1">
+                    {t('settings.device.readTagsDescription', 'Navigate to SpoolBuddy to read and write tags')}
+                  </p>
+                </div>
+                <button
+                  onClick={() => navigate('/spoolbuddy/read-tags')}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors shrink-0"
+                >
+                  {t('settings.device.goToSpoolbuddy', 'Go to SpoolBuddy')}
+                </button>
+              </div>
+
+              {/* Troubleshooting tip */}
+              <div className="p-3 bg-bambu-dark-tertiary border border-bambu-dark-secondary rounded-lg">
+                <p className="text-xs text-bambu-gray">
+                  <span className="font-medium text-white">{t('settings.device.tip', 'Tip:')}</span> {t('settings.device.tipDescription', 'If diagnostics show hardware issues, ensure proper USB connections, power supply, and device drivers are installed.')}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* Disable Authentication Confirmation Modal */}

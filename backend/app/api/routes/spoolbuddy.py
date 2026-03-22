@@ -220,9 +220,6 @@ async def device_heartbeat(
     elif pending == "apply_system_config":
         pending_system = _system_command_payloads.get(device_id)
         # Don't clear config command — it gets cleared by daemon command-result callback
-    elif pending == "restart_services":
-        # No payload needed for restart command.
-        pass
     elif pending and pending.startswith("run_") and pending.endswith("_diag"):
         # Don't clear diagnostic commands — they get cleared by the device reporting results
         pass
@@ -645,25 +642,6 @@ async def queue_system_config_update(
 
     logger.info("Queued system config update for device %s", device_id)
     return {"status": "queued", "message": "System config update queued"}
-
-
-@router.post("/devices/{device_id}/system/restart")
-async def queue_system_restart(
-    device_id: str,
-    db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
-):
-    """Queue service restart command for the device."""
-    result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
-    device = result.scalar_one_or_none()
-    if not device:
-        raise HTTPException(status_code=404, detail="Device not registered")
-
-    device.pending_command = "restart_services"
-    await db.commit()
-
-    logger.info("Queued service restart for device %s", device_id)
-    return {"status": "queued", "message": "Service restart queued"}
 
 
 @router.post("/devices/{device_id}/system/command-result")

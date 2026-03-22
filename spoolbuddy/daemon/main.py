@@ -58,19 +58,6 @@ def _set_env_value(path: Path, key: str, value: str):
     path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
 
 
-def _schedule_service_restart():
-    # Restart getty and spoolbuddy shortly after responding, so this process can finish current cycle.
-    subprocess.Popen(
-        [
-            "sh",
-            "-c",
-            "sleep 1; systemctl restart getty@tty1; systemctl restart spoolbuddy",
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-
 def _get_ip() -> str:
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -351,32 +338,12 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
                         f"Updated {env_path}",
                     )
 
-                    logger.info("Applied system config update; scheduling service restart")
-                    await asyncio.to_thread(_schedule_service_restart)
+                    logger.info("Applied system config update")
                 except Exception as e:
                     logger.exception("Failed to apply system config")
                     await api.system_command_result(
                         config.device_id,
                         "apply_system_config",
-                        False,
-                        str(e),
-                    )
-                continue
-            elif cmd == "restart_services":
-                try:
-                    await api.system_command_result(
-                        config.device_id,
-                        "restart_services",
-                        True,
-                        "Restart scheduled",
-                    )
-                    logger.info("Restart command received; scheduling service restart")
-                    await asyncio.to_thread(_schedule_service_restart)
-                except Exception as e:
-                    logger.exception("Failed to schedule service restart")
-                    await api.system_command_result(
-                        config.device_id,
-                        "restart_services",
                         False,
                         str(e),
                     )

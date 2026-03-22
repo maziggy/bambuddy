@@ -5034,12 +5034,6 @@ export const spoolbuddyApi = {
       body: JSON.stringify({ backend_url: backendUrl, ...(apiKey ? { api_key: apiKey } : {}) }),
     }),
 
-  restartServices: (deviceId: string) =>
-    request<{ status: string; message: string }>(`/spoolbuddy/devices/${deviceId}/system/restart`, {
-      method: 'POST',
-      body: '{}',
-    }),
-
   checkDaemonUpdate: (deviceId: string, includeBeta?: boolean) =>
     request<DaemonUpdateCheck>(`/spoolbuddy/devices/${deviceId}/update-check?include_beta=${includeBeta ?? false}`),
 

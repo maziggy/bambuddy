@@ -50,7 +50,7 @@ function DeviceTab({ device }: { device: SpoolBuddyDevice }) {
     }
   }, [device.backend_url, backendUrl]);
 
-  const saveAndRestart = async () => {
+  const saveConfig = async () => {
     if (!backendUrl.trim()) {
       setSystemMsg({ type: 'error', text: t('spoolbuddy.settings.systemFieldsRequired', 'Backend URL is required.') });
       return;
@@ -64,7 +64,7 @@ function DeviceTab({ device }: { device: SpoolBuddyDevice }) {
         backendUrl.trim(),
         apiToken.trim() || undefined
       );
-      setSystemMsg({ type: 'ok', text: t('spoolbuddy.settings.systemQueued', 'Config queued. Device services will restart shortly.') });
+      setSystemMsg({ type: 'ok', text: t('spoolbuddy.settings.systemQueued', 'Config queued. Reboot the SpoolBuddy device to apply new backend/auth values.') });
     } catch (e) {
       setSystemMsg({ type: 'error', text: e instanceof Error ? e.message : t('common.error', 'Error') });
     } finally {
@@ -72,17 +72,11 @@ function DeviceTab({ device }: { device: SpoolBuddyDevice }) {
     }
   };
 
-  const restartServices = async () => {
-    setSystemBusy(true);
-    setSystemMsg(null);
-    try {
-      await spoolbuddyApi.restartServices(device.device_id);
-      setSystemMsg({ type: 'ok', text: t('spoolbuddy.settings.restartQueued', 'Restart queued for spoolbuddy and getty@tty1.') });
-    } catch (e) {
-      setSystemMsg({ type: 'error', text: e instanceof Error ? e.message : t('common.error', 'Error') });
-    } finally {
-      setSystemBusy(false);
-    }
+  const showRebootHelp = () => {
+    setSystemMsg({
+      type: 'ok',
+      text: t('spoolbuddy.settings.rebootHelp', 'Reboot manually on the device host: sudo reboot'),
+    });
   };
 
   return (
@@ -207,20 +201,23 @@ function DeviceTab({ device }: { device: SpoolBuddyDevice }) {
 
           <div className="flex gap-2">
             <button
-              onClick={saveAndRestart}
+              onClick={saveConfig}
               disabled={systemBusy}
               className="px-3 py-2 rounded bg-green-700 hover:bg-green-600 disabled:bg-zinc-700 text-sm font-medium text-zinc-100"
             >
-              {t('spoolbuddy.settings.saveAndRestart', 'Save & Restart')}
+              {t('spoolbuddy.settings.saveConfig', 'Save Config')}
             </button>
             <button
-              onClick={restartServices}
-              disabled={systemBusy}
-              className="px-3 py-2 rounded bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-700 text-sm font-medium text-zinc-100"
+              onClick={showRebootHelp}
+              className="px-3 py-2 rounded bg-zinc-700 hover:bg-zinc-600 text-sm font-medium text-zinc-100"
             >
-              {t('spoolbuddy.settings.restartServices', 'Restart Services')}
+              {t('spoolbuddy.settings.rebootDevice', 'Reboot Device')}
             </button>
           </div>
+
+          <p className="text-xs text-zinc-500">
+            {t('spoolbuddy.settings.rebootHint', 'After saving, reboot the SpoolBuddy device from the host OS when ready.')}
+          </p>
 
           {systemMsg && (
             <div className={`text-xs ${systemMsg.type === 'ok' ? 'text-green-400' : 'text-red-400'}`}>

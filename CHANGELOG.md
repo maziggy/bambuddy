@@ -5,6 +5,21 @@ All notable changes to Bambuddy will be documented in this file.
 ## [0.2.3b1] - Unreleased
 
 ### New Features
+
+### Fixed
+
+### Added
+
+### Changed
+
+### Improved
+
+### Security
+
+
+## [0.2.2.1] - 2026-03-22
+
+### New Features
 - **SpoolBuddy OTA Updates** — SpoolBuddy devices can now be updated directly from the Settings → Updates tab without SSH access. Click "Check for Updates" to see if a newer version is available, then "Apply Update" to trigger the update. The daemon picks up the command via its heartbeat, pulls the latest code from GitHub, installs dependencies, and restarts automatically via systemd. Live progress is shown in the UI with status messages from the device. The status bar at the bottom automatically checks for updates every 5 minutes and shows a prominent message when one is available. Requires the device to be online.
 - **Select Plates to Queue** ([#777](https://github.com/maziggy/bambuddy/issues/777)) — Multi-plate 3MF files now support selecting a subset of plates to queue, instead of only "one plate" or "all plates". In add-to-queue mode, each plate has a checkbox for multi-select, with a "Select All / Deselect All" toggle. Reprint and edit modes remain single-select. Requested by @stringham.
 - **Camera Image Rotation** ([#672](https://github.com/maziggy/bambuddy/issues/672)) — Added per-printer camera rotation (0°, 90°, 180°, 270°) for cameras mounted in portrait or upside-down orientations. Configurable in Settings → Camera for each printer. Rotation applies to live stream, embedded viewer, stream overlay, and notification snapshots. Requested by @wrenoud.

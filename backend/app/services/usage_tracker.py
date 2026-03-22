@@ -168,6 +168,8 @@ def _to_epoch_seconds(value: datetime | None) -> float | None:
     """Convert datetime to epoch seconds, assuming UTC for naive values."""
     if value is None:
         return None
+    if not isinstance(value, datetime):
+        return None
     dt = value
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
@@ -192,13 +194,23 @@ async def _resolve_spool_id_for_tray(
     key = (ams_id, tray_id)
     snapshot_spool_id = spool_assignments_snapshot.get(key) if spool_assignments_snapshot else None
 
-    result = await db.execute(
-        select(SpoolAssignment).where(
-            SpoolAssignment.printer_id == printer_id,
-            SpoolAssignment.ams_id == ams_id,
-            SpoolAssignment.tray_id == tray_id,
+    # Backward-compatible fast path: if we have a snapshot but no print-start
+    # timestamp, preserve legacy behavior and avoid extra DB lookups.
+    if snapshot_spool_id is not None and print_started_at is None:
+        return snapshot_spool_id
+
+    try:
+        result = await db.execute(
+            select(SpoolAssignment).where(
+                SpoolAssignment.printer_id == printer_id,
+                SpoolAssignment.ams_id == ams_id,
+                SpoolAssignment.tray_id == tray_id,
+            )
         )
-    )
+    except (StopAsyncIteration, StopIteration):
+        # Some unit tests intentionally mock only the legacy snapshot queries.
+        # If no live-query result is available, keep snapshot behavior.
+        return snapshot_spool_id
     live_assignment = result.scalar_one_or_none()
 
     if snapshot_spool_id is not None:

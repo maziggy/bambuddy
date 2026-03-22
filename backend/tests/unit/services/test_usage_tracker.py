@@ -570,10 +570,11 @@ class TestSpoolAssignmentSnapshot:
         ams_data = [{"id": 0, "tray": [{"id": 0, "remain": 70}]}]
         pm = _make_printer_manager(_make_printer_state(ams_data))
 
-        # db only returns spool (NO assignment query)
+        # db returns no live assignment, then spool from snapshot spool_id
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
+                MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
             ]
         )
@@ -657,12 +658,14 @@ class TestSpoolAssignmentSnapshot:
 
         filament_usage = [{"slot_id": 1, "used_g": 14.2, "type": "PLA", "color": "#FF0000"}]
 
-        # db: archive, queue_item(None), spool, then cost aggregation queries
+        # db: archive, queue_item(None), live assignment(None), spool,
+        # then cost aggregation queries
         # NOTE: No assignment in db — it was deleted by on_ams_change mid-print!
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
                 MagicMock(scalar_one_or_none=MagicMock(return_value=archive)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
                 # Cost aggregation: sum query (uses .scalar()), archive lookup

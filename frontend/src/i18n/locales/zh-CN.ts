@@ -3798,6 +3798,8 @@ export default {
     bedCooledDescription: '打印后热床温度降至阈值以下',
     firstLayerCompleteLabel: '首层打印完成',
     firstLayerCompleteDescription: '首层完成时发送带照片的通知',
+    missingSpoolAssignmentLabel: '缺少料卷分配',
+    missingSpoolAssignmentDescription: '当打印开始且所需料盘没有分配料卷时发送通知',
     printFailed: '打印失败',
     printStopped: '打印已停止',
     progressMilestones: '进度里程碑',

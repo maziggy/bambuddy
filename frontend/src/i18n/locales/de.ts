@@ -3807,6 +3807,8 @@ export default {
     bedCooledDescription: 'Bett nach dem Druck unter Schwellenwert abgekühlt',
     firstLayerCompleteLabel: 'Erste Schicht fertig',
     firstLayerCompleteDescription: 'Benachrichtigung mit Foto nach erster Schicht',
+    missingSpoolAssignmentLabel: 'Fehlende Spulenzuordnung',
+    missingSpoolAssignmentDescription: 'Benachrichtigen, wenn ein Druck startet und benoetigte Schaechte keine zugeordnete Spule haben',
     printFailed: 'Druck fehlgeschlagen',
     printStopped: 'Druck gestoppt',
     progressMilestones: 'Fortschrittsmeilensteine',

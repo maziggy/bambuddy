@@ -3798,6 +3798,8 @@ export default {
     bedCooledDescription: 'Mesa resfriou abaixo do limite após a impressão',
     firstLayerCompleteLabel: 'Primeira camada concluída',
     firstLayerCompleteDescription: 'Notificar com foto quando a primeira camada terminar',
+    missingSpoolAssignmentLabel: 'Atribuição de bobina ausente',
+    missingSpoolAssignmentDescription: 'Notificar quando a impressão iniciar e bandejas necessárias não tiverem bobina atribuída',
     printFailed: 'Impressão Falhou',
     printStopped: 'Impressão Parada',
     progressMilestones: 'Marcos de Progresso',

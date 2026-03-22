@@ -36,6 +36,9 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
   const [onPrintFailed, setOnPrintFailed] = useState(provider?.on_print_failed ?? true);
   const [onPrintStopped, setOnPrintStopped] = useState(provider?.on_print_stopped ?? true);
   const [onPrintProgress, setOnPrintProgress] = useState(provider?.on_print_progress ?? false);
+  const [onPrintMissingSpoolAssignment, setOnPrintMissingSpoolAssignment] = useState(
+    provider?.on_print_missing_spool_assignment ?? false
+  );
   const [onPrinterOffline, setOnPrinterOffline] = useState(provider?.on_printer_offline ?? false);
   const [onPrinterError, setOnPrinterError] = useState(provider?.on_printer_error ?? false);
   const [onFilamentLow, setOnFilamentLow] = useState(provider?.on_filament_low ?? false);
@@ -137,6 +140,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
       on_print_failed: onPrintFailed,
       on_print_stopped: onPrintStopped,
       on_print_progress: onPrintProgress,
+      on_print_missing_spool_assignment: onPrintMissingSpoolAssignment,
       on_printer_offline: onPrinterOffline,
       on_printer_error: onPrinterError,
       on_filament_low: onFilamentLow,
@@ -501,6 +505,16 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
                     <span className="text-xs text-bambu-gray ml-1">{t('notifications.firstLayerCompleteDescription')}</span>
                   </div>
                   <Toggle checked={onFirstLayerComplete} onChange={setOnFirstLayerComplete} />
+                </div>
+                <div className="flex items-center justify-between col-span-2">
+                  <div>
+                    <span className="text-sm text-white">{t('notifications.missingSpoolAssignmentLabel')}</span>
+                    <span className="text-xs text-bambu-gray ml-1">{t('notifications.missingSpoolAssignmentDescription')}</span>
+                  </div>
+                  <Toggle
+                    checked={onPrintMissingSpoolAssignment}
+                    onChange={setOnPrintMissingSpoolAssignment}
+                  />
                 </div>
               </div>
             </div>

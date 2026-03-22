@@ -3811,6 +3811,8 @@ export default {
     bedCooledDescription: '印刷後にベッドがしきい値以下に冷却',
     firstLayerCompleteLabel: '第1層完了',
     firstLayerCompleteDescription: '第1層完了時にスナップショット付きで通知',
+    missingSpoolAssignmentLabel: 'スプール割り当て不足',
+    missingSpoolAssignmentDescription: '印刷開始時に必要トレイへスプールが未割り当ての場合に通知',
     printFailed: '印刷失敗',
     printStopped: '印刷停止',
     progressMilestones: '進捗マイルストーン',

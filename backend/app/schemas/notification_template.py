@@ -15,6 +15,7 @@ class EventType(StrEnum):
     PRINT_FAILED = "print_failed"
     PRINT_STOPPED = "print_stopped"
     PRINT_PROGRESS = "print_progress"
+    PRINT_MISSING_SPOOL_ASSIGNMENT = "print_missing_spool_assignment"
     PRINTER_OFFLINE = "printer_offline"
     PRINTER_ERROR = "printer_error"
     FILAMENT_LOW = "filament_low"
@@ -62,6 +63,13 @@ EVENT_VARIABLES: dict[str, list[str]] = {
         "app_name",
     ],
     "print_progress": ["printer", "filename", "progress", "remaining_time", "eta", "timestamp", "app_name"],
+    "print_missing_spool_assignment": [
+        "printer",
+        "missing_slots",
+        "missing_slot_details",
+        "timestamp",
+        "app_name",
+    ],
     "printer_offline": ["printer", "timestamp", "app_name"],
     "printer_error": ["printer", "error_type", "error_detail", "timestamp", "app_name"],
     "filament_low": ["printer", "slot", "remaining_percent", "color", "timestamp", "app_name"],
@@ -138,6 +146,13 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "remaining_time": "0h 41m",
         "eta": "15:41",
         "timestamp": "2024-01-15 15:00",
+        "app_name": "Bambuddy",
+    },
+    "print_missing_spool_assignment": {
+        "printer": "Bambu X1C",
+        "missing_slots": "A1, A3",
+        "missing_slot_details": "- A1: PLA Basic\n- A3: PETG HF",
+        "timestamp": "2024-01-15 14:30",
         "app_name": "Bambuddy",
     },
     "printer_offline": {

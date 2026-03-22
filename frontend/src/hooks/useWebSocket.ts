@@ -1,5 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { api, type PrinterStatus } from '../api/client';
+import { formatSlotLabel, getGlobalTrayId } from '../utils/amsHelpers';
 
 interface WebSocketMessage {
   type: string;
@@ -12,6 +14,7 @@ export function useWebSocket() {
   const reconnectTimeoutRef = useRef<number | null>(null);
   const queryClient = useQueryClient();
   const [isConnected, setIsConnected] = useState(false);
+  const lastMissingSpoolWarningRef = useRef<Map<number, string>>(new Map());
 
   // Debounce invalidations to prevent rapid re-render cascades
   const pendingInvalidations = useRef<Set<string>>(new Set());
@@ -180,6 +183,83 @@ export function useWebSocket() {
     }, 3000);
   }, [queryClient]);
 
+  const checkMissingSpoolAssignments = useCallback(async (printerId: number, data?: Record<string, unknown>) => {
+    const mappingRaw = data?.ams_mapping;
+    if (!Array.isArray(mappingRaw) || mappingRaw.length === 0) {
+      return;
+    }
+
+    const usedTrayIds = Array.from(
+      new Set(
+        mappingRaw.filter(
+          (value): value is number =>
+            typeof value === 'number' && Number.isFinite(value) && value >= 0 && value !== 255
+        )
+      )
+    );
+    if (usedTrayIds.length === 0) {
+      return;
+    }
+
+    try {
+      const assignments = await api.getAssignments(printerId);
+      const assignedTrayIds = new Set(
+        assignments.map((assignment) =>
+          getGlobalTrayId(
+            assignment.ams_id,
+            assignment.tray_id,
+            assignment.ams_id === 254 || assignment.ams_id === 255
+          )
+        )
+      );
+
+      const missingTrayIds = usedTrayIds.filter((trayId) => !assignedTrayIds.has(trayId));
+      if (missingTrayIds.length === 0) {
+        lastMissingSpoolWarningRef.current.delete(printerId);
+        return;
+      }
+
+      const printerStatus = queryClient.getQueryData<PrinterStatus>(['printerStatus', printerId]);
+      const slotLabels = new Map<number, string>();
+
+      printerStatus?.ams?.forEach((amsUnit) => {
+        const isHt = amsUnit.tray.length === 1;
+        amsUnit.tray.forEach((tray) => {
+          const globalTrayId = getGlobalTrayId(amsUnit.id, tray.id, false);
+          slotLabels.set(globalTrayId, formatSlotLabel(amsUnit.id, tray.id, isHt, false));
+        });
+      });
+
+      printerStatus?.vt_tray?.forEach((tray) => {
+        const globalTrayId = tray.id;
+        const externalLabel = globalTrayId === 255 ? 'Ext-R' : 'Ext-L';
+        slotLabels.set(globalTrayId, externalLabel);
+      });
+
+      const missingSlotLabels = missingTrayIds
+        .sort((a, b) => a - b)
+        .map((trayId) => slotLabels.get(trayId) ?? `Tray ${trayId}`);
+      const signature = missingSlotLabels.join('|');
+
+      if (lastMissingSpoolWarningRef.current.get(printerId) === signature) {
+        return;
+      }
+      lastMissingSpoolWarningRef.current.set(printerId, signature);
+
+      window.dispatchEvent(
+        new CustomEvent('missing-spool-assignment', {
+          detail: {
+            printer_id: printerId,
+            printer_name: printerStatus?.name,
+            missing_slots: missingSlotLabels,
+          },
+        })
+      );
+    } catch {
+      // Ignore assignment lookup failures to avoid impacting websocket processing.
+    }
+  }, [queryClient]);
+
   const handleMessage = useCallback((message: WebSocketMessage) => {
     switch (message.type) {
       case 'printer_status':
@@ -192,6 +272,7 @@ export function useWebSocket() {
         // Refetch printer status immediately when print starts to get printable_objects_count
         if (message.printer_id !== undefined) {
           queryClient.invalidateQueries({ queryKey: ['printerStatus', message.printer_id] });
+          void checkMissingSpoolAssignments(message.printer_id, message.data);
         }
         break;
 
@@ -293,7 +374,7 @@ export function useWebSocket() {
         window.dispatchEvent(new CustomEvent('spoolbuddy-offline', { detail: message }));
         break;
     }
-  }, [queryClient, debouncedInvalidate, throttledPrinterStatusUpdate]);
+  }, [queryClient, checkMissingSpoolAssignments, debouncedInvalidate, throttledPrinterStatusUpdate]);
 
   // Keep the ref updated with latest handleMessage
   useEffect(() => {

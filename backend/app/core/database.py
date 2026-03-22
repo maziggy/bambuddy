@@ -254,6 +254,14 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already applied
 
+    # Migration: Add missing-spool-assignment print-start notification toggle
+    try:
+        await conn.execute(
+            text("ALTER TABLE notification_providers ADD COLUMN on_print_missing_spool_assignment BOOLEAN DEFAULT 0")
+        )
+    except OperationalError:
+        pass  # Already applied
+
     # Migration: Add project_id column to print_archives
     try:
         await conn.execute(

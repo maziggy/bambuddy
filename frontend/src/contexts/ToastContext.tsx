@@ -460,6 +460,28 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('background-dispatch', onDispatchEvent);
   }, [t]);
 
+  useEffect(() => {
+    interface MissingSpoolAssignmentDetail {
+      printer_id?: number;
+      printer_name?: string;
+      missing_slots?: string[];
+    }
+
+    const onMissingSpoolAssignment = (event: Event) => {
+      const detail = (event as CustomEvent<MissingSpoolAssignmentDetail>).detail;
+      if (!detail?.printer_id || !detail.missing_slots || detail.missing_slots.length === 0) {
+        return;
+      }
+
+      const printerName = detail.printer_name || `Printer ${detail.printer_id}`;
+      const message = `Print started on ${printerName}. Missing spool assignment for: ${detail.missing_slots.join(', ')}`;
+      showPersistentToast(`missing-spool-assignment-${detail.printer_id}`, message, 'warning');
+    };
+
+    window.addEventListener('missing-spool-assignment', onMissingSpoolAssignment);
+    return () => window.removeEventListener('missing-spool-assignment', onMissingSpoolAssignment);
+  }, [showPersistentToast]);
+
   return (
     <ToastContext.Provider value={{ showToast, showPersistentToast, dismissToast }}>
       {children}

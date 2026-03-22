@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 import { spoolbuddyApi, type SpoolBuddyDevice, type DaemonUpdateCheck } from '../../api/client';
 import { DiagnosticModal } from '../../components/spoolbuddy/DiagnosticModal';
-import { Wand2, Zap } from 'lucide-react';
+import { FileText, Wand2, Zap } from 'lucide-react';
 function formatUptime(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
@@ -38,7 +38,7 @@ const BLANK_OPTIONS = [
 
 function DeviceTab({ device }: { device: SpoolBuddyDevice }) {
   const { t } = useTranslation();
-  const [diagnosticOpen, setDiagnosticOpen] = useState<'nfc' | 'scale' | null>(null);
+  const [diagnosticOpen, setDiagnosticOpen] = useState<'nfc' | 'scale' | 'read_tag' | null>(null);
 
   return (
     <div className="space-y-4">
@@ -159,6 +159,22 @@ function DeviceTab({ device }: { device: SpoolBuddyDevice }) {
           </div>
           <p className="text-xs text-yellow-200/70">
             {t('spoolbuddy.settings.testScale', 'Test accuracy')}
+          </p>
+        </button>
+
+        {/* Read Tag Diagnostic Button */}
+        <button
+          onClick={() => setDiagnosticOpen('read_tag')}
+          className="bg-emerald-700 hover:bg-emerald-600 transition-colors rounded-lg p-3 text-left"
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <FileText className="w-4 h-4 text-emerald-300" />
+            <span className="text-sm font-semibold text-emerald-100">
+              {t('spoolbuddy.settings.readTagDiagnostic', 'Read Tag Diagnostic')}
+            </span>
+          </div>
+          <p className="text-xs text-emerald-200/70">
+            {t('spoolbuddy.settings.testReadTag', 'Run read_tag.py')}
           </p>
         </button>
       </div>

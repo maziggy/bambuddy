@@ -148,7 +148,7 @@ class DisplaySettingsRequest(BaseModel):
 
 
 class DiagnosticResultRequest(BaseModel):
-    diagnostic: str  # 'nfc' or 'scale'
+    diagnostic: str  # 'nfc', 'scale', or 'read_tag'
     success: bool
     output: str
     exit_code: int

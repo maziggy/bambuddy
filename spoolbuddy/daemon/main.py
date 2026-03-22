@@ -279,12 +279,19 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
                     logger.warning("Tare command received but scale not available")
                 # Skip calibration sync — this heartbeat response predates the tare
                 continue
-            elif cmd in ("run_nfc_diag", "run_scale_diag"):
-                diagnostic = "nfc" if cmd == "run_nfc_diag" else "scale"
-                script_name = "read_tag.py" if diagnostic == "nfc" else "scale_diag.py"
+            elif cmd in ("run_nfc_diag", "run_scale_diag", "run_read_tag_diag"):
+                if cmd == "run_scale_diag":
+                    diagnostic = "scale"
+                    script_name = "scale_diag.py"
+                elif cmd == "run_read_tag_diag":
+                    diagnostic = "read_tag"
+                    script_name = "read_tag.py"
+                else:
+                    diagnostic = "nfc"
+                    script_name = "read_tag.py"
                 script_path = Path(__file__).resolve().parent.parent / "scripts" / script_name
 
-                if diagnostic == "nfc":
+                if diagnostic in ("nfc", "read_tag"):
                     logger.info("Pausing NFC continuous scan for diagnostic")
                     shared["nfc_scan_paused"] = True
                     nfc_for_diag = shared.get("nfc")
@@ -326,7 +333,7 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
                         -1,
                     )
                 finally:
-                    if diagnostic == "nfc":
+                    if diagnostic in ("nfc", "read_tag"):
                         logger.info("Reinitializing NFC continuous scan after diagnostic")
                         shared["nfc"] = NFCReader()
                         shared["nfc_scan_paused"] = False

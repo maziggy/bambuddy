@@ -4,7 +4,7 @@ import { spoolbuddyApi } from '../../api/client';
 import { useTranslation } from 'react-i18next';
 
 interface DiagnosticModalProps {
-  type: 'scale' | 'nfc';
+  type: 'scale' | 'nfc' | 'read_tag';
   deviceId: string;
   onClose: () => void;
 }
@@ -78,7 +78,9 @@ export function DiagnosticModal({ type, deviceId, onClose }: DiagnosticModalProp
 
   const title = type === 'scale'
     ? t('spoolbuddy.diagnostic.scaleTitle', 'Scale Diagnostic')
-    : t('spoolbuddy.diagnostic.nfcTitle', 'NFC Reader Diagnostic');
+    : type === 'read_tag'
+      ? t('spoolbuddy.diagnostic.readTagTitle', 'Read Tag Diagnostic')
+      : t('spoolbuddy.diagnostic.nfcTitle', 'NFC Reader Diagnostic');
 
   return (
     <div

@@ -612,8 +612,8 @@ async def queue_diagnostic(
     Returns:
         Status message indicating diagnostic was queued
     """
-    if diagnostic not in ("scale", "nfc"):
-        raise HTTPException(status_code=400, detail="Unknown diagnostic. Must be 'scale' or 'nfc'")
+    if diagnostic not in ("scale", "nfc", "read_tag"):
+        raise HTTPException(status_code=400, detail="Unknown diagnostic. Must be 'scale', 'nfc', or 'read_tag'")
 
     result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
     device = result.scalar_one_or_none()
@@ -644,8 +644,8 @@ async def get_diagnostic_result(
     Returns:
         Diagnostic result or 404 if not found
     """
-    if diagnostic not in ("scale", "nfc"):
-        raise HTTPException(status_code=400, detail="Unknown diagnostic. Must be 'scale' or 'nfc'")
+    if diagnostic not in ("scale", "nfc", "read_tag"):
+        raise HTTPException(status_code=400, detail="Unknown diagnostic. Must be 'scale', 'nfc', or 'read_tag'")
 
     result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
     device = result.scalar_one_or_none()
@@ -671,8 +671,8 @@ async def report_diagnostic_result(
     if not device:
         raise HTTPException(status_code=404, detail="Device not registered")
 
-    if req.diagnostic not in ("nfc", "scale"):
-        raise HTTPException(status_code=400, detail="Unknown diagnostic. Must be 'scale' or 'nfc'")
+    if req.diagnostic not in ("nfc", "scale", "read_tag"):
+        raise HTTPException(status_code=400, detail="Unknown diagnostic. Must be 'scale', 'nfc', or 'read_tag'")
 
     _diagnostic_results[(device_id, req.diagnostic)] = {
         "diagnostic": req.diagnostic,

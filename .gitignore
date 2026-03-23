@@ -64,6 +64,9 @@ data/
 # JWT secret file (should be in data dir, but protect project root too)
 .jwt_secret
 
+# SpoolBuddy SSH keys (generated at runtime for remote updates)
+spoolbuddy/ssh/
+
 # Security scan output
 *.sarif
 

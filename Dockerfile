@@ -25,6 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     iproute2 \
     libcap2-bin \
+    openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Allow binding to privileged ports (e.g. 990/FTPS) as non-root user.

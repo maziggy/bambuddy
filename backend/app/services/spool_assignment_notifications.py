@@ -29,10 +29,10 @@ def _slot_label_from_global_tray(global_tray_id: int) -> str:
     return f"{chr(65 + ams_id)}{tray_id + 1}"
 
 
-def _tray_profile_for_global_id(state: PrinterState | None, global_tray_id: int) -> str:
-    """Resolve expected tray material/profile for a global tray ID from current printer state."""
+def tray_profile_and_color_for_global_id(state: PrinterState | None, global_tray_id: int) -> tuple[str, str]:
+    """Resolve expected tray material/profile and color for a global tray ID from current printer state."""
     if not state or not state.raw_data:
-        return "Unknown"
+        return ("Unknown", "Unknown")
 
     ams_raw = state.raw_data.get("ams", {})
     ams_units = ams_raw.get("ams", []) if isinstance(ams_raw, dict) else ams_raw if isinstance(ams_raw, list) else []
@@ -45,7 +45,9 @@ def _tray_profile_for_global_id(state: PrinterState | None, global_tray_id: int)
         if not isinstance(tray, dict):
             continue
         if int(tray.get("id", -1)) == global_tray_id:
-            return tray.get("tray_sub_brands") or tray.get("tray_type") or "Unknown"
+            profile = tray.get("tray_sub_brands") or tray.get("tray_type") or "Unknown"
+            color = tray.get("tray_color") or "Unknown"
+            return (profile, color)
 
     for ams in ams_units:
         if not isinstance(ams, dict):
@@ -60,45 +62,11 @@ def _tray_profile_for_global_id(state: PrinterState | None, global_tray_id: int)
             tray_id = int(tray.get("id", -1))
             candidate = ams_id if ams_id >= 128 else (ams_id * 4 + tray_id)
             if candidate == global_tray_id:
-                return tray.get("tray_sub_brands") or tray.get("tray_type") or "Unknown"
+                profile = tray.get("tray_sub_brands") or tray.get("tray_type") or "Unknown"
+                color = tray.get("tray_color") or "Unknown"
+                return (profile, color)
 
-    return "Unknown"
-
-
-def _tray_color_for_global_id(state: PrinterState | None, global_tray_id: int) -> str:
-    """Resolve expected tray color for a global tray ID from current printer state."""
-    if not state or not state.raw_data:
-        return "Unknown"
-
-    ams_raw = state.raw_data.get("ams", {})
-    ams_units = ams_raw.get("ams", []) if isinstance(ams_raw, dict) else ams_raw if isinstance(ams_raw, list) else []
-
-    vt_trays = state.raw_data.get("vt_tray", [])
-    if not isinstance(vt_trays, list):
-        vt_trays = []
-
-    for tray in vt_trays:
-        if not isinstance(tray, dict):
-            continue
-        if int(tray.get("id", -1)) == global_tray_id:
-            return tray.get("tray_color") or "Unknown"
-
-    for ams in ams_units:
-        if not isinstance(ams, dict):
-            continue
-        ams_id = int(ams.get("id", -1))
-        trays = ams.get("tray", [])
-        if not isinstance(trays, list):
-            continue
-        for tray in trays:
-            if not isinstance(tray, dict):
-                continue
-            tray_id = int(tray.get("id", -1))
-            candidate = ams_id if ams_id >= 128 else (ams_id * 4 + tray_id)
-            if candidate == global_tray_id:
-                return tray.get("tray_color") or "Unknown"
-
-    return "Unknown"
+    return ("Unknown", "Unknown")
 
 
 def _decode_mqtt_mapping_to_global_trays(mapping_raw: object) -> list[int]:
@@ -180,8 +148,13 @@ async def notify_missing_spool_assignments_on_print_start(
                 missing_slots.append(
                     {
                         "slot": _slot_label_from_global_tray(global_id),
-                        "profile": _tray_profile_for_global_id(state, global_id),
-                        "color": _tray_color_for_global_id(state, global_id),
+                        **dict(
+                            zip(
+                                ["profile", "color"],
+                                tray_profile_and_color_for_global_id(state, global_id),
+                                strict=False,
+                            )
+                        ),
                     }
                 )
 

@@ -222,21 +222,19 @@ async def test_get_spool_by_tag_first_char_variance_same_length(db_session):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Pending reliable short-UID LIKE coverage across fixtures")
 async def test_get_spool_by_tag_first_char_variance_short_uid(db_session):
     """Match spool when 8-char scanned tag differs only in first character.
 
     Handles short UID (8 char) from 4-byte readers with first-char variance.
     """
-    # Skip this test - it requires LIKE patterns to work consistently across test fixtures
-    # The core matching logic is validated by same_length test
     pass
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Pending reliable exact-vs-variance short-UID fixture setup")
 async def test_get_spool_by_tag_short_uid_exact_match_preferred(db_session):
     """Prefer exact match over first-char variance match."""
-    # Skip this test - it requires LIKE patterns to work consistently across test fixtures
-    # The priority logic of exact match is unchanged and validated  previously
     pass
 
 

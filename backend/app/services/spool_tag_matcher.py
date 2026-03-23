@@ -8,35 +8,16 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
+from backend.app.utils.tag_normalization import (
+    normalize_tag_uid as _normalize_tag_uid,
+    normalize_tray_uuid as _normalize_tray_uuid,
+)
 
 logger = logging.getLogger(__name__)
 
 # Zero-value constants for tag validation
 ZERO_TAG_UID = "0000000000000000"
 ZERO_TRAY_UUID = "00000000000000000000000000000000"
-
-
-def _normalize_hex(value: str | None) -> str:
-    if not value:
-        return ""
-    hex_chars = "".join(ch for ch in str(value).strip() if ch in "0123456789abcdefABCDEF")
-    return hex_chars.upper()
-
-
-def _normalize_tag_uid(value: str | None) -> str:
-    uid = _normalize_hex(value)
-    # DB column is VARCHAR(16), so keep the least-significant bytes if longer.
-    if len(uid) > 16:
-        uid = uid[-16:]
-    return uid
-
-
-def _normalize_tray_uuid(value: str | None) -> str:
-    uuid = _normalize_hex(value)
-    # DB column is VARCHAR(32). Keep canonical 32-char UUID when possible.
-    if len(uuid) >= 32:
-        uuid = uuid[:32]
-    return uuid
 
 
 def is_valid_tag(tag_uid: str, tray_uuid: str) -> bool:

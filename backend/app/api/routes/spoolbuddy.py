@@ -1,7 +1,7 @@
 """SpoolBuddy device management API routes."""
 
-import json
 import asyncio
+import json
 import logging
 import time
 from datetime import datetime, timedelta, timezone
@@ -623,6 +623,14 @@ async def update_display_settings(
     device.display_brightness = req.brightness
     device.display_blank_timeout = req.blank_timeout
     await db.commit()
+
+    logger.info(
+        "SpoolBuddy %s display updated: brightness=%d%%, blank_timeout=%ds",
+        device_id,
+        req.brightness,
+        req.blank_timeout,
+    )
+    return {"status": "ok", "brightness": req.brightness, "blank_timeout": req.blank_timeout}
 
 
 @router.post("/devices/{device_id}/system/config")

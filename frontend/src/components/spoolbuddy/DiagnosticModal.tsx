@@ -127,7 +127,7 @@ export function DiagnosticModal({ type, deviceId, onClose }: DiagnosticModalProp
               Click "Run Diagnostic" to start the hardware diagnostic on {deviceId}.
             </div>
           )}
-          {error && (
+          {error && !(hasRun && !output) && (
             <div className="text-red-400 mt-2">
               ❌ {error}
             </div>

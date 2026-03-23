@@ -32,6 +32,7 @@ from backend.app.schemas.spool import (
 )
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
 from backend.app.utils.filament_ids import filament_id_to_setting_id, normalize_slicer_filament
+from backend.app.utils.tag_normalization import normalize_tag_uid, normalize_tray_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -1137,30 +1138,6 @@ class LinkTagRequest(BaseModel):
     data_origin: str | None = "nfc_link"
 
 
-def _normalize_hex(value: str | None) -> str:
-    if not value:
-        return ""
-    return "".join(ch for ch in str(value).strip() if ch in "0123456789abcdefABCDEF").upper()
-
-
-def _normalize_tag_uid(value: str | None) -> str | None:
-    uid = _normalize_hex(value)
-    if not uid:
-        return None
-    if len(uid) > 16:
-        uid = uid[-16:]
-    return uid
-
-
-def _normalize_tray_uuid(value: str | None) -> str | None:
-    uuid = _normalize_hex(value)
-    if not uuid:
-        return None
-    if len(uuid) >= 32:
-        uuid = uuid[:32]
-    return uuid
-
-
 def _validate_tag_input(
     raw_value: str | None, normalized_value: str | None, field_name: str, exact_len: int | None = None
 ) -> None:
@@ -1192,8 +1169,8 @@ async def link_tag_to_spool(
     if spool.archived_at:
         raise HTTPException(400, "Cannot link tag to archived spool")
 
-    normalized_tag_uid = _normalize_tag_uid(data.tag_uid) if data.tag_uid is not None else None
-    normalized_tray_uuid = _normalize_tray_uuid(data.tray_uuid) if data.tray_uuid is not None else None
+    normalized_tag_uid = (normalize_tag_uid(data.tag_uid) or None) if data.tag_uid is not None else None
+    normalized_tray_uuid = (normalize_tray_uuid(data.tray_uuid) or None) if data.tray_uuid is not None else None
 
     _validate_tag_input(data.tag_uid, normalized_tag_uid, "tag_uid")
     _validate_tag_input(data.tray_uuid, normalized_tray_uuid, "tray_uuid", exact_len=32)

@@ -151,7 +151,7 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
     "print_missing_spool_assignment": {
         "printer": "Bambu X1C",
         "missing_slots": "A1, A3",
-        "missing_slot_details": "- A1: PLA Basic | Color: #FFFFFF\n- A3: PETG HF | Color: #2E7D32",
+        "missing_slot_details": "- A1: PLA Basic\n- A3: PETG HF",
         "timestamp": "2024-01-15 14:30",
         "app_name": "Bambuddy",
     },

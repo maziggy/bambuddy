@@ -4995,7 +4995,6 @@ export interface DaemonUpdateCheck {
   current_version: string;
   latest_version: string | null;
   update_available: boolean;
-  release_url: string | null;
 }
 
 // SpoolBuddy API
@@ -5030,14 +5029,17 @@ export const spoolbuddyApi = {
       body: JSON.stringify({ brightness, blank_timeout: blankTimeout }),
     }),
 
-  checkDaemonUpdate: (deviceId: string, includeBeta?: boolean) =>
-    request<DaemonUpdateCheck>(`/spoolbuddy/devices/${deviceId}/update-check?include_beta=${includeBeta ?? false}`),
+  checkDaemonUpdate: (deviceId: string) =>
+    request<DaemonUpdateCheck>(`/spoolbuddy/devices/${deviceId}/update-check`),
 
   triggerUpdate: (deviceId: string) =>
     request<{ status: string; message: string }>(`/spoolbuddy/devices/${deviceId}/update`, {
       method: 'POST',
       body: '{}',
     }),
+
+  getSSHPublicKey: () =>
+    request<{ public_key: string }>('/spoolbuddy/ssh/public-key'),
 
   writeTag: (deviceId: string, spoolId: number) =>
     request<{ status: string }>('/spoolbuddy/nfc/write-tag', {

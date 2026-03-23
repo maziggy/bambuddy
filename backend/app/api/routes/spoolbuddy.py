@@ -1,5 +1,6 @@
 """SpoolBuddy device management API routes."""
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -100,6 +101,10 @@ async def register_device(
         device.nfc_connection = req.nfc_connection
         device.has_backlight = req.has_backlight
         device.last_seen = now
+        # Clear stale update status on re-registration (daemon restarted after update)
+        if device.update_status in ("complete", "error"):
+            device.update_status = None
+            device.update_message = None
         logger.info("SpoolBuddy device re-registered: %s (%s)", req.device_id, req.hostname)
     else:
         device = SpoolBuddyDevice(
@@ -130,7 +135,17 @@ async def register_device(
         }
     )
 
-    return _device_to_response(device)
+    response = _device_to_response(device)
+
+    # Include SSH public key so the daemon can auto-deploy it
+    try:
+        from backend.app.services.spoolbuddy_ssh import get_public_key
+
+        response.ssh_public_key = await get_public_key()
+    except Exception:
+        pass  # Key not generated yet — daemon can still work without it
+
+    return response
 
 
 @router.get("/devices", response_model=list[DeviceResponse])
@@ -573,15 +588,12 @@ async def update_display_settings(
 @router.get("/devices/{device_id}/update-check")
 async def check_daemon_update(
     device_id: str,
-    include_beta: bool = False,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ):
-    """Check if a newer daemon version is available on GitHub."""
-    import httpx
-
-    from backend.app.api.routes.updates import is_newer_version, parse_version
-    from backend.app.core.config import GITHUB_REPO
+    """Check if the SpoolBuddy daemon needs updating to match the Bambuddy backend version."""
+    from backend.app.api.routes.updates import is_newer_version
+    from backend.app.core.config import APP_VERSION
 
     result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
     device = result.scalar_one_or_none()
@@ -590,61 +602,27 @@ async def check_daemon_update(
 
     current = device.firmware_version or "0.0.0"
 
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page=20",
-                headers={"Accept": "application/vnd.github.v3+json"},
-                timeout=10.0,
-            )
-            response.raise_for_status()
-            releases = response.json()
-
-            release_data = None
-            for release in releases:
-                tag = release.get("tag_name", "")
-                if include_beta:
-                    release_data = release
-                    break
-                else:
-                    parsed = parse_version(tag)
-                    if parsed[4] == 0:  # is_prerelease == 0
-                        release_data = release
-                        break
-
-            if not release_data:
-                return {
-                    "current_version": current,
-                    "latest_version": None,
-                    "update_available": False,
-                    "release_url": None,
-                }
-
-            latest = release_data.get("tag_name", "").lstrip("v")
-            return {
-                "current_version": current,
-                "latest_version": latest,
-                "update_available": is_newer_version(latest, current),
-                "release_url": release_data.get("html_url"),
-            }
-    except Exception as e:
-        logger.warning("Failed to check for daemon updates: %s", e)
-        return {
-            "current_version": current,
-            "latest_version": None,
-            "update_available": False,
-            "release_url": None,
-            "error": str(e),
-        }
+    return {
+        "current_version": current,
+        "latest_version": APP_VERSION,
+        "update_available": is_newer_version(APP_VERSION, current),
+    }
 
 
 @router.post("/devices/{device_id}/update")
 async def trigger_daemon_update(
     device_id: str,
+    req: dict | None = None,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
-    """Trigger a daemon update on the SpoolBuddy device via pending_command."""
+    """Trigger a SpoolBuddy update over SSH.
+
+    Bambuddy SSHes into the device, pulls the matching branch, installs deps,
+    and restarts the daemon. Progress is broadcast via WebSocket.
+    """
+    from backend.app.services.spoolbuddy_ssh import perform_ssh_update
+
     result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
     device = result.scalar_one_or_none()
     if not device:
@@ -656,12 +634,11 @@ async def trigger_daemon_update(
     if device.update_status == "updating":
         return {"status": "already_updating", "message": "Update already in progress"}
 
-    device.pending_command = "update"
     device.update_status = "pending"
-    device.update_message = "Waiting for device to pick up update command..."
+    device.update_message = "Starting SSH update..."
     await db.commit()
 
-    logger.info("SpoolBuddy %s: update command queued", device_id)
+    logger.info("SpoolBuddy %s: SSH update triggered (ip=%s)", device_id, device.ip_address)
     await ws_manager.broadcast(
         {
             "type": "spoolbuddy_update",
@@ -670,7 +647,24 @@ async def trigger_daemon_update(
         }
     )
 
-    return {"status": "ok", "message": "Update command sent to device"}
+    # Run the SSH update in the background
+    asyncio.create_task(perform_ssh_update(device_id, device.ip_address))
+
+    return {"status": "ok", "message": "SSH update started"}
+
+
+@router.get("/ssh/public-key")
+async def get_ssh_public_key(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+):
+    """Return the SSH public key for SpoolBuddy pairing."""
+    from backend.app.services.spoolbuddy_ssh import get_public_key
+
+    try:
+        key = await get_public_key()
+        return {"public_key": key}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get SSH key: {e}") from e
 
 
 @router.post("/devices/{device_id}/update-status")

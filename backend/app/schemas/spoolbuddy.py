@@ -43,6 +43,7 @@ class DeviceResponse(BaseModel):
     update_status: str | None = None
     update_message: str | None = None
     online: bool = False
+    ssh_public_key: str | None = None
     created_at: datetime
     updated_at: datetime
 

@@ -66,7 +66,7 @@ export function SpoolBuddyLayout() {
   // Auto-check for SpoolBuddy daemon updates
   const { data: updateCheck } = useQuery({
     queryKey: ['spoolbuddy-update-check', device?.device_id],
-    queryFn: () => device ? spoolbuddyApi.checkDaemonUpdate(device.device_id, true) : Promise.resolve(null),
+    queryFn: () => device ? spoolbuddyApi.checkDaemonUpdate(device.device_id) : Promise.resolve(null),
     enabled: !!device,
     refetchInterval: 5 * 60 * 1000, // re-check every 5 minutes
     staleTime: 4 * 60 * 1000,

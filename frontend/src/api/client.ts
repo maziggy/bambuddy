@@ -4993,7 +4993,6 @@ export interface DaemonUpdateCheck {
   current_version: string;
   latest_version: string | null;
   update_available: boolean;
-  release_url: string | null;
 }
 
 // SpoolBuddy API
@@ -5034,8 +5033,8 @@ export const spoolbuddyApi = {
       body: JSON.stringify({ backend_url: backendUrl, ...(apiKey ? { api_key: apiKey } : {}) }),
     }),
 
-  checkDaemonUpdate: (deviceId: string, includeBeta?: boolean) =>
-    request<DaemonUpdateCheck>(`/spoolbuddy/devices/${deviceId}/update-check?include_beta=${includeBeta ?? false}`),
+  checkDaemonUpdate: (deviceId: string) =>
+    request<DaemonUpdateCheck>(`/spoolbuddy/devices/${deviceId}/update-check`),
 
   triggerUpdate: (deviceId: string) =>
     request<{ status: string; message: string }>(`/spoolbuddy/devices/${deviceId}/update`, {

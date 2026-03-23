@@ -654,7 +654,7 @@ function UpdatesTab({ device }: { device: SpoolBuddyDevice }) {
 
   const { data: updateResult, isLoading: checking, refetch } = useQuery({
     queryKey: ['spoolbuddy-update-check', device.device_id],
-    queryFn: () => spoolbuddyApi.checkDaemonUpdate(device.device_id, true),
+    queryFn: () => spoolbuddyApi.checkDaemonUpdate(device.device_id),
     staleTime: 4 * 60 * 1000,
   });
 

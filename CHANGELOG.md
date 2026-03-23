@@ -17,6 +17,8 @@ All notable changes to Bambuddy will be documented in this file.
 ### Security
 
 ### Fixed
+- **SpoolBuddy Update Check Always Shows "Up to Date"** — The SpoolBuddy daemon update check compared the device's firmware version against GitHub releases instead of the running Bambuddy backend version. This meant the check could incorrectly report "up to date" even when the daemon was behind. Fixed by comparing directly against `APP_VERSION` from the backend config.
+- **Virtual Printer Proxy A1 Printing Fails** ([#757](https://github.com/maziggy/bambuddy/issues/757)) — BambuStudio could not send prints to A1 (and potentially P1S) virtual printers in proxy mode. The slicer connects to undocumented proprietary ports 2024-2026 on these models, which the proxy was not forwarding, causing BambuStudio to show an access code dialog instead of printing. Added transparent TCP pass-through proxying for ports 2024-2026. These ports are silently ignored on models that don't use them (X1C, H2C, P2S). Reported by @Utility9298.
 - **Spool Assignment on Empty AMS Slots** ([#784](https://github.com/maziggy/bambuddy/issues/784)) — Empty AMS slots (no physical spool detected) showed "Assign Spool" and "Configure" buttons in the hover popup. Assigning a spool to an empty slot created a stuck state because no "Unassign" button is available for empty slots. Removed both buttons from empty AMS and HT AMS slot popups. External spool holders are unaffected. Reported by @RosdasHH.
 
 ## [0.2.2.1] - 2026-03-22

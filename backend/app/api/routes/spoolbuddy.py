@@ -783,15 +783,12 @@ async def report_diagnostic_result(
 @router.get("/devices/{device_id}/update-check")
 async def check_daemon_update(
     device_id: str,
-    include_beta: bool = False,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ):
-    """Check if a newer daemon version is available on GitHub."""
-    import httpx
-
-    from backend.app.api.routes.updates import is_newer_version, parse_version
-    from backend.app.core.config import GITHUB_REPO
+    """Check if the SpoolBuddy daemon needs updating to match the Bambuddy backend version."""
+    from backend.app.api.routes.updates import is_newer_version
+    from backend.app.core.config import APP_VERSION
 
     result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
     device = result.scalar_one_or_none()
@@ -800,52 +797,11 @@ async def check_daemon_update(
 
     current = device.firmware_version or "0.0.0"
 
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page=20",
-                headers={"Accept": "application/vnd.github.v3+json"},
-                timeout=10.0,
-            )
-            response.raise_for_status()
-            releases = response.json()
-
-            release_data = None
-            for release in releases:
-                tag = release.get("tag_name", "")
-                if include_beta:
-                    release_data = release
-                    break
-                else:
-                    parsed = parse_version(tag)
-                    if parsed[4] == 0:  # is_prerelease == 0
-                        release_data = release
-                        break
-
-            if not release_data:
-                return {
-                    "current_version": current,
-                    "latest_version": None,
-                    "update_available": False,
-                    "release_url": None,
-                }
-
-            latest = release_data.get("tag_name", "").lstrip("v")
-            return {
-                "current_version": current,
-                "latest_version": latest,
-                "update_available": is_newer_version(latest, current),
-                "release_url": release_data.get("html_url"),
-            }
-    except Exception as e:
-        logger.warning("Failed to check for daemon updates: %s", e)
-        return {
-            "current_version": current,
-            "latest_version": None,
-            "update_available": False,
-            "release_url": None,
-            "error": str(e),
-        }
+    return {
+        "current_version": current,
+        "latest_version": APP_VERSION,
+        "update_available": is_newer_version(APP_VERSION, current),
+    }
 
 
 @router.post("/devices/{device_id}/update")

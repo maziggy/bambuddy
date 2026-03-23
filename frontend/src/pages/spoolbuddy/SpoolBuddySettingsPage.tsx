@@ -506,10 +506,23 @@ function UpdatesTab({ device }: { device: SpoolBuddyDevice }) {
   const [error, setError] = useState<string | null>(null);
   const [sshExpanded, setSSHExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [manualChecking, setManualChecking] = useState(false);
+  const wasUpdatingRef = useRef(false);
 
   const isUpdating = device.update_status === 'pending' || device.update_status === 'updating';
 
-  const { data: updateResult, isFetching: checking, refetch } = useQuery({
+  // Track when an update was in progress so we can reload when device comes back
+  useEffect(() => {
+    if (isUpdating) {
+      wasUpdatingRef.current = true;
+    } else if (wasUpdatingRef.current && device.update_status == null) {
+      // Status cleared = daemon re-registered after update. Reload for fresh state.
+      wasUpdatingRef.current = false;
+      window.location.reload();
+    }
+  }, [isUpdating, device.update_status]);
+
+  const { data: updateResult, refetch } = useQuery({
     queryKey: ['spoolbuddy-update-check', device.device_id],
     queryFn: () => spoolbuddyApi.checkDaemonUpdate(device.device_id),
     staleTime: 30 * 1000,
@@ -521,6 +534,15 @@ function UpdatesTab({ device }: { device: SpoolBuddyDevice }) {
     enabled: sshExpanded,
     staleTime: Infinity,
   });
+
+  const checkForUpdates = async () => {
+    setManualChecking(true);
+    try {
+      await refetch();
+    } finally {
+      setManualChecking(false);
+    }
+  };
 
   const applyUpdate = async () => {
     setApplying(true);
@@ -606,11 +628,11 @@ function UpdatesTab({ device }: { device: SpoolBuddyDevice }) {
           /* Up to date → Check + Force buttons side by side */
           <div className="flex gap-2">
             <button
-              onClick={() => refetch()}
-              disabled={checking || applying}
+              onClick={checkForUpdates}
+              disabled={manualChecking || applying}
               className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-zinc-700 text-zinc-300 hover:bg-zinc-600 disabled:opacity-40 transition-colors flex items-center justify-center gap-1"
             >
-              {checking && (
+              {manualChecking && (
                 <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -635,11 +657,11 @@ function UpdatesTab({ device }: { device: SpoolBuddyDevice }) {
         ) : !isUpdating ? (
           /* No result yet → Check button */
           <button
-            onClick={() => refetch()}
-            disabled={checking}
+            onClick={checkForUpdates}
+            disabled={manualChecking}
             className="w-full px-3 py-2 rounded-lg text-sm font-medium bg-zinc-700 text-zinc-200 hover:bg-zinc-600 disabled:opacity-40 transition-colors flex items-center justify-center gap-2"
           >
-            {checking && (
+            {manualChecking && (
               <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />

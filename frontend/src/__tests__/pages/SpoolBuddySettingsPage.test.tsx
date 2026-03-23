@@ -50,6 +50,7 @@ vi.mock('../../api/client', () => ({
       update_available: false,
     }),
     triggerUpdate: vi.fn().mockResolvedValue({ status: 'ok', message: '' }),
+    getSSHPublicKey: vi.fn().mockResolvedValue({ public_key: 'ssh-ed25519 AAAA test-key' }),
   },
 }));
 
@@ -137,7 +138,7 @@ describe('SpoolBuddySettingsPage', () => {
     });
   });
 
-  it('switching to Updates tab shows Check for Updates button', async () => {
+  it('switching to Updates tab shows Check for Updates and Force Update buttons', async () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByText('Updates')).toBeDefined();
@@ -145,6 +146,46 @@ describe('SpoolBuddySettingsPage', () => {
     fireEvent.click(screen.getByText('Updates'));
     await waitFor(() => {
       expect(screen.getByText('Check for Updates')).toBeDefined();
+      expect(screen.getByText('Force Update')).toBeDefined();
+    });
+  });
+
+  it('Updates tab shows current version', async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('Updates')).toBeDefined();
+    });
+    fireEvent.click(screen.getByText('Updates'));
+    await waitFor(() => {
+      expect(screen.getByText('1.2.3')).toBeDefined();
+    });
+  });
+
+  it('Updates tab shows SSH Setup section', async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('Updates')).toBeDefined();
+    });
+    fireEvent.click(screen.getByText('Updates'));
+    await waitFor(() => {
+      expect(screen.getByText('SSH Setup')).toBeDefined();
+    });
+  });
+
+  it('Updates tab shows Apply Update when update is available', async () => {
+    const { spoolbuddyApi } = await import('../../api/client');
+    vi.mocked(spoolbuddyApi.checkDaemonUpdate).mockResolvedValue({
+      current_version: '1.2.3',
+      latest_version: '1.3.0',
+      update_available: true,
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('Updates')).toBeDefined();
+    });
+    fireEvent.click(screen.getByText('Updates'));
+    await waitFor(() => {
+      expect(screen.getByText('Apply Update')).toBeDefined();
     });
   });
 

@@ -81,7 +81,6 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
       // Also invalidate printer-specific smart plug queries to keep PrintersPage in sync
       if (plug.printer_id) {
         queryClient.invalidateQueries({ queryKey: ['smartPlugsByPrinter', plug.printer_id] });
-        queryClient.invalidateQueries({ queryKey: ['smartPlugsByPrinter', plug.printer_id] });
       }
     },
   });

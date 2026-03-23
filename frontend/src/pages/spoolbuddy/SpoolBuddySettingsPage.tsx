@@ -509,10 +509,10 @@ function UpdatesTab({ device }: { device: SpoolBuddyDevice }) {
 
   const isUpdating = device.update_status === 'pending' || device.update_status === 'updating';
 
-  const { data: updateResult, isLoading: checking, refetch } = useQuery({
+  const { data: updateResult, isFetching: checking, refetch } = useQuery({
     queryKey: ['spoolbuddy-update-check', device.device_id],
     queryFn: () => spoolbuddyApi.checkDaemonUpdate(device.device_id),
-    staleTime: 4 * 60 * 1000,
+    staleTime: 30 * 1000,
   });
 
   const { data: sshKeyData } = useQuery({
@@ -607,7 +607,7 @@ function UpdatesTab({ device }: { device: SpoolBuddyDevice }) {
           <div className="flex gap-2">
             <button
               onClick={() => refetch()}
-              disabled={checking}
+              disabled={checking || applying}
               className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-zinc-700 text-zinc-300 hover:bg-zinc-600 disabled:opacity-40 transition-colors flex items-center justify-center gap-1"
             >
               {checking && (
@@ -621,8 +621,14 @@ function UpdatesTab({ device }: { device: SpoolBuddyDevice }) {
             <button
               onClick={applyUpdate}
               disabled={applying || isUpdating || !device.online}
-              className="px-3 py-2 rounded-lg text-xs font-medium bg-zinc-700 text-zinc-400 hover:bg-zinc-600 hover:text-zinc-200 disabled:opacity-40 transition-colors"
+              className="px-3 py-2 rounded-lg text-xs font-medium bg-zinc-700 text-zinc-400 hover:bg-zinc-600 hover:text-zinc-200 disabled:opacity-40 transition-colors flex items-center justify-center gap-1"
             >
+              {applying && (
+                <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              )}
               {t('spoolbuddy.settings.forceUpdate', 'Force Update')}
             </button>
           </div>

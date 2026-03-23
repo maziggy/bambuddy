@@ -4,18 +4,6 @@ All notable changes to Bambuddy will be documented in this file.
 
 ## [0.2.3b1] - Unreleased
 
-### New Features
-
-### Fixed
-
-### Added
-
-### Changed
-
-### Improved
-
-### Security
-
 ### Fixed
 - **SpoolBuddy Update Check Always Shows "Up to Date"** — The SpoolBuddy daemon update check compared the device's firmware version against GitHub releases instead of the running Bambuddy backend version. This meant the check could incorrectly report "up to date" even when the daemon was behind. Fixed by comparing directly against `APP_VERSION` from the backend config.
 - **SpoolBuddy Updates Now Use SSH** — Replaced the fragile self-update mechanism (daemon pulls its own code via git, permission errors on `.git/`, hardcoded `main` branch) with SSH-based updates driven by the Bambuddy backend. Bambuddy now SSHes into the SpoolBuddy Pi and runs git fetch/checkout, pip install, systemctl restart, and kiosk browser restart remotely. Updates automatically use the same branch as Bambuddy. SSH key pairing is fully automatic — Bambuddy generates an ED25519 keypair and includes the public key in the device registration response; the daemon deploys it to `authorized_keys` on first connect. The install script creates the `spoolbuddy` user with a bash shell and sudoers entries for daemon and kiosk restart. A "Force Update" button allows re-deploying even when versions match. The SSH public key is also shown in SpoolBuddy Settings → Updates → SSH Setup for manual pairing if needed.

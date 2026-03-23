@@ -801,6 +801,10 @@ EOF
     mkdir -p /etc/systemd/system/getty@tty1.service.d
 
     cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << EOF
+[Unit]
+After=network-online.target
+Wants=network-online.target
+
 [Service]
 ExecStart=
 ExecStart=-/sbin/agetty --autologin $KIOSK_USER --noclear %I \$TERM
@@ -854,6 +858,7 @@ wlr-randr --output HDMI-A-1 --custom-mode 1024x600@60 &
 chromium --kiosk --no-first-run --disable-infobars \\
   --disable-session-crashed-bubble --disable-features=TranslateUI \\
   --noerrdialogs --disable-component-update \\
+  --disk-cache-size=0 \\
   --overscroll-history-navigation=0 \\
   --ozone-platform=wayland \\
   $KIOSK_URL &

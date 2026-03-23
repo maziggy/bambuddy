@@ -4,6 +4,8 @@ All notable changes to Bambuddy will be documented in this file.
 
 ## [0.2.3.b1] - Unreleased
 
+### Fixed
+- **Spool Assignment on Empty AMS Slots** ([#784](https://github.com/maziggy/bambuddy/issues/784)) — Empty AMS slots (no physical spool detected) showed "Assign Spool" and "Configure" buttons in the hover popup. Assigning a spool to an empty slot created a stuck state because no "Unassign" button is available for empty slots. Removed both buttons from empty AMS and HT AMS slot popups. External spool holders are unaffected. Reported by @RosdasHH.
 
 ## [0.2.2.1] - 2026-03-22
 

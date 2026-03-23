@@ -33,9 +33,14 @@
     <script>
       if ('serviceWorker' in navigator) {
         if (location.pathname.startsWith('/spoolbuddy')) {
-          // Kiosk mode — unregister any existing SW to avoid stale cache
+          // Kiosk mode — nuke SW and all caches, then reload once to get clean state
           navigator.serviceWorker.getRegistrations().then((regs) => {
-            regs.forEach((r) => r.unregister());
+            if (regs.length > 0) {
+              Promise.all([
+                ...regs.map((r) => r.unregister()),
+                caches.keys().then((names) => Promise.all(names.map((n) => caches.delete(n)))),
+              ]).then(() => location.reload());
+            }
           });
         } else {
           window.addEventListener('load', () => {

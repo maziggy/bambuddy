@@ -168,8 +168,6 @@ def _to_epoch_seconds(value: datetime | None) -> float | None:
     """Convert datetime to epoch seconds, assuming UTC for naive values."""
     if value is None:
         return None
-    if not isinstance(value, datetime):
-        return None
     dt = value
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)

@@ -32,13 +32,14 @@ def _make_spool(*, id=1, label_weight=1000, weight_used=0, tag_uid=None, tray_uu
     return spool
 
 
-def _make_assignment(*, spool_id=1, printer_id=1, ams_id=0, tray_id=0):
+def _make_assignment(*, spool_id=1, printer_id=1, ams_id=0, tray_id=0, created_at=None):
     """Create a mock SpoolAssignment object."""
     assignment = MagicMock()
     assignment.spool_id = spool_id
     assignment.printer_id = printer_id
     assignment.ams_id = ams_id
     assignment.tray_id = tray_id
+    assignment.created_at = created_at or datetime.now(timezone.utc)
     return assignment
 
 

@@ -226,7 +226,6 @@ async def perform_ssh_update(device_id: str, ip_address: str, install_path: str 
             return
 
         # Step 6: Restart kiosk browser to load updated frontend
-        await _update_progress("updating", "Restarting kiosk browser...")
         rc, _, stderr = await _run_ssh_command(
             ip_address,
             "sudo /usr/bin/systemctl restart getty@tty1.service",
@@ -235,8 +234,6 @@ async def perform_ssh_update(device_id: str, ip_address: str, install_path: str 
         if rc != 0:
             # Non-fatal — kiosk may not be set up on all devices
             logger.warning("SpoolBuddy %s: kiosk restart failed (non-fatal): %s", device_id, stderr[:200])
-
-        await _update_progress("complete", "Update complete, daemon restarting...")
         logger.info("SpoolBuddy %s: SSH update complete (branch=%s)", device_id, branch)
 
     except Exception as e:

@@ -64,7 +64,7 @@ export function SpoolBuddyLayout() {
     queryFn: () => device ? spoolbuddyApi.checkDaemonUpdate(device.device_id) : Promise.resolve(null),
     enabled: !!device,
     refetchInterval: 5 * 60 * 1000, // re-check every 5 minutes
-    staleTime: 4 * 60 * 1000,
+    staleTime: 30 * 1000,
   });
 
   // Update alert based on device state and available updates

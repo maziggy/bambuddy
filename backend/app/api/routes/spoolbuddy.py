@@ -102,7 +102,7 @@ async def register_device(
         device.has_backlight = req.has_backlight
         device.last_seen = now
         # Clear stale update status on re-registration (daemon restarted after update)
-        if device.update_status in ("complete", "error"):
+        if device.update_status in ("pending", "updating", "complete", "error"):
             device.update_status = None
             device.update_message = None
         logger.info("SpoolBuddy device re-registered: %s (%s)", req.device_id, req.hostname)

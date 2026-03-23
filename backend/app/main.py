@@ -4113,7 +4113,11 @@ async def serve_service_worker():
     """Serve service worker."""
     sw_file = app_settings.static_dir / "sw.js"
     if sw_file.exists():
-        return FileResponse(sw_file, media_type="application/javascript")
+        return FileResponse(
+            sw_file,
+            media_type="application/javascript",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )
     return {"error": "Service worker not found"}
 
 

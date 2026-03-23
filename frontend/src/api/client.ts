@@ -5042,6 +5042,9 @@ export const spoolbuddyApi = {
       body: '{}',
     }),
 
+  getSSHPublicKey: () =>
+    request<{ public_key: string }>('/spoolbuddy/ssh/public-key'),
+
   writeTag: (deviceId: string, spoolId: number) =>
     request<{ status: string }>('/spoolbuddy/nfc/write-tag', {
       method: 'POST',

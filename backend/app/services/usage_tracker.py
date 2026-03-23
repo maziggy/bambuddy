@@ -199,18 +199,13 @@ async def _resolve_spool_id_for_tray(
     if snapshot_spool_id is not None and print_started_at is None:
         return snapshot_spool_id
 
-    try:
-        result = await db.execute(
-            select(SpoolAssignment).where(
-                SpoolAssignment.printer_id == printer_id,
-                SpoolAssignment.ams_id == ams_id,
-                SpoolAssignment.tray_id == tray_id,
-            )
+    result = await db.execute(
+        select(SpoolAssignment).where(
+            SpoolAssignment.printer_id == printer_id,
+            SpoolAssignment.ams_id == ams_id,
+            SpoolAssignment.tray_id == tray_id,
         )
-    except (StopAsyncIteration, StopIteration):
-        # Some unit tests intentionally mock only the legacy snapshot queries.
-        # If no live-query result is available, keep snapshot behavior.
-        return snapshot_spool_id
+    )
     live_assignment = result.scalar_one_or_none()
 
     if snapshot_spool_id is not None:

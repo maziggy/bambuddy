@@ -101,6 +101,10 @@ async def register_device(
         device.nfc_connection = req.nfc_connection
         device.has_backlight = req.has_backlight
         device.last_seen = now
+        # Clear stale update status on re-registration (daemon restarted after update)
+        if device.update_status in ("complete", "error"):
+            device.update_status = None
+            device.update_message = None
         logger.info("SpoolBuddy device re-registered: %s (%s)", req.device_id, req.hostname)
     else:
         device = SpoolBuddyDevice(

@@ -1,6 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { PrinterStatus } from '../api/client';
 
 interface WebSocketMessage {
   type: string;

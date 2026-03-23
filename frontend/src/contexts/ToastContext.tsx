@@ -6,6 +6,9 @@ import { formatFileSize } from '../utils/file';
 
 type ToastType = 'success' | 'error' | 'warning' | 'info' | 'loading';
 
+// Allow persistent toast to accept optional duration
+type ShowPersistentToast = (id: string, message: string, type?: ToastType, durationMs?: number) => void;
+
 interface Toast {
   id: string;
   message: string;
@@ -38,7 +41,7 @@ interface DispatchToastData {
 
 interface ToastContextType {
   showToast: (message: string, type?: ToastType) => void;
-  showPersistentToast: (id: string, message: string, type?: ToastType) => void;
+  showPersistentToast: ShowPersistentToast;
   dismissToast: (id: string) => void;
 }
 
@@ -98,7 +101,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     timeoutRefs.current.set(id, timeout);
   }, []);
 
-  const showPersistentToast = useCallback((id: string, message: string, type: ToastType = 'info') => {
+  const showPersistentToast = useCallback((id: string, message: string, type: ToastType = 'info', durationMs?: number) => {
     setToasts((prev) => {
       // Update existing toast if same id, otherwise add new one
       const exists = prev.find((t) => t.id === id);
@@ -107,6 +110,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       }
       return [...prev, { id, message, type, persistent: true }];
     });
+    if (durationMs && durationMs > 0) {
+      // Clear any previous timeout for this toast
+      const existingTimeout = timeoutRefs.current.get(id);
+      if (existingTimeout) clearTimeout(existingTimeout);
+      const timeout = setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+        timeoutRefs.current.delete(id);
+      }, durationMs);
+      timeoutRefs.current.set(id, timeout);
+    }
   }, []);
 
   const dismissToast = useCallback((id: string) => {
@@ -460,30 +473,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('background-dispatch', onDispatchEvent);
   }, [t]);
 
-  useEffect(() => {
-    interface MissingSpoolAssignmentDetail {
-      printer_id?: number;
-      printer_name?: string;
-      missing_slots?: string[];
-    }
-
-    const onMissingSpoolAssignment = (event: Event) => {
-      const detail = (event as CustomEvent<MissingSpoolAssignmentDetail>).detail;
-      if (detail?.printer_id == null || !detail.missing_slots || detail.missing_slots.length === 0) {
-        return;
-      }
-
-      const printerName = detail.printer_name || `Printer ${detail.printer_id}`;
-      const message = t('printers.toast.missingSpoolAssignment', {
-        printer: printerName,
-        slots: detail.missing_slots.join(', '),
-      });
-      showPersistentToast(`missing-spool-assignment-${detail.printer_id}`, message, 'warning');
-    };
-
-    window.addEventListener('missing-spool-assignment', onMissingSpoolAssignment);
-    return () => window.removeEventListener('missing-spool-assignment', onMissingSpoolAssignment);
-  }, [showPersistentToast]);
 
   return (
     <ToastContext.Provider value={{ showToast, showPersistentToast, dismissToast }}>

@@ -59,7 +59,7 @@ DEFAULT_TEMPLATES = [
         "event_type": "print_missing_spool_assignment",
         "name": "Missing Spool Assignment",
         "title_template": "Missing Spool Assignment",
-        "body_template": "{printer}: print started with missing spool assignments\nSlots: {missing_slots}\nExpected profile/color:\n{missing_slot_details}",
+        "body_template": "{printer}: print started with missing spool assignments\nSlots: {missing_slots}\nExpected profile:\n{missing_slot_details}",
     },
     {
         "event_type": "printer_offline",

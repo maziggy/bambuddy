@@ -954,8 +954,7 @@ class NotificationService:
         for slot in missing_slots:
             slot_name = slot.get("slot", "Unknown")
             profile = slot.get("profile", "Unknown")
-            color = slot.get("color", "Unknown")
-            detail_lines.append(f"- {slot_name}: {profile} | Color: {color}")
+            detail_lines.append(f"- {slot_name}: {profile}")
         missing_profile_details = "\n".join(detail_lines)
 
         variables = {

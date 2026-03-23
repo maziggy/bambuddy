@@ -1,5 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useToast } from '../contexts/ToastContext';
+import { useTranslation } from 'react-i18next';
 
 interface WebSocketMessage {
   type: string;
@@ -15,6 +17,8 @@ export function useWebSocket() {
   const queryClient = useQueryClient();
   const [isConnected, setIsConnected] = useState(false);
   const lastMissingSpoolWarningRef = useRef<Map<number, string>>(new Map());
+  const { showToast } = useToast();
+  const { t } = useTranslation();
 
   // Debounce invalidations to prevent rapid re-render cascades
   const pendingInvalidations = useRef<Set<string>>(new Set());
@@ -218,15 +222,12 @@ export function useWebSocket() {
         }
         lastMissingSpoolWarningRef.current.set(message.printer_id, signature);
 
-        window.dispatchEvent(
-          new CustomEvent('missing-spool-assignment', {
-            detail: {
-              printer_id: message.printer_id,
-              printer_name: message.printer_name,
-              missing_slots: missingSlotLabels,
-            },
-          })
-        );
+        const printerName = message.printer_name || `Printer ${message.printer_id}`;
+        const toastMsg = t('printers.toast.missingSpoolAssignment', {
+          printer: printerName,
+          slots: missingSlotLabels.join(', '),
+        });
+        showToast(toastMsg, 'warning');
         break;
       }
 

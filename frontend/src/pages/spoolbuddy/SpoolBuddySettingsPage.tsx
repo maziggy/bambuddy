@@ -502,30 +502,36 @@ function ScaleTab({ device, weight, weightStable, rawAdc }: {
 
 function UpdatesTab({ device }: { device: SpoolBuddyDevice }) {
   const { t } = useTranslation();
-  const [applying, setApplying] = useState(false);
+  const [busy, setBusy] = useState<'checking' | 'applying' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sshExpanded, setSSHExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [manualChecking, setManualChecking] = useState(false);
-  const wasUpdatingRef = useRef(false);
 
   const isUpdating = device.update_status === 'pending' || device.update_status === 'updating';
 
-  // Track when an update was in progress so we can reload when device comes back
+  // When applying succeeds and device picks up the update, keep showing busy
   useEffect(() => {
-    if (isUpdating) {
-      wasUpdatingRef.current = true;
-    } else if (wasUpdatingRef.current && device.update_status == null) {
-      // Status cleared = daemon re-registered after update. Reload for fresh state.
-      wasUpdatingRef.current = false;
-      window.location.reload();
+    if (isUpdating && busy === 'applying') {
+      setBusy(null); // device has picked it up, isUpdating takes over the UI
     }
-  }, [isUpdating, device.update_status]);
+  }, [isUpdating, busy]);
+
+  // Reload the page when daemon comes back online after an update
+  useEffect(() => {
+    const handleOnline = () => {
+      if (isUpdating) {
+        // Daemon re-registered — reload to get fresh version + state
+        setTimeout(() => window.location.reload(), 1000);
+      }
+    };
+    window.addEventListener('spoolbuddy-online', handleOnline);
+    return () => window.removeEventListener('spoolbuddy-online', handleOnline);
+  }, [isUpdating]);
 
   const { data: updateResult, refetch } = useQuery({
     queryKey: ['spoolbuddy-update-check', device.device_id],
     queryFn: () => spoolbuddyApi.checkDaemonUpdate(device.device_id),
-    staleTime: 30 * 1000,
+    staleTime: 0,
   });
 
   const { data: sshKeyData } = useQuery({
@@ -536,25 +542,28 @@ function UpdatesTab({ device }: { device: SpoolBuddyDevice }) {
   });
 
   const checkForUpdates = async () => {
-    setManualChecking(true);
+    setBusy('checking');
+    setError(null);
     try {
       await refetch();
     } finally {
-      setManualChecking(false);
+      setBusy(null);
     }
   };
 
   const applyUpdate = async () => {
-    setApplying(true);
+    setBusy('applying');
     setError(null);
     try {
       await spoolbuddyApi.triggerUpdate(device.device_id);
+      // Don't clear busy — keep showing spinner until isUpdating takes over or timeout
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to trigger update');
-    } finally {
-      setApplying(false);
+      setBusy(null);
     }
   };
+
+  const showSpinner = busy != null || isUpdating;
 
   const copyKey = () => {
     if (sshKeyData?.public_key) {
@@ -581,95 +590,58 @@ function UpdatesTab({ device }: { device: SpoolBuddyDevice }) {
           </span>
         </div>
 
-        {/* Update progress */}
-        {isUpdating && (
-          <div className="flex items-center gap-2 text-sm">
+        {/* Status / progress row */}
+        {showSpinner ? (
+          <div className="flex items-center gap-2">
             <svg className="w-4 h-4 animate-spin text-green-400 flex-shrink-0" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
             <span className="text-green-300 text-xs">
-              {device.update_message || t('spoolbuddy.settings.updateWaiting', 'Updating...')}
+              {busy === 'checking' ? t('spoolbuddy.settings.checking', 'Checking for updates...')
+                : device.update_message || t('spoolbuddy.settings.updateWaiting', 'Updating...')}
             </span>
           </div>
-        )}
-
-        {/* Update error */}
-        {device.update_status === 'error' && (
+        ) : device.update_status === 'error' ? (
           <p className="text-xs text-red-300">{device.update_message || t('spoolbuddy.settings.updateFailed', 'Update failed')}</p>
-        )}
+        ) : error ? (
+          <p className="text-xs text-red-300">{error}</p>
+        ) : updateResult?.update_available ? (
+          <p className="text-xs text-green-300">
+            {t('spoolbuddy.settings.updateAvailable', 'Update available')}: {displayVersion} → {updateResult.latest_version}
+          </p>
+        ) : null}
 
-        {/* Error from trigger */}
-        {error && <p className="text-xs text-red-300">{error}</p>}
-
-        {/* Update available → Apply button */}
-        {updateResult?.update_available ? (
-          <>
-            <p className="text-xs text-green-300">
-              {t('spoolbuddy.settings.updateAvailable', 'Update available')}: {displayVersion} → {updateResult.latest_version}
-            </p>
+        {/* Action buttons */}
+        {!showSpinner && (
+          updateResult?.update_available ? (
             <button
               onClick={applyUpdate}
-              disabled={applying || isUpdating || !device.online}
-              className="w-full px-3 py-2 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 disabled:opacity-40 transition-colors flex items-center justify-center gap-2"
+              disabled={!device.online}
+              className="w-full px-3 py-2 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 disabled:opacity-40 transition-colors"
             >
-              {applying && (
-                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-              )}
               {!device.online
                 ? t('spoolbuddy.settings.deviceOffline', 'Device Offline')
                 : t('spoolbuddy.settings.applyUpdate', 'Apply Update')}
             </button>
-          </>
-        ) : updateResult && !isUpdating ? (
-          /* Up to date → Check + Force buttons side by side */
-          <div className="flex gap-2">
-            <button
-              onClick={checkForUpdates}
-              disabled={manualChecking || applying}
-              className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-zinc-700 text-zinc-300 hover:bg-zinc-600 disabled:opacity-40 transition-colors flex items-center justify-center gap-1"
-            >
-              {manualChecking && (
-                <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-              )}
-              {t('spoolbuddy.settings.checkUpdates', 'Check for Updates')}
-            </button>
-            <button
-              onClick={applyUpdate}
-              disabled={applying || isUpdating || !device.online}
-              className="px-3 py-2 rounded-lg text-xs font-medium bg-zinc-700 text-zinc-400 hover:bg-zinc-600 hover:text-zinc-200 disabled:opacity-40 transition-colors flex items-center justify-center gap-1"
-            >
-              {applying && (
-                <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-              )}
-              {t('spoolbuddy.settings.forceUpdate', 'Force Update')}
-            </button>
-          </div>
-        ) : !isUpdating ? (
-          /* No result yet → Check button */
-          <button
-            onClick={checkForUpdates}
-            disabled={manualChecking}
-            className="w-full px-3 py-2 rounded-lg text-sm font-medium bg-zinc-700 text-zinc-200 hover:bg-zinc-600 disabled:opacity-40 transition-colors flex items-center justify-center gap-2"
-          >
-            {manualChecking && (
-              <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-            )}
-            {t('spoolbuddy.settings.checkUpdates', 'Check for Updates')}
-          </button>
-        ) : null}
+          ) : (
+            <div className="flex gap-2">
+              <button
+                onClick={checkForUpdates}
+                className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-zinc-700 text-zinc-300 hover:bg-zinc-600 transition-colors"
+              >
+                {t('spoolbuddy.settings.checkUpdates', 'Check for Updates')}
+              </button>
+              <button
+                onClick={applyUpdate}
+                disabled={!device.online}
+                className="px-3 py-2 rounded-lg text-xs font-medium bg-zinc-700 text-zinc-400 hover:bg-zinc-600 hover:text-zinc-200 disabled:opacity-40 transition-colors"
+              >
+                {t('spoolbuddy.settings.forceUpdate', 'Force Update')}
+              </button>
+            </div>
+          )
+        )}
       </div>
 
       {/* SSH Setup — collapsible */}

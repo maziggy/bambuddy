@@ -1,49 +1,13 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, type PrinterStatus } from '../api/client';
-import { formatSlotLabel, getGlobalTrayId } from '../utils/amsHelpers';
+import type { PrinterStatus } from '../api/client';
 
 interface WebSocketMessage {
   type: string;
   printer_id?: number;
   data?: Record<string, unknown>;
-}
-
-function decodeMqttMapping(mappingRaw: unknown): number[] {
-  if (!Array.isArray(mappingRaw) || mappingRaw.length === 0) {
-    return [];
-  }
-
-  const decoded: number[] = [];
-  for (const entry of mappingRaw) {
-    const value =
-      typeof entry === 'number'
-        ? entry
-        : typeof entry === 'string'
-          ? Number.parseInt(entry, 10)
-          : Number.NaN;
-
-    if (!Number.isFinite(value)) {
-      continue;
-    }
-
-    if (value >= 65535) {
-      continue;
-    }
-
-    const amsHwId = (value >> 8) & 0xff;
-    const slot = value & 0xff;
-
-    if (amsHwId >= 0 && amsHwId <= 3) {
-      decoded.push(amsHwId * 4 + (slot & 0x03));
-    } else if (amsHwId >= 128 && amsHwId <= 135) {
-      decoded.push(amsHwId);
-    } else if (amsHwId === 254 || amsHwId === 255) {
-      decoded.push(slot === 255 ? 255 : 254);
-    }
-  }
-
-  return decoded;
+  printer_name?: string;
+  missing_slots?: Array<{ slot?: string }>;
 }
 
 export function useWebSocket() {
@@ -220,80 +184,6 @@ export function useWebSocket() {
     }, 3000);
   }, [queryClient]);
 
-  const checkMissingSpoolAssignments = useCallback(async (printerId: number, data?: Record<string, unknown>) => {
-    const explicitMapping = Array.isArray(data?.ams_mapping)
-      ? data.ams_mapping
-          .map((value) => (typeof value === 'number' ? value : Number.NaN))
-          .filter((value) => Number.isFinite(value))
-      : [];
-
-    const mqttMapping = decodeMqttMapping((data?.raw_data as Record<string, unknown> | undefined)?.mapping);
-    const mappingToUse = explicitMapping.length > 0 ? explicitMapping : mqttMapping;
-
-    const usedTrayIds = Array.from(new Set(mappingToUse.filter((value) => value >= 0 && value !== 255)));
-    if (usedTrayIds.length === 0) {
-      return;
-    }
-
-    try {
-      const assignments = await api.getAssignments(printerId);
-      const assignedTrayIds = new Set(
-        assignments.map((assignment) =>
-          getGlobalTrayId(
-            assignment.ams_id,
-            assignment.tray_id,
-            assignment.ams_id === 254 || assignment.ams_id === 255
-          )
-        )
-      );
-
-      const missingTrayIds = usedTrayIds.filter((trayId) => !assignedTrayIds.has(trayId));
-      if (missingTrayIds.length === 0) {
-        lastMissingSpoolWarningRef.current.delete(printerId);
-        return;
-      }
-
-      const printerStatus = queryClient.getQueryData<PrinterStatus>(['printerStatus', printerId]);
-      const slotLabels = new Map<number, string>();
-
-      printerStatus?.ams?.forEach((amsUnit) => {
-        const isHt = amsUnit.tray.length === 1;
-        amsUnit.tray.forEach((tray) => {
-          const globalTrayId = getGlobalTrayId(amsUnit.id, tray.id, false);
-          slotLabels.set(globalTrayId, formatSlotLabel(amsUnit.id, tray.id, isHt, false));
-        });
-      });
-
-      printerStatus?.vt_tray?.forEach((tray) => {
-        const globalTrayId = tray.id;
-        const externalLabel = globalTrayId === 255 ? 'Ext-R' : 'Ext-L';
-        slotLabels.set(globalTrayId, externalLabel);
-      });
-
-      const missingSlotLabels = missingTrayIds
-        .sort((a, b) => a - b)
-        .map((trayId) => slotLabels.get(trayId) ?? `Tray ${trayId}`);
-      const signature = missingSlotLabels.join('|');
-
-      if (lastMissingSpoolWarningRef.current.get(printerId) === signature) {
-        return;
-      }
-      lastMissingSpoolWarningRef.current.set(printerId, signature);
-
-      window.dispatchEvent(
-        new CustomEvent('missing-spool-assignment', {
-          detail: {
-            printer_id: printerId,
-            printer_name: printerStatus?.name,
-            missing_slots: missingSlotLabels,
-          },
-        })
-      );
-    } catch {
-      // Ignore assignment lookup failures to avoid impacting websocket processing.
-    }
-  }, [queryClient]);
-
   const handleMessage = useCallback((message: WebSocketMessage) => {
     switch (message.type) {
       case 'printer_status':
@@ -306,9 +196,40 @@ export function useWebSocket() {
         // Refetch printer status immediately when print starts to get printable_objects_count
         if (message.printer_id !== undefined) {
           queryClient.invalidateQueries({ queryKey: ['printerStatus', message.printer_id] });
-          void checkMissingSpoolAssignments(message.printer_id, message.data);
         }
         break;
+
+      case 'missing_spool_assignment': {
+        if (message.printer_id === undefined || !Array.isArray(message.missing_slots)) {
+          break;
+        }
+
+        const missingSlotLabels = message.missing_slots
+          .map((slot) => (slot && typeof slot.slot === 'string' ? slot.slot : 'Unknown'))
+          .filter((slot) => slot.length > 0);
+
+        if (missingSlotLabels.length === 0) {
+          lastMissingSpoolWarningRef.current.delete(message.printer_id);
+          break;
+        }
+
+        const signature = missingSlotLabels.join('|');
+        if (lastMissingSpoolWarningRef.current.get(message.printer_id) === signature) {
+          break;
+        }
+        lastMissingSpoolWarningRef.current.set(message.printer_id, signature);
+
+        window.dispatchEvent(
+          new CustomEvent('missing-spool-assignment', {
+            detail: {
+              printer_id: message.printer_id,
+              printer_name: message.printer_name,
+              missing_slots: missingSlotLabels,
+            },
+          })
+        );
+        break;
+      }
 
       case 'print_complete':
         // Don't invalidate printerStatus here - it causes re-render cascade and browser freeze
@@ -408,7 +329,7 @@ export function useWebSocket() {
         window.dispatchEvent(new CustomEvent('spoolbuddy-offline', { detail: message }));
         break;
     }
-  }, [queryClient, checkMissingSpoolAssignments, debouncedInvalidate, throttledPrinterStatusUpdate]);
+  }, [queryClient, debouncedInvalidate, throttledPrinterStatusUpdate]);
 
   // Keep the ref updated with latest handleMessage
   useEffect(() => {

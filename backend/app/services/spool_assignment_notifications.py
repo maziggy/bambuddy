@@ -1,6 +1,7 @@
 import logging
 
 from backend.app.core.database import async_session
+from backend.app.core.websocket import ws_manager
 from backend.app.services.bambu_mqtt import PrinterState
 from backend.app.services.notification_service import notification_service
 from backend.app.services.printer_manager import printer_manager
@@ -183,6 +184,12 @@ async def notify_missing_spool_assignments_on_print_start(
                         "color": _tray_color_for_global_id(state, global_id),
                     }
                 )
+
+            await ws_manager.send_missing_spool_assignment(
+                printer_id=printer_id,
+                printer_name=printer_name,
+                missing_slots=missing_slots,
+            )
 
             await notification_service.on_print_missing_spool_assignment(
                 printer_id=printer_id,

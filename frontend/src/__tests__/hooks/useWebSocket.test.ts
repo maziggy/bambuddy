@@ -380,6 +380,52 @@ describe('useWebSocket hook', () => {
       vi.unstubAllGlobals();
     });
 
+    it('dispatches missing-spool-assignment browser event from websocket payload', async () => {
+      vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+        cb(0);
+        return 0;
+      });
+      vi.resetModules();
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+
+      const eventSpy = vi.fn();
+      window.addEventListener('missing-spool-assignment', eventSpy as EventListener);
+
+      renderHook(() => useWebSocket(), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      const ws = getLatestWs()!;
+      act(() => {
+        ws.open();
+      });
+
+      act(() => {
+        ws.simulateMessage({
+          type: 'missing_spool_assignment',
+          printer_id: 7,
+          printer_name: 'Printer B',
+          missing_slots: [{ slot: 'A2' }, { slot: 'Ext-L' }],
+        });
+      });
+
+      await waitFor(() => {
+        expect(eventSpy).toHaveBeenCalledTimes(1);
+      });
+
+      const event = eventSpy.mock.calls[0][0] as CustomEvent<{
+        printer_id?: number;
+        printer_name?: string;
+        missing_slots?: string[];
+      }>;
+      expect(event.detail.printer_id).toBe(7);
+      expect(event.detail.printer_name).toBe('Printer B');
+      expect(event.detail.missing_slots).toEqual(['A2', 'Ext-L']);
+
+      window.removeEventListener('missing-spool-assignment', eventSpy as EventListener);
+      vi.unstubAllGlobals();
+    });
+
     it('ignores pong messages without error', async () => {
       vi.resetModules();
       const { useWebSocket } = await import('../../hooks/useWebSocket');

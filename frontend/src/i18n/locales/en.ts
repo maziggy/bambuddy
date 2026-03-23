@@ -265,6 +265,7 @@ export default {
     // Toast messages
     toast: {
       printerDeleted: 'Printer deleted',
+      missingSpoolAssignment: 'Print started on {{printer}}. Missing spool assignment for: {{slots}}',
       printerAdded: 'Printer added',
       printerUpdated: 'Printer updated',
       failedToDelete: 'Failed to delete printer',

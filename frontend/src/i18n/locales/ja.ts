@@ -264,6 +264,7 @@ export default {
     // Toast messages
     toast: {
       printerDeleted: 'プリンターを削除しました',
+      missingSpoolAssignment: '{{printer}}で印刷を開始しました。以下のスプール割り当てがありません: {{slots}}',
       printerAdded: 'プリンターを追加しました',
       printerUpdated: 'プリンターを更新しました',
       failedToDelete: 'プリンターの削除に失敗しました',

@@ -474,7 +474,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       }
 
       const printerName = detail.printer_name || `Printer ${detail.printer_id}`;
-      const message = `Print started on ${printerName}. Missing spool assignment for: ${detail.missing_slots.join(', ')}`;
+      const message = t('printers.toast.missingSpoolAssignment', {
+        printer: printerName,
+        slots: detail.missing_slots.join(', '),
+      });
       showPersistentToast(`missing-spool-assignment-${detail.printer_id}`, message, 'warning');
     };
 

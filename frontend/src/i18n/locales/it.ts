@@ -265,6 +265,7 @@ export default {
     // Toast messages
     toast: {
       printerDeleted: 'Stampante eliminata',
+      missingSpoolAssignment: 'Stampa avviata su {{printer}}. Mancano assegnazioni bobina per: {{slots}}',
       printerAdded: 'Stampante aggiunta',
       printerUpdated: 'Stampante aggiornata',
       failedToDelete: 'Impossibile eliminare stampante',

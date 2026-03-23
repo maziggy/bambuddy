@@ -3,7 +3,6 @@
 
 import asyncio
 import logging
-import shutil
 import socket
 import sys
 import time
@@ -36,6 +35,30 @@ def _get_ip() -> str:
         return ip
     except Exception:
         return "unknown"
+
+
+def _deploy_ssh_key(public_key: str) -> None:
+    """Write Bambuddy's SSH public key to authorized_keys if not already present."""
+    home = Path.home()
+    ssh_dir = home / ".ssh"
+    auth_keys = ssh_dir / "authorized_keys"
+
+    try:
+        ssh_dir.mkdir(mode=0o700, exist_ok=True)
+
+        # Check if key already deployed
+        if auth_keys.exists():
+            existing = auth_keys.read_text()
+            if public_key.strip() in existing:
+                return
+
+        # Append key
+        with auth_keys.open("a") as f:
+            f.write(public_key.strip() + "\n")
+        auth_keys.chmod(0o600)
+        logger.info("SSH public key deployed to %s", auth_keys)
+    except Exception as e:
+        logger.warning("Failed to deploy SSH key: %s", e)
 
 
 async def nfc_poll_loop(config: Config, api: APIClient, shared: dict):
@@ -123,93 +146,6 @@ async def scale_poll_loop(config: Config, api: APIClient, shared: dict):
         scale.close()
 
 
-async def _perform_update(config: Config, api: APIClient):
-    """Pull latest code from git, install deps, then exit for systemd restart."""
-    # Determine repo root (install path) — daemon runs from <repo>/spoolbuddy/
-    repo_root = Path(__file__).resolve().parent.parent.parent
-
-    await api.report_update_status(config.device_id, "updating", "Fetching latest code...")
-
-    git_path = shutil.which("git") or "/usr/bin/git"
-    git_config = ["-c", f"safe.directory={repo_root}"]
-
-    # git fetch origin main
-    proc = await asyncio.create_subprocess_exec(
-        git_path,
-        *git_config,
-        "fetch",
-        "origin",
-        "main",
-        cwd=str(repo_root),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    _, stderr = await proc.communicate()
-    if proc.returncode != 0:
-        msg = f"git fetch failed: {stderr.decode()[:200]}"
-        logger.error(msg)
-        await api.report_update_status(config.device_id, "error", msg)
-        return
-
-    await api.report_update_status(config.device_id, "updating", "Applying update...")
-
-    # git reset --hard origin/main
-    proc = await asyncio.create_subprocess_exec(
-        git_path,
-        *git_config,
-        "reset",
-        "--hard",
-        "origin/main",
-        cwd=str(repo_root),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    _, stderr = await proc.communicate()
-    if proc.returncode != 0:
-        msg = f"git reset failed: {stderr.decode()[:200]}"
-        logger.error(msg)
-        await api.report_update_status(config.device_id, "error", msg)
-        return
-
-    await api.report_update_status(config.device_id, "updating", "Installing dependencies...")
-
-    # pip install daemon deps (use the venv pip)
-    venv_pip = repo_root / "spoolbuddy" / "venv" / "bin" / "pip"
-    pip_packages = ["spidev", "gpiod", "smbus2", "httpx"]
-
-    if venv_pip.exists():
-        proc = await asyncio.create_subprocess_exec(
-            str(venv_pip),
-            "install",
-            "--upgrade",
-            *pip_packages,
-            cwd=str(repo_root),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-    else:
-        proc = await asyncio.create_subprocess_exec(
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "--upgrade",
-            *pip_packages,
-            cwd=str(repo_root),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-    await proc.communicate()
-    if proc.returncode != 0:
-        logger.warning("pip install returned non-zero (continuing anyway)")
-
-    await api.report_update_status(config.device_id, "complete", "Update complete, restarting...")
-    logger.info("Update complete, exiting for systemd restart")
-
-    # Exit cleanly — systemd Restart=always will bring us back with the new code
-    sys.exit(0)
-
-
 async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shared: dict):
     """Periodic heartbeat to keep device registered and pick up commands."""
     display: DisplayControl = shared["display"]
@@ -234,15 +170,7 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
 
         if result:
             cmd = result.get("pending_command")
-            if cmd == "update":
-                logger.info("Update command received, starting update...")
-                try:
-                    await _perform_update(config, api)
-                except Exception as e:
-                    logger.error("Update failed: %s", e)
-                    await api.report_update_status(config.device_id, "error", str(e)[:255])
-                continue
-            elif cmd == "tare":
+            if cmd == "tare":
                 scale = shared.get("scale")
                 if scale and scale.ok:
                     new_offset = await asyncio.to_thread(scale.tare)
@@ -321,6 +249,11 @@ async def main():
         config.tare_offset = reg.get("tare_offset", config.tare_offset)
         config.calibration_factor = reg.get("calibration_factor", config.calibration_factor)
         scale.update_calibration(config.tare_offset, config.calibration_factor)
+
+        # Auto-deploy Bambuddy's SSH public key for remote updates
+        ssh_key = reg.get("ssh_public_key")
+        if ssh_key:
+            _deploy_ssh_key(ssh_key)
 
     logger.info("Device registered, starting poll loops")
 

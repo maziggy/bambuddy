@@ -16,6 +16,7 @@
 #   --api-key KEY        Bambuddy API key (required for spoolbuddy mode)
 #   --path PATH          Installation directory (default: /opt/spoolbuddy or /opt/bambuddy)
 #   --port PORT          Bambuddy port (full mode only, default: 8000)
+#   --ssh-pubkey KEY     Bambuddy SSH public key for remote updates
 #   --yes, -y            Non-interactive mode, accept defaults
 #   --help, -h           Show this help message
 #
@@ -56,6 +57,7 @@ NON_INTERACTIVE="false"
 REBOOT_NEEDED="false"
 KIOSK_USER=""            # auto-detected from $SUDO_USER
 KIOSK_URL=""             # derived from $BAMBUDDY_URL/spoolbuddy?token=$API_KEY
+SSH_PUBKEY=""            # Bambuddy's SSH public key for remote updates
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -190,6 +192,7 @@ show_help() {
     echo "  --api-key KEY        Bambuddy API key (required for spoolbuddy mode)"
     echo "  --path PATH          Installation directory (default: /opt/spoolbuddy or /opt/bambuddy)"
     echo "  --port PORT          Bambuddy port (full mode only, default: 8000)"
+    echo "  --ssh-pubkey KEY     Bambuddy SSH public key for remote updates"
     echo "  --yes, -y            Non-interactive mode, accept defaults"
     echo "  --help, -h           Show this help message"
     echo ""
@@ -354,9 +357,11 @@ install_system_packages() {
 create_spoolbuddy_user() {
     if id "$SPOOLBUDDY_SERVICE_USER" &>/dev/null; then
         info "User '$SPOOLBUDDY_SERVICE_USER' already exists"
+        # Ensure existing installs get a real shell for SSH access
+        usermod --shell /bin/bash "$SPOOLBUDDY_SERVICE_USER" 2>/dev/null || true
     else
         info "Creating service user '$SPOOLBUDDY_SERVICE_USER'..."
-        useradd --system --shell /usr/sbin/nologin --home-dir "$INSTALL_PATH" "$SPOOLBUDDY_SERVICE_USER"
+        useradd --system --shell /bin/bash --home-dir "$INSTALL_PATH" "$SPOOLBUDDY_SERVICE_USER"
         success "Service user created"
     fi
 
@@ -367,6 +372,14 @@ create_spoolbuddy_user() {
         fi
     done
     success "User added to gpio, spi, i2c, video groups"
+
+    # Allow passwordless restart of daemon + kiosk (needed for SSH-based updates from Bambuddy)
+    cat > /etc/sudoers.d/spoolbuddy << 'SUDOERS'
+spoolbuddy ALL=(root) NOPASSWD: /usr/bin/systemctl restart spoolbuddy.service
+spoolbuddy ALL=(root) NOPASSWD: /usr/bin/systemctl restart getty@tty1.service
+SUDOERS
+    chmod 440 /etc/sudoers.d/spoolbuddy
+    success "Sudoers entries created for service and kiosk restart"
 }
 
 download_spoolbuddy() {
@@ -376,13 +389,9 @@ download_spoolbuddy() {
         cd "$INSTALL_PATH"
         run_with_progress "Fetching updates" git fetch origin
         git reset --hard origin/main > /dev/null 2>&1
-	cd "$INSTALL_PATH"
-        git checkout 0.2.2b1
     else
         mkdir -p "$INSTALL_PATH"
         run_with_progress "Cloning repository" git clone "$GITHUB_REPO" "$INSTALL_PATH"
-        cd "$INSTALL_PATH"
-        git checkout 0.2.2b1
     fi
 
     chown -R "$SPOOLBUDDY_SERVICE_USER:$SPOOLBUDDY_SERVICE_USER" "$INSTALL_PATH"
@@ -417,6 +426,33 @@ EOF
     chown "$SPOOLBUDDY_SERVICE_USER:$SPOOLBUDDY_SERVICE_USER" "$env_file"
     chmod 600 "$env_file"
     success "Configuration saved to $env_file"
+}
+
+setup_ssh_key() {
+    info "Setting up SSH access for Bambuddy remote updates..."
+
+    local ssh_dir="$INSTALL_PATH/.ssh"
+    local auth_keys="$ssh_dir/authorized_keys"
+
+    mkdir -p "$ssh_dir"
+    chmod 700 "$ssh_dir"
+
+    if [[ -n "$SSH_PUBKEY" ]]; then
+        # Manual key provided via --ssh-pubkey flag
+        if [[ -f "$auth_keys" ]] && grep -qF "$SSH_PUBKEY" "$auth_keys" 2>/dev/null; then
+            info "SSH key already present in authorized_keys"
+        else
+            echo "$SSH_PUBKEY" >> "$auth_keys"
+            success "SSH public key added"
+        fi
+    else
+        # No manual key — the daemon will auto-deploy it on first registration
+        info "SSH key will be deployed automatically when the daemon connects to Bambuddy"
+        touch "$auth_keys"
+    fi
+
+    chmod 600 "$auth_keys"
+    chown -R "$SPOOLBUDDY_SERVICE_USER:$SPOOLBUDDY_SERVICE_USER" "$ssh_dir"
 }
 
 create_spoolbuddy_service() {
@@ -871,6 +907,10 @@ parse_args() {
                 BAMBUDDY_PORT="$2"
                 shift 2
                 ;;
+            --ssh-pubkey)
+                SSH_PUBKEY="$2"
+                shift 2
+                ;;
             --yes|-y)
                 NON_INTERACTIVE="true"
                 shift
@@ -1058,6 +1098,7 @@ main() {
     info "Setting up SpoolBuddy..."
     setup_spoolbuddy_venv
     create_spoolbuddy_env
+    setup_ssh_key
     create_spoolbuddy_service
     echo ""
 

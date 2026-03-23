@@ -323,10 +323,18 @@ export function useWebSocket() {
 
       case 'spoolbuddy_online':
         window.dispatchEvent(new CustomEvent('spoolbuddy-online', { detail: message }));
+        debouncedInvalidate('spoolbuddy-devices');
+        debouncedInvalidate('spoolbuddy-update-check');
         break;
 
       case 'spoolbuddy_offline':
         window.dispatchEvent(new CustomEvent('spoolbuddy-offline', { detail: message }));
+        debouncedInvalidate('spoolbuddy-devices');
+        break;
+
+      case 'spoolbuddy_update':
+        debouncedInvalidate('spoolbuddy-devices');
+        debouncedInvalidate('spoolbuddy-update-check');
         break;
     }
   }, [queryClient, debouncedInvalidate, throttledPrinterStatusUpdate]);

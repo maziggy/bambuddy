@@ -504,13 +504,22 @@ function UpdatesTab({ device }: { device: SpoolBuddyDevice }) {
   const { t } = useTranslation();
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sshExpanded, setSSHExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const isUpdating = device.update_status === 'pending' || device.update_status === 'updating';
 
   const { data: updateResult, isLoading: checking, refetch } = useQuery({
     queryKey: ['spoolbuddy-update-check', device.device_id],
-    queryFn: () => spoolbuddyApi.checkDaemonUpdate(device.device_id, true),
+    queryFn: () => spoolbuddyApi.checkDaemonUpdate(device.device_id),
     staleTime: 4 * 60 * 1000,
+  });
+
+  const { data: sshKeyData } = useQuery({
+    queryKey: ['spoolbuddy-ssh-key'],
+    queryFn: () => spoolbuddyApi.getSSHPublicKey(),
+    enabled: sshExpanded,
+    staleTime: Infinity,
   });
 
   const applyUpdate = async () => {
@@ -522,6 +531,14 @@ function UpdatesTab({ device }: { device: SpoolBuddyDevice }) {
       setError(e instanceof Error ? e.message : 'Failed to trigger update');
     } finally {
       setApplying(false);
+    }
+  };
+
+  const copyKey = () => {
+    if (sshKeyData?.public_key) {
+      navigator.clipboard.writeText(sshKeyData.public_key);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 
@@ -641,16 +658,71 @@ function UpdatesTab({ device }: { device: SpoolBuddyDevice }) {
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-green-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-                <p className="text-zinc-300">{t('spoolbuddy.settings.upToDate', 'Up to date')}</p>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-green-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <p className="text-zinc-300">{t('spoolbuddy.settings.upToDate', 'Up to date')}</p>
+                </div>
+                {/* Force update button — re-deploy even when versions match */}
+                <button
+                  onClick={applyUpdate}
+                  disabled={applying || isUpdating || !device.online}
+                  className="w-full px-4 py-2 rounded-lg text-xs font-medium bg-zinc-700 text-zinc-400 hover:bg-zinc-600 hover:text-zinc-200 disabled:opacity-40 transition-colors min-h-[36px]"
+                >
+                  {!device.online
+                    ? t('spoolbuddy.settings.deviceOffline', 'Device Offline')
+                    : t('spoolbuddy.settings.forceUpdate', 'Force Update')}
+                </button>
               </div>
             )}
           </div>
         )}
 
+      </div>
+
+      {/* SSH Setup */}
+      <div className="bg-zinc-800 rounded-lg p-4">
+        <button
+          onClick={() => setSSHExpanded(!sshExpanded)}
+          className="w-full flex justify-between items-center text-sm"
+        >
+          <span className="font-semibold text-zinc-300">
+            {t('spoolbuddy.settings.sshSetup', 'SSH Setup')}
+          </span>
+          <svg
+            className={`w-4 h-4 text-zinc-400 transition-transform ${sshExpanded ? 'rotate-180' : ''}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {sshExpanded && (
+          <div className="mt-3 space-y-3">
+            <p className="text-xs text-zinc-400">
+              {t('spoolbuddy.settings.sshDescription', 'Add this public key to your SpoolBuddy device to enable remote updates. Run the install script with --ssh-pubkey or add it to ~/.ssh/authorized_keys on the device.')}
+            </p>
+            {sshKeyData?.public_key ? (
+              <div className="relative">
+                <pre className="bg-zinc-900 rounded p-3 text-xs text-zinc-300 font-mono break-all whitespace-pre-wrap">
+                  {sshKeyData.public_key}
+                </pre>
+                <button
+                  onClick={copyKey}
+                  className="absolute top-2 right-2 px-2 py-1 rounded text-xs bg-zinc-700 text-zinc-300 hover:bg-zinc-600 transition-colors"
+                >
+                  {copied ? t('common.copied', 'Copied!') : t('common.copy', 'Copy')}
+                </button>
+              </div>
+            ) : (
+              <div className="text-xs text-zinc-500 italic">
+                {t('spoolbuddy.settings.sshKeyLoading', 'Loading SSH key...')}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

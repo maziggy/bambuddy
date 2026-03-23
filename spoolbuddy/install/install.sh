@@ -373,11 +373,13 @@ create_spoolbuddy_user() {
     done
     success "User added to gpio, spi, i2c, video groups"
 
-    # Allow passwordless restart of the daemon (needed for SSH-based updates from Bambuddy)
-    echo "$SPOOLBUDDY_SERVICE_USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart spoolbuddy.service" \
-        > /etc/sudoers.d/spoolbuddy
+    # Allow passwordless restart of daemon + kiosk (needed for SSH-based updates from Bambuddy)
+    cat > /etc/sudoers.d/spoolbuddy << 'SUDOERS'
+spoolbuddy ALL=(root) NOPASSWD: /usr/bin/systemctl restart spoolbuddy.service
+spoolbuddy ALL=(root) NOPASSWD: /usr/bin/systemctl restart getty@tty1.service
+SUDOERS
     chmod 440 /etc/sudoers.d/spoolbuddy
-    success "Sudoers entry created for service restart"
+    success "Sudoers entries created for service and kiosk restart"
 }
 
 download_spoolbuddy() {

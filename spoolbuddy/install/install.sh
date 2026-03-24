@@ -545,6 +545,7 @@ ensure_kiosk_env_access() {
     fi
 
     success "Verified kiosk user '$KIOSK_USER' can read SpoolBuddy env"
+}
 setup_ssh_key() {
     info "Setting up SSH access for Bambuddy remote updates..."
 

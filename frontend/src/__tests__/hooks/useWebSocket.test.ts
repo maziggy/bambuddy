@@ -14,6 +14,31 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 let wsInstances: MockWebSocket[] = [];
 let originalWebSocket: typeof WebSocket;
 
+// Mock contexts and hooks
+interface MockToastContextType {
+  showToast: ReturnType<typeof vi.fn>;
+  showPersistentToast: ReturnType<typeof vi.fn>;
+  dismissToast: ReturnType<typeof vi.fn>;
+}
+
+const MockToastContext = React.createContext<MockToastContextType | null>(null);
+
+function createMockToastProvider(showToastMock: ReturnType<typeof vi.fn>) {
+  return function MockToastProvider({ children }: { children: React.ReactNode }) {
+    return React.createElement(
+      MockToastContext.Provider,
+      {
+        value: {
+          showToast: showToastMock,
+          showPersistentToast: vi.fn(),
+          dismissToast: vi.fn(),
+        },
+      },
+      children
+    );
+  };
+}
+
 // Enhanced MockWebSocket that tracks instances
 class MockWebSocket {
   static readonly CONNECTING = 0;
@@ -77,13 +102,20 @@ function createTestQueryClient() {
   });
 }
 
-// Wrapper with QueryClient for hook testing
-function createWrapper(queryClient: QueryClient) {
+// Wrapper with QueryClient and optional mock contexts for hook testing
+function createWrapper(queryClient: QueryClient, options?: { showToastMock?: ReturnType<typeof vi.fn> }) {
   return function Wrapper({ children }: { children: React.ReactNode }) {
+    const showToastMock = options?.showToastMock || vi.fn();
+    const ToastProvider = createMockToastProvider(showToastMock);
+
     return React.createElement(
-      QueryClientProvider,
-      { client: queryClient },
-      children
+      ToastProvider,
+      {},
+      React.createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        children
+      )
     );
   };
 }
@@ -94,20 +126,51 @@ function getLatestWs(): MockWebSocket | undefined {
 
 describe('useWebSocket hook', () => {
   let queryClient: QueryClient;
+  let mockShowToast: ReturnType<typeof vi.fn>;
+  let mockT: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     wsInstances = [];
     queryClient = createTestQueryClient();
+
+    // Create mock functions for toast and translation
+    mockShowToast = vi.fn();
+    mockT = vi.fn((key: string, options?: Record<string, unknown>) => {
+      // Simple mock translator that returns a formatted string
+      if (key === 'printers.toast.missingSpoolAssignment' && options) {
+        const { printer, slots } = options as { printer: string; slots: string };
+        return `Missing assignments for ${printer}: ${slots}`;
+      }
+      return key;
+    });
+
     // Save original and install mock
     originalWebSocket = globalThis.WebSocket;
     globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
+
+    // Mock the hooks globally
+    vi.doMock('../contexts/ToastContext', () => ({
+      useToast: () => ({
+        showToast: mockShowToast,
+        showPersistentToast: vi.fn(),
+        dismissToast: vi.fn(),
+      }),
+    }));
+
+    vi.doMock('react-i18next', () => ({
+      useTranslation: () => ({
+        t: mockT,
+        i18n: {},
+      }),
+    }));
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     // Restore original WebSocket
     globalThis.WebSocket = originalWebSocket;
+    vi.undoAll();
   });
 
   describe('WebSocket Mock', () => {
@@ -380,16 +443,13 @@ describe('useWebSocket hook', () => {
       vi.unstubAllGlobals();
     });
 
-    it('dispatches missing-spool-assignment browser event from websocket payload', async () => {
+    it('calls showToast on missing_spool_assignment message', async () => {
       vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
         cb(0);
         return 0;
       });
       vi.resetModules();
       const { useWebSocket } = await import('../../hooks/useWebSocket');
-
-      const eventSpy = vi.fn();
-      window.addEventListener('missing-spool-assignment', eventSpy as EventListener);
 
       renderHook(() => useWebSocket(), {
         wrapper: createWrapper(queryClient),
@@ -410,19 +470,14 @@ describe('useWebSocket hook', () => {
       });
 
       await waitFor(() => {
-        expect(eventSpy).toHaveBeenCalledTimes(1);
+        expect(mockShowToast).toHaveBeenCalled();
       });
 
-      const event = eventSpy.mock.calls[0][0] as CustomEvent<{
-        printer_id?: number;
-        printer_name?: string;
-        missing_slots?: string[];
-      }>;
-      expect(event.detail.printer_id).toBe(7);
-      expect(event.detail.printer_name).toBe('Printer B');
-      expect(event.detail.missing_slots).toEqual(['A2', 'Ext-L']);
+      const callArgs = mockShowToast.mock.calls[0];
+      expect(callArgs[0]).toContain('Missing assignments for Printer B');
+      expect(callArgs[0]).toContain('A2, Ext-L');
+      expect(callArgs[1]).toBe('warning');
 
-      window.removeEventListener('missing-spool-assignment', eventSpy as EventListener);
       vi.unstubAllGlobals();
     });
 

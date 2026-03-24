@@ -547,6 +547,7 @@ ensure_kiosk_env_access() {
 
     success "Verified kiosk user '$KIOSK_USER' can read SpoolBuddy env"
 }
+
 setup_ssh_key() {
     info "Setting up SSH access for Bambuddy remote updates..."
 
@@ -1325,7 +1326,10 @@ main() {
     info "Setting up SpoolBuddy..."
     setup_spoolbuddy_venv
     create_spoolbuddy_env
-    ensure_kiosk_env_access
+    # Kiosk env access: only needed if actual kiosk hardware is available
+    if [[ -f /boot/firmware/config.txt ]] || [[ -f /boot/config.txt ]]; then
+        ensure_kiosk_env_access
+    fi
     setup_ssh_key
     create_spoolbuddy_service
     echo ""

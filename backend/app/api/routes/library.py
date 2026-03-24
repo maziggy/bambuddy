@@ -871,6 +871,12 @@ async def scan_external_folder(
                     thumb_full.write_bytes(thumb_data)
                     thumbnail_path = to_relative_path(thumb_full)
 
+            # Create thumbnail for image files
+            if ext.lower() in IMAGE_EXTENSIONS and thumbnail_path is None:
+                thumbnail_path_str = create_image_thumbnail(filepath, get_library_thumbnails_dir())
+                if thumbnail_path_str:
+                    thumbnail_path = to_relative_path(Path(thumbnail_path_str))
+
             db_file = LibraryFile(
                 folder_id=folder_id,
                 is_external=True,

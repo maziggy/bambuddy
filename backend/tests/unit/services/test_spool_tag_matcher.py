@@ -224,20 +224,62 @@ async def test_get_spool_by_tag_first_char_variance_same_length(db_session):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Pending reliable short-UID LIKE coverage across fixtures")
 async def test_get_spool_by_tag_first_char_variance_short_uid(db_session):
     """Match spool when 8-char scanned tag differs only in first character.
 
     Handles short UID (8 char) from 4-byte readers with first-char variance.
+    The stored tag is longer (16 char), but the first 8 chars of the stored tag
+    should match the scanned 8-char UID with first-char tolerance.
     """
-    pass
+    spool = Spool(
+        material="PLA",
+        tag_uid="A4501234CCDDEE88",  # 16-char stored tag
+        label_weight=1000,
+        core_weight=250,
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.commit()
+
+    # Scan with 8-char short UID whose first char differs but remaining 7 match
+    # the first 8 chars of the stored tag: stored[:8] = "A4501234",
+    # scanned = "B4501234" → first-char variance on short UID
+    found = await get_spool_by_tag(db_session, "B4501234", "")
+    assert found is not None
+    assert found.id == spool.id
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Pending reliable exact-vs-variance short-UID fixture setup")
 async def test_get_spool_by_tag_short_uid_exact_match_preferred(db_session):
     """Prefer exact match over first-char variance match."""
-    pass
+    # Spool with exact 8-char UID match
+    spool_exact = Spool(
+        material="PLA",
+        tag_uid="B4501234",
+        label_weight=1000,
+        core_weight=250,
+    )
+    spool_exact.k_profiles = []
+    spool_exact.assignments = []
+    db_session.add(spool_exact)
+
+    # Spool that would match via first-char variance
+    spool_variance = Spool(
+        material="PETG",
+        tag_uid="A4501234",
+        label_weight=1000,
+        core_weight=250,
+    )
+    spool_variance.k_profiles = []
+    spool_variance.assignments = []
+    db_session.add(spool_variance)
+    await db_session.commit()
+
+    # Exact match should win over variance match
+    found = await get_spool_by_tag(db_session, "B4501234", "")
+    assert found is not None
+    assert found.id == spool_exact.id
 
 
 @pytest.mark.asyncio

@@ -647,10 +647,10 @@ async def queue_system_config_update(
         raise HTTPException(status_code=404, detail="Device not registered")
 
     parsed = urlparse(req.backend_url.strip())
-    if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.port is None:
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise HTTPException(
             status_code=400,
-            detail="backend_url must be a full URL with scheme and port, e.g. http://192.168.1.100:5000",
+            detail="backend_url must be a full URL with scheme, e.g. http://192.168.1.100:5000 or http://bambuddy.local",
         )
 
     payload = {

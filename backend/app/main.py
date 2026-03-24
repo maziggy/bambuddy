@@ -775,9 +775,11 @@ async def on_ams_change(printer_id: int, ams_data: list):
             from backend.app.services.spool_tag_matcher import (
                 auto_assign_spool,
                 create_spool_from_tray,
+                find_matching_untagged_spool,
                 get_spool_by_tag,
                 is_bambu_tag,
                 is_valid_tag,
+                link_tag_to_inventory_spool,
             )
 
             _spoolman_on = await get_setting(db, "spoolman_enabled")
@@ -833,10 +835,15 @@ async def on_ams_change(printer_id: int, ams_data: list):
                             continue
 
                         if is_bambu_tag(tag_uid, tray_uuid, tray_info_idx):
-                            # BL spool with RFID tag: auto-match or auto-create
+                            # BL spool with RFID tag: auto-match → inventory match → auto-create
                             spool = await get_spool_by_tag(db, tag_uid, tray_uuid)
                             if not spool:
-                                spool = await create_spool_from_tray(db, tray)
+                                # Try matching an untagged inventory spool (same material/color)
+                                spool = await find_matching_untagged_spool(db, tray)
+                                if spool:
+                                    await link_tag_to_inventory_spool(db, spool, tray)
+                                else:
+                                    spool = await create_spool_from_tray(db, tray)
                             await auto_assign_spool(
                                 printer_id,
                                 ams_id,

@@ -103,7 +103,6 @@ export function DiagnosticModal({ type, deviceId, onClose }: DiagnosticModalProp
           </button>
         </div>
 
-        {/* Output Display */}
         <div className="flex-1 overflow-auto p-4 bg-black/50 font-mono text-sm">
           {isRunning ? (
             <div className="flex items-center gap-2 text-green-400">
@@ -111,29 +110,31 @@ export function DiagnosticModal({ type, deviceId, onClose }: DiagnosticModalProp
               <span>{t('spoolbuddy.diagnostic.running', 'Running diagnostic on device...')}</span>
             </div>
           ) : output ? (
-            <div className="text-green-400 whitespace-pre-wrap break-words">
-              {output}
-            </div>
+            <>
+              <div className="text-green-400 whitespace-pre-wrap break-words">
+                {output}
+              </div>
+              {error && (
+                <div className="text-red-400 mt-2">
+                  ❌ {error}
+                </div>
+              )}
+            </>
           ) : hasRun ? (
-            <div className="text-green-400">
+            <div>
               {error ? (
                 <div className="text-red-400">ERROR: {error}</div>
               ) : (
-                t('spoolbuddy.diagnostic.completed', 'Diagnostic completed successfully.')
+                <span className="text-green-400">{t('spoolbuddy.diagnostic.completed', 'Diagnostic completed successfully.')}</span>
               )}
             </div>
-          ) : (
+                ) : (
             <div className="text-zinc-500">
               {t('spoolbuddy.diagnostic.clickStart', 'Click "Run Diagnostic" to start the hardware diagnostic on')} {deviceId}.
             </div>
           )}
-          {error && !(hasRun && !output) && (
-            <div className="text-red-400 mt-2">
-              ❌ {error}
-            </div>
-          )}
         </div>
-
+        
         {/* Footer */}
         <div className="flex gap-2 p-4 border-t border-zinc-700 bg-zinc-800">
           <button

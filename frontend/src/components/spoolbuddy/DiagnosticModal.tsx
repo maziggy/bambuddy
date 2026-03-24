@@ -35,7 +35,7 @@ export function DiagnosticModal({ type, deviceId, onClose }: DiagnosticModalProp
 
     try {
       // Step 1: Queue the diagnostic on the device
-      setOutput('Queuing diagnostic on device...\n');
+      setOutput(t('spoolbuddy.diagnostic.queuing', 'Queuing diagnostic on device...\n'));
       await spoolbuddyApi.queueDiagnostics(deviceId, type);
 
       // Step 2: Poll for results with timeout
@@ -108,7 +108,7 @@ export function DiagnosticModal({ type, deviceId, onClose }: DiagnosticModalProp
           {isRunning ? (
             <div className="flex items-center gap-2 text-green-400">
               <div className="animate-spin w-4 h-4 border-2 border-green-400 border-t-transparent rounded-full" />
-              <span>Running diagnostic on device...</span>
+              <span>{t('spoolbuddy.diagnostic.running', 'Running diagnostic on device...')}</span>
             </div>
           ) : output ? (
             <div className="text-green-400 whitespace-pre-wrap break-words">
@@ -119,12 +119,12 @@ export function DiagnosticModal({ type, deviceId, onClose }: DiagnosticModalProp
               {error ? (
                 <div className="text-red-400">ERROR: {error}</div>
               ) : (
-                'Diagnostic completed successfully.'
+                t('spoolbuddy.diagnostic.completed', 'Diagnostic completed successfully.')
               )}
             </div>
           ) : (
             <div className="text-zinc-500">
-              Click "Run Diagnostic" to start the hardware diagnostic on {deviceId}.
+              {t('spoolbuddy.diagnostic.clickStart', 'Click "Run Diagnostic" to start the hardware diagnostic on')} {deviceId}.
             </div>
           )}
           {error && !(hasRun && !output) && (
@@ -144,17 +144,17 @@ export function DiagnosticModal({ type, deviceId, onClose }: DiagnosticModalProp
             {isRunning ? (
               <>
                 <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
-                Running...
+                {t('spoolbuddy.diagnostic.runningBtn', 'Running...')}
               </>
             ) : hasRun ? (
               <>
                 <RotateCw size={16} />
-                Run Again
+                {t('spoolbuddy.diagnostic.runAgain', 'Run Again')}
               </>
             ) : (
               <>
                 <Play size={16} />
-                Run Diagnostic
+                {t('spoolbuddy.diagnostic.runBtn', 'Run Diagnostic')}
               </>
             )}
           </button>
@@ -162,7 +162,7 @@ export function DiagnosticModal({ type, deviceId, onClose }: DiagnosticModalProp
             onClick={onClose}
             className="px-4 py-2 rounded bg-zinc-700 hover:bg-zinc-600 text-white font-semibold transition-colors"
           >
-            Close
+            {t('spoolbuddy.diagnostic.close', 'Close')}
           </button>
         </div>
       </div>

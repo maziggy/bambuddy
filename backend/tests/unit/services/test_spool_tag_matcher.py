@@ -8,9 +8,11 @@ from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.services.spool_tag_matcher import (
     auto_assign_spool,
     create_spool_from_tray,
+    find_matching_untagged_spool,
     get_spool_by_tag,
     is_bambu_tag,
     is_valid_tag,
+    link_tag_to_inventory_spool,
 )
 
 # -- helpers -----------------------------------------------------------------
@@ -352,3 +354,283 @@ async def test_auto_assign_no_greenlet_error_existing_spool(db_session, printer_
 
     assert assignment is not None
     assert assignment.spool_id == found.id
+
+
+# -- find_matching_untagged_spool -------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_find_matching_untagged_spool_exact_match(db_session):
+    """Finds an untagged spool with matching material, subtype, and color."""
+    spool = Spool(
+        material="PLA",
+        subtype="Basic",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    db_session.add(spool)
+    await db_session.commit()
+
+    found = await find_matching_untagged_spool(db_session, SAMPLE_TRAY)
+    assert found is not None
+    assert found.id == spool.id
+
+
+@pytest.mark.asyncio
+async def test_find_matching_untagged_spool_skips_tagged(db_session):
+    """Spools that already have a tag_uid are not matched."""
+    spool = Spool(
+        material="PLA",
+        subtype="Basic",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+        tag_uid="1122334455667788",
+    )
+    db_session.add(spool)
+    await db_session.commit()
+
+    found = await find_matching_untagged_spool(db_session, SAMPLE_TRAY)
+    assert found is None
+
+
+@pytest.mark.asyncio
+async def test_find_matching_untagged_spool_skips_uuid_tagged(db_session):
+    """Spools that already have a tray_uuid are not matched."""
+    spool = Spool(
+        material="PLA",
+        subtype="Basic",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+        tray_uuid="AABBCCDD11223344AABBCCDD11223344",
+    )
+    db_session.add(spool)
+    await db_session.commit()
+
+    found = await find_matching_untagged_spool(db_session, SAMPLE_TRAY)
+    assert found is None
+
+
+@pytest.mark.asyncio
+async def test_find_matching_untagged_spool_skips_archived(db_session):
+    """Archived spools are not matched."""
+    from datetime import datetime
+
+    spool = Spool(
+        material="PLA",
+        subtype="Basic",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+        archived_at=datetime.now(),
+    )
+    db_session.add(spool)
+    await db_session.commit()
+
+    found = await find_matching_untagged_spool(db_session, SAMPLE_TRAY)
+    assert found is None
+
+
+@pytest.mark.asyncio
+async def test_find_matching_untagged_spool_wrong_material(db_session):
+    """Material mismatch returns None."""
+    spool = Spool(
+        material="PETG",
+        subtype="Basic",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    db_session.add(spool)
+    await db_session.commit()
+
+    found = await find_matching_untagged_spool(db_session, SAMPLE_TRAY)
+    assert found is None
+
+
+@pytest.mark.asyncio
+async def test_find_matching_untagged_spool_wrong_color(db_session):
+    """Color (rgba) mismatch returns None."""
+    spool = Spool(
+        material="PLA",
+        subtype="Basic",
+        rgba="FF0000FF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    db_session.add(spool)
+    await db_session.commit()
+
+    found = await find_matching_untagged_spool(db_session, SAMPLE_TRAY)
+    assert found is None
+
+
+@pytest.mark.asyncio
+async def test_find_matching_untagged_spool_wrong_subtype(db_session):
+    """Subtype mismatch returns None (PLA Matte vs PLA Basic)."""
+    spool = Spool(
+        material="PLA",
+        subtype="Matte",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    db_session.add(spool)
+    await db_session.commit()
+
+    found = await find_matching_untagged_spool(db_session, SAMPLE_TRAY)
+    assert found is None
+
+
+@pytest.mark.asyncio
+async def test_find_matching_untagged_spool_fifo(db_session):
+    """When multiple match, returns the oldest (FIFO)."""
+    import asyncio
+
+    spool_old = Spool(
+        material="PLA",
+        subtype="Basic",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    db_session.add(spool_old)
+    await db_session.flush()
+
+    # Small delay to ensure different created_at
+    await asyncio.sleep(0.05)
+
+    spool_new = Spool(
+        material="PLA",
+        subtype="Basic",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    db_session.add(spool_new)
+    await db_session.commit()
+
+    found = await find_matching_untagged_spool(db_session, SAMPLE_TRAY)
+    assert found is not None
+    assert found.id == spool_old.id
+
+
+@pytest.mark.asyncio
+async def test_find_matching_untagged_spool_case_insensitive(db_session):
+    """Matching is case-insensitive for material and rgba."""
+    spool = Spool(
+        material="pla",
+        subtype="basic",
+        rgba="ffffffff",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    db_session.add(spool)
+    await db_session.commit()
+
+    found = await find_matching_untagged_spool(db_session, SAMPLE_TRAY)
+    assert found is not None
+    assert found.id == spool.id
+
+
+@pytest.mark.asyncio
+async def test_find_matching_untagged_spool_no_subtype(db_session):
+    """Tray without subtype matches spool without subtype."""
+    tray = {**SAMPLE_TRAY, "tray_sub_brands": "PLA", "tray_type": "PLA"}
+    spool = Spool(
+        material="PLA",
+        subtype=None,
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    db_session.add(spool)
+    await db_session.commit()
+
+    found = await find_matching_untagged_spool(db_session, tray)
+    assert found is not None
+    assert found.id == spool.id
+
+
+@pytest.mark.asyncio
+async def test_find_matching_untagged_spool_relationships_loaded(db_session):
+    """Matched spool has k_profiles and assignments eagerly loaded."""
+    spool = Spool(
+        material="PLA",
+        subtype="Basic",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    db_session.add(spool)
+    await db_session.commit()
+    db_session.expire(spool)
+
+    found = await find_matching_untagged_spool(db_session, SAMPLE_TRAY)
+    assert found is not None
+    assert _relationship_is_loaded(found, "k_profiles")
+    assert _relationship_is_loaded(found, "assignments")
+
+
+# -- link_tag_to_inventory_spool -------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_link_tag_to_inventory_spool(db_session):
+    """Links RFID tag data to an existing spool."""
+    spool = Spool(
+        material="PLA",
+        subtype="Basic",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    db_session.add(spool)
+    await db_session.flush()
+
+    await link_tag_to_inventory_spool(db_session, spool, SAMPLE_TRAY)
+    await db_session.commit()
+
+    assert spool.tag_uid == "AABBCCDD11223344"
+    assert spool.tray_uuid == "AABBCCDD11223344AABBCCDD11223344"
+    assert spool.data_origin == "rfid_linked"
+    assert spool.tag_type == "bambulab"
+    assert spool.slicer_filament == "GFL99"
+
+
+@pytest.mark.asyncio
+async def test_link_tag_preserves_existing_slicer_filament(db_session):
+    """Does not overwrite an existing slicer_filament preset."""
+    spool = Spool(
+        material="PLA",
+        subtype="Basic",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+        slicer_filament="CUSTOM01",
+        slicer_filament_name="My Custom PLA",
+    )
+    db_session.add(spool)
+    await db_session.flush()
+
+    await link_tag_to_inventory_spool(db_session, spool, SAMPLE_TRAY)
+    await db_session.commit()
+
+    assert spool.slicer_filament == "CUSTOM01"
+    assert spool.slicer_filament_name == "My Custom PLA"

@@ -4055,6 +4055,15 @@ export const api = {
     }),
   deleteLibraryFolder: (id: number) =>
     request<{ status: string; message: string }>(`/library/folders/${id}`, { method: 'DELETE' }),
+  createExternalFolder: (data: ExternalFolderCreate) =>
+    request<LibraryFolder>('/library/folders/external', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  scanExternalFolder: (folderId: number) =>
+    request<{ status: string; added: number; removed: number }>(`/library/folders/${folderId}/scan`, {
+      method: 'POST',
+    }),
   getLibraryFoldersByProject: (projectId: number) =>
     request<LibraryFolder[]>(`/library/folders/by-project/${projectId}`),
   getLibraryFoldersByArchive: (archiveId: number) =>
@@ -4439,6 +4448,9 @@ export interface LibraryFolderTree {
   archive_id: number | null;
   project_name: string | null;
   archive_name: string | null;
+  is_external: boolean;
+  external_path: string | null;
+  external_readonly: boolean;
   file_count: number;
   children: LibraryFolderTree[];
 }
@@ -4451,6 +4463,10 @@ export interface LibraryFolder {
   archive_id: number | null;
   project_name: string | null;
   archive_name: string | null;
+  is_external: boolean;
+  external_path: string | null;
+  external_readonly: boolean;
+  external_show_hidden: boolean;
   file_count: number;
   created_at: string;
   updated_at: string;
@@ -4461,6 +4477,14 @@ export interface LibraryFolderCreate {
   parent_id?: number | null;
   project_id?: number | null;
   archive_id?: number | null;
+}
+
+export interface ExternalFolderCreate {
+  name: string;
+  external_path: string;
+  readonly?: boolean;
+  show_hidden?: boolean;
+  parent_id?: number | null;
 }
 
 export interface LibraryFolderUpdate {
@@ -4484,6 +4508,7 @@ export interface LibraryFile {
   folder_name: string | null;
   project_id: number | null;
   project_name: string | null;
+  is_external: boolean;
   filename: string;
   file_path: string;
   file_type: string;
@@ -4511,6 +4536,7 @@ export interface LibraryFile {
 export interface LibraryFileListItem {
   id: number;
   folder_id: number | null;
+  is_external: boolean;
   filename: string;
   file_type: string;
   file_size: number;

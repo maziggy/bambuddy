@@ -165,6 +165,104 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     return spool
 
 
+async def find_matching_untagged_spool(db: AsyncSession, tray_data: dict) -> Spool | None:
+    """Find an existing untagged inventory spool matching brand/material/color.
+
+    When a Bambu Lab spool is detected in the AMS but no tag match exists,
+    check if the user has a manually-added spool with the same properties
+    that hasn't been linked to a tag yet. Returns the oldest match (FIFO).
+    """
+    tray_type = tray_data.get("tray_type", "")
+    tray_sub_brands = tray_data.get("tray_sub_brands", "")
+    tray_color = tray_data.get("tray_color", "")  # RRGGBBAA
+
+    if not tray_type or not tray_color:
+        return None
+
+    # Parse material the same way create_spool_from_tray does
+    material = tray_type
+    subtype = None
+    if tray_sub_brands and " " in tray_sub_brands:
+        parts = tray_sub_brands.split(" ", 1)
+        if parts[0].upper() == material.upper():
+            subtype = parts[1]
+        else:
+            material = tray_sub_brands
+    elif tray_sub_brands and tray_sub_brands.upper() != material.upper():
+        material = tray_sub_brands
+
+    # Build query: active spools with no tag, matching brand + material + color
+    query = (
+        select(Spool)
+        .options(selectinload(Spool.k_profiles), selectinload(Spool.assignments))
+        .where(
+            Spool.archived_at.is_(None),
+            Spool.tag_uid.is_(None),
+            Spool.tray_uuid.is_(None),
+            func.upper(Spool.material) == material.upper(),
+            func.upper(Spool.rgba) == tray_color.upper(),
+        )
+    )
+
+    # Match subtype if parsed (e.g. "Basic", "Matte")
+    if subtype:
+        query = query.where(func.upper(Spool.subtype) == subtype.upper())
+    else:
+        query = query.where(Spool.subtype.is_(None))
+
+    # FIFO: oldest spool first (user likely added in purchase order)
+    query = query.order_by(Spool.created_at.asc()).limit(1)
+
+    result = await db.execute(query)
+    spool = result.scalar_one_or_none()
+
+    if spool:
+        logger.info(
+            "Found matching untagged spool %d: %s %s %s (rgba=%s)",
+            spool.id,
+            spool.brand or "",
+            spool.material,
+            spool.color_name or "",
+            spool.rgba or "",
+        )
+
+    return spool
+
+
+async def link_tag_to_inventory_spool(db: AsyncSession, spool: Spool, tray_data: dict) -> None:
+    """Link RFID tag data from AMS tray to an existing inventory spool."""
+    tag_uid = tray_data.get("tag_uid", "")
+    tray_uuid = tray_data.get("tray_uuid", "")
+    tray_info_idx = tray_data.get("tray_info_idx", "")
+
+    if tag_uid and tag_uid != ZERO_TAG_UID:
+        spool.tag_uid = tag_uid
+    if tray_uuid and tray_uuid != ZERO_TRAY_UUID:
+        spool.tray_uuid = tray_uuid
+    spool.data_origin = "rfid_linked"
+    spool.tag_type = "bambulab"
+
+    # Update slicer preset if not already set
+    if tray_info_idx and not spool.slicer_filament:
+        spool.slicer_filament = tray_info_idx
+        try:
+            from backend.app.api.routes.cloud import _BUILTIN_FILAMENT_NAMES
+
+            name = _BUILTIN_FILAMENT_NAMES.get(tray_info_idx)
+            if name and not spool.slicer_filament_name:
+                spool.slicer_filament_name = name
+        except Exception:
+            pass
+
+    await db.flush()
+    logger.info(
+        "Linked RFID tag to existing spool %d (tag=%s uuid=%s origin=rfid_linked)",
+        spool.id,
+        spool.tag_uid or "",
+        spool.tray_uuid or "",
+    )
+
+
 async def get_spool_by_tag(db: AsyncSession, tag_uid: str, tray_uuid: str) -> Spool | None:
     """Look up an active spool by RFID tag UID or Bambu Lab tray UUID.
 

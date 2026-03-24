@@ -1,6 +1,6 @@
 // Bambuddy Service Worker
-const CACHE_NAME = 'bambuddy-v24';
-const STATIC_CACHE = 'bambuddy-static-v24';
+const CACHE_NAME = 'bambuddy-v25';
+const STATIC_CACHE = 'bambuddy-static-v25';
 
 // Static assets to cache on install
 const STATIC_ASSETS = [
@@ -113,15 +113,16 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // JS/CSS assets - stale-while-revalidate
+  // JS/CSS assets - network first (Vite content-hashes filenames, so
+  // cache-busting is built in; network-first ensures new builds load immediately)
   if (
     url.pathname.startsWith('/assets/') ||
     url.pathname.endsWith('.js') ||
     url.pathname.endsWith('.css')
   ) {
     event.respondWith(
-      caches.match(request).then((cached) => {
-        const fetchPromise = fetch(request).then((response) => {
+      fetch(request)
+        .then((response) => {
           if (response.ok) {
             const clone = response.clone();
             caches.open(CACHE_NAME).then((cache) => {
@@ -129,9 +130,10 @@ self.addEventListener('fetch', (event) => {
             });
           }
           return response;
-        });
-        return cached || fetchPromise;
-      })
+        })
+        .catch(() => {
+          return caches.match(request);
+        })
     );
     return;
   }

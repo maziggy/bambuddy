@@ -37,6 +37,9 @@ import {
   Image,
   User,
   Box,
+  RefreshCw,
+  Lock,
+  FolderSymlink,
 } from 'lucide-react';
 import { api } from '../api/client';
 import type {
@@ -44,6 +47,7 @@ import type {
   LibraryFileListItem,
   LibraryFolderCreate,
   LibraryFolderUpdate,
+  ExternalFolderCreate,
   AppSettings,
   Archive,
   Permission,
@@ -107,6 +111,104 @@ function NewFolderModal({ parentId, onClose, onSave, isLoading, t }: NewFolderMo
             </Button>
             <Button type="submit" disabled={!name.trim() || isLoading}>
               {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('common.create')}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// External Folder Modal
+interface ExternalFolderModalProps {
+  onClose: () => void;
+  onSave: (data: ExternalFolderCreate) => void;
+  isLoading: boolean;
+  t: TFunction;
+}
+
+function ExternalFolderModal({ onClose, onSave, isLoading, t }: ExternalFolderModalProps) {
+  const [name, setName] = useState('');
+  const [path, setPath] = useState('');
+  const [readonly, setReadonly] = useState(true);
+  const [showHidden, setShowHidden] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSave({
+      name: name.trim(),
+      external_path: path.trim(),
+      readonly,
+      show_hidden: showHidden,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-md border border-bambu-dark-tertiary">
+        <div className="p-4 border-b border-bambu-dark-tertiary">
+          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+            <FolderSymlink className="w-5 h-5 text-bambu-green" />
+            {t('fileManager.linkExternalFolder')}
+          </h2>
+          <p className="text-sm text-bambu-gray mt-1">{t('fileManager.linkExternalFolderDescription')}</p>
+        </div>
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-white mb-1">
+              {t('fileManager.folderName')}
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
+              placeholder={t('fileManager.externalFolderNamePlaceholder')}
+              autoFocus
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-white mb-1">
+              {t('fileManager.externalPath')}
+            </label>
+            <input
+              type="text"
+              value={path}
+              onChange={(e) => setPath(e.target.value)}
+              className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green font-mono text-sm"
+              placeholder="/mnt/nas/3d-prints"
+              required
+            />
+            <p className="text-xs text-bambu-gray mt-1">{t('fileManager.externalPathHelp')}</p>
+          </div>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={readonly}
+                onChange={(e) => setReadonly(e.target.checked)}
+                className="rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
+              />
+              <span className="text-sm text-white">{t('fileManager.readOnly')}</span>
+              <span className="text-xs text-bambu-gray">({t('fileManager.readOnlyHelp')})</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showHidden}
+                onChange={(e) => setShowHidden(e.target.checked)}
+                className="rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
+              />
+              <span className="text-sm text-white">{t('fileManager.showHiddenFiles')}</span>
+            </label>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={onClose}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" disabled={!name.trim() || !path.trim() || isLoading}>
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('fileManager.linkFolder')}
             </Button>
           </div>
         </form>
@@ -432,6 +534,7 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
   const [showActions, setShowActions] = useState(false);
   const hasChildren = folder.children.length > 0;
   const isLinked = folder.project_id || folder.archive_id;
+  const isExternal = folder.is_external;
 
   return (
     <div>
@@ -457,7 +560,11 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
         ) : (
           <div className="w-4.5" />
         )}
-        <FolderOpen className="w-4 h-4 text-bambu-green flex-shrink-0" />
+        {isExternal ? (
+          <FolderSymlink className="w-4 h-4 text-purple-400 flex-shrink-0" />
+        ) : (
+          <FolderOpen className="w-4 h-4 text-bambu-green flex-shrink-0" />
+        )}
         <span className={`text-sm flex-1 min-w-0 ${wrapNames ? 'break-all' : 'truncate'}`} title={folder.name}>{folder.name}</span>
         {/* Link indicator - clickable to change link */}
         {isLinked && (
@@ -474,11 +581,17 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
             )}
           </button>
         )}
+        {/* Read-only indicator for external folders */}
+        {isExternal && folder.external_readonly && (
+          <span title={t('fileManager.readOnly')}>
+            <Lock className="w-3 h-3 text-amber-400 flex-shrink-0" />
+          </span>
+        )}
         {folder.file_count > 0 && (
           <span className="flex-shrink-0 text-xs text-bambu-gray">{folder.file_count}</span>
         )}
         {/* Quick link button - always visible for unlinked folders */}
-        {!isLinked && (
+        {!isLinked && !isExternal && (
           <button
             onClick={(e) => { e.stopPropagation(); onLink(folder); }}
             className="flex-shrink-0 p-1 rounded hover:bg-bambu-dark-tertiary"
@@ -785,6 +898,7 @@ export function FileManagerPage() {
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(initialFolderId);
   const [selectedFiles, setSelectedFiles] = useState<number[]>([]);
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
+  const [showExternalFolderModal, setShowExternalFolderModal] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [linkFolder, setLinkFolder] = useState<LibraryFolderTree | null>(null);
@@ -975,6 +1089,35 @@ export function FileManagerPage() {
       queryClient.invalidateQueries({ queryKey: ['library-folders'] });
       setShowNewFolderModal(false);
       showToast(t('fileManager.toast.folderCreated'), 'success');
+    },
+    onError: (error: Error) => showToast(error.message, 'error'),
+  });
+
+  const createExternalFolderMutation = useMutation({
+    mutationFn: async (data: ExternalFolderCreate) => {
+      const folder = await api.createExternalFolder(data);
+      // Auto-scan after creation
+      await api.scanExternalFolder(folder.id);
+      return folder;
+    },
+    onSuccess: (folder) => {
+      queryClient.invalidateQueries({ queryKey: ['library-folders'] });
+      queryClient.invalidateQueries({ queryKey: ['library-files'] });
+      queryClient.invalidateQueries({ queryKey: ['library-stats'] });
+      setShowExternalFolderModal(false);
+      setSelectedFolderId(folder.id);
+      showToast(t('fileManager.toast.externalFolderLinked'), 'success');
+    },
+    onError: (error: Error) => showToast(error.message, 'error'),
+  });
+
+  const scanExternalFolderMutation = useMutation({
+    mutationFn: (folderId: number) => api.scanExternalFolder(folderId),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['library-files'] });
+      queryClient.invalidateQueries({ queryKey: ['library-folders'] });
+      queryClient.invalidateQueries({ queryKey: ['library-stats'] });
+      showToast(t('fileManager.toast.folderScanned', { added: result.added, removed: result.removed }), 'success');
     },
     onError: (error: Error) => showToast(error.message, 'error'),
   });
@@ -1195,6 +1338,20 @@ export function FileManagerPage() {
 
   const isLoading = foldersLoading || filesLoading;
 
+  // Find the selected folder in the tree to check external status
+  const selectedFolder = useMemo(() => {
+    if (!selectedFolderId || !folders) return null;
+    const findFolder = (items: LibraryFolderTree[]): LibraryFolderTree | null => {
+      for (const item of items) {
+        if (item.id === selectedFolderId) return item;
+        const found = findFolder(item.children);
+        if (found) return found;
+      }
+      return null;
+    };
+    return findFolder(folders);
+  }, [selectedFolderId, folders]);
+
   return (
     <div className="p-4 md:p-8 min-h-[calc(100vh-64px)] lg:h-[calc(100vh-64px)] flex flex-col">
       {/* Header */}
@@ -1244,6 +1401,15 @@ export function FileManagerPage() {
               <Image className="w-4 h-4 mr-2" />
             )}
             {t('fileManager.generateThumbnails')}
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => setShowExternalFolderModal(true)}
+            disabled={!hasPermission('library:upload')}
+            title={!hasPermission('library:upload') ? t('fileManager.noPermissionCreateFolder') : t('fileManager.linkExternalFolder')}
+          >
+            <FolderSymlink className="w-4 h-4 mr-2" />
+            {t('fileManager.linkExternal')}
           </Button>
           <Button
             variant="secondary"
@@ -1416,6 +1582,40 @@ export function FileManagerPage() {
 
         {/* Files area */}
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
+          {/* External folder info bar */}
+          {selectedFolder?.is_external && (
+            <div className="flex items-center gap-3 mb-4 p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
+              <FolderSymlink className="w-5 h-5 text-purple-400 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-purple-300">{t('fileManager.externalFolder')}</span>
+                  {selectedFolder.external_readonly && (
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 flex items-center gap-1">
+                      <Lock className="w-3 h-3" />
+                      {t('fileManager.readOnly')}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-bambu-gray truncate font-mono" title={selectedFolder.external_path || ''}>
+                  {selectedFolder.external_path}
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => selectedFolderId && scanExternalFolderMutation.mutate(selectedFolderId)}
+                disabled={scanExternalFolderMutation.isPending}
+                title={t('fileManager.scanFolder')}
+              >
+                {scanExternalFolderMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
+                )}
+                <span className="ml-1.5">{t('fileManager.scanFolder')}</span>
+              </Button>
+            </div>
+          )}
           {/* Search, Filter, Sort toolbar - sticky on mobile for easier access */}
           {files && files.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4 p-2 sm:p-3 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary sticky top-0 z-10 lg:static">
@@ -1894,6 +2094,15 @@ export function FileManagerPage() {
           onClose={() => setShowNewFolderModal(false)}
           onSave={(data) => createFolderMutation.mutate(data)}
           isLoading={createFolderMutation.isPending}
+          t={t}
+        />
+      )}
+
+      {showExternalFolderModal && (
+        <ExternalFolderModal
+          onClose={() => setShowExternalFolderModal(false)}
+          onSave={(data) => createExternalFolderMutation.mutate(data)}
+          isLoading={createExternalFolderMutation.isPending}
           t={t}
         />
       )}

@@ -5,7 +5,7 @@ AMS remain% delta as fallback, per-layer gcode for partial prints,
 slot-to-tray mapping resolution, and notification variable formatting.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -326,6 +326,107 @@ class TestOnPrintComplete:
 
 class TestTrackFrom3mf:
     """Tests for _track_from_3mf() — per-layer, linear scaling, and slot mapping."""
+
+    @pytest.mark.asyncio
+    async def test_prefers_live_assignment_when_reassigned_mid_print(self):
+        """If tray assignment changed during print, track usage on the new spool."""
+        spool_old = _make_spool(spool_id=1, label_weight=1000)
+        spool_new = _make_spool(spool_id=2, label_weight=1000)
+        archive = _make_archive(archive_id=80)
+
+        live_assignment = _make_assignment(spool_id=2, ams_id=0, tray_id=0)
+        started_at = datetime.now(timezone.utc)
+        live_assignment.created_at = started_at + timedelta(seconds=5)
+
+        # db: archive, queue_item(None), live assignment lookup, spool_new lookup
+        db = _mock_db_sequential([archive, None, live_assignment, spool_new])
+
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            progress=100,
+            layer_num=50,
+            tray_now=0,
+        )
+
+        filament_usage = [{"slot_id": 1, "used_g": 10.0, "type": "PLA", "color": ""}]
+        handled_trays: set[tuple[int, int]] = set()
+
+        with (
+            patch("backend.app.core.config.settings") as mock_settings,
+            patch(
+                "backend.app.utils.threemf_tools.extract_filament_usage_from_3mf",
+                return_value=filament_usage,
+            ),
+        ):
+            mock_settings.base_dir = MagicMock()
+            mock_path = MagicMock()
+            mock_path.exists.return_value = True
+            mock_settings.base_dir.__truediv__ = MagicMock(return_value=mock_path)
+
+            results = await _track_from_3mf(
+                printer_id=1,
+                archive_id=80,
+                status="completed",
+                print_name="MidPrintReassign",
+                handled_trays=handled_trays,
+                printer_manager=printer_manager,
+                db=db,
+                spool_assignments={(0, 0): spool_old.id},
+                print_started_at=started_at,
+            )
+
+        assert len(results) == 1
+        assert results[0]["spool_id"] == spool_new.id
+
+    @pytest.mark.asyncio
+    async def test_keeps_snapshot_when_live_assignment_predates_print(self):
+        """If live assignment predates print start, preserve snapshot spool mapping."""
+        spool_old = _make_spool(spool_id=1, label_weight=1000)
+        archive = _make_archive(archive_id=81)
+
+        live_assignment = _make_assignment(spool_id=2, ams_id=0, tray_id=0)
+        started_at = datetime.now(timezone.utc)
+        live_assignment.created_at = started_at - timedelta(seconds=5)
+
+        # db: archive, queue_item(None), live assignment lookup, spool_old lookup
+        db = _mock_db_sequential([archive, None, live_assignment, spool_old])
+
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            progress=100,
+            layer_num=50,
+            tray_now=0,
+        )
+
+        filament_usage = [{"slot_id": 1, "used_g": 10.0, "type": "PLA", "color": ""}]
+        handled_trays: set[tuple[int, int]] = set()
+
+        with (
+            patch("backend.app.core.config.settings") as mock_settings,
+            patch(
+                "backend.app.utils.threemf_tools.extract_filament_usage_from_3mf",
+                return_value=filament_usage,
+            ),
+        ):
+            mock_settings.base_dir = MagicMock()
+            mock_path = MagicMock()
+            mock_path.exists.return_value = True
+            mock_settings.base_dir.__truediv__ = MagicMock(return_value=mock_path)
+
+            results = await _track_from_3mf(
+                printer_id=1,
+                archive_id=81,
+                status="completed",
+                print_name="SnapshotPreserved",
+                handled_trays=handled_trays,
+                printer_manager=printer_manager,
+                db=db,
+                spool_assignments={(0, 0): spool_old.id},
+                print_started_at=started_at,
+            )
+
+        assert len(results) == 1
+        assert results[0]["spool_id"] == spool_old.id
 
     @pytest.mark.asyncio
     async def test_linear_fallback_for_partial_print(self):

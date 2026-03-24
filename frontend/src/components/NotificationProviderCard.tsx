@@ -161,6 +161,9 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
             {provider.on_first_layer_complete && (
               <span className="px-2 py-0.5 bg-emerald-600/20 text-emerald-300 text-xs rounded">{t('notifications.firstLayer')}</span>
             )}
+            {provider.on_print_missing_spool_assignment && (
+              <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 text-xs rounded">{t('notifications.missingSpoolAssignmentLabel')}</span>
+            )}
             {provider.quiet_hours_enabled && (
               <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-400 text-xs rounded flex items-center gap-1">
                 <Moon className="w-3 h-3" />
@@ -293,6 +296,17 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                   <Toggle
                     checked={provider.on_first_layer_complete ?? false}
                     onChange={(checked) => updateMutation.mutate({ on_first_layer_complete: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white">{t('notifications.missingSpoolAssignmentLabel')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.missingSpoolAssignmentDescription')}</p>
+                  </div>
+                  <Toggle
+                    checked={provider.on_print_missing_spool_assignment ?? false}
+                    onChange={(checked) => updateMutation.mutate({ on_print_missing_spool_assignment: checked })}
                   />
                 </div>
 

@@ -265,6 +265,7 @@ export default {
     // Toast messages
     toast: {
       printerDeleted: 'Impressora excluída',
+      missingSpoolAssignment: 'Impressão iniciada em {{printer}}. Atribuição de bobina ausente para: {{slots}}',
       printerAdded: 'Impressora adicionada',
       printerUpdated: 'Impressora atualizada',
       failedToDelete: 'Falha ao excluir impressora',
@@ -3812,6 +3813,8 @@ export default {
     bedCooledDescription: 'Mesa resfriou abaixo do limite após a impressão',
     firstLayerCompleteLabel: 'Primeira camada concluída',
     firstLayerCompleteDescription: 'Notificar com foto quando a primeira camada terminar',
+    missingSpoolAssignmentLabel: 'Atribuição de bobina ausente',
+    missingSpoolAssignmentDescription: 'Notificar quando a impressão iniciar e bandejas necessárias não tiverem bobina atribuída',
     printFailed: 'Impressão Falhou',
     printStopped: 'Impressão Parada',
     progressMilestones: 'Marcos de Progresso',

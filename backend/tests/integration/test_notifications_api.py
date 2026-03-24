@@ -391,6 +391,42 @@ class TestNotificationsAPI:
         assert result["on_bed_cooled"] is False
         assert result["on_first_layer_complete"] is True
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_provider_with_missing_spool_assignment_toggle(self, async_client: AsyncClient):
+        """Verify missing spool assignment toggle persists on create."""
+        data = {
+            "name": "Missing Spool Assignment Test",
+            "provider_type": "ntfy",
+            "config": {"server": "https://ntfy.sh", "topic": "test"},
+            "on_print_missing_spool_assignment": True,
+        }
+
+        response = await async_client.post("/api/v1/notifications/", json=data)
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["on_print_missing_spool_assignment"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_missing_spool_assignment_toggle(
+        self, async_client: AsyncClient, notification_provider_factory, db_session
+    ):
+        """CRITICAL: Verify missing spool assignment toggle persists correctly."""
+        provider = await notification_provider_factory(on_print_missing_spool_assignment=False)
+
+        response = await async_client.patch(
+            f"/api/v1/notifications/{provider.id}",
+            json={"on_print_missing_spool_assignment": True},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["on_print_missing_spool_assignment"] is True
+
+        response = await async_client.get(f"/api/v1/notifications/{provider.id}")
+        assert response.json()["on_print_missing_spool_assignment"] is True
+
 
 class TestNotificationTemplatesAPI:
     """Integration tests for /api/v1/notification-templates/ endpoints."""

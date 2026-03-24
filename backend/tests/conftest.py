@@ -427,6 +427,7 @@ def notification_provider_factory(db_session):
             "on_print_failed": True,
             "on_print_stopped": True,
             "on_print_progress": False,
+            "on_print_missing_spool_assignment": False,
             "on_printer_offline": False,
             "on_printer_error": False,
             "on_filament_low": False,

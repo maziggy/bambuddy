@@ -6,6 +6,8 @@ import { formatFileSize } from '../utils/file';
 
 type ToastType = 'success' | 'error' | 'warning' | 'info' | 'loading';
 
+type ShowPersistentToast = (id: string, message: string, type?: ToastType) => void;
+
 interface Toast {
   id: string;
   message: string;
@@ -38,7 +40,7 @@ interface DispatchToastData {
 
 interface ToastContextType {
   showToast: (message: string, type?: ToastType) => void;
-  showPersistentToast: (id: string, message: string, type?: ToastType) => void;
+  showPersistentToast: ShowPersistentToast;
   dismissToast: (id: string) => void;
 }
 
@@ -459,6 +461,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     window.addEventListener('background-dispatch', onDispatchEvent);
     return () => window.removeEventListener('background-dispatch', onDispatchEvent);
   }, [t]);
+
 
   return (
     <ToastContext.Provider value={{ showToast, showPersistentToast, dismissToast }}>

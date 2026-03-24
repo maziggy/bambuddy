@@ -265,6 +265,7 @@ export default {
     // Toast messages
     toast: {
       printerDeleted: 'Printer deleted',
+      missingSpoolAssignment: 'Print started on {{printer}}. Missing spool assignment for: {{slots}}',
       printerAdded: 'Printer added',
       printerUpdated: 'Printer updated',
       failedToDelete: 'Failed to delete printer',
@@ -3826,6 +3827,8 @@ export default {
     bedCooledDescription: 'Bed cooled below threshold after print',
     firstLayerCompleteLabel: 'First Layer Complete',
     firstLayerCompleteDescription: 'Notify with snapshot when first layer finishes',
+    missingSpoolAssignmentLabel: 'Missing Spool Assignment',
+    missingSpoolAssignmentDescription: 'Notify when print starts and required trays have no assigned spool',
     printFailed: 'Print Failed',
     printStopped: 'Print Stopped',
     progressMilestones: 'Progress Milestones',

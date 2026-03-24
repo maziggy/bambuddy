@@ -265,6 +265,7 @@ export default {
     // Toast messages
     toast: {
       printerDeleted: 'Imprimante supprimée',
+      missingSpoolAssignment: 'Impression démarrée sur {{printer}}. Attribution de bobine manquante pour : {{slots}}',
       printerAdded: 'Imprimante ajoutée',
       printerUpdated: 'Imprimante mise à jour',
       failedToDelete: 'Échec de la suppression',
@@ -3813,6 +3814,8 @@ export default {
     bedCooledDescription: 'Plateau refroidi sous le seuil après l\'impression',
     firstLayerCompleteLabel: 'Première couche terminée',
     firstLayerCompleteDescription: 'Notification avec photo après la première couche',
+    missingSpoolAssignmentLabel: 'Affectation de bobine manquante',
+    missingSpoolAssignmentDescription: 'Notifier quand une impression démarre et que des bacs requis n\'ont pas de bobine assignée',
     printFailed: 'Impression échouée',
     printStopped: 'Impression arrêtée',
     progressMilestones: 'Jalons de progression',

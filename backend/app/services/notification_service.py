@@ -934,6 +934,47 @@ class NotificationService:
             providers, title, message, db, "print_progress", printer_id, printer_name, image_data=image_data
         )
 
+    async def on_print_missing_spool_assignment(
+        self,
+        printer_id: int,
+        printer_name: str,
+        missing_slots: list[dict[str, str]],
+        db: AsyncSession,
+    ):
+        """Handle print-start event when required trays are missing spool assignments."""
+        if not missing_slots:
+            return
+
+        providers = await self._get_providers_for_event(db, "on_print_missing_spool_assignment", printer_id)
+        if not providers:
+            return
+
+        missing_slot_names = ", ".join(slot.get("slot", "Unknown") for slot in missing_slots)
+        detail_lines = []
+        for slot in missing_slots:
+            slot_name = slot.get("slot", "Unknown")
+            profile = slot.get("profile", "Unknown")
+            detail_lines.append(f"- {slot_name}: {profile}")
+        missing_profile_details = "\n".join(detail_lines)
+
+        variables = {
+            "printer": printer_name,
+            "missing_slots": missing_slot_names,
+            "missing_slot_details": missing_profile_details,
+        }
+
+        title, message = await self._build_message_from_template(db, "print_missing_spool_assignment", variables)
+        await self._send_to_providers(
+            providers,
+            title,
+            message,
+            db,
+            "print_missing_spool_assignment",
+            printer_id,
+            printer_name,
+            force_immediate=True,
+        )
+
     async def on_printer_offline(self, printer_id: int, printer_name: str, db: AsyncSession):
         """Handle printer offline event."""
         providers = await self._get_providers_for_event(db, "on_printer_offline", printer_id)

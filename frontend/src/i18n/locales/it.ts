@@ -265,6 +265,7 @@ export default {
     // Toast messages
     toast: {
       printerDeleted: 'Stampante eliminata',
+      missingSpoolAssignment: 'Stampa avviata su {{printer}}. Mancano assegnazioni bobina per: {{slots}}',
       printerAdded: 'Stampante aggiunta',
       printerUpdated: 'Stampante aggiornata',
       failedToDelete: 'Impossibile eliminare stampante',
@@ -3812,6 +3813,8 @@ export default {
     bedCooledDescription: 'Piatto raffreddato sotto la soglia dopo la stampa',
     firstLayerCompleteLabel: 'Primo strato completato',
     firstLayerCompleteDescription: 'Notifica con foto al termine del primo strato',
+    missingSpoolAssignmentLabel: 'Assegnazione bobina mancante',
+    missingSpoolAssignmentDescription: 'Notifica quando una stampa parte e i vassoi richiesti non hanno una bobina assegnata',
     printFailed: 'Stampa fallita',
     printStopped: 'Stampa interrotta',
     progressMilestones: 'Traguardi di avanzamento',

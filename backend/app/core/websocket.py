@@ -91,6 +91,22 @@ class ConnectionManager:
             }
         )
 
+    async def send_missing_spool_assignment(
+        self,
+        printer_id: int,
+        printer_name: str,
+        missing_slots: list[dict[str, str]],
+    ):
+        """Notify clients that a print started with missing spool assignments."""
+        await self.broadcast(
+            {
+                "type": "missing_spool_assignment",
+                "printer_id": printer_id,
+                "printer_name": printer_name,
+                "missing_slots": missing_slots,
+            }
+        )
+
 
 # Global connection manager
 ws_manager = ConnectionManager()

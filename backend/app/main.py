@@ -73,6 +73,9 @@ from backend.app.services.printer_manager import (
     printer_state_to_dict,
 )
 from backend.app.services.smart_plug_manager import smart_plug_manager
+from backend.app.services.spool_assignment_notifications import (
+    notify_missing_spool_assignments_on_print_start,
+)
 from backend.app.services.spoolman import close_spoolman_client, get_spoolman_client, init_spoolman_client
 from backend.app.services.spoolman_tracking import (
     cleanup_tracking as _cleanup_spoolman_tracking,
@@ -1213,6 +1216,9 @@ async def on_print_start(printer_id: int, data: dict):
     clear_cover_cache(printer_id)
 
     await ws_manager.send_print_start(printer_id, data)
+
+    # Notify when the print-start AMS mapping references tray slots without spool assignments.
+    await notify_missing_spool_assignments_on_print_start(printer_id, data, logger)
 
     # MQTT relay - publish print start
     try:

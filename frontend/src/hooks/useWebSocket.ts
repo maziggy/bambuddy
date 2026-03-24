@@ -337,7 +337,7 @@ export function useWebSocket() {
         debouncedInvalidate('spoolbuddy-update-check');
         break;
     }
-  }, [queryClient, debouncedInvalidate, throttledPrinterStatusUpdate]);
+  }, [queryClient, debouncedInvalidate, throttledPrinterStatusUpdate, showToast, t]);
 
   // Keep the ref updated with latest handleMessage
   useEffect(() => {

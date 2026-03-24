@@ -122,6 +122,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 
 ### 📁 File Manager (Library)
 - Upload and organize sliced files (3MF, gcode, STL)
+- **External folder mounting** - Mount host directories (NAS, USB, network shares) without copying files
 - **STL thumbnail generation** - Auto-generate previews for STL files on upload or batch generate for existing files
 - ZIP file extraction with folder structure preservation
 - Option to create folder from ZIP filename

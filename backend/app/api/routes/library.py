@@ -39,6 +39,7 @@ from backend.app.schemas.library import (
     BatchThumbnailResult,
     BulkDeleteRequest,
     BulkDeleteResponse,
+    ExternalFolderCreate,
     FileDuplicate,
     FileListResponse,
     FileMoveRequest,
@@ -278,6 +279,9 @@ async def list_folders(
             archive_id=folder.archive_id,
             project_name=project_name,
             archive_name=archive_name,
+            is_external=folder.is_external,
+            external_path=folder.external_path,
+            external_readonly=folder.external_readonly,
             file_count=file_counts.get(folder.id, 0),
             children=[],
         )
@@ -326,6 +330,10 @@ async def get_folders_by_project(
                 archive_id=folder.archive_id,
                 project_name=project_name,
                 archive_name=None,
+                is_external=folder.is_external,
+                external_path=folder.external_path,
+                external_readonly=folder.external_readonly,
+                external_show_hidden=folder.external_show_hidden,
                 file_count=file_count,
                 created_at=folder.created_at,
                 updated_at=folder.updated_at,
@@ -367,6 +375,10 @@ async def get_folders_by_archive(
                 archive_id=folder.archive_id,
                 project_name=None,
                 archive_name=archive_name,
+                is_external=folder.is_external,
+                external_path=folder.external_path,
+                external_readonly=folder.external_readonly,
+                external_show_hidden=folder.external_show_hidden,
                 file_count=file_count,
                 created_at=folder.created_at,
                 updated_at=folder.updated_at,
@@ -426,6 +438,10 @@ async def create_folder(
         archive_id=folder.archive_id,
         project_name=project_name,
         archive_name=archive_name,
+        is_external=folder.is_external,
+        external_path=folder.external_path,
+        external_readonly=folder.external_readonly,
+        external_show_hidden=folder.external_show_hidden,
         file_count=0,
         created_at=folder.created_at,
         updated_at=folder.updated_at,
@@ -464,6 +480,10 @@ async def get_folder(
         archive_id=folder.archive_id,
         project_name=project_name,
         archive_name=archive_name,
+        is_external=folder.is_external,
+        external_path=folder.external_path,
+        external_readonly=folder.external_readonly,
+        external_show_hidden=folder.external_show_hidden,
         file_count=file_count,
         created_at=folder.created_at,
         updated_at=folder.updated_at,
@@ -556,6 +576,10 @@ async def update_folder(
         archive_id=folder.archive_id,
         project_name=project_name,
         archive_name=archive_name,
+        is_external=folder.is_external,
+        external_path=folder.external_path,
+        external_readonly=folder.external_readonly,
+        external_show_hidden=folder.external_show_hidden,
         file_count=file_count,
         created_at=folder.created_at,
         updated_at=folder.updated_at,
@@ -579,6 +603,9 @@ async def delete_folder(
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found")
 
+    # External folders: only remove DB records, never delete files from external path
+    is_ext = folder.is_external
+
     # Get all files in this folder and subfolders to delete from disk
     async def get_all_file_ids(fid: int) -> list[int]:
         """Recursively get all file IDs in a folder tree."""
@@ -586,20 +613,21 @@ async def delete_folder(
 
         # Get files in this folder
         files_result = await db.execute(
-            select(LibraryFile.id, LibraryFile.file_path, LibraryFile.thumbnail_path).where(
+            select(LibraryFile.id, LibraryFile.file_path, LibraryFile.thumbnail_path, LibraryFile.is_external).where(
                 LibraryFile.folder_id == fid
             )
         )
-        for file_id, file_path, thumb_path in files_result.all():
-            file_ids.append(file_id)
-            # Delete actual files
-            try:
-                if file_path and os.path.exists(file_path):
-                    os.remove(file_path)
-                if thumb_path and os.path.exists(thumb_path):
-                    os.remove(thumb_path)
-            except OSError as e:
-                logger.warning("Failed to delete file: %s", e)
+        for fid_val, file_path, thumb_path, file_is_ext in files_result.all():
+            file_ids.append(fid_val)
+            # Only delete non-external files from disk
+            if not is_ext and not file_is_ext:
+                try:
+                    if file_path and os.path.exists(file_path):
+                        os.remove(file_path)
+                    if thumb_path and os.path.exists(thumb_path):
+                        os.remove(thumb_path)
+                except OSError as e:
+                    logger.warning("Failed to delete file: %s", e)
 
         # Get child folders and recurse
         children_result = await db.execute(select(LibraryFolder.id).where(LibraryFolder.parent_id == fid))
@@ -614,6 +642,266 @@ async def delete_folder(
     await db.delete(folder)
 
     return {"status": "success", "message": "Folder deleted"}
+
+
+# ============ External Folder Endpoints ============
+
+# Blocked system directories that cannot be mounted
+_BLOCKED_PREFIXES = (
+    "/proc",
+    "/sys",
+    "/dev",
+    "/run",
+    "/boot",
+    "/sbin",
+    "/bin",
+    "/usr/sbin",
+    "/usr/bin",
+    "/lib",
+    "/etc",
+)
+
+# Supported file extensions for external folder scanning
+_SCANNABLE_EXTENSIONS = {
+    ".3mf",
+    ".gcode",
+    ".gcode.3mf",
+    ".stl",
+    ".obj",
+    ".step",
+    ".stp",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".svg",
+}
+
+
+def _validate_external_path(path_str: str) -> Path:
+    """Validate an external path is safe to mount."""
+    path = Path(path_str).resolve()
+
+    if not path.is_absolute():
+        raise HTTPException(status_code=400, detail="Path must be absolute")
+
+    for prefix in _BLOCKED_PREFIXES:
+        if str(path).startswith(prefix):
+            raise HTTPException(status_code=400, detail=f"Cannot mount system directory: {prefix}")
+
+    if not path.exists():
+        raise HTTPException(status_code=400, detail=f"Path does not exist: {path}")
+
+    if not path.is_dir():
+        raise HTTPException(status_code=400, detail=f"Path is not a directory: {path}")
+
+    # Check readability
+    if not os.access(path, os.R_OK):
+        raise HTTPException(status_code=400, detail=f"Path is not readable: {path}")
+
+    return path
+
+
+@router.post("/folders/external", response_model=FolderResponse)
+async def create_external_folder(
+    data: ExternalFolderCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
+):
+    """Create an external folder that points to a host directory."""
+    resolved = _validate_external_path(data.external_path)
+
+    # Check no other external folder already points to this path
+    existing = await db.execute(
+        select(LibraryFolder).where(
+            LibraryFolder.is_external.is_(True),
+            LibraryFolder.external_path == str(resolved),
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="An external folder already exists for this path")
+
+    # Verify parent exists if specified
+    if data.parent_id is not None:
+        parent_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == data.parent_id))
+        if not parent_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Parent folder not found")
+
+    folder = LibraryFolder(
+        name=data.name,
+        parent_id=data.parent_id,
+        is_external=True,
+        external_path=str(resolved),
+        external_readonly=data.readonly,
+        external_show_hidden=data.show_hidden,
+    )
+    db.add(folder)
+    await db.commit()
+    await db.refresh(folder)
+
+    return FolderResponse(
+        id=folder.id,
+        name=folder.name,
+        parent_id=folder.parent_id,
+        project_id=None,
+        archive_id=None,
+        is_external=True,
+        external_path=folder.external_path,
+        external_readonly=folder.external_readonly,
+        external_show_hidden=folder.external_show_hidden,
+        file_count=0,
+        created_at=folder.created_at,
+        updated_at=folder.updated_at,
+    )
+
+
+@router.post("/folders/{folder_id}/scan")
+async def scan_external_folder(
+    folder_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
+):
+    """Scan an external folder and sync files to the database.
+
+    Discovers new files, removes DB entries for deleted files.
+    Does not copy files — stores the external path directly.
+    """
+    result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
+    folder = result.scalar_one_or_none()
+
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    if not folder.is_external or not folder.external_path:
+        raise HTTPException(status_code=400, detail="Not an external folder")
+
+    ext_path = Path(folder.external_path)
+    if not ext_path.exists() or not ext_path.is_dir():
+        raise HTTPException(status_code=400, detail=f"External path is not accessible: {folder.external_path}")
+
+    # Get existing DB files for this folder
+    existing_result = await db.execute(
+        select(LibraryFile).where(LibraryFile.folder_id == folder_id, LibraryFile.is_external.is_(True))
+    )
+    existing_files = {f.file_path: f for f in existing_result.scalars().all()}
+
+    # Scan the directory
+    added = 0
+    removed = 0
+    found_paths = set()
+
+    for dirpath, _dirnames, filenames in os.walk(ext_path):
+        for filename in filenames:
+            # Skip hidden files unless configured
+            if not folder.external_show_hidden and filename.startswith("."):
+                continue
+
+            filepath = Path(dirpath) / filename
+            ext = filepath.suffix.lower()
+
+            # Check for compound extensions like .gcode.3mf
+            if ext not in _SCANNABLE_EXTENSIONS:
+                # Check compound
+                compound = "".join(filepath.suffixes[-2:]).lower() if len(filepath.suffixes) >= 2 else ""
+                if compound not in _SCANNABLE_EXTENSIONS:
+                    continue
+
+            # Resolve symlinks and ensure still under external_path
+            try:
+                real_path = filepath.resolve()
+                real_path.relative_to(ext_path.resolve())
+            except (ValueError, OSError):
+                continue  # Symlink escapes the external dir
+
+            file_path_str = str(filepath)
+            found_paths.add(file_path_str)
+
+            if file_path_str in existing_files:
+                continue  # Already tracked
+
+            # Get file info
+            try:
+                stat = filepath.stat()
+            except OSError:
+                continue
+
+            file_type = ext[1:] if ext else "unknown"
+            # For compound extensions, use the meaningful part
+            if file_type in ("3mf",) and len(filepath.suffixes) >= 2:
+                inner = filepath.suffixes[-2].lower()
+                if inner == ".gcode":
+                    file_type = "gcode.3mf"
+
+            # Extract thumbnail for 3mf files
+            thumbnail_path = None
+            file_metadata = None
+            if file_type == "3mf":
+                try:
+                    parser = ThreeMFParser(str(filepath))
+                    meta = parser.parse()
+                    if meta:
+                        file_metadata = meta
+                    thumb_data = parser.extract_thumbnail()
+                    if thumb_data:
+                        thumb_dir = get_library_thumbnails_dir()
+                        thumb_filename = f"{uuid.uuid4().hex}.png"
+                        thumb_full = thumb_dir / thumb_filename
+                        thumb_full.write_bytes(thumb_data)
+                        thumbnail_path = to_relative_path(thumb_full)
+                except Exception as e:
+                    logger.debug("Failed to extract metadata from external 3mf %s: %s", filepath, e)
+
+            # Generate thumbnail for STL files
+            if file_type == "stl" and thumbnail_path is None:
+                try:
+                    thumb_dir = get_library_thumbnails_dir()
+                    thumb_result = generate_stl_thumbnail(str(filepath), str(thumb_dir))
+                    if thumb_result:
+                        thumbnail_path = to_relative_path(Path(thumb_result))
+                except Exception as e:
+                    logger.debug("Failed to generate STL thumbnail for external %s: %s", filepath, e)
+
+            # Extract gcode thumbnail
+            if file_type == "gcode" and thumbnail_path is None:
+                thumb_data = extract_gcode_thumbnail(filepath)
+                if thumb_data:
+                    thumb_dir = get_library_thumbnails_dir()
+                    thumb_filename = f"{uuid.uuid4().hex}.png"
+                    thumb_full = thumb_dir / thumb_filename
+                    thumb_full.write_bytes(thumb_data)
+                    thumbnail_path = to_relative_path(thumb_full)
+
+            db_file = LibraryFile(
+                folder_id=folder_id,
+                is_external=True,
+                filename=filename,
+                file_path=file_path_str,
+                file_type=file_type,
+                file_size=stat.st_size,
+                file_hash=None,  # Skip hashing external files for performance
+                thumbnail_path=thumbnail_path,
+                file_metadata=file_metadata,
+            )
+            db.add(db_file)
+            added += 1
+
+    # Remove DB entries for files that no longer exist on disk
+    for path_str, db_file in existing_files.items():
+        if path_str not in found_paths:
+            # Clean up thumbnail if we generated one
+            if db_file.thumbnail_path:
+                try:
+                    abs_thumb = to_absolute_path(db_file.thumbnail_path)
+                    if abs_thumb and abs_thumb.exists():
+                        abs_thumb.unlink()
+                except OSError:
+                    pass
+            await db.delete(db_file)
+            removed += 1
+
+    await db.commit()
+
+    return {"status": "success", "added": added, "removed": removed}
 
 
 # ============ File Endpoints ============
@@ -678,6 +966,7 @@ async def list_files(
             FileListResponse(
                 id=f.id,
                 folder_id=f.folder_id,
+                is_external=f.is_external,
                 filename=f.filename,
                 file_type=f.file_type,
                 file_size=f.file_size,
@@ -719,8 +1008,11 @@ async def upload_file(
         # Verify folder exists if specified
         if folder_id is not None:
             folder_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
-            if not folder_result.scalar_one_or_none():
+            target_folder = folder_result.scalar_one_or_none()
+            if not target_folder:
                 raise HTTPException(status_code=404, detail="Folder not found")
+            if target_folder.is_external and target_folder.external_readonly:
+                raise HTTPException(status_code=403, detail="Cannot upload to a read-only external folder")
 
         # Generate unique filename for storage
         unique_filename = f"{uuid.uuid4().hex}{ext}"
@@ -859,8 +1151,11 @@ async def extract_zip_file(
     # Verify target folder exists if specified
     if folder_id is not None:
         folder_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
-        if not folder_result.scalar_one_or_none():
+        target_folder = folder_result.scalar_one_or_none()
+        if not target_folder:
             raise HTTPException(status_code=404, detail="Target folder not found")
+        if target_folder.is_external and target_folder.external_readonly:
+            raise HTTPException(status_code=403, detail="Cannot extract ZIP to a read-only external folder")
 
     # Save ZIP to temp file
     try:
@@ -1994,12 +2289,14 @@ async def delete_file(
         if file.created_by_id != user.id:
             raise HTTPException(status_code=403, detail="You can only delete your own files")
 
-    # Delete actual files
+    # External files: only remove DB entry and thumbnail, never delete the actual file
     try:
-        abs_file_path = to_absolute_path(file.file_path)
+        if not file.is_external:
+            abs_file_path = to_absolute_path(file.file_path)
+            if abs_file_path and abs_file_path.exists():
+                abs_file_path.unlink()
+        # Always clean up thumbnails we generated
         abs_thumb_path = to_absolute_path(file.thumbnail_path)
-        if abs_file_path and abs_file_path.exists():
-            abs_file_path.unlink()
         if abs_thumb_path and abs_thumb_path.exists():
             abs_thumb_path.unlink()
     except OSError as e:
@@ -2180,8 +2477,11 @@ async def move_files(
     # Verify folder exists if specified
     if data.folder_id is not None:
         folder_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == data.folder_id))
-        if not folder_result.scalar_one_or_none():
+        target_folder = folder_result.scalar_one_or_none()
+        if not target_folder:
             raise HTTPException(status_code=404, detail="Folder not found")
+        if target_folder.is_external and target_folder.external_readonly:
+            raise HTTPException(status_code=403, detail="Cannot move files to a read-only external folder")
 
     # Update files
     moved = 0
@@ -2192,6 +2492,10 @@ async def move_files(
         if file:
             # Ownership check
             if not can_modify_all and file.created_by_id != user.id:
+                skipped += 1
+                continue
+            # Cannot move external files out of their folder
+            if file.is_external:
                 skipped += 1
                 continue
             file.folder_id = data.folder_id
@@ -2231,10 +2535,11 @@ async def bulk_delete(
                 continue
 
             try:
-                abs_file_path = to_absolute_path(file.file_path)
+                if not file.is_external:
+                    abs_file_path = to_absolute_path(file.file_path)
+                    if abs_file_path and abs_file_path.exists():
+                        abs_file_path.unlink()
                 abs_thumb_path = to_absolute_path(file.thumbnail_path)
-                if abs_file_path and abs_file_path.exists():
-                    abs_file_path.unlink()
                 if abs_thumb_path and abs_thumb_path.exists():
                     abs_thumb_path.unlink()
             except OSError as e:

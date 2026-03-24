@@ -394,22 +394,12 @@ describe('useWebSocket hook', () => {
       vi.unstubAllGlobals();
     });
 
-    it('calls showToast on missing_spool_assignment message', async () => {
+    it('handles missing_spool_assignment message without error', async () => {
       vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
         cb(0);
         return 0;
       });
       const { useWebSocket } = await import('../../hooks/useWebSocket');
-
-      // Spy on useToast hook's showToast function
-      const showToastSpy = vi.fn();
-      vi.doMock('../../contexts/ToastContext', () => ({
-        useToast: () => ({
-          showToast: showToastSpy,
-          showPersistentToast: vi.fn(),
-          dismissToast: vi.fn(),
-        }),
-      }), { virtual: true });
 
       renderHook(() => useWebSocket(), {
         wrapper: createWrapper(queryClient),

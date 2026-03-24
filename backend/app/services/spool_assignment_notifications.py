@@ -2,6 +2,8 @@ import logging
 
 from backend.app.core.database import async_session
 from backend.app.core.websocket import ws_manager
+from backend.app.models.printer import Printer
+from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.services.bambu_mqtt import PrinterState
 from backend.app.services.notification_service import notification_service
 from backend.app.services.printer_manager import printer_manager
@@ -29,7 +31,7 @@ def _slot_label_from_global_tray(global_tray_id: int) -> str:
     return f"{chr(65 + ams_id)}{tray_id + 1}"
 
 
-def tray_profile_and_color_for_global_id(state: PrinterState | None, global_tray_id: int) -> tuple[str, str]:
+def _tray_profile_and_color_for_global_id(state: PrinterState | None, global_tray_id: int) -> tuple[str, str]:
     """Resolve expected tray material/profile and color for a global tray ID from current printer state."""
     if not state or not state.raw_data:
         return ("Unknown", "Unknown")
@@ -124,9 +126,6 @@ async def notify_missing_spool_assignments_on_print_start(
 
     try:
         async with async_session() as db:
-            from backend.app.models.printer import Printer
-            from backend.app.models.spool_assignment import SpoolAssignment
-
             printer = await db.get(Printer, printer_id)
             printer_name = printer.name if printer else f"Printer {printer_id}"
 
@@ -145,16 +144,12 @@ async def notify_missing_spool_assignments_on_print_start(
             state = printer_manager.get_status(printer_id)
             missing_slots = []
             for global_id in missing_global:
+                profile, color = _tray_profile_and_color_for_global_id(state, global_id)
                 missing_slots.append(
                     {
                         "slot": _slot_label_from_global_tray(global_id),
-                        **dict(
-                            zip(
-                                ["profile", "color"],
-                                tray_profile_and_color_for_global_id(state, global_id),
-                                strict=False,
-                            )
-                        ),
+                        "profile": profile,
+                        "color": color,
                     }
                 )
 

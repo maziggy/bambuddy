@@ -144,11 +144,10 @@ async def register_device(
             nfc_reader_type=req.nfc_reader_type,
             nfc_connection=req.nfc_connection,
             has_backlight=req.has_backlight,
+            backend_url=req.backend_url,
             last_seen=now,
         )
         db.add(device)
-        if req.backend_url:
-            device.backend_url = req.backend_url
         logger.info("SpoolBuddy device registered: %s (%s)", req.device_id, req.hostname)
 
     await db.commit()

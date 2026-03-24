@@ -225,8 +225,21 @@ async def perform_ssh_update(device_id: str, ip_address: str, install_path: str 
             await _update_progress("error", f"Service restart failed: {stderr[:200]}")
             return
 
-        # No explicit kiosk restart — the frontend detects daemon re-registration
-        # via WebSocket and reloads itself automatically.
+        # Step 6: Clear browser cache and restart kiosk
+        # Remove Chromium's Service Worker + cache storage to prevent stale frontend
+        await _run_ssh_command(
+            ip_address,
+            "sudo find /home -maxdepth 5 -path '*/chromium/Default/Service Worker' -type d -exec rm -rf {} + 2>/dev/null; true",
+            private_key,
+        )
+        rc, _, stderr = await _run_ssh_command(
+            ip_address,
+            "sudo /usr/bin/systemctl restart getty@tty1.service",
+            private_key,
+        )
+        if rc != 0:
+            logger.warning("SpoolBuddy %s: kiosk restart failed (non-fatal): %s", device_id, stderr[:200])
+
         logger.info("SpoolBuddy %s: SSH update complete (branch=%s)", device_id, branch)
 
     except Exception as e:

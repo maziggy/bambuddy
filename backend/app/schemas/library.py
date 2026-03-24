@@ -16,6 +16,16 @@ class FolderCreate(BaseModel):
     archive_id: int | None = None
 
 
+class ExternalFolderCreate(BaseModel):
+    """Schema for linking an external folder."""
+
+    name: str = Field(..., min_length=1, max_length=255)
+    external_path: str = Field(..., min_length=1, max_length=500)
+    readonly: bool = True
+    show_hidden: bool = False
+    parent_id: int | None = None
+
+
 class FolderUpdate(BaseModel):
     """Schema for updating a folder."""
 
@@ -35,6 +45,10 @@ class FolderResponse(BaseModel):
     archive_id: int | None = None
     project_name: str | None = None
     archive_name: str | None = None
+    is_external: bool = False
+    external_path: str | None = None
+    external_readonly: bool = False
+    external_show_hidden: bool = False
     file_count: int = 0  # Computed field
     created_at: datetime
     updated_at: datetime
@@ -53,6 +67,9 @@ class FolderTreeItem(BaseModel):
     archive_id: int | None = None
     project_name: str | None = None
     archive_name: str | None = None
+    is_external: bool = False
+    external_path: str | None = None
+    external_readonly: bool = False
     file_count: int = 0
     children: list["FolderTreeItem"] = []
 
@@ -104,6 +121,7 @@ class FileResponse(BaseModel):
     folder_name: str | None = None
     project_id: int | None
     project_name: str | None = None
+    is_external: bool = False
 
     filename: str
     file_path: str
@@ -145,6 +163,7 @@ class FileListResponse(BaseModel):
 
     id: int
     folder_id: int | None
+    is_external: bool = False
     filename: str
     file_type: str
     file_size: int

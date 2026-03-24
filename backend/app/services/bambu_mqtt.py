@@ -2416,8 +2416,13 @@ class BambuMQTTClient:
         ):
             should_trigger_completion = True
 
-        # Log when we see a terminal state but DON'T trigger completion (diagnostics)
-        if not should_trigger_completion and self.state.state in ("FINISH", "FAILED"):
+        # Log when we FIRST see a terminal state but DON'T trigger completion (diagnostics)
+        # Only log on the transition (prev != current) to avoid flooding logs every MQTT update
+        if (
+            not should_trigger_completion
+            and self.state.state in ("FINISH", "FAILED")
+            and self._previous_gcode_state != self.state.state
+        ):
             logger.info(
                 f"[{self.serial_number}] State is {self.state.state} but completion NOT triggered: "
                 f"prev={self._previous_gcode_state}, was_running={self._was_running}, "

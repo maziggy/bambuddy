@@ -430,6 +430,11 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
 
   useEffect(() => {
     const fetchData = async () => {
+      // Only load full data when in full view mode
+      if (viewMode !== 'full') {
+        return;
+      }
+
       setLoadingCloudPresets(true);
       try {
         const status = await api.getCloudStatus();
@@ -483,7 +488,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
     };
 
     fetchData();
-  }, []);
+  }, [viewMode]);
 
   useEffect(() => {
     if (printersWithCalibrations.length > 0) {

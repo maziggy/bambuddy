@@ -27,6 +27,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const [disableFiltering, setDisableFiltering] = useState(false);
   const [selectedSpoolId, setSelectedSpoolId] = useState<number | null>(null);
   const [searchFilter, setSearchFilter] = useState('');
   const [pendingAssignId, setPendingAssignId] = useState<number | null>(null);
@@ -128,16 +129,28 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
     !assignedSpoolIds.has(spool.id) && (isExternalSlot || (!spool.tag_uid && !spool.tray_uuid))
   );
 
-  const filteredSpools = manualSpools?.filter((spool: InventorySpool) => {
-    if (!searchFilter) return true;
+  // Filtering logic with toggle: search filter always applies, AMS tray profile filter is optional
+  let filteredSpools = manualSpools;
+  if (!disableFiltering) {
+    if (trayInfo?.profile || trayInfo?.type) {
+      const trayProfile = (trayInfo.profile || trayInfo.type || '').trim().toUpperCase();
+      filteredSpools = filteredSpools?.filter((spool: InventorySpool) => {
+        const spoolProfile = (spool.slicer_filament_name || spool.slicer_filament || '').trim().toUpperCase();
+        return trayProfile && spoolProfile && spoolProfile === trayProfile;
+      });
+    }
+  }
+  if (searchFilter && filteredSpools) {
     const q = searchFilter.toLowerCase();
-    return (
-      spool.material.toLowerCase().includes(q) ||
-      (spool.brand?.toLowerCase().includes(q) ?? false) ||
-      (spool.color_name?.toLowerCase().includes(q) ?? false) ||
-      (spool.subtype?.toLowerCase().includes(q) ?? false)
-    );
-  });
+    filteredSpools = filteredSpools.filter((spool: InventorySpool) => {
+      return (
+        spool.material.toLowerCase().includes(q) ||
+        (spool.brand?.toLowerCase().includes(q) ?? false) ||
+        (spool.color_name?.toLowerCase().includes(q) ?? false) ||
+        (spool.subtype?.toLowerCase().includes(q) ?? false)
+      );
+    });
+  }
 
   const handleAssign = () => {
     if (!selectedSpoolId) return;
@@ -295,27 +308,41 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="flex justify-end gap-2 p-4 border-t border-bambu-dark-tertiary">
-          <Button variant="secondary" onClick={onClose}>
-            {t('common.cancel')}
-          </Button>
-          <Button
-            onClick={handleAssign}
-            disabled={!selectedSpoolId || assignMutation.isPending}
-          >
-            {assignMutation.isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                {t('inventory.assigning')}
-              </>
-            ) : (
-              <>
-                <Package className="w-4 h-4" />
-                {t('inventory.assignSpool')}
-              </>
-            )}
-          </Button>
+        {/* Footer with filtering toggle */}
+        <div className="flex justify-between items-center p-4 border-t border-bambu-dark-tertiary">
+          <div className="flex items-center gap-2">
+            <input
+              id="disable-filtering-toggle"
+              type="checkbox"
+              checked={disableFiltering}
+              onChange={() => setDisableFiltering(v => !v)}
+              className="accent-bambu-green w-4 h-4 rounded focus:ring-0 border-bambu-dark-tertiary"
+            />
+            <label htmlFor="disable-filtering-toggle" className="text-xs text-bambu-gray select-none cursor-pointer">
+              {t('inventory.showAllSpools')}
+            </label>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={onClose}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              onClick={handleAssign}
+              disabled={!selectedSpoolId || assignMutation.isPending}
+            >
+              {assignMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  {t('inventory.assigning')}
+                </>
+              ) : (
+                <>
+                  <Package className="w-4 h-4" />
+                  {t('inventory.assignSpool')}
+                </>
+              )}
+            </Button>
+          </div>
         </div>
 
 

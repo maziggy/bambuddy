@@ -3021,6 +3021,7 @@ export default {
     assigned: 'Assigned',
     assigning: 'Assigning...',
     searchSpools: 'Search spools...',
+    showAllSpools: 'Show all spools',
     allMaterials: 'All Materials',
     filterByBrand: 'Filter by brand...',
     showArchived: 'Show archived',

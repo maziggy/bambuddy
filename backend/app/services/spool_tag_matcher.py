@@ -343,7 +343,7 @@ async def get_spool_by_tag(db: AsyncSession, tag_uid: str, tray_uuid: str) -> Sp
                 if len(tag_uid_norm) == len(candidate_uid) and len(tag_uid_norm) > 1:
                     # Same length: check if all chars except the first match
                     if candidate_uid[1:] == tag_uid_norm[1:]:
-                        logger.info(
+                        logger.warning(
                             "Matched spool %d via first-char variance: stored=%s → scanned=%s",
                             candidate.id,
                             candidate_uid,
@@ -354,7 +354,7 @@ async def get_spool_by_tag(db: AsyncSession, tag_uid: str, tray_uuid: str) -> Sp
                 # within the first 8 bytes when remaining 7 chars match.
                 if len(tag_uid_norm) == 8 and len(candidate_uid) >= 8:
                     if candidate_uid[:8][1:] == tag_uid_norm[1:]:
-                        logger.info(
+                        logger.warning(
                             "Matched spool %d via short UID variance: stored=%s → scanned=%s",
                             candidate.id,
                             candidate_uid,

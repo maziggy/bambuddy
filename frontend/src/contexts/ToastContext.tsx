@@ -6,8 +6,7 @@ import { formatFileSize } from '../utils/file';
 
 type ToastType = 'success' | 'error' | 'warning' | 'info' | 'loading';
 
-// Allow persistent toast to accept optional duration
-type ShowPersistentToast = (id: string, message: string, type?: ToastType, durationMs?: number) => void;
+type ShowPersistentToast = (id: string, message: string, type?: ToastType) => void;
 
 interface Toast {
   id: string;
@@ -101,7 +100,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     timeoutRefs.current.set(id, timeout);
   }, []);
 
-  const showPersistentToast = useCallback((id: string, message: string, type: ToastType = 'info', durationMs?: number) => {
+  const showPersistentToast = useCallback((id: string, message: string, type: ToastType = 'info') => {
     setToasts((prev) => {
       // Update existing toast if same id, otherwise add new one
       const exists = prev.find((t) => t.id === id);
@@ -110,16 +109,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       }
       return [...prev, { id, message, type, persistent: true }];
     });
-    if (durationMs && durationMs > 0) {
-      // Clear any previous timeout for this toast
-      const existingTimeout = timeoutRefs.current.get(id);
-      if (existingTimeout) clearTimeout(existingTimeout);
-      const timeout = setTimeout(() => {
-        setToasts((prev) => prev.filter((t) => t.id !== id));
-        timeoutRefs.current.delete(id);
-      }, durationMs);
-      timeoutRefs.current.set(id, timeout);
-    }
   }, []);
 
   const dismissToast = useCallback((id: string) => {

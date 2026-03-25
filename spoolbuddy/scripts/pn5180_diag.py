@@ -15,18 +15,32 @@ Wiring (from spoolbuddy/README.md):
     PN5180 RST  -> Pi Pin 18 (GPIO24)
 """
 
+import os
 import sys
-import time
 
-import gpiod
-import spidev
+# Ensure daemon directory is in sys.path regardless of invocation location
+_daemon_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "daemon"))
+if _daemon_dir not in sys.path:
+    sys.path.insert(0, _daemon_dir)
+from pn5180 import PN5180  # noqa: E402
+
+
+def _env_int(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None or value == "":
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
 
 # ---------------------------------------------------------------------------
 # Pin assignments (BCM numbering)
 # ---------------------------------------------------------------------------
-BUSY_PIN = 25  # Pin 22
-RST_PIN = 24  # Pin 18
-NSS_PIN = 23  # Pin 16 (manual CS)
+BUSY_PIN = _env_int("SPOOLBUDDY_NFC_BUSY_PIN", 25)
+RST_PIN = _env_int("SPOOLBUDDY_NFC_RST_PIN", 24)
+NSS_PIN = _env_int("SPOOLBUDDY_NFC_NSS_PIN", 23)
 
 # ---------------------------------------------------------------------------
 # SPI command instruction codes (NXP PN5180 datasheet Table 5)
@@ -89,225 +103,6 @@ EEPROM_EEPROM_VERSION = 0x14  # 2 bytes
 EEPROM_IRQ_PIN_CONFIG = 0x1A  # 1 byte
 
 
-def _find_gpio_chip():
-    """Find the right gpiochip for Raspberry Pi GPIO pins.
-
-    RPi 5 uses gpiochip4, RPi 4 uses gpiochip0.
-    """
-    for path in ["/dev/gpiochip4", "/dev/gpiochip0"]:
-        try:
-            chip = gpiod.Chip(path)
-            info = chip.get_info()
-            # RPi 4: pinctrl-bcm2711, RPi 5: pinctrl-rp1
-            if "pinctrl" in info.label:
-                return chip
-            chip.close()
-        except (FileNotFoundError, PermissionError, OSError):
-            continue
-    raise RuntimeError("Could not find Raspberry Pi GPIO chip")
-
-
-class PN5180:
-    """Low-level driver for the PN5180 NFC frontend over SPI."""
-
-    def __init__(
-        self,
-        spi_bus=0,
-        spi_device=0,
-        spi_speed_hz=500_000,
-        busy_pin=BUSY_PIN,
-        rst_pin=RST_PIN,
-        nss_pin=NSS_PIN,
-    ):
-        # GPIO setup via libgpiod
-        self._chip = _find_gpio_chip()
-
-        try:
-            self._busy_line = self._chip.request_lines(
-                consumer="pn5180-diag",
-                config={busy_pin: gpiod.LineSettings(direction=gpiod.line.Direction.INPUT)},
-            )
-            self._rst_line = self._chip.request_lines(
-                consumer="pn5180-diag",
-                config={
-                    rst_pin: gpiod.LineSettings(
-                        direction=gpiod.line.Direction.OUTPUT,
-                        output_value=gpiod.line.Value.ACTIVE,
-                    )
-                },
-            )
-            self._nss_line = self._chip.request_lines(
-                consumer="pn5180-diag",
-                config={
-                    nss_pin: gpiod.LineSettings(
-                        direction=gpiod.line.Direction.OUTPUT,
-                        output_value=gpiod.line.Value.ACTIVE,
-                    )
-                },
-            )
-        except OSError as e:
-            self._chip.close()
-            if getattr(e, "errno", None) == 16:
-                raise RuntimeError(
-                    "GPIO line is busy (another process owns PN5180 pins). "
-                    "Stop spoolbuddy service before running diagnostics: "
-                    "sudo systemctl stop spoolbuddy"
-                ) from e
-            raise
-        self._busy_pin = busy_pin
-        self._rst_pin = rst_pin
-        self._nss_pin = nss_pin
-
-        # SPI setup - mode 0 (CPOL=0, CPHA=0), MSB first
-        self._spi = spidev.SpiDev()
-        self._spi.open(spi_bus, spi_device)
-        self._spi.max_speed_hz = spi_speed_hz
-        self._spi.mode = 0b00
-        self._spi.bits_per_word = 8
-        self._spi.no_cs = True
-
-    def close(self):
-        self._spi.close()
-        self._busy_line.release()
-        self._rst_line.release()
-        self._nss_line.release()
-        self._chip.close()
-
-    # -- low-level helpers --------------------------------------------------
-
-    def _busy_is_high(self):
-        return self._busy_line.get_value(self._busy_pin) == gpiod.line.Value.ACTIVE
-
-    def _wait_busy(self, timeout_s=1.0):
-        """Block until BUSY goes LOW (PN5180 ready)."""
-        deadline = time.monotonic() + timeout_s
-        while self._busy_is_high():
-            if time.monotonic() > deadline:
-                raise TimeoutError("PN5180 BUSY line did not go low")
-            time.sleep(0.001)
-
-    def _cs_low(self):
-        self._nss_line.set_value(self._nss_pin, gpiod.line.Value.INACTIVE)
-        time.sleep(0.000005)
-
-    def _cs_high(self):
-        self._nss_line.set_value(self._nss_pin, gpiod.line.Value.ACTIVE)
-        time.sleep(0.000100)
-
-    def _send_command(self, tx_data, rx_len=0):
-        """Send an SPI command frame and optionally read a response frame.
-
-        The PN5180 SPI protocol is half-duplex:
-          1. Send command frame (NSS held low for entire frame).
-          2. Wait for BUSY high then low (command processed).
-          3. If a response is expected, clock out rx_len bytes in a second frame.
-        """
-        self._wait_busy()
-
-        # Transmit command (manual CS)
-        self._cs_low()
-        self._spi.xfer2(list(tx_data))
-        self._cs_high()
-
-        if rx_len == 0:
-            # Write-only command - wait for processing
-            time.sleep(0.001)
-            self._wait_busy()
-            return None
-
-        # Wait for PN5180 to process command (BUSY goes high then low)
-        time.sleep(0.001)
-        self._wait_busy()
-
-        # Read response (manual CS)
-        self._cs_low()
-        rx = self._spi.xfer2([0xFF] * rx_len)
-        self._cs_high()
-        time.sleep(0.001)
-        self._wait_busy()
-        return bytes(rx)
-
-    # -- register operations ------------------------------------------------
-
-    def read_register(self, addr):
-        """Read a 32-bit register. Returns int."""
-        resp = self._send_command([CMD_READ_REGISTER, addr], rx_len=4)
-        return int.from_bytes(resp, "little")
-
-    def write_register(self, addr, value):
-        """Write a 32-bit value to a register."""
-        self._send_command(
-            [
-                CMD_WRITE_REGISTER,
-                addr,
-                value & 0xFF,
-                (value >> 8) & 0xFF,
-                (value >> 16) & 0xFF,
-                (value >> 24) & 0xFF,
-            ]
-        )
-
-    def write_register_or_mask(self, addr, mask):
-        self._send_command(
-            [
-                CMD_WRITE_REGISTER_OR_MASK,
-                addr,
-                mask & 0xFF,
-                (mask >> 8) & 0xFF,
-                (mask >> 16) & 0xFF,
-                (mask >> 24) & 0xFF,
-            ]
-        )
-
-    def write_register_and_mask(self, addr, mask):
-        self._send_command(
-            [
-                CMD_WRITE_REGISTER_AND_MASK,
-                addr,
-                mask & 0xFF,
-                (mask >> 8) & 0xFF,
-                (mask >> 16) & 0xFF,
-                (mask >> 24) & 0xFF,
-            ]
-        )
-
-    # -- EEPROM operations --------------------------------------------------
-
-    def read_eeprom(self, addr, length):
-        """Read `length` bytes from EEPROM starting at `addr`."""
-        return self._send_command([CMD_READ_EEPROM, addr, length], rx_len=length)
-
-    # -- reset --------------------------------------------------------------
-
-    def reset(self):
-        """Hardware-reset the PN5180 via the RST pin."""
-        self._rst_line.set_value(self._rst_pin, gpiod.line.Value.INACTIVE)
-        time.sleep(0.01)
-        self._rst_line.set_value(self._rst_pin, gpiod.line.Value.ACTIVE)
-        time.sleep(0.05)
-        self._wait_busy(timeout_s=2.0)
-        # Clear all IRQ flags
-        self.write_register(REG_IRQ_CLEAR, 0xFFFFFFFF)
-
-    # -- version / identity -------------------------------------------------
-
-    def get_product_version(self):
-        data = self.read_eeprom(EEPROM_PRODUCT_VERSION, 2)
-        return f"{data[1]}.{data[0]}"
-
-    def get_firmware_version(self):
-        data = self.read_eeprom(EEPROM_FIRMWARE_VERSION, 2)
-        return f"{data[1]}.{data[0]}"
-
-    def get_eeprom_version(self):
-        data = self.read_eeprom(EEPROM_EEPROM_VERSION, 2)
-        return f"{data[1]}.{data[0]}"
-
-    def get_die_identifier(self):
-        data = self.read_eeprom(EEPROM_DIE_IDENTIFIER, 16)
-        return data.hex()
-
-
 def run_diagnostics():
     print("=" * 60)
     print("PN5180 NFC Reader Diagnostics")
@@ -330,12 +125,29 @@ def run_diagnostics():
 
         # Register dump
         print("\n[3] Register dump")
+        # Use register names from the script (not in pn5180.py)
+        REGISTER_NAMES = {
+            0x00: "SYSTEM_CONFIG",
+            0x01: "IRQ_ENABLE",
+            0x02: "IRQ_STATUS",
+            0x03: "IRQ_CLEAR",
+            0x04: "TRANSCEIVE_CONTROL",
+            0x0C: "TIMER1_RELOAD",
+            0x0F: "TIMER1_CONFIG",
+            0x11: "RX_WAIT_CONFIG",
+            0x12: "CRC_RX_CONFIG",
+            0x13: "RX_STATUS",
+            0x19: "CRC_TX_CONFIG",
+            0x1D: "RF_STATUS",
+            0x24: "SYSTEM_STATUS",
+            0x25: "TEMP_CONTROL",
+        }
         for addr, name in sorted(REGISTER_NAMES.items()):
-            val = nfc.read_register(addr)
+            val = nfc.read_reg(addr)
             print(f"    0x{addr:02X} {name:<24s} = 0x{val:08X}")
 
         # IRQ status breakdown
-        irq = nfc.read_register(REG_IRQ_STATUS)
+        irq = nfc.read_reg(0x02)
         print(f"\n[4] IRQ status flags (0x{irq:08X})")
         irq_flags = [
             (0, "RX_IRQ"),
@@ -356,7 +168,7 @@ def run_diagnostics():
             print(f"    bit {bit:2d}: {name:<28s} [{state}]")
 
         # RF status
-        rf = nfc.read_register(REG_RF_STATUS)
+        rf = nfc.read_reg(0x1D)
         print(f"\n[5] RF status (0x{rf:08X})")
         tx_rf_on = bool(rf & (1 << 0))
         rx_en = bool(rf & (1 << 1))
@@ -364,11 +176,11 @@ def run_diagnostics():
         print(f"    RX enabled   : {rx_en}")
 
         # System status
-        sys_stat = nfc.read_register(REG_SYSTEM_STATUS)
+        sys_stat = nfc.read_reg(0x24)
         print(f"\n[6] System status (0x{sys_stat:08X})")
 
         # Temperature
-        temp_ctrl = nfc.read_register(REG_TEMP_CONTROL)
+        temp_ctrl = nfc.read_reg(0x25)
         print(f"\n[7] Temp control register (0x{temp_ctrl:08X})")
 
         print("\n" + "=" * 60)

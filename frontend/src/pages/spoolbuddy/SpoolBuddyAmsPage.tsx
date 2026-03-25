@@ -678,20 +678,8 @@ export function SpoolBuddyAmsPage() {
                   </div>
                 </button>
 
-                {/* Inventory: Assign / Unassign */}
-                {!spoolmanEnabled && (
-                  <button
-                    onClick={openAssignFromPicker}
-                    className="w-full flex items-center gap-3 p-3 rounded-lg bg-bambu-dark border border-bambu-dark-tertiary hover:border-bambu-green transition-colors text-left"
-                  >
-                    <Package className="w-5 h-5 text-bambu-green flex-shrink-0" />
-                    <div>
-                      <p className="text-white font-medium">{t('inventory.assignSpool')}</p>
-                      <p className="text-xs text-bambu-gray">{t('spoolbuddy.ams.assignDesc', 'Track a spool from your inventory')}</p>
-                    </div>
-                  </button>
-                )}
-                {!spoolmanEnabled && assignment && (
+                {/* Inventory: Assign or Unassign */}
+                {!spoolmanEnabled && (assignment ? (
                   <button
                     onClick={handleUnassignFromPicker}
                     disabled={unassignMutation.isPending}
@@ -703,22 +691,21 @@ export function SpoolBuddyAmsPage() {
                       <p className="text-xs text-bambu-gray">{t('spoolbuddy.ams.unassignDesc', 'Remove inventory spool from this slot')}</p>
                     </div>
                   </button>
-                )}
-
-                {/* Spoolman: Link / Unlink */}
-                {spoolmanEnabled && (
+                ) : (
                   <button
-                    onClick={openLinkFromPicker}
+                    onClick={openAssignFromPicker}
                     className="w-full flex items-center gap-3 p-3 rounded-lg bg-bambu-dark border border-bambu-dark-tertiary hover:border-bambu-green transition-colors text-left"
                   >
-                    <Link2 className="w-5 h-5 text-bambu-green flex-shrink-0" />
+                    <Package className="w-5 h-5 text-bambu-green flex-shrink-0" />
                     <div>
-                      <p className="text-white font-medium">{t('spoolman.linkToSpoolman')}</p>
-                      <p className="text-xs text-bambu-gray">{t('spoolbuddy.ams.linkDesc', 'Link a Spoolman spool to this slot')}</p>
+                      <p className="text-white font-medium">{t('inventory.assignSpool')}</p>
+                      <p className="text-xs text-bambu-gray">{t('spoolbuddy.ams.assignDesc', 'Track a spool from your inventory')}</p>
                     </div>
                   </button>
-                )}
-                {spoolmanEnabled && linked?.id && (
+                ))}
+
+                {/* Spoolman: Link or Unlink */}
+                {spoolmanEnabled && (linked?.id ? (
                   <button
                     onClick={() => unlinkSpoolMutation.mutate(linked.id)}
                     disabled={unlinkSpoolMutation.isPending}
@@ -730,7 +717,18 @@ export function SpoolBuddyAmsPage() {
                       <p className="text-xs text-bambu-gray">{t('spoolbuddy.ams.unlinkDesc', 'Remove Spoolman link from this slot')}</p>
                     </div>
                   </button>
-                )}
+                ) : (
+                  <button
+                    onClick={openLinkFromPicker}
+                    className="w-full flex items-center gap-3 p-3 rounded-lg bg-bambu-dark border border-bambu-dark-tertiary hover:border-bambu-green transition-colors text-left"
+                  >
+                    <Link2 className="w-5 h-5 text-bambu-green flex-shrink-0" />
+                    <div>
+                      <p className="text-white font-medium">{t('spoolman.linkToSpoolman')}</p>
+                      <p className="text-xs text-bambu-gray">{t('spoolbuddy.ams.linkDesc', 'Link a Spoolman spool to this slot')}</p>
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
           </div>

@@ -209,11 +209,14 @@ def run_diagnostics():
         # SIGPRO_CONFIG ISO/IEC14443 mode check
         sigpro_val = nfc.read_reg(REG_SIGPRO_CONFIG)
         sigpro_mode = (sigpro_val >> 0) & 0b111
-        print(f"\n[5b] SIGPRO_CONFIG (0x1A) bits 2:0 = 0b{sigpro_mode:03b}")
-        if sigpro_mode == 0b100:
-            print(" Transmit baudrate: 106 kBd - ISO/IEC14443 mode detected")
-        else:
-            print("    WARNING: Unexpected SIGPRO_CONFIG mode (expected 0b100 for ISO/IEC14443)")
+        baudrate_map = {
+            0b100: "106 kBd (ISO/IEC14443 type A/B)",
+            0b101: "212 kBd (FeliCa 212 kBd)",
+            0b110: "424 kBd (FeliCa 424 kBd)",
+            0b111: "848 kBd",
+        }
+        baudrate_str = baudrate_map.get(sigpro_mode, "Unknown or reserved")
+        print(f"\n[5b] SIGPRO_CONFIG (0x1A) bits 2:0 = 0b{sigpro_mode:03b} ({baudrate_str})")
 
         # IRQ status breakdown
         irq = nfc.read_reg(0x02)
@@ -250,20 +253,20 @@ def run_diagnostics():
 
         # System status bit breakdown
         sys_stat_bits = [
-            (9, "LDO_TVDD_OK", "LDO voltage available on LDO_OUT"),
-            (8, "PARAMETER_ERROR", "Parameter Error on Host Communication"),
-            (7, "SYNTAX_ERROR", "Syntax Error on Host Communication"),
-            (6, "SEMANTIC_ERROR", "Semantic Error on Host Communication"),
-            (5, "STBY_PREVENT_RFLD", "Entry of STBY mode prevented due to existing RFLD"),
-            (4, "BOOT_TEMP", "Boot Reason Temp Sensor"),
-            (3, "BOOT_SOFT_RESET", "Boot Reason due to SOFT RESET"),
-            (2, "BOOT_WUC", "Boot Reason wake-up Counter"),
-            (1, "BOOT_RFLD", "Boot Reason RF Level Detector"),
-            (0, "BOOT_POR", "Boot Reason 'Power on' or pin RESET_N set to HIGH"),
+            (9, "LDO_TVDD_OK"),
+            (8, "PARAMETER_ERROR"),
+            (7, "SYNTAX_ERROR"),
+            (6, "SEMANTIC_ERROR"),
+            (5, "STBY_PREVENT_RFLD"),
+            (4, "BOOT_TEMP"),
+            (3, "BOOT_SOFT_RESET"),
+            (2, "BOOT_WUC"),
+            (1, "BOOT_RFLD"),
+            (0, "BOOT_POR"),
         ]
-        for bit, symbol, desc in sys_stat_bits:
+        for bit, symbol in sys_stat_bits:
             state = "SET" if sys_stat & (1 << bit) else "---"
-            print(f"    bit {bit:2d}: {symbol:<18s} [{state}] - {desc}")
+            print(f"    bit {bit:2d}: {symbol:<18s} [{state}]")
 
         # Temperature
         temp_ctrl = nfc.read_reg(0x25)

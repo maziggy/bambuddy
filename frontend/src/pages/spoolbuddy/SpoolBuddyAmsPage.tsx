@@ -338,7 +338,8 @@ export function SpoolBuddyAmsPage() {
 
   const openConfigureFromPicker = useCallback(() => {
     if (!slotActionPicker) return;
-    const { tray: _t, location: _l, ...configData } = slotActionPicker;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { tray, location, ...configData } = slotActionPicker;
     setSlotActionPicker(null);
     setConfigureSlotModal(configData);
   }, [slotActionPicker]);

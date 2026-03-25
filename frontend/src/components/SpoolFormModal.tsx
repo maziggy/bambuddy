@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { X, Loader2, Save, Beaker, Palette, Zap, Tag } from 'lucide-react';
+import { X, Loader2, Save, Beaker, Palette, Zap, Tag, Unlink } from 'lucide-react';
 import { api } from '../api/client';
 import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset } from '../api/client';
 import { Button } from './Button';
@@ -383,6 +383,29 @@ export function SpoolFormModal({
     },
   });
 
+  // Fetch assignment for this spool (to show Unassign button)
+  const { data: assignments } = useQuery({
+    queryKey: ['spool-assignments'],
+    queryFn: () => api.getAssignments(),
+    enabled: isOpen && isEditing,
+  });
+  const spoolAssignment = spool ? assignments?.find(a => a.spool_id === spool.id) : undefined;
+
+  const unassignMutation = useMutation({
+    mutationFn: () => {
+      if (!spoolAssignment) throw new Error('No assignment');
+      return api.unassignSpool(spoolAssignment.printer_id, spoolAssignment.ams_id, spoolAssignment.tray_id);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['spool-assignments'] });
+      showToast(t('inventory.unassignSuccess', 'Spool unassigned'), 'success');
+      onClose();
+    },
+    onError: (error: Error) => {
+      showToast(error.message, 'error');
+    },
+  });
+
   // Save K-profiles for selected calibrations
   const saveKProfiles = async (spoolId: number) => {
     if (selectedProfiles.size === 0) {
@@ -487,7 +510,7 @@ export function SpoolFormModal({
     }
   };
 
-  const isPending = createMutation.isPending || bulkCreateMutation.isPending || updateMutation.isPending || deleteTagMutation.isPending;
+  const isPending = createMutation.isPending || bulkCreateMutation.isPending || updateMutation.isPending || deleteTagMutation.isPending || unassignMutation.isPending;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -646,15 +669,24 @@ export function SpoolFormModal({
         {/* Footer */}
         <div className="flex gap-2 p-4 border-t border-bambu-dark-tertiary flex-shrink-0">
           {isEditing && (
-            <Button
-              variant="secondary"
-              onClick={() => deleteTagMutation.mutate()}
-              disabled={isPending || !spool?.tag_uid}
-              className="mr-auto"
-            >
-              <Tag className="w-4 h-4" />
-              {t('inventory.deleteTag', 'Delete Tag')}
-            </Button>
+            <div className="flex gap-2 mr-auto">
+              <Button
+                variant="secondary"
+                onClick={() => deleteTagMutation.mutate()}
+                disabled={isPending || !spool?.tag_uid}
+              >
+                <Tag className="w-4 h-4" />
+                {t('inventory.deleteTag', 'Delete Tag')}
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => unassignMutation.mutate()}
+                disabled={isPending || !spoolAssignment}
+              >
+                <Unlink className="w-4 h-4" />
+                {t('inventory.unassignSpool', 'Unassign')}
+              </Button>
+            </div>
           )}
           <div className="flex gap-2 ml-auto">
           <Button variant="secondary" onClick={onClose}>

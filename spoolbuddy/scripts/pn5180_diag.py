@@ -82,6 +82,7 @@ REG_RX_STATUS = 0x13
 REG_CRC_TX_CONFIG = 0x19
 REG_RF_STATUS = 0x1D
 REG_SYSTEM_STATUS = 0x24
+REG_SIGPRO_CONFIG = 0x1A  # Signal Processing Configuration
 REG_TEMP_CONTROL = 0x25
 
 REGISTER_NAMES = {
@@ -97,6 +98,7 @@ REGISTER_NAMES = {
     REG_RX_STATUS: "RX_STATUS",
     REG_CRC_TX_CONFIG: "CRC_TX_CONFIG",
     REG_RF_STATUS: "RF_STATUS",
+    REG_SIGPRO_CONFIG: "SIGPRO_CONFIG",
     REG_SYSTEM_STATUS: "SYSTEM_STATUS",
     REG_TEMP_CONTROL: "TEMP_CONTROL",
 }
@@ -183,7 +185,7 @@ def run_diagnostics():
         # Register dump
         print("\n[5] Register dump")
         # Use register names from the script (not in pn5180.py)
-        REGISTER_NAMES = {
+        REGISTER_NAMES_DUMP = {
             0x00: "SYSTEM_CONFIG",
             0x01: "IRQ_ENABLE",
             0x02: "IRQ_STATUS",
@@ -195,13 +197,23 @@ def run_diagnostics():
             0x12: "CRC_RX_CONFIG",
             0x13: "RX_STATUS",
             0x19: "CRC_TX_CONFIG",
+            0x1A: "SIGPRO_CONFIG",
             0x1D: "RF_STATUS",
             0x24: "SYSTEM_STATUS",
             0x25: "TEMP_CONTROL",
         }
-        for addr, name in sorted(REGISTER_NAMES.items()):
+        for addr, name in sorted(REGISTER_NAMES_DUMP.items()):
             val = nfc.read_reg(addr)
             print(f"    0x{addr:02X} {name:<24s} = 0x{val:08X}")
+
+        # SIGPRO_CONFIG ISO/IEC14443 mode check
+        sigpro_val = nfc.read_reg(REG_SIGPRO_CONFIG)
+        sigpro_mode = (sigpro_val >> 0) & 0b111
+        print(f"\n[5b] SIGPRO_CONFIG (0x1A) bits 2:0 = 0b{sigpro_mode:03b}")
+        if sigpro_mode == 0b100:
+            print(" Transmit baudrate: 106 kBd - ISO/IEC14443 mode detected")
+        else:
+            print("    WARNING: Unexpected SIGPRO_CONFIG mode (expected 0b100 for ISO/IEC14443)")
 
         # IRQ status breakdown
         irq = nfc.read_reg(0x02)
@@ -236,9 +248,37 @@ def run_diagnostics():
         sys_stat = nfc.read_reg(0x24)
         print(f"\n[8] System status (0x{sys_stat:08X})")
 
+        # System status bit breakdown
+        sys_stat_bits = [
+            (9, "LDO_TVDD_OK", "LDO voltage available on LDO_OUT"),
+            (8, "PARAMETER_ERROR", "Parameter Error on Host Communication"),
+            (7, "SYNTAX_ERROR", "Syntax Error on Host Communication"),
+            (6, "SEMANTIC_ERROR", "Semantic Error on Host Communication"),
+            (5, "STBY_PREVENT_RFLD", "Entry of STBY mode prevented due to existing RFLD"),
+            (4, "BOOT_TEMP", "Boot Reason Temp Sensor"),
+            (3, "BOOT_SOFT_RESET", "Boot Reason due to SOFT RESET"),
+            (2, "BOOT_WUC", "Boot Reason wake-up Counter"),
+            (1, "BOOT_RFLD", "Boot Reason RF Level Detector"),
+            (0, "BOOT_POR", "Boot Reason 'Power on' or pin RESET_N set to HIGH"),
+        ]
+        for bit, symbol, desc in sys_stat_bits:
+            state = "SET" if sys_stat & (1 << bit) else "---"
+            print(f"    bit {bit:2d}: {symbol:<18s} [{state}] - {desc}")
+
         # Temperature
         temp_ctrl = nfc.read_reg(0x25)
         print(f"\n[9] Temp control register (0x{temp_ctrl:08X})")
+
+        # TEMP_DELTA bits 1:0
+        temp_delta = (temp_ctrl >> 0) & 0b11
+        temp_delta_map = {
+            0b00: "85°C",
+            0b01: "115°C",
+            0b10: "125°C",
+            0b11: "135°C",
+        }
+        temp_delta_str = temp_delta_map.get(temp_delta, "Unknown")
+        print(f"    TEMP_DELTA bits 1:0 = 0b{temp_delta:02b} ({temp_delta_str})")
 
         print("\n" + "=" * 60)
         print("Diagnostics complete - PN5180 is responding over SPI.")

@@ -281,7 +281,7 @@ def run_diagnostics():
             0b11: "135°C",
         }
         temp_delta_str = temp_delta_map.get(temp_delta, "Unknown")
-        print(f"    TEMP_DELTA bits 1:0 = 0b{temp_delta:02b} ({temp_delta_str})")
+        print(f"    bits 1:0 TEMP_DELTA = 0b{temp_delta:02b} ({temp_delta_str})")
 
         print("\n" + "=" * 60)
         print("Diagnostics complete - PN5180 is responding over SPI.")

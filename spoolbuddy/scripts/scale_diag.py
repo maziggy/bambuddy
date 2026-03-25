@@ -8,11 +8,10 @@ Bus: /dev/i2c-1 (GPIO2/GPIO3 on RPi)
 import os
 import sys
 import time
-from pathlib import Path
 
 import smbus2
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "daemon"))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "daemon")))
 from nau7802 import NAU7802
 
 

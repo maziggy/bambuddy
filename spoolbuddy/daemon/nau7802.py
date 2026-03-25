@@ -1,17 +1,15 @@
-"""NAU7802 24-bit ADC driver for load cell / scale applications.
+#!/usr/bin/env python3
+"""NAU7802 Scale Diagnostic - ported from SpoolBuddy Rust firmware.
 
 I2C address: 0x2A
 Bus: /dev/i2c-1 (GPIO2/GPIO3 on RPi)
 """
 
-import logging
 import os
 import struct
 import time
 
 import smbus2
-
-logger = logging.getLogger(__name__)
 
 
 def _env_int(name: str, default: int) -> int:
@@ -51,10 +49,14 @@ PU_AVDDS = 0x80  # AVDD source select
 
 
 class NAU7802:
-    def __init__(self, bus: int = I2C_BUS, addr: int = NAU7802_ADDR):
+    def __init__(self, bus=I2C_BUS, addr=NAU7802_ADDR):
         self._bus_num = bus
         self._bus = smbus2.SMBus(bus)
         self._addr = addr
+
+    # CTRL2 bits for AFE calibration
+    _CTRL2_CALS = 1 << 2
+    _CTRL2_CAL_ERROR = 1 << 3
 
     def close(self):
         self._bus.close()
@@ -78,70 +80,138 @@ class NAU7802:
         self._update_bits(reg, mask, value << shift)
 
     def init(self):
-        """Initialize NAU7802 using the Adafruit library startup sequence."""
+        """Initialize NAU7802 per datasheet power-on sequencing (Section 8.1).
 
-        # Reset
+        Datasheet steps:
+          1. RR=1 (reset all registers)
+          2. RR=0, PUD=1 (enter normal operation; PUD auto-starts AD conversion)
+          3. Wait ~200µs for PUR=1
+          4. Configure (LDO, gain, rate, etc.)
+          5. Tuning (ADC chopper, PGA caps)
+          6. (Optional) calibration and flush transients
+        """
+
+        # Step 1: Reset (set RR=1, then RR=0)
         self._set_bit(REG_PU_CTRL, 0, True)  # RR=1
         time.sleep(0.010)
-        self._set_bit(REG_PU_CTRL, 0, False)  # RR=0
-        self._set_bit(REG_PU_CTRL, 1, True)  # PUD=1
+        self._set_bit(REG_PU_CTRL, 0, False)  # RR=0 exits reset
+        # Datasheet says "about 200 microseconds" before PUR is set
         time.sleep(0.001)
 
-        # Enable digital + analog and allow analog section to settle.
+        # Step 2: Power up digital (PUD=1 auto-starts AD conversion)
         self._set_bit(REG_PU_CTRL, 1, True)  # PUD=1
+        # Step 2b: Power up analog (PUA=1)
         self._set_bit(REG_PU_CTRL, 2, True)  # PUA=1
-        time.sleep(0.600)
+        time.sleep(0.600)  # Wait for LDO and analog section to stabilize
 
-        # Start conversion cycle (PU_CS bit 4) after power-up.
-        self._set_bit(REG_PU_CTRL, 4, True)
-
-        # Wait for power-up ready (PU_PUR bit 3)
+        # Step 3: Wait for power-up ready (PUR bit 3)
         for _ in range(100):
             status = self.read_reg(REG_PU_CTRL)
             if status & PU_PUR:
-                logger.debug("Power-up ready")
+                print("  Power-up ready")
                 break
             time.sleep(0.001)
         else:
-            raise TimeoutError("NAU7802 power-up timeout")
+            raise TimeoutError("NAU7802 power-up timeout (PUR bit not set)")
 
-        # Check revision register low nibble (Adafruit expects 0xF).
+        # Check revision register low nibble (datasheet expects 0xF).
         revision = self.read_reg(REG_REVISION)
+        print(f"  Revision: 0x{revision:02X}")
         if (revision & 0x0F) != 0x0F:
-            raise RuntimeError(f"Unexpected NAU7802 revision register: 0x{revision:02X}")
-        logger.debug("Revision: 0x%02X", revision)
+            raise RuntimeError(f"Unexpected NAU7802 revision: 0x{revision:02X} (expected 0x_F)")
 
-        # Internal LDO enable is PU_CTRL.AVDDS (bit 7); set LDO voltage to 3.0V.
-        self._set_bit(REG_PU_CTRL, 7, True)  # AVDDS=1 (internal LDO)
+        # Step 4: Configure device
+        # Internal LDO enable (AVDDS=1, bit 7) and set voltage to 3.0V
+        self._set_bit(REG_PU_CTRL, 7, True)  # AVDDS=1
         self._set_field(REG_CTRL1, shift=3, width=3, value=0b101)  # VLDO=3.0V
-        logger.debug("LDO: 3.0V (internal)")
+        print("  LDO: 3.0V (internal)")
 
-        # Gain: 128x (bits 2:0 of CTRL1 = 0b111)
+        # Set gain to 128x (CTRL1 bits 2:0 = 0b111)
         self._set_field(REG_CTRL1, shift=0, width=3, value=0b111)
-        logger.debug("Gain: 128x")
+        print("  Gain: 128x")
 
-        # Sample rate: 10 SPS (CTRL2 bits 6:4 = 0b000)
+        # Set sample rate to 10 SPS (CTRL2 bits 6:4 = 0b000)
+        # Note: At 10 SPS, each sample takes ~100ms; first 4 samples = ~400ms to settle
         self._set_field(REG_CTRL2, shift=4, width=3, value=0b000)
-        logger.debug("Sample rate: 10 SPS")
+        print("  Sample rate: 10 SPS")
 
-        # Adafruit tuning: disable ADC chopper clock (ADC bits 5:4 = 0b11)
+        # Step 5: Tuning per application notes
+        # Disable ADC chopper clock (ADC bits 5:4 = 0b11)
         self._set_field(REG_ADC, shift=4, width=2, value=0b11)
-
-        # Adafruit tuning: use low ESR caps (PGA bit 6 = 0)
+        # Enable low-ESR caps on PGA (PGA bit 6 = 0 for improved accuracy)
         self._set_bit(REG_PGA, 6, False)
 
-        # Start conversion cycle
-        self._set_bit(REG_PU_CTRL, 4, True)
-        logger.debug("Conversion started")
+        # Step 6: Trigger fresh AD conversion and wait for first result
+        # CS bit transition 0→1 starts fresh conversion; takes ~4-sample time for result
+        self._set_bit(REG_PU_CTRL, 4, True)  # CS=1
+        print("  Conversion started")
 
-        # Flush the first reading — the NAU7802 always returns a stale
-        # max-scale value (0x7FFFFF) on the first conversion after power-up.
-        for _ in range(200):
+        # Flush startup transients before calibration
+        # At 10 SPS, initial 4 samples may contain settling artifacts
+        self.flush_readings(count=4, timeout_s=1.5)
+
+        # Run AFE calibration (internal mode), then flush result
+        self.calibrate_afe(timeout_ms=1000, mode=0)
+        self.flush_readings(count=2, timeout_s=1.0)
+        print("  Initialization complete")
+
+    def begin_calibrate_afe(self, mode: int = 0) -> None:
+        """Start asynchronous AFE calibration.
+
+        mode values match NAU7802 CALMOD: 0=internal, 1=offset, 2=gain.
+        """
+        ctrl2 = self.read_reg(REG_CTRL2)
+        ctrl2 &= 0xFC  # clear CALMOD bits[1:0]
+        ctrl2 |= mode & 0x03
+        self.write_reg(REG_CTRL2, ctrl2)
+
+        # Set CALS (bit 2) to start calibration.
+        self.write_reg(REG_CTRL2, self.read_reg(REG_CTRL2) | self._CTRL2_CALS)
+
+    def wait_for_calibrate_afe(self, timeout_ms: int = 1000) -> bool:
+        deadline = time.monotonic() + (timeout_ms / 1000.0) if timeout_ms > 0 else None
+
+        while True:
+            ctrl2 = self.read_reg(REG_CTRL2)
+            if (ctrl2 & self._CTRL2_CALS) == 0:
+                return (ctrl2 & self._CTRL2_CAL_ERROR) == 0
+
+            if deadline is not None and time.monotonic() >= deadline:
+                return False
+            time.sleep(0.001)
+
+    def calibrate_afe(self, timeout_ms: int = 1000, mode: int = 0) -> None:
+        """Run AFE calibration per datasheet CTRL2[2] CALS bit sequence.
+
+        Datasheet says:
+          - Write 1 to CALS to start (mode in CALMOD bits [1:0])
+          - CALS=1 during calibration, 0 when complete
+          - Check CAL_ERR bit after completion
+        """
+        self.begin_calibrate_afe(mode=mode)
+        if not self.wait_for_calibrate_afe(timeout_ms=timeout_ms):
+            raise RuntimeError(f"NAU7802 AFE calibration timed out after {timeout_ms}ms")
+        # Check CAL_ERR bit to ensure no error during calibration
+        ctrl2 = self.read_reg(REG_CTRL2)
+        if ctrl2 & self._CTRL2_CAL_ERROR:
+            raise RuntimeError("NAU7802 AFE calibration completed with CAL_ERR set")
+        print("  AFE calibration: OK")
+
+    def wait_data_ready(self, timeout_s: float = 1.0) -> bool:
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
             if self.data_ready():
-                self.read_raw()  # discard
-                logger.debug("First reading flushed")
-                break
-            time.sleep(0.010)
+                return True
+            time.sleep(0.001)
+        return False
+
+    def flush_readings(self, count: int = 4, timeout_s: float = 1.0) -> None:
+        flushed = 0
+        while flushed < count:
+            if not self.wait_data_ready(timeout_s=timeout_s):
+                raise TimeoutError("Timeout while flushing startup scale readings")
+            _ = self.read_raw()
+            flushed += 1
 
     def data_ready(self) -> bool:
         return bool(self.read_reg(REG_PU_CTRL) & PU_CR)

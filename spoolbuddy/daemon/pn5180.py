@@ -479,14 +479,18 @@ class PN5180:
         if len(data) != 4:
             return False
 
-        # NTAG WRITE needs TX CRC on (tag expects CRC), RX CRC off (ACK is 4-bit, no CRC)
+        # Crypto1 off, TX CRC on (tag expects CRC), RX CRC off (ACK is 4-bit, no CRC)
+        self.write_reg_and(0x00, 0xFFFFFFBF)  # Crypto1 off
         self.write_reg_or(0x19, 0x01)  # TX CRC on
         self.write_reg_and(0x12, 0xFFFFFFFE)  # RX CRC off
+        self.write_reg(0x03, 0xFFFFFFFF)  # Clear IRQs
 
-        # Clear IRQs and set transceive mode
-        self.write_reg(0x03, 0xFFFFFFFF)
-        self.set_transceive_mode()
+        # Reset state machine: IDLE then TRANSCEIVE
+        sys_cfg = self.read_reg(0x00)
+        self.write_reg(0x00, sys_cfg & 0xFFFFFFF8)  # IDLE
         time.sleep(0.001)
+        self.write_reg(0x00, (sys_cfg & 0xFFFFFFF8) | 0x03)  # TRANSCEIVE
+        time.sleep(0.002)
 
         # WRITE command: 0xA2 + page + 4 bytes
         self.send_data([0xA2, page] + list(data))
@@ -495,14 +499,20 @@ class PN5180:
         # Check for ACK: NTAG ACK is 4-bit 0x0A.
         # RX_STATUS bits 8:0 = complete bytes, bits 17:9 = extra bits.
         # A 4-bit ACK reports 0 bytes + 4 bits, so check both fields.
+        irq_status = self.read_reg(0x02)
         rx_status = self.read_reg(0x13)
         rx_bytes = rx_status & 0x1FF
         rx_bits = (rx_status >> 9) & 0x1FF
         logger.debug(
-            "NTAG write page %d: rx_status=0x%08X, rx_bytes=%d, rx_bits=%d", page, rx_status, rx_bytes, rx_bits
+            "NTAG write page %d: irq=0x%08X, rx_status=0x%08X, rx_bytes=%d, rx_bits=%d",
+            page,
+            irq_status,
+            rx_status,
+            rx_bytes,
+            rx_bits,
         )
         if rx_bytes == 0 and rx_bits == 0:
-            logger.warning("NTAG write page %d: no ACK received", page)
+            logger.warning("NTAG write page %d: no ACK received (irq=0x%08X)", page, irq_status)
             return False
 
         ack = self.read_data(1)

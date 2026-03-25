@@ -20,6 +20,10 @@ import sys
 import time
 
 import gpiod
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "daemon")))
+
+
 from pn5180 import (
     NSS_PIN as DRIVER_NSS_PIN,  # noqa: E402
     PN5180,  # noqa: E402
@@ -27,11 +31,6 @@ from pn5180 import (
     SPI_BUS as DRIVER_SPI_BUS,  # noqa: E402
     SPI_DEVICE as DRIVER_SPI_DEVICE,  # noqa: E402
 )
-
-# Ensure daemon directory is in sys.path regardless of invocation location
-_daemon_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "daemon"))
-if _daemon_dir not in sys.path:
-    sys.path.insert(0, _daemon_dir)
 
 
 def _env_int(name: str, default: int) -> int:

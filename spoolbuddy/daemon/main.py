@@ -23,6 +23,7 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("spoolbuddy")
+logging.getLogger("daemon.pn5180").setLevel(logging.DEBUG)
 
 
 def _spoolbuddy_env_path() -> Path:

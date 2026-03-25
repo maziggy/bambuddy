@@ -17,12 +17,21 @@ Wiring (from spoolbuddy/README.md):
 
 import os
 import sys
+import time
+
+import gpiod
+from pn5180 import (
+    NSS_PIN as DRIVER_NSS_PIN,  # noqa: E402
+    PN5180,  # noqa: E402
+    RST_PIN as DRIVER_RST_PIN,  # noqa: E402
+    SPI_BUS as DRIVER_SPI_BUS,  # noqa: E402
+    SPI_DEVICE as DRIVER_SPI_DEVICE,  # noqa: E402
+)
 
 # Ensure daemon directory is in sys.path regardless of invocation location
 _daemon_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "daemon"))
 if _daemon_dir not in sys.path:
     sys.path.insert(0, _daemon_dir)
-from pn5180 import PN5180  # noqa: E402
 
 
 def _env_int(name: str, default: int) -> int:
@@ -103,6 +112,42 @@ EEPROM_EEPROM_VERSION = 0x14  # 2 bytes
 EEPROM_IRQ_PIN_CONFIG = 0x1A  # 1 byte
 
 
+def _check_spi_device_access() -> str:
+    """Check that the configured spidev exists and can be opened."""
+    spi_path = f"/dev/spidev{DRIVER_SPI_BUS}.{DRIVER_SPI_DEVICE}"
+    if not os.path.exists(spi_path):
+        raise FileNotFoundError(f"SPI device not found: {spi_path}")
+
+    fd = os.open(spi_path, os.O_RDWR)
+    os.close(fd)
+    return spi_path
+
+
+def _pin_state_name(value: gpiod.line.Value) -> str:
+    return "ACTIVE" if value == gpiod.line.Value.ACTIVE else "INACTIVE"
+
+
+def _self_test_control_pins(nfc: PN5180):
+    """Toggle NSS and RST pins and print observed line state."""
+    for pin_name, pin_num in (("NSS", DRIVER_NSS_PIN), ("RST", DRIVER_RST_PIN)):
+        nfc._lines.set_value(pin_num, gpiod.line.Value.ACTIVE)
+        time.sleep(0.005)
+        active_state = nfc._lines.get_value(pin_num)
+
+        nfc._lines.set_value(pin_num, gpiod.line.Value.INACTIVE)
+        time.sleep(0.005)
+        inactive_state = nfc._lines.get_value(pin_num)
+
+        # Restore idle-high level used by this driver.
+        nfc._lines.set_value(pin_num, gpiod.line.Value.ACTIVE)
+
+        print(
+            f"    {pin_name} pin {pin_num}: "
+            f"ACTIVE->{_pin_state_name(active_state)}, "
+            f"INACTIVE->{_pin_state_name(inactive_state)}"
+        )
+
+
 def run_diagnostics():
     print("=" * 60)
     print("PN5180 NFC Reader Diagnostics")
@@ -110,21 +155,34 @@ def run_diagnostics():
 
     nfc = None
     try:
+        print("\n[1] SPI device check...")
+        spi_path = _check_spi_device_access()
+        print(f"    SPI device OK: {spi_path}")
+
         nfc = PN5180()
+
+        print("\n[2] Control pin self-test (NSS/RST)...")
+        _self_test_control_pins(nfc)
+
         # Reset
-        print("\n[1] Hardware reset...")
+        print("\n[3] Hardware reset...")
         nfc.reset()
         print("    Reset OK")
 
         # Version info
-        print("\n[2] Version info (EEPROM)")
-        print(f"    Product version  : {nfc.get_product_version()}")
-        print(f"    Firmware version : {nfc.get_firmware_version()}")
-        print(f"    EEPROM version   : {nfc.get_eeprom_version()}")
-        print(f"    Die identifier   : {nfc.get_die_identifier()}")
+        print("\n[4] Version info (EEPROM)")
+        product = nfc.read_eeprom(EEPROM_PRODUCT_VERSION, 2)
+        firmware = nfc.read_eeprom(EEPROM_FIRMWARE_VERSION, 2)
+        eeprom = nfc.read_eeprom(EEPROM_EEPROM_VERSION, 2)
+        die_id = nfc.read_eeprom(EEPROM_DIE_IDENTIFIER, 16)
+
+        print(f"    Product version  : {product[1]}.{product[0]}")
+        print(f"    Firmware version : {firmware[1]}.{firmware[0]}")
+        print(f"    EEPROM version   : {eeprom[1]}.{eeprom[0]}")
+        print(f"    Die identifier   : {die_id.hex()}")
 
         # Register dump
-        print("\n[3] Register dump")
+        print("\n[5] Register dump")
         # Use register names from the script (not in pn5180.py)
         REGISTER_NAMES = {
             0x00: "SYSTEM_CONFIG",
@@ -148,7 +206,7 @@ def run_diagnostics():
 
         # IRQ status breakdown
         irq = nfc.read_reg(0x02)
-        print(f"\n[4] IRQ status flags (0x{irq:08X})")
+        print(f"\n[6] IRQ status flags (0x{irq:08X})")
         irq_flags = [
             (0, "RX_IRQ"),
             (1, "TX_IRQ"),
@@ -169,7 +227,7 @@ def run_diagnostics():
 
         # RF status
         rf = nfc.read_reg(0x1D)
-        print(f"\n[5] RF status (0x{rf:08X})")
+        print(f"\n[7] RF status (0x{rf:08X})")
         tx_rf_on = bool(rf & (1 << 0))
         rx_en = bool(rf & (1 << 1))
         print(f"    TX RF active : {tx_rf_on}")
@@ -177,11 +235,11 @@ def run_diagnostics():
 
         # System status
         sys_stat = nfc.read_reg(0x24)
-        print(f"\n[6] System status (0x{sys_stat:08X})")
+        print(f"\n[8] System status (0x{sys_stat:08X})")
 
         # Temperature
         temp_ctrl = nfc.read_reg(0x25)
-        print(f"\n[7] Temp control register (0x{temp_ctrl:08X})")
+        print(f"\n[9] Temp control register (0x{temp_ctrl:08X})")
 
         print("\n" + "=" * 60)
         print("Diagnostics complete - PN5180 is responding over SPI.")

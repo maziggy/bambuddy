@@ -962,11 +962,12 @@ setup_kiosk() {
         warn "splash.png not found — boot splash will not display an image"
     fi
 
-    # Remove Plymouth if present (replaced by fbi)
-    if dpkg -l plymouth &>/dev/null; then
+    # Remove Plymouth if present (replaced by fbi).
+    # Use --purge directly (skips separate purge pass) to avoid double
+    # update-initramfs runs from apt post-removal hooks.
+    if dpkg -l plymouth 2>/dev/null | grep -q '^ii'; then
         info "Removing Plymouth (replaced by lightweight fbi splash)..."
-        apt-get remove -y --purge plymouth plymouth-themes 2>/dev/null || true
-        update-initramfs -u 2>/dev/null || true
+        apt-get purge -y plymouth plymouth-themes 2>/dev/null || true
     fi
 
     # Create systemd service that shows splash image on tty1 during boot

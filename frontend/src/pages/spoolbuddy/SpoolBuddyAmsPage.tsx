@@ -6,7 +6,7 @@ import { Layers, Settings2, Package, Unlink, Link2, X } from 'lucide-react';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 import { api } from '../../api/client';
 import type { PrinterStatus, AMSTray, SpoolAssignment } from '../../api/client';
-import { getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag } from '../../utils/amsHelpers';
+import { getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, formatSlotLabel } from '../../utils/amsHelpers';
 import { AmsUnitCard, HumidityIndicator, TemperatureIndicator, NozzleBadge } from '../../components/spoolbuddy/AmsUnitCard';
 import type { AmsThresholds } from '../../components/spoolbuddy/AmsUnitCard';
 import { ConfigureAmsSlotModal } from '../../components/ConfigureAmsSlotModal';
@@ -388,11 +388,16 @@ export function SpoolBuddyAmsPage() {
       return;
     }
     for (const unit of amsUnits) {
-      for (const tray of unit.tray || []) {
+      const trays = unit.tray || [];
+      for (let i = 0; i < trays.length; i++) {
+        const tray = trays[i];
         if (tray.remain !== null && tray.remain >= 0 && tray.remain < 15 && tray.tray_type) {
+          const isExternal = unit.id === 254 || unit.id === 255;
+          const isHt = !isExternal && unit.id >= 128;
+          const slot = formatSlotLabel(unit.id, i, isHt, isExternal);
           setAlert({
             type: 'warning',
-            message: `Low Filament: ${tray.tray_type} (${getAmsName(unit.id)}) - ${tray.remain}% remaining`,
+            message: `Low Filament: ${tray.tray_type} (${slot}) - ${tray.remain}% remaining`,
           });
           return;
         }

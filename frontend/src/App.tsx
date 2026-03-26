@@ -30,6 +30,7 @@ import { SpoolBuddyAmsPage } from './pages/spoolbuddy/SpoolBuddyAmsPage';
 import { SpoolBuddySettingsPage } from './pages/spoolbuddy/SpoolBuddySettingsPage';
 import { SpoolBuddyCalibrationPage } from './pages/spoolbuddy/SpoolBuddyCalibrationPage';
 import { SpoolBuddyWriteTagPage } from './pages/spoolbuddy/SpoolBuddyWriteTagPage';
+import { SpoolBuddyInventoryPage } from './pages/spoolbuddy/SpoolBuddyInventoryPage';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -125,6 +126,7 @@ function App() {
                   <Route path="spoolbuddy" element={<SpoolBuddyDashboard />} />
                   <Route path="spoolbuddy/ams" element={<SpoolBuddyAmsPage />} />
                   <Route path="spoolbuddy/write-tag" element={<SpoolBuddyWriteTagPage />} />
+                  <Route path="spoolbuddy/inventory" element={<SpoolBuddyInventoryPage />} />
                   <Route path="spoolbuddy/settings" element={<SpoolBuddySettingsPage />} />
                   <Route path="spoolbuddy/calibration" element={<SpoolBuddyCalibrationPage />} />
                 </Route>

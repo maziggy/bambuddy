@@ -10,6 +10,7 @@ but with qos=1 they respond instantly.
 import asyncio
 import json
 import logging
+import os
 import ssl
 import threading
 import time
@@ -268,6 +269,8 @@ class BambuMQTTClient:
     # Class-level cache: serial_number -> False when request topic is known unsupported.
     # Persists across client instances so reconnects don't re-trigger failed subscriptions.
     _request_topic_cache: dict[str, bool] = {}
+    # Counter for generating unique MQTT client IDs across instances.
+    _client_instance_counter: int = 0
 
     def __init__(
         self,
@@ -347,6 +350,9 @@ class BambuMQTTClient:
         # Set when check_staleness() force-closes the socket to trigger reconnect.
         # Prevents _on_disconnect from redundantly broadcasting state (already done).
         self._stale_reconnecting: bool = False
+        # Timestamp of last stale reconnect — prevents rapid-fire socket closes
+        # when the frontend polls status faster than paho can reconnect.
+        self._last_stale_reconnect: float = 0.0
 
     @property
     def topic_subscribe(self) -> str:
@@ -366,12 +372,24 @@ class BambuMQTTClient:
         time_since_last = time.time() - self._last_message_time
         return time_since_last > self.STALE_TIMEOUT
 
+    # Minimum seconds between stale reconnect attempts.  Frontend polls
+    # status every few seconds — without a cooldown, each poll would
+    # force-close the socket before paho has time to reconnect.
+    STALE_RECONNECT_COOLDOWN = 30.0
+
     def check_staleness(self) -> bool:
         """Check staleness and update connected state if stale. Returns True if connected."""
         if self.state.connected and self.is_stale():
+            # Don't force-close again if we already did recently — give paho
+            # time to reconnect and the printer time to send its first message.
+            now = time.time()
+            if now - self._last_stale_reconnect < self.STALE_RECONNECT_COOLDOWN:
+                return self.state.connected
+
             logger.warning(
-                f"[{self.serial_number}] Connection stale - no message for {time.time() - self._last_message_time:.1f}s, forcing reconnect"
+                f"[{self.serial_number}] Connection stale - no message for {now - self._last_message_time:.1f}s, forcing reconnect"
             )
+            self._last_stale_reconnect = now
             self.state.connected = False
             if self.on_state_change:
                 self.on_state_change(self.state)
@@ -2629,9 +2647,11 @@ class BambuMQTTClient:
                   If not provided, will try to get the running loop.
         """
         self._loop = loop
+        BambuMQTTClient._client_instance_counter += 1
+        client_id = f"bambuddy_{self.serial_number}_{os.getpid()}_{BambuMQTTClient._client_instance_counter}"
         self._client = mqtt.Client(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-            client_id=f"bambuddy_{self.serial_number}",
+            client_id=client_id,
             protocol=mqtt.MQTTv311,
         )
 
@@ -2646,6 +2666,9 @@ class BambuMQTTClient:
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
         self._client.tls_set_context(ssl_context)
+
+        # Backoff reconnects to avoid tight reconnect loops on unstable brokers.
+        self._client.reconnect_delay_set(min_delay=1, max_delay=30)
 
         # Keepalive: paho sends PINGREQs at this interval, broker considers
         # client dead at 1.5x.  30s is a good balance — fast enough to detect

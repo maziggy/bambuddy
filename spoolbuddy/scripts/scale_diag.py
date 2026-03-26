@@ -99,8 +99,13 @@ def main():
         # Print key interpreted config values
         revision = scale.read_reg(REG_REVISION)
         revision_id = revision & 0x0F
-        revision_id_str = f"0b{revision_id:04b}"
-        print(f"    Revision ID: {revision_id_str} (bits 3:0, should be 0b1111 per datasheet)")
+        print(f"    Revision ID: {revision_id}")
+
+        # PU_CTRL bit 7: AVDD source select
+        pu_ctrl = scale.read_reg(REG_PU_CTRL)
+        avdds = (pu_ctrl >> 7) & 0x1
+        avdds_str = "Internal LDO" if avdds == 1 else "AVDD pin input"
+        print(f"    AVDD source: {avdds_str}")
         ctrl1 = scale.read_reg(REG_CTRL1)
         vldo = (ctrl1 >> 3) & 0b111
         vldo_map = {
@@ -149,11 +154,6 @@ def main():
         low_esr = (pga >> 6) & 0x1
         low_esr_str = "Enabled" if low_esr == 0 else "Disabled"
         print(f"    PGA low-ESR caps: {low_esr_str}")
-        # PU_CTRL bit 7: AVDD source select
-        pu_ctrl = scale.read_reg(REG_PU_CTRL)
-        avdds = (pu_ctrl >> 7) & 0x1
-        avdds_str = "Internal LDO" if avdds == 1 else "AVDD pin input"
-        print(f"    AVDD source select: {avdds_str} (PU_CTRL bit 7)")
 
         scale.flush_readings(count=4, timeout_s=1.5)
         scale.calibrate_afe(timeout_ms=1000, mode=0)
@@ -168,7 +168,7 @@ def main():
             print("    Timeout waiting for data ready")
             sys.exit(1)
 
-        print("[3] Reading 10 samples (10 SPS = ~1 second)...")
+        print("Reading 10 samples (10 SPS = ~1 second)...")
         readings = []
         for i in range(10):
             # Wait for data ready

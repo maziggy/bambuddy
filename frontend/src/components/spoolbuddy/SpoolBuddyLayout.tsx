@@ -189,6 +189,7 @@ export function SpoolBuddyLayout() {
     <>
       <div
         ref={rootRef}
+        data-spoolbuddy-kiosk
         className="w-screen h-screen bg-bambu-dark text-white flex flex-col overflow-hidden"
         style={{ ...brightnessStyle, overscrollBehaviorX: 'none' }}
         onTouchStart={handleTouchStart}

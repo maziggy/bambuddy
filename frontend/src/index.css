@@ -392,6 +392,23 @@ body {
   box-shadow: var(--card-shadow);
 }
 
+/* ============================================
+   SPOOLBUDDY KIOSK MODAL CONSTRAINTS
+   Cap modals to viewport height on the small
+   SpoolBuddy touchscreen.
+   ============================================ */
+[data-spoolbuddy-kiosk] .fixed.z-50 > .relative {
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+[data-spoolbuddy-kiosk] .fixed.z-50 > .relative > .p-4:not(:first-child):not(:last-child) {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 /* Calendar selected-day list scrollbar theming */
 .calendar-scroll {
   scrollbar-width: thin;

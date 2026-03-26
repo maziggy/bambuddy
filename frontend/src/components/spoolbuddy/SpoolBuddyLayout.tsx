@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { SpoolBuddyTopBar } from './SpoolBuddyTopBar';
@@ -17,6 +17,8 @@ export function SpoolBuddyLayout() {
   const [displayBlankTimeout, setDisplayBlankTimeout] = useState(0);
   const lastActivityRef = useRef(Date.now());
   const { i18n } = useTranslation();
+  const navigate = useNavigate();
+  const location = useLocation();
   const sbState = useSpoolBuddyState();
 
   // Sync language from backend settings (kiosk has its own browser with empty localStorage)
@@ -97,6 +99,17 @@ export function SpoolBuddyLayout() {
       window.removeEventListener('keydown', resetActivity);
     };
   }, [resetActivity]);
+
+  // Auto-navigate to dashboard when a tag is detected on a non-dashboard page
+  const tagDetected = Boolean(sbState.matchedSpool || sbState.unknownTagUid);
+  useEffect(() => {
+    if (tagDetected) {
+      resetActivity();
+      if (location.pathname !== '/spoolbuddy') {
+        navigate('/spoolbuddy');
+      }
+    }
+  }, [tagDetected, location.pathname, navigate, resetActivity]);
 
   // Screen blank timer
   useEffect(() => {

@@ -69,10 +69,6 @@ def _check_spi_device_access() -> str:
     return spi_path
 
 
-def _pin_state_name(value: gpiod.line.Value) -> str:
-    return "ACTIVE" if value == gpiod.line.Value.ACTIVE else "INACTIVE"
-
-
 def _self_test_control_pins(nfc: PN5180):
     """Toggle NSS and RST pins and print observed line state.
     Uses public set_pin/get_pin methods to avoid direct access to driver internals.

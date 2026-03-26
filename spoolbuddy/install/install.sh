@@ -853,7 +853,7 @@ strip_packages() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Kiosk Setup (labwc + Chromium + fbi splash)
+# Kiosk Setup (labwc + Chromium + Plymouth splash)
 # ─────────────────────────────────────────────────────────────────────────────
 
 setup_kiosk() {
@@ -878,7 +878,7 @@ setup_kiosk() {
     fi
 
     # ── Install kiosk packages ────────────────────────────────────────────
-    run_with_progress "Installing kiosk packages" apt-get install -y labwc chromium fim wlr-randr
+    run_with_progress "Installing kiosk packages" apt-get install -y labwc chromium plymouth wlr-randr
 
     # ── config.txt tweaks ─────────────────────────────────────────────────
     local boot_config="/boot/firmware/config.txt"
@@ -928,17 +928,11 @@ setup_kiosk() {
     if [[ -f "$cmdline" ]]; then
         info "Configuring $cmdline for kiosk..."
 
-        # Remove serial console (frees tty1 for splash and kiosk)
+        # Remove serial console (Plymouth needs tty-only console)
         sed -i 's/console=serial0,[0-9]* //' "$cmdline"
 
-        # Add quiet loglevel=3 logo.nologo if missing (suppress boot text)
-        grep -q "loglevel=3" "$cmdline" || sed -i 's/$/ quiet loglevel=3 logo.nologo/' "$cmdline"
-
-        # Hide kernel text cursor during boot
-        grep -q "vt.global_cursor_default=0" "$cmdline" || sed -i 's/$/ vt.global_cursor_default=0/' "$cmdline"
-
-        # Remove Plymouth "splash" keyword if present (fbi replaces Plymouth)
-        sed -i 's/ splash / /g; s/^splash //; s/ splash$//' "$cmdline"
+        # Add splash quiet loglevel=3 logo.nologo if missing
+        grep -q "splash" "$cmdline" || sed -i 's/$/ splash quiet loglevel=3 logo.nologo/' "$cmdline"
 
         # Add video mode if missing
         grep -q "video=HDMI-A-1" "$cmdline" || sed -i 's/$/ video=HDMI-A-1:1024x600@60/' "$cmdline"
@@ -946,51 +940,47 @@ setup_kiosk() {
         success "Kernel cmdline updated"
     fi
 
-    # ── fim boot splash ──────────────────────────────────────────────────
-    info "Installing boot splash (fim)..."
-    local splash_dir="/usr/share/spoolbuddy"
-    mkdir -p "$splash_dir"
+    # ── Plymouth splash theme ─────────────────────────────────────────────
+    info "Installing Plymouth boot splash..."
+    local theme_dir="/usr/share/plymouth/themes/spoolbuddy"
+    mkdir -p "$theme_dir"
 
     # Copy bundled splash image from the install directory
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     if [[ -f "$script_dir/splash.png" ]]; then
-        cp "$script_dir/splash.png" "$splash_dir/splash.png"
+        cp "$script_dir/splash.png" "$theme_dir/splash.png"
     elif [[ -f "$INSTALL_PATH/spoolbuddy/install/splash.png" ]]; then
-        cp "$INSTALL_PATH/spoolbuddy/install/splash.png" "$splash_dir/splash.png"
+        cp "$INSTALL_PATH/spoolbuddy/install/splash.png" "$theme_dir/splash.png"
     else
-        warn "splash.png not found — boot splash will not display an image"
+        warn "splash.png not found — Plymouth splash will not display an image"
     fi
 
-    # Remove Plymouth if present (replaced by fbi).
-    # Use --purge directly (skips separate purge pass) to avoid double
-    # update-initramfs runs from apt post-removal hooks.
-    if dpkg -l plymouth 2>/dev/null | grep -q '^ii'; then
-        info "Removing Plymouth (replaced by lightweight fbi splash)..."
-        apt-get purge -y plymouth plymouth-themes 2>/dev/null || true
-    fi
+    # Write .plymouth theme file
+    cat > "$theme_dir/spoolbuddy.plymouth" << 'EOF'
+[Plymouth Theme]
+Name=SpoolBuddy
+Description=SpoolBuddy boot splash
+ModuleName=script
 
-    # Create systemd service that shows splash image via DRM during boot
-    cat > /etc/systemd/system/spoolbuddy-splash.service << 'EOF'
-[Unit]
-Description=SpoolBuddy Boot Splash
-DefaultDependencies=no
-After=local-fs.target
-Before=getty@tty1.service
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart=/usr/bin/fim --autozoom --quiet /usr/share/spoolbuddy/splash.png
-ExecStop=/usr/bin/killall -q fim
-
-[Install]
-WantedBy=sysinit.target
+[script]
+ImageDir=/usr/share/plymouth/themes/spoolbuddy
+ScriptFile=/usr/share/plymouth/themes/spoolbuddy/spoolbuddy.script
 EOF
 
-    systemctl daemon-reload
-    systemctl enable spoolbuddy-splash.service
-    success "Boot splash installed (fim)"
+    # Write .script theme file
+    cat > "$theme_dir/spoolbuddy.script" << 'EOF'
+wallpaper_image = Image("splash.png");
+screen_width = Window.GetWidth();
+screen_height = Window.GetHeight();
+resized_wallpaper_image = wallpaper_image.Scale(screen_width, screen_height);
+wallpaper_sprite = Sprite(resized_wallpaper_image);
+wallpaper_sprite.SetZ(-100);
+EOF
+
+    plymouth-set-default-theme spoolbuddy
+    run_with_progress "Updating initramfs" update-initramfs -u
+    success "Plymouth splash installed"
 
     # ── Auto-login on tty1 ────────────────────────────────────────────────
     info "Configuring auto-login for $KIOSK_USER..."
@@ -1095,9 +1085,6 @@ EOF
 
         # ── labwc autostart ───────────────────────────────────────────────────
         cat > "$labwc_dir/autostart" << EOF
-# Kill fbi boot splash now that the compositor is running
-systemctl stop spoolbuddy-splash.service 2>/dev/null || killall -q fim || true
-
 # Force 1024x600 (panel doesn't advertise this natively)
 wlr-randr --output HDMI-A-1 --custom-mode 1024x600@60 &
 
@@ -1390,7 +1377,7 @@ main() {
     download_spoolbuddy
     echo ""
 
-    # ── Step 3b: Kiosk setup (labwc + Chromium + fbi splash) ──
+    # ── Step 3b: Kiosk setup (labwc + Chromium + squeekboard + Plymouth) ──
     setup_kiosk
     echo ""
 
@@ -1442,7 +1429,7 @@ main() {
 
     if [[ "$INSTALL_MODE" == "full" ]]; then
         echo -e "  ${BOLD}Next steps:${NC}"
-        echo -e "    1. Reboot (required for kiosk, boot splash, and hardware changes)"
+        echo -e "    1. Reboot (required for kiosk, Plymouth splash, and hardware changes)"
         echo -e "    2. The touchscreen kiosk will start automatically after reboot"
         echo -e "    3. On another device, open ${CYAN}http://$ip_addr:$BAMBUDDY_PORT${NC}"
         echo -e "    4. Go to Settings -> API Keys and create an API key"
@@ -1465,7 +1452,7 @@ main() {
     echo -e "  ${BOLD}Diagnostics:${NC}      ${CYAN}sudo $INSTALL_PATH/spoolbuddy/venv/bin/python $INSTALL_PATH/spoolbuddy/pn5180_diag.py${NC}"
     echo ""
 
-    echo -e "  ${YELLOW}A reboot is required to apply all changes (kiosk, boot splash, hardware).${NC}"
+    echo -e "  ${YELLOW}A reboot is required to apply all changes (kiosk, Plymouth splash, hardware).${NC}"
     echo ""
     if prompt_yes_no "Reboot now?" "y"; then
         reboot

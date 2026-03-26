@@ -69,7 +69,10 @@ jobs:
           pip install pip-audit
 
       - name: Run pip-audit
-        run: pip-audit --desc on
+        run: |
+          # CVE-2026-4539: low-severity ReDoS in Pygments AdlLexer (indirect dep via mkdocs-material/pytest/rich).
+          # No fix available yet. Remove --ignore-vuln once Pygments releases a patched version.
+          pip-audit --desc on --ignore-vuln CVE-2026-4539
 
   backend-tests:
     name: Backend Tests

@@ -1424,6 +1424,12 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already applied
 
+    # Migration: Add system_stats JSON blob column to spoolbuddy_devices
+    try:
+        await conn.execute(text("ALTER TABLE spoolbuddy_devices ADD COLUMN system_stats TEXT"))
+    except OperationalError:
+        pass  # Already applied
+
     # Migration: Convert ams_labels table from (printer_id, ams_id) key to ams_serial_number key
     # Labels are now keyed by AMS serial number so they persist when the AMS is moved to another printer.
     try:

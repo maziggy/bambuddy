@@ -1163,17 +1163,23 @@ class TestHasStgCurIdleBug:
         assert has_stg_cur_idle_bug("a1") is True  # case insensitive
         assert has_stg_cur_idle_bug("a1 mini") is True
 
-    def test_a1_internal_codes_return_true(self):
-        """Verify A1 internal model codes return True."""
+    def test_p1_models_return_true(self):
+        """Verify P1P/P1S model variants return True."""
+        assert has_stg_cur_idle_bug("P1P") is True
+        assert has_stg_cur_idle_bug("P1S") is True
+        assert has_stg_cur_idle_bug("p1p") is True  # case insensitive
+
+    def test_internal_codes_return_true(self):
+        """Verify internal model codes return True."""
         assert has_stg_cur_idle_bug("N1") is True  # A1 Mini
         assert has_stg_cur_idle_bug("N2S") is True  # A1
+        assert has_stg_cur_idle_bug("C11") is True  # P1P
+        assert has_stg_cur_idle_bug("C12") is True  # P1S
 
-    def test_non_a1_models_return_false(self):
-        """Verify non-A1 models return False."""
+    def test_non_affected_models_return_false(self):
+        """Verify non-affected models return False."""
         assert has_stg_cur_idle_bug("X1C") is False
         assert has_stg_cur_idle_bug("X1") is False
-        assert has_stg_cur_idle_bug("P1P") is False
-        assert has_stg_cur_idle_bug("P1S") is False
         assert has_stg_cur_idle_bug("H2D") is False
 
     def test_none_model_returns_false(self):

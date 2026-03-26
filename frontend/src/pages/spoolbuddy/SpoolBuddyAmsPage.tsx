@@ -736,19 +736,35 @@ export function SpoolBuddyAmsPage() {
         );
       })()}
 
-      {/* Assign spool modal (inventory) */}
+      {/* Assign spool modal (inventory) — scoped styles constrain to viewport for small SpoolBuddy screen */}
       {assignSpoolModal && (
-        <AssignSpoolModal
-          isOpen={!!assignSpoolModal}
-          onClose={() => {
-            setAssignSpoolModal(null);
-            queryClient.invalidateQueries({ queryKey: ['spool-assignments', selectedPrinterId] });
-          }}
-          printerId={assignSpoolModal.printerId}
-          amsId={assignSpoolModal.amsId}
-          trayId={assignSpoolModal.trayId}
-          trayInfo={assignSpoolModal.trayInfo}
-        />
+        <>
+          <style>{`
+            .sb-assign-wrap .relative.max-w-2xl {
+              max-height: 90vh;
+              display: flex;
+              flex-direction: column;
+            }
+            .sb-assign-wrap .relative.max-w-2xl > .p-4.space-y-4 {
+              flex: 1 1 0;
+              min-height: 0;
+              overflow-y: auto;
+            }
+          `}</style>
+          <div className="sb-assign-wrap">
+            <AssignSpoolModal
+              isOpen={!!assignSpoolModal}
+              onClose={() => {
+                setAssignSpoolModal(null);
+                queryClient.invalidateQueries({ queryKey: ['spool-assignments', selectedPrinterId] });
+              }}
+              printerId={assignSpoolModal.printerId}
+              amsId={assignSpoolModal.amsId}
+              trayId={assignSpoolModal.trayId}
+              trayInfo={assignSpoolModal.trayInfo}
+            />
+          </div>
+        </>
       )}
 
       {/* Link spool modal (Spoolman) */}

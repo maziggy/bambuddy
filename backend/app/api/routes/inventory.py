@@ -13,6 +13,7 @@ from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.catalog_defaults import DEFAULT_COLOR_CATALOG, DEFAULT_SPOOL_CATALOG
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.websocket import ws_manager
 from backend.app.models.ams_label import AmsLabel
 from backend.app.models.color_catalog import ColorCatalogEntry
 from backend.app.models.spool import Spool
@@ -1100,6 +1101,16 @@ async def assign_spool(
     resp = result.scalar_one()
     response = SpoolAssignmentResponse.model_validate(resp)
     response.configured = configured
+
+    await ws_manager.broadcast(
+        {
+            "type": "spool_assignment_changed",
+            "printer_id": data.printer_id,
+            "ams_id": data.ams_id,
+            "tray_id": data.tray_id,
+        }
+    )
+
     return response
 
 
@@ -1125,6 +1136,16 @@ async def unassign_spool(
 
     await db.delete(assignment)
     await db.commit()
+
+    await ws_manager.broadcast(
+        {
+            "type": "spool_assignment_changed",
+            "printer_id": printer_id,
+            "ams_id": ams_id,
+            "tray_id": tray_id,
+        }
+    )
+
     return {"status": "deleted"}
 
 

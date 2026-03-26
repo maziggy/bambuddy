@@ -10,7 +10,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import __version__
+from . import __version__, system_stats
 from .api_client import APIClient
 from .config import Config
 from .display_control import DisplayControl
@@ -211,6 +211,7 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
         nfc = shared.get("nfc")
         scale = shared.get("scale")
         uptime = int(time.monotonic() - start_time)
+        stats = await asyncio.to_thread(system_stats.collect)
         result = await api.heartbeat(
             device_id=config.device_id,
             nfc_ok=nfc.ok if nfc else False,
@@ -221,6 +222,7 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
             nfc_reader_type=nfc.reader_type if nfc else None,
             nfc_connection=nfc.connection if nfc else None,
             backend_url=config.backend_url,
+            system_stats=stats,
         )
 
         if result:

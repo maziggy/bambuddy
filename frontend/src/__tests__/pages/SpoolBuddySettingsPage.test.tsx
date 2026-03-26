@@ -1,8 +1,9 @@
 /**
  * Tests for SpoolBuddySettingsPage:
- * - Renders 4 tabs (Device, Display, Scale, Updates)
+ * - Renders 5 tabs (Device, Display, Scale, Updates, System)
  * - Device tab shows hostname, IP, NFC status
  * - Updates tab shows "Check for Updates" button
+ * - System tab shows OS stats
  * - Tab switching works
  */
 
@@ -39,6 +40,15 @@ vi.mock('../../api/client', () => ({
       uptime_s: 3600,
       update_status: null,
       update_message: null,
+      system_stats: {
+        os: { os: 'Raspbian GNU/Linux 12', kernel: '6.1.0-rpi7', arch: 'aarch64', python: '3.11.2' },
+        cpu_temp_c: 52.1,
+        cpu_count: 4,
+        load_avg: [0.15, 0.22, 0.18],
+        memory: { total_mb: 1024, available_mb: 512, used_mb: 512, percent: 50.0 },
+        disk: { total_gb: 29.7, used_gb: 8.2, free_gb: 21.5, percent: 27.6 },
+        system_uptime_s: 86400,
+      },
       online: true,
     }]),
     updateDisplay: vi.fn().mockResolvedValue({ status: 'ok' }),
@@ -106,13 +116,14 @@ describe('SpoolBuddySettingsPage', () => {
     vi.clearAllMocks();
   });
 
-  it('renders 4 tabs', async () => {
+  it('renders 5 tabs', async () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByText('Device')).toBeDefined();
       expect(screen.getByText('Display')).toBeDefined();
       expect(screen.getByText('Scale')).toBeDefined();
       expect(screen.getByText('Updates')).toBeDefined();
+      expect(screen.getByText('System')).toBeDefined();
     });
   });
 
@@ -209,6 +220,94 @@ describe('SpoolBuddySettingsPage', () => {
     await waitFor(() => {
       expect(screen.getByText('Tare')).toBeDefined();
       expect(screen.getByText('Calibrate')).toBeDefined();
+    });
+  });
+
+  it('System tab shows CPU info', async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('System')).toBeDefined();
+    });
+    fireEvent.click(screen.getByText('System'));
+    await waitFor(() => {
+      expect(screen.getByText('CPU')).toBeDefined();
+      expect(screen.getByText('4')).toBeDefined(); // cpu_count
+      expect(screen.getByText('0.15 / 0.22 / 0.18')).toBeDefined(); // load_avg
+    });
+  });
+
+  it('System tab shows memory stats', async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('System')).toBeDefined();
+    });
+    fireEvent.click(screen.getByText('System'));
+    await waitFor(() => {
+      expect(screen.getByText('Memory')).toBeDefined();
+      expect(screen.getByText('512 / 1024 MB')).toBeDefined();
+    });
+  });
+
+  it('System tab shows disk stats', async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('System')).toBeDefined();
+    });
+    fireEvent.click(screen.getByText('System'));
+    await waitFor(() => {
+      expect(screen.getByText('Disk')).toBeDefined();
+      expect(screen.getByText('8.2 / 29.7 GB')).toBeDefined();
+    });
+  });
+
+  it('System tab shows OS info', async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('System')).toBeDefined();
+    });
+    fireEvent.click(screen.getByText('System'));
+    await waitFor(() => {
+      expect(screen.getByText('Raspbian GNU/Linux 12')).toBeDefined();
+      expect(screen.getByText('aarch64')).toBeDefined();
+      expect(screen.getByText('3.11.2')).toBeDefined();
+    });
+  });
+
+  it('System tab shows waiting message when no stats', async () => {
+    const { spoolbuddyApi } = await import('../../api/client');
+    vi.mocked(spoolbuddyApi.getDevices).mockResolvedValue([{
+      id: 1,
+      device_id: 'sb-test-001',
+      hostname: 'spoolbuddy-pi',
+      ip_address: '192.168.1.100',
+      firmware_version: '1.2.3',
+      has_nfc: true,
+      has_scale: true,
+      tare_offset: 0,
+      calibration_factor: 1.0,
+      nfc_reader_type: 'PN532',
+      nfc_connection: 'I2C',
+      display_brightness: 80,
+      display_blank_timeout: 300,
+      has_backlight: true,
+      last_calibrated_at: null,
+      last_seen: '2026-03-22T12:00:00Z',
+      pending_command: null,
+      nfc_ok: true,
+      scale_ok: true,
+      uptime_s: 3600,
+      update_status: null,
+      update_message: null,
+      system_stats: null,
+      online: true,
+    }]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('System')).toBeDefined();
+    });
+    fireEvent.click(screen.getByText('System'));
+    await waitFor(() => {
+      expect(screen.getByText('Waiting for system stats...')).toBeDefined();
     });
   });
 });

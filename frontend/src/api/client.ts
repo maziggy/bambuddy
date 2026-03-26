@@ -5016,6 +5016,15 @@ export interface SpoolBuddyDevice {
   uptime_s: number;
   update_status: string | null;
   update_message: string | null;
+  system_stats: {
+    os?: { os?: string; kernel?: string; arch?: string; python?: string };
+    cpu_temp_c?: number;
+    cpu_count?: number;
+    load_avg?: number[];
+    memory?: { total_mb?: number; available_mb?: number; used_mb?: number; percent?: number };
+    disk?: { total_gb?: number; used_gb?: number; free_gb?: number; percent?: number };
+    system_uptime_s?: number;
+  } | null;
   online: boolean;
 }
 

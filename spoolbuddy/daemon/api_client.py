@@ -108,19 +108,23 @@ class APIClient:
         nfc_reader_type: str | None = None,
         nfc_connection: str | None = None,
         backend_url: str | None = None,
+        system_stats: dict | None = None,
     ) -> dict | None:
+        payload: dict = {
+            "nfc_ok": nfc_ok,
+            "scale_ok": scale_ok,
+            "uptime_s": uptime_s,
+            "ip_address": ip_address,
+            "firmware_version": firmware_version,
+            "nfc_reader_type": nfc_reader_type,
+            "nfc_connection": nfc_connection,
+            "backend_url": backend_url,
+        }
+        if system_stats is not None:
+            payload["system_stats"] = system_stats
         result = await self._post(
             f"/devices/{device_id}/heartbeat",
-            {
-                "nfc_ok": nfc_ok,
-                "scale_ok": scale_ok,
-                "uptime_s": uptime_s,
-                "ip_address": ip_address,
-                "firmware_version": firmware_version,
-                "nfc_reader_type": nfc_reader_type,
-                "nfc_connection": nfc_connection,
-                "backend_url": backend_url,
-            },
+            payload,
         )
         if result and self._buffer:
             await self._flush_buffer()

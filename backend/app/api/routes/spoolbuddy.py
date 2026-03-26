@@ -81,6 +81,7 @@ def _device_to_response(device: SpoolBuddyDevice) -> DeviceResponse:
         uptime_s=device.uptime_s,
         update_status=device.update_status,
         update_message=device.update_message,
+        system_stats=json.loads(device.system_stats) if device.system_stats else None,
         online=_is_online(device),
         created_at=device.created_at,
         updated_at=device.updated_at,
@@ -216,6 +217,8 @@ async def device_heartbeat(
         device.nfc_connection = req.nfc_connection
     if req.backend_url:
         device.backend_url = req.backend_url
+    if req.system_stats is not None:
+        device.system_stats = json.dumps(req.system_stats)
 
     # Return and clear pending command
     pending = device.pending_command

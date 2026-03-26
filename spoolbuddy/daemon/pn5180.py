@@ -429,7 +429,7 @@ class PN5180:
             data = self.read_data(16)
             pages_to_copy = min(4, num_pages - pages_read)
             result.extend(data[: pages_to_copy * 4])
-            pages_read += 4  # Always advances by 4 (READ returns 4 pages)
+            pages_read += 4
 
         return bytes(result)
 

@@ -44,6 +44,7 @@ class DeviceResponse(BaseModel):
     uptime_s: int
     update_status: str | None = None
     update_message: str | None = None
+    system_stats: dict | None = None
     online: bool = False
     ssh_public_key: str | None = None
     created_at: datetime
@@ -62,6 +63,7 @@ class HeartbeatRequest(BaseModel):
     nfc_reader_type: str | None = None
     nfc_connection: str | None = None
     backend_url: str | None = None
+    system_stats: dict | None = None
 
 
 class HeartbeatResponse(BaseModel):

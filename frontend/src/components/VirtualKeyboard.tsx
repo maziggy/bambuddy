@@ -26,6 +26,30 @@ export function VirtualKeyboard() {
   const keyboardRef = useRef<ReturnType<typeof Keyboard> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Add bottom padding to the scrollable ancestor so inputs can scroll above the keyboard
+  const paddedParentRef = useRef<HTMLElement | null>(null);
+
+  const addScrollPadding = useCallback((target: HTMLElement) => {
+    // Find nearest scrollable ancestor
+    let el: HTMLElement | null = target.parentElement;
+    while (el) {
+      const style = getComputedStyle(el);
+      if (style.overflowY === 'auto' || style.overflowY === 'scroll') break;
+      el = el.parentElement;
+    }
+    if (!el) return;
+    paddedParentRef.current = el;
+    // Keyboard is ~260px tall; add generous padding
+    el.style.paddingBottom = '280px';
+  }, []);
+
+  const removeScrollPadding = useCallback(() => {
+    if (paddedParentRef.current) {
+      paddedParentRef.current.style.paddingBottom = '';
+      paddedParentRef.current = null;
+    }
+  }, []);
+
   const handleFocusIn = useCallback((e: FocusEvent) => {
     if (closingRef.current) return;
     const target = e.target as HTMLElement;
@@ -47,11 +71,14 @@ export function VirtualKeyboard() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (keyboardRef.current as any)?.setInput?.(activeInput.current.value);
 
-    // Scroll input into view above the keyboard
+    // Add scroll padding then scroll the input's parent card into view above the keyboard
+    addScrollPadding(target);
     setTimeout(() => {
-      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Scroll the closest card/section so the entire group of fields is visible
+      const card = target.closest('.bg-zinc-800, .rounded-lg, [data-vkb-group]') as HTMLElement | null;
+      (card ?? target).scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 100);
-  }, []);
+  }, [addScrollPadding]);
 
   const handleFocusOut = useCallback(() => {
     // Delay to allow click on keyboard buttons to register
@@ -64,10 +91,11 @@ export function VirtualKeyboard() {
       ) {
         return;
       }
+      removeScrollPadding();
       setVisible(false);
       activeInput.current = null;
     }, 150);
-  }, []);
+  }, [removeScrollPadding]);
 
   useEffect(() => {
     document.addEventListener('focusin', handleFocusIn);
@@ -83,6 +111,7 @@ export function VirtualKeyboard() {
   const dismiss = useCallback(() => {
     closingRef.current = true;
     setClosing(true);
+    removeScrollPadding();
     activeInput.current?.blur();
     activeInput.current = null;
     setTimeout(() => {
@@ -90,7 +119,7 @@ export function VirtualKeyboard() {
       setClosing(false);
       closingRef.current = false;
     }, 400);
-  }, []);
+  }, [removeScrollPadding]);
 
   const onKeyPress = useCallback((button: string) => {
     const input = activeInput.current;

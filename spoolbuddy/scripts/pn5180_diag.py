@@ -43,32 +43,6 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-# ---------------------------------------------------------------------------
-# Pin assignments (BCM numbering)
-# ---------------------------------------------------------------------------
-BUSY_PIN = _env_int("SPOOLBUDDY_NFC_BUSY_PIN", 25)
-RST_PIN = _env_int("SPOOLBUDDY_NFC_RST_PIN", 24)
-NSS_PIN = _env_int("SPOOLBUDDY_NFC_NSS_PIN", 23)
-
-# ---------------------------------------------------------------------------
-# SPI command instruction codes (NXP PN5180 datasheet Table 5)
-# ---------------------------------------------------------------------------
-CMD_WRITE_REGISTER = 0x00
-CMD_WRITE_REGISTER_OR_MASK = 0x01
-CMD_WRITE_REGISTER_AND_MASK = 0x02
-CMD_READ_REGISTER = 0x04
-CMD_READ_REGISTER_MULTIPLE = 0x05
-CMD_WRITE_EEPROM = 0x06
-CMD_READ_EEPROM = 0x07
-CMD_SEND_DATA = 0x09
-CMD_READ_DATA = 0x0A
-CMD_LOAD_RF_CONFIG = 0x11
-CMD_RF_ON = 0x16
-CMD_RF_OFF = 0x17
-
-# ---------------------------------------------------------------------------
-# Register addresses (32-bit each)
-# ---------------------------------------------------------------------------
 REG_SYSTEM_CONFIG = 0x00
 REG_IRQ_ENABLE = 0x01
 REG_IRQ_STATUS = 0x02
@@ -84,24 +58,6 @@ REG_RF_STATUS = 0x1D
 REG_SYSTEM_STATUS = 0x24
 REG_SIGPRO_CONFIG = 0x1A  # Signal Processing Configuration
 REG_TEMP_CONTROL = 0x25
-
-REGISTER_NAMES = {
-    REG_SYSTEM_CONFIG: "SYSTEM_CONFIG",
-    REG_IRQ_ENABLE: "IRQ_ENABLE",
-    REG_IRQ_STATUS: "IRQ_STATUS",
-    REG_IRQ_CLEAR: "IRQ_CLEAR",
-    REG_TRANSCEIVE_CONTROL: "TRANSCEIVE_CONTROL",
-    REG_TIMER1_RELOAD: "TIMER1_RELOAD",
-    REG_TIMER1_CONFIG: "TIMER1_CONFIG",
-    REG_RX_WAIT_CONFIG: "RX_WAIT_CONFIG",
-    REG_CRC_RX_CONFIG: "CRC_RX_CONFIG",
-    REG_RX_STATUS: "RX_STATUS",
-    REG_CRC_TX_CONFIG: "CRC_TX_CONFIG",
-    REG_RF_STATUS: "RF_STATUS",
-    REG_SIGPRO_CONFIG: "SIGPRO_CONFIG",
-    REG_SYSTEM_STATUS: "SYSTEM_STATUS",
-    REG_TEMP_CONTROL: "TEMP_CONTROL",
-}
 
 # ---------------------------------------------------------------------------
 # EEPROM addresses
@@ -129,23 +85,25 @@ def _pin_state_name(value: gpiod.line.Value) -> str:
 
 
 def _self_test_control_pins(nfc: PN5180):
-    """Toggle NSS and RST pins and print observed line state."""
+    """Toggle NSS and RST pins and print observed line state.
+    Uses public set_pin/get_pin methods to avoid direct access to driver internals.
+    """
     for pin_name, pin_num in (("NSS", DRIVER_NSS_PIN), ("RST", DRIVER_RST_PIN)):
-        nfc._lines.set_value(pin_num, gpiod.line.Value.ACTIVE)
+        nfc.set_pin(pin_num, True)
         time.sleep(0.005)
-        active_state = nfc._lines.get_value(pin_num)
+        active_state = nfc.get_pin(pin_num)
 
-        nfc._lines.set_value(pin_num, gpiod.line.Value.INACTIVE)
+        nfc.set_pin(pin_num, False)
         time.sleep(0.005)
-        inactive_state = nfc._lines.get_value(pin_num)
+        inactive_state = nfc.get_pin(pin_num)
 
         # Restore idle-high level used by this driver.
-        nfc._lines.set_value(pin_num, gpiod.line.Value.ACTIVE)
+        nfc.set_pin(pin_num, True)
 
         print(
             f"    {pin_name} pin {pin_num}: "
-            f"ACTIVE->{_pin_state_name(active_state)}, "
-            f"INACTIVE->{_pin_state_name(inactive_state)}"
+            f"ACTIVE->{'ACTIVE' if active_state else 'INACTIVE'}, "
+            f"INACTIVE->{'ACTIVE' if inactive_state else 'INACTIVE'}"
         )
 
 

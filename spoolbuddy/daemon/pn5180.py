@@ -208,6 +208,18 @@ class PN5180:
         self._cmd([0x17, 0x00])
         time.sleep(0.005)
 
+    def set_pin(self, pin: int, value: bool) -> None:
+        """Set the state of a control pin (NSS or RST). Value: True=ACTIVE, False=INACTIVE."""
+        if pin not in (NSS_PIN, RST_PIN):
+            raise ValueError("Only NSS_PIN and RST_PIN can be set via set_pin().")
+        self._lines.set_value(pin, gpiod.line.Value.ACTIVE if value else gpiod.line.Value.INACTIVE)
+
+    def get_pin(self, pin: int) -> bool:
+        """Get the state of a control pin (NSS or RST). Returns True if ACTIVE, False if INACTIVE."""
+        if pin not in (NSS_PIN, RST_PIN):
+            raise ValueError("Only NSS_PIN and RST_PIN can be read via get_pin().")
+        return self._lines.get_value(pin) == gpiod.line.Value.ACTIVE
+
     def set_transceive_mode(self):
         """Set SYSTEM_CONFIG command bits to TRANSCEIVE (0x03) — CRITICAL!"""
         sys_cfg = self.read_reg(0x00)

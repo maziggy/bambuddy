@@ -5,11 +5,14 @@ I2C address: 0x2A
 Bus: /dev/i2c-1 (GPIO2/GPIO3 on RPi)
 """
 
+import logging
 import os
 import struct
 import time
 
 import smbus2
+
+logger = logging.getLogger(__name__)
 
 
 def _env_int(name: str, default: int) -> int:
@@ -49,7 +52,7 @@ PU_AVDDS = 0x80  # AVDD source select
 
 
 class NAU7802:
-    def __init__(self, bus=I2C_BUS, addr=NAU7802_ADDR):
+    def __init__(self, bus: int = I2C_BUS, addr: int = NAU7802_ADDR):
         self._bus_num = bus
         self._bus = smbus2.SMBus(bus)
         self._addr = addr
@@ -105,35 +108,40 @@ class NAU7802:
         time.sleep(0.600)  # Wait for LDO and analog section to stabilize
 
         # Step 3: Wait for power-up ready (PUR bit 3)
+
         for _ in range(100):
             status = self.read_reg(REG_PU_CTRL)
             if status & PU_PUR:
-                print("  Power-up ready")
+                logger.debug("  Power-up ready")
                 break
             time.sleep(0.001)
         else:
             raise TimeoutError("NAU7802 power-up timeout (PUR bit not set)")
 
         # Check revision register low nibble (datasheet expects 0xF).
+
         revision = self.read_reg(REG_REVISION)
-        print(f"  Revision: 0x{revision:02X}")
+        logger.debug(f"  Revision: 0x{revision:02X}")
         if (revision & 0x0F) != 0x0F:
             raise RuntimeError(f"Unexpected NAU7802 revision: 0x{revision:02X} (expected 0x_F)")
 
         # Step 4: Configure device
         # Internal LDO enable (AVDDS=1, bit 7) and set voltage to 3.0V
+
         self._set_bit(REG_PU_CTRL, 7, True)  # AVDDS=1
         self._set_field(REG_CTRL1, shift=3, width=3, value=0b101)  # VLDO=3.0V
-        print("  LDO: 3.0V (internal)")
+        logger.debug("  LDO: 3.0V (internal)")
 
         # Set gain to 128x (CTRL1 bits 2:0 = 0b111)
+
         self._set_field(REG_CTRL1, shift=0, width=3, value=0b111)
-        print("  Gain: 128x")
+        logger.debug("  Gain: 128x")
 
         # Set sample rate to 10 SPS (CTRL2 bits 6:4 = 0b000)
         # Note: At 10 SPS, each sample takes ~100ms; first 4 samples = ~400ms to settle
+
         self._set_field(REG_CTRL2, shift=4, width=3, value=0b000)
-        print("  Sample rate: 10 SPS")
+        logger.debug("  Sample rate: 10 SPS")
 
         # Step 5: Tuning per application notes
         # Disable ADC chopper clock (ADC bits 5:4 = 0b11)
@@ -143,17 +151,19 @@ class NAU7802:
 
         # Step 6: Trigger fresh AD conversion and wait for first result
         # CS bit transition 0→1 starts fresh conversion; takes ~4-sample time for result
+
         self._set_bit(REG_PU_CTRL, 4, True)  # CS=1
-        print("  Conversion started")
+        logger.debug("  Conversion started")
 
         # Flush startup transients before calibration
         # At 10 SPS, initial 4 samples may contain settling artifacts
+
         self.flush_readings(count=4, timeout_s=1.5)
 
         # Run AFE calibration (internal mode), then flush result
         self.calibrate_afe(timeout_ms=1000, mode=0)
         self.flush_readings(count=2, timeout_s=1.0)
-        print("  Initialization complete")
+        logger.debug("  Initialization complete")
 
     def begin_calibrate_afe(self, mode: int = 0) -> None:
         """Start asynchronous AFE calibration.
@@ -195,7 +205,7 @@ class NAU7802:
         ctrl2 = self.read_reg(REG_CTRL2)
         if ctrl2 & self._CTRL2_CAL_ERROR:
             raise RuntimeError("NAU7802 AFE calibration completed with CAL_ERR set")
-        print("  AFE calibration: OK")
+        logger.debug("  AFE calibration: OK")
 
     def wait_data_ready(self, timeout_s: float = 1.0) -> bool:
         deadline = time.monotonic() + timeout_s

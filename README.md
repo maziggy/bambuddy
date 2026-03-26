@@ -505,25 +505,6 @@ services:
 
 </details>
 
-#### Windows (Portable Launcher)
-
-The easiest way to run Bambuddy on Windows - no installation required:
-
-```batch
-git clone https://github.com/maziggy/bambuddy.git
-cd bambuddy
-start_bambuddy.bat
-```
-
-Double-click `start_bambuddy.bat` and it will:
-- Download Python and Node.js automatically (portable, no system changes)
-- Install dependencies and build the frontend
-- Open your browser to http://localhost:8000
-
-Everything is stored in the `.portable\` folder. Use `start_bambuddy.bat reset` to clean up.
-
-> **Custom port:** `set PORT=9000 & start_bambuddy.bat`
-
 #### Manual Installation (Linux/macOS)
 
 ```bash

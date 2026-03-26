@@ -55,6 +55,19 @@ A1_MODELS = frozenset(
     ]
 )
 
+# Models affected by the stg_cur=0 idle bug (firmware reports stg_cur=0 when idle,
+# which maps to "Printing" in STAGE_NAMES and overrides the correct IDLE state)
+STG_CUR_IDLE_BUG_MODELS = A1_MODELS | frozenset(
+    [
+        # Display names
+        "P1P",
+        "P1S",
+        # Internal codes (from MQTT/SSDP)
+        "C11",  # P1P
+        "C12",  # P1S
+    ]
+)
+
 
 def supports_chamber_temp(model: str | None) -> bool:
     """Check if a printer model has a real chamber temperature sensor.
@@ -72,14 +85,14 @@ def supports_chamber_temp(model: str | None) -> bool:
 def has_stg_cur_idle_bug(model: str | None) -> bool:
     """Check if a printer model may incorrectly report stg_cur=0 when idle.
 
-    Some A1/A1 Mini firmware versions report stg_cur=0 (which maps to "Printing")
-    even when the printer is idle. This is a known firmware bug that was observed
-    in the Home Assistant Bambu Lab integration.
+    Some firmware versions report stg_cur=0 (which maps to "Printing")
+    even when the printer is idle. Originally observed on A1/A1 Mini via the
+    Home Assistant Bambu Lab integration, also confirmed on P1S.
     """
     if not model:
         return False
     model_upper = model.strip().upper()
-    return model_upper in A1_MODELS
+    return model_upper in STG_CUR_IDLE_BUG_MODELS
 
 
 # Minimum firmware versions for AMS drying support (confirmed via capture testing)

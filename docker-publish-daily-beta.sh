@@ -288,6 +288,9 @@ else
     # Extract release notes from CHANGELOG: content between ## [<version>] and the next ## [ heading
     CHANGELOG_NOTES=$(sed -n "/^## \[${VERSION}\]/,/^## \[/{/^## \[/!p}" "$CHANGELOG_FILE" | sed '/^$/d; 1{/^$/d}')
 
+    # Strip @mentions so GitHub doesn't auto-generate a "Contributors" section
+    CHANGELOG_NOTES=$(echo "$CHANGELOG_NOTES" | sed 's/@\([a-zA-Z0-9_-]*\)/\1/g')
+
     if [ -z "$CHANGELOG_NOTES" ]; then
         echo -e "${YELLOW}  Warning: No changelog notes found for ${VERSION}${NC}"
         CHANGELOG_NOTES="No changelog notes available for this release."
@@ -346,6 +349,7 @@ EOF
     gh release create "v${DAILY_TAG}" \
         --title "Daily Beta Build v${DAILY_TAG}" \
         --prerelease \
+        --generate-notes=false \
         --notes "$RELEASE_BODY"
     echo -e "${GREEN}  Created GitHub release: v${DAILY_TAG}${NC}"
 fi

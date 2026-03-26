@@ -418,7 +418,7 @@ export default function InventoryPageRouter() {
   if (spoolmanSettings?.spoolman_enabled === 'true' && spoolmanSettings?.spoolman_url) {
     return (
       <iframe
-        src={spoolmanSettings.spoolman_url}
+        src={`${spoolmanSettings.spoolman_url.replace(/\/+$/, '')}/spool`}
         className="h-full w-full border-0"
         title="Spoolman"
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"

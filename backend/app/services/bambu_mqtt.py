@@ -366,11 +366,22 @@ class BambuMQTTClient:
         """Check staleness and update connected state if stale. Returns True if connected."""
         if self.state.connected and self.is_stale():
             logger.warning(
-                f"[{self.serial_number}] Connection stale - no message for {time.time() - self._last_message_time:.1f}s"
+                f"[{self.serial_number}] Connection stale - no message for {time.time() - self._last_message_time:.1f}s, forcing reconnect"
             )
             self.state.connected = False
             if self.on_state_change:
                 self.on_state_change(self.state)
+            # Force-close the underlying socket so paho's loop thread detects
+            # the broken connection and triggers auto-reconnect.  We don't call
+            # client.disconnect() because that's a clean disconnect and paho
+            # would NOT auto-reconnect afterwards.
+            if self._client:
+                try:
+                    sock = self._client.socket()
+                    if sock:
+                        sock.close()
+                except Exception:
+                    pass  # Best-effort; paho loop will reconnect on next iteration
         return self.state.connected
 
     def _on_connect(self, client, userdata, flags, rc, properties=None):
@@ -434,9 +445,12 @@ class BambuMQTTClient:
 
     def _on_disconnect(self, client, userdata, disconnect_flags=None, rc=None, properties=None):
         # Ignore spurious disconnect callbacks if we've received a message recently
-        # Paho-mqtt sometimes fires disconnect callbacks while the connection is still active
+        # Paho-mqtt sometimes fires disconnect callbacks while the connection is still active.
+        # BUT: never suppress error disconnects (keepalive timeout, connection lost, etc.)
+        # — only suppress when rc indicates a clean/normal disconnect.
+        is_error_disconnect = rc is not None and hasattr(rc, "is_failure") and rc.is_failure
         time_since_last_message = time.time() - self._last_message_time
-        if time_since_last_message < 30.0 and self._last_message_time > 0:
+        if not is_error_disconnect and time_since_last_message < 10.0 and self._last_message_time > 0:
             logger.debug(
                 f"[{self.serial_number}] Ignoring spurious disconnect (last message {time_since_last_message:.1f}s ago)"
             )

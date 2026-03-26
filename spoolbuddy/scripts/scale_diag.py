@@ -168,7 +168,7 @@ def main():
             print("    Timeout waiting for data ready")
             sys.exit(1)
 
-        print("Reading 10 samples (10 SPS = ~1 second)...")
+        print("    Reading 10 samples (10 SPS = ~1 second)...")
         readings = []
         for i in range(10):
             # Wait for data ready

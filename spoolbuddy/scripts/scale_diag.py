@@ -5,7 +5,6 @@ I2C address: 0x2A
 Bus: /dev/i2c-1 (GPIO2/GPIO3 on RPi)
 """
 
-import logging
 import os
 import sys
 import time
@@ -13,9 +12,8 @@ import time
 import smbus2
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "daemon")))
-from nau7802 import NAU7802
 
-logging.basicConfig(level=logging.DEBUG)
+from nau7802 import NAU7802
 
 
 def _env_int(name: str, default: int) -> int:
@@ -98,27 +96,23 @@ def main():
 
         scale.init()
 
-        # Register dump and key config values after init
-        print("\n[1b] Register dump after init")
-        REGISTER_NAMES_DUMP = {
-            REG_PU_CTRL: "PU_CTRL",
-            REG_CTRL1: "CTRL1",
-            REG_CTRL2: "CTRL2",
-            REG_ADC: "ADC",
-            REG_PGA: "PGA",
-            REG_PWR_CTRL: "PWR_CTRL",
-            REG_REVISION: "REVISION",
-        }
-        for addr, name in REGISTER_NAMES_DUMP.items():
-            val = scale.read_reg(addr)
-            print(f"    0x{addr:02X} {name:<10s} = 0x{val:02X}")
-
         # Print key interpreted config values
         revision = scale.read_reg(REG_REVISION)
-        print(f"    Revision: 0x{revision:02X}")
+        revision_id = revision & 0x0F
+        revision_id_str = f"0b{revision_id:04b}"
+        print(f"    Revision ID: {revision_id_str} (bits 3:0, should be 0b1111 per datasheet)")
         ctrl1 = scale.read_reg(REG_CTRL1)
         vldo = (ctrl1 >> 3) & 0b111
-        vldo_map = {0b100: "2.7V", 0b101: "3.0V", 0b110: "3.3V"}
+        vldo_map = {
+            0b111: "2.4V",
+            0b110: "2.7V",
+            0b101: "3.0V",
+            0b100: "3.3V",
+            0b011: "3.6V",
+            0b010: "3.9V",
+            0b001: "4.2V",
+            0b000: "4.5V",
+        }
         vldo_str = vldo_map.get(vldo, f"Unknown ({vldo})")
         gain = ctrl1 & 0b111
         gain_map = {
@@ -142,8 +136,6 @@ def main():
             0b010: "40 SPS",
             0b011: "80 SPS",
             0b100: "320 SPS",
-            0b101: "1000 SPS",
-            0b110: "2000 SPS",
         }
         sps_str = sps_map.get(sps, f"Unknown ({sps})")
         print(f"    Sample rate: {sps_str}")
@@ -157,6 +149,11 @@ def main():
         low_esr = (pga >> 6) & 0x1
         low_esr_str = "Enabled" if low_esr == 0 else "Disabled"
         print(f"    PGA low-ESR caps: {low_esr_str}")
+        # PU_CTRL bit 7: AVDD source select
+        pu_ctrl = scale.read_reg(REG_PU_CTRL)
+        avdds = (pu_ctrl >> 7) & 0x1
+        avdds_str = "Internal LDO" if avdds == 1 else "AVDD pin input"
+        print(f"    AVDD source select: {avdds_str} (PU_CTRL bit 7)")
 
         scale.flush_readings(count=4, timeout_s=1.5)
         scale.calibrate_afe(timeout_ms=1000, mode=0)

@@ -392,6 +392,38 @@ body {
   box-shadow: var(--card-shadow);
 }
 
+/* ============================================
+   SPOOLBUDDY KIOSK MODAL CONSTRAINTS
+   Cap large modals (max-w-2xl) to viewport on the
+   small SpoolBuddy touchscreen. Excludes smaller
+   modals like the slot action picker (max-w-sm).
+   ============================================ */
+[data-spoolbuddy-kiosk] .fixed .relative.max-w-2xl {
+  height: 90vh;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+[data-spoolbuddy-kiosk] .fixed .relative.max-w-2xl > div:first-child {
+  flex-shrink: 0;
+}
+
+[data-spoolbuddy-kiosk] .fixed .relative.max-w-2xl > div:last-child {
+  flex-shrink: 0;
+}
+
+[data-spoolbuddy-kiosk] .fixed .relative.max-w-2xl > div:nth-child(2) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Remove inner spool grid max-height to avoid nested scrollbars */
+[data-spoolbuddy-kiosk] .fixed .relative.max-w-2xl .max-h-96 {
+  max-height: none;
+}
+
 /* Calendar selected-day list scrollbar theming */
 .calendar-scroll {
   scrollbar-width: thin;

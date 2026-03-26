@@ -344,6 +344,10 @@ class BambuMQTTClient:
         self._request_topic_sub_time: float = 0.0
         self._request_topic_confirmed: bool = False
 
+        # Set when check_staleness() force-closes the socket to trigger reconnect.
+        # Prevents _on_disconnect from redundantly broadcasting state (already done).
+        self._stale_reconnecting: bool = False
+
     @property
     def topic_subscribe(self) -> str:
         return f"device/{self.serial_number}/report"
@@ -375,6 +379,9 @@ class BambuMQTTClient:
             # the broken connection and triggers auto-reconnect.  We don't call
             # client.disconnect() because that's a clean disconnect and paho
             # would NOT auto-reconnect afterwards.
+            # Set flag so _on_disconnect knows this was intentional and skips
+            # redundant state broadcast (we already set connected=False above).
+            self._stale_reconnecting = True
             if self._client:
                 try:
                     sock = self._client.socket()
@@ -387,6 +394,7 @@ class BambuMQTTClient:
     def _on_connect(self, client, userdata, flags, rc, properties=None):
         if rc == 0:
             self.state.connected = True
+            self._stale_reconnecting = False  # Clear stale-reconnect flag on successful connect
             # Reset per-connection warning state so warnings fire once per (re)connection
             self._ams_version_warned = set()
             client.subscribe(self.topic_subscribe)
@@ -444,6 +452,23 @@ class BambuMQTTClient:
             self._request_topic_sub_time = 0.0
 
     def _on_disconnect(self, client, userdata, disconnect_flags=None, rc=None, properties=None):
+        # Always unblock disconnect() callers, regardless of whether we suppress
+        # the state broadcast below.  disconnect() sets _disconnection_event and
+        # waits on it — every callback path must fire it.
+        if self._disconnection_event:
+            self._disconnection_event.set()
+
+        # If we intentionally closed the socket for stale reconnect, don't broadcast
+        # another state change — check_staleness() already set connected=False and
+        # notified the UI.  Just log and let paho auto-reconnect.
+        if self._stale_reconnecting:
+            logger.info(
+                "[%s] Disconnect callback after stale reconnect (expected), rc=%s",
+                self.serial_number,
+                rc,
+            )
+            return
+
         # Ignore spurious disconnect callbacks if we've received a message recently
         # Paho-mqtt sometimes fires disconnect callbacks while the connection is still active.
         # BUT: never suppress error disconnects (keepalive timeout, connection lost, etc.)
@@ -478,8 +503,6 @@ class BambuMQTTClient:
         self.state.connected = False
         if self.on_state_change:
             self.on_state_change(self.state)
-        if self._disconnection_event:
-            self._disconnection_event.set()
 
     def _on_message(self, client, userdata, msg):
         try:
@@ -505,10 +528,6 @@ class BambuMQTTClient:
                 self._handle_request_message(payload)
                 return
 
-            # TEMP: Dump full payload once to find extruder state field
-            if not hasattr(self, "_payload_dumped"):
-                self._payload_dumped = True
-                logger.debug("[%s] FULL MQTT PAYLOAD DUMP:\n%s", self.serial_number, json.dumps(payload, indent=2))
             # Log message if logging is enabled
             if self._logging_enabled:
                 self._message_log.append(
@@ -2628,9 +2647,13 @@ class BambuMQTTClient:
         ssl_context.verify_mode = ssl.CERT_NONE
         self._client.tls_set_context(ssl_context)
 
-        # Use shorter keepalive (15s) for faster disconnect detection
-        # Paho considers connection lost after 1.5x keepalive with no response
-        self._client.connect_async(self.ip_address, self.MQTT_PORT, keepalive=15)
+        # Keepalive: paho sends PINGREQs at this interval, broker considers
+        # client dead at 1.5x.  30s is a good balance — fast enough to detect
+        # real network loss (45s), not so aggressive that transient hiccups
+        # trigger false disconnects.  Stale detection (60s no messages) handles
+        # the P1S/P1P firmware bug where the broker stops publishing but the
+        # TCP connection stays alive.
+        self._client.connect_async(self.ip_address, self.MQTT_PORT, keepalive=30)
         self._client.loop_start()
 
     def start_print(

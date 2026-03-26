@@ -878,7 +878,19 @@ setup_kiosk() {
     fi
 
     # ── Install kiosk packages ────────────────────────────────────────────
+    # Temporarily block initramfs rebuilds during package install — we rebuild
+    # once at the end after the Plymouth theme is configured, saving ~4 runs
+    # (one per installed kernel per hook trigger).
+    if [[ -x /usr/sbin/update-initramfs ]]; then
+        dpkg-divert --local --rename --add /usr/sbin/update-initramfs >/dev/null 2>&1 || true
+        ln -sf /bin/true /usr/sbin/update-initramfs
+    fi
     run_with_progress "Installing kiosk packages" apt-get install -y labwc chromium plymouth wlr-randr
+    # Restore real update-initramfs
+    if dpkg-divert --list /usr/sbin/update-initramfs 2>/dev/null | grep -q local; then
+        rm -f /usr/sbin/update-initramfs
+        dpkg-divert --local --rename --remove /usr/sbin/update-initramfs >/dev/null 2>&1 || true
+    fi
 
     # ── config.txt tweaks ─────────────────────────────────────────────────
     local boot_config="/boot/firmware/config.txt"

@@ -2974,3 +2974,170 @@ class TestStartPrintAmsMapping:
         cmd = self._get_published_command(mqtt_client)
         assert "ams_mapping" not in cmd
         assert "ams_mapping2" not in cmd
+
+
+class TestStaleReconnect:
+    """Tests for stale connection detection and reconnect without UI bouncing."""
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST_STALE",
+            access_code="12345678",
+        )
+        return client
+
+    def test_check_staleness_sets_flag_and_broadcasts_once(self, mqtt_client):
+        """check_staleness() should set connected=False, broadcast, and set _stale_reconnecting."""
+        import time
+
+        state_changes = []
+        mqtt_client.on_state_change = lambda s: state_changes.append(s.connected)
+        mqtt_client.state.connected = True
+        mqtt_client._last_message_time = time.time() - 120  # well past 60s threshold
+
+        result = mqtt_client.check_staleness()
+
+        assert result is False
+        assert mqtt_client.state.connected is False
+        assert mqtt_client._stale_reconnecting is True
+        assert state_changes == [False]  # Exactly one broadcast
+
+    def test_check_staleness_noop_when_not_connected(self, mqtt_client):
+        """check_staleness() should not set flag when already disconnected."""
+        import time
+
+        mqtt_client.state.connected = False
+        mqtt_client._last_message_time = time.time() - 120
+
+        mqtt_client.check_staleness()
+
+        assert mqtt_client._stale_reconnecting is False
+
+    def test_check_staleness_noop_when_not_stale(self, mqtt_client):
+        """check_staleness() should not set flag when messages are recent."""
+        import time
+
+        mqtt_client.state.connected = True
+        mqtt_client._last_message_time = time.time() - 5  # 5s ago, well within 60s
+
+        result = mqtt_client.check_staleness()
+
+        assert result is True
+        assert mqtt_client.state.connected is True
+        assert mqtt_client._stale_reconnecting is False
+
+    def test_on_disconnect_skipped_during_stale_reconnect(self, mqtt_client):
+        """_on_disconnect should not broadcast state when _stale_reconnecting is set."""
+        state_changes = []
+        mqtt_client.on_state_change = lambda s: state_changes.append(s.connected)
+        mqtt_client._stale_reconnecting = True
+        mqtt_client.state.connected = False
+
+        mqtt_client._on_disconnect(None, None)
+
+        # No state change broadcast — check_staleness() already did it
+        assert state_changes == []
+        assert mqtt_client.state.connected is False
+
+    def test_on_disconnect_fires_event_during_stale_reconnect(self, mqtt_client):
+        """_on_disconnect must still fire _disconnection_event even during stale reconnect.
+
+        If disconnect() is called while _stale_reconnecting is True (e.g. user removes
+        the printer before paho reconnects), the event must fire so disconnect() doesn't hang.
+        """
+        import threading
+
+        mqtt_client._stale_reconnecting = True
+        mqtt_client._disconnection_event = threading.Event()
+
+        mqtt_client._on_disconnect(None, None)
+
+        assert mqtt_client._disconnection_event.is_set()
+
+    def test_on_connect_clears_stale_reconnecting_flag(self, mqtt_client):
+        """_on_connect should clear _stale_reconnecting and restore connected=True."""
+        mqtt_client._stale_reconnecting = True
+        mqtt_client.state.connected = False
+
+        subscribe_calls = []
+        mock_client = type(
+            "MockClient",
+            (),
+            {
+                "subscribe": lambda self, topic: subscribe_calls.append(topic) or (0, 1),
+            },
+        )()
+
+        mqtt_client._on_connect(mock_client, None, None, 0)
+
+        assert mqtt_client._stale_reconnecting is False
+        assert mqtt_client.state.connected is True
+
+    def test_full_stale_reconnect_cycle_no_bounce(self, mqtt_client):
+        """Full cycle: stale → disconnect callback → reconnect. UI should see exactly one disconnect."""
+        import time
+
+        state_changes = []
+        mqtt_client.on_state_change = lambda s: state_changes.append(s.connected)
+        mqtt_client.state.connected = True
+        mqtt_client._last_message_time = time.time() - 120
+
+        # Step 1: Stale detection triggers
+        mqtt_client.check_staleness()
+        assert state_changes == [False]
+
+        # Step 2: Paho fires disconnect callback (from socket close)
+        mqtt_client._on_disconnect(None, None)
+        # Should NOT add another state change
+        assert state_changes == [False]
+
+        # Step 3: Paho reconnects
+        subscribe_calls = []
+        mock_client = type(
+            "MockClient",
+            (),
+            {
+                "subscribe": lambda self, topic: subscribe_calls.append(topic) or (0, 1),
+            },
+        )()
+        mqtt_client._on_connect(mock_client, None, None, 0)
+        assert state_changes == [False, True]  # Now connected again
+        assert mqtt_client._stale_reconnecting is False
+
+    def test_spurious_disconnect_suppressed_when_recent_messages(self, mqtt_client):
+        """Non-error disconnect with recent messages should be suppressed."""
+        import time
+
+        state_changes = []
+        mqtt_client.on_state_change = lambda s: state_changes.append(s.connected)
+        mqtt_client.state.connected = True
+        mqtt_client._last_message_time = time.time() - 3  # 3s ago
+
+        # Non-error disconnect (rc=None)
+        mqtt_client._on_disconnect(None, None)
+
+        assert state_changes == []
+        assert mqtt_client.state.connected is True
+
+    def test_error_disconnect_not_suppressed_despite_recent_messages(self, mqtt_client):
+        """Error disconnect should always be processed, even with recent messages."""
+        import time
+
+        import paho.mqtt.client as mqtt
+        from paho.mqtt.reasoncodes import ReasonCode
+
+        state_changes = []
+        mqtt_client.on_state_change = lambda s: state_changes.append(s.connected)
+        mqtt_client.state.connected = True
+        mqtt_client._last_message_time = time.time() - 3  # 3s ago
+
+        # Error disconnect (rc.is_failure = True)
+        rc = ReasonCode(mqtt.CONNACK >> 4, identifier=0x80)  # Failure code
+        mqtt_client._on_disconnect(None, None, rc=rc)
+
+        assert state_changes == [False]
+        assert mqtt_client.state.connected is False

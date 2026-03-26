@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """NAU7802 Scale Diagnostic - ported from SpoolBuddy Rust firmware.
 
 I2C address: 0x2A

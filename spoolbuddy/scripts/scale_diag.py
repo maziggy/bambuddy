@@ -5,6 +5,7 @@ I2C address: 0x2A
 Bus: /dev/i2c-1 (GPIO2/GPIO3 on RPi)
 """
 
+import logging
 import os
 import sys
 import time
@@ -13,6 +14,8 @@ import smbus2
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "daemon")))
 from nau7802 import NAU7802
+
+logging.basicConfig(level=logging.DEBUG)
 
 
 def _env_int(name: str, default: int) -> int:
@@ -92,47 +95,7 @@ def main():
     scale = NAU7802()
     try:
         print("[1] Initializing...")
-        # Step 1: Reset (set RR=1, then RR=0)
-        scale._set_bit(REG_PU_CTRL, 0, True)  # RR=1
-        time.sleep(0.010)
-        scale._set_bit(REG_PU_CTRL, 0, False)  # RR=0 exits reset
-        time.sleep(0.001)
-
-        # Step 2: Power up digital (PUD=1 auto-starts AD conversion)
-        scale._set_bit(REG_PU_CTRL, 1, True)  # PUD=1
-        scale._set_bit(REG_PU_CTRL, 2, True)  # PUA=1
-        time.sleep(0.600)
-
-        # Step 3: Wait for power-up ready (PUR bit 3)
-        for _ in range(100):
-            status = scale.read_reg(REG_PU_CTRL)
-            if status & PU_PUR:
-                print("  Power-up ready")
-                break
-            time.sleep(0.001)
-        else:
-            raise TimeoutError("NAU7802 power-up timeout (PUR bit not set)")
-
-        revision = scale.read_reg(REG_REVISION)
-        print(f"  Revision: 0x{revision:02X}")
-        if (revision & 0x0F) != 0x0F:
-            raise RuntimeError(f"Unexpected NAU7802 revision: 0x{revision:02X} (expected 0x_F)")
-
-        scale._set_bit(REG_PU_CTRL, 7, True)  # AVDDS=1
-        scale._set_field(REG_CTRL1, shift=3, width=3, value=0b101)  # VLDO=3.0V
-        print("  LDO: 3.0V (internal)")
-
-        scale._set_field(REG_CTRL1, shift=0, width=3, value=0b111)
-        print("  Gain: 128x")
-
-        scale._set_field(REG_CTRL2, shift=4, width=3, value=0b000)
-        print("  Sample rate: 10 SPS")
-
-        scale._set_field(REG_ADC, shift=4, width=2, value=0b11)
-        scale._set_bit(REG_PGA, 6, False)
-
-        scale._set_bit(REG_PU_CTRL, 4, True)  # CS=1
-        print("  Conversion started")
+        scale.init()
 
         scale.flush_readings(count=4, timeout_s=1.5)
         scale.calibrate_afe(timeout_ms=1000, mode=0)

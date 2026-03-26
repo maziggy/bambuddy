@@ -24,24 +24,13 @@ import gpiod
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "daemon")))
 
 
-from pn5180 import (
-    NSS_PIN as DRIVER_NSS_PIN,  # noqa: E402
-    PN5180,  # noqa: E402
-    RST_PIN as DRIVER_RST_PIN,  # noqa: E402
-    SPI_BUS as DRIVER_SPI_BUS,  # noqa: E402
-    SPI_DEVICE as DRIVER_SPI_DEVICE,  # noqa: E402
+from pn5180 import (  # noqa: E402
+    NSS_PIN as DRIVER_NSS_PIN,
+    PN5180,
+    RST_PIN as DRIVER_RST_PIN,
+    SPI_BUS as DRIVER_SPI_BUS,
+    SPI_DEVICE as DRIVER_SPI_DEVICE,
 )
-
-
-def _env_int(name: str, default: int) -> int:
-    value = os.environ.get(name)
-    if value is None or value == "":
-        return default
-    try:
-        return int(value)
-    except ValueError:
-        return default
-
 
 REG_SYSTEM_CONFIG = 0x00
 REG_IRQ_ENABLE = 0x01
@@ -177,7 +166,7 @@ def run_diagnostics():
         print(f"\n[5b] SIGPRO_CONFIG (0x1A) bits 2:0 = 0b{sigpro_mode:03b} ({baudrate_str})")
 
         # IRQ status breakdown
-        irq = nfc.read_reg(0x02)
+        irq = nfc.read_reg(REG_IRQ_STATUS)
         print(f"\n[6] IRQ status flags (0x{irq:08X})")
         irq_flags = [
             (0, "RX_IRQ"),
@@ -198,7 +187,7 @@ def run_diagnostics():
             print(f"    bit {bit:2d}: {name:<28s} [{state}]")
 
         # RF status
-        rf = nfc.read_reg(0x1D)
+        rf = nfc.read_reg(REG_RF_STATUS)
         print(f"\n[7] RF status (0x{rf:08X})")
         tx_rf_on = bool(rf & (1 << 0))
         rx_en = bool(rf & (1 << 1))
@@ -206,7 +195,7 @@ def run_diagnostics():
         print(f"    RX enabled   : {rx_en}")
 
         # System status
-        sys_stat = nfc.read_reg(0x24)
+        sys_stat = nfc.read_reg(REG_SYSTEM_STATUS)
         print(f"\n[8] System status (0x{sys_stat:08X})")
 
         # System status bit breakdown
@@ -227,7 +216,7 @@ def run_diagnostics():
             print(f"    bit {bit:2d}: {symbol:<18s} [{state}]")
 
         # Temperature
-        temp_ctrl = nfc.read_reg(0x25)
+        temp_ctrl = nfc.read_reg(REG_TEMP_CONTROL)
         print(f"\n[9] Temp control register (0x{temp_ctrl:08X})")
 
         # TEMP_DELTA bits 1:0

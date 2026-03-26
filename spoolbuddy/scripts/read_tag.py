@@ -423,6 +423,10 @@ class PN5180:
             rx_status = self.read_reg(0x13)
             rx_len = rx_status & 0x1FF
             if rx_len < 16:
+                # Tag may have fewer pages than requested (e.g. MIFARE Ultralight
+                # has only 16 pages). Return what we have so far.
+                if result:
+                    return bytes(result)
                 print(f"    NTAG read page {start_page + pages_read}: rx_len={rx_len} (expected >=16)")
                 return None
 

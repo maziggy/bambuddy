@@ -740,18 +740,22 @@ export function SpoolBuddyAmsPage() {
       {assignSpoolModal && (
         <>
           <style>{`
-            .sb-assign-wrap .relative.max-w-2xl {
-              max-height: 90vh;
-              display: flex;
-              flex-direction: column;
+            [data-sb-assign] [class*="max-w-2xl"] {
+              max-height: 90vh !important;
+              display: flex !important;
+              flex-direction: column !important;
             }
-            .sb-assign-wrap .relative.max-w-2xl > .p-4.space-y-4 {
-              flex: 1 1 0;
-              min-height: 0;
-              overflow-y: auto;
+            [data-sb-assign] [class*="max-w-2xl"] > [class*="space-y"] {
+              flex: 1 1 0 !important;
+              min-height: 0 !important;
+              overflow-y: auto !important;
+            }
+            [data-sb-assign] [class*="max-w-2xl"] > [class*="border-b"],
+            [data-sb-assign] [class*="max-w-2xl"] > [class*="border-t"] {
+              flex-shrink: 0 !important;
             }
           `}</style>
-          <div className="sb-assign-wrap">
+          <div data-sb-assign="">
             <AssignSpoolModal
               isOpen={!!assignSpoolModal}
               onClose={() => {

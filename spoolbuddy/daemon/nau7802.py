@@ -1,4 +1,4 @@
-"""NAU7802 Scale Diagnostic - ported from SpoolBuddy Rust firmware.
+"""NAU7802 24-bit ADC driver for load cell / scale applications.
 
 I2C address: 0x2A
 Bus: /dev/i2c-1 (GPIO2/GPIO3 on RPi)

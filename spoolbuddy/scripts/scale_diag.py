@@ -155,10 +155,6 @@ def main():
         low_esr_str = "Enabled" if low_esr == 0 else "Disabled"
         print(f"    PGA low-ESR caps: {low_esr_str}")
 
-        scale.flush_readings(count=4, timeout_s=1.5)
-        scale.calibrate_afe(timeout_ms=1000, mode=0)
-        scale.flush_readings(count=2, timeout_s=1.0)
-
         print("[2] Waiting for first reading...")
         for _ in range(200):
             if scale.data_ready():

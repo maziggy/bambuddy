@@ -142,15 +142,20 @@ export function SpoolBuddyLayout() {
 
   // Swipe left/right to cycle through online printers
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const swipeLockedRef = useRef(false);
   const SWIPE_THRESHOLD = 50;
+  const rootRef = useRef<HTMLDivElement>(null);
+
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    swipeLockedRef.current = false;
   }, []);
   const handleTouchEnd = useCallback((e: React.TouchEvent) => {
     if (!touchStartRef.current || onlinePrinters.length < 2) return;
     const dx = e.changedTouches[0].clientX - touchStartRef.current.x;
     const dy = e.changedTouches[0].clientY - touchStartRef.current.y;
     touchStartRef.current = null;
+    swipeLockedRef.current = false;
     if (Math.abs(dx) < SWIPE_THRESHOLD || Math.abs(dy) > Math.abs(dx)) return;
     const currentIdx = onlinePrinters.findIndex((p: Printer) => p.id === selectedPrinterId);
     const nextIdx = dx < 0
@@ -158,6 +163,22 @@ export function SpoolBuddyLayout() {
       : (currentIdx - 1 + onlinePrinters.length) % onlinePrinters.length; // swipe right → prev
     setSelectedPrinterId(onlinePrinters[nextIdx].id);
   }, [onlinePrinters, selectedPrinterId, setSelectedPrinterId]);
+
+  // Block browser back/forward swipe gesture with non-passive touchmove listener
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const onTouchMove = (e: TouchEvent) => {
+      if (!touchStartRef.current) return;
+      const dx = Math.abs(e.touches[0].clientX - touchStartRef.current.x);
+      const dy = Math.abs(e.touches[0].clientY - touchStartRef.current.y);
+      // Once locked as horizontal, prevent default for the rest of this gesture
+      if (swipeLockedRef.current) { e.preventDefault(); return; }
+      if (dx > 10 && dx > dy) { swipeLockedRef.current = true; e.preventDefault(); }
+    };
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    return () => el.removeEventListener('touchmove', onTouchMove);
+  }, []);
 
   // CSS brightness filter (software dimming)
   const brightnessStyle = displayBrightness < 100
@@ -167,8 +188,9 @@ export function SpoolBuddyLayout() {
   return (
     <>
       <div
+        ref={rootRef}
         className="w-screen h-screen bg-bambu-dark text-white flex flex-col overflow-hidden"
-        style={{ ...brightnessStyle, overscrollBehaviorX: 'none', touchAction: 'pan-y' }}
+        style={{ ...brightnessStyle, overscrollBehaviorX: 'none' }}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""NAU7802 Scale Driver - ported from SpoolBuddy Rust firmware.
+"""NAU7802 Scale Diagnostic.
 
 I2C address: 0x2A
 Bus: /dev/i2c-1 (GPIO2/GPIO3 on RPi)

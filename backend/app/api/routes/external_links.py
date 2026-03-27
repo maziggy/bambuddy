@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequireCameraStreamTokenIfAuthEnabled, RequirePermissionIfAuthEnabled
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -239,10 +239,11 @@ async def delete_icon(
 async def get_icon(
     link_id: int,
     db: AsyncSession = Depends(get_db),
+    _: None = RequireCameraStreamTokenIfAuthEnabled,
 ):
     """Get the custom icon for an external link.
 
-    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
+    Requires a stream token query param (?token=xxx) when auth is enabled.
     """
     result = await db.execute(select(ExternalLink).where(ExternalLink.id == link_id))
     link = result.scalar_one_or_none()

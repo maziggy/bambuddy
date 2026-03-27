@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Layers, Clock, Timer, Printer } from 'lucide-react';
-import { api } from '../api/client';
+import { api, withStreamToken } from '../api/client';
 import type { PrinterStatus } from '../api/client';
 import { formatDuration, formatETA, type TimeFormat } from '../utils/date';
 
@@ -191,7 +191,7 @@ export function StreamOverlayPage() {
 
   const isPrinting = status.state === 'RUNNING' || status.state === 'PAUSE';
   const progress = status.progress || 0;
-  const streamUrl = `/api/v1/printers/${id}/camera/stream?fps=${config.fps}&t=${imageKey}`;
+  const streamUrl = withStreamToken(`/api/v1/printers/${id}/camera/stream?fps=${config.fps}&t=${imageKey}`);
 
   return (
     <div className="min-h-screen bg-black relative overflow-hidden">

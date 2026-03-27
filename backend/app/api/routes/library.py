@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.core.auth import (
+    RequireCameraStreamTokenIfAuthEnabled,
     require_ownership_permission,
     require_permission_if_auth_enabled,
 )
@@ -1871,6 +1872,7 @@ async def get_library_file_plate_thumbnail(
     file_id: int,
     plate_index: int,
     db: AsyncSession = Depends(get_db),
+    _: None = RequireCameraStreamTokenIfAuthEnabled,
 ):
     """Get the thumbnail image for a specific plate from a library file."""
     from starlette.responses import Response
@@ -2397,7 +2399,11 @@ async def download_library_file_for_slicer(
 
 
 @router.get("/files/{file_id}/thumbnail")
-async def get_thumbnail(file_id: int, db: AsyncSession = Depends(get_db)):
+async def get_thumbnail(
+    file_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: None = RequireCameraStreamTokenIfAuthEnabled,
+):
     """Get a file's thumbnail."""
     result = await db.execute(select(LibraryFile).where(LibraryFile.id == file_id))
     file = result.scalar_one_or_none()

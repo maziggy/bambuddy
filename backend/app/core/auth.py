@@ -136,6 +136,38 @@ def verify_slicer_download_token(token: str, resource_type: str, resource_id: in
     return True
 
 
+# --- Camera stream tokens ---
+# Reusable tokens for camera stream/snapshot endpoints loaded via <img> tags.
+# Unlike slicer tokens, these are NOT single-use (streams reconnect on errors)
+# and have a longer expiry. Maps token → expiry.
+_camera_stream_tokens: dict[str, datetime] = {}
+CAMERA_STREAM_TOKEN_EXPIRE_MINUTES = 60
+
+
+def create_camera_stream_token() -> str:
+    """Create a reusable token for camera stream/snapshot access."""
+    now = datetime.now(timezone.utc)
+    # Cleanup expired tokens
+    expired = [k for k, exp in _camera_stream_tokens.items() if exp < now]
+    for k in expired:
+        del _camera_stream_tokens[k]
+
+    token = secrets.token_urlsafe(24)
+    _camera_stream_tokens[token] = now + timedelta(minutes=CAMERA_STREAM_TOKEN_EXPIRE_MINUTES)
+    return token
+
+
+def verify_camera_stream_token(token: str) -> bool:
+    """Verify a camera stream token is valid."""
+    expiry = _camera_stream_tokens.get(token)
+    if not expiry:
+        return False
+    if datetime.now(timezone.utc) > expiry:
+        del _camera_stream_tokens[token]
+        return False
+    return True
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against a hash.
 
@@ -703,6 +735,30 @@ def RequirePermission(*permissions: str | Permission):
 def RequirePermissionIfAuthEnabled(*permissions: str | Permission):
     """Convenience dependency that requires permissions if auth is enabled."""
     return Depends(require_permission_if_auth_enabled(*permissions))
+
+
+def require_camera_stream_token_if_auth_enabled():
+    """Dependency that validates a camera stream token query param when auth is enabled.
+
+    Used for camera stream/snapshot endpoints that are loaded via <img> tags
+    which cannot send Authorization headers. The frontend obtains a token from
+    POST /printers/camera/stream-token and appends it as ?token=xxx.
+    """
+
+    async def checker(token: str | None = None) -> None:
+        async with async_session() as db:
+            if not await is_auth_enabled(db):
+                return  # Auth disabled, allow access
+        if not token or not verify_camera_stream_token(token):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Valid camera stream token required. Obtain one from POST /api/v1/printers/camera/stream-token",
+            )
+
+    return checker
+
+
+RequireCameraStreamTokenIfAuthEnabled = Depends(require_camera_stream_token_if_auth_enabled())
 
 
 def require_ownership_permission(

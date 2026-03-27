@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Loader2, Monitor, AlertCircle, Box, Maximize2 } from 'lucide-react';
-import { api } from '../api/client';
+import { api, withStreamToken } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { ConfirmModal } from './ConfirmModal';
@@ -136,7 +136,7 @@ export function SkipObjectsModal({ printerId, isOpen, onClose }: SkipObjectsModa
                 <div className="relative cursor-pointer group" onClick={() => setEnlarged(true)}>
                   {status?.cover_url ? (
                     <img
-                      src={`${status.cover_url}?view=top`}
+                      src={withStreamToken(`${status.cover_url}?view=top`)}
                       alt={t('printers.printPreview')}
                       className="w-full aspect-square object-contain rounded-lg bg-gray-900 dark:bg-gray-900 border border-gray-300 dark:border-gray-600"
                     />

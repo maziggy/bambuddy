@@ -21,6 +21,7 @@ import { LoginPage } from './pages/LoginPage';
 import { SetupPage } from './pages/SetupPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { useWebSocket } from './hooks/useWebSocket';
+import { useStreamTokenSync } from './hooks/useCameraStreamToken';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -39,6 +40,11 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+function StreamTokenSync() {
+  useStreamTokenSync();
+  return null;
+}
 
 function WebSocketProvider({ children }: { children: React.ReactNode }) {
   useWebSocket();
@@ -107,6 +113,7 @@ function App() {
       <ToastProvider>
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
+            <StreamTokenSync />
             <BrowserRouter>
               <Routes>
                 {/* Setup page - only accessible if auth not enabled */}

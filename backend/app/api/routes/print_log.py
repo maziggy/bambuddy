@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequireCameraStreamTokenIfAuthEnabled, RequirePermissionIfAuthEnabled
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -92,10 +92,11 @@ async def get_print_log(
 async def get_print_log_thumbnail(
     entry_id: int,
     db: AsyncSession = Depends(get_db),
+    _: None = RequireCameraStreamTokenIfAuthEnabled,
 ):
     """Get the thumbnail for a print log entry.
 
-    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
+    Requires a stream token query param (?token=xxx) when auth is enabled.
     """
     entry = await db.get(PrintLogEntry, entry_id)
     if not entry or not entry.thumbnail_path:

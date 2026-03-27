@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { RefreshCw, AlertTriangle, Camera, Maximize, Minimize, WifiOff, ZoomIn, ZoomOut } from 'lucide-react';
-import { api, getAuthToken } from '../api/client';
+import { api, getAuthToken, withStreamToken } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { ChamberLight } from '../components/icons/ChamberLight';
@@ -577,8 +577,8 @@ export function CameraPage() {
   const currentUrl = transitioning
     ? ''
     : streamMode === 'stream'
-      ? `/api/v1/printers/${id}/camera/stream?fps=15&t=${imageKey}`
-      : `/api/v1/printers/${id}/camera/snapshot?t=${imageKey}`;
+      ? withStreamToken(`/api/v1/printers/${id}/camera/stream?fps=15&t=${imageKey}`)
+      : withStreamToken(`/api/v1/printers/${id}/camera/snapshot?t=${imageKey}`);
 
   const isDisabled = streamLoading || transitioning || isReconnecting;
 

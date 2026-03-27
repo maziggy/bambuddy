@@ -13,6 +13,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import (
+    RequireCameraStreamTokenIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
     require_ownership_permission,
 )
@@ -1385,10 +1386,11 @@ async def download_archive_for_slicer(
 async def get_thumbnail(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
+    _: None = RequireCameraStreamTokenIfAuthEnabled,
 ):
     """Get the thumbnail image.
 
-    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
+    Requires a stream token query param (?token=xxx) when auth is enabled.
     """
     service = ArchiveService(db)
     archive = await service.get_archive(archive_id)
@@ -1416,10 +1418,11 @@ async def get_thumbnail(
 async def get_timelapse(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
+    _: None = RequireCameraStreamTokenIfAuthEnabled,
 ):
     """Get the timelapse video.
 
-    Note: Unauthenticated - loaded via <video> tags which can't send auth headers.
+    Requires a stream token query param (?token=xxx) when auth is enabled.
     """
     service = ArchiveService(db)
     archive = await service.get_archive(archive_id)
@@ -2047,10 +2050,11 @@ async def get_photo(
     archive_id: int,
     filename: str,
     db: AsyncSession = Depends(get_db),
+    _: None = RequireCameraStreamTokenIfAuthEnabled,
 ):
     """Get a specific photo.
 
-    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
+    Requires a stream token query param (?token=xxx) when auth is enabled.
     """
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
     archive = result.scalar_one_or_none()
@@ -2118,10 +2122,11 @@ async def get_qrcode(
     request: Request,
     size: int = 200,
     db: AsyncSession = Depends(get_db),
+    _: None = RequireCameraStreamTokenIfAuthEnabled,
 ):
     """Generate a QR code that links to this archive.
 
-    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
+    Requires a stream token query param (?token=xxx) when auth is enabled.
     """
     try:
         import qrcode
@@ -2430,13 +2435,14 @@ async def get_gcode(
 async def get_plate_preview(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
+    _: None = RequireCameraStreamTokenIfAuthEnabled,
 ):
     """Get the plate preview image from the 3MF file.
 
     Returns the slicer-generated plate thumbnail which shows the model
     with correct colors and positioning.
 
-    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
+    Requires a stream token query param (?token=xxx) when auth is enabled.
     """
     service = ArchiveService(db)
     archive = await service.get_archive(archive_id)
@@ -2862,10 +2868,11 @@ async def get_plate_thumbnail(
     archive_id: int,
     plate_index: int,
     db: AsyncSession = Depends(get_db),
+    _: None = RequireCameraStreamTokenIfAuthEnabled,
 ):
     """Get the thumbnail image for a specific plate.
 
-    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
+    Requires a stream token query param (?token=xxx) when auth is enabled.
     """
     service = ArchiveService(db)
     archive = await service.get_archive(archive_id)
@@ -3176,10 +3183,11 @@ async def get_project_image(
     archive_id: int,
     image_path: str,
     db: AsyncSession = Depends(get_db),
+    _: None = RequireCameraStreamTokenIfAuthEnabled,
 ):
     """Get an image from the 3MF project page.
 
-    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
+    Requires a stream token query param (?token=xxx) when auth is enabled.
     """
     from backend.app.services.archive import ProjectPageParser
 

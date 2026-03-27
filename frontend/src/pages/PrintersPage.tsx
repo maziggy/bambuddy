@@ -50,7 +50,7 @@ import {
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
-import { api, discoveryApi, firmwareApi } from '../api/client';
+import { api, discoveryApi, firmwareApi, withStreamToken } from '../api/client';
 import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
 import type { Printer, PrinterCreate, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError } from '../api/client';
 import { Card, CardContent } from '../components/Card';
@@ -1037,7 +1037,7 @@ function CoverImage({ url, printName }: { url: string | null; printName?: string
   const cacheBustedUrl = useMemo(() => {
     if (!url) return null;
     const sep = url.includes('?') ? '&' : '?';
-    return `${url}${sep}v=${encodeURIComponent(printName || Date.now().toString())}`;
+    return withStreamToken(`${url}${sep}v=${encodeURIComponent(printName || Date.now().toString())}`);
   }, [url, printName]);
 
   // Reset loaded/error state when the image URL changes

@@ -18,6 +18,25 @@ export function getAuthToken(): string | null {
   return authToken;
 }
 
+// Stream token for image/video URLs loaded via <img>/<video> tags
+// (these can't send Authorization headers, so a query param token is used)
+let streamToken: string | null = null;
+
+export function setStreamToken(token: string | null) {
+  streamToken = token;
+}
+
+export function getStreamToken(): string | null {
+  return streamToken;
+}
+
+/** Append the stream token to a URL if available (for <img>/<video> src). */
+export function withStreamToken(url: string): string {
+  if (!streamToken) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}token=${encodeURIComponent(streamToken)}`;
+}
+
 function parseContentDispositionFilename(header: string | null): string | null {
   if (!header) return null;
   // RFC 5987: filename*=utf-8''percent-encoded-name
@@ -2530,7 +2549,7 @@ export const api = {
       is_multi_plate: boolean;
     }>(`/printers/${printerId}/files/plates?path=${encodeURIComponent(path)}`),
   getPrinterFilePlateThumbnail: (printerId: number, plateIndex: number, path: string) =>
-    `${API_BASE}/printers/${printerId}/files/plate-thumbnail/${plateIndex}?path=${encodeURIComponent(path)}`,
+    withStreamToken(`${API_BASE}/printers/${printerId}/files/plate-thumbnail/${plateIndex}?path=${encodeURIComponent(path)}`),
   downloadPrinterFile: async (printerId: number, path: string): Promise<void> => {
     const headers: Record<string, string> = {};
     if (authToken) {
@@ -2748,9 +2767,9 @@ export const api = {
     request<{ updated: number; errors: Array<{ id: number; error: string }> }>('/archives/backfill-hashes', {
       method: 'POST',
     }),
-  getArchiveThumbnail: (id: number) => `${API_BASE}/archives/${id}/thumbnail?v=${Date.now()}`,
+  getArchiveThumbnail: (id: number) => withStreamToken(`${API_BASE}/archives/${id}/thumbnail?v=${Date.now()}`),
   getArchivePlateThumbnail: (id: number, plateIndex: number) =>
-    `${API_BASE}/archives/${id}/plate-thumbnail/${plateIndex}`,
+    withStreamToken(`${API_BASE}/archives/${id}/plate-thumbnail/${plateIndex}`),
   getArchiveDownload: (id: number) => `${API_BASE}/archives/${id}/download`,
   downloadArchive: async (id: number, filename?: string): Promise<void> => {
     const headers: Record<string, string> = {};
@@ -2775,8 +2794,8 @@ export const api = {
     window.URL.revokeObjectURL(url);
   },
   getArchiveGcode: (id: number) => `${API_BASE}/archives/${id}/gcode`,
-  getArchivePlatePreview: (id: number) => `${API_BASE}/archives/${id}/plate-preview`,
-  getArchiveTimelapse: (id: number) => `${API_BASE}/archives/${id}/timelapse?v=${Date.now()}`,
+  getArchivePlatePreview: (id: number) => withStreamToken(`${API_BASE}/archives/${id}/plate-preview`),
+  getArchiveTimelapse: (id: number) => withStreamToken(`${API_BASE}/archives/${id}/timelapse?v=${Date.now()}`),
   scanArchiveTimelapse: (id: number) =>
     request<{
       status: string;
@@ -2870,7 +2889,7 @@ export const api = {
   },
   // Photos
   getArchivePhotoUrl: (archiveId: number, filename: string) =>
-    `${API_BASE}/archives/${archiveId}/photos/${encodeURIComponent(filename)}`,
+    withStreamToken(`${API_BASE}/archives/${archiveId}/photos/${encodeURIComponent(filename)}`),
   uploadArchivePhoto: async (archiveId: number, file: File): Promise<{ status: string; filename: string; photos: string[] }> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -3001,7 +3020,7 @@ export const api = {
 
   // QR Code
   getArchiveQRCodeUrl: (archiveId: number, size = 200) =>
-    `${API_BASE}/archives/${archiveId}/qrcode?size=${size}`,
+    withStreamToken(`${API_BASE}/archives/${archiveId}/qrcode?size=${size}`),
   getArchiveCapabilities: (id: number) =>
     request<{
       has_model: boolean;
@@ -3048,7 +3067,7 @@ export const api = {
       body: JSON.stringify(data),
     }),
   getArchiveProjectImageUrl: (archiveId: number, imagePath: string) =>
-    `${API_BASE}/archives/${archiveId}/project-image/${encodeURIComponent(imagePath)}`,
+    withStreamToken(`${API_BASE}/archives/${archiveId}/project-image/${encodeURIComponent(imagePath)}`),
   getArchiveForSlicer: (id: number, filename: string) => {
     const safe = filename.replace(/[/\\?#]/g, '_');
     return `${API_BASE}/archives/${id}/file/${encodeURIComponent(safe.endsWith('.3mf') ? safe : safe + '.3mf')}`;
@@ -3162,7 +3181,7 @@ export const api = {
     if (params?.offset !== undefined) searchParams.set('offset', String(params.offset));
     return request<PrintLogResponse>(`/print-log/?${searchParams}`);
   },
-  getPrintLogThumbnail: (id: number) => `${API_BASE}/print-log/${id}/thumbnail`,
+  getPrintLogThumbnail: (id: number) => withStreamToken(`${API_BASE}/print-log/${id}/thumbnail`),
   clearPrintLog: () =>
     request<{ deleted: number }>('/print-log/', { method: 'DELETE' }),
 
@@ -3767,10 +3786,12 @@ export const api = {
     }),
 
   // Camera
+  getCameraStreamToken: () =>
+    request<{ token: string }>('/printers/camera/stream-token', { method: 'POST' }),
   getCameraStreamUrl: (printerId: number, fps = 10) =>
-    `${API_BASE}/printers/${printerId}/camera/stream?fps=${fps}`,
+    withStreamToken(`${API_BASE}/printers/${printerId}/camera/stream?fps=${fps}`),
   getCameraSnapshotUrl: (printerId: number) =>
-    `${API_BASE}/printers/${printerId}/camera/snapshot`,
+    withStreamToken(`${API_BASE}/printers/${printerId}/camera/snapshot`),
   testCameraConnection: (printerId: number) =>
     request<{ success: boolean; message?: string; error?: string }>(`/printers/${printerId}/camera/test`),
   getCameraStatus: (printerId: number) =>
@@ -3811,9 +3832,8 @@ export const api = {
       max_references: number;
     }>(`/printers/${printerId}/camera/plate-detection/references`);
   },
-  getPlateReferenceThumbnailUrl: (printerId: number, index: number) => {
-    return `${API_BASE}/printers/${printerId}/camera/plate-detection/references/${index}/thumbnail`;
-  },
+  getPlateReferenceThumbnailUrl: (printerId: number, index: number) =>
+    withStreamToken(`${API_BASE}/printers/${printerId}/camera/plate-detection/references/${index}/thumbnail`),
   updatePlateReferenceLabel: (printerId: number, index: number, label: string) => {
     const params = new URLSearchParams();
     params.set('label', label);
@@ -3869,7 +3889,7 @@ export const api = {
   },
   deleteExternalLinkIcon: (id: number) =>
     request<ExternalLink>(`/external-links/${id}/icon`, { method: 'DELETE' }),
-  getExternalLinkIconUrl: (id: number) => `${API_BASE}/external-links/${id}/icon`,
+  getExternalLinkIconUrl: (id: number) => withStreamToken(`${API_BASE}/external-links/${id}/icon`),
 
   // Projects
   getProjects: (status?: string) => {
@@ -4170,9 +4190,9 @@ export const api = {
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
   },
-  getLibraryFileThumbnailUrl: (id: number) => `${API_BASE}/library/files/${id}/thumbnail`,
+  getLibraryFileThumbnailUrl: (id: number) => withStreamToken(`${API_BASE}/library/files/${id}/thumbnail`),
   getLibraryFilePlateThumbnail: (id: number, plateIndex: number) =>
-    `${API_BASE}/library/files/${id}/plate-thumbnail/${plateIndex}`,
+    withStreamToken(`${API_BASE}/library/files/${id}/plate-thumbnail/${plateIndex}`),
   getLibraryFileGcodeUrl: (id: number) => `${API_BASE}/library/files/${id}/gcode`,
   moveLibraryFiles: (fileIds: number[], folderId: number | null) =>
     request<{ status: string; moved: number }>('/library/files/move', {

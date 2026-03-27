@@ -11,7 +11,11 @@ from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import (
+    RequireCameraStreamTokenIfAuthEnabled,
+    RequirePermissionIfAuthEnabled,
+    create_camera_stream_token,
+)
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.printer import Printer
@@ -478,19 +482,32 @@ async def generate_rtsp_mjpeg_stream(
         await proxy_server.wait_closed()
 
 
+@router.post("/camera/stream-token")
+async def create_stream_token(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+):
+    """Create a reusable token for camera stream/snapshot access.
+
+    Returns a token valid for 60 minutes that can be appended as ?token=xxx
+    to camera stream/snapshot URLs loaded via <img> tags.
+    """
+    return {"token": create_camera_stream_token()}
+
+
 @router.get("/{printer_id}/camera/stream")
 async def camera_stream(
     printer_id: int,
     request: Request,
     fps: int = 10,
     db: AsyncSession = Depends(get_db),
+    _: None = RequireCameraStreamTokenIfAuthEnabled,
 ):
     """Stream live video from printer camera as MJPEG.
 
     This endpoint returns a multipart MJPEG stream that can be used directly
     in an <img> tag or video player.
 
-    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
+    Requires a stream token query param (?token=xxx) when auth is enabled.
 
     Uses external camera if configured, otherwise uses built-in camera:
     - External: MJPEG, RTSP, or HTTP snapshot
@@ -720,12 +737,13 @@ async def stop_camera_stream(
 async def camera_snapshot(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
+    _: None = RequireCameraStreamTokenIfAuthEnabled,
 ):
     """Capture a single frame from the printer camera.
 
     Returns a JPEG image.
 
-    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
+    Requires a stream token query param (?token=xxx) when auth is enabled.
     """
     import tempfile
     from pathlib import Path
@@ -1198,10 +1216,11 @@ async def get_reference_thumbnail(
     printer_id: int,
     index: int,
     db: AsyncSession = Depends(get_db),
+    _: None = RequireCameraStreamTokenIfAuthEnabled,
 ):
     """Get thumbnail image for a calibration reference.
 
-    Note: Unauthenticated - loaded via <img> tags which can't send auth headers.
+    Requires a stream token query param (?token=xxx) when auth is enabled.
     """
     from fastapi.responses import Response
 

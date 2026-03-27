@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, RefreshCw, AlertTriangle, Maximize2, Minimize2, GripVertical, WifiOff, ZoomIn, ZoomOut, Fullscreen, Minimize } from 'lucide-react';
-import { api, getAuthToken } from '../api/client';
+import { api, getAuthToken, withStreamToken } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { ChamberLight } from './icons/ChamberLight';
@@ -550,7 +550,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     }
   }, [isDragging, isResizing, dragOffset]);
 
-  const streamUrl = `/api/v1/printers/${printerId}/camera/stream?fps=15&t=${imageKey}`;
+  const streamUrl = withStreamToken(`/api/v1/printers/${printerId}/camera/stream?fps=15&t=${imageKey}`);
 
   return (
     <div

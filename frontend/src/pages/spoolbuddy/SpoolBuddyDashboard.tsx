@@ -3,7 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
-import { api, type InventorySpool, type Printer } from '../../api/client';
+import { api, type InventorySpool, type Printer, type PrinterStatus } from '../../api/client';
 import { SpoolIcon } from '../../components/spoolbuddy/SpoolIcon';
 import { SpoolInfoCard, UnknownTagCard } from '../../components/spoolbuddy/SpoolInfoCard';
 import { AssignToAmsModal } from '../../components/spoolbuddy/AssignToAmsModal';
@@ -141,6 +141,7 @@ export function SpoolBuddyDashboard() {
       queryKey: ['printerStatus', printer.id],
       queryFn: () => api.getPrinterStatus(printer.id),
       refetchInterval: 10000,
+      select: (data: PrinterStatus) => ({ connected: data?.connected }),
     })),
   });
 

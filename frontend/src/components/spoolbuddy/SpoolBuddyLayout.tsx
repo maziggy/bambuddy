@@ -6,7 +6,7 @@ import { SpoolBuddyTopBar } from './SpoolBuddyTopBar';
 import { SpoolBuddyBottomNav } from './SpoolBuddyBottomNav';
 import { SpoolBuddyStatusBar } from './SpoolBuddyStatusBar';
 import { useSpoolBuddyState } from '../../hooks/useSpoolBuddyState';
-import { api, spoolbuddyApi, type Printer } from '../../api/client';
+import { api, spoolbuddyApi, type Printer, type PrinterStatus } from '../../api/client';
 import { VirtualKeyboard } from '../VirtualKeyboard';
 
 export function SpoolBuddyLayout() {
@@ -134,6 +134,7 @@ export function SpoolBuddyLayout() {
       queryKey: ['printerStatus', printer.id],
       queryFn: () => api.getPrinterStatus(printer.id),
       refetchInterval: 10000,
+      select: (data: PrinterStatus) => ({ connected: data?.connected }),
     })),
   });
   const onlinePrinters = useMemo(() => {

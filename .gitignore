@@ -71,3 +71,6 @@ spoolbuddy/ssh/
 *.sarif
 
 debug_logs/
+
+# SSH keys Spoolbuddy
+spoolbuddy/ssh/

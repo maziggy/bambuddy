@@ -3,7 +3,7 @@ import Keyboard from 'react-simple-keyboard';
 import 'react-simple-keyboard/build/css/index.css';
 import './VirtualKeyboard.css';
 
-const FOCUSABLE_TYPES = new Set(['text', 'password', 'email', 'search', 'url']);
+const FOCUSABLE_TYPES = new Set(['text', 'password', 'email', 'search', 'url', 'number']);
 
 /**
  * Set value on a controlled React input using the native setter,
@@ -17,7 +17,7 @@ function setNativeValue(input: HTMLInputElement | HTMLTextAreaElement, value: st
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-export function VirtualKeyboard() {
+export function VirtualKeyboard({ onVisibilityChange }: { onVisibilityChange?: (visible: boolean) => void }) {
   const [visible, setVisible] = useState(false);
   const [closing, setClosing] = useState(false);
   const closingRef = useRef(false);
@@ -25,6 +25,11 @@ export function VirtualKeyboard() {
   const activeInput = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const keyboardRef = useRef<ReturnType<typeof Keyboard> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Notify parent when keyboard visibility changes
+  useEffect(() => {
+    onVisibilityChange?.(visible);
+  }, [visible, onVisibilityChange]);
 
   const handleFocusIn = useCallback((e: FocusEvent) => {
     if (closingRef.current) return;
@@ -47,9 +52,10 @@ export function VirtualKeyboard() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (keyboardRef.current as any)?.setInput?.(activeInput.current.value);
 
-    // Scroll input into view above the keyboard
+    // Scroll focused input into view after the keyboard renders and layout reflows
     setTimeout(() => {
-      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const card = target.closest('.bg-zinc-800, .rounded-lg, [data-vkb-group]') as HTMLElement | null;
+      (card ?? target).scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }, 100);
   }, []);
 
@@ -142,7 +148,7 @@ export function VirtualKeyboard() {
       {!closing && (
       <div
         ref={containerRef}
-        className="fixed bottom-0 left-0 right-0 z-[9999]"
+        className="relative z-[9999] shrink-0"
         onMouseDown={(e) => e.preventDefault()}
         onTouchStart={(e) => {
           // Prevent focus loss but allow button interaction

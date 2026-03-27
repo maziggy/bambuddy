@@ -13,6 +13,7 @@ from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.catalog_defaults import DEFAULT_COLOR_CATALOG, DEFAULT_SPOOL_CATALOG
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.websocket import ws_manager
 from backend.app.models.ams_label import AmsLabel
 from backend.app.models.color_catalog import ColorCatalogEntry
 from backend.app.models.spool import Spool
@@ -32,6 +33,7 @@ from backend.app.schemas.spool import (
 )
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
 from backend.app.utils.filament_ids import filament_id_to_setting_id, normalize_slicer_filament
+from backend.app.utils.tag_normalization import normalize_tag_uid, normalize_tray_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -1099,6 +1101,16 @@ async def assign_spool(
     resp = result.scalar_one()
     response = SpoolAssignmentResponse.model_validate(resp)
     response.configured = configured
+
+    await ws_manager.broadcast(
+        {
+            "type": "spool_assignment_changed",
+            "printer_id": data.printer_id,
+            "ams_id": data.ams_id,
+            "tray_id": data.tray_id,
+        }
+    )
+
     return response
 
 
@@ -1124,6 +1136,16 @@ async def unassign_spool(
 
     await db.delete(assignment)
     await db.commit()
+
+    await ws_manager.broadcast(
+        {
+            "type": "spool_assignment_changed",
+            "printer_id": printer_id,
+            "ams_id": ams_id,
+            "tray_id": tray_id,
+        }
+    )
+
     return {"status": "deleted"}
 
 
@@ -1135,6 +1157,22 @@ class LinkTagRequest(BaseModel):
     tray_uuid: str | None = None
     tag_type: str | None = None
     data_origin: str | None = "nfc_link"
+
+
+def _validate_tag_input(
+    raw_value: str | None, normalized_value: str | None, field_name: str, exact_len: int | None = None
+) -> None:
+    if raw_value is None:
+        return
+    raw = str(raw_value).strip()
+    if not raw:
+        return
+    if normalized_value is None:
+        raise HTTPException(422, f"{field_name} must contain hexadecimal characters")
+    if len(normalized_value) % 2 != 0:
+        raise HTTPException(422, f"{field_name} must have an even number of hex characters")
+    if exact_len is not None and len(normalized_value) != exact_len:
+        raise HTTPException(422, f"{field_name} must be exactly {exact_len} hex characters")
 
 
 @router.patch("/spools/{spool_id}/link-tag", response_model=SpoolResponse)
@@ -1152,11 +1190,17 @@ async def link_tag_to_spool(
     if spool.archived_at:
         raise HTTPException(400, "Cannot link tag to archived spool")
 
+    normalized_tag_uid = (normalize_tag_uid(data.tag_uid) or None) if data.tag_uid is not None else None
+    normalized_tray_uuid = (normalize_tray_uuid(data.tray_uuid) or None) if data.tray_uuid is not None else None
+
+    _validate_tag_input(data.tag_uid, normalized_tag_uid, "tag_uid")
+    _validate_tag_input(data.tray_uuid, normalized_tray_uuid, "tray_uuid", exact_len=32)
+
     # Check for conflicts: tag already linked to another active spool
-    if data.tag_uid:
+    if normalized_tag_uid:
         conflict = await db.execute(
             select(Spool).where(
-                Spool.tag_uid == data.tag_uid,
+                func.upper(Spool.tag_uid) == normalized_tag_uid,
                 Spool.id != spool_id,
                 Spool.archived_at.is_(None),
             )
@@ -1166,7 +1210,7 @@ async def link_tag_to_spool(
         # Auto-clear from archived spools (tag recycling)
         archived_with_tag = await db.execute(
             select(Spool).where(
-                Spool.tag_uid == data.tag_uid,
+                func.upper(Spool.tag_uid) == normalized_tag_uid,
                 Spool.id != spool_id,
                 Spool.archived_at.is_not(None),
             )
@@ -1174,10 +1218,10 @@ async def link_tag_to_spool(
         for old_spool in archived_with_tag.scalars().all():
             old_spool.tag_uid = None
 
-    if data.tray_uuid:
+    if normalized_tray_uuid:
         conflict = await db.execute(
             select(Spool).where(
-                Spool.tray_uuid == data.tray_uuid,
+                func.upper(Spool.tray_uuid) == normalized_tray_uuid,
                 Spool.id != spool_id,
                 Spool.archived_at.is_(None),
             )
@@ -1186,7 +1230,7 @@ async def link_tag_to_spool(
             raise HTTPException(409, "Tray UUID already linked to another active spool")
         archived_with_uuid = await db.execute(
             select(Spool).where(
-                Spool.tray_uuid == data.tray_uuid,
+                func.upper(Spool.tray_uuid) == normalized_tray_uuid,
                 Spool.id != spool_id,
                 Spool.archived_at.is_not(None),
             )
@@ -1195,9 +1239,9 @@ async def link_tag_to_spool(
             old_spool.tray_uuid = None
 
     if data.tag_uid is not None:
-        spool.tag_uid = data.tag_uid
+        spool.tag_uid = normalized_tag_uid
     if data.tray_uuid is not None:
-        spool.tray_uuid = data.tray_uuid
+        spool.tray_uuid = normalized_tray_uuid
     if data.tag_type is not None:
         spool.tag_type = data.tag_type
     if data.data_origin is not None:

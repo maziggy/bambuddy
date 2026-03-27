@@ -32,13 +32,14 @@ def _make_spool(*, id=1, label_weight=1000, weight_used=0, tag_uid=None, tray_uu
     return spool
 
 
-def _make_assignment(*, spool_id=1, printer_id=1, ams_id=0, tray_id=0):
+def _make_assignment(*, spool_id=1, printer_id=1, ams_id=0, tray_id=0, created_at=None):
     """Create a mock SpoolAssignment object."""
     assignment = MagicMock()
     assignment.spool_id = spool_id
     assignment.printer_id = printer_id
     assignment.ams_id = ams_id
     assignment.tray_id = tray_id
+    assignment.created_at = created_at or datetime.now(timezone.utc)
     return assignment
 
 
@@ -570,10 +571,11 @@ class TestSpoolAssignmentSnapshot:
         ams_data = [{"id": 0, "tray": [{"id": 0, "remain": 70}]}]
         pm = _make_printer_manager(_make_printer_state(ams_data))
 
-        # db only returns spool (NO assignment query)
+        # db returns no live assignment, then spool from snapshot spool_id
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
+                MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
             ]
         )
@@ -657,12 +659,14 @@ class TestSpoolAssignmentSnapshot:
 
         filament_usage = [{"slot_id": 1, "used_g": 14.2, "type": "PLA", "color": "#FF0000"}]
 
-        # db: archive, queue_item(None), spool, then cost aggregation queries
+        # db: archive, queue_item(None), live assignment(None), spool,
+        # then cost aggregation queries
         # NOTE: No assignment in db — it was deleted by on_ams_change mid-print!
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
                 MagicMock(scalar_one_or_none=MagicMock(return_value=archive)),
+                MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
                 MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
                 # Cost aggregation: sum query (uses .scalar()), archive lookup

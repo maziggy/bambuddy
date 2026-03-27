@@ -1,0 +1,378 @@
+"""Integration tests for External Folder API endpoints."""
+
+import os
+import tempfile
+from pathlib import Path
+
+import pytest
+from httpx import AsyncClient
+
+
+class TestExternalFolderCreation:
+    """Tests for POST /library/folders/external."""
+
+    @pytest.fixture
+    def external_dir(self, tmp_path):
+        """Create a temporary directory to act as an external folder."""
+        ext_dir = tmp_path / "nas_share"
+        ext_dir.mkdir()
+        # Add some test files
+        (ext_dir / "benchy.3mf").write_bytes(b"fake3mf")
+        (ext_dir / "bracket.stl").write_bytes(b"fakestl")
+        (ext_dir / "print.gcode").write_text("G28\nG1 X10 Y10")
+        (ext_dir / "readme.txt").write_text("not a print file")
+        (ext_dir / ".hidden.3mf").write_bytes(b"hidden")
+        return ext_dir
+
+    @pytest.fixture
+    def nested_external_dir(self, external_dir):
+        """Create a nested subdirectory in the external folder."""
+        sub = external_dir / "subfolder"
+        sub.mkdir()
+        (sub / "nested_part.stl").write_bytes(b"nestedstl")
+        return external_dir
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_external_folder(self, async_client: AsyncClient, db_session, external_dir):
+        """Verify external folder can be created with valid path."""
+        data = {
+            "name": "NAS Prints",
+            "external_path": str(external_dir),
+            "readonly": True,
+            "show_hidden": False,
+        }
+        response = await async_client.post("/api/v1/library/folders/external", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["name"] == "NAS Prints"
+        assert result["is_external"] is True
+        assert result["external_readonly"] is True
+        assert result["external_show_hidden"] is False
+        assert result["external_path"] == str(external_dir.resolve())
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_external_folder_nonexistent_path(self, async_client: AsyncClient, db_session):
+        """Verify 400 for non-existent path."""
+        data = {
+            "name": "Bad Path",
+            "external_path": "/nonexistent/path/that/does/not/exist",
+        }
+        response = await async_client.post("/api/v1/library/folders/external", json=data)
+        assert response.status_code == 400
+        assert "does not exist" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_external_folder_system_dir_blocked(self, async_client: AsyncClient, db_session):
+        """Verify system directories are blocked."""
+        data = {
+            "name": "System",
+            "external_path": "/proc",
+        }
+        response = await async_client.post("/api/v1/library/folders/external", json=data)
+        assert response.status_code == 400
+        assert "system directory" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_external_folder_file_not_dir(self, async_client: AsyncClient, db_session, tmp_path):
+        """Verify 400 when path is a file, not directory."""
+        file_path = tmp_path / "not_a_dir.txt"
+        file_path.write_text("hello")
+        data = {
+            "name": "Not A Dir",
+            "external_path": str(file_path),
+        }
+        response = await async_client.post("/api/v1/library/folders/external", json=data)
+        assert response.status_code == 400
+        assert "not a directory" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_external_folder_duplicate_path(self, async_client: AsyncClient, db_session, external_dir):
+        """Verify 409 when same path already linked."""
+        data = {
+            "name": "First",
+            "external_path": str(external_dir),
+        }
+        response = await async_client.post("/api/v1/library/folders/external", json=data)
+        assert response.status_code == 200
+
+        data["name"] = "Duplicate"
+        response = await async_client.post("/api/v1/library/folders/external", json=data)
+        assert response.status_code == 409
+        assert "already exists" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_external_folder_appears_in_tree(self, async_client: AsyncClient, db_session, external_dir):
+        """Verify external folder shows up in folder tree with external fields."""
+        data = {
+            "name": "My NAS",
+            "external_path": str(external_dir),
+            "readonly": True,
+        }
+        await async_client.post("/api/v1/library/folders/external", json=data)
+
+        response = await async_client.get("/api/v1/library/folders")
+        assert response.status_code == 200
+        folders = response.json()
+        ext_folder = next((f for f in folders if f["name"] == "My NAS"), None)
+        assert ext_folder is not None
+        assert ext_folder["is_external"] is True
+        assert ext_folder["external_readonly"] is True
+
+
+class TestExternalFolderScan:
+    """Tests for POST /library/folders/{id}/scan."""
+
+    @pytest.fixture
+    def external_dir(self, tmp_path):
+        """Create a temporary directory with test files."""
+        ext_dir = tmp_path / "prints"
+        ext_dir.mkdir()
+        (ext_dir / "benchy.3mf").write_bytes(b"fake3mf")
+        (ext_dir / "bracket.stl").write_bytes(b"fakestl")
+        (ext_dir / "print.gcode").write_text("G28\nG1 X10 Y10")
+        (ext_dir / "readme.txt").write_text("not a print file")
+        (ext_dir / ".hidden.3mf").write_bytes(b"hidden")
+        sub = ext_dir / "subfolder"
+        sub.mkdir()
+        (sub / "nested.stl").write_bytes(b"nested")
+        return ext_dir
+
+    @pytest.fixture
+    async def external_folder(self, async_client, db_session, external_dir):
+        """Create an external folder via API."""
+        data = {
+            "name": "Scan Test",
+            "external_path": str(external_dir),
+            "readonly": True,
+            "show_hidden": False,
+        }
+        response = await async_client.post("/api/v1/library/folders/external", json=data)
+        return response.json()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_scan_discovers_files(self, async_client: AsyncClient, db_session, external_folder):
+        """Verify scan discovers supported files."""
+        response = await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
+        assert response.status_code == 200
+        result = response.json()
+        # Should find: benchy.3mf, bracket.stl, print.gcode, subfolder/nested.stl
+        # Should skip: readme.txt (unsupported), .hidden.3mf (hidden)
+        assert result["added"] == 4
+        assert result["removed"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_scan_skips_hidden_files(self, async_client: AsyncClient, db_session, external_folder):
+        """Verify hidden files are skipped by default."""
+        await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
+
+        # List files in folder
+        response = await async_client.get(f"/api/v1/library/files?folder_id={external_folder['id']}")
+        assert response.status_code == 200
+        files = response.json()
+        filenames = [f["filename"] for f in files]
+        assert ".hidden.3mf" not in filenames
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_scan_shows_hidden_when_enabled(self, async_client: AsyncClient, db_session, external_dir):
+        """Verify hidden files found when show_hidden=True."""
+        data = {
+            "name": "Show Hidden Test",
+            "external_path": str(external_dir),
+            "show_hidden": True,
+        }
+        response = await async_client.post("/api/v1/library/folders/external", json=data)
+        folder = response.json()
+
+        response = await async_client.post(f"/api/v1/library/folders/{folder['id']}/scan")
+        result = response.json()
+        # Now should also find .hidden.3mf → 5 total
+        assert result["added"] == 5
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_scan_idempotent(self, async_client: AsyncClient, db_session, external_folder):
+        """Verify scanning twice doesn't duplicate files."""
+        response1 = await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
+        assert response1.json()["added"] == 4
+
+        response2 = await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
+        assert response2.json()["added"] == 0
+        assert response2.json()["removed"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_scan_removes_deleted_files(
+        self, async_client: AsyncClient, db_session, external_folder, external_dir
+    ):
+        """Verify scan removes entries for files no longer on disk."""
+        await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
+
+        # Delete a file from disk
+        (external_dir / "bracket.stl").unlink()
+
+        response = await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
+        result = response.json()
+        assert result["removed"] == 1
+        assert result["added"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_scan_non_external_folder_fails(self, async_client: AsyncClient, db_session):
+        """Verify scan fails on regular (non-external) folder."""
+        # Create a regular folder
+        data = {"name": "Regular Folder"}
+        response = await async_client.post("/api/v1/library/folders", json=data)
+        folder = response.json()
+
+        response = await async_client.post(f"/api/v1/library/folders/{folder['id']}/scan")
+        assert response.status_code == 400
+        assert "not an external" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_scan_files_marked_external(self, async_client: AsyncClient, db_session, external_folder):
+        """Verify scanned files have is_external=True."""
+        await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
+
+        response = await async_client.get(f"/api/v1/library/files?folder_id={external_folder['id']}")
+        files = response.json()
+        assert len(files) > 0
+        for f in files:
+            assert f["is_external"] is True
+
+
+class TestExternalFolderProtections:
+    """Tests for read-only protections on external folders."""
+
+    @pytest.fixture
+    def external_dir(self, tmp_path):
+        ext_dir = tmp_path / "readonly_share"
+        ext_dir.mkdir()
+        (ext_dir / "test.stl").write_bytes(b"fakestl")
+        return ext_dir
+
+    @pytest.fixture
+    async def readonly_folder(self, async_client, db_session, external_dir):
+        """Create a read-only external folder with files scanned."""
+        data = {
+            "name": "Read Only",
+            "external_path": str(external_dir),
+            "readonly": True,
+        }
+        response = await async_client.post("/api/v1/library/folders/external", json=data)
+        folder = response.json()
+        await async_client.post(f"/api/v1/library/folders/{folder['id']}/scan")
+        return folder
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_to_readonly_folder_blocked(self, async_client: AsyncClient, db_session, readonly_folder):
+        """Verify uploads to read-only external folders are blocked."""
+        import io
+
+        file_content = io.BytesIO(b"test content")
+        response = await async_client.post(
+            f"/api/v1/library/files?folder_id={readonly_folder['id']}",
+            files={"file": ("test.gcode", file_content, "application/octet-stream")},
+        )
+        assert response.status_code == 403
+        assert "read-only" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_move_to_readonly_folder_blocked(self, async_client: AsyncClient, db_session, readonly_folder):
+        """Verify moving files to read-only external folder is blocked."""
+        from backend.app.models.library import LibraryFile
+
+        # Create a regular file
+        lib_file = LibraryFile(
+            filename="regular.3mf",
+            file_path="/test/regular.3mf",
+            file_size=1024,
+            file_type="3mf",
+        )
+        db_session.add(lib_file)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+
+        data = {"file_ids": [lib_file.id], "folder_id": readonly_folder["id"]}
+        response = await async_client.post("/api/v1/library/files/move", json=data)
+        assert response.status_code == 403
+        assert "read-only" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_external_files_cannot_be_moved_out(self, async_client: AsyncClient, db_session, readonly_folder):
+        """Verify external files can't be moved to other folders."""
+        # Get the external file ID
+        response = await async_client.get(f"/api/v1/library/files?folder_id={readonly_folder['id']}")
+        files = response.json()
+        assert len(files) > 0
+        ext_file_id = files[0]["id"]
+
+        # Try to move to root
+        data = {"file_ids": [ext_file_id], "folder_id": None}
+        response = await async_client.post("/api/v1/library/files/move", json=data)
+        assert response.status_code == 200
+        # File should be skipped, not moved
+        result = response.json()
+        assert result["moved"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_delete_external_file_removes_db_only(
+        self, async_client: AsyncClient, db_session, readonly_folder, external_dir
+    ):
+        """Verify deleting an external file only removes DB entry, not the file on disk."""
+        response = await async_client.get(f"/api/v1/library/files?folder_id={readonly_folder['id']}")
+        files = response.json()
+        ext_file_id = files[0]["id"]
+        ext_filename = files[0]["filename"]
+
+        # Delete via API
+        response = await async_client.delete(f"/api/v1/library/files/{ext_file_id}")
+        assert response.status_code == 200
+
+        # File should still exist on disk
+        assert (external_dir / ext_filename).exists()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_delete_external_folder_preserves_files(
+        self, async_client: AsyncClient, db_session, readonly_folder, external_dir
+    ):
+        """Verify deleting an external folder doesn't delete files from disk."""
+        response = await async_client.delete(f"/api/v1/library/folders/{readonly_folder['id']}")
+        assert response.status_code == 200
+
+        # Files should still exist on disk
+        assert (external_dir / "test.stl").exists()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_zip_to_readonly_folder_blocked(self, async_client: AsyncClient, db_session, readonly_folder):
+        """Verify ZIP extraction to read-only external folder is blocked."""
+        import io
+        import zipfile
+
+        # Create a minimal zip
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("test.stl", b"fakestl")
+        buf.seek(0)
+
+        response = await async_client.post(
+            f"/api/v1/library/files/extract-zip?folder_id={readonly_folder['id']}",
+            files={"file": ("test.zip", buf, "application/zip")},
+        )
+        assert response.status_code == 403
+        assert "read-only" in response.json()["detail"].lower()

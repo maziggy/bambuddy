@@ -361,6 +361,25 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
                 </label>
               </div>
 
+              {/* Auto Off Persistent */}
+              {plug.auto_off && (
+                <div className="flex items-center justify-between pl-4 border-l-2 border-bambu-dark-tertiary">
+                  <div>
+                    <p className="text-sm text-white">{t('smartPlugs.autoOffPersistent')}</p>
+                    <p className="text-xs text-bambu-gray">{t('smartPlugs.autoOffPersistentDescription')}</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={plug.auto_off_persistent}
+                      onChange={(e) => updateMutation.mutate({ auto_off_persistent: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-bambu-green"></div>
+                  </label>
+                </div>
+              )}
+
               {/* Delay Mode */}
               {plug.auto_off && (
                 <div className="space-y-3 pl-4 border-l-2 border-bambu-dark-tertiary">

@@ -16,6 +16,7 @@ class DeviceRegisterRequest(BaseModel):
     calibration_factor: float = 1.0
     nfc_reader_type: str | None = None
     nfc_connection: str | None = None
+    backend_url: str | None = None
     has_backlight: bool = False
 
 
@@ -31,6 +32,7 @@ class DeviceResponse(BaseModel):
     calibration_factor: float
     nfc_reader_type: str | None = None
     nfc_connection: str | None = None
+    backend_url: str | None = None
     display_brightness: int = 100
     display_blank_timeout: int = 0
     has_backlight: bool = False
@@ -42,7 +44,9 @@ class DeviceResponse(BaseModel):
     uptime_s: int
     update_status: str | None = None
     update_message: str | None = None
+    system_stats: dict | None = None
     online: bool = False
+    ssh_public_key: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -58,11 +62,14 @@ class HeartbeatRequest(BaseModel):
     ip_address: str | None = None
     nfc_reader_type: str | None = None
     nfc_connection: str | None = None
+    backend_url: str | None = None
+    system_stats: dict | None = None
 
 
 class HeartbeatResponse(BaseModel):
     pending_command: str | None = None
     pending_write_payload: dict | None = None
+    pending_system_payload: dict | None = None
     tare_offset: int
     calibration_factor: float
     display_brightness: int = 100
@@ -104,10 +111,6 @@ class UpdateSpoolWeightRequest(BaseModel):
 # --- Calibration schemas ---
 
 
-class TareRequest(BaseModel):
-    pass
-
-
 class SetTareRequest(BaseModel):
     tare_offset: int
 
@@ -142,3 +145,24 @@ class WriteTagResultRequest(BaseModel):
 class DisplaySettingsRequest(BaseModel):
     brightness: int = Field(ge=0, le=100)
     blank_timeout: int = Field(ge=0)
+
+
+class SystemConfigRequest(BaseModel):
+    backend_url: str = Field(..., min_length=1, max_length=255)
+    api_key: str | None = Field(default=None, max_length=255)
+
+
+class SystemCommandResultRequest(BaseModel):
+    command: str
+    success: bool
+    message: str | None = None
+
+
+# --- Diagnostics schemas ---
+
+
+class DiagnosticResultRequest(BaseModel):
+    diagnostic: str  # 'nfc', 'scale', or 'read_tag'
+    success: bool
+    output: str
+    exit_code: int

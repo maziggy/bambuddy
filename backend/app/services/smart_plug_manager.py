@@ -416,7 +416,7 @@ class SmartPlugManager:
             logger.warning("Failed to update plug %s pending state: %s", plug_id, e)
 
     async def _mark_auto_off_executed(self, plug_id: int):
-        """Disable auto-off after it was executed (one-shot behavior)."""
+        """Disable auto-off after it was executed (one-shot behavior unless persistent)."""
         try:
             from backend.app.core.database import async_session
             from backend.app.models.smart_plug import SmartPlug
@@ -425,14 +425,18 @@ class SmartPlugManager:
                 result = await db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
                 plug = result.scalar_one_or_none()
                 if plug:
-                    plug.auto_off = False  # Disable auto-off (one-shot behavior)
+                    if not plug.auto_off_persistent:
+                        plug.auto_off = False  # Disable auto-off (one-shot behavior)
                     plug.auto_off_executed = False  # Reset the flag
                     plug.auto_off_pending = False  # Clear pending state
                     plug.auto_off_pending_since = None
                     plug.last_state = "OFF"
                     plug.last_checked = datetime.now(timezone.utc)
                     await db.commit()
-                    logger.info("Auto-off executed and disabled for plug %s", plug_id)
+                    if plug.auto_off_persistent:
+                        logger.info("Auto-off executed for plug %s (persistent, stays enabled)", plug_id)
+                    else:
+                        logger.info("Auto-off executed and disabled for plug %s", plug_id)
         except Exception as e:
             logger.warning("Failed to update plug %s after auto-off: %s", plug_id, e)
 

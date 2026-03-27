@@ -12,7 +12,7 @@ def _set_sqlite_pragmas(dbapi_conn, connection_record):
     # WAL mode allows concurrent readers + one writer (vs default DELETE mode which locks entirely)
     cursor.execute("PRAGMA journal_mode = WAL")
     # Wait up to 5 seconds when the database is locked instead of failing immediately
-    cursor.execute("PRAGMA busy_timeout = 5000")
+    cursor.execute("PRAGMA busy_timeout = 15000")
     cursor.execute("PRAGMA synchronous = NORMAL")
     cursor.close()
 
@@ -20,8 +20,8 @@ def _set_sqlite_pragmas(dbapi_conn, connection_record):
 engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
-    pool_size=10,
-    max_overflow=20,
+    pool_size=20,
+    max_overflow=200,
 )
 
 # Register the pragma listener on the underlying sync engine
@@ -46,8 +46,8 @@ async def reinitialize_database():
     engine = create_async_engine(
         settings.database_url,
         echo=settings.debug,
-        pool_size=10,
-        max_overflow=20,
+        pool_size=20,
+        max_overflow=200,
     )
     event.listen(engine.sync_engine, "connect", _set_sqlite_pragmas)
     async_session = async_sessionmaker(
@@ -254,6 +254,14 @@ async def run_migrations(conn):
     except OperationalError:
         pass  # Already applied
 
+    # Migration: Add missing-spool-assignment print-start notification toggle
+    try:
+        await conn.execute(
+            text("ALTER TABLE notification_providers ADD COLUMN on_print_missing_spool_assignment BOOLEAN DEFAULT 0")
+        )
+    except OperationalError:
+        pass  # Already applied
+
     # Migration: Add project_id column to print_archives
     try:
         await conn.execute(
@@ -335,6 +343,12 @@ async def run_migrations(conn):
         pass  # Already applied
     try:
         await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN auto_off_pending_since DATETIME"))
+    except OperationalError:
+        pass  # Already applied
+
+    # Migration: Add auto_off_persistent column to smart_plugs (keep auto-off enabled between prints)
+    try:
+        await conn.execute(text("ALTER TABLE smart_plugs ADD COLUMN auto_off_persistent BOOLEAN DEFAULT 0"))
     except OperationalError:
         pass  # Already applied
 
@@ -589,6 +603,7 @@ async def run_migrations(conn):
                     enabled BOOLEAN NOT NULL DEFAULT 1,
                     auto_on BOOLEAN NOT NULL DEFAULT 1,
                     auto_off BOOLEAN NOT NULL DEFAULT 1,
+                    auto_off_persistent BOOLEAN NOT NULL DEFAULT 0,
                     off_delay_mode VARCHAR(20) NOT NULL DEFAULT 'time',
                     off_delay_minutes INTEGER NOT NULL DEFAULT 5,
                     off_temp_threshold INTEGER NOT NULL DEFAULT 70,
@@ -617,7 +632,8 @@ async def run_migrations(conn):
                 INSERT INTO smart_plugs_new
                 SELECT id, name, ip_address,
                        COALESCE(plug_type, 'tasmota'), ha_entity_id, printer_id,
-                       enabled, auto_on, auto_off, off_delay_mode, off_delay_minutes, off_temp_threshold,
+                       enabled, auto_on, auto_off, COALESCE(auto_off_persistent, 0),
+                       off_delay_mode, off_delay_minutes, off_temp_threshold,
                        username, password, power_alert_enabled, power_alert_high, power_alert_low,
                        power_alert_last_triggered, schedule_enabled, schedule_on_time, schedule_off_time,
                        COALESCE(show_in_switchbar, 0), last_state, last_checked, auto_off_executed,
@@ -886,6 +902,7 @@ async def run_migrations(conn):
                     enabled BOOLEAN NOT NULL DEFAULT 1,
                     auto_on BOOLEAN NOT NULL DEFAULT 1,
                     auto_off BOOLEAN NOT NULL DEFAULT 1,
+                    auto_off_persistent BOOLEAN NOT NULL DEFAULT 0,
                     off_delay_mode VARCHAR(20) NOT NULL DEFAULT 'time',
                     off_delay_minutes INTEGER NOT NULL DEFAULT 5,
                     off_temp_threshold INTEGER NOT NULL DEFAULT 70,
@@ -915,7 +932,8 @@ async def run_migrations(conn):
                 INSERT INTO smart_plugs_temp
                 SELECT id, name, ip_address, plug_type, ha_entity_id, ha_power_entity,
                        ha_energy_today_entity, ha_energy_total_entity, printer_id, enabled,
-                       auto_on, auto_off, off_delay_mode, off_delay_minutes, off_temp_threshold,
+                       auto_on, auto_off, COALESCE(auto_off_persistent, 0),
+                       off_delay_mode, off_delay_minutes, off_temp_threshold,
                        username, password, power_alert_enabled, power_alert_high, power_alert_low,
                        power_alert_last_triggered, schedule_enabled, schedule_on_time, schedule_off_time,
                        show_in_switchbar, last_state, last_checked, auto_off_executed,
@@ -1403,6 +1421,22 @@ async def run_migrations(conn):
         pass  # Already applied
     try:
         await conn.execute(text("ALTER TABLE spoolbuddy_devices ADD COLUMN update_message VARCHAR(255)"))
+    except OperationalError:
+        pass  # Already applied
+
+    # Migration: Persist SpoolBuddy backend URL and queued system payload
+    try:
+        await conn.execute(text("ALTER TABLE spoolbuddy_devices ADD COLUMN backend_url VARCHAR(255)"))
+    except OperationalError:
+        pass  # Already applied
+    try:
+        await conn.execute(text("ALTER TABLE spoolbuddy_devices ADD COLUMN pending_system_payload TEXT"))
+    except OperationalError:
+        pass  # Already applied
+
+    # Migration: Add system_stats JSON blob column to spoolbuddy_devices
+    try:
+        await conn.execute(text("ALTER TABLE spoolbuddy_devices ADD COLUMN system_stats TEXT"))
     except OperationalError:
         pass  # Already applied
 

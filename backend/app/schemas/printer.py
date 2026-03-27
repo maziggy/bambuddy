@@ -136,6 +136,7 @@ class AMSTray(BaseModel):
     nozzle_temp_max: int | None = None  # Max nozzle temperature
     drying_temp: int | None = None  # RFID-recommended drying temp
     drying_time: int | None = None  # RFID-recommended drying time (hours)
+    state: int | None = None  # AMS tray state: 9=empty, 10=spool present not loaded, 11=loaded
 
 
 class AMSUnit(BaseModel):

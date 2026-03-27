@@ -48,6 +48,7 @@ class SmartPlugBase(BaseModel):
     enabled: bool = True
     auto_on: bool = True
     auto_off: bool = True
+    auto_off_persistent: bool = False
     off_delay_mode: Literal["time", "temperature"] = "time"
     off_delay_minutes: int = Field(default=5, ge=0, le=60)
     off_temp_threshold: int = Field(default=70, ge=30, le=150)
@@ -115,6 +116,7 @@ class SmartPlugUpdate(BaseModel):
     enabled: bool | None = None
     auto_on: bool | None = None
     auto_off: bool | None = None
+    auto_off_persistent: bool | None = None
     off_delay_mode: Literal["time", "temperature"] | None = None
     off_delay_minutes: int | None = Field(default=None, ge=0, le=60)
     off_temp_threshold: int | None = Field(default=None, ge=30, le=150)

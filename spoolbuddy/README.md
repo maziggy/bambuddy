@@ -53,18 +53,15 @@ ls /dev/i2c-*
 Add the following lines under the `[all]` section:
 
 ```
-# SpoolBuddy: I2C bus 0 for NAU7802 scale (GPIO0/GPIO1)
-dtparam=i2c_vc=on
+# SpoolBuddy: I2C bus 1 for NAU7802 scale (GPIO2/GPIO3)
+dtparam=i2c_arm=on
 
 # SpoolBuddy: Disable SPI auto CS (manual CS on GPIO23 for PN5180)
 dtoverlay=spi0-0cs
 ```
 
-- `i2c_vc=on` enables I2C bus 0 (GPIO0/GPIO1). The default `i2c_arm` only
-  enables bus 1 (GPIO2/GPIO3). The NAU7802 is wired to bus 0.
-- `spi0-0cs` disables the kernel SPI driver's automatic chip-select. We use
+- `i2c_arm=on` enables I2C bus 1 (GPIO2/GPIO3). The NAU7802 is wired to bus 1.
   manual CS on GPIO23 because the driver's CS timing doesn't meet the PN5180's
-  requirements.
 
 Then reboot:
 
@@ -75,10 +72,10 @@ sudo reboot
 Verify after reboot:
 
 ```bash
-ls /dev/i2c-0
+ls /dev/i2c-1
 # Should exist
 
-sudo i2cdetect -y 0
+sudo i2cdetect -y 1
 # Should show 0x2A (NAU7802)
 ```
 
@@ -90,9 +87,6 @@ sudo apt install python3-spidev python3-libgpiod gpiod libgpiod3 i2c-tools
 
 - `python3-spidev` / `libgpiod3` — system libraries for SPI and GPIO access
 - `gpiod` — command-line GPIO tools (useful for debugging)
-- `i2c-tools` — I2C diagnostic tools (`i2cdetect`, `i2cget`, etc.)
-
-#### 4. Install Python dependencies (in venv)
 
 ```bash
 pip install spidev gpiod smbus2
@@ -100,9 +94,6 @@ pip install spidev gpiod smbus2
 
 - `spidev` — Python SPI bindings (PN5180 NFC reader)
 - `gpiod` — Python GPIO bindings via libgpiod (works on both RPi 4 and RPi 5)
-- `smbus2` — Python I2C bindings (NAU7802 scale)
-
-#### 5. Solder all connections
 
 Wago connectors or breadboard jumpers are unreliable for SPI — the PN5180
 is very sensitive to signal integrity issues (loose connections cause RF
@@ -132,7 +123,7 @@ Place a tag on the reader. Supported tag types:
 |---------------------|--------|------------------------------|
 | MIFARE Classic 1K   | `0x08` | Bambu Lab filament tags      |
 | MIFARE Classic 4K   | `0x18` | Bambu Lab filament tags      |
-| NTAG (213/215/216)  | `0x00` | SpoolEase / OpenPrintTag     |
+| NTAG (213/215/216)  | `0x00` / `0x04` | SpoolEase / OpenPrintTag     |
 
 ### Troubleshooting
 
@@ -150,34 +141,24 @@ Place a tag on the reader. Supported tag types:
 
 - SPI speed: **500 kHz** (higher speeds cause communication errors)
 - SPI mode: **0** (CPOL=0, CPHA=0)
-- CS timing: **5µs** setup after CS LOW, **100µs** hold after CS HIGH
-- BUSY handshake: wait for BUSY **HIGH** (processing started) then **LOW** (done) — waiting only for LOW is incorrect
-- `setTransceiveMode()`: must write `0x03` to SYSTEM_CONFIG bits 0-2 before every `SEND_DATA`, or the PN5180 buffers data but never transmits on RF
-- Bambu tags use **MIFARE Classic** with per-sector keys derived via **HKDF-SHA256** from a master key + tag UID
-- NTAG reads require **CRC disabled** (unlike MIFARE Classic which needs CRC enabled)
-- The PN5180 handles Crypto1 encryption/decryption internally via the `MFC_AUTHENTICATE` (0x0C) host command
 
----
-
-## NAU7802 Scale (I2C)
 
 ### Wiring
 
 | NAU7802 Pin | Raspberry Pi Pin | GPIO   | Wire Color |
 |-------------|------------------|--------|------------|
 | VCC         | Pin 1            | —      | Red        |
-| SDA         | Pin 27           | GPIO 0 | Yellow     |
-| SCL         | Pin 28           | GPIO 1 | White      |
+| SDA         | Pin 3            | GPIO 2 | Yellow     |
+| SCL         | Pin 5            | GPIO 3 | White      |
 | GND         | Pin 30           | —      | Black      |
 
-> **I2C Bus:** Uses I2C bus 0 (GPIO0/GPIO1), enabled via `dtparam=i2c_vc=on`
-> in config.txt. Bus 1 (GPIO2/GPIO3) is the default but those pins are not
-> used here.
+> **I2C Bus:** Uses I2C bus 1 (GPIO2/GPIO3), enabled via `dtparam=i2c_arm=on`
+> in config.txt.
 
 ### Verify
 
 ```bash
-sudo i2cdetect -y 0
+sudo i2cdetect -y 1
 # Should show 0x2A
 
 sudo python3 spoolbuddy/scale_diag.py

@@ -129,6 +129,7 @@ export interface AMSTray {
   nozzle_temp_max: number | null;  // Max nozzle temperature
   drying_temp: number | null;      // RFID-recommended drying temp
   drying_time: number | null;      // RFID-recommended drying time (hours)
+  state: number | null;            // AMS tray state: 9=empty, 10=spool present not loaded, 11=loaded
 }
 
 export interface AMSUnit {
@@ -1073,6 +1074,7 @@ export interface SmartPlug {
   enabled: boolean;
   auto_on: boolean;
   auto_off: boolean;
+  auto_off_persistent: boolean;
   off_delay_mode: 'time' | 'temperature';
   off_delay_minutes: number;
   off_temp_threshold: number;
@@ -1127,6 +1129,7 @@ export interface SmartPlugCreate {
   enabled?: boolean;
   auto_on?: boolean;
   auto_off?: boolean;
+  auto_off_persistent?: boolean;
   off_delay_mode?: 'time' | 'temperature';
   off_delay_minutes?: number;
   off_temp_threshold?: number;
@@ -1173,6 +1176,7 @@ export interface SmartPlugUpdate {
   enabled?: boolean;
   auto_on?: boolean;
   auto_off?: boolean;
+  auto_off_persistent?: boolean;
   off_delay_mode?: 'time' | 'temperature';
   off_delay_minutes?: number;
   off_temp_threshold?: number;
@@ -1469,6 +1473,7 @@ export interface NotificationProvider {
   on_print_failed: boolean;
   on_print_stopped: boolean;
   on_print_progress: boolean;
+  on_print_missing_spool_assignment: boolean;
   // Printer status events
   on_printer_offline: boolean;
   on_printer_error: boolean;
@@ -1523,6 +1528,7 @@ export interface NotificationProviderCreate {
   on_print_failed?: boolean;
   on_print_stopped?: boolean;
   on_print_progress?: boolean;
+  on_print_missing_spool_assignment?: boolean;
   // Printer status events
   on_printer_offline?: boolean;
   on_printer_error?: boolean;
@@ -1570,6 +1576,7 @@ export interface NotificationProviderUpdate {
   on_print_failed?: boolean;
   on_print_stopped?: boolean;
   on_print_progress?: boolean;
+  on_print_missing_spool_assignment?: boolean;
   // Printer status events
   on_printer_offline?: boolean;
   on_printer_error?: boolean;
@@ -4052,6 +4059,15 @@ export const api = {
     }),
   deleteLibraryFolder: (id: number) =>
     request<{ status: string; message: string }>(`/library/folders/${id}`, { method: 'DELETE' }),
+  createExternalFolder: (data: ExternalFolderCreate) =>
+    request<LibraryFolder>('/library/folders/external', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  scanExternalFolder: (folderId: number) =>
+    request<{ status: string; added: number; removed: number }>(`/library/folders/${folderId}/scan`, {
+      method: 'POST',
+    }),
   getLibraryFoldersByProject: (projectId: number) =>
     request<LibraryFolder[]>(`/library/folders/by-project/${projectId}`),
   getLibraryFoldersByArchive: (archiveId: number) =>
@@ -4436,6 +4452,9 @@ export interface LibraryFolderTree {
   archive_id: number | null;
   project_name: string | null;
   archive_name: string | null;
+  is_external: boolean;
+  external_path: string | null;
+  external_readonly: boolean;
   file_count: number;
   children: LibraryFolderTree[];
 }
@@ -4448,6 +4467,10 @@ export interface LibraryFolder {
   archive_id: number | null;
   project_name: string | null;
   archive_name: string | null;
+  is_external: boolean;
+  external_path: string | null;
+  external_readonly: boolean;
+  external_show_hidden: boolean;
   file_count: number;
   created_at: string;
   updated_at: string;
@@ -4458,6 +4481,14 @@ export interface LibraryFolderCreate {
   parent_id?: number | null;
   project_id?: number | null;
   archive_id?: number | null;
+}
+
+export interface ExternalFolderCreate {
+  name: string;
+  external_path: string;
+  readonly?: boolean;
+  show_hidden?: boolean;
+  parent_id?: number | null;
 }
 
 export interface LibraryFolderUpdate {
@@ -4481,6 +4512,7 @@ export interface LibraryFile {
   folder_name: string | null;
   project_id: number | null;
   project_name: string | null;
+  is_external: boolean;
   filename: string;
   file_path: string;
   file_type: string;
@@ -4508,6 +4540,7 @@ export interface LibraryFile {
 export interface LibraryFileListItem {
   id: number;
   folder_id: number | null;
+  is_external: boolean;
   filename: string;
   file_type: string;
   file_size: number;
@@ -4967,6 +5000,7 @@ export interface SpoolBuddyDevice {
   device_id: string;
   hostname: string;
   ip_address: string;
+  backend_url?: string | null;
   firmware_version: string | null;
   has_nfc: boolean;
   has_scale: boolean;
@@ -4985,6 +5019,15 @@ export interface SpoolBuddyDevice {
   uptime_s: number;
   update_status: string | null;
   update_message: string | null;
+  system_stats: {
+    os?: { os?: string; kernel?: string; arch?: string; python?: string };
+    cpu_temp_c?: number;
+    cpu_count?: number;
+    load_avg?: number[];
+    memory?: { total_mb?: number; available_mb?: number; used_mb?: number; percent?: number };
+    disk?: { total_gb?: number; used_gb?: number; free_gb?: number; percent?: number };
+    system_uptime_s?: number;
+  } | null;
   online: boolean;
 }
 
@@ -4992,7 +5035,6 @@ export interface DaemonUpdateCheck {
   current_version: string;
   latest_version: string | null;
   update_available: boolean;
-  release_url: string | null;
 }
 
 // SpoolBuddy API
@@ -5027,14 +5069,23 @@ export const spoolbuddyApi = {
       body: JSON.stringify({ brightness, blank_timeout: blankTimeout }),
     }),
 
-  checkDaemonUpdate: (deviceId: string, includeBeta?: boolean) =>
-    request<DaemonUpdateCheck>(`/spoolbuddy/devices/${deviceId}/update-check?include_beta=${includeBeta ?? false}`),
+  updateSystemConfig: (deviceId: string, backendUrl: string, apiKey?: string) =>
+    request<{ status: string; message: string }>(`/spoolbuddy/devices/${deviceId}/system/config`, {
+      method: 'POST',
+      body: JSON.stringify({ backend_url: backendUrl, ...(apiKey ? { api_key: apiKey } : {}) }),
+    }),
+
+  checkDaemonUpdate: (deviceId: string) =>
+    request<DaemonUpdateCheck>(`/spoolbuddy/devices/${deviceId}/update-check`),
 
   triggerUpdate: (deviceId: string) =>
     request<{ status: string; message: string }>(`/spoolbuddy/devices/${deviceId}/update`, {
       method: 'POST',
       body: '{}',
     }),
+
+  getSSHPublicKey: () =>
+    request<{ public_key: string }>('/spoolbuddy/ssh/public-key'),
 
   writeTag: (deviceId: string, spoolId: number) =>
     request<{ status: string }>('/spoolbuddy/nfc/write-tag', {
@@ -5047,6 +5098,18 @@ export const spoolbuddyApi = {
       method: 'POST',
       body: '{}',
     }),
+
+  queueDiagnostics: (deviceId: string, type: 'nfc' | 'scale' | 'read_tag') =>
+    request<{ status: string; diagnostic: string; message: string }>(
+      `/spoolbuddy/diagnostics/${deviceId}/run?diagnostic=${type}`,
+      { method: 'POST', body: '{}' }
+    ),
+
+  getDiagnosticResult: (deviceId: string, type: 'nfc' | 'scale' | 'read_tag') =>
+    request<{ diagnostic: string; success: boolean; output: string; exit_code: number }>(
+      `/spoolbuddy/diagnostics/${deviceId}/result?diagnostic=${type}`,
+      { method: 'GET' }
+    ),
 };
 
 export interface BugReportRequest {

@@ -43,6 +43,7 @@ const createMockPlug = (overrides: Partial<SmartPlug> = {}): SmartPlug => ({
   enabled: true,
   auto_on: true,
   auto_off: true,
+  auto_off_persistent: false,
   off_delay_mode: 'time',
   off_delay_minutes: 5,
   off_temp_threshold: 70,
@@ -238,6 +239,51 @@ describe('SmartPlugCard', () => {
 
       // onEdit should have been called (may not be called if edit button not found)
       // This test verifies the interaction pattern
+    });
+  });
+
+  describe('persistent auto-off', () => {
+    it('shows Keep Enabled toggle when auto_off is enabled', async () => {
+      const user = userEvent.setup();
+      const plug = createMockPlug({ auto_off: true, auto_off_persistent: false });
+      render(<SmartPlugCard plug={plug} onEdit={mockOnEdit} />);
+
+      await user.click(screen.getByText('Automation Settings'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Keep Enabled')).toBeInTheDocument();
+        expect(screen.getByText('Stay enabled between prints instead of one-shot')).toBeInTheDocument();
+      });
+    });
+
+    it('does not show Keep Enabled toggle when auto_off is disabled', async () => {
+      const user = userEvent.setup();
+      const plug = createMockPlug({ auto_off: false });
+      render(<SmartPlugCard plug={plug} onEdit={mockOnEdit} />);
+
+      await user.click(screen.getByText('Automation Settings'));
+
+      await waitFor(() => {
+        expect(screen.queryByText('Keep Enabled')).not.toBeInTheDocument();
+      });
+    });
+
+    it('shows Keep Enabled toggle for HA plugs with auto_off enabled', async () => {
+      const user = userEvent.setup();
+      const plug = createMockPlug({
+        plug_type: 'homeassistant',
+        ip_address: null,
+        ha_entity_id: 'switch.bentobox_filter',
+        auto_off: true,
+        auto_off_persistent: true,
+      });
+      render(<SmartPlugCard plug={plug} onEdit={mockOnEdit} />);
+
+      await user.click(screen.getByText('Automation Settings'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Keep Enabled')).toBeInTheDocument();
+      });
     });
   });
 

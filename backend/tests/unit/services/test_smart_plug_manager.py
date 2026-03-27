@@ -417,6 +417,149 @@ class TestGetPlugForPrinter:
         assert result is script1
 
 
+class TestAutoOffPersistent:
+    """Tests for persistent auto-off behavior (Issue #826).
+
+    When auto_off_persistent is True, auto_off should remain enabled after
+    execution instead of being disabled (one-shot default).
+    """
+
+    @pytest.fixture
+    def manager(self):
+        return SmartPlugManager()
+
+    @pytest.mark.asyncio
+    async def test_mark_auto_off_executed_one_shot_disables_auto_off(self, manager):
+        """Default one-shot: auto_off should be set to False after execution."""
+        mock_plug = MagicMock()
+        mock_plug.id = 1
+        mock_plug.auto_off = True
+        mock_plug.auto_off_persistent = False
+        mock_plug.auto_off_executed = False
+        mock_plug.auto_off_pending = True
+        mock_plug.auto_off_pending_since = datetime.now(timezone.utc)
+
+        with patch("backend.app.core.database.async_session") as mock_session_ctx:
+            mock_db = AsyncMock()
+            mock_result = MagicMock()
+            mock_result.scalar_one_or_none.return_value = mock_plug
+            mock_db.execute = AsyncMock(return_value=mock_result)
+            mock_db.commit = AsyncMock()
+
+            mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+            mock_session_ctx.return_value.__aexit__ = AsyncMock()
+
+            await manager._mark_auto_off_executed(1)
+
+            assert mock_plug.auto_off is False, "One-shot: auto_off should be disabled"
+            assert mock_plug.auto_off_pending is False
+            assert mock_plug.auto_off_pending_since is None
+            mock_db.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_mark_auto_off_executed_persistent_keeps_auto_off_enabled(self, manager):
+        """Persistent mode: auto_off should remain True after execution."""
+        mock_plug = MagicMock()
+        mock_plug.id = 2
+        mock_plug.auto_off = True
+        mock_plug.auto_off_persistent = True
+        mock_plug.auto_off_executed = False
+        mock_plug.auto_off_pending = True
+        mock_plug.auto_off_pending_since = datetime.now(timezone.utc)
+
+        with patch("backend.app.core.database.async_session") as mock_session_ctx:
+            mock_db = AsyncMock()
+            mock_result = MagicMock()
+            mock_result.scalar_one_or_none.return_value = mock_plug
+            mock_db.execute = AsyncMock(return_value=mock_result)
+            mock_db.commit = AsyncMock()
+
+            mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+            mock_session_ctx.return_value.__aexit__ = AsyncMock()
+
+            await manager._mark_auto_off_executed(2)
+
+            assert mock_plug.auto_off is True, "Persistent: auto_off should stay enabled"
+            assert mock_plug.auto_off_pending is False
+            assert mock_plug.auto_off_pending_since is None
+            mock_db.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_persistent_auto_off_full_cycle(self, manager):
+        """Verify persistent auto-off survives a full print cycle.
+
+        Simulates: print start → print complete → auto-off executes → next print start.
+        auto_off should remain True throughout for persistent plugs.
+        """
+        mock_plug = MagicMock()
+        mock_plug.id = 3
+        mock_plug.name = "HA BentoBox Filter"
+        mock_plug.plug_type = "homeassistant"
+        mock_plug.ha_entity_id = "switch.bentobox_filter"
+        mock_plug.ip_address = None
+        mock_plug.username = None
+        mock_plug.password = None
+        mock_plug.enabled = True
+        mock_plug.auto_on = True
+        mock_plug.auto_off = True
+        mock_plug.auto_off_persistent = True
+        mock_plug.off_delay_mode = "time"
+        mock_plug.off_delay_minutes = 1
+        mock_plug.off_temp_threshold = 70
+        mock_plug.printer_id = 1
+        mock_plug.auto_off_executed = False
+        mock_plug.auto_off_pending = False
+        mock_plug.last_state = "OFF"
+        mock_plug.last_checked = None
+
+        mock_db = AsyncMock()
+        mock_db.commit = AsyncMock()
+
+        # Step 1: Print starts — plug turns on
+        with (
+            patch.object(manager, "_get_plug_for_printer", new_callable=AsyncMock) as mock_get,
+            patch.object(manager, "get_service_for_plug", new_callable=AsyncMock) as mock_svc,
+        ):
+            mock_get.return_value = mock_plug
+            mock_service = AsyncMock()
+            mock_service.turn_on = AsyncMock(return_value=True)
+            mock_svc.return_value = mock_service
+
+            await manager.on_print_start(printer_id=1, db=mock_db)
+
+            assert mock_plug.auto_off_executed is False
+            assert mock_plug.auto_off is True  # Still enabled
+
+        # Step 2: Print completes — auto-off is scheduled
+        with (
+            patch.object(manager, "_get_plug_for_printer", new_callable=AsyncMock) as mock_get,
+            patch.object(manager, "_schedule_delayed_off") as mock_schedule,
+        ):
+            mock_get.return_value = mock_plug
+
+            await manager.on_print_complete(printer_id=1, status="completed", db=mock_db)
+
+            mock_schedule.assert_called_once()
+            assert mock_plug.auto_off is True  # Still enabled after scheduling
+
+        # Step 3: Auto-off executes via _mark_auto_off_executed
+        with patch("backend.app.core.database.async_session") as mock_session_ctx:
+            mock_db2 = AsyncMock()
+            mock_result = MagicMock()
+            mock_result.scalar_one_or_none.return_value = mock_plug
+            mock_db2.execute = AsyncMock(return_value=mock_result)
+            mock_db2.commit = AsyncMock()
+
+            mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=mock_db2)
+            mock_session_ctx.return_value.__aexit__ = AsyncMock()
+
+            await manager._mark_auto_off_executed(3)
+
+            # KEY ASSERTION: auto_off stays True for persistent mode
+            assert mock_plug.auto_off is True, "Persistent auto_off must survive execution"
+            assert mock_plug.auto_off_pending is False
+
+
 class TestScheduleLoop:
     """Tests for the schedule-based plug control."""
 

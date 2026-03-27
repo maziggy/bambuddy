@@ -3,12 +3,34 @@ import { useOutletContext } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
-import { api, spoolbuddyApi, type InventorySpool } from '../../api/client';
+import {
+  api,
+  spoolbuddyApi,
+  type InventorySpool,
+  type LocalPreset,
+  type SlicerSetting,
+  type SpoolCatalogEntry,
+} from '../../api/client';
+import { getCurrencySymbol } from '../../utils/currency';
+import { FilamentSection } from '../../components/spool-form/FilamentSection';
+import { ColorSection } from '../../components/spool-form/ColorSection';
+import { AdditionalSection } from '../../components/spool-form/AdditionalSection';
+import { PAProfileSection } from '../../components/spool-form/PAProfileSection';
+import type { ColorPreset, PrinterWithCalibrations, SpoolFormData } from '../../components/spool-form/types';
+import { defaultFormData, validateForm } from '../../components/spool-form/types';
+import {
+  buildFilamentOptions,
+  extractBrandsFromPresets,
+  findPresetOption,
+  loadRecentColors,
+  parsePresetName,
+  saveRecentColor,
+} from '../../components/spool-form/utils';
+import { MATERIALS } from '../../components/spool-form/constants';
 
 type Tab = 'existing' | 'new' | 'replace';
 type WriteStatus = 'idle' | 'selected' | 'writing' | 'success' | 'error';
-
-const COMMON_MATERIALS = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'PA', 'PC', 'PVA', 'HIPS'];
+const SIMPLE_COMMON_MATERIALS = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'PA', 'PC', 'PVA', 'HIPS'];
 
 export function SpoolBuddyWriteTagPage() {
   const { t } = useTranslation();
@@ -19,16 +41,10 @@ export function SpoolBuddyWriteTagPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [writeStatus, setWriteStatus] = useState<WriteStatus>('idle');
   const [writeMessage, setWriteMessage] = useState('');
+  const [untagging, setUntagging] = useState(false);
   const [tagOnReader, setTagOnReader] = useState(false);
   const [tagUid, setTagUid] = useState<string | null>(null);
 
-  // New spool form state
-  const [newMaterial, setNewMaterial] = useState('PLA');
-  const [newColorName, setNewColorName] = useState('');
-  const [newColorHex, setNewColorHex] = useState('#00AE42');
-  const [newBrand, setNewBrand] = useState('');
-  const [newWeight, setNewWeight] = useState(1000);
-  const [creating, setCreating] = useState(false);
 
   const { data: spools = [], refetch: refetchSpools } = useQuery({
     queryKey: ['inventory-spools'],
@@ -42,8 +58,14 @@ export function SpoolBuddyWriteTagPage() {
     refetchInterval: 5000,
   });
 
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: api.getSettings,
+  });
+
   const device = devices[0];
   const deviceOnline = sbState.deviceOnline;
+  const currencySymbol = getCurrencySymbol(settings?.currency || 'USD');
 
   // Filter spools based on tab
   const filteredSpools = useMemo(() => {
@@ -51,7 +73,7 @@ export function SpoolBuddyWriteTagPage() {
     if (activeTab === 'existing') {
       list = spools.filter(s => !s.tag_uid && !s.archived_at);
     } else if (activeTab === 'replace') {
-      list = spools.filter(s => s.tag_uid && !s.archived_at);
+      list = spools.filter(s => (s.tag_uid || s.tray_uuid) && !s.archived_at);
     } else {
       return [];
     }
@@ -157,45 +179,39 @@ export function SpoolBuddyWriteTagPage() {
     setWriteMessage('');
   };
 
-  const handleCreateAndSelect = async () => {
-    setCreating(true);
+  const handleUntagSpool = async () => {
+    if (!selectedSpool || !isReplaceTagged(selectedSpool)) return;
+    setUntagging(true);
+    setWriteStatus('idle');
+    setWriteMessage('');
     try {
-      const rgba = newColorHex.replace('#', '') + 'FF';
-      const spool = await api.createSpool({
-        material: newMaterial,
-        subtype: null,
-        color_name: newColorName || null,
-        rgba,
-        brand: newBrand || null,
-        label_weight: newWeight,
-        core_weight: 250,
-        core_weight_catalog_id: null,
-        weight_used: 0,
-        slicer_filament: null,
-        slicer_filament_name: null,
-        nozzle_temp_min: null,
-        nozzle_temp_max: null,
-        note: null,
-        added_full: true,
-        last_used: null,
-        encode_time: null,
-        tag_uid: null,
-        tray_uuid: null,
-        data_origin: null,
-        tag_type: null,
-        cost_per_kg: null,
-        last_scale_weight: null,
-        last_weighed_at: null,
+      await api.linkTagToSpool(selectedSpool.id, {
+        tag_uid: '',
+        tray_uuid: '',
+        data_origin: 'manual',
       });
-      setSelectedSpool(spool);
-      refetchSpools();
+      await refetchSpools();
+      setSelectedSpool(null);
+      setWriteStatus('success');
+      setWriteMessage(t('spoolbuddy.writeTag.untagSuccess', 'Tag removed from spool'));
+      setTimeout(() => {
+        setWriteStatus('idle');
+        setWriteMessage('');
+      }, 2500);
     } catch {
-      setWriteMessage(t('spoolbuddy.writeTag.createFailed', 'Failed to create spool'));
       setWriteStatus('error');
+      setWriteMessage(t('spoolbuddy.writeTag.untagFailed', 'Failed to remove tag from spool'));
     } finally {
-      setCreating(false);
+      setUntagging(false);
     }
   };
+
+  const handleSpoolCreated = useCallback((createdSpool: InventorySpool) => {
+    setSelectedSpool(createdSpool);
+    setWriteStatus('idle');
+    setWriteMessage('');
+    void refetchSpools();
+  }, [refetchSpools]);
 
   const canWrite = selectedSpool && deviceOnline && writeStatus !== 'writing' && writeStatus !== 'success';
 
@@ -227,19 +243,9 @@ export function SpoolBuddyWriteTagPage() {
         {/* Left panel — spool list or form */}
         <div className="flex-1 flex flex-col overflow-hidden border-r border-bambu-dark-tertiary">
           {activeTab === 'new' ? (
-            <NewSpoolForm
-              material={newMaterial}
-              setMaterial={setNewMaterial}
-              colorName={newColorName}
-              setColorName={setNewColorName}
-              colorHex={newColorHex}
-              setColorHex={setNewColorHex}
-              brand={newBrand}
-              setBrand={setNewBrand}
-              weight={newWeight}
-              setWeight={setNewWeight}
-              creating={creating}
-              onSubmit={handleCreateAndSelect}
+            <NewSpoolTouchForm
+              currencySymbol={currencySymbol}
+              onCreated={handleSpoolCreated}
               selectedSpool={selectedSpool}
               t={t}
             />
@@ -295,7 +301,10 @@ export function SpoolBuddyWriteTagPage() {
             deviceOnline={deviceOnline}
             canWrite={!!canWrite}
             isReplace={activeTab === 'replace'}
+            canUntag={activeTab === 'replace' && !!selectedSpool && isReplaceTagged(selectedSpool)}
+            untagging={untagging}
             onWrite={handleWriteTag}
+            onUntag={handleUntagSpool}
             onCancel={handleCancelWrite}
             onRetry={() => { setWriteStatus('idle'); setWriteMessage(''); }}
             t={t}
@@ -304,6 +313,10 @@ export function SpoolBuddyWriteTagPage() {
       </div>
     </div>
   );
+}
+
+function isReplaceTagged(spool: InventorySpool): boolean {
+  return !!(spool.tag_uid || spool.tray_uuid);
 }
 
 // --- Spool list item ---
@@ -358,118 +371,535 @@ function SpoolListItem({ spool, selected, showTag, onClick }: {
   );
 }
 
-// --- New spool form ---
-function NewSpoolForm({ material, setMaterial, colorName, setColorName, colorHex, setColorHex, brand, setBrand, weight, setWeight, creating, onSubmit, selectedSpool, t }: {
-  material: string;
-  setMaterial: (v: string) => void;
-  colorName: string;
-  setColorName: (v: string) => void;
-  colorHex: string;
-  setColorHex: (v: string) => void;
-  brand: string;
-  setBrand: (v: string) => void;
-  weight: number;
-  setWeight: (v: number) => void;
-  creating: boolean;
-  onSubmit: () => void;
+type NewSpoolSubTab = 'filament' | 'pa-profile';
+type NewSpoolViewMode = 'simple' | 'full';
+
+// --- New spool touch form (mirrors Add Spool fields/options in kiosk-friendly layout) ---
+function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, t }: {
+  currencySymbol: string;
+  onCreated: (spool: InventorySpool) => void;
   selectedSpool: InventorySpool | null;
   t: (key: string, fallback: string) => string;
 }) {
-  if (selectedSpool) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full p-6 text-center">
-        <div
-          className="w-12 h-12 rounded-full mb-4 border border-white/10"
-          style={{ backgroundColor: selectedSpool.rgba ? `#${selectedSpool.rgba.slice(0, 6)}` : '#666' }}
-        />
-        <p className="text-white font-medium">
-          {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}
-        </p>
-        {selectedSpool.color_name && <p className="text-zinc-400 text-sm">{selectedSpool.color_name}</p>}
-        <p className="text-zinc-500 text-xs mt-1">{selectedSpool.label_weight}g</p>
-        <p className="text-bambu-green text-sm mt-4">{t('spoolbuddy.writeTag.spoolCreated', 'Spool created! Ready to write.')}</p>
-      </div>
-    );
-  }
+  const [viewMode, setViewMode] = useState<NewSpoolViewMode>('simple');
+  const [activeSubTab, setActiveSubTab] = useState<NewSpoolSubTab>('filament');
+  const [formData, setFormData] = useState<SpoolFormData>(defaultFormData);
+  const [errors, setErrors] = useState<Partial<Record<keyof SpoolFormData, string>>>({});
+  const [quickAdd, setQuickAdd] = useState(false);
+  const [quantity, setQuantity] = useState(1);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  const [cloudAuthenticated, setCloudAuthenticated] = useState(false);
+  const [loadingCloudPresets, setLoadingCloudPresets] = useState(false);
+  const [cloudPresets, setCloudPresets] = useState<SlicerSetting[]>([]);
+  const [localPresets, setLocalPresets] = useState<LocalPreset[]>([]);
+  const [spoolCatalog, setSpoolCatalog] = useState<SpoolCatalogEntry[]>([]);
+  const [colorCatalog, setColorCatalog] = useState<
+    { manufacturer: string; color_name: string; hex_color: string; material: string | null }[]
+  >([]);
+  const [presetInputValue, setPresetInputValue] = useState('');
+  const [recentColors, setRecentColors] = useState<ColorPreset[]>([]);
+
+  const [printersWithCalibrations, setPrintersWithCalibrations] = useState<PrinterWithCalibrations[]>([]);
+  const [selectedProfiles, setSelectedProfiles] = useState<Set<string>>(new Set());
+  const [expandedPrinters, setExpandedPrinters] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setRecentColors(loadRecentColors());
+  }, []);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      // Only load full data when in full view mode
+      if (viewMode !== 'full') {
+        return;
+      }
+
+      setLoadingCloudPresets(true);
+      try {
+        const status = await api.getCloudStatus();
+        setCloudAuthenticated(status.is_authenticated);
+        if (status.is_authenticated) {
+          const presets = await api.getFilamentPresets();
+          setCloudPresets(presets);
+        }
+      } catch {
+        setCloudAuthenticated(false);
+      } finally {
+        setLoadingCloudPresets(false);
+      }
+
+      api.getSpoolCatalog().then(setSpoolCatalog).catch(() => undefined);
+      api.getColorCatalog().then(setColorCatalog).catch(() => undefined);
+      api.getLocalPresets().then(r => setLocalPresets(r.filament)).catch(() => undefined);
+
+      try {
+        const printers = await api.getPrinters();
+        const statuses = await Promise.all(printers.map(p => api.getPrinterStatus(p.id).catch(() => null)));
+        const results: PrinterWithCalibrations[] = [];
+        for (let i = 0; i < printers.length; i++) {
+          const printer = printers[i];
+          const status = statuses[i];
+          const connected = status?.connected ?? false;
+          let calibrations: PrinterWithCalibrations['calibrations'] = [];
+          if (connected) {
+            try {
+              const kRes = await api.getKProfiles(printer.id);
+              calibrations = kRes.profiles.map(p => ({
+                cali_idx: p.slot_id,
+                filament_id: p.filament_id,
+                setting_id: p.setting_id || '',
+                name: p.name,
+                k_value: parseFloat(p.k_value) || 0,
+                n_coef: parseFloat(p.n_coef) || 0,
+                extruder_id: p.extruder_id,
+                nozzle_diameter: p.nozzle_diameter,
+              }));
+            } catch {
+              // ignore per-printer unsupported profile endpoints
+            }
+          }
+          results.push({ printer: { ...printer, connected }, calibrations });
+        }
+        setPrintersWithCalibrations(results);
+      } catch {
+        // ignore calibration loading errors on kiosk form
+      }
+    };
+
+    fetchData();
+  }, [viewMode]);
+
+  useEffect(() => {
+    if (printersWithCalibrations.length > 0) {
+      setExpandedPrinters(new Set(printersWithCalibrations.map(p => String(p.printer.id))));
+    }
+  }, [printersWithCalibrations]);
+
+  const filamentOptions = useMemo(
+    () => buildFilamentOptions(cloudPresets, new Set(), localPresets),
+    [cloudPresets, localPresets],
+  );
+
+  const selectedPresetOption = useMemo(
+    () => findPresetOption(formData.slicer_filament, filamentOptions),
+    [formData.slicer_filament, filamentOptions],
+  );
+
+  const baseAvailableBrands = useMemo(() => {
+    const presetBrands = extractBrandsFromPresets(cloudPresets, localPresets);
+    const catalogBrands = colorCatalog
+      .map(entry => entry.manufacturer?.trim())
+      .filter((brand): brand is string => !!brand);
+    return Array.from(new Set<string>([...presetBrands, ...catalogBrands])).sort((a, b) => a.localeCompare(b));
+  }, [cloudPresets, localPresets, colorCatalog]);
+
+  const baseAvailableMaterials = useMemo(() => {
+    const catalogMaterials = colorCatalog
+      .map(entry => entry.material?.trim())
+      .filter((material): material is string => !!material);
+    return Array.from(new Set<string>([...MATERIALS, ...catalogMaterials])).sort((a, b) => a.localeCompare(b));
+  }, [colorCatalog]);
+
+  const brandMaterialPairs = useMemo(() => {
+    const pairs: Array<{ brand: string; material: string }> = [];
+    for (const entry of colorCatalog) {
+      const brand = entry.manufacturer?.trim();
+      const material = entry.material?.trim();
+      if (brand && material) pairs.push({ brand, material });
+    }
+    for (const preset of cloudPresets) {
+      const parsed = parsePresetName(preset.name);
+      if (parsed.brand && parsed.material) pairs.push({ brand: parsed.brand, material: parsed.material });
+    }
+    for (const preset of localPresets) {
+      const parsed = parsePresetName(preset.name);
+      const brand = preset.filament_vendor?.trim() || parsed.brand;
+      const material = parsed.material;
+      if (brand && material) pairs.push({ brand, material });
+    }
+    return pairs;
+  }, [cloudPresets, colorCatalog, localPresets]);
+
+  const brandToMaterials = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const pair of brandMaterialPairs) {
+      const brandKey = pair.brand.toLowerCase();
+      const materialKey = pair.material.toLowerCase();
+      if (!map.has(brandKey)) map.set(brandKey, new Set());
+      map.get(brandKey)!.add(materialKey);
+    }
+    return map;
+  }, [brandMaterialPairs]);
+
+  const materialToBrands = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const pair of brandMaterialPairs) {
+      const brandKey = pair.brand.toLowerCase();
+      const materialKey = pair.material.toLowerCase();
+      if (!map.has(materialKey)) map.set(materialKey, new Set());
+      map.get(materialKey)!.add(brandKey);
+    }
+    return map;
+  }, [brandMaterialPairs]);
+
+  const availableBrands = useMemo(() => {
+    if (!formData.material) return baseAvailableBrands;
+    const materialKey = formData.material.toLowerCase();
+    const brandKeys = materialToBrands.get(materialKey);
+    if (!brandKeys || brandKeys.size === 0) return baseAvailableBrands;
+    return baseAvailableBrands.filter(brand => brandKeys.has(brand.toLowerCase()));
+  }, [baseAvailableBrands, formData.material, materialToBrands]);
+
+  const availableMaterials = useMemo(() => {
+    if (!formData.brand) return baseAvailableMaterials;
+    const brandKey = formData.brand.toLowerCase();
+    const materialKeys = brandToMaterials.get(brandKey);
+    if (!materialKeys || materialKeys.size === 0) return baseAvailableMaterials;
+    return baseAvailableMaterials.filter(material => materialKeys.has(material.toLowerCase()));
+  }, [baseAvailableMaterials, formData.brand, brandToMaterials]);
+
+  const updateField = <K extends keyof SpoolFormData>(key: K, value: SpoolFormData[K]) => {
+    setFormData(prev => ({ ...prev, [key]: value }));
+    if (errors[key]) {
+      setErrors(prev => ({ ...prev, [key]: undefined }));
+    }
+  };
+
+  const handleColorUsed = (color: ColorPreset) => {
+    setRecentColors(prev => saveRecentColor(color, prev));
+  };
+
+  const saveKProfiles = async (spoolId: number) => {
+    if (selectedProfiles.size === 0) {
+      try {
+        await api.saveSpoolKProfiles(spoolId, []);
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    const profiles = [];
+    for (const key of selectedProfiles) {
+      const [printerIdStr, caliIdxStr, extruderStr] = key.split(':');
+      const printerId = parseInt(printerIdStr);
+      const caliIdx = parseInt(caliIdxStr);
+      const extruder = extruderStr === 'null' ? 0 : parseInt(extruderStr);
+
+      const pc = printersWithCalibrations.find(p => p.printer.id === printerId);
+      if (pc) {
+        const cal = pc.calibrations.find(c => c.cali_idx === caliIdx);
+        if (cal) {
+          profiles.push({
+            printer_id: printerId,
+            extruder,
+            nozzle_diameter: cal.nozzle_diameter || '0.4',
+            k_value: cal.k_value,
+            name: cal.name || null,
+            cali_idx: cal.cali_idx,
+            setting_id: cal.setting_id || null,
+          });
+        }
+      }
+    }
+
+    if (profiles.length > 0) {
+      await api.saveSpoolKProfiles(spoolId, profiles);
+    }
+  };
+
+  const handleCreate = async () => {
+    setCreateError(null);
+    const validation = validateForm(formData, viewMode === 'simple' ? true : quickAdd);
+    if (!validation.isValid) {
+      setErrors(validation.errors);
+      setActiveSubTab('filament');
+      return;
+    }
+
+    const presetName = selectedPresetOption?.displayName || presetInputValue || null;
+    const payload = {
+      material: formData.material,
+      subtype: formData.subtype || null,
+      brand: formData.brand || null,
+      color_name: formData.color_name || null,
+      rgba: formData.rgba || null,
+      label_weight: formData.label_weight,
+      core_weight: formData.core_weight,
+      core_weight_catalog_id: formData.core_weight_catalog_id,
+      weight_used: formData.weight_used,
+      slicer_filament: formData.slicer_filament || null,
+      slicer_filament_name: presetName,
+      nozzle_temp_min: null,
+      nozzle_temp_max: null,
+      note: formData.note || null,
+      cost_per_kg: formData.cost_per_kg,
+      added_full: null,
+      last_used: null,
+      encode_time: null,
+      tag_uid: null,
+      tray_uuid: null,
+      data_origin: null,
+      tag_type: null,
+      last_scale_weight: null,
+      last_weighed_at: null,
+    };
+
+    setCreating(true);
+    try {
+      if (quantity > 1) {
+        const created = await api.bulkCreateSpools(payload, quantity);
+        for (const spool of created) {
+          await saveKProfiles(spool.id);
+        }
+        if (created.length > 0) onCreated(created[0]);
+      } else {
+        const created = await api.createSpool(payload);
+        await saveKProfiles(created.id);
+        onCreated(created);
+      }
+    } catch {
+      setCreateError(t('spoolbuddy.writeTag.createFailed', 'Failed to create spool'));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const simpleColorHex = `#${(formData.rgba || '808080FF').slice(0, 6)}`;
 
   return (
-    <div className="p-4 space-y-4 overflow-y-auto">
-      {/* Material */}
-      <div>
-        <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.material', 'Material')}</label>
-        <select
-          value={material}
-          onChange={(e) => setMaterial(e.target.value)}
-          className="w-full px-3 py-2 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded text-sm text-white focus:outline-none focus:border-bambu-green"
+    <div className="p-3 space-y-3 overflow-y-auto h-full">
+      <div className="flex items-center justify-between px-2 py-2 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary">
+        <span className="text-sm text-zinc-200">{t('spoolbuddy.writeTag.viewMode', 'View')}</span>
+        <div className="flex rounded-lg overflow-hidden border border-bambu-dark-tertiary">
+          <button
+            type="button"
+            onClick={() => setViewMode('simple')}
+            className={`px-3 py-1.5 text-xs font-medium ${
+              viewMode === 'simple' ? 'bg-bambu-green/20 text-bambu-green' : 'bg-bambu-dark text-zinc-400'
+            }`}
+          >
+            {t('spoolbuddy.writeTag.simpleView', 'Simple')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('full')}
+            className={`px-3 py-1.5 text-xs font-medium ${
+              viewMode === 'full' ? 'bg-bambu-green/20 text-bambu-green' : 'bg-bambu-dark text-zinc-400'
+            }`}
+          >
+            {t('spoolbuddy.writeTag.fullView', 'Full')}
+          </button>
+        </div>
+      </div>
+
+      {viewMode === 'simple' ? (
+        selectedSpool ? (
+          <div className="flex flex-col items-center justify-center h-full p-6 text-center bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
+            <div
+              className="w-12 h-12 rounded-full mb-4 border border-white/10"
+              style={{ backgroundColor: selectedSpool.rgba ? `#${selectedSpool.rgba.slice(0, 6)}` : '#666' }}
+            />
+            <p className="text-white font-medium">
+              {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}
+            </p>
+            {selectedSpool.color_name && <p className="text-zinc-400 text-sm">{selectedSpool.color_name}</p>}
+            <p className="text-zinc-500 text-xs mt-1">{selectedSpool.label_weight}g</p>
+            <p className="text-bambu-green text-sm mt-4">{t('spoolbuddy.writeTag.spoolCreated', 'Spool created! Ready to write.')}</p>
+          </div>
+        ) : (
+          <div className="p-4 space-y-4 overflow-y-auto bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.material', 'Material')}</label>
+              <select
+                value={formData.material}
+                onChange={(e) => updateField('material', e.target.value)}
+                className="w-full px-3 py-2 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded text-sm text-white focus:outline-none focus:border-bambu-green"
+              >
+                {SIMPLE_COMMON_MATERIALS.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.colorName', 'Color Name')}</label>
+                <input
+                  type="text"
+                  value={formData.color_name}
+                  onChange={(e) => updateField('color_name', e.target.value)}
+                  placeholder="Jade White"
+                  className="w-full px-3 py-2 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-bambu-green"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.color', 'Color')}</label>
+                <input
+                  type="color"
+                  value={simpleColorHex}
+                  onChange={(e) => updateField('rgba', e.target.value.replace('#', '').toUpperCase() + 'FF')}
+                  className="w-10 h-9 bg-transparent border border-bambu-dark-tertiary rounded cursor-pointer"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.brand', 'Brand')}</label>
+              <input
+                type="text"
+                value={formData.brand}
+                onChange={(e) => updateField('brand', e.target.value)}
+                placeholder="Polymaker"
+                className="w-full px-3 py-2 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-bambu-green"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.weight', 'Weight (g)')}</label>
+              <input
+                type="number"
+                value={formData.label_weight}
+                onChange={(e) => updateField('label_weight', parseInt(e.target.value) || 0)}
+                min={0}
+                max={10000}
+                className="w-full px-3 py-2 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded text-sm text-white focus:outline-none focus:border-bambu-green"
+              />
+            </div>
+
+            <button
+              onClick={handleCreate}
+              disabled={creating || !formData.material}
+              className="w-full py-2.5 bg-bambu-green hover:bg-bambu-green/80 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded transition-colors"
+            >
+              {creating ? t('spoolbuddy.writeTag.creating', 'Creating...') : t('spoolbuddy.writeTag.createSpool', 'Create Spool')}
+            </button>
+          </div>
+        )
+      ) : (
+        <>
+      <div className="flex items-center justify-between px-2 py-2 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary">
+        <span className="text-sm text-zinc-200">{t('inventory.quickAdd', 'Quick Add')}</span>
+        <button
+          type="button"
+          onClick={() => setQuickAdd((prev) => !prev)}
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+            quickAdd ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
+          }`}
         >
-          {COMMON_MATERIALS.map(m => <option key={m} value={m}>{m}</option>)}
-        </select>
+          <span className={`inline-block h-4.5 w-4.5 rounded-full bg-white transition-transform ${quickAdd ? 'translate-x-6' : 'translate-x-1'}`} />
+        </button>
       </div>
 
-      {/* Color name + picker */}
-      <div className="flex gap-3">
-        <div className="flex-1">
-          <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.colorName', 'Color Name')}</label>
-          <input
-            type="text"
-            value={colorName}
-            onChange={(e) => setColorName(e.target.value)}
-            placeholder="Jade White"
-            className="w-full px-3 py-2 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-bambu-green"
+      <div className="flex border border-bambu-dark-tertiary rounded-lg overflow-hidden">
+        <button
+          onClick={() => setActiveSubTab('filament')}
+          className={`flex-1 py-2.5 text-sm font-medium ${
+            activeSubTab === 'filament' ? 'bg-bambu-green/15 text-bambu-green' : 'bg-bambu-dark-secondary text-zinc-400'
+          }`}
+        >
+          {t('inventory.filamentInfoTab', 'Filament')}
+        </button>
+        {!quickAdd && (
+          <button
+            onClick={() => setActiveSubTab('pa-profile')}
+            className={`flex-1 py-2.5 text-sm font-medium ${
+              activeSubTab === 'pa-profile' ? 'bg-bambu-green/15 text-bambu-green' : 'bg-bambu-dark-secondary text-zinc-400'
+            }`}
+          >
+            {t('inventory.paProfileTab', 'PA Profile')}
+          </button>
+        )}
+      </div>
+
+      <div className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg p-3">
+        {activeSubTab === 'filament' ? (
+          <div className="space-y-4">
+            <FilamentSection
+              formData={formData}
+              updateField={updateField}
+              cloudAuthenticated={cloudAuthenticated}
+              loadingCloudPresets={loadingCloudPresets}
+              presetInputValue={presetInputValue}
+              setPresetInputValue={setPresetInputValue}
+              selectedPresetOption={selectedPresetOption}
+              filamentOptions={filamentOptions}
+              availableBrands={availableBrands}
+              availableMaterials={availableMaterials}
+              quickAdd={quickAdd}
+              quantity={quantity}
+              onQuantityChange={setQuantity}
+              errors={errors}
+            />
+
+            <ColorSection
+              formData={formData}
+              updateField={updateField}
+              recentColors={recentColors}
+              onColorUsed={handleColorUsed}
+              catalogColors={colorCatalog}
+            />
+
+            <AdditionalSection
+              formData={formData}
+              updateField={updateField}
+              spoolCatalog={spoolCatalog}
+              currencySymbol={currencySymbol}
+            />
+          </div>
+        ) : (
+          <PAProfileSection
+            formData={formData}
+            updateField={updateField}
+            printersWithCalibrations={printersWithCalibrations}
+            selectedProfiles={selectedProfiles}
+            setSelectedProfiles={setSelectedProfiles}
+            expandedPrinters={expandedPrinters}
+            setExpandedPrinters={setExpandedPrinters}
           />
+        )}
+      </div>
+        </>
+      )}
+
+      {createError && (
+        <div className="text-sm text-red-400 bg-red-900/20 border border-red-900/40 rounded-lg px-3 py-2">
+          {createError}
         </div>
-        <div>
-          <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.color', 'Color')}</label>
-          <input
-            type="color"
-            value={colorHex}
-            onChange={(e) => setColorHex(e.target.value)}
-            className="w-10 h-9 bg-transparent border border-bambu-dark-tertiary rounded cursor-pointer"
+      )}
+
+      {viewMode === 'full' && (
+        <button
+          onClick={handleCreate}
+          disabled={creating}
+          className="w-full py-3 bg-bambu-green hover:bg-bambu-green/80 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded transition-colors"
+        >
+          {creating ? t('spoolbuddy.writeTag.creating', 'Creating...') : t('spoolbuddy.writeTag.createSpool', 'Create Spool')}
+        </button>
+      )}
+
+      {viewMode === 'full' && selectedSpool && (
+        <div className="flex flex-col items-center justify-center p-4 text-center bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
+          <div
+            className="w-12 h-12 rounded-full mb-4 border border-white/10"
+            style={{ backgroundColor: selectedSpool.rgba ? `#${selectedSpool.rgba.slice(0, 6)}` : '#666' }}
           />
+          <p className="text-white font-medium">
+            {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}
+          </p>
+          {selectedSpool.color_name && <p className="text-zinc-400 text-sm">{selectedSpool.color_name}</p>}
+          <p className="text-zinc-500 text-xs mt-1">{selectedSpool.label_weight}g</p>
+          <p className="text-bambu-green text-sm mt-4">{t('spoolbuddy.writeTag.spoolCreated', 'Spool created! Ready to write.')}</p>
         </div>
-      </div>
-
-      {/* Brand */}
-      <div>
-        <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.brand', 'Brand')}</label>
-        <input
-          type="text"
-          value={brand}
-          onChange={(e) => setBrand(e.target.value)}
-          placeholder="Polymaker"
-          className="w-full px-3 py-2 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-bambu-green"
-        />
-      </div>
-
-      {/* Weight */}
-      <div>
-        <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.weight', 'Weight (g)')}</label>
-        <input
-          type="number"
-          value={weight}
-          onChange={(e) => setWeight(parseInt(e.target.value) || 0)}
-          min={0}
-          max={10000}
-          className="w-full px-3 py-2 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded text-sm text-white focus:outline-none focus:border-bambu-green"
-        />
-      </div>
-
-      {/* Create button */}
-      <button
-        onClick={onSubmit}
-        disabled={creating || !material}
-        className="w-full py-2.5 bg-bambu-green hover:bg-bambu-green/80 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded transition-colors"
-      >
-        {creating
-          ? t('spoolbuddy.writeTag.creating', 'Creating...')
-          : t('spoolbuddy.writeTag.createSpool', 'Create Spool')}
-      </button>
+      )}
     </div>
   );
 }
 
 // --- NFC status panel ---
-function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader, tagUid, deviceOnline, canWrite, isReplace, onWrite, onCancel, onRetry, t }: {
+function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader, tagUid, deviceOnline, canWrite, isReplace, canUntag, untagging, onWrite, onUntag, onCancel, onRetry, t }: {
   writeStatus: WriteStatus;
   writeMessage: string;
   selectedSpool: InventorySpool | null;
@@ -478,7 +908,10 @@ function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader,
   deviceOnline: boolean;
   canWrite: boolean;
   isReplace: boolean;
+  canUntag: boolean;
+  untagging: boolean;
   onWrite: () => void;
+  onUntag: () => void;
   onCancel: () => void;
   onRetry: () => void;
   t: (key: string, fallback: string) => string;
@@ -630,6 +1063,19 @@ function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader,
           ? t('spoolbuddy.writeTag.replaceTag', 'Replace Tag')
           : t('spoolbuddy.writeTag.writeTag', 'Write Tag')}
       </button>
+
+      {isReplace && canUntag && (
+        <button
+          onClick={onUntag}
+          disabled={untagging}
+          className="w-full py-2.5 bg-bambu-dark-tertiary hover:bg-bambu-dark-secondary disabled:opacity-40 disabled:cursor-not-allowed text-zinc-200 rounded-lg transition-colors text-sm"
+        >
+          {untagging
+            ? t('spoolbuddy.writeTag.untagging', 'Removing tag...')
+            : t('spoolbuddy.writeTag.untagSpool', 'Untag Selected Spool')}
+        </button>
+      )}
+
     </div>
   );
 }

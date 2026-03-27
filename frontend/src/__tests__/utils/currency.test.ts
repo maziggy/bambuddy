@@ -26,6 +26,10 @@ describe('getCurrencySymbol', () => {
     expect(getCurrencySymbol('MYR')).toBe('RM');
   });
 
+  it('returns ₴ for UAH', () => {
+    expect(getCurrencySymbol('UAH')).toBe('₴');
+  });
+
   it('returns the code itself for unknown currencies', () => {
     expect(getCurrencySymbol('XYZ')).toBe('XYZ');
   });
@@ -46,6 +50,6 @@ describe('SUPPORTED_CURRENCIES', () => {
   });
 
   it('has 28 entries', () => {
-    expect(SUPPORTED_CURRENCIES).toHaveLength(28);
+    expect(SUPPORTED_CURRENCIES).toHaveLength(29);
   });
 });

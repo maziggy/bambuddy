@@ -418,6 +418,7 @@ async def get_printer_status(
                         nozzle_temp_max=tray_data.get("nozzle_temp_max"),
                         drying_temp=tray_data.get("drying_temp"),
                         drying_time=tray_data.get("drying_time"),
+                        state=tray_data.get("state"),
                     )
                 )
             # Prefer humidity_raw (percentage) over humidity (index 1-5)

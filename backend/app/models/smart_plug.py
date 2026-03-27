@@ -57,6 +57,7 @@ class SmartPlug(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     auto_on: Mapped[bool] = mapped_column(Boolean, default=True)  # Turn on at print start
     auto_off: Mapped[bool] = mapped_column(Boolean, default=True)  # Turn off at print complete/fail
+    auto_off_persistent: Mapped[bool] = mapped_column(Boolean, default=False)  # Keep auto-off enabled between prints
 
     # Turn-off delay mode: "time" or "temperature"
     off_delay_mode: Mapped[str] = mapped_column(String(20), default="time")

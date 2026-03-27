@@ -565,6 +565,8 @@ class BackgroundDispatchService:
             elif base_name.endswith(".3mf"):
                 base_name = base_name[:-4]
             remote_filename = f"{base_name}.3mf"
+            # Sanitize: firmware parses ftp://{filename} as a URL, spaces break it
+            remote_filename = remote_filename.replace(" ", "_")
             remote_path = f"/{remote_filename}"
 
             ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
@@ -732,6 +734,8 @@ class BackgroundDispatchService:
             elif base_name.endswith(".3mf"):
                 base_name = base_name[:-4]
             remote_filename = f"{base_name}.3mf"
+            # Sanitize: firmware parses ftp://{filename} as a URL, spaces break it
+            remote_filename = remote_filename.replace(" ", "_")
             remote_path = f"/{remote_filename}"
 
             ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()

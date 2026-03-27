@@ -43,6 +43,7 @@ def _provider_to_dict(provider: NotificationProvider) -> dict:
         "on_print_failed": provider.on_print_failed,
         "on_print_stopped": provider.on_print_stopped,
         "on_print_progress": provider.on_print_progress,
+        "on_print_missing_spool_assignment": provider.on_print_missing_spool_assignment,
         # Printer status events
         "on_printer_offline": provider.on_printer_offline,
         "on_printer_error": provider.on_printer_error,
@@ -122,6 +123,7 @@ async def create_notification_provider(
         on_print_failed=provider_data.on_print_failed,
         on_print_stopped=provider_data.on_print_stopped,
         on_print_progress=provider_data.on_print_progress,
+        on_print_missing_spool_assignment=provider_data.on_print_missing_spool_assignment,
         # Printer status events
         on_printer_offline=provider_data.on_printer_offline,
         on_printer_error=provider_data.on_printer_error,

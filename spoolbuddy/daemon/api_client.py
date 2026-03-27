@@ -69,6 +69,7 @@ class APIClient:
         calibration_factor: float = 1.0,
         nfc_reader_type: str | None = None,
         nfc_connection: str | None = None,
+        backend_url: str | None = None,
         has_backlight: bool = False,
     ) -> dict | None:
         while True:
@@ -85,6 +86,7 @@ class APIClient:
                     "calibration_factor": calibration_factor,
                     "nfc_reader_type": nfc_reader_type,
                     "nfc_connection": nfc_connection,
+                    "backend_url": backend_url,
                     "has_backlight": has_backlight,
                 },
             )
@@ -105,18 +107,24 @@ class APIClient:
         firmware_version: str | None = None,
         nfc_reader_type: str | None = None,
         nfc_connection: str | None = None,
+        backend_url: str | None = None,
+        system_stats: dict | None = None,
     ) -> dict | None:
+        payload: dict = {
+            "nfc_ok": nfc_ok,
+            "scale_ok": scale_ok,
+            "uptime_s": uptime_s,
+            "ip_address": ip_address,
+            "firmware_version": firmware_version,
+            "nfc_reader_type": nfc_reader_type,
+            "nfc_connection": nfc_connection,
+            "backend_url": backend_url,
+        }
+        if system_stats is not None:
+            payload["system_stats"] = system_stats
         result = await self._post(
             f"/devices/{device_id}/heartbeat",
-            {
-                "nfc_ok": nfc_ok,
-                "scale_ok": scale_ok,
-                "uptime_s": uptime_s,
-                "ip_address": ip_address,
-                "firmware_version": firmware_version,
-                "nfc_reader_type": nfc_reader_type,
-                "nfc_connection": nfc_connection,
-            },
+            payload,
         )
         if result and self._buffer:
             await self._flush_buffer()
@@ -187,4 +195,38 @@ class APIClient:
         return await self._post(
             f"/devices/{device_id}/update-status",
             {"status": status, "message": message},
+        )
+
+    async def diagnostic_result(
+        self,
+        device_id: str,
+        diagnostic: str,
+        success: bool,
+        output: str,
+        exit_code: int,
+    ) -> dict | None:
+        return await self._post(
+            f"/diagnostics/{device_id}/result",
+            {
+                "diagnostic": diagnostic,
+                "success": success,
+                "output": output,
+                "exit_code": exit_code,
+            },
+        )
+
+    async def system_command_result(
+        self,
+        device_id: str,
+        command: str,
+        success: bool,
+        message: str | None = None,
+    ) -> dict | None:
+        return await self._post(
+            f"/devices/{device_id}/system/command-result",
+            {
+                "command": command,
+                "success": success,
+                "message": message,
+            },
         )

@@ -1,10 +1,14 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useToast } from '../contexts/ToastContext';
+import { useTranslation } from 'react-i18next';
 
 interface WebSocketMessage {
   type: string;
   printer_id?: number;
   data?: Record<string, unknown>;
+  printer_name?: string;
+  missing_slots?: Array<{ slot?: string }>;
 }
 
 export function useWebSocket() {
@@ -12,6 +16,9 @@ export function useWebSocket() {
   const reconnectTimeoutRef = useRef<number | null>(null);
   const queryClient = useQueryClient();
   const [isConnected, setIsConnected] = useState(false);
+  const lastMissingSpoolWarningRef = useRef<Map<number, string>>(new Map());
+  const { showToast } = useToast();
+  const { t } = useTranslation();
 
   // Debounce invalidations to prevent rapid re-render cascades
   const pendingInvalidations = useRef<Set<string>>(new Set());
@@ -195,6 +202,35 @@ export function useWebSocket() {
         }
         break;
 
+      case 'missing_spool_assignment': {
+        if (message.printer_id === undefined || !Array.isArray(message.missing_slots)) {
+          break;
+        }
+
+        const missingSlotLabels = message.missing_slots
+          .map((slot) => (slot && typeof slot.slot === 'string' ? slot.slot : 'Unknown'))
+          .filter((slot) => slot.length > 0);
+
+        if (missingSlotLabels.length === 0) {
+          lastMissingSpoolWarningRef.current.delete(message.printer_id);
+          break;
+        }
+
+        const signature = missingSlotLabels.join('|');
+        if (lastMissingSpoolWarningRef.current.get(message.printer_id) === signature) {
+          break;
+        }
+        lastMissingSpoolWarningRef.current.set(message.printer_id, signature);
+
+        const printerName = message.printer_name || `Printer ${message.printer_id}`;
+        const toastMsg = t('printers.toast.missingSpoolAssignment', {
+          printer: printerName,
+          slots: missingSlotLabels.join(', '),
+        });
+        showToast(toastMsg, 'warning');
+        break;
+      }
+
       case 'print_complete':
         // Don't invalidate printerStatus here - it causes re-render cascade and browser freeze
         // The printer_status websocket messages will naturally update the status
@@ -225,6 +261,12 @@ export function useWebSocket() {
             message: (message as unknown as { message?: string }).message,
           }
         }));
+        break;
+
+      case 'spool_assignment_changed':
+        // Spool assigned/unassigned - refresh assignment data across all tabs
+        debouncedInvalidate('spool-assignments');
+        debouncedInvalidate('slotPresets');
         break;
 
       case 'spool_auto_assigned':
@@ -287,13 +329,21 @@ export function useWebSocket() {
 
       case 'spoolbuddy_online':
         window.dispatchEvent(new CustomEvent('spoolbuddy-online', { detail: message }));
+        debouncedInvalidate('spoolbuddy-devices');
+        debouncedInvalidate('spoolbuddy-update-check');
         break;
 
       case 'spoolbuddy_offline':
         window.dispatchEvent(new CustomEvent('spoolbuddy-offline', { detail: message }));
+        debouncedInvalidate('spoolbuddy-devices');
+        break;
+
+      case 'spoolbuddy_update':
+        debouncedInvalidate('spoolbuddy-devices');
+        debouncedInvalidate('spoolbuddy-update-check');
         break;
     }
-  }, [queryClient, debouncedInvalidate, throttledPrinterStatusUpdate]);
+  }, [queryClient, debouncedInvalidate, throttledPrinterStatusUpdate, showToast, t]);
 
   // Keep the ref updated with latest handleMessage
   useEffect(() => {

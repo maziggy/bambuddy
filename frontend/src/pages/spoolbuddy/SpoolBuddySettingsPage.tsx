@@ -4,6 +4,10 @@ import { useOutletContext } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 import { spoolbuddyApi, type SpoolBuddyDevice } from '../../api/client';
+import { DiagnosticModal } from '../../components/spoolbuddy/DiagnosticModal';
+import { FileText, Wand2, Zap } from 'lucide-react';
+
+
 function formatUptime(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
@@ -36,20 +40,44 @@ const BLANK_OPTIONS = [
 
 function DeviceTab({ device }: { device: SpoolBuddyDevice }) {
   const { t } = useTranslation();
+  const [diagnosticOpen, setDiagnosticOpen] = useState<'nfc' | 'scale' | 'read_tag' | null>(null);
+  const [backendUrl, setBackendUrl] = useState('');
+  const [apiToken, setApiToken] = useState('');
+  const [systemBusy, setSystemBusy] = useState(false);
+  const [systemMsg, setSystemMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!backendUrl && device.backend_url) {
+      setBackendUrl(device.backend_url);
+    }
+  }, [device.backend_url, backendUrl]);
+
+  const saveConfig = async () => {
+    if (!backendUrl.trim()) {
+      setSystemMsg({ type: 'error', text: t('spoolbuddy.settings.systemFieldsRequired', 'Backend URL is required.') });
+      return;
+    }
+
+    setSystemBusy(true);
+    setSystemMsg(null);
+    try {
+      await spoolbuddyApi.updateSystemConfig(
+        device.device_id,
+        backendUrl.trim(),
+        apiToken.trim() || undefined
+      );
+      setSystemMsg({ type: 'ok', text: t('spoolbuddy.settings.systemQueued', 'Config queued.') });
+    } catch (e) {
+      setSystemMsg({ type: 'error', text: e instanceof Error ? e.message : t('common.error', 'Error') });
+    } finally {
+      setSystemBusy(false);
+    }
+  };
 
   return (
-    <div className="space-y-4">
-      {/* About */}
-      <div className="bg-zinc-800 rounded-lg p-4">
-        <div className="flex items-center gap-3 mb-2">
-          <img src="/img/spoolbuddy_logo_dark_small.png" alt="SpoolBuddy" className="h-7 w-auto" />
-        </div>
-        <p className="text-xs text-zinc-500 mb-1">Part of Bambuddy</p>
-        <span className="text-xs text-zinc-500">github.com/maziggy/bambuddy</span>
-      </div>
-
+    <div className="space-y-2">
       {/* NFC Reader + Device Info side by side */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-2">
         {/* NFC Reader */}
         <div className="bg-zinc-800 rounded-lg p-3">
           <h3 className="text-sm font-semibold text-zinc-300 mb-2">
@@ -106,24 +134,90 @@ function DeviceTab({ device }: { device: SpoolBuddyDevice }) {
               <span className="text-zinc-500">{t('spoolbuddy.settings.uptime', 'Uptime')}</span>
               <span className="text-zinc-300">{formatUptime(device.uptime_s)}</span>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-zinc-500">{t('spoolbuddy.status.status', 'Status')}</span>
-              <div className="flex items-center gap-1.5">
-                <div className={`w-2 h-2 rounded-full ${device.online ? 'bg-green-500' : 'bg-zinc-600'}`} />
-                <span className={device.online ? 'text-green-400' : 'text-zinc-500'}>
-                  {device.online ? t('spoolbuddy.status.online', 'Online') : t('spoolbuddy.status.offline', 'Offline')}
-                </span>
-              </div>
+            <div className="flex justify-between">
+              <span className="text-zinc-500">ID</span>
+              <span className="text-zinc-400 font-mono truncate ml-2">{device.device_id}</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Device ID (full width, below cards) */}
-      <div className="bg-zinc-800 rounded-lg px-3 py-2 flex justify-between items-center text-xs">
-        <span className="text-zinc-500">Device ID</span>
-        <span className="text-zinc-400 font-mono">{device.device_id}</span>
+      {/* Backend/Auth + Diagnostics side by side */}
+      <div className="grid grid-cols-2 gap-2">
+        {/* Backend/Auth Config */}
+        <div className="bg-zinc-800 rounded-lg p-3 space-y-2">
+          <h3 className="text-sm font-semibold text-zinc-300">
+            {t('spoolbuddy.settings.systemConfig', 'Backend & Auth')}
+          </h3>
+          <input
+            value={backendUrl}
+            onChange={(e) => setBackendUrl(e.target.value)}
+            placeholder="http://192.168.1.100:5000"
+            className="w-full px-2 py-1.5 rounded bg-zinc-900 border border-zinc-700 text-zinc-100 text-xs"
+          />
+          <div className="flex gap-2">
+            <input
+              type="password"
+              value={apiToken}
+              onChange={(e) => setApiToken(e.target.value)}
+              placeholder={t('spoolbuddy.settings.apiTokenPlaceholder', 'API token')}
+              className="flex-1 px-2 py-1.5 rounded bg-zinc-900 border border-zinc-700 text-zinc-100 text-xs"
+            />
+            <button
+              onClick={saveConfig}
+              disabled={systemBusy}
+              className="px-3 py-1.5 rounded bg-green-700 hover:bg-green-600 disabled:bg-zinc-700 text-xs font-medium text-zinc-100"
+            >
+              {t('spoolbuddy.settings.saveConfig', 'Save')}
+            </button>
+          </div>
+          {systemMsg && (
+            <div className={`text-xs ${systemMsg.type === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
+              {systemMsg.text}
+            </div>
+          )}
+        </div>
+
+        {/* Diagnostic Buttons */}
+        <div className="bg-zinc-800 rounded-lg p-3 flex flex-col gap-2">
+          <button
+            onClick={() => setDiagnosticOpen('nfc')}
+            className="flex-1 bg-blue-700 hover:bg-blue-600 transition-colors rounded-lg p-2 flex items-center gap-2"
+          >
+            <Wand2 className="w-4 h-4 text-blue-300 shrink-0" />
+            <span className="text-xs font-medium text-blue-100">
+              {t('spoolbuddy.settings.nfcDiagnostic', 'NFC Diagnostic')}
+            </span>
+          </button>
+          <button
+            onClick={() => setDiagnosticOpen('scale')}
+            className="flex-1 bg-yellow-700 hover:bg-yellow-600 transition-colors rounded-lg p-2 flex items-center gap-2"
+          >
+            <Zap className="w-4 h-4 text-yellow-300 shrink-0" />
+            <span className="text-xs font-medium text-yellow-100">
+              {t('spoolbuddy.settings.scaleDiagnostic', 'Scale Diagnostic')}
+            </span>
+          </button>
+          <button
+            onClick={() => setDiagnosticOpen('read_tag')}
+            className="flex-1 bg-emerald-700 hover:bg-emerald-600 transition-colors rounded-lg p-2 flex items-center gap-2"
+          >
+            <FileText className="w-4 h-4 text-emerald-300 shrink-0" />
+            <span className="text-xs font-medium text-emerald-100">
+              {t('spoolbuddy.settings.readTagDiagnostic', 'Read Tag')}
+            </span>
+          </button>
+        </div>
       </div>
+
+      {/* Diagnostic Modal */}
+      {diagnosticOpen && device && (
+        <DiagnosticModal
+          type={diagnosticOpen}
+          deviceId={device.device_id}
+          onClose={() => setDiagnosticOpen(null)}
+        />
+      )}
     </div>
   );
 }
@@ -502,26 +596,74 @@ function ScaleTab({ device, weight, weightStable, rawAdc }: {
 
 function UpdatesTab({ device }: { device: SpoolBuddyDevice }) {
   const { t } = useTranslation();
-  const [applying, setApplying] = useState(false);
+  const [busy, setBusy] = useState<'checking' | 'applying' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sshExpanded, setSSHExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const isUpdating = device.update_status === 'pending' || device.update_status === 'updating';
 
-  const { data: updateResult, isLoading: checking, refetch } = useQuery({
+  // When applying succeeds and device picks up the update, keep showing busy
+  useEffect(() => {
+    if (isUpdating && busy === 'applying') {
+      setBusy(null); // device has picked it up, isUpdating takes over the UI
+    }
+  }, [isUpdating, busy]);
+
+  // Reload the page when daemon comes back online after an update
+  useEffect(() => {
+    const handleOnline = () => {
+      if (isUpdating) {
+        // Daemon re-registered — reload to get fresh version + state
+        setTimeout(() => window.location.reload(), 1000);
+      }
+    };
+    window.addEventListener('spoolbuddy-online', handleOnline);
+    return () => window.removeEventListener('spoolbuddy-online', handleOnline);
+  }, [isUpdating]);
+
+  const { data: updateResult, refetch } = useQuery({
     queryKey: ['spoolbuddy-update-check', device.device_id],
-    queryFn: () => spoolbuddyApi.checkDaemonUpdate(device.device_id, true),
-    staleTime: 4 * 60 * 1000,
+    queryFn: () => spoolbuddyApi.checkDaemonUpdate(device.device_id),
+    staleTime: 0,
   });
 
+  const { data: sshKeyData } = useQuery({
+    queryKey: ['spoolbuddy-ssh-key'],
+    queryFn: () => spoolbuddyApi.getSSHPublicKey(),
+    enabled: sshExpanded,
+    staleTime: Infinity,
+  });
+
+  const checkForUpdates = async () => {
+    setBusy('checking');
+    setError(null);
+    try {
+      await refetch();
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const applyUpdate = async () => {
-    setApplying(true);
+    setBusy('applying');
     setError(null);
     try {
       await spoolbuddyApi.triggerUpdate(device.device_id);
+      // Don't clear busy — keep showing spinner until isUpdating takes over or timeout
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to trigger update');
-    } finally {
-      setApplying(false);
+      setBusy(null);
+    }
+  };
+
+  const showSpinner = busy != null || isUpdating;
+
+  const copyKey = () => {
+    if (sshKeyData?.public_key) {
+      navigator.clipboard.writeText(sshKeyData.public_key);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 
@@ -529,128 +671,275 @@ function UpdatesTab({ device }: { device: SpoolBuddyDevice }) {
     || (updateResult?.current_version && updateResult.current_version !== '0.0.0' ? updateResult.current_version : null);
 
   return (
-    <div className="space-y-4">
-      {/* Current version */}
-      <div className="bg-zinc-800 rounded-lg p-4">
-        <h3 className="text-sm font-semibold text-zinc-300 mb-3">
-          {t('spoolbuddy.settings.daemonVersion', 'Daemon Version')}
-        </h3>
+    <div className="space-y-3">
+      {/* Version + Update status + Check — single card */}
+      <div className="bg-zinc-800 rounded-lg p-3 space-y-3">
+        {/* Version row */}
         <div className="flex justify-between items-center text-sm">
-          <span className="text-zinc-500">{t('spoolbuddy.settings.currentVersion', 'Current')}</span>
+          <span className="text-zinc-500">{t('spoolbuddy.settings.currentVersion', 'Current Version')}</span>
           <span className="text-zinc-200 font-mono">
             {displayVersion || (
-              <span className="text-zinc-500 italic">{t('spoolbuddy.settings.versionPending', 'Waiting for daemon...')}</span>
+              <span className="text-zinc-500 italic text-xs">{t('spoolbuddy.settings.versionPending', 'Waiting for daemon...')}</span>
             )}
           </span>
         </div>
+
+        {/* Status / progress row */}
+        {showSpinner ? (
+          <div className="flex items-center gap-2">
+            <svg className="w-4 h-4 animate-spin text-green-400 flex-shrink-0" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span className="text-green-300 text-xs">
+              {busy === 'checking' ? t('spoolbuddy.settings.checking', 'Checking for updates...')
+                : device.update_message || t('spoolbuddy.settings.updateWaiting', 'Updating...')}
+            </span>
+          </div>
+        ) : device.update_status === 'error' ? (
+          <p className="text-xs text-red-300">{device.update_message || t('spoolbuddy.settings.updateFailed', 'Update failed')}</p>
+        ) : error ? (
+          <p className="text-xs text-red-300">{error}</p>
+        ) : updateResult?.update_available ? (
+          <p className="text-xs text-green-300">
+            {t('spoolbuddy.settings.updateAvailable', 'Update available')}: {displayVersion} → {updateResult.latest_version}
+          </p>
+        ) : null}
+
+        {/* Action buttons */}
+        {!showSpinner && (
+          updateResult?.update_available ? (
+            <button
+              onClick={applyUpdate}
+              disabled={!device.online}
+              className="w-full px-3 py-2 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 disabled:opacity-40 transition-colors"
+            >
+              {!device.online
+                ? t('spoolbuddy.settings.deviceOffline', 'Device Offline')
+                : t('spoolbuddy.settings.applyUpdate', 'Apply Update')}
+            </button>
+          ) : (
+            <div className="flex gap-2">
+              <button
+                onClick={checkForUpdates}
+                className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-zinc-700 text-zinc-300 hover:bg-zinc-600 transition-colors"
+              >
+                {t('spoolbuddy.settings.checkUpdates', 'Check for Updates')}
+              </button>
+              <button
+                onClick={applyUpdate}
+                disabled={!device.online}
+                className="px-3 py-2 rounded-lg text-xs font-medium bg-zinc-700 text-zinc-400 hover:bg-zinc-600 hover:text-zinc-200 disabled:opacity-40 transition-colors"
+              >
+                {t('spoolbuddy.settings.forceUpdate', 'Force Update')}
+              </button>
+            </div>
+          )
+        )}
       </div>
 
-      {/* Update progress (shown when update is in progress) */}
-      {isUpdating && (
-        <div className="bg-zinc-800 rounded-lg p-4">
-          <div className="flex items-center gap-3">
-            <svg className="w-5 h-5 animate-spin text-green-400 flex-shrink-0" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-            <div>
-              <p className="text-sm font-medium text-green-300">
-                {t('spoolbuddy.settings.updating', 'Updating...')}
-              </p>
-              <p className="text-xs text-zinc-400 mt-0.5">
-                {device.update_message || t('spoolbuddy.settings.updateWaiting', 'Waiting for device...')}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Update complete */}
-      {device.update_status === 'complete' && (
-        <div className="rounded-lg p-3 text-sm bg-green-900/30 border border-green-800">
-          <div className="flex items-center gap-2">
-            <svg className="w-4 h-4 text-green-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-            <p className="text-green-300">{device.update_message || t('spoolbuddy.settings.updateComplete', 'Update complete!')}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Update error */}
-      {device.update_status === 'error' && (
-        <div className="rounded-lg p-3 text-sm bg-red-900/30 border border-red-800">
-          <p className="text-red-300">{device.update_message || t('spoolbuddy.settings.updateFailed', 'Update failed')}</p>
-        </div>
-      )}
-
-      {/* Check for updates */}
-      <div className="bg-zinc-800 rounded-lg p-4 space-y-3">
+      {/* SSH Setup — collapsible */}
+      <div className="bg-zinc-800 rounded-lg p-3">
         <button
-          onClick={() => refetch()}
-          disabled={checking || isUpdating}
-          className="w-full px-4 py-2.5 rounded-lg text-sm font-medium bg-zinc-700 text-zinc-200 hover:bg-zinc-600 disabled:opacity-40 transition-colors min-h-[44px] flex items-center justify-center gap-2"
+          onClick={() => setSSHExpanded(!sshExpanded)}
+          className="w-full flex justify-between items-center text-xs"
         >
-          {checking && (
-            <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-          )}
-          {checking ? t('spoolbuddy.settings.checking', 'Checking...') : t('spoolbuddy.settings.checkUpdates', 'Check for Updates')}
+          <span className="font-medium text-zinc-400">
+            {t('spoolbuddy.settings.sshSetup', 'SSH Setup')}
+          </span>
+          <svg
+            className={`w-3 h-3 text-zinc-500 transition-transform ${sshExpanded ? 'rotate-180' : ''}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
         </button>
 
-        {/* Error feedback */}
-        {error && (
-          <div className="rounded-lg p-3 text-sm bg-red-900/30 border border-red-800">
-            <p className="text-red-300">{error}</p>
-          </div>
-        )}
-
-        {/* Result feedback */}
-        {updateResult && (
-          <div className={`rounded-lg p-3 text-sm ${
-            updateResult.update_available
-              ? 'bg-green-900/30 border border-green-800'
-              : 'bg-zinc-700/50'
-          }`}>
-            {updateResult.update_available ? (
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <p className="text-green-300 font-medium">
-                    {t('spoolbuddy.settings.updateAvailable', 'Update available')}: v{updateResult.latest_version}
-                  </p>
-                  <p className="text-xs text-zinc-400">
-                    {displayVersion ? `${displayVersion} → ${updateResult.latest_version}` : ''}
-                  </p>
-                </div>
+        {sshExpanded && (
+          <div className="mt-2 space-y-2">
+            <p className="text-xs text-zinc-500">
+              {t('spoolbuddy.settings.sshDescription', 'SSH key is deployed automatically. For manual setup, add this key to ~/.ssh/authorized_keys on the device.')}
+            </p>
+            {sshKeyData?.public_key ? (
+              <div className="relative">
+                <pre className="bg-zinc-900 rounded p-2 text-[10px] text-zinc-400 font-mono break-all whitespace-pre-wrap">
+                  {sshKeyData.public_key}
+                </pre>
                 <button
-                  onClick={applyUpdate}
-                  disabled={applying || isUpdating || !device.online}
-                  className="w-full px-4 py-2.5 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 disabled:opacity-40 transition-colors min-h-[44px] flex items-center justify-center gap-2"
+                  onClick={copyKey}
+                  className="absolute top-1 right-1 px-1.5 py-0.5 rounded text-[10px] bg-zinc-700 text-zinc-300 hover:bg-zinc-600 transition-colors"
                 >
-                  {applying && (
-                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                  )}
-                  {!device.online
-                    ? t('spoolbuddy.settings.deviceOffline', 'Device Offline')
-                    : t('spoolbuddy.settings.applyUpdate', 'Apply Update')}
+                  {copied ? t('common.copied', 'Copied!') : t('common.copy', 'Copy')}
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-green-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-                <p className="text-zinc-300">{t('spoolbuddy.settings.upToDate', 'Up to date')}</p>
-              </div>
+              <span className="text-[10px] text-zinc-500 italic">
+                {t('spoolbuddy.settings.sshKeyLoading', 'Loading...')}
+              </span>
             )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
 
+// --- System Tab ---
+
+function UsageBar({ percent, color }: { percent: number; color: string }) {
+  return (
+    <div className="w-full h-2 bg-zinc-700 rounded-full overflow-hidden">
+      <div
+        className={`h-full rounded-full transition-all ${color}`}
+        style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
+      />
+    </div>
+  );
+}
+
+function formatSystemUptime(seconds: number): string {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function SystemTab({ device }: { device: SpoolBuddyDevice }) {
+  const { t } = useTranslation();
+  const stats = device.system_stats;
+
+  if (!stats) {
+    return (
+      <div className="flex items-center justify-center h-32">
+        <p className="text-sm text-zinc-500">
+          {t('spoolbuddy.settings.systemStatsWaiting', 'Waiting for system stats...')}
+        </p>
+      </div>
+    );
+  }
+
+  const mem = stats.memory;
+  const disk = stats.disk;
+  const tempColor = (stats.cpu_temp_c ?? 0) >= 80 ? 'text-red-400' : (stats.cpu_temp_c ?? 0) >= 65 ? 'text-amber-400' : 'text-green-400';
+  const memColor = (mem?.percent ?? 0) >= 90 ? 'bg-red-500' : (mem?.percent ?? 0) >= 70 ? 'bg-amber-500' : 'bg-green-500';
+  const diskColor = (disk?.percent ?? 0) >= 90 ? 'bg-red-500' : (disk?.percent ?? 0) >= 70 ? 'bg-amber-500' : 'bg-green-500';
+
+  return (
+    <div className="space-y-2">
+      {/* CPU + Memory side by side */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="bg-zinc-800 rounded-lg p-3">
+          <h3 className="text-sm font-semibold text-zinc-300 mb-2">CPU</h3>
+          <div className="space-y-1.5 text-xs">
+            <div className="flex justify-between">
+              <span className="text-zinc-500">{t('spoolbuddy.settings.cores', 'Cores')}</span>
+              <span className="text-zinc-300 font-mono">{stats.cpu_count ?? '-'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-zinc-500">{t('spoolbuddy.settings.loadAvg', 'Load Avg')}</span>
+              <span className="text-zinc-300 font-mono">
+                {stats.load_avg ? stats.load_avg.join(' / ') : '-'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-zinc-500">{t('spoolbuddy.settings.temp', 'Temp')}</span>
+              <span className={`font-mono font-medium ${tempColor}`}>
+                {stats.cpu_temp_c != null ? `${stats.cpu_temp_c}\u00B0C` : '-'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Memory */}
+        <div className="bg-zinc-800 rounded-lg p-3">
+          <h3 className="text-sm font-semibold text-zinc-300 mb-2">
+            {t('spoolbuddy.settings.memory', 'Memory')}
+          </h3>
+          {mem ? (
+            <div className="space-y-1.5">
+              <UsageBar percent={mem.percent ?? 0} color={memColor} />
+              <div className="space-y-1 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">{t('spoolbuddy.settings.used', 'Used')}</span>
+                  <span className="text-zinc-300 font-mono">{mem.used_mb} / {mem.total_mb} MB</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">{t('spoolbuddy.settings.available', 'Free')}</span>
+                  <span className="text-zinc-300 font-mono">{mem.available_mb} MB</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <span className="text-xs text-zinc-500">-</span>
+          )}
+        </div>
+      </div>
+
+      {/* Disk — compact single row */}
+      <div className="bg-zinc-800 rounded-lg px-3 py-2">
+        <div className="flex items-center gap-3">
+          <h3 className="text-sm font-semibold text-zinc-300 shrink-0">
+            {t('spoolbuddy.settings.disk', 'Disk')}
+          </h3>
+          {disk ? (
+            <>
+              <div className="flex-1"><UsageBar percent={disk.percent ?? 0} color={diskColor} /></div>
+              <span className="text-xs text-zinc-300 font-mono shrink-0">{disk.used_gb} / {disk.total_gb} GB</span>
+            </>
+          ) : (
+            <span className="text-xs text-zinc-500">-</span>
+          )}
+        </div>
+      </div>
+
+      {/* OS + Runtime side by side */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="bg-zinc-800 rounded-lg p-3">
+          <h3 className="text-sm font-semibold text-zinc-300 mb-1.5">
+            {t('spoolbuddy.settings.osInfo', 'OS')}
+          </h3>
+          <div className="space-y-1 text-xs">
+            {stats.os?.os && (
+              <div className="flex justify-between">
+                <span className="text-zinc-500">{t('spoolbuddy.settings.distro', 'Distro')}</span>
+                <span className="text-zinc-300 truncate ml-2">{stats.os.os}</span>
+              </div>
+            )}
+            {stats.os?.kernel && (
+              <div className="flex justify-between">
+                <span className="text-zinc-500">{t('spoolbuddy.settings.kernel', 'Kernel')}</span>
+                <span className="text-zinc-300 font-mono truncate ml-2">{stats.os.kernel}</span>
+              </div>
+            )}
+            {stats.os?.arch && (
+              <div className="flex justify-between">
+                <span className="text-zinc-500">{t('spoolbuddy.settings.arch', 'Arch')}</span>
+                <span className="text-zinc-300 font-mono">{stats.os.arch}</span>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="bg-zinc-800 rounded-lg p-3">
+          <h3 className="text-sm font-semibold text-zinc-300 mb-1.5">
+            {t('spoolbuddy.settings.runtime', 'Runtime')}
+          </h3>
+          <div className="space-y-1 text-xs">
+            {stats.os?.python && (
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Python</span>
+                <span className="text-zinc-300 font-mono">{stats.os.python}</span>
+              </div>
+            )}
+            {stats.system_uptime_s != null && (
+              <div className="flex justify-between">
+                <span className="text-zinc-500">{t('spoolbuddy.settings.systemUptime', 'Uptime')}</span>
+                <span className="text-zinc-300">{formatSystemUptime(stats.system_uptime_s)}</span>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -658,7 +947,7 @@ function UpdatesTab({ device }: { device: SpoolBuddyDevice }) {
 
 // --- Main Settings Page ---
 
-type SettingsTab = 'device' | 'display' | 'scale' | 'updates';
+type SettingsTab = 'device' | 'display' | 'scale' | 'updates' | 'system';
 
 export function SpoolBuddySettingsPage() {
   const { sbState, setDisplayBrightness, setDisplayBlankTimeout } = useOutletContext<SpoolBuddyOutletContext>();
@@ -682,6 +971,7 @@ export function SpoolBuddySettingsPage() {
     { id: 'display', label: t('spoolbuddy.settings.tabDisplay', 'Display') },
     { id: 'scale', label: t('spoolbuddy.settings.tabScale', 'Scale') },
     { id: 'updates', label: t('spoolbuddy.settings.tabUpdates', 'Updates') },
+    { id: 'system', label: t('spoolbuddy.settings.tabSystem', 'System') },
   ];
 
   return (
@@ -734,6 +1024,7 @@ export function SpoolBuddySettingsPage() {
               />
             )}
             {activeTab === 'updates' && <UpdatesTab device={device} />}
+            {activeTab === 'system' && <SystemTab device={device} />}
           </>
         )}
       </div>

@@ -9,10 +9,25 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ToastProvider } from '../../contexts/ToastContext';
 
 // Track WebSocket instances created during tests
 let wsInstances: MockWebSocket[] = [];
 let originalWebSocket: typeof WebSocket;
+
+// Mock react-i18next BEFORE any modules that use it are imported
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) => {
+      if (key === 'printers.toast.missingSpoolAssignment' && options) {
+        const { printer, slots } = options as { printer: string; slots: string };
+        return `Missing assignments for ${printer}: ${slots}`;
+      }
+      return key;
+    },
+    i18n: {},
+  }),
+}));
 
 // Enhanced MockWebSocket that tracks instances
 class MockWebSocket {
@@ -77,13 +92,17 @@ function createTestQueryClient() {
   });
 }
 
-// Wrapper with QueryClient for hook testing
+// Wrapper with QueryClient and ToastProvider for hook testing
 function createWrapper(queryClient: QueryClient) {
   return function Wrapper({ children }: { children: React.ReactNode }) {
     return React.createElement(
-      QueryClientProvider,
-      { client: queryClient },
-      children
+      ToastProvider,
+      {},
+      React.createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        children
+      )
     );
   };
 }
@@ -99,6 +118,7 @@ describe('useWebSocket hook', () => {
     vi.clearAllMocks();
     wsInstances = [];
     queryClient = createTestQueryClient();
+
     // Save original and install mock
     originalWebSocket = globalThis.WebSocket;
     globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
@@ -164,8 +184,6 @@ describe('useWebSocket hook', () => {
 
   describe('hook connection', () => {
     it('connects to WebSocket on mount', async () => {
-      // Reset module cache to get fresh import with our mock
-      vi.resetModules();
       const { useWebSocket } = await import('../../hooks/useWebSocket');
 
       renderHook(() => useWebSocket(), {
@@ -178,7 +196,6 @@ describe('useWebSocket hook', () => {
     });
 
     it('reports connected state when WebSocket opens', async () => {
-      vi.resetModules();
       const { useWebSocket } = await import('../../hooks/useWebSocket');
 
       const { result } = renderHook(() => useWebSocket(), {
@@ -260,7 +277,6 @@ describe('useWebSocket hook', () => {
         cb(0);
         return 0;
       });
-      vi.resetModules();
       const { useWebSocket } = await import('../../hooks/useWebSocket');
 
       const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -303,7 +319,6 @@ describe('useWebSocket hook', () => {
         cb(0);
         return 0;
       });
-      vi.resetModules();
       const { useWebSocket } = await import('../../hooks/useWebSocket');
 
       const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -345,7 +360,6 @@ describe('useWebSocket hook', () => {
         cb(0);
         return 0;
       });
-      vi.resetModules();
       const { useWebSocket } = await import('../../hooks/useWebSocket');
 
       const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -380,8 +394,39 @@ describe('useWebSocket hook', () => {
       vi.unstubAllGlobals();
     });
 
+    it('handles missing_spool_assignment message without error', async () => {
+      vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+        cb(0);
+        return 0;
+      });
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+
+      renderHook(() => useWebSocket(), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      const ws = getLatestWs()!;
+      act(() => {
+        ws.open();
+      });
+
+      // This test verifies that the hook properly handles missing_spool_assignment messages
+      // without throwing an error. The actual toast display is tested via the UI.
+      expect(() => {
+        act(() => {
+          ws.simulateMessage({
+            type: 'missing_spool_assignment',
+            printer_id: 7,
+            printer_name: 'Printer B',
+            missing_slots: [{ slot: 'A2' }, { slot: 'Ext-L' }],
+          });
+        });
+      }).not.toThrow();
+
+      vi.unstubAllGlobals();
+    });
+
     it('ignores pong messages without error', async () => {
-      vi.resetModules();
       const { useWebSocket } = await import('../../hooks/useWebSocket');
 
       const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -409,7 +454,6 @@ describe('useWebSocket hook', () => {
     });
 
     it('handles malformed JSON gracefully', async () => {
-      vi.resetModules();
       const { useWebSocket } = await import('../../hooks/useWebSocket');
 
       renderHook(() => useWebSocket(), {
@@ -438,7 +482,6 @@ describe('useWebSocket hook', () => {
     });
 
     it('handles unknown message types gracefully', async () => {
-      vi.resetModules();
       const { useWebSocket } = await import('../../hooks/useWebSocket');
 
       const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -470,7 +513,6 @@ describe('useWebSocket hook', () => {
 
   describe('sendMessage', () => {
     it('sends JSON message when connected', async () => {
-      vi.resetModules();
       const { useWebSocket } = await import('../../hooks/useWebSocket');
 
       const { result } = renderHook(() => useWebSocket(), {
@@ -494,7 +536,6 @@ describe('useWebSocket hook', () => {
     });
 
     it('does not send when disconnected', async () => {
-      vi.resetModules();
       const { useWebSocket } = await import('../../hooks/useWebSocket');
 
       const { result } = renderHook(() => useWebSocket(), {
@@ -516,7 +557,6 @@ describe('useWebSocket hook', () => {
   describe('reconnection', () => {
     it('reconnects after connection closes', async () => {
       vi.useFakeTimers();
-      vi.resetModules();
 
       const { useWebSocket } = await import('../../hooks/useWebSocket');
 
@@ -551,7 +591,6 @@ describe('useWebSocket hook', () => {
     });
 
     it('cleans up on unmount', async () => {
-      vi.resetModules();
       const { useWebSocket } = await import('../../hooks/useWebSocket');
 
       const { unmount } = renderHook(() => useWebSocket(), {

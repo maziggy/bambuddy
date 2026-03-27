@@ -256,6 +256,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
                   <button
                     key={spool.id}
                     onClick={() => setSelectedSpoolId(spool.id)}
+                    title={spool.note || undefined}
                     className={`p-2.5 rounded-lg border text-left transition-colors ${
                       selectedSpoolId === spool.id
                         ? 'bg-bambu-green/20 border-bambu-green'

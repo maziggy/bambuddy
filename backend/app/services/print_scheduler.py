@@ -1571,6 +1571,8 @@ class PrintScheduler:
         elif base_name.endswith(".3mf"):
             base_name = base_name[:-4]  # Remove .3mf
         remote_filename = f"{base_name}.3mf"
+        # Sanitize: firmware parses ftp://{filename} as a URL, spaces break it
+        remote_filename = remote_filename.replace(" ", "_")
         # Upload to root directory (not /cache/) - the start_print command references
         # files by name only (ftp://{filename}), so they must be in the root
         remote_path = f"/{remote_filename}"

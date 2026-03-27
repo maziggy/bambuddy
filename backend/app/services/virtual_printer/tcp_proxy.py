@@ -1421,6 +1421,9 @@ class SlicerProxyManager:
     PRINTER_MQTT_PORT = 8883
     PRINTER_FILE_TRANSFER_PORT = 6000
     PRINTER_RTSP_PORT = 322  # X1/H2/P2 series camera (A1/P1 use port 6000)
+    # Undocumented proprietary ports used by some models (A1, P1S, etc.)
+    # BambuStudio requires port 2024 for printing; OrcaSlicer also needs 2025.
+    PRINTER_AUX_PORTS = [2024, 2025, 2026]
     PRINTER_BIND_PORTS = [3000, 3002]
 
     # Local listen ports - must match what Bambu Studio expects
@@ -1461,6 +1464,7 @@ class SlicerProxyManager:
         self._mqtt_proxy: TLSProxy | None = None
         self._file_transfer_proxy: TCPProxy | None = None
         self._rtsp_proxy: TCPProxy | None = None
+        self._aux_proxies: list[TCPProxy] = []
         self._bind_proxies: list[TCPProxy] = []
         self._bind_server = None
         self._probe_servers: list[asyncio.Server] = []
@@ -1560,6 +1564,22 @@ class SlicerProxyManager:
             bind_address=self.bind_address,
         )
 
+        # Auxiliary ports (2024-2026) — raw TCP pass-through for undocumented
+        # proprietary services. Required by BambuStudio/OrcaSlicer for some
+        # models (A1, P1S). Silently ignored if the printer doesn't listen.
+        for aux_port in self.PRINTER_AUX_PORTS:
+            self._aux_proxies.append(
+                TCPProxy(
+                    name=f"Aux-{aux_port}",
+                    listen_port=aux_port,
+                    target_host=self.target_host,
+                    target_port=aux_port,
+                    on_connect=lambda cid, p=aux_port: self._log_activity(f"Aux-{p}", f"connected: {cid}"),
+                    on_disconnect=lambda cid, p=aux_port: self._log_activity(f"Aux-{p}", f"disconnected: {cid}"),
+                    bind_address=self.bind_address,
+                )
+            )
+
         # Bind/auth — respond with VP identity instead of proxying to printer.
         # The detect response contains the printer name, serial, model, and
         # bind status. Proxying it would leak the real printer's identity and
@@ -1628,6 +1648,13 @@ class SlicerProxyManager:
                 name="slicer_proxy_rtsp",
             ),
         ]
+        for ap in self._aux_proxies:
+            self._tasks.append(
+                asyncio.create_task(
+                    run_with_logging(ap),
+                    name=f"slicer_proxy_aux_{ap.listen_port}",
+                )
+            )
         if self._bind_server:
             self._tasks.append(
                 asyncio.create_task(
@@ -1701,6 +1728,10 @@ class SlicerProxyManager:
         if self._rtsp_proxy:
             await self._rtsp_proxy.stop()
             self._rtsp_proxy = None
+
+        for ap in self._aux_proxies:
+            await ap.stop()
+        self._aux_proxies = []
 
         if self._bind_server:
             await self._bind_server.stop()

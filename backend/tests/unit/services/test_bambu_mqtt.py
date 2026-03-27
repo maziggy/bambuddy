@@ -734,6 +734,207 @@ class TestAMSDataMerging:
         )
 
 
+class TestAMSTrayStateClearning:
+    """Tests for AMS tray state-based clearing (#784).
+
+    Some printers (e.g. H2D) only send {id, state} in incremental MQTT
+    updates when a tray is not fully loaded.  state=11 means loaded;
+    other values (9=empty, 10=spool present but filament not in feeder)
+    should clear stale tray data that was set from an earlier pushall.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST_H2D",
+            access_code="12345678",
+        )
+        return client
+
+    def _seed_loaded_tray(self, mqtt_client):
+        """Seed AMS 0 with a fully loaded tray (state=11) and an empty slot."""
+        initial = {
+            "ams": [
+                {
+                    "id": 0,
+                    "tray": [
+                        {
+                            "id": 0,
+                            "tray_type": "PETG",
+                            "tray_sub_brands": "PETG HF",
+                            "tray_color": "00FF00FF",
+                            "tray_id_name": "A00-G1",
+                            "tray_info_idx": "GFG99",
+                            "tag_uid": "AABBCCDD11223344",
+                            "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+                            "remain": 75,
+                            "k": 0.02,
+                            "cali_idx": 5,
+                            "state": 11,
+                        },
+                        {
+                            "id": 1,
+                            "tray_type": "PLA",
+                            "tray_color": "FF0000FF",
+                            "remain": 50,
+                            "state": 11,
+                        },
+                    ],
+                }
+            ],
+            "power_on_flag": False,  # H2D always sends False
+        }
+        mqtt_client._handle_ams_data(initial)
+        ams = mqtt_client.state.raw_data["ams"]
+        assert ams[0]["tray"][0]["tray_type"] == "PETG"
+        assert ams[0]["tray"][1]["tray_type"] == "PLA"
+
+    def test_state_10_clears_stale_tray_data(self, mqtt_client):
+        """Incremental update with state=10 (spool present, not loaded) clears tray."""
+        self._seed_loaded_tray(mqtt_client)
+
+        # H2D sends only {id, state} when filament is retracted
+        update = {
+            "ams": [
+                {
+                    "id": 0,
+                    "tray": [
+                        {"id": 0, "state": 10},
+                        {"id": 1, "state": 11},  # slot 1 still loaded
+                    ],
+                }
+            ],
+            "power_on_flag": False,
+        }
+        mqtt_client._handle_ams_data(update)
+
+        ams = mqtt_client.state.raw_data["ams"]
+        tray0 = ams[0]["tray"][0]
+        tray1 = ams[0]["tray"][1]
+
+        # Tray 0 should be cleared
+        assert tray0["tray_type"] == "", "tray_type must be cleared on state=10"
+        assert tray0["tray_color"] == "", "tray_color must be cleared"
+        assert tray0["tray_sub_brands"] == "", "tray_sub_brands must be cleared"
+        assert tray0["tray_id_name"] == "", "tray_id_name must be cleared"
+        assert tray0["tray_info_idx"] == "", "tray_info_idx must be cleared"
+        assert tray0["tag_uid"] == "0000000000000000", "tag_uid must be cleared"
+        assert tray0["tray_uuid"] == "00000000000000000000000000000000", "tray_uuid must be cleared"
+        assert tray0["remain"] == 0, "remain must be 0"
+        assert tray0["k"] is None, "k must be cleared"
+        assert tray0["cali_idx"] is None, "cali_idx must be cleared"
+        assert tray0["state"] == 10, "state should be preserved"
+
+        # Tray 1 should be untouched
+        assert tray1["tray_type"] == "PLA", "Loaded slot must be preserved"
+        assert tray1["remain"] == 50
+
+    def test_state_9_clears_stale_tray_data(self, mqtt_client):
+        """Incremental update with state=9 (empty, no spool) clears tray."""
+        self._seed_loaded_tray(mqtt_client)
+
+        update = {
+            "ams": [
+                {
+                    "id": 0,
+                    "tray": [
+                        {"id": 0, "state": 9},
+                        {"id": 1, "state": 11},
+                    ],
+                }
+            ],
+            "power_on_flag": False,
+        }
+        mqtt_client._handle_ams_data(update)
+
+        tray0 = mqtt_client.state.raw_data["ams"][0]["tray"][0]
+        assert tray0["tray_type"] == "", "state=9 must clear tray_type"
+        assert tray0["remain"] == 0
+
+    def test_state_11_preserves_tray_data(self, mqtt_client):
+        """Incremental update with state=11 (loaded) must NOT clear tray."""
+        self._seed_loaded_tray(mqtt_client)
+
+        update = {
+            "ams": [
+                {
+                    "id": 0,
+                    "tray": [
+                        {"id": 0, "state": 11},
+                        {"id": 1, "state": 11},
+                    ],
+                }
+            ],
+            "power_on_flag": False,
+        }
+        mqtt_client._handle_ams_data(update)
+
+        tray0 = mqtt_client.state.raw_data["ams"][0]["tray"][0]
+        assert tray0["tray_type"] == "PETG", "state=11 must preserve tray data"
+        assert tray0["tray_color"] == "00FF00FF"
+        assert tray0["remain"] == 75
+
+    def test_no_clearing_when_tray_type_already_empty(self, mqtt_client):
+        """Don't re-clear a tray that's already empty (avoids log spam)."""
+        self._seed_loaded_tray(mqtt_client)
+
+        # First unload clears
+        update = {
+            "ams": [{"id": 0, "tray": [{"id": 0, "state": 10}, {"id": 1, "state": 11}]}],
+            "power_on_flag": False,
+        }
+        mqtt_client._handle_ams_data(update)
+        assert mqtt_client.state.raw_data["ams"][0]["tray"][0]["tray_type"] == ""
+
+        # Second identical update should not trigger clearing again
+        # (merged_tray.get("tray_type") is already empty/falsy)
+        mqtt_client._handle_ams_data(update)
+        assert mqtt_client.state.raw_data["ams"][0]["tray"][0]["tray_type"] == ""
+
+    def test_reload_after_unload_restores_data(self, mqtt_client):
+        """After clearing via state=10, a full update with state=11 restores data."""
+        self._seed_loaded_tray(mqtt_client)
+
+        # Unload
+        mqtt_client._handle_ams_data(
+            {
+                "ams": [{"id": 0, "tray": [{"id": 0, "state": 10}, {"id": 1, "state": 11}]}],
+                "power_on_flag": False,
+            }
+        )
+        assert mqtt_client.state.raw_data["ams"][0]["tray"][0]["tray_type"] == ""
+
+        # Reload — full tray data arrives again
+        mqtt_client._handle_ams_data(
+            {
+                "ams": [
+                    {
+                        "id": 0,
+                        "tray": [
+                            {
+                                "id": 0,
+                                "tray_type": "PETG",
+                                "tray_sub_brands": "PETG HF",
+                                "tray_color": "00FF00FF",
+                                "remain": 75,
+                                "state": 11,
+                            },
+                            {"id": 1, "state": 11},
+                        ],
+                    }
+                ],
+                "power_on_flag": False,
+            }
+        )
+        tray0 = mqtt_client.state.raw_data["ams"][0]["tray"][0]
+        assert tray0["tray_type"] == "PETG", "Reload must restore tray data"
+        assert tray0["tray_color"] == "00FF00FF"
+        assert tray0["remain"] == 75
+
+
 class TestNozzleRackData:
     """Tests for nozzle rack data parsing from H2 series device.nozzle.info."""
 
@@ -2656,3 +2857,287 @@ class TestSendDryingCommand:
         # qos may be positional arg [2] or keyword
         qos = call_args.kwargs.get("qos", call_args[0][2] if len(call_args[0]) > 2 else None)
         assert qos == 1
+
+
+class TestStartPrintAmsMapping:
+    """Tests for ams_mapping/ams_mapping2 construction in start_print().
+
+    BambuStudio converts virtual tray IDs (254/255) to -1 in the flat
+    ams_mapping and puts the real external spool info only in ams_mapping2.
+    Passing raw 254/255 in the flat array causes H2D firmware to fail
+    with 0700_8012 "Failed to get AMS mapping table".
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from unittest.mock import MagicMock
+
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        client._client = MagicMock()
+        client.state.connected = True
+        return client
+
+    def _get_published_command(self, mqtt_client):
+        """Extract the parsed print command from the last publish call."""
+        call_args = mqtt_client._client.publish.call_args
+        return json.loads(call_args[0][1])["print"]
+
+    def test_regular_ams_trays_preserved_in_flat_mapping(self, mqtt_client):
+        """Regular AMS tray IDs pass through unchanged in flat ams_mapping."""
+        mqtt_client.start_print("test.3mf", ams_mapping=[0, 5, 11])
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["ams_mapping"] == [0, 5, 11]
+        assert cmd["ams_mapping2"] == [
+            {"ams_id": 0, "slot_id": 0},
+            {"ams_id": 1, "slot_id": 1},
+            {"ams_id": 2, "slot_id": 3},
+        ]
+
+    def test_unmapped_slots(self, mqtt_client):
+        """Unmapped slots (-1) produce -1 in flat and 0xFF/0xFF in mapping2."""
+        mqtt_client.start_print("test.3mf", ams_mapping=[-1, -1])
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["ams_mapping"] == [-1, -1]
+        assert cmd["ams_mapping2"] == [
+            {"ams_id": 255, "slot_id": 255},
+            {"ams_id": 255, "slot_id": 255},
+        ]
+
+    def test_external_main_nozzle_becomes_minus_one_in_flat(self, mqtt_client):
+        """Virtual tray 255 (main nozzle) must be -1 in flat mapping."""
+        mqtt_client.start_print("test.3mf", ams_mapping=[255])
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["ams_mapping"] == [-1]
+        assert cmd["ams_mapping2"] == [{"ams_id": 255, "slot_id": 0}]
+
+    def test_external_deputy_nozzle_becomes_minus_one_in_flat(self, mqtt_client):
+        """Virtual tray 254 (deputy nozzle) must be -1 in flat mapping."""
+        mqtt_client.start_print("test.3mf", ams_mapping=[254])
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["ams_mapping"] == [-1]
+        assert cmd["ams_mapping2"] == [{"ams_id": 254, "slot_id": 0}]
+
+    def test_h2d_external_spool_mixed_with_ams(self, mqtt_client):
+        """H2D scenario: AMS trays + unmapped + external deputy nozzle."""
+        # Reproduces the exact scenario from issue #797:
+        # 5-slot 3MF, only slot 5 assigned to external deputy nozzle (254)
+        mqtt_client.start_print("test.3mf", ams_mapping=[-1, -1, -1, -1, 255])
+
+        cmd = self._get_published_command(mqtt_client)
+        # Flat mapping: all -1 (external converted, unmapped stay -1)
+        assert cmd["ams_mapping"] == [-1, -1, -1, -1, -1]
+        # Detailed mapping: unmapped slots use 0xFF, external uses real ams_id
+        assert cmd["ams_mapping2"] == [
+            {"ams_id": 255, "slot_id": 255},
+            {"ams_id": 255, "slot_id": 255},
+            {"ams_id": 255, "slot_id": 255},
+            {"ams_id": 255, "slot_id": 255},
+            {"ams_id": 255, "slot_id": 0},
+        ]
+
+    def test_ams_ht_trays_preserved_in_flat_mapping(self, mqtt_client):
+        """AMS-HT tray IDs (>=128) pass through in flat mapping."""
+        mqtt_client.start_print("test.3mf", ams_mapping=[128, 131])
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["ams_mapping"] == [128, 131]
+        assert cmd["ams_mapping2"] == [
+            {"ams_id": 128, "slot_id": 0},
+            {"ams_id": 131, "slot_id": 0},
+        ]
+
+    def test_dual_nozzle_both_external(self, mqtt_client):
+        """Both nozzles using external spools: 254 (deputy) + 255 (main)."""
+        mqtt_client.start_print("test.3mf", ams_mapping=[254, 255])
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["ams_mapping"] == [-1, -1]
+        assert cmd["ams_mapping2"] == [
+            {"ams_id": 254, "slot_id": 0},
+            {"ams_id": 255, "slot_id": 0},
+        ]
+
+    def test_no_ams_mapping_omits_fields(self, mqtt_client):
+        """When ams_mapping is None, neither field is in the command."""
+        mqtt_client.start_print("test.3mf", ams_mapping=None)
+
+        cmd = self._get_published_command(mqtt_client)
+        assert "ams_mapping" not in cmd
+        assert "ams_mapping2" not in cmd
+
+
+class TestStaleReconnect:
+    """Tests for stale connection detection and reconnect without UI bouncing."""
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST_STALE",
+            access_code="12345678",
+        )
+        return client
+
+    def test_check_staleness_sets_flag_and_broadcasts_once(self, mqtt_client):
+        """check_staleness() should set connected=False, broadcast, and set _stale_reconnecting."""
+        import time
+
+        state_changes = []
+        mqtt_client.on_state_change = lambda s: state_changes.append(s.connected)
+        mqtt_client.state.connected = True
+        mqtt_client._last_message_time = time.time() - 120  # well past 60s threshold
+
+        result = mqtt_client.check_staleness()
+
+        assert result is False
+        assert mqtt_client.state.connected is False
+        assert mqtt_client._stale_reconnecting is True
+        assert state_changes == [False]  # Exactly one broadcast
+
+    def test_check_staleness_noop_when_not_connected(self, mqtt_client):
+        """check_staleness() should not set flag when already disconnected."""
+        import time
+
+        mqtt_client.state.connected = False
+        mqtt_client._last_message_time = time.time() - 120
+
+        mqtt_client.check_staleness()
+
+        assert mqtt_client._stale_reconnecting is False
+
+    def test_check_staleness_noop_when_not_stale(self, mqtt_client):
+        """check_staleness() should not set flag when messages are recent."""
+        import time
+
+        mqtt_client.state.connected = True
+        mqtt_client._last_message_time = time.time() - 5  # 5s ago, well within 60s
+
+        result = mqtt_client.check_staleness()
+
+        assert result is True
+        assert mqtt_client.state.connected is True
+        assert mqtt_client._stale_reconnecting is False
+
+    def test_on_disconnect_skipped_during_stale_reconnect(self, mqtt_client):
+        """_on_disconnect should not broadcast state when _stale_reconnecting is set."""
+        state_changes = []
+        mqtt_client.on_state_change = lambda s: state_changes.append(s.connected)
+        mqtt_client._stale_reconnecting = True
+        mqtt_client.state.connected = False
+
+        mqtt_client._on_disconnect(None, None)
+
+        # No state change broadcast — check_staleness() already did it
+        assert state_changes == []
+        assert mqtt_client.state.connected is False
+
+    def test_on_disconnect_fires_event_during_stale_reconnect(self, mqtt_client):
+        """_on_disconnect must still fire _disconnection_event even during stale reconnect.
+
+        If disconnect() is called while _stale_reconnecting is True (e.g. user removes
+        the printer before paho reconnects), the event must fire so disconnect() doesn't hang.
+        """
+        import threading
+
+        mqtt_client._stale_reconnecting = True
+        mqtt_client._disconnection_event = threading.Event()
+
+        mqtt_client._on_disconnect(None, None)
+
+        assert mqtt_client._disconnection_event.is_set()
+
+    def test_on_connect_clears_stale_reconnecting_flag(self, mqtt_client):
+        """_on_connect should clear _stale_reconnecting and restore connected=True."""
+        mqtt_client._stale_reconnecting = True
+        mqtt_client.state.connected = False
+
+        subscribe_calls = []
+        mock_client = type(
+            "MockClient",
+            (),
+            {
+                "subscribe": lambda self, topic: subscribe_calls.append(topic) or (0, 1),
+            },
+        )()
+
+        mqtt_client._on_connect(mock_client, None, None, 0)
+
+        assert mqtt_client._stale_reconnecting is False
+        assert mqtt_client.state.connected is True
+
+    def test_full_stale_reconnect_cycle_no_bounce(self, mqtt_client):
+        """Full cycle: stale → disconnect callback → reconnect. UI should see exactly one disconnect."""
+        import time
+
+        state_changes = []
+        mqtt_client.on_state_change = lambda s: state_changes.append(s.connected)
+        mqtt_client.state.connected = True
+        mqtt_client._last_message_time = time.time() - 120
+
+        # Step 1: Stale detection triggers
+        mqtt_client.check_staleness()
+        assert state_changes == [False]
+
+        # Step 2: Paho fires disconnect callback (from socket close)
+        mqtt_client._on_disconnect(None, None)
+        # Should NOT add another state change
+        assert state_changes == [False]
+
+        # Step 3: Paho reconnects
+        subscribe_calls = []
+        mock_client = type(
+            "MockClient",
+            (),
+            {
+                "subscribe": lambda self, topic: subscribe_calls.append(topic) or (0, 1),
+            },
+        )()
+        mqtt_client._on_connect(mock_client, None, None, 0)
+        assert state_changes == [False, True]  # Now connected again
+        assert mqtt_client._stale_reconnecting is False
+
+    def test_spurious_disconnect_suppressed_when_recent_messages(self, mqtt_client):
+        """Non-error disconnect with recent messages should be suppressed."""
+        import time
+
+        state_changes = []
+        mqtt_client.on_state_change = lambda s: state_changes.append(s.connected)
+        mqtt_client.state.connected = True
+        mqtt_client._last_message_time = time.time() - 3  # 3s ago
+
+        # Non-error disconnect (rc=None)
+        mqtt_client._on_disconnect(None, None)
+
+        assert state_changes == []
+        assert mqtt_client.state.connected is True
+
+    def test_error_disconnect_not_suppressed_despite_recent_messages(self, mqtt_client):
+        """Error disconnect should always be processed, even with recent messages."""
+        import time
+
+        import paho.mqtt.client as mqtt
+        from paho.mqtt.reasoncodes import ReasonCode
+
+        state_changes = []
+        mqtt_client.on_state_change = lambda s: state_changes.append(s.connected)
+        mqtt_client.state.connected = True
+        mqtt_client._last_message_time = time.time() - 3  # 3s ago
+
+        # Error disconnect (rc.is_failure = True)
+        rc = ReasonCode(mqtt.CONNACK >> 4, identifier=0x80)  # Failure code
+        mqtt_client._on_disconnect(None, None, rc=rc)
+
+        assert state_changes == [False]
+        assert mqtt_client.state.connected is False

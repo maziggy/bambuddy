@@ -1067,8 +1067,6 @@ export function SettingsPage() {
           <span className={`w-2 h-2 rounded-full ${cloudAuthStatus?.is_authenticated && githubBackupStatus?.configured && githubBackupStatus?.enabled ? 'bg-green-400' : 'bg-gray-500'}`} />
         </button>
       </div>
-
-      {/* General Tab */}
       {activeTab === 'general' && (
       <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
         {/* Left Column - General Settings */}

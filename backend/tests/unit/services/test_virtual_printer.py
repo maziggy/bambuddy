@@ -1091,6 +1091,8 @@ class TestSlicerProxyManager:
         assert proxy_manager.PRINTER_MQTT_PORT == 8883
         assert proxy_manager.PRINTER_FILE_TRANSFER_PORT == 6000
         assert proxy_manager.PRINTER_RTSP_PORT == 322
+        # Auxiliary ports: undocumented proprietary ports for A1/P1S etc.
+        assert proxy_manager.PRINTER_AUX_PORTS == [2024, 2025, 2026]
         # Bind ports: both 3000 and 3002 for slicer compatibility
         assert proxy_manager.PRINTER_BIND_PORTS == [3000, 3002]
         # FTP data port range for transparent EPSV proxying
@@ -1156,6 +1158,14 @@ class TestSlicerProxyManager:
 
         # MQTT should be TLSProxy (TLS-terminated for IP rewriting)
         assert isinstance(mgr._mqtt_proxy, TLSProxy), "MQTT should be TLSProxy (TLS-terminated)"
+
+        # Auxiliary ports (2024-2026) should be TCPProxy (transparent)
+        assert len(mgr._aux_proxies) == 3, "Should have 3 aux port proxies"
+        for ap in mgr._aux_proxies:
+            assert isinstance(ap, TCPProxy), "Aux proxies should be TCPProxy"
+        assert mgr._aux_proxies[0].listen_port == 2024
+        assert mgr._aux_proxies[0].target_port == 2024
+        assert mgr._aux_proxies[2].listen_port == 2026
 
         # FTP data ports should be pre-created as TCPProxy instances
         assert len(mgr._ftp_data_proxies) == 101  # 50000-50100 inclusive

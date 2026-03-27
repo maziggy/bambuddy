@@ -122,6 +122,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 
 ### 📁 File Manager (Library)
 - Upload and organize sliced files (3MF, gcode, STL)
+- **External folder mounting** - Mount host directories (NAS, USB, network shares) without copying files
 - **STL thumbnail generation** - Auto-generate previews for STL files on upload or batch generate for existing files
 - ZIP file extraction with folder structure preservation
 - Option to create folder from ZIP filename
@@ -153,6 +154,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Customizable message templates with per-filament usage details
 - Print finish photo URL in notifications
 - Filament usage and progress in failed/cancelled print notifications
+- **Missing spool assignment warning** — Toast and push notification when a print starts with unassigned AMS trays
 - HMS error alerts (AMS, nozzle, etc.)
 - Build plate detection alerts
 - First layer complete alert (with camera snapshot)
@@ -162,6 +164,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 ### 🧵 Spool Inventory
 - Built-in spool inventory with AMS slot assignment, usage tracking, and remaining weight management
 - Automatic filament consumption tracking: 3MF slicer estimates for all spools (primary), AMS remain% delta as fallback
+- Mid-print spool reassignment support: uses live assignment if changed during print, snapshot otherwise
 - Per-layer gcode accuracy for partial prints (failed/cancelled), with linear scaling fallback
 - **Per-spool cost tracking** — Set cost/kg on each spool; costs are automatically calculated at print completion and aggregated to archives. Print modal shows real-time cost preview. Configurable default cost and currency in Settings.
 - **Bulk spool addition** — Add multiple identical spools at once (quantity 1–100) with a single form submission. Quick Add mode for stock spools that only need material, color, and weight.
@@ -501,25 +504,6 @@ services:
 > **Note:** Docker's default bridge networking cannot receive SSDP multicast packets for automatic printer discovery. When using `network_mode: host`, Bambuddy auto-detects your network subnet and can discover printers via subnet scanning in the Add Printer dialog.
 
 </details>
-
-#### Windows (Portable Launcher)
-
-The easiest way to run Bambuddy on Windows - no installation required:
-
-```batch
-git clone https://github.com/maziggy/bambuddy.git
-cd bambuddy
-start_bambuddy.bat
-```
-
-Double-click `start_bambuddy.bat` and it will:
-- Download Python and Node.js automatically (portable, no system changes)
-- Install dependencies and build the frontend
-- Open your browser to http://localhost:8000
-
-Everything is stored in the `.portable\` folder. Use `start_bambuddy.bat reset` to clean up.
-
-> **Custom port:** `set PORT=9000 & start_bambuddy.bat`
 
 #### Manual Installation (Linux/macOS)
 

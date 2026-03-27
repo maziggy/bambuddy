@@ -28,7 +28,7 @@ class NFCReader:
         self._last_status_log = 0.0
 
         try:
-            from read_tag import PN5180
+            from .pn5180 import PN5180
 
             self._nfc = PN5180()
             self._init_rf()
@@ -98,7 +98,7 @@ class NFCReader:
         """
         if self._state != NFCState.TAG_PRESENT:
             return False, "No tag present"
-        if self._current_sak != 0x00:
+        if self._current_sak not in (0x00, 0x04):
             return False, f"Not an NTAG (SAK=0x{self._current_sak:02X})"
         if not self._nfc:
             return False, "NFC reader not available"
@@ -205,7 +205,7 @@ class NFCReader:
 
                 # Try reading Bambu tag data
                 tray_uuid = None
-                tag_type = "mifare_classic" if sak in (0x08, 0x18) else "ntag" if sak == 0x00 else "unknown"
+                tag_type = "mifare_classic" if sak in (0x08, 0x18) else "ntag" if sak in (0x00, 0x04) else "unknown"
 
                 if sak in (0x08, 0x18):
                     blocks = self._nfc.read_bambu_tag(uid_bytes)
@@ -240,13 +240,24 @@ class NFCReader:
 
 def _extract_tray_uuid(blocks: dict[int, bytes]) -> str | None:
     """Extract tray_uuid from Bambu MIFARE Classic data blocks."""
-    # Block 4-5 contain the 32-char tray UUID (first 16 bytes from block 4 + 5)
+    # Block 4-5 contain the tray UUID as 32 ASCII hex chars across 32 bytes.
     if 4 in blocks and 5 in blocks:
         raw = blocks[4] + blocks[5]
-        # UUID is stored as ASCII hex in the first 16 bytes of blocks 4-5
-        uuid_bytes = raw[:16]
         try:
-            uuid_str = uuid_bytes.hex().upper()
+            # Preferred path: decode full ASCII payload, keep only hex chars.
+            ascii_candidate = raw.decode("ascii", errors="ignore")
+            hex_chars = "".join(ch for ch in ascii_candidate if ch in "0123456789abcdefABCDEF")
+            if len(hex_chars) >= 32:
+                uuid_str = hex_chars[:32].upper()
+                if uuid_str != "0" * 32:
+                    return uuid_str
+        except Exception:
+            pass
+
+        try:
+            # Fallback for partially decoded payloads: use first 16 raw bytes as hex.
+            # This preserves compatibility with older decoding behavior.
+            uuid_str = raw[:16].hex().upper()
             if uuid_str and uuid_str != "0" * 32:
                 return uuid_str
         except Exception:

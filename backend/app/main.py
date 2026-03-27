@@ -73,6 +73,9 @@ from backend.app.services.printer_manager import (
     printer_state_to_dict,
 )
 from backend.app.services.smart_plug_manager import smart_plug_manager
+from backend.app.services.spool_assignment_notifications import (
+    notify_missing_spool_assignments_on_print_start,
+)
 from backend.app.services.spoolman import close_spoolman_client, get_spoolman_client, init_spoolman_client
 from backend.app.services.spoolman_tracking import (
     cleanup_tracking as _cleanup_spoolman_tracking,
@@ -425,15 +428,25 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
 
     # Include tray_now and vt_tray hash so external spool changes trigger broadcasts
     vt_tray_key = hash(str(state.raw_data.get("vt_tray", []))) if state.raw_data else 0
-    # Include AMS dry_time values so drying status changes trigger broadcasts
+    # Include AMS dry_time and tray state values so drying/slot changes trigger broadcasts
     ams_dry_key = tuple(a.get("dry_time", 0) for a in (state.raw_data.get("ams") or [])) if state.raw_data else ()
+    # Include tray states so load/unload transitions (state 11→10) trigger broadcasts (#784)
+    ams_tray_key = (
+        tuple(
+            (t.get("id"), t.get("tray_type", ""), t.get("state"))
+            for a in (state.raw_data.get("ams") or [])
+            for t in a.get("tray", [])
+        )
+        if state.raw_data
+        else ()
+    )
     status_key = (
         f"{state.connected}:{state.state}:{state.progress}:{state.layer_num}:"
         f"{nozzle_temp}:{bed_temp}:{nozzle_2_temp}:{chamber_temp}:"
         f"{state.stg_cur}:{bed_target}:{nozzle_target}:"
         f"{state.cooling_fan_speed}:{state.big_fan1_speed}:{state.big_fan2_speed}:"
         f"{state.chamber_light}:{state.active_extruder}:{state.tray_now}:{vt_tray_key}:"
-        f"{ams_dry_key}"
+        f"{ams_dry_key}:{ams_tray_key}"
     )
 
     # MQTT relay - publish status (before dedup check - always publish to MQTT)
@@ -775,9 +788,11 @@ async def on_ams_change(printer_id: int, ams_data: list):
             from backend.app.services.spool_tag_matcher import (
                 auto_assign_spool,
                 create_spool_from_tray,
+                find_matching_untagged_spool,
                 get_spool_by_tag,
                 is_bambu_tag,
                 is_valid_tag,
+                link_tag_to_inventory_spool,
             )
 
             _spoolman_on = await get_setting(db, "spoolman_enabled")
@@ -833,10 +848,15 @@ async def on_ams_change(printer_id: int, ams_data: list):
                             continue
 
                         if is_bambu_tag(tag_uid, tray_uuid, tray_info_idx):
-                            # BL spool with RFID tag: auto-match or auto-create
+                            # BL spool with RFID tag: auto-match → inventory match → auto-create
                             spool = await get_spool_by_tag(db, tag_uid, tray_uuid)
                             if not spool:
-                                spool = await create_spool_from_tray(db, tray)
+                                # Try matching an untagged inventory spool (same material/color)
+                                spool = await find_matching_untagged_spool(db, tray)
+                                if spool:
+                                    await link_tag_to_inventory_spool(db, spool, tray)
+                                else:
+                                    spool = await create_spool_from_tray(db, tray)
                             await auto_assign_spool(
                                 printer_id,
                                 ams_id,
@@ -1206,6 +1226,9 @@ async def on_print_start(printer_id: int, data: dict):
     clear_cover_cache(printer_id)
 
     await ws_manager.send_print_start(printer_id, data)
+
+    # Notify when the print-start AMS mapping references tray slots without spool assignments.
+    await notify_missing_spool_assignments_on_print_start(printer_id, data, logger)
 
     # MQTT relay - publish print start
     try:
@@ -4113,7 +4136,11 @@ async def serve_service_worker():
     """Serve service worker."""
     sw_file = app_settings.static_dir / "sw.js"
     if sw_file.exists():
-        return FileResponse(sw_file, media_type="application/javascript")
+        return FileResponse(
+            sw_file,
+            media_type="application/javascript",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )
     return {"error": "Service worker not found"}
 
 

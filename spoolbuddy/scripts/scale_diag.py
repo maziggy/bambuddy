@@ -1,17 +1,32 @@
 #!/usr/bin/env python3
-"""NAU7802 Scale Diagnostic — ported from SpoolBuddy Rust firmware.
+"""NAU7802 Scale Diagnostic.
 
 I2C address: 0x2A
-Bus: /dev/i2c-0 (GPIO0/GPIO1 on RPi)
+Bus: /dev/i2c-1 (GPIO2/GPIO3 on RPi)
 """
 
-import struct
+import os
 import sys
 import time
 
 import smbus2
 
-I2C_BUS = 0
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "daemon")))
+
+from nau7802 import NAU7802
+
+
+def _env_int(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None or value == "":
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+I2C_BUS = _env_int("SPOOLBUDDY_I2C_BUS", 1)
 NAU7802_ADDR = 0x2A
 
 # Register addresses
@@ -37,92 +52,108 @@ PU_OSCS = 0x40  # Oscillator select
 PU_AVDDS = 0x80  # AVDD source select
 
 
-class NAU7802:
-    def __init__(self, bus=I2C_BUS, addr=NAU7802_ADDR):
-        self._bus = smbus2.SMBus(bus)
-        self._addr = addr
-
-    def close(self):
-        self._bus.close()
-
-    def read_reg(self, reg: int) -> int:
-        return self._bus.read_byte_data(self._addr, reg)
-
-    def write_reg(self, reg: int, val: int):
-        self._bus.write_byte_data(self._addr, reg, val & 0xFF)
-
-    def init(self):
-        """Initialize NAU7802 — matches Rust firmware init sequence."""
-        revision = self.read_reg(REG_REVISION)
-        print(f"  Revision: 0x{revision:02X}")
-
-        # Reset
-        self.write_reg(REG_PU_CTRL, PU_RR)
-        time.sleep(0.010)
-        self.write_reg(REG_PU_CTRL, 0x00)
-
-        # Power up digital + analog
-        self.write_reg(REG_PU_CTRL, PU_PUD | PU_PUA)
-
-        # Wait for power-up ready
-        for _ in range(100):
-            status = self.read_reg(REG_PU_CTRL)
-            if status & PU_PUR:
-                print("  Power-up ready")
-                break
-            time.sleep(0.001)
-        else:
-            raise TimeoutError("NAU7802 power-up timeout")
-
-        # Sample rate: 10 SPS (bits 6:4 of CTRL2 = 0b000)
-        ctrl2 = self.read_reg(REG_CTRL2)
-        self.write_reg(REG_CTRL2, (ctrl2 & 0x8F) | (0 << 4))
-        print("  Sample rate: 10 SPS")
-
-        # Gain: 128x (bits 2:0 of CTRL1 = 0b111)
-        ctrl1 = self.read_reg(REG_CTRL1)
-        self.write_reg(REG_CTRL1, (ctrl1 & 0xF8) | 7)
-        print("  Gain: 128x")
-
-        # LDO: 3.3V (bits 5:3 of CTRL1 = 0b100)
-        ctrl1 = self.read_reg(REG_CTRL1)
-        self.write_reg(REG_CTRL1, (ctrl1 & 0xC7) | (0b100 << 3))
-
-        # Enable internal LDO (bit 7 of CTRL1)
-        ctrl1 = self.read_reg(REG_CTRL1)
-        self.write_reg(REG_CTRL1, ctrl1 | 0x80)
-        print("  LDO: 3.3V (internal)")
-
-        # Start conversion cycle
-        pu_ctrl = self.read_reg(REG_PU_CTRL)
-        self.write_reg(REG_PU_CTRL, pu_ctrl | PU_CS)
-        print("  Conversion started")
-
-    def data_ready(self) -> bool:
-        return bool(self.read_reg(REG_PU_CTRL) & PU_CR)
-
-    def read_raw(self) -> int:
-        """Read 24-bit signed ADC value."""
-        b2 = self.read_reg(REG_ADCO_B2)
-        b1 = self.read_reg(REG_ADCO_B1)
-        b0 = self.read_reg(REG_ADCO_B0)
-        raw = (b2 << 16) | (b1 << 8) | b0
-        # Sign extend 24-bit to 32-bit
-        if raw & 0x800000:
-            raw |= 0xFF000000
-            raw = struct.unpack("i", struct.pack("I", raw))[0]
-        return raw
-
-
 def main():
     print("=" * 60)
     print("NAU7802 Scale Diagnostic")
     print("=" * 60)
 
+    print(f"Configured bus: {I2C_BUS}, address: 0x{NAU7802_ADDR:02X}")
+
+    # Probe both common I2C buses and show where devices are actually visible.
+    found_by_bus: dict[int, list[int]] = {}
+    for bus_num in (0, 1):
+        found_by_bus[bus_num] = []
+        try:
+            with smbus2.SMBus(bus_num) as probe_bus:
+                for addr in range(0x03, 0x78):
+                    try:
+                        probe_bus.read_byte(addr)
+                        found_by_bus[bus_num].append(addr)
+                    except OSError:
+                        continue
+        except FileNotFoundError:
+            continue
+        except PermissionError:
+            continue
+
+    for bus_num, addrs in found_by_bus.items():
+        if addrs:
+            pretty = " ".join(f"0x{a:02X}" for a in addrs)
+            print(f"Bus {bus_num} devices: {pretty}")
+        else:
+            print(f"Bus {bus_num} devices: (none)")
+
+    if NAU7802_ADDR not in found_by_bus.get(I2C_BUS, []):
+        for alt in (1, 0):
+            if alt != I2C_BUS and NAU7802_ADDR in found_by_bus.get(alt, []):
+                print(f"\nHint: NAU7802 (0x{NAU7802_ADDR:02X}) appears on bus {alt}, not configured bus {I2C_BUS}.")
+                print(f"Try: SPOOLBUDDY_I2C_BUS={alt} .../scale_diag.py")
+                break
+
     scale = NAU7802()
     try:
         print("[1] Initializing...")
+
         scale.init()
+
+        # Print key interpreted config values
+        revision = scale.read_reg(REG_REVISION)
+        revision_id = revision & 0x0F
+        print(f"    Revision ID: {revision_id}")
+
+        # PU_CTRL bit 7: AVDD source select
+        pu_ctrl = scale.read_reg(REG_PU_CTRL)
+        avdds = (pu_ctrl >> 7) & 0x1
+        avdds_str = "Internal LDO" if avdds == 1 else "AVDD pin input"
+        print(f"    AVDD source: {avdds_str}")
+        ctrl1 = scale.read_reg(REG_CTRL1)
+        vldo = (ctrl1 >> 3) & 0b111
+        vldo_map = {
+            0b111: "2.4V",
+            0b110: "2.7V",
+            0b101: "3.0V",
+            0b100: "3.3V",
+            0b011: "3.6V",
+            0b010: "3.9V",
+            0b001: "4.2V",
+            0b000: "4.5V",
+        }
+        vldo_str = vldo_map.get(vldo, f"Unknown ({vldo})")
+        gain = ctrl1 & 0b111
+        gain_map = {
+            0b000: "1x",
+            0b001: "2x",
+            0b010: "4x",
+            0b011: "8x",
+            0b100: "16x",
+            0b101: "32x",
+            0b110: "64x",
+            0b111: "128x",
+        }
+        gain_str = gain_map.get(gain, f"Unknown ({gain})")
+        print(f"    LDO setting (VLDO): {vldo_str}")
+        print(f"    Gain setting: {gain_str}")
+        ctrl2 = scale.read_reg(REG_CTRL2)
+        sps = (ctrl2 >> 4) & 0b111
+        sps_map = {
+            0b000: "10 SPS",
+            0b001: "20 SPS",
+            0b010: "40 SPS",
+            0b011: "80 SPS",
+            0b100: "320 SPS",
+        }
+        sps_str = sps_map.get(sps, f"Unknown ({sps})")
+        print(f"    Sample rate: {sps_str}")
+        adc = scale.read_reg(REG_ADC)
+        chopper = (adc >> 4) & 0b11
+        chopper_str = {0b00: "Enabled", 0b01: "Enabled", 0b10: "Enabled", 0b11: "Disabled"}.get(
+            chopper, f"Unknown ({chopper})"
+        )
+        print(f"    ADC chopper: {chopper_str}")
+        pga = scale.read_reg(REG_PGA)
+        low_esr = (pga >> 6) & 0x1
+        low_esr_str = "Enabled" if low_esr == 0 else "Disabled"
+        print(f"    PGA low-ESR caps: {low_esr_str}")
 
         print("[2] Waiting for first reading...")
         for _ in range(200):
@@ -133,7 +164,7 @@ def main():
             print("    Timeout waiting for data ready")
             sys.exit(1)
 
-        print("[3] Reading 10 samples (10 SPS = ~1 second)...")
+        print("    Reading 10 samples (10 SPS = ~1 second)...")
         readings = []
         for i in range(10):
             # Wait for data ready
@@ -158,9 +189,36 @@ def main():
 
     except Exception as e:
         print(f"\nERROR: {e}")
-        import traceback
+        is_known_error = False
 
-        traceback.print_exc()
+        if isinstance(e, OSError):
+            if e.errno == 16:  # Device or resource busy
+                is_known_error = True
+                print("\nI2C DEVICE BUSY (Errno 16): Another process is using the I2C bus.")
+                print("This typically means the SpoolBuddy daemon is already reading the scale.")
+                print("\nTo run this diagnostic, stop the daemon first:")
+                print("  sudo systemctl stop bambuddy")
+                print("  # Run diagnostic")
+                print("  .../scale_diag.py")
+                print("  # Restart daemon when done:")
+                print("  sudo systemctl start bambuddy")
+            elif e.errno == 121:
+                is_known_error = True
+                print("\nI2C NACK (Errno 121): the device did not acknowledge reads at 0x2A.")
+                print("Check:")
+                print("  - NAU7802 SDA/SCL are on the configured bus pins")
+                print("  - 3.3V and GND are correct and stable")
+                print("  - Sensor address is really 0x2A")
+                print("  - No loose wire or swapped SDA/SCL")
+            else:
+                print(f"\nI2C Error (Errno {e.errno}): {e}")
+
+        # Only print full traceback for unexpected errors
+        if not is_known_error:
+            import traceback
+
+            traceback.print_exc()
+
         sys.exit(1)
     finally:
         scale.close()

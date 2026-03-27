@@ -2,12 +2,16 @@
 
 import logging
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
+from backend.app.utils.tag_normalization import (
+    normalize_tag_uid as _normalize_tag_uid,
+    normalize_tray_uuid as _normalize_tray_uuid,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -18,14 +22,17 @@ ZERO_TRAY_UUID = "00000000000000000000000000000000"
 
 def is_valid_tag(tag_uid: str, tray_uuid: str) -> bool:
     """Check if a tag/UUID pair contains a non-zero, non-empty value."""
-    uid_valid = bool(tag_uid) and tag_uid != ZERO_TAG_UID and tag_uid != "0" * len(tag_uid)
-    uuid_valid = bool(tray_uuid) and tray_uuid != ZERO_TRAY_UUID and tray_uuid != "0" * len(tray_uuid)
+    uid = _normalize_tag_uid(tag_uid)
+    uuid = _normalize_tray_uuid(tray_uuid)
+    uid_valid = bool(uid) and uid != ZERO_TAG_UID and uid != "0" * len(uid)
+    uuid_valid = bool(uuid) and uuid != ZERO_TRAY_UUID and uuid != "0" * len(uuid)
     return uid_valid or uuid_valid
 
 
 def is_bambu_tag(tag_uid: str, tray_uuid: str, tray_info_idx: str) -> bool:
     """Check if an AMS tray contains a Bambu Lab RFID spool (has valid UUID or slicer preset)."""
-    uuid_valid = bool(tray_uuid) and tray_uuid != ZERO_TRAY_UUID and tray_uuid != "0" * len(tray_uuid)
+    uuid = _normalize_tray_uuid(tray_uuid)
+    uuid_valid = bool(uuid) and uuid != ZERO_TRAY_UUID and uuid != "0" * len(uuid)
     has_preset = bool(tray_info_idx)
     return uuid_valid or (is_valid_tag(tag_uid, tray_uuid) and has_preset)
 
@@ -43,8 +50,8 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     tray_sub_brands = tray_data.get("tray_sub_brands", "")  # "PLA Basic"
     tray_color = tray_data.get("tray_color", "FFFFFFFF")  # RRGGBBAA
     tray_id_name = tray_data.get("tray_id_name", "")  # Color name e.g. "Jade White"
-    tag_uid = tray_data.get("tag_uid", "")
-    tray_uuid = tray_data.get("tray_uuid", "")
+    tag_uid = _normalize_tag_uid(tray_data.get("tag_uid", ""))
+    tray_uuid = _normalize_tray_uuid(tray_data.get("tray_uuid", ""))
     tray_info_idx = tray_data.get("tray_info_idx", "")
     nozzle_min = tray_data.get("nozzle_temp_min", 0)
     nozzle_max = tray_data.get("nozzle_temp_max", 0)
@@ -165,17 +172,118 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     return spool
 
 
+async def find_matching_untagged_spool(db: AsyncSession, tray_data: dict) -> Spool | None:
+    """Find an existing untagged inventory spool matching brand/material/color.
+
+    When a Bambu Lab spool is detected in the AMS but no tag match exists,
+    check if the user has a manually-added spool with the same properties
+    that hasn't been linked to a tag yet. Returns the oldest match (FIFO).
+    """
+    tray_type = tray_data.get("tray_type", "")
+    tray_sub_brands = tray_data.get("tray_sub_brands", "")
+    tray_color = tray_data.get("tray_color", "")  # RRGGBBAA
+
+    if not tray_type or not tray_color:
+        return None
+
+    # Parse material the same way create_spool_from_tray does
+    material = tray_type
+    subtype = None
+    if tray_sub_brands and " " in tray_sub_brands:
+        parts = tray_sub_brands.split(" ", 1)
+        if parts[0].upper() == material.upper():
+            subtype = parts[1]
+        else:
+            material = tray_sub_brands
+    elif tray_sub_brands and tray_sub_brands.upper() != material.upper():
+        material = tray_sub_brands
+
+    # Build query: active spools with no tag, matching brand + material + color
+    query = (
+        select(Spool)
+        .options(selectinload(Spool.k_profiles), selectinload(Spool.assignments))
+        .where(
+            Spool.archived_at.is_(None),
+            Spool.tag_uid.is_(None),
+            Spool.tray_uuid.is_(None),
+            func.upper(Spool.material) == material.upper(),
+            func.upper(Spool.rgba) == tray_color.upper(),
+        )
+    )
+
+    # Match subtype if parsed (e.g. "Basic", "Matte")
+    if subtype:
+        query = query.where(func.upper(Spool.subtype) == subtype.upper())
+    else:
+        query = query.where(Spool.subtype.is_(None))
+
+    # FIFO: oldest spool first (user likely added in purchase order)
+    query = query.order_by(Spool.created_at.asc()).limit(1)
+
+    result = await db.execute(query)
+    spool = result.scalar_one_or_none()
+
+    if spool:
+        logger.info(
+            "Found matching untagged spool %d: %s %s %s (rgba=%s)",
+            spool.id,
+            spool.brand or "",
+            spool.material,
+            spool.color_name or "",
+            spool.rgba or "",
+        )
+
+    return spool
+
+
+async def link_tag_to_inventory_spool(db: AsyncSession, spool: Spool, tray_data: dict) -> None:
+    """Link RFID tag data from AMS tray to an existing inventory spool."""
+    tag_uid = tray_data.get("tag_uid", "")
+    tray_uuid = tray_data.get("tray_uuid", "")
+    tray_info_idx = tray_data.get("tray_info_idx", "")
+
+    if tag_uid and tag_uid != ZERO_TAG_UID:
+        spool.tag_uid = tag_uid
+    if tray_uuid and tray_uuid != ZERO_TRAY_UUID:
+        spool.tray_uuid = tray_uuid
+    spool.data_origin = "rfid_linked"
+    spool.tag_type = "bambulab"
+
+    # Update slicer preset if not already set
+    if tray_info_idx and not spool.slicer_filament:
+        spool.slicer_filament = tray_info_idx
+        try:
+            from backend.app.api.routes.cloud import _BUILTIN_FILAMENT_NAMES
+
+            name = _BUILTIN_FILAMENT_NAMES.get(tray_info_idx)
+            if name and not spool.slicer_filament_name:
+                spool.slicer_filament_name = name
+        except Exception:
+            pass
+
+    await db.flush()
+    logger.info(
+        "Linked RFID tag to existing spool %d (tag=%s uuid=%s origin=rfid_linked)",
+        spool.id,
+        spool.tag_uid or "",
+        spool.tray_uuid or "",
+    )
+
+
 async def get_spool_by_tag(db: AsyncSession, tag_uid: str, tray_uuid: str) -> Spool | None:
     """Look up an active spool by RFID tag UID or Bambu Lab tray UUID.
 
     Prefers tray_uuid match over tag_uid (more reliable).
     """
+    tray_uuid_norm = _normalize_tray_uuid(tray_uuid)
+    tag_uid_norm = _normalize_tag_uid(tag_uid)
+
     # Try tray_uuid first (Bambu Lab spools — more reliable)
-    if tray_uuid and tray_uuid != ZERO_TRAY_UUID and tray_uuid != "0" * len(tray_uuid):
+    if tray_uuid_norm and tray_uuid_norm != ZERO_TRAY_UUID and tray_uuid_norm != "0" * len(tray_uuid_norm):
         result = await db.execute(
             select(Spool)
             .options(selectinload(Spool.k_profiles), selectinload(Spool.assignments))
-            .where(Spool.tray_uuid == tray_uuid, Spool.archived_at.is_(None))
+            .where(func.upper(Spool.tray_uuid) == tray_uuid_norm, Spool.archived_at.is_(None))
             .limit(1)
         )
         spool = result.scalar_one_or_none()
@@ -183,16 +291,76 @@ async def get_spool_by_tag(db: AsyncSession, tag_uid: str, tray_uuid: str) -> Sp
             return spool
 
     # Fall back to tag_uid
-    if tag_uid and tag_uid != ZERO_TAG_UID and tag_uid != "0" * len(tag_uid):
+    if tag_uid_norm and tag_uid_norm != ZERO_TAG_UID and tag_uid_norm != "0" * len(tag_uid_norm):
         result = await db.execute(
             select(Spool)
             .options(selectinload(Spool.k_profiles), selectinload(Spool.assignments))
-            .where(Spool.tag_uid == tag_uid, Spool.archived_at.is_(None))
+            .where(func.upper(Spool.tag_uid) == tag_uid_norm, Spool.archived_at.is_(None))
             .limit(1)
         )
         spool = result.scalar_one_or_none()
         if spool:
             return spool
+
+        # Compatibility fallback: some readers report 4-byte UID (8 hex) while
+        # stored values may contain longer forms. Prefer suffix match only.
+        if len(tag_uid_norm) >= 8:
+            suffix8 = tag_uid_norm[-8:]
+            short_uid_body = tag_uid_norm[1:] if len(tag_uid_norm) == 8 else ""
+
+            # Build LIKE patterns for candidates search
+            like_patterns = [
+                func.upper(Spool.tag_uid).like(f"%{tag_uid_norm}"),
+                func.upper(Spool.tag_uid).like(f"%{suffix8}"),
+            ]
+            if short_uid_body:
+                like_patterns.append(func.upper(Spool.tag_uid).like(f"%{short_uid_body}%"))
+
+            candidates = await db.execute(
+                select(Spool)
+                .options(selectinload(Spool.k_profiles), selectinload(Spool.assignments))
+                .where(
+                    Spool.tag_uid.is_not(None),
+                    Spool.archived_at.is_(None),
+                    or_(*like_patterns),
+                )
+                .limit(100)
+            )
+            for candidate in candidates.scalars().all():
+                candidate_uid = _normalize_tag_uid(candidate.tag_uid)
+                if not candidate_uid:
+                    continue
+                if candidate_uid == tag_uid_norm:
+                    return candidate
+                if len(candidate_uid) > len(tag_uid_norm) and candidate_uid.endswith(tag_uid_norm):
+                    return candidate
+                if len(tag_uid_norm) > len(candidate_uid) and tag_uid_norm.endswith(candidate_uid):
+                    return candidate
+                # Backward-compatible matching: allow first-character mismatch
+                # when remaining characters match. This handles cases where the same
+                # physical tag reports different first bytes across different readers
+                # (e.g., one reader reports "A45012F", another reports "B45012F").
+                if len(tag_uid_norm) == len(candidate_uid) and len(tag_uid_norm) > 1:
+                    # Same length: check if all chars except the first match
+                    if candidate_uid[1:] == tag_uid_norm[1:]:
+                        logger.warning(
+                            "Matched spool %d via first-char variance: stored=%s → scanned=%s",
+                            candidate.id,
+                            candidate_uid,
+                            tag_uid_norm,
+                        )
+                        return candidate
+                # Short UID (8 chars) matching: allow first-character mismatch
+                # within the first 8 bytes when remaining 7 chars match.
+                if len(tag_uid_norm) == 8 and len(candidate_uid) >= 8:
+                    if candidate_uid[:8][1:] == tag_uid_norm[1:]:
+                        logger.warning(
+                            "Matched spool %d via short UID variance: stored=%s → scanned=%s",
+                            candidate.id,
+                            candidate_uid,
+                            tag_uid_norm,
+                        )
+                        return candidate
 
     return None
 

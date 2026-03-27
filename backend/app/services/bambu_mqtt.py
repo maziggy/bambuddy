@@ -10,6 +10,7 @@ but with qos=1 they respond instantly.
 import asyncio
 import json
 import logging
+import os
 import ssl
 import threading
 import time
@@ -268,6 +269,8 @@ class BambuMQTTClient:
     # Class-level cache: serial_number -> False when request topic is known unsupported.
     # Persists across client instances so reconnects don't re-trigger failed subscriptions.
     _request_topic_cache: dict[str, bool] = {}
+    # Counter for generating unique MQTT client IDs across instances.
+    _client_instance_counter: int = 0
 
     def __init__(
         self,
@@ -344,6 +347,13 @@ class BambuMQTTClient:
         self._request_topic_sub_time: float = 0.0
         self._request_topic_confirmed: bool = False
 
+        # Set when check_staleness() force-closes the socket to trigger reconnect.
+        # Prevents _on_disconnect from redundantly broadcasting state (already done).
+        self._stale_reconnecting: bool = False
+        # Timestamp of last stale reconnect — prevents rapid-fire socket closes
+        # when the frontend polls status faster than paho can reconnect.
+        self._last_stale_reconnect: float = 0.0
+
     @property
     def topic_subscribe(self) -> str:
         return f"device/{self.serial_number}/report"
@@ -362,20 +372,47 @@ class BambuMQTTClient:
         time_since_last = time.time() - self._last_message_time
         return time_since_last > self.STALE_TIMEOUT
 
+    # Minimum seconds between stale reconnect attempts.  Frontend polls
+    # status every few seconds — without a cooldown, each poll would
+    # force-close the socket before paho has time to reconnect.
+    STALE_RECONNECT_COOLDOWN = 30.0
+
     def check_staleness(self) -> bool:
         """Check staleness and update connected state if stale. Returns True if connected."""
         if self.state.connected and self.is_stale():
+            # Don't force-close again if we already did recently — give paho
+            # time to reconnect and the printer time to send its first message.
+            now = time.time()
+            if now - self._last_stale_reconnect < self.STALE_RECONNECT_COOLDOWN:
+                return self.state.connected
+
             logger.warning(
-                f"[{self.serial_number}] Connection stale - no message for {time.time() - self._last_message_time:.1f}s"
+                f"[{self.serial_number}] Connection stale - no message for {now - self._last_message_time:.1f}s, forcing reconnect"
             )
+            self._last_stale_reconnect = now
             self.state.connected = False
             if self.on_state_change:
                 self.on_state_change(self.state)
+            # Force-close the underlying socket so paho's loop thread detects
+            # the broken connection and triggers auto-reconnect.  We don't call
+            # client.disconnect() because that's a clean disconnect and paho
+            # would NOT auto-reconnect afterwards.
+            # Set flag so _on_disconnect knows this was intentional and skips
+            # redundant state broadcast (we already set connected=False above).
+            self._stale_reconnecting = True
+            if self._client:
+                try:
+                    sock = self._client.socket()
+                    if sock:
+                        sock.close()
+                except Exception:
+                    pass  # Best-effort; paho loop will reconnect on next iteration
         return self.state.connected
 
     def _on_connect(self, client, userdata, flags, rc, properties=None):
         if rc == 0:
             self.state.connected = True
+            self._stale_reconnecting = False  # Clear stale-reconnect flag on successful connect
             # Reset per-connection warning state so warnings fire once per (re)connection
             self._ams_version_warned = set()
             client.subscribe(self.topic_subscribe)
@@ -433,10 +470,30 @@ class BambuMQTTClient:
             self._request_topic_sub_time = 0.0
 
     def _on_disconnect(self, client, userdata, disconnect_flags=None, rc=None, properties=None):
+        # Always unblock disconnect() callers, regardless of whether we suppress
+        # the state broadcast below.  disconnect() sets _disconnection_event and
+        # waits on it — every callback path must fire it.
+        if self._disconnection_event:
+            self._disconnection_event.set()
+
+        # If we intentionally closed the socket for stale reconnect, don't broadcast
+        # another state change — check_staleness() already set connected=False and
+        # notified the UI.  Just log and let paho auto-reconnect.
+        if self._stale_reconnecting:
+            logger.info(
+                "[%s] Disconnect callback after stale reconnect (expected), rc=%s",
+                self.serial_number,
+                rc,
+            )
+            return
+
         # Ignore spurious disconnect callbacks if we've received a message recently
-        # Paho-mqtt sometimes fires disconnect callbacks while the connection is still active
+        # Paho-mqtt sometimes fires disconnect callbacks while the connection is still active.
+        # BUT: never suppress error disconnects (keepalive timeout, connection lost, etc.)
+        # — only suppress when rc indicates a clean/normal disconnect.
+        is_error_disconnect = rc is not None and hasattr(rc, "is_failure") and rc.is_failure
         time_since_last_message = time.time() - self._last_message_time
-        if time_since_last_message < 30.0 and self._last_message_time > 0:
+        if not is_error_disconnect and time_since_last_message < 10.0 and self._last_message_time > 0:
             logger.debug(
                 f"[{self.serial_number}] Ignoring spurious disconnect (last message {time_since_last_message:.1f}s ago)"
             )
@@ -464,8 +521,6 @@ class BambuMQTTClient:
         self.state.connected = False
         if self.on_state_change:
             self.on_state_change(self.state)
-        if self._disconnection_event:
-            self._disconnection_event.set()
 
     def _on_message(self, client, userdata, msg):
         try:
@@ -491,10 +546,6 @@ class BambuMQTTClient:
                 self._handle_request_message(payload)
                 return
 
-            # TEMP: Dump full payload once to find extruder state field
-            if not hasattr(self, "_payload_dumped"):
-                self._payload_dumped = True
-                logger.debug("[%s] FULL MQTT PAYLOAD DUMP:\n%s", self.serial_number, json.dumps(payload, indent=2))
             # Log message if logging is enabled
             if self._logging_enabled:
                 self._message_log.append(
@@ -1358,6 +1409,44 @@ class BambuMQTTClient:
                             # When tray_type is explicitly empty, clear everything
                             # including RFID data (tag_uid/tray_uuid).
                             slot_clearing = new_tray.get("tray_type") == ""
+                            # Some printers (e.g. H2D) only send {id, state} in
+                            # incremental updates when a tray is not fully loaded.
+                            # state=11 means loaded; other values (9=empty,
+                            # 10=spool present but filament not in feeder) indicate
+                            # the slot should be cleared.  Without this, old
+                            # tray_type/tray_color persist indefinitely (#784).
+                            tray_state = new_tray.get("state")
+                            if (
+                                tray_state is not None
+                                and tray_state != 11
+                                and "tray_type" not in new_tray
+                                and merged_tray.get("tray_type")
+                            ):
+                                logger.info(
+                                    "[%s] AMS %s tray %s: state=%s (not loaded) — clearing stale tray data",
+                                    self.serial_number,
+                                    ams_id,
+                                    tray_id,
+                                    tray_state,
+                                )
+                                slot_clearing = True
+                                # The incremental update only has {id, state} — inject
+                                # empty values for all content fields so the merge loop
+                                # below clears the stale data from merged_tray.
+                                new_tray.update(
+                                    {
+                                        "tray_type": "",
+                                        "tray_sub_brands": "",
+                                        "tray_color": "",
+                                        "tray_id_name": "",
+                                        "tray_info_idx": "",
+                                        "tag_uid": "0000000000000000",
+                                        "tray_uuid": "00000000000000000000000000000000",
+                                        "remain": 0,
+                                        "k": None,
+                                        "cali_idx": None,
+                                    }
+                                )
                             for key, value in new_tray.items():
                                 # Fields that should always be updated (even with empty/zero values):
                                 # - remain, k, id, cali_idx: status indicators where 0 is valid
@@ -2416,13 +2505,20 @@ class BambuMQTTClient:
         ):
             should_trigger_completion = True
 
-        # Log when we see a terminal state but DON'T trigger completion (diagnostics)
-        if not should_trigger_completion and self.state.state in ("FINISH", "FAILED"):
+        # Log when we FIRST see a terminal state but DON'T trigger completion (diagnostics)
+        # Only log on the transition (prev != current) to avoid flooding logs every MQTT update
+        if (
+            not should_trigger_completion
+            and self.state.state in ("FINISH", "FAILED")
+            and self._previous_gcode_state != self.state.state
+        ):
             logger.info(
                 f"[{self.serial_number}] State is {self.state.state} but completion NOT triggered: "
                 f"prev={self._previous_gcode_state}, was_running={self._was_running}, "
                 f"already_triggered={self._completion_triggered}, has_callback={bool(self.on_print_complete)}"
             )
+            # Mark as triggered so state is clean for the next print cycle
+            self._completion_triggered = True
 
         if should_trigger_completion:
             if self.state.state == "FINISH":
@@ -2551,9 +2647,11 @@ class BambuMQTTClient:
                   If not provided, will try to get the running loop.
         """
         self._loop = loop
+        BambuMQTTClient._client_instance_counter += 1
+        client_id = f"bambuddy_{self.serial_number}_{os.getpid()}_{BambuMQTTClient._client_instance_counter}"
         self._client = mqtt.Client(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-            client_id=f"bambuddy_{self.serial_number}",
+            client_id=client_id,
             protocol=mqtt.MQTTv311,
         )
 
@@ -2569,9 +2667,16 @@ class BambuMQTTClient:
         ssl_context.verify_mode = ssl.CERT_NONE
         self._client.tls_set_context(ssl_context)
 
-        # Use shorter keepalive (15s) for faster disconnect detection
-        # Paho considers connection lost after 1.5x keepalive with no response
-        self._client.connect_async(self.ip_address, self.MQTT_PORT, keepalive=15)
+        # Backoff reconnects to avoid tight reconnect loops on unstable brokers.
+        self._client.reconnect_delay_set(min_delay=1, max_delay=30)
+
+        # Keepalive: paho sends PINGREQs at this interval, broker considers
+        # client dead at 1.5x.  30s is a good balance — fast enough to detect
+        # real network loss (45s), not so aggressive that transient hiccups
+        # trigger false disconnects.  Stale detection (60s no messages) handles
+        # the P1S/P1P firmware bug where the broker stops publishing but the
+        # TCP connection stays alive.
+        self._client.connect_async(self.ip_address, self.MQTT_PORT, keepalive=30)
         self._client.loop_start()
 
     def start_print(
@@ -2606,25 +2711,36 @@ class BambuMQTTClient:
             # Bambu print command format - matches Bambu Studio's format
             # Build ams_mapping2 from ams_mapping (detailed format with ams_id/slot_id)
             ams_mapping2 = []
+            # BambuStudio converts virtual tray IDs (254/255) to -1 in the flat
+            # ams_mapping and relies on ams_mapping2 for external spool details.
+            # Passing raw 254/255 in the flat array causes H2D firmware to fail
+            # with 0700_8012 "Failed to get AMS mapping table".
+            flat_ams_mapping = []
             if ams_mapping is not None:
                 for tray_id in ams_mapping:
                     # Ensure tray_id is an integer (may be string from JSON)
                     tray_id = int(tray_id) if tray_id is not None else -1
                     if tray_id == -1:
                         # Unmapped filament slot
+                        flat_ams_mapping.append(-1)
                         ams_mapping2.append({"ams_id": 255, "slot_id": 255})
                     elif tray_id >= 254:
-                        # External spool: 254 = main nozzle, 255 = deputy nozzle
-                        # For ams_mapping2, slot_id is 0 (main) or 1 (deputy), not the tray_id
-                        external_slot = 0 if tray_id == 254 else 1
-                        ams_mapping2.append({"ams_id": 255, "slot_id": external_slot})
+                        # External/virtual spool: each virtual tray is its own AMS unit
+                        # with a single slot (slot 0). BambuStudio convention:
+                        #   255 = VIRTUAL_TRAY_MAIN_ID (main/left nozzle)
+                        #   254 = VIRTUAL_TRAY_DEPUTY_ID (deputy/right nozzle)
+                        # Flat mapping must use -1 (firmware doesn't accept raw 254/255).
+                        flat_ams_mapping.append(-1)
+                        ams_mapping2.append({"ams_id": tray_id, "slot_id": 0})
                     elif tray_id >= 128:
                         # AMS-HT: global tray ID IS the ams_id (single tray per unit)
+                        flat_ams_mapping.append(tray_id)
                         ams_mapping2.append({"ams_id": tray_id, "slot_id": 0})
                     else:
                         # Regular AMS tray: Global tray ID = (ams_id * 4) + slot_id
                         ams_id = tray_id // 4
                         slot_id = tray_id % 4
+                        flat_ams_mapping.append(tray_id)
                         ams_mapping2.append({"ams_id": ams_id, "slot_id": slot_id})
 
             # H2D series requires integer values (0/1) for calibration/leveling fields
@@ -2675,7 +2791,7 @@ class BambuMQTTClient:
 
             # Add AMS mapping if provided
             if ams_mapping is not None:
-                command["print"]["ams_mapping"] = ams_mapping
+                command["print"]["ams_mapping"] = flat_ams_mapping
                 command["print"]["ams_mapping2"] = ams_mapping2
 
             logger.info("[%s] Sending print command: %s", self.serial_number, json.dumps(command))

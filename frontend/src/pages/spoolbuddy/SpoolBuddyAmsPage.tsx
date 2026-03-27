@@ -1,15 +1,18 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Layers } from 'lucide-react';
+import { Layers, Settings2, Package, Unlink, Link2, X } from 'lucide-react';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 import { api } from '../../api/client';
-import type { PrinterStatus, AMSTray } from '../../api/client';
-import { getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag } from '../../utils/amsHelpers';
+import type { PrinterStatus, AMSTray, SpoolAssignment } from '../../api/client';
+import { getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, formatSlotLabel } from '../../utils/amsHelpers';
 import { AmsUnitCard, HumidityIndicator, TemperatureIndicator, NozzleBadge } from '../../components/spoolbuddy/AmsUnitCard';
 import type { AmsThresholds } from '../../components/spoolbuddy/AmsUnitCard';
 import { ConfigureAmsSlotModal } from '../../components/ConfigureAmsSlotModal';
+import { AssignSpoolModal } from '../../components/AssignSpoolModal';
+import { LinkSpoolModal } from '../../components/LinkSpoolModal';
+import { useToast } from '../../contexts/ToastContext';
 
 function getAmsName(amsId: number): string {
   if (amsId <= 3) return `AMS ${String.fromCharCode(65 + amsId)}`;
@@ -43,6 +46,7 @@ export function SpoolBuddyAmsPage() {
   const { selectedPrinterId, setAlert } = useOutletContext<SpoolBuddyOutletContext>();
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
 
   const { data: status } = useQuery<PrinterStatus>({
     queryKey: ['printerStatus', selectedPrinterId],
@@ -205,6 +209,72 @@ export function SpoolBuddyAmsPage() {
     savedPresetId?: string;
   } | null>(null);
 
+  // Slot action picker: shown before opening configure or assign modal
+  const [slotActionPicker, setSlotActionPicker] = useState<{
+    amsId: number;
+    trayId: number;
+    trayCount: number;
+    tray: AMSTray | null;
+    trayType?: string;
+    trayColor?: string;
+    traySubBrands?: string;
+    trayInfoIdx?: string;
+    extruderId?: number;
+    caliIdx?: number | null;
+    savedPresetId?: string;
+    location: string;
+  } | null>(null);
+
+  // Assign spool modal state (inventory)
+  const [assignSpoolModal, setAssignSpoolModal] = useState<{
+    printerId: number;
+    amsId: number;
+    trayId: number;
+    trayInfo: { type: string; material?: string; profile?: string; color: string; location: string };
+  } | null>(null);
+
+  // Link spool modal state (Spoolman)
+  const [linkSpoolModal, setLinkSpoolModal] = useState<{
+    tagUid: string;
+    trayUuid: string;
+    printerId: number;
+    amsId: number;
+    trayId: number;
+  } | null>(null);
+
+  const getAssignment = useCallback((amsId: number, trayId: number): SpoolAssignment | undefined => {
+    return assignments?.find(a => a.ams_id === Number(amsId) && a.tray_id === Number(trayId));
+  }, [assignments]);
+
+  const getLinkedSpool = useCallback((amsId: number, trayId: number, tray: AMSTray | null) => {
+    if (!linkedSpools || !printerSerial) return undefined;
+    const tag = (tray?.tray_uuid || tray?.tag_uid || getFallbackSpoolTag(printerSerial, amsId, trayId))?.toUpperCase();
+    return tag ? linkedSpools[tag] : undefined;
+  }, [linkedSpools, printerSerial]);
+
+  const unassignMutation = useMutation({
+    mutationFn: ({ printerId, amsId, trayId }: { printerId: number; amsId: number; trayId: number }) =>
+      api.unassignSpool(printerId, amsId, trayId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['spool-assignments', selectedPrinterId] });
+      showToast(t('inventory.unassignSuccess', 'Spool unassigned'), 'success');
+      setSlotActionPicker(null);
+    },
+  });
+
+  const unlinkSpoolMutation = useMutation({
+    mutationFn: (spoolId: number) => api.unlinkSpool(spoolId),
+    onSuccess: (result) => {
+      showToast(t('spoolman.unlinkSuccess') || result?.message, 'success');
+      queryClient.invalidateQueries({ queryKey: ['linked-spools'] });
+      queryClient.invalidateQueries({ queryKey: ['unlinked-spools'] });
+      setSlotActionPicker(null);
+    },
+    onError: (error: Error) => {
+      showToast(error.message || t('spoolman.unlinkFailed'), 'error');
+    },
+  });
+
   const getActiveSlotForAms = useCallback((amsId: number): number | null => {
     if (effectiveTrayNow === undefined) return null;
     if (amsId <= 3) {
@@ -224,10 +294,11 @@ export function SpoolBuddyAmsPage() {
     const mappedExtruderId = amsExtruderMap[String(amsId)];
     const normalizedId = amsId >= 128 ? amsId - 128 : amsId;
     const extruderId = mappedExtruderId !== undefined ? mappedExtruderId : normalizedId;
-    setConfigureSlotModal({
+    const slotData = {
       amsId,
       trayId,
       trayCount: tray ? (amsId >= 128 ? 1 : 4) : 4,
+      tray,
       trayType: tray?.tray_type || undefined,
       trayColor: tray?.tray_color || undefined,
       traySubBrands: tray?.tray_sub_brands || undefined,
@@ -235,17 +306,21 @@ export function SpoolBuddyAmsPage() {
       extruderId: isDualNozzle ? extruderId : undefined,
       caliIdx: tray?.cali_idx,
       savedPresetId: slotPreset?.preset_id,
-    });
+      location: `${getAmsName(amsId)} Slot ${trayId + 1}`,
+    };
+
+    setSlotActionPicker(slotData);
   }, [slotPresets, amsExtruderMap, isDualNozzle]);
 
   const handleExtSlotClick = useCallback((extTray: AMSTray) => {
     const extTrayId = extTray.id ?? 254;
     const slotTrayId = extTrayId - 254;
     const extSlotPreset = slotPresets?.[255 * 4 + slotTrayId];
-    setConfigureSlotModal({
+    const slotData = {
       amsId: 255,
       trayId: slotTrayId,
       trayCount: 1,
+      tray: isTrayEmpty(extTray) ? null : extTray,
       trayType: extTray.tray_type || undefined,
       trayColor: extTray.tray_color || undefined,
       traySubBrands: extTray.tray_sub_brands || undefined,
@@ -253,8 +328,58 @@ export function SpoolBuddyAmsPage() {
       extruderId: isDualNozzle ? (extTrayId === 254 ? 1 : 0) : undefined,
       caliIdx: extTray.cali_idx,
       savedPresetId: extSlotPreset?.preset_id,
-    });
+      location: isDualNozzle
+        ? (extTrayId === 254 ? 'Ext-L' : 'Ext-R')
+        : 'External',
+    };
+
+    setSlotActionPicker(slotData);
   }, [slotPresets, isDualNozzle]);
+
+  const openConfigureFromPicker = useCallback(() => {
+    if (!slotActionPicker) return;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { tray, location, ...configData } = slotActionPicker;
+    setSlotActionPicker(null);
+    setConfigureSlotModal(configData);
+  }, [slotActionPicker]);
+
+  const openAssignFromPicker = useCallback(() => {
+    if (!slotActionPicker || !selectedPrinterId) return;
+    const { amsId, trayId, trayType, trayColor, location } = slotActionPicker;
+    setSlotActionPicker(null);
+    setAssignSpoolModal({
+      printerId: selectedPrinterId,
+      amsId,
+      trayId,
+      trayInfo: {
+        type: trayType || '',
+        material: trayType,
+        color: trayColor?.slice(0, 6) || '',
+        location,
+      },
+    });
+  }, [slotActionPicker, selectedPrinterId]);
+
+  const openLinkFromPicker = useCallback(() => {
+    if (!slotActionPicker || !selectedPrinterId) return;
+    const { amsId, trayId, tray } = slotActionPicker;
+    const linkTag = (tray?.tray_uuid || tray?.tag_uid || getFallbackSpoolTag(printerSerial, amsId, trayId))?.toUpperCase() || '';
+    setSlotActionPicker(null);
+    setLinkSpoolModal({
+      tagUid: tray?.tag_uid || linkTag,
+      trayUuid: tray?.tray_uuid || '',
+      printerId: selectedPrinterId,
+      amsId,
+      trayId,
+    });
+  }, [slotActionPicker, selectedPrinterId, printerSerial]);
+
+  const handleUnassignFromPicker = useCallback(() => {
+    if (!slotActionPicker || !selectedPrinterId) return;
+    const { amsId, trayId } = slotActionPicker;
+    unassignMutation.mutate({ printerId: selectedPrinterId, amsId, trayId });
+  }, [slotActionPicker, selectedPrinterId, unassignMutation]);
 
   // Set alert for low filament in status bar
   useEffect(() => {
@@ -263,11 +388,16 @@ export function SpoolBuddyAmsPage() {
       return;
     }
     for (const unit of amsUnits) {
-      for (const tray of unit.tray || []) {
+      const trays = unit.tray || [];
+      for (let i = 0; i < trays.length; i++) {
+        const tray = trays[i];
         if (tray.remain !== null && tray.remain >= 0 && tray.remain < 15 && tray.tray_type) {
+          const isExternal = unit.id === 254 || unit.id === 255;
+          const isHt = !isExternal && unit.id >= 128;
+          const slot = formatSlotLabel(unit.id, i, isHt, isExternal);
           setAlert({
             type: 'warning',
-            message: `Low Filament: ${tray.tray_type} (${getAmsName(unit.id)}) - ${tray.remain}% remaining`,
+            message: `Low Filament: ${tray.tray_type} (${slot}) - ${tray.remain}% remaining`,
           });
           return;
         }
@@ -478,6 +608,164 @@ export function SpoolBuddyAmsPage() {
             queryClient.invalidateQueries({ queryKey: ['slotPresets', selectedPrinterId] });
             queryClient.invalidateQueries({ queryKey: ['printerStatus', selectedPrinterId] });
           }}
+        />
+      )}
+
+      {/* Slot action picker */}
+      {slotActionPicker && selectedPrinterId && (() => {
+        const assignment = getAssignment(slotActionPicker.amsId, slotActionPicker.trayId);
+        const linked = getLinkedSpool(slotActionPicker.amsId, slotActionPicker.trayId, slotActionPicker.tray);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setSlotActionPicker(null)}
+            />
+            <div className="relative w-full max-w-sm mx-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl">
+              <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
+                <div className="flex items-center gap-2">
+                  {slotActionPicker.trayColor && (
+                    <span
+                      className="w-4 h-4 rounded-full border border-black/20"
+                      style={{ backgroundColor: `#${slotActionPicker.trayColor.slice(0, 6)}` }}
+                    />
+                  )}
+                  <h2 className="text-lg font-semibold text-white">{slotActionPicker.location}</h2>
+                  {slotActionPicker.traySubBrands && (
+                    <span className="text-sm text-bambu-gray">({slotActionPicker.traySubBrands})</span>
+                  )}
+                </div>
+                <button
+                  onClick={() => setSlotActionPicker(null)}
+                  className="p-1 text-bambu-gray hover:text-white rounded transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-4 space-y-2">
+                {/* Currently assigned/linked spool info */}
+                {!spoolmanEnabled && assignment?.spool && (
+                  <div className="p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary mb-3">
+                    <p className="text-xs text-bambu-gray mb-1">{t('inventory.assignedSpool', 'Assigned spool')}</p>
+                    <div className="flex items-center gap-2">
+                      {assignment.spool.rgba && (
+                        <span
+                          className="w-3 h-3 rounded-full border border-black/20 flex-shrink-0"
+                          style={{ backgroundColor: `#${assignment.spool.rgba.substring(0, 6)}` }}
+                        />
+                      )}
+                      <span className="text-sm text-white">
+                        {assignment.spool.brand ? `${assignment.spool.brand} ` : ''}{assignment.spool.material}
+                        {assignment.spool.color_name ? ` - ${assignment.spool.color_name}` : ''}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                {spoolmanEnabled && linked && (
+                  <div className="p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary mb-3">
+                    <p className="text-xs text-bambu-gray mb-1">{t('spoolman.linkedSpool', 'Linked spool')}</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-white">
+                        Spoolman #{linked.id}
+                        {linked.remaining_weight != null ? ` (${Math.round(linked.remaining_weight)}g)` : ''}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  onClick={openConfigureFromPicker}
+                  className="w-full flex items-center gap-3 p-3 rounded-lg bg-bambu-dark border border-bambu-dark-tertiary hover:border-bambu-blue transition-colors text-left"
+                >
+                  <Settings2 className="w-5 h-5 text-bambu-blue flex-shrink-0" />
+                  <div>
+                    <p className="text-white font-medium">{t('configureAmsSlot.title')}</p>
+                    <p className="text-xs text-bambu-gray">{t('spoolbuddy.ams.configureDesc', 'Set filament preset, K-profile, and color')}</p>
+                  </div>
+                </button>
+
+                {/* Inventory: Assign or Unassign */}
+                {!spoolmanEnabled && (assignment ? (
+                  <button
+                    onClick={handleUnassignFromPicker}
+                    disabled={unassignMutation.isPending}
+                    className="w-full flex items-center gap-3 p-3 rounded-lg bg-bambu-dark border border-bambu-dark-tertiary hover:border-amber-500 transition-colors text-left"
+                  >
+                    <Unlink className="w-5 h-5 text-amber-400 flex-shrink-0" />
+                    <div>
+                      <p className="text-amber-400 font-medium">{t('inventory.unassignSpool', 'Unassign')}</p>
+                      <p className="text-xs text-bambu-gray">{t('spoolbuddy.ams.unassignDesc', 'Remove inventory spool from this slot')}</p>
+                    </div>
+                  </button>
+                ) : (
+                  <button
+                    onClick={openAssignFromPicker}
+                    className="w-full flex items-center gap-3 p-3 rounded-lg bg-bambu-dark border border-bambu-dark-tertiary hover:border-bambu-green transition-colors text-left"
+                  >
+                    <Package className="w-5 h-5 text-bambu-green flex-shrink-0" />
+                    <div>
+                      <p className="text-white font-medium">{t('inventory.assignSpool')}</p>
+                      <p className="text-xs text-bambu-gray">{t('spoolbuddy.ams.assignDesc', 'Track a spool from your inventory')}</p>
+                    </div>
+                  </button>
+                ))}
+
+                {/* Spoolman: Link or Unlink */}
+                {spoolmanEnabled && (linked?.id ? (
+                  <button
+                    onClick={() => unlinkSpoolMutation.mutate(linked.id)}
+                    disabled={unlinkSpoolMutation.isPending}
+                    className="w-full flex items-center gap-3 p-3 rounded-lg bg-bambu-dark border border-bambu-dark-tertiary hover:border-amber-500 transition-colors text-left"
+                  >
+                    <Unlink className="w-5 h-5 text-amber-400 flex-shrink-0" />
+                    <div>
+                      <p className="text-amber-400 font-medium">{t('spoolman.unlinkSpool')}</p>
+                      <p className="text-xs text-bambu-gray">{t('spoolbuddy.ams.unlinkDesc', 'Remove Spoolman link from this slot')}</p>
+                    </div>
+                  </button>
+                ) : (
+                  <button
+                    onClick={openLinkFromPicker}
+                    className="w-full flex items-center gap-3 p-3 rounded-lg bg-bambu-dark border border-bambu-dark-tertiary hover:border-bambu-green transition-colors text-left"
+                  >
+                    <Link2 className="w-5 h-5 text-bambu-green flex-shrink-0" />
+                    <div>
+                      <p className="text-white font-medium">{t('spoolman.linkToSpoolman')}</p>
+                      <p className="text-xs text-bambu-gray">{t('spoolbuddy.ams.linkDesc', 'Link a Spoolman spool to this slot')}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Assign spool modal (inventory) */}
+      {assignSpoolModal && (
+        <AssignSpoolModal
+          isOpen={!!assignSpoolModal}
+          onClose={() => {
+            setAssignSpoolModal(null);
+            queryClient.invalidateQueries({ queryKey: ['spool-assignments', selectedPrinterId] });
+          }}
+          printerId={assignSpoolModal.printerId}
+          amsId={assignSpoolModal.amsId}
+          trayId={assignSpoolModal.trayId}
+          trayInfo={assignSpoolModal.trayInfo}
+        />
+      )}
+
+      {/* Link spool modal (Spoolman) */}
+      {linkSpoolModal && (
+        <LinkSpoolModal
+          isOpen={!!linkSpoolModal}
+          onClose={() => setLinkSpoolModal(null)}
+          tagUid={linkSpoolModal.tagUid}
+          trayUuid={linkSpoolModal.trayUuid}
+          printerId={linkSpoolModal.printerId}
+          amsId={linkSpoolModal.amsId}
+          trayId={linkSpoolModal.trayId}
         />
       )}
     </div>

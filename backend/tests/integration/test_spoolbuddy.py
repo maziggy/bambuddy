@@ -7,6 +7,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes import spoolbuddy as spoolbuddy_routes
 from backend.app.models.spool import Spool
 from backend.app.models.spoolbuddy_device import SpoolBuddyDevice
 
@@ -154,6 +155,7 @@ class TestDeviceEndpoints:
     @pytest.mark.integration
     async def test_heartbeat_updates_status(self, async_client: AsyncClient, device_factory):
         device = await device_factory(device_id="sb-hb")
+        spoolbuddy_routes._spoolbuddy_online_last_broadcast.clear()
 
         with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
             mock_ws.broadcast = AsyncMock()
@@ -166,6 +168,10 @@ class TestDeviceEndpoints:
         data = resp.json()
         assert data["tare_offset"] == device.tare_offset
         assert data["calibration_factor"] == pytest.approx(device.calibration_factor)
+        mock_ws.broadcast.assert_called_once()
+        msg = mock_ws.broadcast.call_args[0][0]
+        assert msg["type"] == "spoolbuddy_online"
+        assert msg["device_id"] == "sb-hb"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -208,6 +214,7 @@ class TestDeviceEndpoints:
     @pytest.mark.integration
     async def test_heartbeat_broadcasts_online_when_was_offline(self, async_client: AsyncClient, device_factory):
         # Create device with last_seen far in the past (offline)
+        spoolbuddy_routes._spoolbuddy_online_last_broadcast.clear()
         await device_factory(
             device_id="sb-offline",
             last_seen=datetime.now(timezone.utc) - timedelta(seconds=120),
@@ -226,6 +233,55 @@ class TestDeviceEndpoints:
         msg = mock_ws.broadcast.call_args[0][0]
         assert msg["type"] == "spoolbuddy_online"
         assert msg["device_id"] == "sb-offline"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_heartbeat_broadcasts_online_when_already_online(self, async_client: AsyncClient, device_factory):
+        spoolbuddy_routes._spoolbuddy_online_last_broadcast.clear()
+        await device_factory(
+            device_id="sb-already-online",
+            last_seen=datetime.now(timezone.utc),
+        )
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            resp = await async_client.post(
+                f"{API}/devices/sb-already-online/heartbeat",
+                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 42},
+            )
+
+        assert resp.status_code == 200
+        mock_ws.broadcast.assert_called_once()
+        msg = mock_ws.broadcast.call_args[0][0]
+        assert msg["type"] == "spoolbuddy_online"
+        assert msg["device_id"] == "sb-already-online"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_heartbeat_online_broadcast_is_throttled(self, async_client: AsyncClient, device_factory):
+        spoolbuddy_routes._spoolbuddy_online_last_broadcast.clear()
+        await device_factory(
+            device_id="sb-throttle",
+            last_seen=datetime.now(timezone.utc),
+        )
+
+        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            resp1 = await async_client.post(
+                f"{API}/devices/sb-throttle/heartbeat",
+                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 10},
+            )
+            resp2 = await async_client.post(
+                f"{API}/devices/sb-throttle/heartbeat",
+                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 11},
+            )
+
+        assert resp1.status_code == 200
+        assert resp2.status_code == 200
+        mock_ws.broadcast.assert_called_once()
+        msg = mock_ws.broadcast.call_args[0][0]
+        assert msg["type"] == "spoolbuddy_online"
+        assert msg["device_id"] == "sb-throttle"
 
 
 # ============================================================================
@@ -813,26 +869,18 @@ class TestDisplayEndpoints:
 class TestUpdateEndpoints:
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_trigger_update_queues_command(self, async_client: AsyncClient, device_factory):
+    async def test_trigger_update_starts_ssh_update(self, async_client: AsyncClient, device_factory):
         await device_factory(device_id="sb-upd")
 
-        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+        with (
+            patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws,
+            patch("backend.app.services.spoolbuddy_ssh.perform_ssh_update", new_callable=AsyncMock),
+        ):
             mock_ws.broadcast = AsyncMock()
             resp = await async_client.post(f"{API}/devices/sb-upd/update")
 
         assert resp.status_code == 200
         assert resp.json()["status"] == "ok"
-
-        # Verify heartbeat returns update command
-        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
-            mock_ws.broadcast = AsyncMock()
-            hb = await async_client.post(
-                f"{API}/devices/sb-upd/heartbeat",
-                json={"nfc_ok": True, "scale_ok": True, "uptime_s": 10},
-            )
-
-        # update command is NOT cleared by heartbeat (cleared by update-status)
-        assert hb.json()["pending_command"] == "update"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -943,50 +991,25 @@ class TestUpdateEndpoints:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_update_check_returns_version_info(self, async_client: AsyncClient, device_factory):
-        """GET /devices/{id}/update-check queries GitHub and returns version comparison."""
+        """GET /devices/{id}/update-check compares device version against APP_VERSION."""
         await device_factory(device_id="sb-uc", firmware_version="0.1.0")
 
-        mock_releases = [{"tag_name": "v0.2.0", "html_url": "https://github.com/test/releases/0.2.0"}]
-
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = mock_releases
-        mock_resp.raise_for_status = MagicMock()
-
-        mock_client = AsyncMock()
-        mock_client.get.return_value = mock_resp
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("httpx.AsyncClient", return_value=mock_client):
-            resp = await async_client.get(f"{API}/devices/sb-uc/update-check")
+        resp = await async_client.get(f"{API}/devices/sb-uc/update-check")
 
         assert resp.status_code == 200
         data = resp.json()
         assert data["current_version"] == "0.1.0"
-        assert data["latest_version"] == "0.2.0"
+        assert data["latest_version"] is not None
         assert data["update_available"] is True
-        assert data["release_url"] == "https://github.com/test/releases/0.2.0"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_update_check_up_to_date(self, async_client: AsyncClient, device_factory):
-        await device_factory(device_id="sb-uc2", firmware_version="0.2.0")
+        from backend.app.core.config import APP_VERSION
 
-        mock_releases = [{"tag_name": "v0.2.0", "html_url": "https://github.com/test/releases/0.2.0"}]
+        await device_factory(device_id="sb-uc2", firmware_version=APP_VERSION)
 
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = mock_releases
-        mock_resp.raise_for_status = MagicMock()
-
-        mock_client = AsyncMock()
-        mock_client.get.return_value = mock_resp
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("httpx.AsyncClient", return_value=mock_client):
-            resp = await async_client.get(f"{API}/devices/sb-uc2/update-check")
+        resp = await async_client.get(f"{API}/devices/sb-uc2/update-check")
 
         assert resp.status_code == 200
         assert resp.json()["update_available"] is False
@@ -1002,7 +1025,10 @@ class TestUpdateEndpoints:
     async def test_trigger_update_broadcasts_websocket(self, async_client: AsyncClient, device_factory):
         await device_factory(device_id="sb-upd-ws")
 
-        with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
+        with (
+            patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws,
+            patch("backend.app.services.spoolbuddy_ssh.perform_ssh_update", new_callable=AsyncMock),
+        ):
             mock_ws.broadcast = AsyncMock()
             await async_client.post(f"{API}/devices/sb-upd-ws/update")
 

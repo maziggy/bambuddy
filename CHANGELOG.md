@@ -2,7 +2,7 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
-## [0.2.3b1] - Unreleased
+## [0.2.2.2] - 2026-03-27
 
 ### New Features
 - **Persistent Auto-Off for Smart Plugs** ([#826](https://github.com/maziggy/bambuddy/issues/826)) — Smart plugs now have a "Keep Enabled" toggle under Auto Off settings. When enabled, auto-off stays active between prints instead of requiring manual re-enablement after each print (one-shot). Useful for accessories like BentoBox filters on Home Assistant switches that should always power off when a print completes. Default behavior (one-shot) is unchanged. Requested by @AeroMaestro.

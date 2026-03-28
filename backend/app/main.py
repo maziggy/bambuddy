@@ -2631,6 +2631,70 @@ async def on_print_complete(printer_id: int, data: dict):
         task = asyncio.create_task(_background_bed_cooldown())
         _bed_cooldown_tasks[printer_id] = task
 
+    # --- Track filament consumption (must run before archive_id early-return so usage
+    # is recorded even when auto-archive is disabled) ---
+    usage_results: list[dict] = []
+    # Prefer ams_mapping captured from MQTT request topic (works for all print sources)
+    stored_ams_mapping = data.get("ams_mapping")
+    # Fallback to _print_ams_mappings for queue/reprint (set before print starts)
+    if not stored_ams_mapping and archive_id:
+        stored_ams_mapping = _print_ams_mappings.pop(archive_id, None)
+
+    # Internal inventory: track AMS remain% deltas (skip if Spoolman handles usage)
+    try:
+        async with async_session() as db:
+            from backend.app.api.routes.settings import get_setting
+
+            _spoolman_on = await get_setting(db, "spoolman_enabled")
+        if not _spoolman_on or _spoolman_on.lower() != "true":
+            from backend.app.services.usage_tracker import on_print_complete as usage_on_print_complete
+
+            async with async_session() as db:
+                usage_results = await usage_on_print_complete(
+                    printer_id,
+                    data,
+                    printer_manager,
+                    db,
+                    archive_id=archive_id,
+                    ams_mapping=stored_ams_mapping,
+                )
+                if usage_results:
+                    await ws_manager.broadcast(
+                        {
+                            "type": "spool_usage_logged",
+                            "printer_id": printer_id,
+                            "usage": usage_results,
+                        }
+                    )
+                    log_timing("Usage tracker")
+
+    except Exception as e:
+        logger.warning("Usage tracker on_print_complete failed: %s", e)
+
+    # Spoolman: report filament usage (requires archive_id for tracking data lookup)
+    if archive_id:
+        if data.get("status") == "completed":
+            try:
+                await _report_spoolman_usage(printer_id, archive_id)
+                log_timing("Spoolman usage report")
+            except Exception as e:
+                logger.warning("Spoolman usage reporting failed: %s", e)
+        else:
+            # Report partial usage if tracking data exists (only stored when weight sync is disabled)
+            try:
+                async with async_session() as db:
+                    await _cleanup_spoolman_tracking(
+                        printer_id,
+                        archive_id,
+                        db,
+                        last_layer_num=data.get("last_layer_num"),
+                        last_progress=data.get("last_progress"),
+                    )
+            except Exception as e:
+                logger.debug("[SPOOLMAN] Cleanup failed: %s", e)
+
+    log_timing("Filament usage tracking")
+
     if not archive_id:
         logger.warning("Could not find archive for print complete: filename=%s, subtask=%s", filename, subtask_name)
 
@@ -2804,64 +2868,6 @@ async def on_print_complete(printer_id: int, data: dict):
         logger.warning("[PRINT_LOG] Failed to write log entry for archive %s: %s", archive_id, e)
 
     log_timing("Print log entry")
-
-    # Track filament consumption from AMS remain% deltas (skip if Spoolman handles usage)
-    usage_results: list[dict] = []
-    # Prefer ams_mapping captured from MQTT request topic (works for all print sources)
-    stored_ams_mapping = data.get("ams_mapping")
-    # Fallback to _print_ams_mappings for queue/reprint (set before print starts)
-    if not stored_ams_mapping and archive_id:
-        stored_ams_mapping = _print_ams_mappings.pop(archive_id, None)
-    try:
-        async with async_session() as db:
-            from backend.app.api.routes.settings import get_setting
-
-            _spoolman_on = await get_setting(db, "spoolman_enabled")
-        if not _spoolman_on or _spoolman_on.lower() != "true":
-            from backend.app.services.usage_tracker import on_print_complete as usage_on_print_complete
-
-            async with async_session() as db:
-                usage_results = await usage_on_print_complete(
-                    printer_id,
-                    data,
-                    printer_manager,
-                    db,
-                    archive_id=archive_id,
-                    ams_mapping=stored_ams_mapping,
-                )
-                if usage_results:
-                    await ws_manager.broadcast(
-                        {
-                            "type": "spool_usage_logged",
-                            "printer_id": printer_id,
-                            "usage": usage_results,
-                        }
-                    )
-                    log_timing("Usage tracker")
-
-    except Exception as e:
-        logger.warning("Usage tracker on_print_complete failed: %s", e)
-
-    # Report filament usage to Spoolman if print completed successfully
-    if data.get("status") == "completed":
-        try:
-            await _report_spoolman_usage(printer_id, archive_id)
-            log_timing("Spoolman usage report")
-        except Exception as e:
-            logger.warning("Spoolman usage reporting failed: %s", e)
-    else:
-        # Report partial usage if tracking data exists (only stored when weight sync is disabled)
-        try:
-            async with async_session() as db:
-                await _cleanup_spoolman_tracking(
-                    printer_id,
-                    archive_id,
-                    db,
-                    last_layer_num=data.get("last_layer_num"),
-                    last_progress=data.get("last_progress"),
-                )
-        except Exception as e:
-            logger.debug("[SPOOLMAN] Cleanup failed: %s", e)
 
     # Run slow operations as background tasks to avoid blocking the event loop
     # These operations can take 5-10+ seconds and would freeze the UI if awaited

@@ -296,6 +296,24 @@ def extract_nozzle_mapping_from_3mf(zf: zipfile.ZipFile) -> dict[int, int] | Non
         if not physical_extruder_map or len(physical_extruder_map) <= 1:
             return None  # Single-nozzle printer
 
+        # Check if there are multiple active extruders.
+        # If not, create nozzle mapping based on active extruder to avoid incorrect mapping when only second extruder is used.
+        stats_list = data.get("extruder_nozzle_stats") or []
+        active_extruders = [
+            1 if any(n.partition("#")[2] not in ("0", "") for n in s.split("|")) else 0 for s in stats_list
+        ]
+        if len(active_extruders) > 0 and sum(active_extruders) < 2:
+            nozzle_mapping: dict[int, int] = {}
+            if "Metadata/slice_info.config" in zf.namelist():
+                si_content = zf.read("Metadata/slice_info.config").decode()
+                si_root = ET.fromstring(si_content)
+                for filament_elem in si_root.findall(".//filament"):
+                    try:
+                        nozzle_mapping[int(filament_elem.get("id"))] = 0
+                    except (ValueError, TypeError):
+                        pass
+            return nozzle_mapping
+
         # Priority 1: Use group_id from slice_info filament elements.
         # This reflects the actual slicer assignment (respects "Auto For Flush").
         nozzle_mapping: dict[int, int] = {}

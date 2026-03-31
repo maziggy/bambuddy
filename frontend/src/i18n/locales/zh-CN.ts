@@ -383,6 +383,35 @@ export default {
       powerOffWarning: '警告："{{name}}"正在打印中！确定要关闭电源吗？这将中断打印并可能损坏打印机。',
       powerOffButton: '关机',
     },
+    // Bulk actions
+    bulk: {
+      select: '选择',
+      selectAll: '全选',
+      selectByLocation: '按位置选择',
+      selected: '已选择{{count}}台',
+      actions: {
+        stop: '停止',
+        pause: '暂停',
+        resume: '继续',
+        clearPlate: '清除打印床',
+        clearHMS: '清除通知',
+      },
+      confirm: {
+        stopTitle: '停止{{count}}个打印任务',
+        stopMessage: '这将取消{{count}}台打印机上的活动打印任务。此操作无法撤销。',
+        stopButton: '全部停止',
+        pauseTitle: '暂停{{count}}个打印任务',
+        pauseMessage: '这将暂停{{count}}台打印机上的活动打印任务。',
+        pauseButton: '全部暂停',
+        clearPlateTitle: '清除{{count}}个打印床',
+        clearPlateMessage: '这将清除{{count}}台打印机的打印床，可能会触发队列中的任务。',
+        clearPlateButton: '全部清除',
+      },
+      success: '{{action}}已在{{count}}台打印机上完成',
+      partial: '{{succeeded}}成功，{{failed}}失败',
+      noneApplicable: '没有选中的打印机处于适合此操作的状态',
+      selectByState: '按状态选择',
+    },
     // Discovery
     discovery: {
       title: '发现打印机',

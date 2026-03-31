@@ -383,6 +383,35 @@ export default {
       powerOffWarning: 'WARNUNG: "{{name}}" druckt gerade! Möchten Sie die Stromversorgung wirklich AUSSCHALTEN? Dies unterbricht den Druck und kann den Drucker beschädigen.',
       powerOffButton: 'Ausschalten',
     },
+    // Bulk actions
+    bulk: {
+      select: 'Auswählen',
+      selectAll: 'Alle auswählen',
+      selectByLocation: 'Nach Standort auswählen',
+      selected: '{{count}} ausgewählt',
+      actions: {
+        stop: 'Stoppen',
+        pause: 'Pausieren',
+        resume: 'Fortsetzen',
+        clearPlate: 'Druckbett leeren',
+        clearHMS: 'Benachrichtigungen löschen',
+      },
+      confirm: {
+        stopTitle: '{{count}} Drucke stoppen',
+        stopMessage: 'Dies wird aktive Drucke auf {{count}} Drucker(n) abbrechen. Diese Aktion kann nicht rückgängig gemacht werden.',
+        stopButton: 'Alle stoppen',
+        pauseTitle: '{{count}} Drucke pausieren',
+        pauseMessage: 'Dies wird aktive Drucke auf {{count}} Drucker(n) pausieren.',
+        pauseButton: 'Alle pausieren',
+        clearPlateTitle: '{{count}} Druckbetten leeren',
+        clearPlateMessage: 'Dies wird das Druckbett auf {{count}} Drucker(n) leeren und kann wartende Aufträge starten.',
+        clearPlateButton: 'Alle leeren',
+      },
+      success: '{{action}} auf {{count}} Drucker(n) abgeschlossen',
+      partial: '{{succeeded}} erfolgreich, {{failed}} fehlgeschlagen',
+      noneApplicable: 'Keine ausgewählten Drucker sind im richtigen Zustand für diese Aktion',
+      selectByState: 'Nach Status auswählen',
+    },
     // Discovery
     discovery: {
       title: 'Drucker entdecken',

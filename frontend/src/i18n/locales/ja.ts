@@ -382,6 +382,35 @@ export default {
       powerOffWarning: '警告: 「{{name}}」は現在印刷中です！電源をオフにしますか？印刷が中断され、プリンターが損傷する可能性があります。',
       powerOffButton: '電源オフ',
     },
+    // Bulk actions
+    bulk: {
+      select: '選択',
+      selectAll: 'すべて選択',
+      selectByLocation: '場所で選択',
+      selected: '{{count}}件選択中',
+      actions: {
+        stop: '停止',
+        pause: '一時停止',
+        resume: '再開',
+        clearPlate: 'ベッドをクリア',
+        clearHMS: '通知をクリア',
+      },
+      confirm: {
+        stopTitle: '{{count}}件の印刷を停止',
+        stopMessage: '{{count}}台のプリンターのアクティブな印刷をキャンセルします。この操作は元に戻せません。',
+        stopButton: 'すべて停止',
+        pauseTitle: '{{count}}件の印刷を一時停止',
+        pauseMessage: '{{count}}台のプリンターのアクティブな印刷を一時停止します。',
+        pauseButton: 'すべて一時停止',
+        clearPlateTitle: '{{count}}台のプリントベッドをクリア',
+        clearPlateMessage: '{{count}}台のプリンターのプリントベッドをクリアし、キュー内のジョブが開始される場合があります。',
+        clearPlateButton: 'すべてクリア',
+      },
+      success: '{{count}}台のプリンターで{{action}}が完了',
+      partial: '{{succeeded}}件成功、{{failed}}件失敗',
+      noneApplicable: '選択したプリンターにこのアクションに適した状態のものがありません',
+      selectByState: 'ステータスで選択',
+    },
     // Discovery
     discovery: {
       title: 'プリンター',

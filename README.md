@@ -86,6 +86,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - **Build plate empty detection** - Auto-pause print if objects detected on plate (multi-reference calibration, ROI adjustment)
 - Fan status monitoring (part cooling, auxiliary, chamber)
 - Printer control (stop, pause, resume, chamber light, print speed)
+- Bulk printer actions (multi-select cards, then stop/pause/resume/clear all — select by state or location)
 - Resizable printer cards (S/M/L/XL)
 - Skip objects during print
 - AMS slot RFID re-read

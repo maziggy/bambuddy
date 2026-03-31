@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, fireEvent } from '@testing-library/react';
 import { render } from '../utils';
 import { PrintersPage } from '../../pages/PrintersPage';
 import { http, HttpResponse } from 'msw';
@@ -383,6 +383,97 @@ describe('PrintersPage', () => {
 
       // Badge should not appear when API returns no latest_version
       expect(screen.queryByText('01.01.03.00')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('bulk selection', () => {
+    it('shows select button in toolbar', async () => {
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // The Select button should be in the toolbar (title attribute)
+      const selectButton = screen.getByTitle('Select');
+      expect(selectButton).toBeInTheDocument();
+    });
+
+    it('shows selection toolbar after clicking select button', async () => {
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Click the Select button to enter selection mode
+      fireEvent.click(screen.getByTitle('Select'));
+
+      // The floating toolbar should appear with Select All
+      await waitFor(() => {
+        expect(screen.getByText('Select All')).toBeInTheDocument();
+      });
+    });
+
+    it('shows selection count when printers are selected', async () => {
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Enter selection mode
+      fireEvent.click(screen.getByTitle('Select'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Select All')).toBeInTheDocument();
+      });
+
+      // Click Select All to select both printers
+      fireEvent.click(screen.getByText('Select All'));
+
+      // Should show "2 selected"
+      await waitFor(() => {
+        expect(screen.getByText('2 selected')).toBeInTheDocument();
+      });
+    });
+
+    it('shows select by state dropdown', async () => {
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Enter selection mode
+      fireEvent.click(screen.getByTitle('Select'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Select by State')).toBeInTheDocument();
+      });
+    });
+
+    it('exits selection mode on close button', async () => {
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Enter selection mode
+      fireEvent.click(screen.getByTitle('Select'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Select All')).toBeInTheDocument();
+      });
+
+      // Click the Select button again to exit (it toggles)
+      fireEvent.click(screen.getByTitle('Select'));
+
+      // Floating toolbar should disappear
+      await waitFor(() => {
+        expect(screen.queryByText('Select All')).not.toBeInTheDocument();
+      });
     });
   });
 });

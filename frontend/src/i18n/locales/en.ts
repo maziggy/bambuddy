@@ -383,6 +383,35 @@ export default {
       powerOffWarning: 'WARNING: "{{name}}" is currently printing! Are you sure you want to turn OFF the power? This will interrupt the print and may damage the printer.',
       powerOffButton: 'Power Off',
     },
+    // Bulk actions
+    bulk: {
+      select: 'Select',
+      selectAll: 'Select All',
+      selectByLocation: 'Select by Location',
+      selected: '{{count}} selected',
+      actions: {
+        stop: 'Stop',
+        pause: 'Pause',
+        resume: 'Resume',
+        clearPlate: 'Clear Bed',
+        clearHMS: 'Clear Notifications',
+      },
+      confirm: {
+        stopTitle: 'Stop {{count}} Prints',
+        stopMessage: 'This will cancel active prints on {{count}} printer(s). This action cannot be undone.',
+        stopButton: 'Stop All',
+        pauseTitle: 'Pause {{count}} Prints',
+        pauseMessage: 'This will pause active prints on {{count}} printer(s).',
+        pauseButton: 'Pause All',
+        clearPlateTitle: 'Clear {{count}} Print Beds',
+        clearPlateMessage: 'This will clear the print bed on {{count}} printer(s) and may trigger queued jobs.',
+        clearPlateButton: 'Clear All',
+      },
+      success: '{{action}} completed on {{count}} printer(s)',
+      partial: '{{succeeded}} succeeded, {{failed}} failed',
+      noneApplicable: 'No selected printers are in the right state for this action',
+      selectByState: 'Select by State',
+    },
     // Discovery
     discovery: {
       title: 'Discover Printers',

@@ -383,6 +383,35 @@ export default {
       powerOffWarning: 'AVISO: "{{name}}" está imprimindo no momento! Tem certeza de que deseja desligar a impressora? Isso interromperá a impressão e pode danificar a impressora.',
       powerOffButton: 'Desligar',
     },
+    // Bulk actions
+    bulk: {
+      select: 'Selecionar',
+      selectAll: 'Selecionar tudo',
+      selectByLocation: 'Selecionar por local',
+      selected: '{{count}} selecionado(s)',
+      actions: {
+        stop: 'Parar',
+        pause: 'Pausar',
+        resume: 'Retomar',
+        clearPlate: 'Limpar mesa',
+        clearHMS: 'Limpar notificações',
+      },
+      confirm: {
+        stopTitle: 'Parar {{count}} impressões',
+        stopMessage: 'Isso cancelará as impressões ativas em {{count}} impressora(s). Esta ação não pode ser desfeita.',
+        stopButton: 'Parar todas',
+        pauseTitle: 'Pausar {{count}} impressões',
+        pauseMessage: 'Isso pausará as impressões ativas em {{count}} impressora(s).',
+        pauseButton: 'Pausar todas',
+        clearPlateTitle: 'Limpar {{count}} mesas de impressão',
+        clearPlateMessage: 'Isso limpará a mesa de impressão em {{count}} impressora(s) e pode iniciar trabalhos na fila.',
+        clearPlateButton: 'Limpar todas',
+      },
+      success: '{{action}} concluído em {{count}} impressora(s)',
+      partial: '{{succeeded}} bem-sucedido(s), {{failed}} falhou/falharam',
+      noneApplicable: 'Nenhuma impressora selecionada está no estado correto para esta ação',
+      selectByState: 'Selecionar por estado',
+    },
     // Discovery
     discovery: {
       title: 'Descobrir Impressoras',

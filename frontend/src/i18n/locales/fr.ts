@@ -383,6 +383,35 @@ export default {
       powerOffWarning: 'ATTENTION : "{{name}}" imprime ! L\'éteindre maintenant peut endommager l\'imprimante.',
       powerOffButton: 'Éteindre',
     },
+    // Bulk actions
+    bulk: {
+      select: 'Sélectionner',
+      selectAll: 'Tout sélectionner',
+      selectByLocation: 'Sélectionner par emplacement',
+      selected: '{{count}} sélectionné(s)',
+      actions: {
+        stop: 'Arrêter',
+        pause: 'Pause',
+        resume: 'Reprendre',
+        clearPlate: 'Vider le plateau',
+        clearHMS: 'Effacer les notifications',
+      },
+      confirm: {
+        stopTitle: 'Arrêter {{count}} impressions',
+        stopMessage: 'Cela annulera les impressions actives sur {{count}} imprimante(s). Cette action est irréversible.',
+        stopButton: 'Tout arrêter',
+        pauseTitle: 'Mettre en pause {{count}} impressions',
+        pauseMessage: 'Cela mettra en pause les impressions actives sur {{count}} imprimante(s).',
+        pauseButton: 'Tout mettre en pause',
+        clearPlateTitle: 'Vider {{count}} plateaux',
+        clearPlateMessage: 'Cela videra le plateau sur {{count}} imprimante(s) et pourrait lancer les travaux en file d\'attente.',
+        clearPlateButton: 'Tout vider',
+      },
+      success: '{{action}} terminé sur {{count}} imprimante(s)',
+      partial: '{{succeeded}} réussi(s), {{failed}} échoué(s)',
+      noneApplicable: 'Aucune imprimante sélectionnée n\'est dans le bon état pour cette action',
+      selectByState: 'Sélectionner par état',
+    },
     // Discovery
     discovery: {
       title: 'Découvrir les imprimantes',

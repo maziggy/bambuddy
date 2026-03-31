@@ -383,6 +383,35 @@ export default {
       powerOffWarning: 'AVVISO: "{{name}}" sta stampando! Sei sicuro di spegnere? Questo interromperà la stampa e potrebbe danneggiare la stampante.',
       powerOffButton: 'Spegni',
     },
+    // Bulk actions
+    bulk: {
+      select: 'Seleziona',
+      selectAll: 'Seleziona tutto',
+      selectByLocation: 'Seleziona per posizione',
+      selected: '{{count}} selezionato/i',
+      actions: {
+        stop: 'Ferma',
+        pause: 'Pausa',
+        resume: 'Riprendi',
+        clearPlate: 'Svuota piano',
+        clearHMS: 'Cancella notifiche',
+      },
+      confirm: {
+        stopTitle: 'Ferma {{count}} stampe',
+        stopMessage: 'Questo annullerà le stampe attive su {{count}} stampante/i. Questa azione non può essere annullata.',
+        stopButton: 'Ferma tutte',
+        pauseTitle: 'Pausa {{count}} stampe',
+        pauseMessage: 'Questo metterà in pausa le stampe attive su {{count}} stampante/i.',
+        pauseButton: 'Pausa tutte',
+        clearPlateTitle: 'Svuota {{count}} piani di stampa',
+        clearPlateMessage: 'Questo svuoterà il piano di stampa su {{count}} stampante/i e potrebbe avviare i lavori in coda.',
+        clearPlateButton: 'Svuota tutti',
+      },
+      success: '{{action}} completato su {{count}} stampante/i',
+      partial: '{{succeeded}} riuscito/i, {{failed}} fallito/i',
+      noneApplicable: 'Nessuna stampante selezionata è nello stato corretto per questa azione',
+      selectByState: 'Seleziona per stato',
+    },
     // Discovery
     discovery: {
       title: 'Trova Stampanti',

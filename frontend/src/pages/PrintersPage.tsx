@@ -39,6 +39,7 @@ import {
   Download,
   ScanSearch,
   CheckCircle,
+  CheckSquare,
   XCircle,
   User,
   Home,
@@ -56,6 +57,7 @@ import type { Printer, PrinterCreate, AMSUnit, DiscoveredPrinter, FirmwareUpdate
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { BulkPrinterToolbar, type PrinterState } from '../components/BulkPrinterToolbar';
 import { FileManagerModal } from '../components/FileManagerModal';
 import { EmbeddedCameraViewer } from '../components/EmbeddedCameraViewer';
 import { MQTTDebugModal } from '../components/MQTTDebugModal';
@@ -1120,10 +1122,12 @@ function StatusSummaryBar({ printers }: { printers: Printer[] | undefined }) {
 
   const { counts, nextFinish } = useMemo(() => {
     let printing = 0;
+    let paused = 0;
+    let finished = 0;
     let idle = 0;
     let offline = 0;
     let loading = 0;
-    let problem = 0;
+    let error = 0;
     let nextPrinterName: string | null = null;
     let nextRemainingMin: number | null = null;
     let nextProgress: number = 0;
@@ -1138,25 +1142,37 @@ function StatusSummaryBar({ printers }: { printers: Printer[] | undefined }) {
       } else {
         // Count printers with HMS errors
         if (status.hms_errors && filterKnownHMSErrors(status.hms_errors).length > 0) {
-          problem++;
+          error++;
         }
-        if (status.state === 'RUNNING') {
-          printing++;
-          if (status.remaining_time != null && status.remaining_time > 0) {
-            if (nextRemainingMin === null || status.remaining_time < nextRemainingMin) {
-              nextRemainingMin = status.remaining_time;
-              nextPrinterName = printer.name;
-              nextProgress = status.progress || 0;
+        switch (status.state) {
+          case 'RUNNING':
+            printing++;
+            if (status.remaining_time != null && status.remaining_time > 0) {
+              if (nextRemainingMin === null || status.remaining_time < nextRemainingMin) {
+                nextRemainingMin = status.remaining_time;
+                nextPrinterName = printer.name;
+                nextProgress = status.progress || 0;
+              }
             }
-          }
-        } else {
-          idle++;
+            break;
+          case 'PAUSE':
+            paused++;
+            break;
+          case 'FINISH':
+            finished++;
+            break;
+          case 'FAILED':
+            error++;
+            break;
+          default:
+            idle++;
+            break;
         }
       }
     });
 
     return {
-      counts: { printing, idle, offline, loading, problem, total: (printers?.length || 0) },
+      counts: { printing, paused, finished, idle, offline, loading, error, total: (printers?.length || 0) },
       nextFinish: nextPrinterName && nextRemainingMin ? { name: nextPrinterName, remainingMin: nextRemainingMin, progress: nextProgress } : null,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1164,38 +1180,25 @@ function StatusSummaryBar({ printers }: { printers: Printer[] | undefined }) {
 
   if (!printers?.length) return null;
 
+  const badges: { count: number; dot: string; label: string }[] = [
+    { count: counts.printing, dot: 'bg-bambu-green animate-pulse', label: t('printers.status.printing').toLowerCase() },
+    { count: counts.paused, dot: 'bg-status-warning', label: t('printers.status.paused', 'paused').toLowerCase() },
+    { count: counts.finished, dot: 'bg-blue-400', label: t('printers.status.finished', 'finished').toLowerCase() },
+    { count: counts.idle, dot: counts.idle > 0 ? 'bg-bambu-green' : 'bg-gray-500', label: t('printers.status.available').toLowerCase() },
+    { count: counts.error, dot: 'bg-status-error', label: t('printers.status.problem').toLowerCase() },
+    { count: counts.offline, dot: 'bg-gray-400', label: t('printers.status.offline').toLowerCase() },
+  ];
+
   return (
     <div className="flex flex-wrap items-center gap-4 gap-y-2 text-sm">
-      <div className="flex items-center gap-1.5">
-        <div className={`w-2 h-2 rounded-full ${counts.idle > 0 ? 'bg-bambu-green' : 'bg-gray-500'}`} />
-        <span className="text-bambu-gray">
-          <span className="text-white font-medium">{counts.idle}</span> {t('printers.status.available').toLowerCase()}
-        </span>
-      </div>
-      {counts.printing > 0 && (
-        <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 rounded-full bg-bambu-green animate-pulse" />
+      {badges.map(({ count, dot, label }) => count > 0 && (
+        <div key={label} className="flex items-center gap-1.5">
+          <div className={`w-2 h-2 rounded-full ${dot}`} />
           <span className="text-bambu-gray">
-            <span className="text-white font-medium">{counts.printing}</span> {t('printers.status.printing').toLowerCase()}
+            <span className="text-white font-medium">{count}</span> {label}
           </span>
         </div>
-      )}
-      {counts.offline > 0 && (
-        <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 rounded-full bg-gray-400" />
-          <span className="text-bambu-gray">
-            <span className="text-white font-medium">{counts.offline}</span> {t('printers.status.offline').toLowerCase()}
-          </span>
-        </div>
-      )}
-      {counts.problem > 0 && (
-        <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 rounded-full bg-status-error" />
-          <span className="text-bambu-gray">
-            <span className="text-white font-medium">{counts.problem}</span> {t('printers.status.problem').toLowerCase()}
-          </span>
-        </div>
-      )}
+      ))}
       {nextFinish && (
         <>
           <div className="w-px h-4 bg-bambu-dark-tertiary" />
@@ -1517,6 +1520,9 @@ function PrinterCard({
   onOpenEmbeddedCamera,
   checkPrinterFirmware = true,
   dryingPresets = DRYING_PRESETS,
+  selectionMode = false,
+  isSelected = false,
+  onToggleSelect,
 }: {
   printer: Printer;
   hideIfDisconnected?: boolean;
@@ -1542,6 +1548,9 @@ function PrinterCard({
   onOpenEmbeddedCamera?: (printerId: number, printerName: string) => void;
   checkPrinterFirmware?: boolean;
   dryingPresets?: Record<string, { n3f: number; n3s: number; n3f_hours: number; n3s_hours: number }>;
+  selectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: (id: number) => void;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -2340,12 +2349,25 @@ function PrinterCard({
 
   return (
     <Card
-      className="relative"
+      className={`relative ${isSelected ? 'ring-2 ring-bambu-green' : ''} ${selectionMode ? 'cursor-pointer' : ''}`}
       onDragEnter={handleCardDragEnter}
       onDragOver={handleCardDragOver}
       onDragLeave={handleCardDragLeave}
       onDrop={handleCardDrop}
     >
+      {/* Selection mode click overlay — captures all clicks, preventing nested interactions */}
+      {selectionMode && (
+        <div
+          className="absolute inset-0 z-20 flex items-start p-2"
+          onClick={(e) => { e.stopPropagation(); onToggleSelect?.(printer.id); }}
+        >
+          {isSelected ? (
+            <CheckSquare className="w-5 h-5 text-bambu-green" />
+          ) : (
+            <Square className="w-5 h-5 text-bambu-gray" />
+          )}
+        </div>
+      )}
       {/* Drop zone overlay */}
       {(isDraggingFile || isDropUploading) && (
         <div
@@ -5903,6 +5925,102 @@ export function PrintersPage() {
     },
   });
 
+  // Bulk selection state
+  const [selectedPrinterIds, setSelectedPrinterIds] = useState<Set<number>>(new Set());
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [bulkConfirmAction, setBulkConfirmAction] = useState<'stop' | 'pause' | 'clearPlate' | null>(null);
+  const [bulkActionPending, setBulkActionPending] = useState(false);
+  const selectionMode = isSelectionMode || selectedPrinterIds.size > 0;
+
+  const toggleSelect = useCallback((id: number) => {
+    setSelectedPrinterIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedPrinterIds(new Set());
+    setIsSelectionMode(false);
+  }, []);
+
+  // Escape key exits selection mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && selectionMode) {
+        clearSelection();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectionMode, clearSelection]);
+
+  const executeBulkAction = useCallback(async (action: 'stop' | 'pause' | 'resume' | 'clearPlate' | 'clearHMS') => {
+    setBulkActionPending(true);
+    const ids = Array.from(selectedPrinterIds);
+
+    // Filter to only applicable printers based on cached state
+    const applicableIds = ids.filter(id => {
+      const status = queryClient.getQueryData<{ connected: boolean; state: string | null; hms_errors?: HMSError[] }>(['printerStatus', id]);
+      if (!status?.connected) return false;
+      switch (action) {
+        case 'stop': return status.state === 'RUNNING' || status.state === 'PAUSE';
+        case 'pause': return status.state === 'RUNNING';
+        case 'resume': return status.state === 'PAUSE';
+        case 'clearPlate': return (status.state === 'FINISH' || status.state === 'FAILED') && !(status as { plate_cleared?: boolean }).plate_cleared;
+        case 'clearHMS': return status.hms_errors && filterKnownHMSErrors(status.hms_errors).length > 0;
+        default: return false;
+      }
+    });
+
+    if (applicableIds.length === 0) {
+      showToast(t('printers.bulk.noneApplicable'), 'error');
+      setBulkActionPending(false);
+      setBulkConfirmAction(null);
+      return;
+    }
+
+    const apiCall = {
+      stop: api.stopPrint,
+      pause: api.pausePrint,
+      resume: api.resumePrint,
+      clearPlate: api.clearPlate,
+      clearHMS: api.clearHMSErrors,
+    }[action];
+
+    const results = await Promise.allSettled(
+      applicableIds.map(id => apiCall(id))
+    );
+
+    const succeeded = results.filter(r => r.status === 'fulfilled').length;
+    const failed = results.filter(r => r.status === 'rejected').length;
+
+    if (failed === 0) {
+      showToast(t('printers.bulk.success', { action: t(`printers.bulk.actions.${action}`), count: succeeded }));
+    } else {
+      showToast(t('printers.bulk.partial', { succeeded, failed }), 'error');
+    }
+
+    // Invalidate status queries for affected printers
+    applicableIds.forEach(id => {
+      queryClient.invalidateQueries({ queryKey: ['printerStatus', id] });
+    });
+
+    setBulkActionPending(false);
+    setBulkConfirmAction(null);
+  }, [selectedPrinterIds, queryClient, showToast, t]);
+
+  const handleBulkAction = useCallback((action: 'stop' | 'pause' | 'resume' | 'clearPlate' | 'clearHMS') => {
+    // Actions that need confirmation
+    if (action === 'stop' || action === 'pause' || action === 'clearPlate') {
+      setBulkConfirmAction(action);
+    } else {
+      executeBulkAction(action);
+    }
+  }, [executeBulkAction]);
+
   const toggleHideDisconnected = () => {
     const newValue = !hideDisconnected;
     setHideDisconnected(newValue);
@@ -5982,6 +6100,40 @@ export function PrintersPage() {
     return sorted;
   }, [printers, sortBy, sortAsc, queryClient]);
 
+  const selectAll = useCallback(() => {
+    setSelectedPrinterIds(new Set(sortedPrinters.map(p => p.id)));
+    setIsSelectionMode(true);
+  }, [sortedPrinters]);
+
+  const selectByState = useCallback((state: PrinterState) => {
+    setSelectedPrinterIds(prev => {
+      const next = new Set(prev);
+      sortedPrinters.forEach(p => {
+        const status = queryClient.getQueryData<{ connected: boolean; state: string | null; hms_errors?: HMSError[] }>(['printerStatus', p.id]);
+        if (!status) return;
+        switch (state) {
+          case 'printing': if (status.connected && status.state === 'RUNNING') next.add(p.id); break;
+          case 'paused': if (status.connected && status.state === 'PAUSE') next.add(p.id); break;
+          case 'finished': if (status.connected && status.state === 'FINISH') next.add(p.id); break;
+          case 'idle': if (status.connected && status.state !== 'RUNNING' && status.state !== 'PAUSE' && status.state !== 'FINISH' && status.state !== 'FAILED') next.add(p.id); break;
+          case 'error': if (status.connected && (status.state === 'FAILED' || (status.hms_errors && filterKnownHMSErrors(status.hms_errors).length > 0))) next.add(p.id); break;
+          case 'offline': if (!status.connected) next.add(p.id); break;
+        }
+      });
+      return next;
+    });
+    setIsSelectionMode(true);
+  }, [sortedPrinters, queryClient]);
+
+  const selectByLocation = useCallback((location: string) => {
+    setSelectedPrinterIds(prev => {
+      const next = new Set(prev);
+      sortedPrinters.filter(p => (p.location || '') === location).forEach(p => next.add(p.id));
+      return next;
+    });
+    setIsSelectionMode(true);
+  }, [sortedPrinters]);
+
   // Group printers by location when sorted by location
   const groupedPrinters = useMemo(() => {
     if (sortBy !== 'location') return null;
@@ -6056,6 +6208,23 @@ export function PrintersPage() {
               );
             })}
           </div>
+
+          {/* Bulk select toggle */}
+          <button
+            onClick={() => {
+              if (selectionMode) clearSelection();
+              else setIsSelectionMode(true);
+            }}
+            className={`p-1.5 rounded-lg transition-colors ${
+              selectionMode
+                ? 'bg-bambu-green text-white'
+                : 'hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white'
+            }`}
+            title={t('printers.bulk.select')}
+            disabled={!hasPermission('printers:control')}
+          >
+            <CheckSquare className="w-4 h-4" />
+          </button>
 
           <div className="w-px h-6 bg-bambu-dark-tertiary" />
 
@@ -6148,6 +6317,14 @@ export function PrintersPage() {
                 <span className="w-2 h-2 rounded-full bg-bambu-green" />
                 {location}
                 <span className="text-sm font-normal text-bambu-gray">({locationPrinters.length})</span>
+                {selectionMode && (
+                  <button
+                    onClick={() => selectByLocation(location === 'Ungrouped' ? '' : location)}
+                    className="text-xs text-bambu-green hover:text-bambu-green-light transition-colors ml-1"
+                  >
+                    {t('printers.bulk.selectAll')}
+                  </button>
+                )}
               </h2>
               <div className={`grid gap-4 ${cardSize >= 3 ? 'gap-6' : ''} ${getGridClasses()}`}>
                 {locationPrinters.map((printer) => (
@@ -6176,6 +6353,9 @@ export function PrintersPage() {
                     onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
                     checkPrinterFirmware={settings?.check_printer_firmware !== false}
                     dryingPresets={effectiveDryingPresets}
+                    selectionMode={selectionMode}
+                    isSelected={selectedPrinterIds.has(printer.id)}
+                    onToggleSelect={toggleSelect}
                   />
                 ))}
               </div>
@@ -6211,6 +6391,9 @@ export function PrintersPage() {
               onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
               checkPrinterFirmware={settings?.check_printer_firmware !== false}
               dryingPresets={effectiveDryingPresets}
+              selectionMode={selectionMode}
+              isSelected={selectedPrinterIds.has(printer.id)}
+              onToggleSelect={toggleSelect}
             />
           ))}
         </div>
@@ -6221,6 +6404,53 @@ export function PrintersPage() {
           onClose={() => setShowAddModal(false)}
           onAdd={(data) => addMutation.mutate(data)}
           existingSerials={printers?.map(p => p.serial_number) || []}
+        />
+      )}
+
+      {/* Bulk selection toolbar */}
+      {selectionMode && printers && (
+        <BulkPrinterToolbar
+          selectedIds={selectedPrinterIds}
+          printers={printers}
+          onClose={clearSelection}
+          onSelectAll={selectAll}
+          onSelectByLocation={selectByLocation}
+          onSelectByState={selectByState}
+          onAction={handleBulkAction}
+          actionPending={bulkActionPending}
+        />
+      )}
+
+      {/* Bulk action confirmation modals */}
+      {bulkConfirmAction === 'stop' && (
+        <ConfirmModal
+          title={t('printers.bulk.confirm.stopTitle', { count: selectedPrinterIds.size })}
+          message={t('printers.bulk.confirm.stopMessage', { count: selectedPrinterIds.size })}
+          confirmText={t('printers.bulk.confirm.stopButton')}
+          variant="danger"
+          isLoading={bulkActionPending}
+          onConfirm={() => executeBulkAction('stop')}
+          onCancel={() => setBulkConfirmAction(null)}
+        />
+      )}
+      {bulkConfirmAction === 'pause' && (
+        <ConfirmModal
+          title={t('printers.bulk.confirm.pauseTitle', { count: selectedPrinterIds.size })}
+          message={t('printers.bulk.confirm.pauseMessage', { count: selectedPrinterIds.size })}
+          confirmText={t('printers.bulk.confirm.pauseButton')}
+          isLoading={bulkActionPending}
+          onConfirm={() => executeBulkAction('pause')}
+          onCancel={() => setBulkConfirmAction(null)}
+        />
+      )}
+      {bulkConfirmAction === 'clearPlate' && (
+        <ConfirmModal
+          title={t('printers.bulk.confirm.clearPlateTitle', { count: selectedPrinterIds.size })}
+          message={t('printers.bulk.confirm.clearPlateMessage', { count: selectedPrinterIds.size })}
+          confirmText={t('printers.bulk.confirm.clearPlateButton')}
+          isLoading={bulkActionPending}
+          onConfirm={() => executeBulkAction('clearPlate')}
+          onCancel={() => setBulkConfirmAction(null)}
         />
       )}
 

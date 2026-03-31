@@ -295,6 +295,32 @@ def extract_nozzle_mapping_from_3mf(zf: zipfile.ZipFile) -> dict[int, int] | Non
         physical_extruder_map = data.get("physical_extruder_map")
         if not physical_extruder_map or len(physical_extruder_map) <= 1:
             return None  # Single-nozzle printer
+        
+        # Check if only one extruder is active.
+        # If so, we can skip the mapping and just assign all slots to that extruder.
+        # extruder_nozzle_stats format: ["Standard#0|High Flow#0", "Standard#1"]
+        # Each entry = one extruder. Format: <NozzleVolumeType>#<count>[|...]
+        # #N is the count of physical nozzles of that type (0 = none installed).
+        # Types: Standard, High Flow, Hybrid, TPU High Flow
+        
+        active_extruders = []
+        for stats_str in (data.get("extruder_nozzle_stats") or []):
+            nozzle_counts = [n.partition("#")[2] for n in stats_str.split("|")]
+            active_extruders.append(1 if any(c not in ("0", "") for c in nozzle_counts) else 0)
+        
+        if sum(active_extruders) == 1:
+            nozzle_mapping: dict[int, int] = {}
+            active_idx = active_extruders.index(1)
+            target_extruder = int(physical_extruder_map[active_idx])
+            if "Metadata/slice_info.config" in zf.namelist():
+                si_content = zf.read("Metadata/slice_info.config").decode()
+                si_root = ET.fromstring(si_content)
+                for filament_elem in si_root.findall(".//filament"):
+                    try:
+                        nozzle_mapping[int(filament_elem.get("id"))] = target_extruder
+                    except (ValueError, TypeError):
+                        pass
+            return nozzle_mapping or None
 
         # Priority 1: Use group_id from slice_info filament elements.
         # This reflects the actual slicer assignment (respects "Auto For Flush").

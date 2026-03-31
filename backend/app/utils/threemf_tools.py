@@ -295,9 +295,14 @@ def extract_nozzle_mapping_from_3mf(zf: zipfile.ZipFile) -> dict[int, int] | Non
         physical_extruder_map = data.get("physical_extruder_map")
         if not physical_extruder_map or len(physical_extruder_map) <= 1:
             return None  # Single-nozzle printer
+        
         # Check if only one extruder is active.
         # If so, we can skip the mapping and just assign all slots to that extruder.
-        # For reference: "extruder_nozzle_stats": ["Standard#0|High Flow#0","Standard#1"]
+        # extruder_nozzle_stats format: ["Standard#0|High Flow#0", "Standard#1"]
+        # Each entry = one extruder. Format: <NozzleVolumeType>#<count>[|...]
+        # #N is the count of physical nozzles of that type (0 = none installed).
+        # Types: Standard, High Flow, Hybrid, TPU High Flow
+        
         active_extruders = []
         for stats_str in (data.get("extruder_nozzle_stats") or []):
             nozzle_counts = [n.partition("#")[2] for n in stats_str.split("|")]

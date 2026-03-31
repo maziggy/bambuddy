@@ -590,6 +590,91 @@ class TestExtractNozzleMappingFrom3mf:
         assert result == {1: 1, 2: 0}
         zf.close()
 
+    def test_single_active_extruder_maps_all_slots(self):
+        """When only one extruder has nozzles installed, all filaments map to it.
+
+        H2C scenario: left extruder has no nozzles (Standard#0|High Flow#0),
+        right extruder has one Standard nozzle (Standard#1). Print uses only
+        the right extruder, so all filaments should map to physical extruder 0.
+        """
+        slice_info = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+          <plate>
+            <filament id="1" type="PLA" color="#FF0000" used_g="5.0" group_id="0"/>
+            <filament id="2" type="PLA" color="#00FF00" used_g="3.0" group_id="0"/>
+          </plate>
+        </config>"""
+        zf = _make_3mf_zip(
+            {
+                "physical_extruder_map": ["1", "0"],
+                "extruder_nozzle_stats": ["Standard#0|High Flow#0", "Standard#1"],
+            },
+            slice_info_xml=slice_info,
+        )
+        result = extract_nozzle_mapping_from_3mf(zf)
+        # Only extruder index 1 is active → physical_extruder_map[1] = 0 (RIGHT)
+        assert result == {1: 0, 2: 0}
+        zf.close()
+
+    def test_two_active_extruders_falls_through(self):
+        """When both extruders have nozzles, the single-active shortcut is skipped.
+
+        Should fall through to the normal group_id-based mapping.
+        """
+        slice_info = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+          <plate>
+            <filament id="1" type="PLA" color="#FF0000" used_g="5.0" group_id="0"/>
+            <filament id="2" type="PLA" color="#00FF00" used_g="3.0" group_id="1"/>
+          </plate>
+        </config>"""
+        zf = _make_3mf_zip(
+            {
+                "physical_extruder_map": ["1", "0"],
+                "extruder_nozzle_stats": ["Standard#1", "High Flow#1"],
+            },
+            slice_info_xml=slice_info,
+        )
+        result = extract_nozzle_mapping_from_3mf(zf)
+        # Both active → normal group_id mapping: group 0 → phys 1, group 1 → phys 0
+        assert result == {1: 1, 2: 0}
+        zf.close()
+
+    def test_missing_extruder_nozzle_stats_falls_through(self):
+        """When extruder_nozzle_stats is absent, the single-active shortcut is skipped.
+
+        Should fall through to the normal group_id-based mapping.
+        """
+        slice_info = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+          <plate>
+            <filament id="1" type="PLA" color="#FF0000" used_g="5.0" group_id="0"/>
+            <filament id="2" type="PLA" color="#00FF00" used_g="3.0" group_id="1"/>
+          </plate>
+        </config>"""
+        zf = _make_3mf_zip(
+            {
+                "physical_extruder_map": ["1", "0"],
+            },
+            slice_info_xml=slice_info,
+        )
+        result = extract_nozzle_mapping_from_3mf(zf)
+        # No extruder_nozzle_stats → normal group_id mapping
+        assert result == {1: 1, 2: 0}
+        zf.close()
+
+    def test_single_active_extruder_no_slice_info_returns_none(self):
+        """Single active extruder but no slice_info should return None."""
+        zf = _make_3mf_zip(
+            {
+                "physical_extruder_map": ["1", "0"],
+                "extruder_nozzle_stats": ["Standard#0", "Standard#1"],
+            },
+        )
+        result = extract_nozzle_mapping_from_3mf(zf)
+        assert result is None
+        zf.close()
+
 
 class TestNozzleAwareMapping:
     """Test nozzle-aware filament matching in the print scheduler."""

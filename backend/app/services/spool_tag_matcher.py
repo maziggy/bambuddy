@@ -70,6 +70,22 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     elif tray_sub_brands and tray_sub_brands.upper() != material.upper():
         material = tray_sub_brands
 
+    # Upgrade subtype for gradient/multi-color variants based on tray_id_name color code.
+    # Firmware sends tray_sub_brands="PLA Basic" for gradients and "PLA Silk" for dual/tri-color,
+    # but the M*/T* suffix in tray_id_name distinguishes them:
+    #   A00-M* = PLA Basic Gradient, A05-M* = PLA Silk Dual Color, A05-T* = PLA Silk Tri Color
+    if tray_id_name and "-" in tray_id_name:
+        color_code = tray_id_name.split("-", 1)[1]
+        if color_code and color_code[0] == "M":
+            # M* = gradient for PLA Basic (A00), dual-color for PLA Silk (A05)
+            prefix = tray_id_name.split("-", 1)[0]
+            if prefix == "A05":
+                subtype = "Dual Color"
+            else:
+                subtype = "Gradient"
+        elif color_code and color_code[0] == "T":
+            subtype = "Tri Color"
+
     # Resolve color name from tray_id_name code, hex catalog, or raw tray_id_name
     from backend.app.core.bambu_colors import resolve_bambu_color_name
 
@@ -197,6 +213,19 @@ async def find_matching_untagged_spool(db: AsyncSession, tray_data: dict) -> Spo
             material = tray_sub_brands
     elif tray_sub_brands and tray_sub_brands.upper() != material.upper():
         material = tray_sub_brands
+
+    # Upgrade subtype for gradient/multi-color variants (same logic as create_spool_from_tray)
+    tray_id_name = tray_data.get("tray_id_name", "")
+    if tray_id_name and "-" in tray_id_name:
+        color_code = tray_id_name.split("-", 1)[1]
+        if color_code and color_code[0] == "M":
+            prefix = tray_id_name.split("-", 1)[0]
+            if prefix == "A05":
+                subtype = "Dual Color"
+            else:
+                subtype = "Gradient"
+        elif color_code and color_code[0] == "T":
+            subtype = "Tri Color"
 
     # Build query: active spools with no tag, matching brand + material + color
     query = (

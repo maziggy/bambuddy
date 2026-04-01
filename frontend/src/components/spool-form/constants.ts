@@ -17,7 +17,7 @@ export const DEFAULT_BRANDS = [
 
 // Known filament variants/subtypes
 export const KNOWN_VARIANTS = [
-  'Basic', 'Matte', 'Silk', 'Tough', 'HF', 'High Flow', 'Engineering',
+  'Basic', 'Matte', 'Silk', 'Silk+', 'Tough', 'Tough+', 'HF', 'High Flow', 'Engineering',
   'Galaxy', 'Glow', 'Marble', 'Metal', 'Rainbow', 'Sparkle', 'Wood',
   'Translucent', 'Transparent', 'Clear', 'Lite', 'Pro', 'Plus', 'Max',
   'Super', 'Ultra', 'Flex', 'Soft', 'Hard', 'Strong', 'Impact',

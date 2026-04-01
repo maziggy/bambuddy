@@ -737,3 +737,118 @@ async def test_link_tag_preserves_existing_slicer_filament(db_session):
 
     assert spool.slicer_filament == "CUSTOM01"
     assert spool.slicer_filament_name == "My Custom PLA"
+
+
+# -- gradient / multi-color subtype detection --------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_spool_gradient_from_tray_id_name(db_session):
+    """PLA Basic with M* color code → subtype='Gradient'."""
+    tray = {
+        **SAMPLE_TRAY,
+        "tray_sub_brands": "PLA Basic",
+        "tray_id_name": "A00-M2",  # Ocean to Meadow
+    }
+    spool = await create_spool_from_tray(db_session, tray)
+    assert spool.material == "PLA"
+    assert spool.subtype == "Gradient"
+
+
+@pytest.mark.asyncio
+async def test_create_spool_dual_color_from_tray_id_name(db_session):
+    """PLA Silk with A05-M* color code → subtype='Dual Color'."""
+    tray = {
+        **SAMPLE_TRAY,
+        "tray_sub_brands": "PLA Silk",
+        "tray_id_name": "A05-M1",  # South Beach
+    }
+    spool = await create_spool_from_tray(db_session, tray)
+    assert spool.material == "PLA"
+    assert spool.subtype == "Dual Color"
+
+
+@pytest.mark.asyncio
+async def test_create_spool_tri_color_from_tray_id_name(db_session):
+    """PLA Silk with A05-T* color code → subtype='Tri Color'."""
+    tray = {
+        **SAMPLE_TRAY,
+        "tray_sub_brands": "PLA Silk",
+        "tray_id_name": "A05-T3",  # Neon City
+    }
+    spool = await create_spool_from_tray(db_session, tray)
+    assert spool.material == "PLA"
+    assert spool.subtype == "Tri Color"
+
+
+@pytest.mark.asyncio
+async def test_create_spool_silk_plus_subtype(db_session):
+    """PLA Silk+ preserves 'Silk+' subtype (no gradient override)."""
+    tray = {
+        **SAMPLE_TRAY,
+        "tray_sub_brands": "PLA Silk+",
+        "tray_id_name": "A06-D0",  # Titan Gray — D code, not M/T
+    }
+    spool = await create_spool_from_tray(db_session, tray)
+    assert spool.material == "PLA"
+    assert spool.subtype == "Silk+"
+
+
+@pytest.mark.asyncio
+async def test_create_spool_standard_not_affected(db_session):
+    """Standard filaments with D/K/etc codes are not affected."""
+    tray = {
+        **SAMPLE_TRAY,
+        "tray_sub_brands": "PLA Basic",
+        "tray_id_name": "A00-D3",  # Dark Gray
+    }
+    spool = await create_spool_from_tray(db_session, tray)
+    assert spool.material == "PLA"
+    assert spool.subtype == "Basic"
+
+
+@pytest.mark.asyncio
+async def test_find_matching_untagged_gradient_spool(db_session):
+    """find_matching_untagged_spool matches gradient subtype from tray_id_name."""
+    spool = Spool(
+        material="PLA",
+        subtype="Gradient",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    db_session.add(spool)
+    await db_session.commit()
+
+    tray = {
+        **SAMPLE_TRAY,
+        "tray_sub_brands": "PLA Basic",
+        "tray_id_name": "A00-M2",
+    }
+    found = await find_matching_untagged_spool(db_session, tray)
+    assert found is not None
+    assert found.id == spool.id
+
+
+@pytest.mark.asyncio
+async def test_find_matching_untagged_gradient_no_match_basic(db_session):
+    """A 'Basic' spool does NOT match a Gradient tray (different subtype)."""
+    spool = Spool(
+        material="PLA",
+        subtype="Basic",
+        rgba="FFFFFFFF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+    )
+    db_session.add(spool)
+    await db_session.commit()
+
+    tray = {
+        **SAMPLE_TRAY,
+        "tray_sub_brands": "PLA Basic",
+        "tray_id_name": "A00-M2",  # Gradient
+    }
+    found = await find_matching_untagged_spool(db_session, tray)
+    assert found is None

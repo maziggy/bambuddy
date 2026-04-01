@@ -387,6 +387,37 @@ body {
   animation: slide-in-left 0.3s ease-out;
 }
 
+/* SpoolBuddy idle scan animation: transform/opacity only for low-power devices */
+@keyframes spoolbuddy-optimized-ping {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.8;
+  }
+  80%,
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+.spoolbuddy-optimized-ping {
+  will-change: transform, opacity;
+  animation: spoolbuddy-optimized-ping 2.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+.spoolbuddy-spool-glow {
+  transform: scale(2.5);
+  will-change: background;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spoolbuddy-optimized-ping {
+    animation: none;
+    opacity: 0.25;
+    transform: scale(1.2);
+  }
+}
+
 /* Card shadows - uses theme-specific shadow */
 .card-shadow {
   box-shadow: var(--card-shadow);

@@ -1,0 +1,200 @@
+2026-04-01 15:47:08,584 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 15:47:08,585 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 15:47:08,585 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:08,587 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x7959643fdcc0>
+2026-04-01 15:47:08,588 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:08,588 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 15:47:08,588 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 15:47:08,588 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 15:47:08,588 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:08,673 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 400, b'Bad Request', [(b'Date', b'Wed, 01 Apr 2026 13:47:08 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Content-Length', b'223'), (b'Connection', b'keep-alive'), (b'b3', b'e105a3972c39ff9d5ffea58e537d132b-6a89b393b5c21ec3-1'), (b'traceparent', b'00-e105a3972c39ff9d5ffea58e537d132b-6a89b393b5c21ec3-01'), (b'x-bbl-be', b'go'), (b'Server', b'cloudflare'), (b'x-request-id', b'15eac402-90a0-4a9c-b0e6-4af7abf63da6'), (b'cf-cache-status', b'DYNAMIC'), (b'x-xss-protection', b'1; mode=block'), (b'Strict-Transport-Security', b'max-age=15552000; includeSubDomains; preload'), (b'x-content-type-options', b'nosniff'), (b'set-cookie', b'__cf_bm=vVKCFNPgEurvI8SimGtDagyTrRCY47pfAtGcrxZ9Eeo-1775051228.486374-[IP]-nuF.PdAMnWUtagMFErkH3ZL8Z4sXcfaOQoiLSSapNcPAf4Mkhy30Nm738Aeg8ti2yRH4e1XwZkPx68UF72ZHUfSeOTg96KBqiBbi0gZm9m63V50YV9L37c7V2WXOuLpU; HttpOnly; Secure; Path=/; Domain=bambulab.com; Expires=Wed, 01 Apr 2026 14:17:08 GMT'), (b'expect-ct', b'max-age=86400, enforce'), (b'referrer-policy', b'same-origin'), (b'x-frame-options', b'SAMEORIGIN'), (b'CF-RAY', b'9e580b420fe9e51a-TXL'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-01 15:47:08,673 INFO [httpx] HTTP Request: GET https://api.bambulab.com/v1/iot-service/api/slicer/setting/GFSG02 "HTTP/1.1 400 Bad Request"
+2026-04-01 15:47:08,673 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 15:47:08,673 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 15:47:08,673 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 15:47:08,673 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 15:47:08,674 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset GFG02 (API ID: GFSG02): Failed to get setting detail: 400
+2026-04-01 15:47:08,674 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:08,674 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 15:47:08,674 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 15:47:08,674 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 15:47:08,674 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:08,676 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 01 Apr 2026 13:47:08 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'b3', b'64d7b4336fba781f18476f8e984b3b45-371f6c2521f72416-1'), (b'traceparent', b'00-64d7b4336fba781f18476f8e984b3b45-371f6c2521f72416-01'), (b'x-bbl-be', b'go'), (b'Server', b'cloudflare'), (b'x-request-id', b'284ea7fc-7daa-4de9-80a9-bc1bd226a547'), (b'cf-cache-status', b'DYNAMIC'), (b'x-xss-protection', b'1; mode=block'), (b'Strict-Transport-Security', b'max-age=15552000; includeSubDomains; preload'), (b'x-content-type-options', b'nosniff'), (b'set-cookie', b'__cf_bm=jzbFs6wv0QEZO1VcsAJ9rsGg7tmEt_PhcRjN8HNdYGQ-1775051228.4862134-[IP]-hAyl8z2xltA7K2nj5TRha.fJ5jDsAbACBiAGyAqwaipFsuIkgFIAaaj4SfehKRGlaVrp4Kg3Mqv3FLbbireXcWoE210d_4xTBmV8_S2LUa2dPu5UTHZotlvnJfd3eGzs; HttpOnly; Secure; Path=/; Domain=bambulab.com; Expires=Wed, 01 Apr 2026 14:17:08 GMT'), (b'expect-ct', b'max-age=86400, enforce'), (b'referrer-policy', b'same-origin'), (b'x-frame-options', b'SAMEORIGIN'), (b'Content-Encoding', b'gzip'), (b'CF-RAY', b'9e580b42098ce52a-TXL'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-01 15:47:08,676 INFO [httpx] HTTP Request: GET https://api.bambulab.com/v1/iot-service/api/slicer/setting/GFSL99 "HTTP/1.1 200 OK"
+2026-04-01 15:47:08,676 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 15:47:08,676 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 15:47:08,676 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 15:47:08,676 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 15:47:08,677 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:08,677 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 15:47:08,677 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 15:47:08,677 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 15:47:08,677 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:08,805 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/13.3.0 (ESP8266EX)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 15:47:08,805 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Power "HTTP/1.1 200 OK"
+2026-04-01 15:47:08,805 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 15:47:08,819 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/14.4.1 (ESP8285H16)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 15:47:08,819 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Power "HTTP/1.1 200 OK"
+2026-04-01 15:47:08,819 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 15:47:08,822 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 01 Apr 2026 13:47:08 GMT'), (b'Content-Type', b'text/html; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'content-security-policy', b"default-src 'self' *.bdimg.com; worker-src 'self' blob: data:; script-src 'self' qrc: 'nonce-YTBiMjRmNzYtYTRiNy00ZGEzLWE4NTctMmZkZjM4NDc5YTFj' 'strict-dynamic' 'unsafe-eval' www.youtube.com *.googletagmanager.com googletagmanager.com tagmanager.google.com http://static.geevisit.com https://gcaptcha4.geetest.com https://gcaptcha4.geetest.com https://static.geetest.com maps.googleapis.com https://*.hotjar.com https://*.clarity.ms https://c.bing.com 'unsafe-inline' api.map.baidu.com dlswbr.baidu.com *.bdimg.com mapopen-pub-jsapi.cdn.bcebos.com; style-src 'self' 'unsafe-inline' fonts.googlefonts.cn fonts.googleapis.com *.googletagmanager.com googletagmanager.com tagmanager.google.com https://static.geetest.com https://static.geevisit.com *.bblmw.cn api.map.baidu.com; img-src 'self' blob: data: https: https://*.hotjar.com *.baidu.com *.bdimg.com *.map.baidu.com; font-src 'self' blob: data: fonts.gstatic.com fonts.gstatic.googlefonts.cn https://*.hotjar.com *.bblmw.com *.bblmw.cn https://consent.trustarc.com; media-src 'self' *.bambulab.cn *.bambulab.com *.bblmw.cn *.bblmw.com; connect-src 'self' https: https://*.hotjar.com https://*.hotjar.io wss://*.hotjar.com data: *.baidu.com *.bdimg.com *.map.baidu.com ; frame-src www.youtube-nocookie.com www.facebook.com www.youtube.com www.bilibili.com space.bilibili.com player.bilibili.com https://td.doubleclick.net https://www.googletagmanager.com https://consent-pref.trustarc.com; object-src 'none'; base-uri 'self'; form-action 'self' https:; frame-ancestors 'none'; block-all-mixed-content;"), (b'Cache-Control', b'public, s-maxage=30, stale-while-revalidate=59'), (b'expect-ct', b'max-age=86400, enforce'), (b'vary', b'Accept-Encoding'), (b'x-frame-options', b'SAMEORIGIN'), (b'x-cache-status', b'STALE'), (b'Server', b'cloudflare'), (b'x-request-id', b'e636812b-c0fc-4bf3-b08d-5427529b0e0d'), (b'referrer-policy', b'strict-origin-when-cross-origin'), (b'x-content-type-options', b'nosniff'), (b'strict-transport-security', b'max-age=15552000; includeSubDomains; preload'), (b'cf-cache-status', b'DYNAMIC'), (b'x-xss-protection', b'1; mode=block'), (b'Content-Encoding', b'gzip'), (b'CF-RAY', b'9e580b42ab62761f-TXL'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-01 15:47:08,822 INFO [httpx] HTTP Request: GET https://bambulab.com/en/support/firmware-download/all "HTTP/1.1 200 OK"
+2026-04-01 15:47:08,822 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 15:47:08,845 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 15:47:08,845 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 15:47:08,845 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 15:47:08,849 INFO [backend.app.services.firmware_check] Got Bambu Lab build ID: o14xTWcCqDC8fp_d1rN_s
+2026-04-01 15:47:08,849 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:08,850 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 15:47:08,850 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 15:47:08,850 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 15:47:08,850 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:08,852 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 400, b'Bad Request', [(b'Date', b'Wed, 01 Apr 2026 13:47:08 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Content-Length', b'223'), (b'Connection', b'keep-alive'), (b'x-xss-protection', b'1; mode=block'), (b'b3', b'9aa62dd4749f3e27db8d752cc36fe5bc-a71aaafda20f4da3-1'), (b'traceparent', b'00-9aa62dd4749f3e27db8d752cc36fe5bc-a71aaafda20f4da3-01'), (b'x-bbl-be', b'go'), (b'Server', b'cloudflare'), (b'x-request-id', b'f4911291-da45-4086-b4af-be864616c980'), (b'x-frame-options', b'SAMEORIGIN'), (b'cf-cache-status', b'DYNAMIC'), (b'Strict-Transport-Security', b'max-age=15552000; includeSubDomains; preload'), (b'x-content-type-options', b'nosniff'), (b'expect-ct', b'max-age=86400, enforce'), (b'referrer-policy', b'same-origin'), (b'CF-RAY', b'9e580b434e8fe52a-TXL'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-01 15:47:08,853 INFO [httpx] HTTP Request: GET https://api.bambulab.com/v1/iot-service/api/slicer/setting/GFSL03 "HTTP/1.1 400 Bad Request"
+2026-04-01 15:47:08,853 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 15:47:08,853 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 15:47:08,853 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 15:47:08,853 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 15:47:08,853 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset GFL03 (API ID: GFSL03): Failed to get setting detail: 400
+2026-04-01 15:47:08,854 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:08,854 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 15:47:08,854 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 15:47:08,854 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 15:47:08,854 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:08,875 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 400, b'Bad Request', [(b'Date', b'Wed, 01 Apr 2026 13:47:08 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Content-Length', b'223'), (b'Connection', b'keep-alive'), (b'b3', b'f672bec13c5dab6217278aef151af898-457b36c9dc3f4bcf-1'), (b'traceparent', b'00-f672bec13c5dab6217278aef151af898-457b36c9dc3f4bcf-01'), (b'x-bbl-be', b'go'), (b'Server', b'cloudflare'), (b'x-request-id', b'8ecdf8c7-1d25-471a-a7fa-1e1850771efd'), (b'cf-cache-status', b'DYNAMIC'), (b'x-xss-protection', b'1; mode=block'), (b'Strict-Transport-Security', b'max-age=15552000; includeSubDomains; preload'), (b'x-content-type-options', b'nosniff'), (b'expect-ct', b'max-age=86400, enforce'), (b'referrer-policy', b'same-origin'), (b'x-frame-options', b'SAMEORIGIN'), (b'CF-RAY', b'9e580b433c36e51a-TXL'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-01 15:47:08,875 INFO [httpx] HTTP Request: GET https://api.bambulab.com/v1/iot-service/api/slicer/setting/GFSA06 "HTTP/1.1 400 Bad Request"
+2026-04-01 15:47:08,875 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 15:47:08,875 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 15:47:08,875 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 15:47:08,875 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 15:47:08,876 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset GFA06 (API ID: GFSA06): Failed to get setting detail: 400
+2026-04-01 15:47:08,876 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:08,876 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 15:47:08,876 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 15:47:08,876 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 15:47:08,876 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:08,891 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 15:47:08,891 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 15:47:08,891 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 15:47:08,892 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 15:47:08,892 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 15:47:08,892 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 15:47:08,898 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 15:47:08,903 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 15:47:09,000 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x7959643e8eb0>
+2026-04-01 15:47:09,000 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x795964301e50>
+2026-04-01 15:47:09,000 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:09,000 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:09,000 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 15:47:09,000 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 15:47:09,001 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 15:47:09,001 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:09,001 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 15:47:09,001 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 15:47:09,001 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 15:47:09,001 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:09,031 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 400, b'Bad Request', [(b'Date', b'Wed, 01 Apr 2026 13:47:09 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Content-Length', b'223'), (b'Connection', b'keep-alive'), (b'x-xss-protection', b'1; mode=block'), (b'b3', b'66a1c56ae7b4640ff395a81bada82ed1-2d9938a1cbb05291-1'), (b'traceparent', b'00-66a1c56ae7b4640ff395a81bada82ed1-2d9938a1cbb05291-01'), (b'x-bbl-be', b'go'), (b'Server', b'cloudflare'), (b'x-request-id', b'52445971-4fa5-4347-8d8d-1c58770d91c6'), (b'x-frame-options', b'SAMEORIGIN'), (b'cf-cache-status', b'DYNAMIC'), (b'Strict-Transport-Security', b'max-age=15552000; includeSubDomains; preload'), (b'x-content-type-options', b'nosniff'), (b'expect-ct', b'max-age=86400, enforce'), (b'referrer-policy', b'same-origin'), (b'CF-RAY', b'9e580b445af1e52a-TXL'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-01 15:47:09,031 INFO [httpx] HTTP Request: GET https://api.bambulab.com/v1/iot-service/api/slicer/setting/P4d64437 "HTTP/1.1 400 Bad Request"
+2026-04-01 15:47:09,031 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 15:47:09,031 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 15:47:09,032 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 15:47:09,032 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 15:47:09,032 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset P4d64437 (API ID: P4d64437): Failed to get setting detail: 400
+2026-04-01 15:47:09,067 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 01 Apr 2026 13:47:09 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'b3', b'89cd1d908b50e9f40cc9c951b0d09737-61f71d9d2c9a59da-1'), (b'traceparent', b'00-89cd1d908b50e9f40cc9c951b0d09737-61f71d9d2c9a59da-01'), (b'x-bbl-be', b'go'), (b'Server', b'cloudflare'), (b'x-request-id', b'3452c1e0-d863-4923-ab62-cce0c3bceaa5'), (b'cf-cache-status', b'DYNAMIC'), (b'x-xss-protection', b'1; mode=block'), (b'Strict-Transport-Security', b'max-age=15552000; includeSubDomains; preload'), (b'x-content-type-options', b'nosniff'), (b'expect-ct', b'max-age=86400, enforce'), (b'referrer-policy', b'same-origin'), (b'x-frame-options', b'SAMEORIGIN'), (b'Content-Encoding', b'gzip'), (b'CF-RAY', b'9e580b4488cae51a-TXL'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-01 15:47:09,067 INFO [httpx] HTTP Request: GET https://api.bambulab.com/v1/iot-service/api/slicer/setting/GFSA00 "HTTP/1.1 200 OK"
+2026-04-01 15:47:09,068 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 15:47:09,068 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 15:47:09,068 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 15:47:09,068 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 15:47:09,069 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:09,069 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 15:47:09,069 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 15:47:09,069 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 15:47:09,069 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:09,082 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 01 Apr 2026 13:47:09 GMT'), (b'Content-Type', b'text/html; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'x-frame-options', b'SAMEORIGIN'), (b'x-xss-protection', b'1; mode=block'), (b'x-content-type-options', b'nosniff'), (b'x-ua-compatible', b'IE=edge'), (b'expect-ct', b'max-age=86400, enforce'), (b'content-language', b'en'), (b'Strict-Transport-Security', b'max-age=15552000; includeSubDomains; preload'), (b'vary', b'Accept-Encoding'), (b'set-cookie', b'__cf_bm=ejTDJOqHO7I_O0NQEtdWsm.zWfWcx5.0ln5SigNbHik-1775051228.394237-[IP]-miCGaAoC0kqUcSgorp030Bz1M_it6hGOIvdOE6TW8ooAx3Z2MA6UsyzwVRsaxPMO4AInqCIWTJwcv0TXEmQqrs598yaJs67fhtSYnhRksetoqajjrnlazupjjSr3YqYC; HttpOnly; Secure; Path=/; Domain=bambulab.com; Expires=Wed, 01 Apr 2026 14:17:09 GMT'), (b'Server', b'cloudflare'), (b'x-request-id', b'ad35eec3-03d5-4a9f-8372-a4de858f7891'), (b'cf-cache-status', b'DYNAMIC'), (b'Content-Security-Policy', b"frame-ancestors 'self' https://*.bambulab.net https://*.makerworld.com https://*.makerworld.com.cn https://bambulab.net https://makerworld.com https://makerworld.com.cn;"), (b'Content-Encoding', b'gzip'), (b'CF-RAY', b'9e580b4178fb236c-TXL'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-01 15:47:09,082 INFO [httpx] HTTP Request: GET https://wiki.bambulab.com/en/x1/manual/X1-X1C-firmware-release-history "HTTP/1.1 200 OK"
+2026-04-01 15:47:09,083 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 15:47:09,084 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 15:47:09,084 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 15:47:09,084 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 15:47:09,085 DEBUG [backend.app.services.firmware_check] Wiki firmware for x1: 01.11.02.00
+2026-04-01 15:47:09,086 DEBUG [httpcore.connection] connect_tcp.started host='bambulab.com' port=443 local_address=None timeout=30.0 socket_options=None
+2026-04-01 15:47:09,089 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 01 Apr 2026 13:47:09 GMT'), (b'Content-Type', b'application/json'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'content-security-policy', b"default-src 'self' *.bdimg.com; worker-src 'self' blob: data:; script-src 'self' qrc: 'nonce-YWY0ZTZiMzYtNTJhZi00ODkwLTkxZWItYmU5MDAwN2RlYWFl' 'strict-dynamic' 'unsafe-eval' www.youtube.com *.googletagmanager.com googletagmanager.com tagmanager.google.com http://static.geevisit.com https://gcaptcha4.geetest.com https://gcaptcha4.geetest.com https://static.geetest.com maps.googleapis.com https://*.hotjar.com https://*.clarity.ms https://c.bing.com 'unsafe-inline' api.map.baidu.com dlswbr.baidu.com *.bdimg.com mapopen-pub-jsapi.cdn.bcebos.com; style-src 'self' 'unsafe-inline' fonts.googlefonts.cn fonts.googleapis.com *.googletagmanager.com googletagmanager.com tagmanager.google.com https://static.geetest.com https://static.geevisit.com *.bblmw.cn api.map.baidu.com; img-src 'self' blob: data: https: https://*.hotjar.com *.baidu.com *.bdimg.com *.map.baidu.com; font-src 'self' blob: data: fonts.gstatic.com fonts.gstatic.googlefonts.cn https://*.hotjar.com *.bblmw.com *.bblmw.cn https://consent.trustarc.com; media-src 'self' *.bambulab.cn *.bambulab.com *.bblmw.cn *.bblmw.com; connect-src 'self' https: https://*.hotjar.com https://*.hotjar.io wss://*.hotjar.com data: *.baidu.com *.bdimg.com *.map.baidu.com ; frame-src www.youtube-nocookie.com www.facebook.com www.youtube.com www.bilibili.com space.bilibili.com player.bilibili.com https://td.doubleclick.net https://www.googletagmanager.com https://consent-pref.trustarc.com; object-src 'none'; base-uri 'self'; form-action 'self' https:; frame-ancestors 'none'; block-all-mixed-content;"), (b'Cache-Control', b'public, s-maxage=30, stale-while-revalidate=59'), (b'etag', b'"13o482yxio2cfbv"'), (b'vary', b'Accept-Encoding'), (b'Content-Encoding', b'gzip'), (b'x-cache-status', b'BYPASS'), (b'Server', b'cloudflare'), (b'x-request-id', b'009cb280-1f60-40c2-be9b-cea3bf258feb'), (b'x-content-type-options', b'nosniff'), (b'strict-transport-security', b'max-age=15552000; includeSubDomains; preload'), (b'referrer-policy', b'strict-origin-when-cross-origin'), (b'cf-cache-status', b'DYNAMIC'), (b'x-xss-protection', b'1; mode=block'), (b'expect-ct', b'max-age=86400, enforce'), (b'x-frame-options', b'SAMEORIGIN'), (b'CF-RAY', b'9e580b445afe761f-TXL'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-01 15:47:09,089 INFO [httpx] HTTP Request: GET https://bambulab.com/_next/data/o14xTWcCqDC8fp_d1rN_s/en/support/firmware-download/h2d.json "HTTP/1.1 200 OK"
+2026-04-01 15:47:09,089 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 15:47:09,099 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x7959643fcfa0>
+2026-04-01 15:47:09,099 DEBUG [httpcore.connection] start_tls.started ssl_context=<ssl.SSLContext object at 0x79596c0a6180> server_hostname='bambulab.com' timeout=30.0
+2026-04-01 15:47:09,102 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 15:47:09,102 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 15:47:09,102 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 15:47:09,119 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/13.3.0 (ESP8266EX)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 15:47:09,119 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Status%208 "HTTP/1.1 200 OK"
+2026-04-01 15:47:09,119 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 15:47:09,123 DEBUG [httpcore.connection] start_tls.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x79596e390b90>
+2026-04-01 15:47:09,124 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:09,124 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 15:47:09,124 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 15:47:09,124 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 15:47:09,124 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:09,131 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/14.4.1 (ESP8285H16)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 15:47:09,131 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Status%208 "HTTP/1.1 200 OK"
+2026-04-01 15:47:09,131 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 15:47:09,199 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 15:47:09,200 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 15:47:09,200 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 15:47:09,204 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 15:47:09,204 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 15:47:09,204 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 15:47:09,269 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 01 Apr 2026 13:47:09 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'b3', b'5f263f6a0628a325c2a75f5d04e932d9-1f2c1c8750cc626d-1'), (b'traceparent', b'00-5f263f6a0628a325c2a75f5d04e932d9-1f2c1c8750cc626d-01'), (b'x-bbl-be', b'go'), (b'Server', b'cloudflare'), (b'x-request-id', b'0d7b9220-c192-4abb-9f38-4932a9aa038b'), (b'cf-cache-status', b'DYNAMIC'), (b'x-xss-protection', b'1; mode=block'), (b'Strict-Transport-Security', b'max-age=15552000; includeSubDomains; preload'), (b'x-content-type-options', b'nosniff'), (b'expect-ct', b'max-age=86400, enforce'), (b'referrer-policy', b'same-origin'), (b'x-frame-options', b'SAMEORIGIN'), (b'Content-Encoding', b'gzip'), (b'CF-RAY', b'9e580b45bd33e51a-TXL'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-01 15:47:09,269 INFO [httpx] HTTP Request: GET https://api.bambulab.com/v1/iot-service/api/slicer/setting/GFSA02 "HTTP/1.1 200 OK"
+2026-04-01 15:47:09,269 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 15:47:09,270 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 15:47:09,270 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 15:47:09,270 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 15:47:09,270 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:09,271 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 15:47:09,271 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 15:47:09,271 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 15:47:09,271 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:09,343 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 01 Apr 2026 13:47:09 GMT'), (b'Content-Type', b'application/json'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'content-security-policy', b"default-src 'self' *.bdimg.com; worker-src 'self' blob: data:; script-src 'self' qrc: 'nonce-NWQ3YWU2NTMtOGMxMS00YTY3LThjZTAtMDVlODRjNDYzNjJm' 'strict-dynamic' 'unsafe-eval' www.youtube.com *.googletagmanager.com googletagmanager.com tagmanager.google.com http://static.geevisit.com https://gcaptcha4.geetest.com https://gcaptcha4.geetest.com https://static.geetest.com maps.googleapis.com https://*.hotjar.com https://*.clarity.ms https://c.bing.com 'unsafe-inline' api.map.baidu.com dlswbr.baidu.com *.bdimg.com mapopen-pub-jsapi.cdn.bcebos.com; style-src 'self' 'unsafe-inline' fonts.googlefonts.cn fonts.googleapis.com *.googletagmanager.com googletagmanager.com tagmanager.google.com https://static.geetest.com https://static.geevisit.com *.bblmw.cn api.map.baidu.com; img-src 'self' blob: data: https: https://*.hotjar.com *.baidu.com *.bdimg.com *.map.baidu.com; font-src 'self' blob: data: fonts.gstatic.com fonts.gstatic.googlefonts.cn https://*.hotjar.com *.bblmw.com *.bblmw.cn https://consent.trustarc.com; media-src 'self' *.bambulab.cn *.bambulab.com *.bblmw.cn *.bblmw.com; connect-src 'self' https: https://*.hotjar.com https://*.hotjar.io wss://*.hotjar.com data: *.baidu.com *.bdimg.com *.map.baidu.com ; frame-src www.youtube-nocookie.com www.facebook.com www.youtube.com www.bilibili.com space.bilibili.com player.bilibili.com https://td.doubleclick.net https://www.googletagmanager.com https://consent-pref.trustarc.com; object-src 'none'; base-uri 'self'; form-action 'self' https:; frame-ancestors 'none'; block-all-mixed-content;"), (b'Cache-Control', b'public, s-maxage=30, stale-while-revalidate=59'), (b'etag', b'"nqgqkiejpwcfbv"'), (b'vary', b'Accept-Encoding'), (b'Content-Encoding', b'gzip'), (b'x-cache-status', b'BYPASS'), (b'Server', b'cloudflare'), (b'x-request-id', b'ef3ae834-43fe-4336-95b6-4a0a5ab09c2c'), (b'referrer-policy', b'strict-origin-when-cross-origin'), (b'strict-transport-security', b'max-age=15552000; includeSubDomains; preload'), (b'x-content-type-options', b'nosniff'), (b'x-xss-protection', b'1; mode=block'), (b'x-frame-options', b'SAMEORIGIN'), (b'cf-cache-status', b'DYNAMIC'), (b'expect-ct', b'max-age=86400, enforce'), (b'CF-RAY', b'9e580b460886e50f-TXL'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-01 15:47:09,343 INFO [httpx] HTTP Request: GET https://bambulab.com/_next/data/o14xTWcCqDC8fp_d1rN_s/en/support/firmware-download/x1.json "HTTP/1.1 200 OK"
+2026-04-01 15:47:09,343 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 15:47:09,375 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 15:47:09,375 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 15:47:09,375 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 15:47:09,443 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 400, b'Bad Request', [(b'Date', b'Wed, 01 Apr 2026 13:47:09 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Content-Length', b'223'), (b'Connection', b'keep-alive'), (b'x-xss-protection', b'1; mode=block'), (b'b3', b'6aefcf952018e5a6a98eb90cfb794256-ae3adf1d82315d7d-1'), (b'traceparent', b'00-6aefcf952018e5a6a98eb90cfb794256-ae3adf1d82315d7d-01'), (b'x-bbl-be', b'go'), (b'Server', b'cloudflare'), (b'x-request-id', b'0298a312-bec4-4f42-bf90-6ab96e0242cf'), (b'x-frame-options', b'SAMEORIGIN'), (b'cf-cache-status', b'DYNAMIC'), (b'Strict-Transport-Security', b'max-age=15552000; includeSubDomains; preload'), (b'x-content-type-options', b'nosniff'), (b'expect-ct', b'max-age=86400, enforce'), (b'referrer-policy', b'same-origin'), (b'CF-RAY', b'9e580b46f9d0e51a-TXL'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-01 15:47:09,444 INFO [httpx] HTTP Request: GET https://api.bambulab.com/v1/iot-service/api/slicer/setting/P8aa1726 "HTTP/1.1 400 Bad Request"
+2026-04-01 15:47:09,444 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 15:47:09,444 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 15:47:09,444 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 15:47:09,444 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 15:47:09,444 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset P8aa1726 (API ID: P8aa1726): Failed to get setting detail: 400
+2026-04-01 15:47:09,445 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:09,445 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 15:47:09,445 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 15:47:09,445 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 15:47:09,445 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:09,638 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 400, b'Bad Request', [(b'Date', b'Wed, 01 Apr 2026 13:47:09 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Content-Length', b'223'), (b'Connection', b'keep-alive'), (b'b3', b'afb611ba927f13751ebed5ceab2b63b0-cc2e246d92b3fbdc-1'), (b'traceparent', b'00-afb611ba927f13751ebed5ceab2b63b0-cc2e246d92b3fbdc-01'), (b'x-bbl-be', b'go'), (b'Server', b'cloudflare'), (b'x-request-id', b'ec416fbc-386f-495c-b1c3-67e3921d9488'), (b'cf-cache-status', b'DYNAMIC'), (b'x-xss-protection', b'1; mode=block'), (b'Strict-Transport-Security', b'max-age=15552000; includeSubDomains; preload'), (b'x-content-type-options', b'nosniff'), (b'expect-ct', b'max-age=86400, enforce'), (b'referrer-policy', b'same-origin'), (b'x-frame-options', b'SAMEORIGIN'), (b'CF-RAY', b'9e580b480cc7e51a-TXL'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-01 15:47:09,639 INFO [httpx] HTTP Request: GET https://api.bambulab.com/v1/iot-service/api/slicer/setting/GFSL05 "HTTP/1.1 400 Bad Request"
+2026-04-01 15:47:09,639 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 15:47:09,639 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 15:47:09,639 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 15:47:09,639 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 15:47:09,639 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset GFL05 (API ID: GFSL05): Failed to get setting detail: 400
+2026-04-01 15:47:09,640 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:09,640 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 15:47:09,640 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 15:47:09,640 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 15:47:09,640 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 15:47:09,848 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 400, b'Bad Request', [(b'Date', b'Wed, 01 Apr 2026 13:47:09 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Content-Length', b'223'), (b'Connection', b'keep-alive'), (b'b3', b'a7fdf58b779301ecf7ae6201e8817ddd-aad2ff4e86686dd5-1'), (b'traceparent', b'00-a7fdf58b779301ecf7ae6201e8817ddd-aad2ff4e86686dd5-01'), (b'x-bbl-be', b'go'), (b'Server', b'cloudflare'), (b'x-request-id', b'af8f0e1b-992b-4db9-908e-fb752a245d12'), (b'cf-cache-status', b'DYNAMIC'), (b'x-xss-protection', b'1; mode=block'), (b'Strict-Transport-Security', b'max-age=15552000; includeSubDomains; preload'), (b'x-content-type-options', b'nosniff'), (b'expect-ct', b'max-age=86400, enforce'), (b'referrer-policy', b'same-origin'), (b'x-frame-options', b'SAMEORIGIN'), (b'CF-RAY', b'9e580b494929e51a-TXL'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-04-01 15:47:09,849 INFO [httpx] HTTP Request: GET https://api.bambulab.com/v1/iot-service/api/slicer/setting/P4d64437 "HTTP/1.1 400 Bad Request"
+2026-04-01 15:47:09,849 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 15:47:09,849 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 15:47:09,849 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 15:47:09,849 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 15:47:09,849 WARNING [backend.app.api.routes.cloud] Failed to get cloud preset P4d64437 (API ID: P4d64437): Failed to get setting detail: 400
+2026-04-01 15:47:09,909 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 15:47:09,910 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 15:47:12,129 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] request_status_update: not connected
+2026-04-01 15:47:12,130 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] request_status_update: not connected
+2026-04-01 15:47:12,472 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 15:47:12,472 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])

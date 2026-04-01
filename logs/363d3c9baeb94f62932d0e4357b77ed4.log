@@ -1,0 +1,200 @@
+2026-04-01 14:58:49,786 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:58:49,786 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:58:49,786 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:58:49,792 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:58:49,799 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x7959643e99f0>
+2026-04-01 14:58:49,799 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:58:49,799 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:58:49,799 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:58:49,799 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:58:49,799 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:58:49,869 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/14.4.1 (ESP8285H16)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:58:49,869 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Status%208 "HTTP/1.1 200 OK"
+2026-04-01 14:58:49,869 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:58:49,928 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:58:49,928 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:58:49,928 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:58:54,231 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 1, '1': 0, '128': 0, '2': 1}
+2026-04-01 14:58:54,231 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 9
+2026-04-01 14:58:54,258 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0, '1': 0}
+2026-04-01 14:58:54,258 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 3
+2026-04-01 14:58:55,025 INFO [backend.app.services.print_scheduler] Queue check: found 5 pending items: [(420, None, 83, None), (421, None, 83, None), (422, None, 83, None), (423, None, 83, None), (424, None, 83, None)]
+2026-04-01 14:58:55,025 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 5}
+2026-04-01 14:58:59,786 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:58:59,793 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x79594c2d31b0>
+2026-04-01 14:58:59,793 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:58:59,793 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:58:59,793 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:58:59,793 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:58:59,793 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:58:59,824 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/13.3.0 (ESP8266EX)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:58:59,825 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Power "HTTP/1.1 200 OK"
+2026-04-01 14:58:59,825 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:58:59,832 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:58:59,832 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:58:59,832 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:58:59,837 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:58:59,842 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x79594c2d3340>
+2026-04-01 14:58:59,843 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:58:59,843 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:58:59,843 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:58:59,843 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:58:59,843 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:58:59,891 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/13.3.0 (ESP8266EX)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:58:59,891 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Status%208 "HTTP/1.1 200 OK"
+2026-04-01 14:58:59,891 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:58:59,951 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:58:59,964 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:58:59,964 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:58:59,964 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:59:00,192 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x795964279770>
+2026-04-01 14:59:00,192 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:59:00,193 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:59:00,193 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:59:00,193 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:59:00,193 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:59:00,280 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/14.4.1 (ESP8285H16)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:59:00,280 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Power "HTTP/1.1 200 OK"
+2026-04-01 14:59:00,280 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:59:00,371 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:59:00,371 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:59:00,371 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:59:00,378 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:59:00,685 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x7959642900a0>
+2026-04-01 14:59:00,686 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:59:00,686 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:59:00,686 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:59:00,686 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:59:00,686 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:59:00,799 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/14.4.1 (ESP8285H16)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:59:00,799 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Status%208 "HTTP/1.1 200 OK"
+2026-04-01 14:59:00,799 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:59:00,804 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:59:00,804 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:59:00,804 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:59:08,174 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:59:08,174 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:59:09,780 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:59:09,780 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:59:09,985 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:59:09,999 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x79594c2d3480>
+2026-04-01 14:59:09,999 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:59:09,999 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:59:10,000 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:59:10,000 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:59:10,000 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:59:10,841 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:59:10,843 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/13.3.0 (ESP8266EX)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:59:10,844 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Power "HTTP/1.1 200 OK"
+2026-04-01 14:59:10,844 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:59:10,927 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:59:10,927 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:59:10,927 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:59:10,933 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:59:13,078 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x79594c2d2620>
+2026-04-01 14:59:13,078 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:59:13,078 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:59:13,079 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:59:13,079 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:59:13,079 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:59:13,186 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/13.3.0 (ESP8266EX)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:59:13,186 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Status%208 "HTTP/1.1 200 OK"
+2026-04-01 14:59:13,186 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:59:13,269 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:59:13,269 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:59:13,270 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:59:15,842 DEBUG [httpcore.connection] connect_tcp.failed exception=ConnectTimeout(TimeoutError())
+2026-04-01 14:59:15,843 WARNING [backend.app.services.tasmota] Tasmota device at [IP] timed out
+2026-04-01 14:59:23,306 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:59:24,241 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 1, '1': 0, '128': 0, '2': 1}
+2026-04-01 14:59:24,241 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 9
+2026-04-01 14:59:24,272 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0, '1': 0}
+2026-04-01 14:59:24,272 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 3
+2026-04-01 14:59:25,028 INFO [backend.app.services.print_scheduler] Queue check: found 5 pending items: [(420, None, 83, None), (421, None, 83, None), (422, None, 83, None), (423, None, 83, None), (424, None, 83, None)]
+2026-04-01 14:59:25,029 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 5}
+2026-04-01 14:59:25,862 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:59:27,861 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x7959642900a0>
+2026-04-01 14:59:27,861 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:59:27,861 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:59:27,861 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:59:27,861 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:59:27,861 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:59:27,888 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/13.3.0 (ESP8266EX)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:59:27,888 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Power "HTTP/1.1 200 OK"
+2026-04-01 14:59:27,888 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:59:27,892 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:59:27,892 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:59:27,892 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:59:27,898 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:59:27,902 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x795964285720>
+2026-04-01 14:59:27,902 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:59:27,902 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:59:27,902 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:59:27,902 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:59:27,902 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:59:27,940 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/13.3.0 (ESP8266EX)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:59:27,940 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Status%208 "HTTP/1.1 200 OK"
+2026-04-01 14:59:27,940 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:59:28,021 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:59:28,021 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:59:28,021 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:59:30,862 DEBUG [httpcore.connection] connect_tcp.failed exception=ConnectTimeout(TimeoutError())
+2026-04-01 14:59:30,863 WARNING [backend.app.services.tasmota] Tasmota device at [IP] timed out
+2026-04-01 14:59:38,043 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:59:38,060 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x795970d41e50>
+2026-04-01 14:59:38,060 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:59:38,060 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:59:38,060 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:59:38,060 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:59:38,060 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:59:38,174 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/13.3.0 (ESP8266EX)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:59:38,174 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Power "HTTP/1.1 200 OK"
+2026-04-01 14:59:38,175 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:59:38,202 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:59:38,202 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:59:38,262 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:59:38,262 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:59:38,262 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:59:38,268 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:59:38,475 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x795964305ef0>
+2026-04-01 14:59:38,475 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:59:38,475 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:59:38,475 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:59:38,476 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:59:38,476 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:59:39,781 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:59:39,781 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:59:40,563 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/13.3.0 (ESP8266EX)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:59:40,563 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Status%208 "HTTP/1.1 200 OK"
+2026-04-01 14:59:40,564 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:59:40,880 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:59:40,880 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:59:40,880 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:59:40,881 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:59:44,892 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x79596c8cd090>
+2026-04-01 14:59:44,892 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:59:44,893 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:59:44,893 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:59:44,893 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:59:44,893 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:59:44,943 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] request_status_update: not connected
+2026-04-01 14:59:44,943 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] request_status_update: not connected
+2026-04-01 14:59:44,953 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/14.4.1 (ESP8285H16)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:59:44,953 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Power "HTTP/1.1 200 OK"
+2026-04-01 14:59:44,953 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:59:45,015 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:59:45,015 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:59:45,015 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:59:45,021 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:59:45,139 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x79596427bbb0>
+2026-04-01 14:59:45,139 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:59:45,139 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:59:45,139 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:59:45,140 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:59:45,140 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:59:45,272 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/14.4.1 (ESP8285H16)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:59:45,273 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Status%208 "HTTP/1.1 200 OK"
+2026-04-01 14:59:45,273 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:59:45,330 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:59:45,330 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:59:45,330 DEBUG [httpcore.http11] response_closed.complete

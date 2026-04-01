@@ -1,0 +1,200 @@
+2026-04-01 14:53:29,180 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:53:29,180 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:53:29,180 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:53:29,185 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:53:29,186 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x79594c2d37f0>
+2026-04-01 14:53:29,186 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:53:29,186 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:53:29,186 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:53:29,186 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:53:29,186 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:53:29,190 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x79594c2d1360>
+2026-04-01 14:53:29,190 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:53:29,190 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:53:29,190 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:53:29,190 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:53:29,190 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:53:29,214 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/13.3.0 (ESP8266EX)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:53:29,214 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Status%208 "HTTP/1.1 200 OK"
+2026-04-01 14:53:29,214 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:53:29,214 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/14.4.1 (ESP8285H16)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:53:29,214 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Status%208 "HTTP/1.1 200 OK"
+2026-04-01 14:53:29,214 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:53:29,304 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:53:29,305 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:53:29,305 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:53:29,305 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:53:29,305 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:53:29,305 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:53:37,732 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:53:37,832 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:53:39,332 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:53:39,338 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:53:39,370 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x795964299630>
+2026-04-01 14:53:39,371 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:53:39,371 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:53:39,371 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:53:39,371 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:53:39,371 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:53:39,496 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/13.3.0 (ESP8266EX)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:53:39,496 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Power "HTTP/1.1 200 OK"
+2026-04-01 14:53:39,496 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:53:39,545 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:53:39,545 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:53:39,545 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:53:39,551 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:53:39,557 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x795964298320>
+2026-04-01 14:53:39,557 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:53:39,557 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:53:39,557 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:53:39,557 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:53:39,557 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:53:39,657 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x795964305450>
+2026-04-01 14:53:39,658 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:53:39,658 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:53:39,658 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:53:39,658 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:53:39,658 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:53:39,763 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:53:39,763 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:53:39,764 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/14.4.1 (ESP8285H16)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:53:39,764 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Power "HTTP/1.1 200 OK"
+2026-04-01 14:53:39,764 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:53:39,805 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/13.3.0 (ESP8266EX)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:53:39,805 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Status%208 "HTTP/1.1 200 OK"
+2026-04-01 14:53:39,805 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:53:39,832 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Server', b'nginx'), (b'Date', b'Wed, 01 Apr 2026 12:53:39 GMT'), (b'Content-Type', b'application/json'), (b'Content-Length', b'144'), (b'Connection', b'keep-alive'), (b'Access-Control-Allow-Origin', b'*'), (b'Access-Control-Allow-Headers', b'Content-Type'), (b'Access-Control-Allow-Methods', b'POST, OPTIONS'), (b'X-Frame-Options', b'DENY'), (b'Content-Security-Policy', b"frame-ancestors 'none'")])
+2026-04-01 14:53:39,832 INFO [httpx] HTTP Request: POST https://bambuddy.cool/api/bug-report "HTTP/1.1 200 OK"
+2026-04-01 14:53:39,832 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'POST']>
+2026-04-01 14:53:39,832 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:53:39,832 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:53:39,832 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:53:39,833 DEBUG [httpcore.connection] close.started
+2026-04-01 14:53:39,833 DEBUG [httpcore.connection] close.complete
+2026-04-01 14:53:39,851 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:53:39,851 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:53:39,851 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:53:39,852 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:53:39,852 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:53:39,852 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:53:39,857 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:53:39,954 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x795970d432f0>
+2026-04-01 14:53:39,955 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:53:39,955 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:53:39,955 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:53:39,955 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:53:39,955 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:53:40,075 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/14.4.1 (ESP8285H16)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:53:40,076 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Status%208 "HTTP/1.1 200 OK"
+2026-04-01 14:53:40,076 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:53:40,150 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:53:40,150 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:53:40,151 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:53:54,998 INFO [backend.app.services.print_scheduler] Queue check: found 5 pending items: [(420, None, 83, None), (421, None, 83, None), (422, None, 83, None), (423, None, 83, None), (424, None, 83, None)]
+2026-04-01 14:53:54,998 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 5}
+2026-04-01 14:54:07,764 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:54:07,865 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:54:09,764 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:54:09,764 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:54:25,000 INFO [backend.app.services.print_scheduler] Queue check: found 5 pending items: [(420, None, 83, None), (421, None, 83, None), (422, None, 83, None), (423, None, 83, None), (424, None, 83, None)]
+2026-04-01 14:54:25,000 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 5}
+2026-04-01 14:54:37,811 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:54:37,912 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:54:39,765 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:54:39,765 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:54:55,002 INFO [backend.app.services.print_scheduler] Queue check: found 5 pending items: [(420, None, 83, None), (421, None, 83, None), (422, None, 83, None), (423, None, 83, None), (424, None, 83, None)]
+2026-04-01 14:54:55,002 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 5}
+2026-04-01 14:55:07,855 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:55:07,955 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:55:09,767 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:55:09,767 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:55:25,005 INFO [backend.app.services.print_scheduler] Queue check: found 5 pending items: [(420, None, 83, None), (421, None, 83, None), (422, None, 83, None), (423, None, 83, None), (424, None, 83, None)]
+2026-04-01 14:55:25,005 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 5}
+2026-04-01 14:55:37,855 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:55:37,955 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:55:39,768 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:55:39,769 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:55:55,008 INFO [backend.app.services.print_scheduler] Queue check: found 5 pending items: [(420, None, 83, None), (421, None, 83, None), (422, None, 83, None), (423, None, 83, None), (424, None, 83, None)]
+2026-04-01 14:55:55,008 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 5}
+2026-04-01 14:56:07,948 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:56:08,048 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:56:09,770 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:56:09,770 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:56:25,011 INFO [backend.app.services.print_scheduler] Queue check: found 5 pending items: [(420, None, 83, None), (421, None, 83, None), (422, None, 83, None), (423, None, 83, None), (424, None, 83, None)]
+2026-04-01 14:56:25,011 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 5}
+2026-04-01 14:56:37,976 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:56:38,076 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:56:39,770 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:56:39,770 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:56:55,013 INFO [backend.app.services.print_scheduler] Queue check: found 5 pending items: [(420, None, 83, None), (421, None, 83, None), (422, None, 83, None), (423, None, 83, None), (424, None, 83, None)]
+2026-04-01 14:56:55,013 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 5}
+2026-04-01 14:57:08,017 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:57:08,117 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:57:09,773 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:57:09,773 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:57:25,016 INFO [backend.app.services.print_scheduler] Queue check: found 5 pending items: [(420, None, 83, None), (421, None, 83, None), (422, None, 83, None), (423, None, 83, None), (424, None, 83, None)]
+2026-04-01 14:57:25,016 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 5}
+2026-04-01 14:57:38,031 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:57:38,132 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for [PRINTER] Proxy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-01 14:57:39,775 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:57:39,775 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: not connected
+2026-04-01 14:57:54,202 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 1, '1': 0, '128': 0, '2': 1}
+2026-04-01 14:57:54,202 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 9
+2026-04-01 14:57:54,230 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0, '1': 0}
+2026-04-01 14:57:54,230 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 3
+2026-04-01 14:57:54,300 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:57:54,313 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:57:54,326 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x7959642d59f0>
+2026-04-01 14:57:54,326 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:57:54,326 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:57:54,326 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:57:54,326 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:57:54,326 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:57:54,432 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x795964290640>
+2026-04-01 14:57:54,432 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:57:54,432 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:57:54,432 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:57:54,433 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:57:54,433 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:57:54,436 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/13.3.0 (ESP8266EX)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:57:54,436 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Power "HTTP/1.1 200 OK"
+2026-04-01 14:57:54,436 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:57:54,569 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/14.4.1 (ESP8285H16)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:57:54,570 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Power "HTTP/1.1 200 OK"
+2026-04-01 14:57:54,570 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:57:54,626 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:57:54,627 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:57:54,627 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:57:54,633 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:57:54,633 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:57:54,633 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:57:54,633 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:57:54,638 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=80 local_address=None timeout=5.0 socket_options=None
+2026-04-01 14:57:54,651 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x795964341c70>
+2026-04-01 14:57:54,651 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:57:54,652 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:57:54,652 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:57:54,652 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:57:54,652 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:57:54,678 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x7959643c7e80>
+2026-04-01 14:57:54,678 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-01 14:57:54,678 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-01 14:57:54,678 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-01 14:57:54,678 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-01 14:57:54,679 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-01 14:57:54,718 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/14.4.1 (ESP8285H16)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:57:54,718 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Status%208 "HTTP/1.1 200 OK"
+2026-04-01 14:57:54,718 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:57:54,735 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Server', b'Tasmota/13.3.0 (ESP8266EX)'), (b'Cache-Control', b'no-cache, no-store, must-revalidate'), (b'Pragma', b'no-cache'), (b'Expires', b'-1'), (b'Accept-Ranges', b'none'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'close')])
+2026-04-01 14:57:54,736 INFO [httpx] HTTP Request: GET http://[IP]/cm?cmnd=Status%208 "HTTP/1.1 200 OK"
+2026-04-01 14:57:54,736 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-01 14:57:54,740 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:57:54,740 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:57:54,740 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:57:54,837 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-01 14:57:54,838 DEBUG [httpcore.http11] response_closed.started
+2026-04-01 14:57:54,838 DEBUG [httpcore.http11] response_closed.complete
+2026-04-01 14:57:55,019 INFO [backend.app.services.print_scheduler] Queue check: found 5 pending items: [(420, None, 83, None), (421, None, 83, None), (422, None, 83, None), (423, None, 83, None), (424, None, 83, None)]
+2026-04-01 14:57:55,019 INFO [backend.app.services.print_scheduler] Queue skip summary: {'manual_start': 5}
+2026-04-01 14:57:59,508 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] request_status_update: not connected
+2026-04-01 14:57:59,509 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] request_status_update: not connected

@@ -1,11 +1,15 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { useOutletContext } from 'react-router-dom';
 import { Search, X, Package } from 'lucide-react';
 import { api } from '../../api/client';
 import type { InventorySpool, SpoolAssignment } from '../../api/client';
 import { resolveSpoolColorName } from '../../utils/colors';
 import { formatSlotLabel } from '../../utils/amsHelpers';
+import { InventorySpoolInfoCard } from '../../components/spoolbuddy/InventorySpoolInfoCard';
+import { AssignToAmsModal } from '../../components/spoolbuddy/AssignToAmsModal';
+import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 
 type FilterMode = 'all' | 'in_ams' | string; // string = material name
 
@@ -49,10 +53,12 @@ function SpoolCircle({ color, size = 56 }: { color: string; size?: number }) {
 }
 
 export function SpoolBuddyInventoryPage() {
+  const { sbState, selectedPrinterId } = useOutletContext<SpoolBuddyOutletContext>();
   const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [selectedSpoolId, setSelectedSpoolId] = useState<number | null>(null);
+  const [showAssignAmsModal, setShowAssignAmsModal] = useState(false);
 
   const { data: spoolmanSettings } = useQuery({
     queryKey: ['spoolman-settings'],
@@ -220,12 +226,26 @@ export function SpoolBuddyInventoryPage() {
       {selectedSpoolId != null && (() => {
         const liveSpool = spools.find(s => s.id === selectedSpoolId);
         if (!liveSpool) return null;
+        const handleCloseDetail = () => {
+          setSelectedSpoolId(null);
+          setShowAssignAmsModal(false);
+        };
         return (
-          <SpoolDetailModal
-            spool={liveSpool}
-            assignment={assignmentMap[liveSpool.id]}
-            onClose={() => setSelectedSpoolId(null)}
-          />
+          <>
+            <SpoolDetailModal
+              spool={liveSpool}
+              assignment={assignmentMap[liveSpool.id]}
+              sbState={sbState}
+              onAssignToAms={() => setShowAssignAmsModal(true)}
+              onClose={handleCloseDetail}
+            />
+            <AssignToAmsModal
+              isOpen={showAssignAmsModal}
+              onClose={() => setShowAssignAmsModal(false)}
+              spool={liveSpool}
+              printerId={selectedPrinterId}
+            />
+          </>
         );
       })()}
     </div>
@@ -314,168 +334,60 @@ function CatalogCard({ spool, assignment, onClick }: {
 }
 
 /* Detail bottom sheet */
-function SpoolDetailModal({ spool, assignment, onClose }: {
+function SpoolDetailModal({ spool, assignment, sbState, onAssignToAms, onClose }: {
   spool: InventorySpool;
   assignment?: SpoolAssignment;
+  sbState: SpoolBuddyOutletContext['sbState'];
+  onAssignToAms: () => void;
   onClose: () => void;
 }) {
-  const { t } = useTranslation();
-  const color = spoolColor(spool);
-  const pct = spoolPct(spool);
-  const remaining = spoolRemaining(spool);
-  const colorName = resolveSpoolColorName(spool.color_name, spool.rgba);
+  const useLiveScaleWeight = sbState.deviceOnline && sbState.weight !== null;
+  const modalScaleWeight = useLiveScaleWeight
+    ? Math.round(sbState.weight as number)
+    : (spool.last_scale_weight != null ? Math.round(spool.last_scale_weight) : null);
+  const persistedGrossWeight = spool.last_scale_weight != null ? Math.round(spool.last_scale_weight) : null;
 
   return (
-    <div className="fixed inset-0 z-50" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={onClose}>
       <div
-        className="h-full w-full bg-bambu-dark overflow-y-auto"
+        className="w-full max-w-md bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-2xl p-4 overflow-y-auto max-h-[90vh]"
         onClick={e => e.stopPropagation()}
       >
-        {/* Header with spool icon */}
-        <div className="flex items-center gap-4 p-4 pb-3">
-          <SpoolCircle color={color} size={72} />
-          <div className="flex-1 min-w-0">
-            <h2 className="text-lg font-semibold text-white">
-              {spoolDisplayName(spool)}
-            </h2>
-            {spool.brand && (
-              <p className="text-sm text-white/50">{spool.brand}</p>
-            )}
-            <div className="flex items-center gap-1.5 mt-1">
-              <span
-                className="w-3 h-3 rounded-full border border-white/10"
-                style={{ backgroundColor: color }}
-              />
-              <span className="text-sm text-white/60">
-                {colorName || '-'}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="px-4 pb-4 space-y-4">
-          {/* Remaining bar */}
-          <div>
-            <div className="flex justify-between text-xs text-white/50 mb-1.5">
-              <span>{t('spoolbuddy.inventory.remaining', 'Remaining')}</span>
-              <span>{Math.round(remaining)}g ({Math.round(pct)}%)</span>
-            </div>
-            <div className="h-3 bg-bambu-dark-secondary rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all ${pct > 50 ? 'bg-bambu-green' : pct > 20 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                style={{ width: `${Math.min(pct, 100)}%` }}
-              />
-            </div>
-          </div>
-
-          {/* AMS location */}
+        <div className="space-y-3">
           {assignment && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-center gap-2">
               <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-bambu-green/20 text-bambu-green">
                 {assignmentLabel(assignment)}
               </span>
               {assignment.printer_name && (
-                <span className="text-xs text-white/40">{assignment.printer_name}</span>
+                <span className="text-xs text-zinc-400">{assignment.printer_name}</span>
               )}
             </div>
           )}
 
-          {/* Detail grid */}
-          <div className="grid grid-cols-2 gap-2.5">
-            <DetailItem
-              label={t('spoolbuddy.inventory.labelWeight', 'Label Weight')}
-              value={`${spool.label_weight}g`}
+          <div className="flex justify-center">
+            <InventorySpoolInfoCard
+              spool={{
+                id: spool.id,
+                tag_uid: spool.tag_uid ?? '',
+                material: spool.material,
+                subtype: spool.subtype,
+                color_name: spool.color_name,
+                rgba: spool.rgba,
+                brand: spool.brand,
+                label_weight: spool.label_weight,
+                core_weight: spool.core_weight,
+                weight_used: spool.weight_used,
+              }}
+              liveScaleWeight={modalScaleWeight}
+              persistedGrossWeight={persistedGrossWeight}
+              onAssignToAms={onAssignToAms}
+              onClose={onClose}
+              className="max-w-md"
             />
-            <DetailItem
-              label={t('spoolbuddy.inventory.weightUsed', 'Used')}
-              value={spool.weight_used > 0 ? `${Math.round(spool.weight_used)}g` : '-'}
-            />
-            <DetailItem
-              label={t('spoolbuddy.inventory.coreWeight', 'Core Weight')}
-              value={spool.core_weight > 0 ? `${spool.core_weight}g` : '-'}
-            />
-            <DetailItem
-              label={t('spoolbuddy.inventory.grossWeight', 'Gross Weight')}
-              value={`${spool.label_weight + spool.core_weight}g`}
-            />
-            {spool.nozzle_temp_min != null && spool.nozzle_temp_max != null && (
-              <DetailItem
-                label={t('spoolbuddy.inventory.nozzleTemp', 'Nozzle Temp')}
-                value={`${spool.nozzle_temp_min}-${spool.nozzle_temp_max}°C`}
-              />
-            )}
-            {spool.cost_per_kg != null && spool.cost_per_kg > 0 && (
-              <DetailItem
-                label={t('spoolbuddy.inventory.costPerKg', 'Cost/kg')}
-                value={`${spool.cost_per_kg.toFixed(2)}/kg`}
-              />
-            )}
-            {spool.last_scale_weight != null && (
-              <DetailItem
-                label={t('spoolbuddy.inventory.lastScaleWeight', 'Scale Weight')}
-                value={`${Math.round(spool.last_scale_weight)}g`}
-              />
-            )}
-            {spool.tag_uid && (
-              <DetailItem
-                label={t('spoolbuddy.inventory.tagId', 'Tag')}
-                value={spool.tag_uid}
-                mono
-              />
-            )}
-            {(spool.slicer_filament_name || spool.slicer_filament) && (
-              <DetailItem
-                label={t('spoolbuddy.inventory.slicerFilament', 'Slicer Filament')}
-                value={spool.slicer_filament_name || spool.slicer_filament || ''}
-              />
-            )}
           </div>
-
-          {/* K-Profiles */}
-          {spool.k_profiles && spool.k_profiles.length > 0 && (
-            <div>
-              <p className="text-xs text-white/40 mb-1.5">{t('spoolbuddy.inventory.kProfiles', 'PA K-Profiles')}</p>
-              <div className="space-y-1">
-                {spool.k_profiles.map(kp => (
-                  <div key={kp.id} className="flex items-center justify-between bg-bambu-dark-secondary rounded-lg px-3 py-2">
-                    <span className="text-sm text-white/70 truncate">
-                      {kp.name || `${kp.nozzle_diameter}mm ${kp.nozzle_type || ''}`}
-                    </span>
-                    <span className="text-sm font-mono text-bambu-green shrink-0 ml-2">
-                      {kp.k_value.toFixed(3)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Note */}
-          {spool.note && (
-            <div className="bg-bambu-dark-secondary rounded-lg p-3">
-              <p className="text-xs text-white/40 mb-1">{t('spoolbuddy.inventory.note', 'Note')}</p>
-              <p className="text-sm text-white/70">{spool.note}</p>
-            </div>
-          )}
-
-          {/* Close button */}
-          <button
-            onClick={onClose}
-            className="w-full py-3 rounded-xl bg-bambu-dark-secondary hover:bg-bambu-dark-tertiary text-white/60 hover:text-white text-sm font-medium transition-colors"
-          >
-            {t('spoolbuddy.inventory.close', 'Close')}
-          </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function DetailItem({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="bg-bambu-dark-secondary rounded-lg px-3 py-2">
-      <p className="text-[10px] text-white/40 uppercase tracking-wide">{label}</p>
-      <p className={`text-sm text-white mt-0.5 truncate ${mono ? 'font-mono text-xs' : ''}`}>{value}</p>
     </div>
   );
 }

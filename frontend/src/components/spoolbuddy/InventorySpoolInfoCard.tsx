@@ -114,12 +114,14 @@ export function InventorySpoolInfoCard({
       <div className="flex items-start gap-5">
         <div className="relative shrink-0">
           <SpoolIcon color={colorHex} isEmpty={false} size={100} />
-          <div
-            className="absolute -bottom-2 -right-2 px-2 py-0.5 rounded-full text-xs font-bold text-white shadow-lg"
-            style={{ backgroundColor: fillColor }}
-          >
-            {fillPercent}%
-          </div>
+          {Number.isFinite(fillPercent) && (
+            <div
+              className="absolute -bottom-2 -right-2 px-2 py-0.5 rounded-full text-xs font-bold text-white shadow-lg"
+              style={{ backgroundColor: fillColor }}
+            >
+              {fillPercent}%
+            </div>
+          )}
         </div>
 
         <div className="flex-1 min-w-0 pt-1">

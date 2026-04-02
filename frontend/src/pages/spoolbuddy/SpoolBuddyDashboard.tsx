@@ -50,7 +50,7 @@ function IdleSpool() {
       <div className="relative mb-6 flex items-center justify-center" style={{ width: 160, height: 160 }}>
         {/* NFC wave rings: transform + opacity only for Pi-friendly rendering */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          {[0, 1, 2].map((i) => (
+          {[0, 1].map((i) => (
             <div
               key={i}
               className="absolute rounded-full border spoolbuddy-optimized-ping"
@@ -74,7 +74,7 @@ function IdleSpool() {
               transition: 'background-color 140ms linear, opacity 140ms linear',
             }}
           />
-          <div className="relative transition-transform duration-1000">
+          <div className="relative" style={{ transition: 'opacity 140ms linear' }}>
             <SpoolIcon color={currentColor} isEmpty={false} size={100} />
           </div>
         </div>

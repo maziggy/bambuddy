@@ -19,9 +19,9 @@ export function SpoolIcon({ color, isEmpty, size = 32 }: SpoolIconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32">
       {/* Outer ring with white stroke for visibility */}
-      <circle cx="16" cy="16" r="14" fill={color} style={{ transition: 'fill 140ms linear' }} stroke="white" strokeWidth="1.5" strokeOpacity="0.7" />
+      <circle cx="16" cy="16" r="14" fill={color} stroke="white" strokeWidth="1.5" strokeOpacity="0.7" />
       {/* Inner shadow/depth */}
-      <circle cx="16" cy="16" r="11" fill={color} style={{ filter: 'brightness(0.85)', transition: 'fill 140ms linear' }} />
+      <circle cx="16" cy="16" r="11" fill={color} style={{ filter: 'brightness(0.85)' }} />
     </svg>
   );
 }

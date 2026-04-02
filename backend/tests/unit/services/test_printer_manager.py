@@ -782,6 +782,37 @@ class TestPrinterStateToDict:
         assert result["vt_tray"][0]["tray_color"] == "00FF00"
         assert result["vt_tray"][0]["tray_type"] == "PETG"
 
+    def test_vt_tray_dict_normalized_to_list(self, mock_state):
+        """Verify vt_tray as a raw dict (from MQTT) is normalized to a list."""
+        mock_state.raw_data = {
+            "vt_tray": {
+                "id": "254",
+                "tray_color": "FF0000",
+                "tray_type": "PLA",
+                "tray_sub_brands": "Generic",
+                "tag_uid": "0000000000000000",
+                "tray_uuid": "00000000000000000000000000000000",
+                "remain": 0,
+            }
+        }
+
+        result = printer_state_to_dict(mock_state)
+
+        assert isinstance(result["vt_tray"], list)
+        assert len(result["vt_tray"]) == 1
+        assert result["vt_tray"][0]["tray_color"] == "FF0000"
+        assert result["vt_tray"][0]["tray_type"] == "PLA"
+        assert result["vt_tray"][0]["tag_uid"] is None
+        assert result["vt_tray"][0]["tray_uuid"] is None
+
+    def test_vt_tray_non_list_non_dict_ignored(self, mock_state):
+        """Verify unexpected vt_tray types (e.g. string) produce empty list."""
+        mock_state.raw_data = {"vt_tray": "unexpected_string"}
+
+        result = printer_state_to_dict(mock_state)
+
+        assert result["vt_tray"] == []
+
     def test_hms_errors_conversion(self, mock_state):
         """Verify HMS errors are converted correctly."""
         error = MagicMock()

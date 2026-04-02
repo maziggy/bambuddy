@@ -685,7 +685,13 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
 
     # Parse virtual tray (external spool) — now a list
     if "vt_tray" in raw_data:
-        for vt_data in raw_data["vt_tray"]:
+        vt_tray_raw = raw_data["vt_tray"]
+        # Defensive: MQTT sends vt_tray as a dict; normalize to list
+        if isinstance(vt_tray_raw, dict):
+            vt_tray_raw = [vt_tray_raw]
+        elif not isinstance(vt_tray_raw, list):
+            vt_tray_raw = []
+        for vt_data in vt_tray_raw:
             vt_tag_uid = vt_data.get("tag_uid")
             if vt_tag_uid in ("", "0000000000000000"):
                 vt_tag_uid = None

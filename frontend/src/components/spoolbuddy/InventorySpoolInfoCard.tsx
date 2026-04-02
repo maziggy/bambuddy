@@ -188,7 +188,7 @@ export function InventorySpoolInfoCard({
         </div>
         {nozzleTempRange && (
           <div className="flex justify-between items-center">
-            <span className="text-zinc-500">Nozzle</span>
+            <span className="text-zinc-500">{t('spoolbuddy.inventory.nozzleTemp', 'Nozzle')}</span>
             <span className="font-mono text-zinc-300">{nozzleTempRange}</span>
           </div>
         )}
@@ -200,7 +200,7 @@ export function InventorySpoolInfoCard({
         )}
         {kFactorSummary && (
           <div className="flex justify-between items-center">
-            <span className="text-zinc-500">K-Profile</span>
+            <span className="text-zinc-500">{t('spoolbuddy.inventory.kProfiles', 'K-Profile')}</span>
             <span className="font-mono text-zinc-300 truncate max-w-[220px] text-right" title={kFactorSummary}>{kFactorSummary}</span>
           </div>
         )}

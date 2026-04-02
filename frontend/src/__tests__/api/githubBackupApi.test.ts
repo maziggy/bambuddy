@@ -33,6 +33,8 @@ describe('GitHub Backup API Types', () => {
       backup_kprofiles: true,
       backup_cloud_profiles: true,
       backup_settings: false,
+      backup_spools: false,
+      backup_archives: false,
       enabled: true,
       last_backup_at: '2026-01-27T10:00:00Z',
       last_backup_status: 'success',
@@ -46,6 +48,8 @@ describe('GitHub Backup API Types', () => {
     expect(config.id).toBe(1);
     expect(config.has_token).toBe(true);
     expect(config.schedule_type).toBe('daily');
+    expect(config.backup_spools).toBe(false);
+    expect(config.backup_archives).toBe(false);
   });
 
   it('GitHubBackupStatus has correct shape', () => {
@@ -96,6 +100,34 @@ describe('GitHub Backup API Types', () => {
     expect(log.files_changed).toBe(5);
   });
 
+  it('GitHubBackupConfig supports spool and archive backup toggles', () => {
+    const config: GitHubBackupConfig = {
+      id: 2,
+      repository_url: 'https://github.com/test/full-backup',
+      has_token: true,
+      branch: 'main',
+      schedule_enabled: false,
+      schedule_type: 'daily',
+      backup_kprofiles: true,
+      backup_cloud_profiles: false,
+      backup_settings: false,
+      backup_spools: true,
+      backup_archives: true,
+      enabled: true,
+      last_backup_at: null,
+      last_backup_status: null,
+      last_backup_message: null,
+      last_backup_commit_sha: null,
+      next_scheduled_run: null,
+      created_at: '2026-04-01T00:00:00Z',
+      updated_at: '2026-04-01T00:00:00Z',
+    };
+
+    expect(config.backup_spools).toBe(true);
+    expect(config.backup_archives).toBe(true);
+    expect(config.backup_cloud_profiles).toBe(false);
+  });
+
   it('GitHubBackupLog can have error', () => {
     const log: GitHubBackupLog = {
       id: 2,
@@ -139,6 +171,8 @@ describe('GitHub Backup API Endpoints', () => {
       backup_kprofiles: true,
       backup_cloud_profiles: true,
       backup_settings: false,
+      backup_spools: true,
+      backup_archives: true,
       enabled: true,
       last_backup_at: null,
       last_backup_status: null,

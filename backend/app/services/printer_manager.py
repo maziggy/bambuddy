@@ -150,6 +150,7 @@ class PrinterManager:
         self._on_status_change: Callable[[int, PrinterState], None] | None = None
         self._on_ams_change: Callable[[int, list], None] | None = None
         self._on_layer_change: Callable[[int, int], None] | None = None
+        self._on_bed_temp_update: Callable[[int, float], None] | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         # Track who started the current print (Issue #206)
         self._current_print_user: dict[int, dict] = {}  # {printer_id: {"user_id": int, "username": str}}
@@ -208,6 +209,10 @@ class PrinterManager:
         """Set callback for layer change events. Receives (printer_id, layer_num)."""
         self._on_layer_change = callback
 
+    def set_bed_temp_update_callback(self, callback: Callable[[int, float], None]):
+        """Set callback for bed temperature updates. Receives (printer_id, bed_temp)."""
+        self._on_bed_temp_update = callback
+
     def _schedule_async(self, coro):
         """Schedule an async coroutine from a sync context.
 
@@ -255,6 +260,10 @@ class PrinterManager:
             if self._on_layer_change:
                 self._schedule_async(self._on_layer_change(printer_id, layer_num))
 
+        def on_bed_temp_update(bed_temp: float):
+            if self._on_bed_temp_update:
+                self._schedule_async(self._on_bed_temp_update(printer_id, bed_temp))
+
         client = BambuMQTTClient(
             ip_address=printer.ip_address,
             serial_number=printer.serial_number,
@@ -265,6 +274,7 @@ class PrinterManager:
             on_print_complete=on_print_complete,
             on_ams_change=on_ams_change,
             on_layer_change=on_layer_change,
+            on_bed_temp_update=on_bed_temp_update,
         )
 
         client.connect()

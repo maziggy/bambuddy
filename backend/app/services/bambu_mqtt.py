@@ -283,6 +283,7 @@ class BambuMQTTClient:
         on_print_complete: Callable[[dict], None] | None = None,
         on_ams_change: Callable[[list], None] | None = None,
         on_layer_change: Callable[[int], None] | None = None,
+        on_bed_temp_update: Callable[[float], None] | None = None,
     ):
         self.ip_address = ip_address
         self.serial_number = serial_number
@@ -293,6 +294,7 @@ class BambuMQTTClient:
         self.on_print_complete = on_print_complete
         self.on_ams_change = on_ams_change
         self.on_layer_change = on_layer_change
+        self.on_bed_temp_update = on_bed_temp_update
 
         self.state = PrinterState()
         self._client: mqtt.Client | None = None
@@ -2106,6 +2108,10 @@ class BambuMQTTClient:
             for key, value in temps.items():
                 self.state.temperatures[key] = value
 
+            # Notify bed temperature updates (used by event-driven bed cooldown monitor)
+            if "bed" in temps and self.on_bed_temp_update:
+                self.on_bed_temp_update(temps["bed"])
+
             # Calculate chamber_heating after all targets are known
             # Priority: local target (if recent) > explicit target (chamber_target) > 0
             if "chamber" in temps and "chamber_heating" not in temps:
@@ -2797,6 +2803,12 @@ class BambuMQTTClient:
         """
         if self._client and self.state.connected:
             # Bambu print command format - matches Bambu Studio's format
+            # H2D series requires integer values (0/1) for calibration/leveling fields
+            # but use_ams MUST remain boolean — H2D Pro firmware interprets integer
+            # values as nozzle index (1 = deputy nozzle), causing wrong extruder routing
+            # Other printers (X1C, P1S, A1, etc.) require actual booleans for all fields
+            is_h2d = self.model and self.model.upper().strip() in ("H2D", "H2D PRO", "H2DPRO", "H2C", "H2S")
+
             # Build ams_mapping2 from ams_mapping (detailed format with ams_id/slot_id)
             ams_mapping2 = []
             # BambuStudio converts virtual tray IDs (254/255) to -1 in the flat
@@ -2813,13 +2825,19 @@ class BambuMQTTClient:
                         flat_ams_mapping.append(-1)
                         ams_mapping2.append({"ams_id": 255, "slot_id": 255})
                     elif tray_id >= 254:
-                        # External/virtual spool: each virtual tray is its own AMS unit
-                        # with a single slot (slot 0). BambuStudio convention:
+                        # External/virtual spool. BambuStudio convention:
                         #   255 = VIRTUAL_TRAY_MAIN_ID (main/right nozzle)
                         #   254 = VIRTUAL_TRAY_DEPUTY_ID (deputy/left nozzle)
                         # Flat mapping must use -1 (firmware doesn't accept raw 254/255).
+                        # Single-nozzle printers (X1C, P1S, A1, etc.) report tray_now=254
+                        # for external spool, but BambuStudio always sends ams_id=255
+                        # (VIRTUAL_TRAY_MAIN_ID) in ams_mapping2. Sending 254 causes the
+                        # firmware to target AMS tray 0 instead of external spool, leading
+                        # to 07FF_8012 "Failed to get AMS mapping table" or stuck prints.
+                        # Only H2D dual-nozzle printers use 254 (deputy/left nozzle).
                         flat_ams_mapping.append(-1)
-                        ams_mapping2.append({"ams_id": tray_id, "slot_id": 0})
+                        ext_ams_id = tray_id if is_h2d else 255
+                        ams_mapping2.append({"ams_id": ext_ams_id, "slot_id": 0})
                     elif tray_id >= 128:
                         # AMS-HT: global tray ID IS the ams_id (single tray per unit)
                         flat_ams_mapping.append(tray_id)
@@ -2830,12 +2848,6 @@ class BambuMQTTClient:
                         slot_id = tray_id % 4
                         flat_ams_mapping.append(tray_id)
                         ams_mapping2.append({"ams_id": ams_id, "slot_id": slot_id})
-
-            # H2D series requires integer values (0/1) for calibration/leveling fields
-            # but use_ams MUST remain boolean — H2D Pro firmware interprets integer
-            # values as nozzle index (1 = deputy nozzle), causing wrong extruder routing
-            # Other printers (X1C, P1S, A1, etc.) require actual booleans for all fields
-            is_h2d = self.model and self.model.upper().strip() in ("H2D", "H2D PRO", "H2DPRO", "H2C", "H2S")
 
             # If all mapped slots are external spool (no real AMS trays), force use_ams=False.
             # P1S/P1P with no AMS rejects use_ams=True with "Failed to get AMS mapping table".

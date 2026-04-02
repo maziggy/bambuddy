@@ -39,6 +39,8 @@ def _config_to_response(config: GitHubBackupConfig) -> dict:
         "backup_kprofiles": config.backup_kprofiles,
         "backup_cloud_profiles": config.backup_cloud_profiles,
         "backup_settings": config.backup_settings,
+        "backup_spools": config.backup_spools,
+        "backup_archives": config.backup_archives,
         "enabled": config.enabled,
         "last_backup_at": config.last_backup_at,
         "last_backup_status": config.last_backup_status,
@@ -89,6 +91,8 @@ async def save_config(
         config.backup_kprofiles = config_data.backup_kprofiles
         config.backup_cloud_profiles = config_data.backup_cloud_profiles
         config.backup_settings = config_data.backup_settings
+        config.backup_spools = config_data.backup_spools
+        config.backup_archives = config_data.backup_archives
         config.enabled = config_data.enabled
 
         # Calculate next scheduled run if enabled
@@ -109,6 +113,8 @@ async def save_config(
             backup_kprofiles=config_data.backup_kprofiles,
             backup_cloud_profiles=config_data.backup_cloud_profiles,
             backup_settings=config_data.backup_settings,
+            backup_spools=config_data.backup_spools,
+            backup_archives=config_data.backup_archives,
             enabled=config_data.enabled,
         )
 

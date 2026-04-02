@@ -16,9 +16,12 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import async_session
+from backend.app.models.archive import PrintArchive
 from backend.app.models.github_backup import GitHubBackupConfig, GitHubBackupLog
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
+from backend.app.models.spool import Spool
+from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.services.bambu_cloud import get_cloud_service
 from backend.app.services.printer_manager import printer_manager
 
@@ -331,6 +334,8 @@ class GitHubBackupService:
                 "kprofiles": config.backup_kprofiles,
                 "cloud_profiles": config.backup_cloud_profiles,
                 "settings": config.backup_settings,
+                "spools": config.backup_spools,
+                "archives": config.backup_archives,
             },
         }
         files["backup_metadata.json"] = metadata
@@ -349,6 +354,16 @@ class GitHubBackupService:
         if config.backup_settings:
             self._backup_progress = "Collecting app settings..."
             await self._collect_settings(db, files)
+
+        # Collect spool inventory
+        if config.backup_spools:
+            self._backup_progress = "Collecting spool inventory..."
+            await self._collect_spools(db, files)
+
+        # Collect print archives
+        if config.backup_archives:
+            self._backup_progress = "Collecting print archives..."
+            await self._collect_archives(db, files)
 
         return files
 
@@ -471,6 +486,128 @@ class GitHubBackupService:
             "version": "1.0",
             "settings": settings_data,
         }
+
+    async def _collect_spools(self, db: AsyncSession, files: dict):
+        """Collect spool inventory data."""
+        result = await db.execute(select(Spool))
+        spools = result.scalars().all()
+
+        if not spools:
+            return
+
+        spool_list = []
+        for s in spools:
+            spool_data = {
+                "id": s.id,
+                "material": s.material,
+                "subtype": s.subtype,
+                "color_name": s.color_name,
+                "rgba": s.rgba,
+                "brand": s.brand,
+                "label_weight": s.label_weight,
+                "core_weight": s.core_weight,
+                "weight_used": s.weight_used,
+                "weight_locked": s.weight_locked,
+                "slicer_filament": s.slicer_filament,
+                "slicer_filament_name": s.slicer_filament_name,
+                "nozzle_temp_min": s.nozzle_temp_min,
+                "nozzle_temp_max": s.nozzle_temp_max,
+                "note": s.note,
+                "cost_per_kg": s.cost_per_kg,
+                "tag_uid": s.tag_uid,
+                "tray_uuid": s.tray_uuid,
+                "data_origin": s.data_origin,
+                "tag_type": s.tag_type,
+                "archived_at": str(s.archived_at) if s.archived_at else None,
+                "created_at": str(s.created_at) if s.created_at else None,
+            }
+            spool_list.append(spool_data)
+
+        files["spools/inventory.json"] = {
+            "version": "1.0",
+            "spools": spool_list,
+        }
+
+        # Collect usage history
+        usage_result = await db.execute(select(SpoolUsageHistory))
+        usages = usage_result.scalars().all()
+
+        if usages:
+            usage_list = []
+            for u in usages:
+                usage_list.append(
+                    {
+                        "id": u.id,
+                        "spool_id": u.spool_id,
+                        "printer_id": u.printer_id,
+                        "print_name": u.print_name,
+                        "archive_id": u.archive_id,
+                        "weight_used": u.weight_used,
+                        "percent_used": u.percent_used,
+                        "status": u.status,
+                        "cost": u.cost,
+                        "created_at": str(u.created_at) if u.created_at else None,
+                    }
+                )
+            files["spools/usage_history.json"] = {
+                "version": "1.0",
+                "usage_history": usage_list,
+            }
+
+        logger.info("Collected %d spools and %d usage records", len(spool_list), len(usages))
+
+    async def _collect_archives(self, db: AsyncSession, files: dict):
+        """Collect print archive metadata (no binary files)."""
+        result = await db.execute(select(PrintArchive))
+        archives = result.scalars().all()
+
+        if not archives:
+            return
+
+        archive_list = []
+        for a in archives:
+            archive_data = {
+                "id": a.id,
+                "printer_id": a.printer_id,
+                "project_id": a.project_id,
+                "filename": a.filename,
+                "file_size": a.file_size,
+                "content_hash": a.content_hash,
+                "print_name": a.print_name,
+                "print_time_seconds": a.print_time_seconds,
+                "filament_used_grams": a.filament_used_grams,
+                "filament_type": a.filament_type,
+                "filament_color": a.filament_color,
+                "layer_height": a.layer_height,
+                "total_layers": a.total_layers,
+                "nozzle_diameter": a.nozzle_diameter,
+                "bed_temperature": a.bed_temperature,
+                "nozzle_temperature": a.nozzle_temperature,
+                "sliced_for_model": a.sliced_for_model,
+                "status": a.status,
+                "started_at": str(a.started_at) if a.started_at else None,
+                "completed_at": str(a.completed_at) if a.completed_at else None,
+                "makerworld_url": a.makerworld_url,
+                "designer": a.designer,
+                "external_url": a.external_url,
+                "is_favorite": a.is_favorite,
+                "tags": a.tags,
+                "notes": a.notes,
+                "cost": a.cost,
+                "failure_reason": a.failure_reason,
+                "quantity": a.quantity,
+                "energy_kwh": a.energy_kwh,
+                "energy_cost": a.energy_cost,
+                "created_at": str(a.created_at) if a.created_at else None,
+            }
+            archive_list.append(archive_data)
+
+        files["archives/print_history.json"] = {
+            "version": "1.0",
+            "archives": archive_list,
+        }
+
+        logger.info("Collected %d print archives", len(archive_list))
 
     async def _push_to_github(self, config: GitHubBackupConfig, files: dict) -> dict:
         """Push files to GitHub using the GitHub API.

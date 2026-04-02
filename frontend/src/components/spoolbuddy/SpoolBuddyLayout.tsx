@@ -74,14 +74,21 @@ export function SpoolBuddyLayout() {
     staleTime: 0,
   });
 
-  // Update alert based on device state and available updates
+  // Update alert based on device state and available updates.
+  // Only clear alerts that the layout itself set (not alerts from child pages).
+  const layoutAlertRef = useRef<string | null>(null);
   useEffect(() => {
     if (!effectiveDeviceOnline) {
-      setAlert({ type: 'warning', message: 'SpoolBuddy device disconnected' });
+      const msg = 'SpoolBuddy device disconnected';
+      setAlert({ type: 'warning', message: msg });
+      layoutAlertRef.current = msg;
     } else if (updateCheck?.update_available && updateCheck.latest_version) {
-      setAlert({ type: 'info', message: `Update available: v${updateCheck.latest_version}` });
-    } else {
+      const msg = `Update available: v${updateCheck.latest_version}`;
+      setAlert({ type: 'info', message: msg });
+      layoutAlertRef.current = msg;
+    } else if (layoutAlertRef.current) {
       setAlert(null);
+      layoutAlertRef.current = null;
     }
   }, [effectiveDeviceOnline, updateCheck?.update_available, updateCheck?.latest_version]);
 

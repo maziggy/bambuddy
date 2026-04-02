@@ -62,13 +62,10 @@ export function InventorySpoolInfoCard({
     (spool.label_weight || 0) - (spool.weight_used || 0)
   ));
 
-  // Use live scale for remaining/fill only when reading is meaningful for a loaded spool.
-  const hasValidCoreWeight = spool.core_weight != null && spool.core_weight > 0;
-  const minDynamicScaleReading = coreWeight * 0.8;
-  const useDynamicRemaining = hasValidCoreWeight
-    && grossWeightFromScale !== null
-    && grossWeightFromScale > 0
-    && grossWeightFromScale > minDynamicScaleReading;
+  // Use live scale for remaining/fill only when scale has a meaningful reading.
+  const minDynamicScaleReading = 10;
+  const useDynamicRemaining = grossWeightFromScale !== null
+    && grossWeightFromScale >= minDynamicScaleReading;
 
   const remaining = useDynamicRemaining
     ? Math.round(Math.max(0, grossWeightFromScale - coreWeight))

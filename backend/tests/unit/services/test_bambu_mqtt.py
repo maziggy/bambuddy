@@ -2788,6 +2788,102 @@ class TestDeveloperModeDetection:
         assert mqtt_client.state.developer_mode is False
 
 
+class TestVtTrayNormalization:
+    """Tests for vt_tray dict→list normalization in _update_state.
+
+    MQTT sends vt_tray as a dict for single-slot printers, but all consumers
+    expect a list.  _update_state must normalize it before any callback can
+    read raw_data, because the dev-mode probe may release the GIL and let
+    the event loop read the partially-updated state.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        return client
+
+    def test_vt_tray_dict_normalized_in_update_state(self, mqtt_client):
+        """Verify _update_state wraps a raw vt_tray dict into a list."""
+        vt_dict = {
+            "id": "254",
+            "tray_color": "FF0000",
+            "tray_type": "PLA",
+            "tag_uid": "0000000000000000",
+            "tray_uuid": "00000000000000000000000000000000",
+        }
+        data = {"gcode_state": "IDLE", "vt_tray": vt_dict}
+        mqtt_client._update_state(data)
+
+        stored = mqtt_client.state.raw_data.get("vt_tray")
+        assert isinstance(stored, list)
+        assert len(stored) == 1
+        assert stored[0]["tray_color"] == "FF0000"
+
+    def test_vt_tray_list_unchanged_in_update_state(self, mqtt_client):
+        """Verify _update_state keeps an already-list vt_tray unchanged."""
+        vt_list = [
+            {"id": "254", "tray_type": "PLA"},
+            {"id": "255", "tray_type": "PETG"},
+        ]
+        data = {"gcode_state": "IDLE", "vt_tray": vt_list}
+        mqtt_client._update_state(data)
+
+        stored = mqtt_client.state.raw_data.get("vt_tray")
+        assert isinstance(stored, list)
+        assert len(stored) == 2
+
+    def test_preserved_vt_tray_restored_before_probe(self, mqtt_client):
+        """Verify preserved vt_tray is restored before dev-mode probe runs.
+
+        On the first message, the incremental handler wraps vt_tray into a list
+        and stores it.  _update_state then replaces raw_data with the full data
+        dict, but must restore preserved fields BEFORE the probe publishes
+        (which can release the GIL).
+        """
+        # Simulate: incremental handler already stored a wrapped list
+        mqtt_client.state.raw_data = {
+            "vt_tray": [{"id": "254", "tray_type": "PLA", "tray_color": "00FF00"}],
+        }
+
+        # Now _update_state runs with new data that has vt_tray as dict
+        new_data = {
+            "gcode_state": "IDLE",
+            "vt_tray": {"id": "254", "tray_type": "PETG", "tray_color": "FF0000"},
+        }
+        mqtt_client._update_state(new_data)
+
+        # The preserved list (PLA/green) should take priority over new data
+        stored = mqtt_client.state.raw_data["vt_tray"]
+        assert isinstance(stored, list)
+        assert stored[0]["tray_type"] == "PLA"
+        assert stored[0]["tray_color"] == "00FF00"
+
+    def test_first_message_vt_tray_dict_becomes_list(self, mqtt_client):
+        """Verify on the very first message, vt_tray dict is still a list.
+
+        When there's no previously preserved data, the normalized dict should
+        remain as a list in raw_data.
+        """
+        # raw_data starts empty — no preserved vt_tray
+        mqtt_client.state.raw_data = {}
+
+        data = {
+            "gcode_state": "IDLE",
+            "vt_tray": {"id": "254", "tray_type": "ABS"},
+        }
+        mqtt_client._update_state(data)
+
+        stored = mqtt_client.state.raw_data["vt_tray"]
+        assert isinstance(stored, list)
+        assert stored[0]["tray_type"] == "ABS"
+
+
 class TestSendDryingCommand:
     """Tests for send_drying_command MQTT payload construction."""
 

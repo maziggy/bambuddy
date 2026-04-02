@@ -2407,7 +2407,26 @@ class BambuMQTTClient:
         vt_tray_data = self.state.raw_data.get("vt_tray")
         ams_extruder_map_data = self.state.raw_data.get("ams_extruder_map")
         mapping_data = self.state.raw_data.get("mapping")
+
+        # Normalize vt_tray in data before assigning to raw_data: MQTT sends it
+        # as a dict but consumers expect a list.  Without this, the dev mode probe
+        # below can release the GIL (via publish), letting the event-loop thread
+        # read raw_data["vt_tray"] as a dict and crash iterating over string keys.
+        if "vt_tray" in data and isinstance(data["vt_tray"], dict):
+            data["vt_tray"] = [data["vt_tray"]]
+
         self.state.raw_data = data
+
+        # Restore preserved fields BEFORE any work that may release the GIL
+        # (e.g. _probe_developer_mode publishes an MQTT message).
+        if ams_data is not None:
+            self.state.raw_data["ams"] = ams_data
+        if vt_tray_data is not None:
+            self.state.raw_data["vt_tray"] = vt_tray_data
+        if ams_extruder_map_data is not None:
+            self.state.raw_data["ams_extruder_map"] = ams_extruder_map_data
+        if mapping_data is not None and "mapping" not in data:
+            self.state.raw_data["mapping"] = mapping_data
 
         # Parse developer LAN mode from "fun" field
         if "fun" in data:
@@ -2422,14 +2441,6 @@ class BambuMQTTClient:
             # Only probe after a full pushall response (30+ keys) to avoid firing on
             # partial incremental updates that arrive before the pushall with "fun".
             self._probe_developer_mode()
-        if ams_data is not None:
-            self.state.raw_data["ams"] = ams_data
-        if vt_tray_data is not None:
-            self.state.raw_data["vt_tray"] = vt_tray_data
-        if ams_extruder_map_data is not None:
-            self.state.raw_data["ams_extruder_map"] = ams_extruder_map_data
-        if mapping_data is not None and "mapping" not in data:
-            self.state.raw_data["mapping"] = mapping_data
 
         # Log mapping data when received (for usage tracking debugging)
         if "mapping" in data:

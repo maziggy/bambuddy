@@ -42,6 +42,7 @@ export function InventorySpoolInfoCard({
   const { t } = useTranslation();
   const [syncing, setSyncing] = useState(false);
   const [synced, setSynced] = useState(false);
+  const [syncedGrossWeight, setSyncedGrossWeight] = useState<number | null>(null);
 
   const colorHex = spool.rgba ? `#${spool.rgba.slice(0, 6)}` : '#808080';
 
@@ -53,10 +54,12 @@ export function InventorySpoolInfoCard({
     ? Math.round(Math.max(0, liveScaleWeight))
     : null;
 
-  // Inventory scenario: keep gross display tied to persisted inventory value.
-  const displayedGrossWeight = persistedGrossWeight !== undefined
-    ? (persistedGrossWeight !== null ? Math.round(Math.max(0, persistedGrossWeight)) : null)
-    : grossWeightFromScale;
+  // Inventory scenario: prefer the most recently synced value in this modal session.
+  const displayedGrossWeight = syncedGrossWeight ?? (
+    persistedGrossWeight !== undefined
+      ? (persistedGrossWeight !== null ? Math.round(Math.max(0, persistedGrossWeight)) : null)
+      : grossWeightFromScale
+  );
 
   const inventoryRemaining = Math.round(Math.max(0,
     (spool.label_weight || 0) - (spool.weight_used || 0)
@@ -98,9 +101,11 @@ export function InventorySpoolInfoCard({
 
   const handleSyncWeight = async () => {
     if (liveScaleWeight === null) return;
+    const roundedLiveWeight = Math.round(liveScaleWeight);
     setSyncing(true);
     try {
-      await spoolbuddyApi.updateSpoolWeight(spool.id, Math.round(liveScaleWeight));
+      await spoolbuddyApi.updateSpoolWeight(spool.id, roundedLiveWeight);
+      setSyncedGrossWeight(roundedLiveWeight);
       setSynced(true);
       onSyncWeight?.();
       setTimeout(() => setSynced(false), 3000);

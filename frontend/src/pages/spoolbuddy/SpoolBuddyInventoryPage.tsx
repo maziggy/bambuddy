@@ -66,7 +66,7 @@ export function SpoolBuddyInventoryPage() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const { data: spools = [], isLoading } = useQuery({
+  const { data: spools = [], isLoading, refetch: refetchSpools } = useQuery({
     queryKey: ['inventory-spools'],
     queryFn: () => api.getSpools(false),
     refetchInterval: 30000,
@@ -236,6 +236,9 @@ export function SpoolBuddyInventoryPage() {
               spool={liveSpool}
               assignment={assignmentMap[liveSpool.id]}
               sbState={sbState}
+              onSyncWeight={() => {
+                void refetchSpools();
+              }}
               onAssignToAms={() => setShowAssignAmsModal(true)}
               onClose={handleCloseDetail}
             />
@@ -334,10 +337,11 @@ function CatalogCard({ spool, assignment, onClick }: {
 }
 
 /* Detail bottom sheet */
-function SpoolDetailModal({ spool, assignment, sbState, onAssignToAms, onClose }: {
+function SpoolDetailModal({ spool, assignment, sbState, onSyncWeight, onAssignToAms, onClose }: {
   spool: InventorySpool;
   assignment?: SpoolAssignment;
   sbState: SpoolBuddyOutletContext['sbState'];
+  onSyncWeight: () => void;
   onAssignToAms: () => void;
   onClose: () => void;
 }) {
@@ -370,6 +374,7 @@ function SpoolDetailModal({ spool, assignment, sbState, onAssignToAms, onClose }
               spool={spool}
               liveScaleWeight={modalScaleWeight}
               persistedGrossWeight={persistedGrossWeight}
+              onSyncWeight={onSyncWeight}
               onAssignToAms={onAssignToAms}
               onClose={onClose}
               className="max-w-md"

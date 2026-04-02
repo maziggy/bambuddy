@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, AlertTriangle, RefreshCw } from 'lucide-react';
-import type { MatchedSpool } from '../../hooks/useSpoolBuddyState';
-import type { SpoolKProfile } from '../../api/client';
+import type { InventorySpool } from '../../api/client';
 import { spoolbuddyApi } from '../../api/client';
 import { SpoolIcon } from './SpoolIcon';
 
@@ -22,15 +21,7 @@ function getDefaultCoreWeight(): number {
 }
 
 interface InventorySpoolInfoCardProps {
-  spool: MatchedSpool & {
-    nozzle_temp_min?: number | null;
-    nozzle_temp_max?: number | null;
-    slicer_filament_name?: string | null;
-    slicer_filament?: string | null;
-    cost_per_kg?: number | null;
-    note?: string | null;
-    k_profiles?: SpoolKProfile[];
-  };
+  spool: InventorySpool;
   liveScaleWeight: number | null;
   persistedGrossWeight?: number | null;
   onClose?: () => void;

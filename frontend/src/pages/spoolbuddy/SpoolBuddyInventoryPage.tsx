@@ -367,25 +367,7 @@ function SpoolDetailModal({ spool, assignment, sbState, onAssignToAms, onClose }
 
           <div className="flex justify-center">
             <InventorySpoolInfoCard
-              spool={{
-                id: spool.id,
-                tag_uid: spool.tag_uid ?? '',
-                material: spool.material,
-                subtype: spool.subtype,
-                color_name: spool.color_name,
-                rgba: spool.rgba,
-                brand: spool.brand,
-                label_weight: spool.label_weight,
-                core_weight: spool.core_weight,
-                weight_used: spool.weight_used,
-                nozzle_temp_min: spool.nozzle_temp_min,
-                nozzle_temp_max: spool.nozzle_temp_max,
-                slicer_filament_name: spool.slicer_filament_name,
-                slicer_filament: spool.slicer_filament,
-                cost_per_kg: spool.cost_per_kg,
-                note: spool.note,
-                k_profiles: spool.k_profiles,
-              }}
+              spool={spool}
               liveScaleWeight={modalScaleWeight}
               persistedGrossWeight={persistedGrossWeight}
               onAssignToAms={onAssignToAms}

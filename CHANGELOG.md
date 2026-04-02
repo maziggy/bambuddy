@@ -2,7 +2,10 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
-## [0.2.3b1] - Unreleased
+## [0.2.3b2] - Unreleased
+
+
+## [0.2.3b1] - 2026-04-02
 
 ### New Features
 - **Queue Timeline View** ([#823](https://github.com/maziggy/bambuddy/issues/823)) — The queue page now has a production schedule view showing when each print is estimated to finish. Events are sorted chronologically and grouped by hour, with cards showing the file name, printer, estimated completion time, and time remaining. Active prints show a live progress bar. Filter by "Show All", "Printing", or "Queued", and navigate between days. Click any event to edit or stop it. Toggle between List and Timeline views with the button group above the queue.
@@ -69,7 +72,6 @@ All notable changes to Bambuddy will be documented in this file.
 
 ### Security
 - **Token-Based Auth for Media Endpoints** — Camera streams, snapshots, thumbnails, timelapse videos, photos, QR codes, and cover images served via `<img>`/`<video>` tags now require a stream token query parameter (`?token=xxx`) when authentication is enabled. Previously these endpoints were unauthenticated because browser media elements cannot send `Authorization` headers. The frontend obtains a 60-minute reusable token via `POST /printers/camera/stream-token` (requires `CAMERA_VIEW` permission) and automatically appends it to all media URLs. Affects endpoints in camera, archives, library, printers, print-log, and external-links routes. When auth is disabled (default for local installs), behavior is unchanged — no token required.
-- **Dependency Security Updates** — Updated `aiohttp` 3.13.3 → 3.13.4 (10 CVEs — HTTP header validation and parser fixes), `cryptography` 46.0.5 → 46.0.6 (CVE-2026-34073 — X.509 wildcard SAN validation bypass), and `Pygments` 2.19.2 → 2.20.0 (CVE-2026-4539 — ReDoS in archetype lexer).
 
 ### Fixed
 - **Native Install Misdetected as Docker in LXC Containers** — The update check falsely identified native installs as Docker when running inside Proxmox LXC containers. The detection logic used `.git/` directory absence as a Docker fallback, but LXC containers may also lack `.git/` depending on how the install was deployed. Replaced the `.git/` fallback with a proper check of `/run/systemd/container` which only matches Docker/Podman/OCI runtimes, not LXC. Native installs in LXC containers now correctly show the in-app update button instead of Docker Compose instructions.

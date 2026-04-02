@@ -401,13 +401,14 @@ body {
 }
 
 .spoolbuddy-optimized-ping {
-  will-change: transform, opacity;
-  animation: spoolbuddy-optimized-ping 2.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+  will-change: auto;
+  contain: layout paint;
+  animation: spoolbuddy-optimized-ping 3.5s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
 
 .spoolbuddy-spool-glow {
-  transform: scale(2.5);
-  will-change: background;
+  transform: scale(2.0);
+  will-change: auto;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -163,10 +163,6 @@ export function InventorySpoolInfoCard({
           <span className="text-zinc-500">{t('spoolbuddy.dashboard.spoolSize', 'Spool size')}</span>
           <span className="font-mono text-zinc-300">{labelWeight}g</span>
         </div>
-        <div className="flex justify-between">
-          <span className="text-zinc-500">{t('spoolbuddy.inventory.labelWeight', 'Label Weight')}</span>
-          <span className="font-mono text-zinc-300">{labelWeight}g</span>
-        </div>
         <div className="flex justify-between items-center">
           <span className="text-zinc-500">{t('spoolbuddy.spool.scaleWeight', 'Scale')}</span>
           {grossWeightFromScale !== null ? (

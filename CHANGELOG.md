@@ -2,7 +2,10 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
-## [0.2.3b1] - Unreleased
+## [0.2.3b2] - Unreleased
+
+
+## [0.2.3b1] - 2026-04-02
 
 ### New Features
 - **Queue Timeline View** ([#823](https://github.com/maziggy/bambuddy/issues/823)) — The queue page now has a production schedule view showing when each print is estimated to finish. Events are sorted chronologically and grouped by hour, with cards showing the file name, printer, estimated completion time, and time remaining. Active prints show a live progress bar. Filter by "Show All", "Printing", or "Queued", and navigate between days. Click any event to edit or stop it. Toggle between List and Timeline views with the button group above the queue.

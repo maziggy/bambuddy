@@ -281,8 +281,10 @@ _HMS_CLEAR_GRACE_SECONDS = 30.0
 # Used for snapshot-diff detection at print completion
 _timelapse_baselines: dict[int, set[str]] = {}
 
-# Track active bed cooldown monitoring tasks: {printer_id: asyncio.Task}
-_bed_cooldown_tasks: dict[int, asyncio.Task] = {}
+# Track printers waiting for bed to cool after print completion.
+# Event-driven: fires when bed_temper arrives via MQTT below threshold.
+# {printer_id: {"threshold": float, "filename": str, "registered_at": float}}
+_bed_cool_waiters: dict[int, dict] = {}
 
 # Track printers where the user explicitly stopped the print from the queue UI.
 # When on_print_complete fires with status "failed" for these printers we treat it
@@ -1219,11 +1221,9 @@ async def on_print_start(printer_id: int, data: dict):
     # Clear any stale user-stopped flag from previous print cycles
     _user_stopped_printers.discard(printer_id)
 
-    # Cancel any active bed cooldown task for this printer
-    existing_task = _bed_cooldown_tasks.pop(printer_id, None)
-    if existing_task and not existing_task.done():
-        existing_task.cancel()
-        logger.info("[BED-COOL] Cancelled bed cooldown monitor for printer %s (new print started)", printer_id)
+    # Cancel any active bed cooldown waiter for this printer
+    if _bed_cool_waiters.pop(printer_id, None):
+        logger.info("[BED-COOL] Cancelled bed cooldown waiter for printer %s (new print started)", printer_id)
 
     # Clear cached cover images so the new print's thumbnail is fetched fresh
     from backend.app.api.routes.printers import clear_cover_cache
@@ -2537,104 +2537,35 @@ async def on_print_complete(printer_id: int, data: dict):
 
     log_timing("Queue item update")
 
-    # Start bed cooldown monitor (polls bed temp until it drops below threshold)
+    # Register bed cooldown waiter (event-driven via on_bed_temp_update callback).
     # Must run before archive_id early-return so it fires for all prints (including
     # prints started from BambuStudio/touchscreen that have no archive).
-    async def _background_bed_cooldown():
-        """Monitor bed temperature after print and notify when cooled."""
+    if data.get("status") == "completed":
         try:
             from backend.app.api.routes.settings import get_setting
 
-            # Check threshold setting
             async with async_session() as db:
                 threshold_str = await get_setting(db, "bed_cooled_threshold")
             threshold = float(threshold_str) if threshold_str else 35.0
 
-            # Check if any provider has on_bed_cooled enabled (early exit if none)
+            # Check if any provider has on_bed_cooled enabled (skip registration if none)
             async with async_session() as db:
                 providers = await notification_service._get_providers_for_event(db, "on_bed_cooled", printer_id)
-                if not providers:
-                    logger.debug("[BED-COOL] No providers enabled for bed_cooled on printer %s", printer_id)
-                    return
-
-            logger.info("[BED-COOL] Monitoring bed temp for printer %s (threshold: %.0f°C)", printer_id, threshold)
-
-            # Request a fresh full status so we get current bed_temper
-            printer_manager.request_status_update(printer_id)
-
-            max_polls = 120  # 120 * 15s = 30 min timeout
-            for poll_num in range(max_polls):
-                await asyncio.sleep(15)
-
-                # Request fresh temperature data every 60s — after print completion,
-                # the printer may send partial MQTT updates without bed_temper,
-                # leaving the cached value stale at the end-of-print temperature.
-                if poll_num % 4 == 0:
-                    printer_manager.request_status_update(printer_id)
-
-                # Check if printer is still connected
-                status = printer_manager.get_status(printer_id)
-                if status is None:
-                    logger.info("[BED-COOL] Printer %s disconnected, stopping monitor", printer_id)
-                    return
-
-                # Check if a new print started (state == RUNNING)
-                if hasattr(status, "state") and status.state == "RUNNING":
-                    logger.info("[BED-COOL] New print started on printer %s, stopping monitor", printer_id)
-                    return
-
-                # Get bed temperature
-                bed_temp = None
-                if hasattr(status, "temperatures") and isinstance(status.temperatures, dict):
-                    bed_temp = status.temperatures.get("bed")
-
-                if bed_temp is None:
-                    logger.debug(
-                        "[BED-COOL] Printer %s: bed temp is None (keys: %s, state: %s)",
-                        printer_id,
-                        list(status.temperatures.keys()) if isinstance(status.temperatures, dict) else "N/A",
-                        status.state if hasattr(status, "state") else "N/A",
-                    )
-                    continue
-
-                logger.debug("[BED-COOL] Printer %s: bed=%.1f°C, threshold=%.0f°C", printer_id, bed_temp, threshold)
-
-                if bed_temp <= threshold:
-                    logger.info(
-                        "[BED-COOL] Bed cooled to %.1f°C on printer %s (threshold: %.0f°C)",
-                        bed_temp,
-                        printer_id,
-                        threshold,
-                    )
-                    printer_info = printer_manager.get_printer(printer_id)
-                    p_name = printer_info.name if printer_info else "Unknown"
-                    async with async_session() as db:
-                        await notification_service.on_bed_cooled(
-                            printer_id=printer_id,
-                            printer_name=p_name,
-                            bed_temp=bed_temp,
-                            threshold=threshold,
-                            filename=filename or subtask_name or "",
-                            db=db,
-                        )
-                    return
-
-            logger.info("[BED-COOL] Timeout waiting for bed to cool on printer %s", printer_id)
-        except asyncio.CancelledError:
-            logger.info("[BED-COOL] Bed cooldown monitor cancelled for printer %s", printer_id)
+            if providers:
+                _bed_cool_waiters[printer_id] = {
+                    "threshold": threshold,
+                    "filename": filename or subtask_name or "",
+                    "registered_at": time.time(),
+                }
+                logger.info(
+                    "[BED-COOL] Registered waiter for printer %s (threshold: %.0f°C)",
+                    printer_id,
+                    threshold,
+                )
+            else:
+                logger.debug("[BED-COOL] No providers enabled for bed_cooled on printer %s", printer_id)
         except Exception as e:
-            logger.warning("[BED-COOL] Failed: %s", e)
-        finally:
-            _bed_cooldown_tasks.pop(printer_id, None)
-
-    # Only start bed cooldown for completed prints
-    if data.get("status") == "completed":
-        # Cancel any existing task for this printer
-        existing_task = _bed_cooldown_tasks.pop(printer_id, None)
-        if existing_task and not existing_task.done():
-            existing_task.cancel()
-        task = asyncio.create_task(_background_bed_cooldown())
-        _bed_cooldown_tasks[printer_id] = task
+            logger.warning("[BED-COOL] Failed to register waiter: %s", e)
 
     # --- Track filament consumption (must run before archive_id early-return so usage
     # is recorded even when auto-archive is disabled) ---
@@ -3760,6 +3691,42 @@ async def lifespan(app: FastAPI):
                 logging.getLogger(__name__).warning("First layer notification failed: %s", e)
 
     printer_manager.set_layer_change_callback(on_layer_change)
+
+    # Event-driven bed cooldown: fires whenever bed_temper arrives via MQTT
+    async def on_bed_temp_update(printer_id: int, bed_temp: float):
+        waiter = _bed_cool_waiters.get(printer_id)
+        if not waiter:
+            return
+        threshold = waiter["threshold"]
+        if bed_temp > threshold:
+            return
+        # Bed is at or below threshold — fire notification and remove waiter
+        waiter_info = _bed_cool_waiters.pop(printer_id, None)
+        if not waiter_info:
+            return  # Another callback already handled it
+        bed_cool_logger = logging.getLogger(__name__)
+        bed_cool_logger.info(
+            "[BED-COOL] Bed cooled to %.1f°C on printer %s (threshold: %.0f°C)",
+            bed_temp,
+            printer_id,
+            threshold,
+        )
+        try:
+            printer_info = printer_manager.get_printer(printer_id)
+            p_name = printer_info.name if printer_info else "Unknown"
+            async with async_session() as db:
+                await notification_service.on_bed_cooled(
+                    printer_id=printer_id,
+                    printer_name=p_name,
+                    bed_temp=bed_temp,
+                    threshold=threshold,
+                    filename=waiter_info["filename"],
+                    db=db,
+                )
+        except Exception as e:
+            bed_cool_logger.warning("[BED-COOL] Failed to send notification: %s", e)
+
+    printer_manager.set_bed_temp_update_callback(on_bed_temp_update)
 
     # Initialize MQTT relay from settings
     async with async_session() as db:

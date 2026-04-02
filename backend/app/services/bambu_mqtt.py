@@ -283,6 +283,7 @@ class BambuMQTTClient:
         on_print_complete: Callable[[dict], None] | None = None,
         on_ams_change: Callable[[list], None] | None = None,
         on_layer_change: Callable[[int], None] | None = None,
+        on_bed_temp_update: Callable[[float], None] | None = None,
     ):
         self.ip_address = ip_address
         self.serial_number = serial_number
@@ -293,6 +294,7 @@ class BambuMQTTClient:
         self.on_print_complete = on_print_complete
         self.on_ams_change = on_ams_change
         self.on_layer_change = on_layer_change
+        self.on_bed_temp_update = on_bed_temp_update
 
         self.state = PrinterState()
         self._client: mqtt.Client | None = None
@@ -2105,6 +2107,10 @@ class BambuMQTTClient:
             # Merge new temps into existing, preserving valid values when new ones are filtered out
             for key, value in temps.items():
                 self.state.temperatures[key] = value
+
+            # Notify bed temperature updates (used by event-driven bed cooldown monitor)
+            if "bed" in temps and self.on_bed_temp_update:
+                self.on_bed_temp_update(temps["bed"])
 
             # Calculate chamber_heating after all targets are known
             # Priority: local target (if recent) > explicit target (chamber_target) > 0

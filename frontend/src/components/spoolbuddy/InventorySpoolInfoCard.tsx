@@ -58,13 +58,25 @@ export function InventorySpoolInfoCard({
     ? (persistedGrossWeight !== null ? Math.round(Math.max(0, persistedGrossWeight)) : null)
     : grossWeightFromScale;
 
-  const remaining = Math.round(Math.max(0,
+  const inventoryRemaining = Math.round(Math.max(0,
     (spool.label_weight || 0) - (spool.weight_used || 0)
   ));
 
+  // Use live scale for remaining/fill only when reading is meaningful for a loaded spool.
+  const minDynamicScaleReading = coreWeight * 0.8;
+  const useDynamicRemaining = grossWeightFromScale !== null
+    && grossWeightFromScale > 0
+    && grossWeightFromScale > minDynamicScaleReading;
+
+  const remaining = useDynamicRemaining
+    ? Math.round(Math.max(0, grossWeightFromScale - coreWeight))
+    : inventoryRemaining;
+
   const labelWeight = Math.round(spool.label_weight || 1000);
-  const fillPercent = Math.min(100, Math.round((remaining / labelWeight) * 100));
-  const fillColor = fillPercent > 50 ? '#22c55e' : fillPercent > 20 ? '#eab308' : '#ef4444';
+  const fillPercent = labelWeight > 0 ? Math.min(100, Math.round((remaining / labelWeight) * 100)) : null;
+  const fillColor = fillPercent !== null
+    ? (fillPercent > 50 ? '#22c55e' : fillPercent > 20 ? '#eab308' : '#ef4444')
+    : '#808080';
 
   const netWeight = Math.max(0,
     (spool.label_weight || 0) - (spool.weight_used || 0)
@@ -105,7 +117,7 @@ export function InventorySpoolInfoCard({
       <div className="flex items-start gap-5">
         <div className="relative shrink-0">
           <SpoolIcon color={colorHex} isEmpty={false} size={100} />
-          {Number.isFinite(fillPercent) && (
+          {fillPercent !== null && (
             <div
               className="absolute -bottom-2 -right-2 px-2 py-0.5 rounded-full text-xs font-bold text-white shadow-lg"
               style={{ backgroundColor: fillColor }}
@@ -135,7 +147,7 @@ export function InventorySpoolInfoCard({
               <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full transition-all duration-500"
-                  style={{ width: `${fillPercent}%`, backgroundColor: fillColor }}
+                  style={{ width: `${fillPercent ?? 0}%`, backgroundColor: fillColor }}
                 />
               </div>
             </div>

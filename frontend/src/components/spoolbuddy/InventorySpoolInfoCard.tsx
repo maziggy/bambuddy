@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, AlertTriangle, RefreshCw } from 'lucide-react';
 import type { MatchedSpool } from '../../hooks/useSpoolBuddyState';
+import type { SpoolKProfile } from '../../api/client';
 import { spoolbuddyApi } from '../../api/client';
 import { SpoolIcon } from './SpoolIcon';
 
@@ -21,7 +22,15 @@ function getDefaultCoreWeight(): number {
 }
 
 interface InventorySpoolInfoCardProps {
-  spool: MatchedSpool;
+  spool: MatchedSpool & {
+    nozzle_temp_min?: number | null;
+    nozzle_temp_max?: number | null;
+    slicer_filament_name?: string | null;
+    slicer_filament?: string | null;
+    cost_per_kg?: number | null;
+    note?: string | null;
+    k_profiles?: SpoolKProfile[];
+  };
   liveScaleWeight: number | null;
   persistedGrossWeight?: number | null;
   onClose?: () => void;
@@ -58,16 +67,13 @@ export function InventorySpoolInfoCard({
     ? (persistedGrossWeight !== null ? Math.round(Math.max(0, persistedGrossWeight)) : null)
     : grossWeightFromScale;
 
-  // Remaining/fill stays live from scale when available.
-  const remaining = grossWeightFromScale !== null
-    ? Math.round(Math.max(0, grossWeightFromScale - coreWeight))
-    : null;
+  const remaining = Math.round(Math.max(0,
+    (spool.label_weight || 0) - (spool.weight_used || 0)
+  ));
 
   const labelWeight = Math.round(spool.label_weight || 1000);
-  const fillPercent = remaining !== null ? Math.min(100, Math.round((remaining / labelWeight) * 100)) : null;
-  const fillColor = fillPercent !== null
-    ? fillPercent > 50 ? '#22c55e' : fillPercent > 20 ? '#eab308' : '#ef4444'
-    : '#808080';
+  const fillPercent = Math.min(100, Math.round((remaining / labelWeight) * 100));
+  const fillColor = fillPercent > 50 ? '#22c55e' : fillPercent > 20 ? '#eab308' : '#ef4444';
 
   const netWeight = Math.max(0,
     (spool.label_weight || 0) - (spool.weight_used || 0)
@@ -79,6 +85,14 @@ export function InventorySpoolInfoCard({
   // Inventory fallback so gross is always populated across spools.
   const inventoryDerivedGrossWeight = Math.round(calculatedWeight);
   const resolvedGrossWeight = displayedGrossWeight ?? inventoryDerivedGrossWeight;
+  const nozzleTempRange = (spool.nozzle_temp_min != null && spool.nozzle_temp_max != null)
+    ? `${spool.nozzle_temp_min}-${spool.nozzle_temp_max}\u00B0C`
+    : null;
+  const slicerPreset = spool.slicer_filament_name || spool.slicer_filament || null;
+  const note = spool.note?.trim() || null;
+  const kFactorSummary = (spool.k_profiles && spool.k_profiles.length > 0)
+    ? Array.from(new Set(spool.k_profiles.map(kp => kp.k_value.toFixed(3)))).join(', ')
+    : null;
 
   const handleSyncWeight = async () => {
     if (liveScaleWeight === null) return;
@@ -100,14 +114,12 @@ export function InventorySpoolInfoCard({
       <div className="flex items-start gap-5">
         <div className="relative shrink-0">
           <SpoolIcon color={colorHex} isEmpty={false} size={100} />
-          {fillPercent !== null && (
-            <div
-              className="absolute -bottom-2 -right-2 px-2 py-0.5 rounded-full text-xs font-bold text-white shadow-lg"
-              style={{ backgroundColor: fillColor }}
-            >
-              {fillPercent}%
-            </div>
-          )}
+          <div
+            className="absolute -bottom-2 -right-2 px-2 py-0.5 rounded-full text-xs font-bold text-white shadow-lg"
+            style={{ backgroundColor: fillColor }}
+          >
+            {fillPercent}%
+          </div>
         </div>
 
         <div className="flex-1 min-w-0 pt-1">
@@ -119,24 +131,22 @@ export function InventorySpoolInfoCard({
             {spool.subtype && ` ${spool.subtype}`}
           </p>
 
-          {remaining !== null && (
-            <div className="mt-3">
-              <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-bold font-mono text-zinc-100">{remaining}g</span>
-                <span className="text-sm text-zinc-500">/ {labelWeight}g</span>
-              </div>
-              <p className="text-xs text-zinc-500 mt-0.5">{t('spoolbuddy.spool.remaining', 'Remaining')}</p>
+          <div className="mt-3">
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-bold font-mono text-zinc-100">{remaining}g</span>
+              <span className="text-sm text-zinc-500">/ {labelWeight}g</span>
+            </div>
+            <p className="text-xs text-zinc-500 mt-0.5">{t('spoolbuddy.spool.remaining', 'Remaining')}</p>
 
-              <div className="mt-2 max-w-xs">
-                <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-500"
-                    style={{ width: `${fillPercent}%`, backgroundColor: fillColor }}
-                  />
-                </div>
+            <div className="mt-2 max-w-xs">
+              <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{ width: `${fillPercent}%`, backgroundColor: fillColor }}
+                />
               </div>
             </div>
-          )}
+          </div>
         </div>
       </div>
 
@@ -151,6 +161,10 @@ export function InventorySpoolInfoCard({
         </div>
         <div className="flex justify-between">
           <span className="text-zinc-500">{t('spoolbuddy.dashboard.spoolSize', 'Spool size')}</span>
+          <span className="font-mono text-zinc-300">{labelWeight}g</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-zinc-500">{t('spoolbuddy.inventory.labelWeight', 'Label Weight')}</span>
           <span className="font-mono text-zinc-300">{labelWeight}g</span>
         </div>
         <div className="flex justify-between items-center">
@@ -183,6 +197,36 @@ export function InventorySpoolInfoCard({
             {spool.tag_uid ? spool.tag_uid.slice(-8) : '\u2014'}
           </span>
         </div>
+        {nozzleTempRange && (
+          <div className="flex justify-between items-center">
+            <span className="text-zinc-500">Nozzle</span>
+            <span className="font-mono text-zinc-300">{nozzleTempRange}</span>
+          </div>
+        )}
+        {spool.cost_per_kg != null && spool.cost_per_kg > 0 && (
+          <div className="flex justify-between items-center">
+            <span className="text-zinc-500">{t('spoolbuddy.inventory.costPerKg', 'Cost/kg')}</span>
+            <span className="font-mono text-zinc-300">{spool.cost_per_kg.toFixed(2)}/kg</span>
+          </div>
+        )}
+        {kFactorSummary && (
+          <div className="flex justify-between items-center">
+            <span className="text-zinc-500">K-Profile</span>
+            <span className="font-mono text-zinc-300 truncate max-w-[220px] text-right" title={kFactorSummary}>{kFactorSummary}</span>
+          </div>
+        )}
+        {slicerPreset && (
+          <div className="min-w-0">
+            <p className="text-xs text-zinc-500 mb-1">{t('spoolbuddy.inventory.slicerFilament', 'Slicer Filament')}</p>
+            <p className="text-sm text-zinc-300 whitespace-pre-wrap break-words">{slicerPreset}</p>
+          </div>
+        )}
+        {note && (
+          <div className="col-span-2">
+            <p className="text-xs text-zinc-500 mb-1">{t('spoolbuddy.inventory.note', 'Note')}</p>
+            <p className="text-sm leading-5 text-zinc-300 whitespace-pre-wrap break-words max-h-[3.75rem] overflow-y-auto pr-1">{note}</p>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-2 justify-center">

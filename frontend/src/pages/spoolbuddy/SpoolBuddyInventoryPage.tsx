@@ -344,7 +344,7 @@ function SpoolDetailModal({ spool, assignment, sbState, onAssignToAms, onClose }
   const useLiveScaleWeight = sbState.deviceOnline && sbState.weight !== null;
   const modalScaleWeight = useLiveScaleWeight
     ? Math.round(sbState.weight as number)
-    : (spool.last_scale_weight != null ? Math.round(spool.last_scale_weight) : null);
+    : null;
   const persistedGrossWeight = spool.last_scale_weight != null ? Math.round(spool.last_scale_weight) : null;
 
   return (

@@ -430,12 +430,18 @@ class NotificationService:
             return False, f"HTTP {response.status_code}: {response.text[:200]}"
 
     async def _send_webhook(
-        self, config: dict, title: str, message: str, image_data: bytes | None = None
+        self,
+        config: dict,
+        title: str,
+        message: str,
+        image_data: bytes | None = None,
+        event_type: str | None = None,
+        variables: dict | None = None,
     ) -> tuple[bool, str]:
         """Send notification via generic webhook (POST JSON).
 
         Supports two payload formats:
-        - generic: Custom field names with timestamp/source metadata
+        - generic: Custom field names with timestamp/source metadata + structured event data
         - slack: Slack/Mattermost compatible format (just {"text": "..."})
         """
         webhook_url = config.get("webhook_url", "").strip()
@@ -459,6 +465,15 @@ class NotificationService:
                 "timestamp": datetime.now().isoformat(),
                 "source": "Bambuddy",
             }
+
+        # For generic format, include structured event data for automation tools
+        if payload_format != "slack":
+            if event_type:
+                data["event"] = event_type
+            if variables:
+                for key, value in variables.items():
+                    if key not in data:  # Don't overwrite title/message/timestamp/source
+                        data[key] = value
 
         # Attach base64-encoded image when available (generic format only)
         if image_data and payload_format != "slack":
@@ -573,6 +588,8 @@ class NotificationService:
         message: str,
         db: AsyncSession | None = None,
         image_data: bytes | None = None,
+        event_type: str | None = None,
+        variables: dict | None = None,
     ) -> tuple[bool, str]:
         """Send notification to a specific provider."""
         # Check quiet hours
@@ -596,7 +613,9 @@ class NotificationService:
             elif provider.provider_type == "discord":
                 return await self._send_discord(config, title, message, image_data=image_data)
             elif provider.provider_type == "webhook":
-                return await self._send_webhook(config, title, message, image_data=image_data)
+                return await self._send_webhook(
+                    config, title, message, image_data=image_data, event_type=event_type, variables=variables
+                )
             elif provider.provider_type == "homeassistant":
                 return await self._send_homeassistant(config, title, message, db=db)
             else:
@@ -681,6 +700,7 @@ class NotificationService:
         printer_name: str | None = None,
         force_immediate: bool = False,
         image_data: bytes | None = None,
+        variables: dict | None = None,
     ):
         """Send notification to multiple providers and log the results.
 
@@ -690,7 +710,9 @@ class NotificationService:
         for provider in providers:
             try:
                 # Always send notification immediately
-                success, error = await self._send_to_provider(provider, title, message, db, image_data=image_data)
+                success, error = await self._send_to_provider(
+                    provider, title, message, db, image_data=image_data, event_type=event_type, variables=variables
+                )
 
                 # Also queue for digest if enabled (digest is a summary, not a queue)
                 if provider.daily_digest_enabled and provider.daily_digest_time:
@@ -807,7 +829,15 @@ class NotificationService:
         logger.info("Found %s providers for print_start: %s", len(providers), [p.name for p in providers])
         title, message = await self._build_message_from_template(db, "print_start", variables)
         await self._send_to_providers(
-            providers, title, message, db, "print_start", printer_id, printer_name, image_data=image_data
+            providers,
+            title,
+            message,
+            db,
+            "print_start",
+            printer_id,
+            printer_name,
+            image_data=image_data,
+            variables=variables,
         )
 
     async def on_print_complete(
@@ -901,7 +931,15 @@ class NotificationService:
         logger.info("Found %s providers for %s: %s", len(providers), event_field, [p.name for p in providers])
         title, message = await self._build_message_from_template(db, event_type, variables)
         await self._send_to_providers(
-            providers, title, message, db, event_type, printer_id, printer_name, image_data=image_data
+            providers,
+            title,
+            message,
+            db,
+            event_type,
+            printer_id,
+            printer_name,
+            image_data=image_data,
+            variables=variables,
         )
 
     async def on_print_progress(
@@ -931,7 +969,15 @@ class NotificationService:
 
         title, message = await self._build_message_from_template(db, "print_progress", variables)
         await self._send_to_providers(
-            providers, title, message, db, "print_progress", printer_id, printer_name, image_data=image_data
+            providers,
+            title,
+            message,
+            db,
+            "print_progress",
+            printer_id,
+            printer_name,
+            image_data=image_data,
+            variables=variables,
         )
 
     async def on_print_missing_spool_assignment(
@@ -973,6 +1019,7 @@ class NotificationService:
             printer_id,
             printer_name,
             force_immediate=True,
+            variables=variables,
         )
 
     async def on_printer_offline(self, printer_id: int, printer_name: str, db: AsyncSession):
@@ -984,7 +1031,9 @@ class NotificationService:
         variables = {"printer": printer_name}
 
         title, message = await self._build_message_from_template(db, "printer_offline", variables)
-        await self._send_to_providers(providers, title, message, db, "printer_offline", printer_id, printer_name)
+        await self._send_to_providers(
+            providers, title, message, db, "printer_offline", printer_id, printer_name, variables=variables
+        )
 
     async def on_printer_error(
         self,
@@ -1008,7 +1057,15 @@ class NotificationService:
 
         title, message = await self._build_message_from_template(db, "printer_error", variables)
         await self._send_to_providers(
-            providers, title, message, db, "printer_error", printer_id, printer_name, image_data=image_data
+            providers,
+            title,
+            message,
+            db,
+            "printer_error",
+            printer_id,
+            printer_name,
+            image_data=image_data,
+            variables=variables,
         )
 
     async def on_plate_not_empty(
@@ -1030,7 +1087,15 @@ class NotificationService:
 
         title, message = await self._build_message_from_template(db, "plate_not_empty", variables)
         await self._send_to_providers(
-            providers, title, message, db, "plate_not_empty", printer_id, printer_name, force_immediate=True
+            providers,
+            title,
+            message,
+            db,
+            "plate_not_empty",
+            printer_id,
+            printer_name,
+            force_immediate=True,
+            variables=variables,
         )
 
     async def on_filament_low(
@@ -1055,7 +1120,9 @@ class NotificationService:
         }
 
         title, message = await self._build_message_from_template(db, "filament_low", variables)
-        await self._send_to_providers(providers, title, message, db, "filament_low", printer_id, printer_name)
+        await self._send_to_providers(
+            providers, title, message, db, "filament_low", printer_id, printer_name, variables=variables
+        )
 
     async def on_maintenance_due(
         self,
@@ -1087,7 +1154,9 @@ class NotificationService:
 
         logger.info("Found %s providers for maintenance_due: %s", len(providers), [p.name for p in providers])
         title, message = await self._build_message_from_template(db, "maintenance_due", variables)
-        await self._send_to_providers(providers, title, message, db, "maintenance_due", printer_id, printer_name)
+        await self._send_to_providers(
+            providers, title, message, db, "maintenance_due", printer_id, printer_name, variables=variables
+        )
 
     async def on_ams_humidity_high(
         self,
@@ -1113,7 +1182,15 @@ class NotificationService:
         title, message = await self._build_message_from_template(db, "ams_humidity_high", variables)
         # Alarms always send immediately, bypassing digest mode
         await self._send_to_providers(
-            providers, title, message, db, "ams_humidity_high", printer_id, printer_name, force_immediate=True
+            providers,
+            title,
+            message,
+            db,
+            "ams_humidity_high",
+            printer_id,
+            printer_name,
+            force_immediate=True,
+            variables=variables,
         )
 
     async def on_ams_temperature_high(
@@ -1140,7 +1217,15 @@ class NotificationService:
         title, message = await self._build_message_from_template(db, "ams_temperature_high", variables)
         # Alarms always send immediately, bypassing digest mode
         await self._send_to_providers(
-            providers, title, message, db, "ams_temperature_high", printer_id, printer_name, force_immediate=True
+            providers,
+            title,
+            message,
+            db,
+            "ams_temperature_high",
+            printer_id,
+            printer_name,
+            force_immediate=True,
+            variables=variables,
         )
 
     async def on_ams_ht_humidity_high(
@@ -1168,7 +1253,15 @@ class NotificationService:
         title, message = await self._build_message_from_template(db, "ams_humidity_high", variables)
         # Alarms always send immediately, bypassing digest mode
         await self._send_to_providers(
-            providers, title, message, db, "ams_ht_humidity_high", printer_id, printer_name, force_immediate=True
+            providers,
+            title,
+            message,
+            db,
+            "ams_ht_humidity_high",
+            printer_id,
+            printer_name,
+            force_immediate=True,
+            variables=variables,
         )
 
     async def on_ams_ht_temperature_high(
@@ -1196,7 +1289,15 @@ class NotificationService:
         title, message = await self._build_message_from_template(db, "ams_temperature_high", variables)
         # Alarms always send immediately, bypassing digest mode
         await self._send_to_providers(
-            providers, title, message, db, "ams_ht_temperature_high", printer_id, printer_name, force_immediate=True
+            providers,
+            title,
+            message,
+            db,
+            "ams_ht_temperature_high",
+            printer_id,
+            printer_name,
+            force_immediate=True,
+            variables=variables,
         )
 
     async def on_bed_cooled(
@@ -1221,7 +1322,9 @@ class NotificationService:
         }
 
         title, message = await self._build_message_from_template(db, "bed_cooled", variables)
-        await self._send_to_providers(providers, title, message, db, "bed_cooled", printer_id, printer_name)
+        await self._send_to_providers(
+            providers, title, message, db, "bed_cooled", printer_id, printer_name, variables=variables
+        )
 
     async def on_first_layer_complete(
         self,
@@ -1245,7 +1348,15 @@ class NotificationService:
 
         title, message = await self._build_message_from_template(db, "first_layer_complete", variables)
         await self._send_to_providers(
-            providers, title, message, db, "first_layer_complete", printer_id, printer_name, image_data=image_data
+            providers,
+            title,
+            message,
+            db,
+            "first_layer_complete",
+            printer_id,
+            printer_name,
+            image_data=image_data,
+            variables=variables,
         )
 
     def clear_template_cache(self):
@@ -1388,7 +1499,9 @@ class NotificationService:
         }
 
         title, message = await self._build_message_from_template(db, "queue_job_added", variables)
-        await self._send_to_providers(providers, title, message, db, "queue_job_added", printer_id, printer_name)
+        await self._send_to_providers(
+            providers, title, message, db, "queue_job_added", printer_id, printer_name, variables=variables
+        )
 
     async def on_queue_job_assigned(
         self,
@@ -1410,7 +1523,9 @@ class NotificationService:
         }
 
         title, message = await self._build_message_from_template(db, "queue_job_assigned", variables)
-        await self._send_to_providers(providers, title, message, db, "queue_job_assigned", printer_id, printer_name)
+        await self._send_to_providers(
+            providers, title, message, db, "queue_job_assigned", printer_id, printer_name, variables=variables
+        )
 
     async def on_queue_job_started(
         self,
@@ -1435,7 +1550,9 @@ class NotificationService:
         }
 
         title, message = await self._build_message_from_template(db, "queue_job_started", variables)
-        await self._send_to_providers(providers, title, message, db, "queue_job_started", printer_id, printer_name)
+        await self._send_to_providers(
+            providers, title, message, db, "queue_job_started", printer_id, printer_name, variables=variables
+        )
 
     async def on_queue_job_waiting(
         self,
@@ -1456,7 +1573,7 @@ class NotificationService:
         }
 
         title, message = await self._build_message_from_template(db, "queue_job_waiting", variables)
-        await self._send_to_providers(providers, title, message, db, "queue_job_waiting")
+        await self._send_to_providers(providers, title, message, db, "queue_job_waiting", variables=variables)
 
     async def on_queue_job_skipped(
         self,
@@ -1478,7 +1595,9 @@ class NotificationService:
         }
 
         title, message = await self._build_message_from_template(db, "queue_job_skipped", variables)
-        await self._send_to_providers(providers, title, message, db, "queue_job_skipped", printer_id, printer_name)
+        await self._send_to_providers(
+            providers, title, message, db, "queue_job_skipped", printer_id, printer_name, variables=variables
+        )
 
     async def on_queue_job_failed(
         self,
@@ -1500,7 +1619,9 @@ class NotificationService:
         }
 
         title, message = await self._build_message_from_template(db, "queue_job_failed", variables)
-        await self._send_to_providers(providers, title, message, db, "queue_job_failed", printer_id, printer_name)
+        await self._send_to_providers(
+            providers, title, message, db, "queue_job_failed", printer_id, printer_name, variables=variables
+        )
 
     async def on_queue_completed(
         self,
@@ -1517,7 +1638,7 @@ class NotificationService:
         }
 
         title, message = await self._build_message_from_template(db, "queue_completed", variables)
-        await self._send_to_providers(providers, title, message, db, "queue_completed")
+        await self._send_to_providers(providers, title, message, db, "queue_completed", variables=variables)
 
     async def _queue_for_digest(
         self,

@@ -87,6 +87,8 @@ export function GitHubBackupSettings() {
   const [backupKProfiles, setBackupKProfiles] = useState(true);
   const [backupCloudProfiles, setBackupCloudProfiles] = useState(true);
   const [backupSettings, setBackupSettings] = useState(false);
+  const [backupSpools, setBackupSpools] = useState(false);
+  const [backupArchives, setBackupArchives] = useState(false);
   const [enabled, setEnabled] = useState(true);
 
   // Local backup state
@@ -180,6 +182,8 @@ export function GitHubBackupSettings() {
       setBackupKProfiles(config.backup_kprofiles);
       setBackupCloudProfiles(config.backup_cloud_profiles);
       setBackupSettings(config.backup_settings);
+      setBackupSpools(config.backup_spools);
+      setBackupArchives(config.backup_archives);
       setEnabled(config.enabled);
       setAccessToken(''); // Don't show stored token
       // Mark as initialized after a tick to avoid auto-save on initial load
@@ -203,6 +207,8 @@ export function GitHubBackupSettings() {
           backup_kprofiles: backupKProfiles,
           backup_cloud_profiles: backupCloudProfiles,
           backup_settings: backupSettings,
+          backup_spools: backupSpools,
+          backup_archives: backupArchives,
           enabled,
         });
         setAccessToken(''); // Clear after save
@@ -217,6 +223,8 @@ export function GitHubBackupSettings() {
           backup_kprofiles: backupKProfiles,
           backup_cloud_profiles: backupCloudProfiles,
           backup_settings: backupSettings,
+          backup_spools: backupSpools,
+          backup_archives: backupArchives,
           enabled,
         });
         showToast(t('backup.settingsSaved'));
@@ -226,7 +234,7 @@ export function GitHubBackupSettings() {
     } catch (error) {
       showToast(t('backup.failedToSave', { message: (error as Error).message }), 'error');
     }
-  }, [config?.has_token, repoUrl, accessToken, branch, scheduleEnabled, scheduleType, backupKProfiles, backupCloudProfiles, backupSettings, enabled, queryClient, showToast, t]);
+  }, [config?.has_token, repoUrl, accessToken, branch, scheduleEnabled, scheduleType, backupKProfiles, backupCloudProfiles, backupSettings, backupSpools, backupArchives, enabled, queryClient, showToast, t]);
 
   // Auto-save effect for existing configs (debounced)
   useEffect(() => {
@@ -245,7 +253,7 @@ export function GitHubBackupSettings() {
         clearTimeout(autoSaveTimerRef.current);
       }
     };
-  }, [repoUrl, branch, scheduleEnabled, scheduleType, backupKProfiles, backupCloudProfiles, backupSettings, enabled, autoSave, config?.has_token]);
+  }, [repoUrl, branch, scheduleEnabled, scheduleType, backupKProfiles, backupCloudProfiles, backupSettings, backupSpools, backupArchives, enabled, autoSave, config?.has_token]);
 
   // Auto-save token when it changes (with longer debounce)
   useEffect(() => {
@@ -361,6 +369,8 @@ export function GitHubBackupSettings() {
       backup_kprofiles: backupKProfiles,
       backup_cloud_profiles: backupCloudProfiles,
       backup_settings: backupSettings,
+      backup_spools: backupSpools,
+      backup_archives: backupArchives,
       enabled,
     });
   };
@@ -527,6 +537,30 @@ export function GitHubBackupSettings() {
                   <div>
                     <span className="text-white text-sm">{t('backup.appSettings')}</span>
                     <p className="text-xs text-bambu-gray">{t('backup.appSettingsDescription')}</p>
+                  </div>
+                </label>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={backupSpools}
+                    onChange={(e) => setBackupSpools(e.target.checked)}
+                    className="w-4 h-4 mt-0.5 rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
+                  />
+                  <div>
+                    <span className="text-white text-sm">{t('backup.spoolInventory')}</span>
+                    <p className="text-xs text-bambu-gray">{t('backup.spoolInventoryDescription')}</p>
+                  </div>
+                </label>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={backupArchives}
+                    onChange={(e) => setBackupArchives(e.target.checked)}
+                    className="w-4 h-4 mt-0.5 rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
+                  />
+                  <div>
+                    <span className="text-white text-sm">{t('backup.printArchives')}</span>
+                    <p className="text-xs text-bambu-gray">{t('backup.printArchivesDescription')}</p>
                   </div>
                 </label>
               </div>

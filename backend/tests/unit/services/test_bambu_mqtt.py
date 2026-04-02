@@ -2919,13 +2919,18 @@ class TestStartPrintAmsMapping:
         assert cmd["ams_mapping"] == [-1]
         assert cmd["ams_mapping2"] == [{"ams_id": 255, "slot_id": 0}]
 
-    def test_external_deputy_nozzle_becomes_minus_one_in_flat(self, mqtt_client):
-        """Virtual tray 254 (deputy nozzle) must be -1 in flat mapping."""
+    def test_single_nozzle_external_spool_uses_main_id(self, mqtt_client):
+        """Single-nozzle external spool (254) maps to ams_id=255 (VIRTUAL_TRAY_MAIN_ID).
+
+        Firmware reports tray_now=254 for external spool, but the print command
+        must use ams_id=255 in ams_mapping2. Sending 254 causes the firmware to
+        target AMS tray 0 instead of external spool (07FF_8012 error).
+        """
         mqtt_client.start_print("test.3mf", ams_mapping=[254])
 
         cmd = self._get_published_command(mqtt_client)
         assert cmd["ams_mapping"] == [-1]
-        assert cmd["ams_mapping2"] == [{"ams_id": 254, "slot_id": 0}]
+        assert cmd["ams_mapping2"] == [{"ams_id": 255, "slot_id": 0}]
 
     def test_h2d_external_spool_mixed_with_ams(self, mqtt_client):
         """H2D scenario: AMS trays + unmapped + external deputy nozzle."""
@@ -2956,8 +2961,20 @@ class TestStartPrintAmsMapping:
             {"ams_id": 131, "slot_id": 0},
         ]
 
-    def test_dual_nozzle_both_external(self, mqtt_client):
-        """Both nozzles using external spools: 254 (deputy) + 255 (main)."""
+    def test_non_h2d_both_external_maps_to_main_id(self, mqtt_client):
+        """Non-H2D: both 254 and 255 map to ams_id=255 (single nozzle)."""
+        mqtt_client.start_print("test.3mf", ams_mapping=[254, 255])
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["ams_mapping"] == [-1, -1]
+        assert cmd["ams_mapping2"] == [
+            {"ams_id": 255, "slot_id": 0},
+            {"ams_id": 255, "slot_id": 0},
+        ]
+
+    def test_h2d_external_preserves_deputy_id(self, mqtt_client):
+        """H2D dual-nozzle: 254 (deputy) stays 254, 255 (main) stays 255."""
+        mqtt_client.model = "H2D"
         mqtt_client.start_print("test.3mf", ams_mapping=[254, 255])
 
         cmd = self._get_published_command(mqtt_client)
@@ -2966,6 +2983,15 @@ class TestStartPrintAmsMapping:
             {"ams_id": 254, "slot_id": 0},
             {"ams_id": 255, "slot_id": 0},
         ]
+
+    def test_h2d_single_external_deputy(self, mqtt_client):
+        """H2D: single external spool on deputy nozzle (254) keeps ams_id=254."""
+        mqtt_client.model = "H2D Pro"
+        mqtt_client.start_print("test.3mf", ams_mapping=[254])
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["ams_mapping"] == [-1]
+        assert cmd["ams_mapping2"] == [{"ams_id": 254, "slot_id": 0}]
 
     def test_external_spool_only_sets_use_ams_false(self, mqtt_client):
         """Single external spool on non-H2D printer sets use_ams=False."""

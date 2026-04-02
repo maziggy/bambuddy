@@ -1618,6 +1618,16 @@ async def run_migrations(conn):
     except OperationalError:
         pass
 
+    # Migration: Add backup_spools and backup_archives columns to github_backup_config
+    try:
+        await conn.execute(text("ALTER TABLE github_backup_config ADD COLUMN backup_spools BOOLEAN DEFAULT 0"))
+    except OperationalError:
+        pass
+    try:
+        await conn.execute(text("ALTER TABLE github_backup_config ADD COLUMN backup_archives BOOLEAN DEFAULT 0"))
+    except OperationalError:
+        pass
+
     # Seed default settings keys that must exist on fresh install
     default_settings = [
         ("advanced_auth_enabled", "false"),

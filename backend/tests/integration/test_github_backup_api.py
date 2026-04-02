@@ -28,6 +28,8 @@ class TestGitHubBackupConfigAPI:
             "backup_kprofiles": True,
             "backup_cloud_profiles": True,
             "backup_settings": False,
+            "backup_spools": False,
+            "backup_archives": False,
             "enabled": True,
         }
         response = await async_client.post("/api/v1/github-backup/config", json=data)
@@ -37,6 +39,8 @@ class TestGitHubBackupConfigAPI:
         assert result["branch"] == "main"
         assert result["has_token"] is True
         assert result["enabled"] is True
+        assert result["backup_spools"] is False
+        assert result["backup_archives"] is False
         # Token should not be exposed in response
         assert "access_token" not in result
 
@@ -69,6 +73,30 @@ class TestGitHubBackupConfigAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_create_config_with_spools_and_archives(self, async_client: AsyncClient):
+        """Verify config with spool and archive backup enabled."""
+        data = {
+            "repository_url": "https://github.com/test/spoolarchive",
+            "access_token": "ghp_spooltoken",
+            "branch": "main",
+            "schedule_enabled": False,
+            "schedule_type": "daily",
+            "backup_kprofiles": True,
+            "backup_cloud_profiles": False,
+            "backup_settings": False,
+            "backup_spools": True,
+            "backup_archives": True,
+            "enabled": True,
+        }
+        response = await async_client.post("/api/v1/github-backup/config", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["backup_spools"] is True
+        assert result["backup_archives"] is True
+        assert result["backup_cloud_profiles"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_update_config_partial(self, async_client: AsyncClient):
         """Verify partial update of GitHub backup config."""
         # Create config first
@@ -81,6 +109,8 @@ class TestGitHubBackupConfigAPI:
             "backup_kprofiles": True,
             "backup_cloud_profiles": True,
             "backup_settings": False,
+            "backup_spools": False,
+            "backup_archives": False,
             "enabled": True,
         }
         await async_client.post("/api/v1/github-backup/config", json=create_data)
@@ -97,6 +127,40 @@ class TestGitHubBackupConfigAPI:
         assert result["schedule_enabled"] is True
         # Original values should be preserved
         assert result["repository_url"] == "https://github.com/test/update"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_config_enable_spools_and_archives(self, async_client: AsyncClient):
+        """Verify partial update can enable spool and archive backup."""
+        # Create config first
+        create_data = {
+            "repository_url": "https://github.com/test/updatetoggle",
+            "access_token": "ghp_toggletoken",
+            "branch": "main",
+            "schedule_enabled": False,
+            "schedule_type": "daily",
+            "backup_kprofiles": True,
+            "backup_cloud_profiles": True,
+            "backup_settings": False,
+            "backup_spools": False,
+            "backup_archives": False,
+            "enabled": True,
+        }
+        await async_client.post("/api/v1/github-backup/config", json=create_data)
+
+        # Enable spools and archives via partial update
+        update_data = {
+            "backup_spools": True,
+            "backup_archives": True,
+        }
+        response = await async_client.patch("/api/v1/github-backup/config", json=update_data)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["backup_spools"] is True
+        assert result["backup_archives"] is True
+        # Other values preserved
+        assert result["backup_kprofiles"] is True
+        assert result["backup_settings"] is False
 
     @pytest.mark.asyncio
     @pytest.mark.integration

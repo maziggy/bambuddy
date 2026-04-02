@@ -1715,6 +1715,8 @@ export interface GitHubBackupConfig {
   backup_kprofiles: boolean;
   backup_cloud_profiles: boolean;
   backup_settings: boolean;
+  backup_spools: boolean;
+  backup_archives: boolean;
   enabled: boolean;
   last_backup_at: string | null;
   last_backup_status: string | null;
@@ -1734,6 +1736,8 @@ export interface GitHubBackupConfigCreate {
   backup_kprofiles?: boolean;
   backup_cloud_profiles?: boolean;
   backup_settings?: boolean;
+  backup_spools?: boolean;
+  backup_archives?: boolean;
   enabled?: boolean;
 }
 

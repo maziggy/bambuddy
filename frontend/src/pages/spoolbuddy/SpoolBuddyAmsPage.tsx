@@ -125,17 +125,18 @@ export function SpoolBuddyAmsPage() {
 
   const isConnected = status?.connected ?? false;
 
-  // Cache AMS data to prevent it disappearing on idle/offline printers
-  const cachedAmsData = useRef<PrinterStatus['ams']>([]);
+  // Cache AMS data per printer to prevent it disappearing on idle/offline printers
+  const cachedAmsData = useRef<Record<number, PrinterStatus['ams']>>({});
   useEffect(() => {
-    if (status?.ams && status.ams.length > 0) {
-      cachedAmsData.current = status.ams;
+    if (selectedPrinterId && status?.ams && status.ams.length > 0) {
+      cachedAmsData.current[selectedPrinterId] = status.ams;
     }
-  }, [status?.ams]);
+  }, [status?.ams, selectedPrinterId]);
   const amsUnits = useMemo(() => {
     const live = status?.ams;
-    return (live && live.length > 0) ? live : (cachedAmsData.current ?? []);
-  }, [status?.ams]);
+    if (live && live.length > 0) return live;
+    return (selectedPrinterId ? cachedAmsData.current[selectedPrinterId] : null) ?? [];
+  }, [status?.ams, selectedPrinterId]);
   const regularAms = useMemo(() => amsUnits.filter(u => !u.is_ams_ht), [amsUnits]);
   const htAms = useMemo(() => amsUnits.filter(u => u.is_ams_ht), [amsUnits]);
 

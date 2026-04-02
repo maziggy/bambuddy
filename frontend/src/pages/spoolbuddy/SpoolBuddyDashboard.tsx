@@ -53,10 +53,12 @@ function IdleSpool() {
           {[0, 1, 2].map((i) => (
             <div
               key={i}
-              className="absolute rounded-full border border-green-500/30 spoolbuddy-optimized-ping"
+              className="absolute rounded-full border spoolbuddy-optimized-ping"
               style={{
                 width: 80,
                 height: 80,
+                borderColor: `${currentColor}4D`,
+                transition: 'border-color 140ms linear',
                 animationDelay: `${i * 0.8}s`,
               }}
             />
@@ -64,11 +66,12 @@ function IdleSpool() {
         </div>
 
         {/* Spool icon with lightweight radial glow */}
-        <div className="relative">
+        <div className="relative overflow-hidden rounded-full">
           <div
             className="absolute inset-0 rounded-full opacity-30 transition-colors duration-1000 spoolbuddy-spool-glow"
             style={{
               background: `radial-gradient(circle, ${currentColor} 0%, transparent 70%)`,
+              transition: 'background-color 140ms linear, opacity 140ms linear',
             }}
           />
           <div className="relative transition-transform duration-1000">

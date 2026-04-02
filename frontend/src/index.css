@@ -416,6 +416,10 @@ body {
     opacity: 0.25;
     transform: scale(1.2);
   }
+
+  .spoolbuddy-spool-glow {
+    transition: none;
+  }
 }
 
 /* Card shadows - uses theme-specific shadow */

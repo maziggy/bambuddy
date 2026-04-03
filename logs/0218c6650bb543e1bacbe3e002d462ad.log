@@ -1,0 +1,200 @@
+2026-04-03 17:43:14,943 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: added 30s, total=35615s (9.89h)
+2026-04-03 17:43:14,944 DEBUG [backend.app.main] Updated runtime for 1 printer(s)
+2026-04-03 17:43:17,312 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:43:17,312 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -44dBm
+2026-04-03 17:43:19,345 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:43:20,669 DEBUG [backend.app.services.virtual_printer.mqtt_server] MQTT client disconnected: [IP]:9833
+2026-04-03 17:43:23,037 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': False}
+2026-04-03 17:43:23,037 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-04-03 17:43:23,037 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: Gridfinity_bin_2x1x5.gcode.3mf, subtask_name: Gridfinity_bin_2x1x5
+2026-04-03 17:43:23,037 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'b', 'tray_is_bbl_bits': 'b', 'tray_tar': '3', 'tray_now': '3', 'tray_pre': '3', 'tray_read_done_bits': 'b', 'tray_reading_bits': '0', 'version': 62, 'insert_flag': True, 'power_on_flag': True}
+2026-04-03 17:43:23,037 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] tray_now updated: 3
+2026-04-03 17:43:23,037 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-04-03 17:43:23,038 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1002 -> extruder 0
+2026-04-03 17:43:23,038 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-04-03 17:43:23,038 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-04-03 17:43:23,038 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:43:23,038 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper raw value: 5.0
+2026-04-03 17:43:23,038 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-04-03 17:43:23,038 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-04-03 17:43:23,038 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-04-03 17:43:23,038 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: []
+2026-04-03 17:43:23,038 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-04-03 17:43:23,038 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -44dBm
+2026-04-03 17:43:23,038 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-04-03 17:43:23,038 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: Gridfinity_bin_2x1x5.gcode.3mf, subtask: Gridfinity_bin_2x1x5
+2026-04-03 17:43:23,051 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] AMS unit 0: serial number not available in version info
+2026-04-03 17:43:23,051 WARNING [backend.app.services.bambu_mqtt] [[SERIAL]] AMS unit 0: firmware version not available in version info
+2026-04-03 17:43:24,015 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: extrusion_cali_get
+2026-04-03 17:43:25,092 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:43:27,107 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:43:29,160 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:43:29,160 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -46dBm
+2026-04-03 17:43:30,863 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-03 17:43:31,191 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:43:31,191 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -43dBm
+2026-04-03 17:43:35,241 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:43:37,276 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:43:39,316 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:43:41,360 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:43:41,360 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -45dBm
+2026-04-03 17:43:43,383 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:43:43,383 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -43dBm
+2026-04-03 17:43:44,944 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: added 30s, total=35645s (9.90h)
+2026-04-03 17:43:44,945 DEBUG [backend.app.main] Updated runtime for 1 printer(s)
+2026-04-03 17:43:45,415 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:43:49,474 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:43:49,475 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -44dBm
+2026-04-03 17:43:51,494 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:43:53,545 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:43:55,560 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:43:57,594 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:44:00,945 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-03 17:44:01,652 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:44:03,678 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:44:07,725 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:44:09,744 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:44:11,773 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:44:14,947 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: added 30s, total=35675s (9.91h)
+2026-04-03 17:44:14,948 DEBUG [backend.app.main] Updated runtime for 1 printer(s)
+2026-04-03 17:44:15,846 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:44:19,901 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:44:21,930 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:44:26,007 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:44:30,048 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:44:31,042 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-03 17:44:32,087 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:44:36,123 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:44:38,160 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:44:42,210 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:44:44,243 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:44:44,948 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: added 30s, total=35705s (9.92h)
+2026-04-03 17:44:44,949 DEBUG [backend.app.main] Updated runtime for 1 printer(s)
+2026-04-03 17:44:46,272 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:44:48,307 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:44:48,307 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -42dBm
+2026-04-03 17:44:50,359 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:44:50,359 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -44dBm
+2026-04-03 17:44:52,391 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:44:52,391 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -43dBm
+2026-04-03 17:44:58,475 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:45:00,509 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:45:00,509 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -45dBm
+2026-04-03 17:45:01,049 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-03 17:45:02,537 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:45:02,537 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -43dBm
+2026-04-03 17:45:08,589 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:45:10,637 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:45:12,659 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:45:12,659 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -42dBm
+2026-04-03 17:45:14,950 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: added 30s, total=35735s (9.93h)
+2026-04-03 17:45:14,951 DEBUG [backend.app.main] Updated runtime for 1 printer(s)
+2026-04-03 17:45:16,708 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:45:18,753 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:45:20,769 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:45:22,813 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:45:22,813 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -44dBm
+2026-04-03 17:45:22,815 INFO [backend.app.main] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-04-03 17:45:22,815 INFO [backend.app.services.camera] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-04-03 17:45:25,655 DEBUG [backend.app.services.camera] Chamber image: received 157531 bytes
+2026-04-03 17:45:25,660 INFO [backend.app.main] [SNAPSHOT] Fresh camera frame: 157531 bytes
+2026-04-03 17:45:26,889 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:45:26,889 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -42dBm
+2026-04-03 17:45:28,948 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:45:30,994 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:45:31,058 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-03 17:45:33,036 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:45:35,081 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:45:37,103 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:45:41,177 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:45:41,178 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -44dBm
+2026-04-03 17:45:43,202 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:45:43,202 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -43dBm
+2026-04-03 17:45:44,952 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: added 30s, total=35765s (9.93h)
+2026-04-03 17:45:44,953 DEBUG [backend.app.main] Updated runtime for 1 printer(s)
+2026-04-03 17:45:45,246 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:45:45,246 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -44dBm
+2026-04-03 17:45:47,281 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:45:49,307 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:45:53,346 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:01,077 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-03 17:46:01,398 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:01,398 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -43dBm
+2026-04-03 17:46:03,442 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:03,442 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -44dBm
+2026-04-03 17:46:07,504 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:07,504 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -43dBm
+2026-04-03 17:46:09,555 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:09,555 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -44dBm
+2026-04-03 17:46:11,641 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:13,685 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:14,953 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: added 30s, total=35795s (9.94h)
+2026-04-03 17:46:14,954 DEBUG [backend.app.main] Updated runtime for 1 printer(s)
+2026-04-03 17:46:15,707 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:17,750 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:21,805 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:21,805 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -43dBm
+2026-04-03 17:46:23,838 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:23,838 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -44dBm
+2026-04-03 17:46:25,867 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:27,903 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:29,942 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:31,089 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-03 17:46:33,998 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:36,035 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:38,078 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:39,962 INFO [backend.app.main] Recorded 1 AMS sensor history entries
+2026-04-03 17:46:40,106 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:44,163 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:44,955 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: added 30s, total=35825s (9.95h)
+2026-04-03 17:46:44,956 DEBUG [backend.app.main] Updated runtime for 1 printer(s)
+2026-04-03 17:46:46,189 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:48,222 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:50,267 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:52,289 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:52,289 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -43dBm
+2026-04-03 17:46:56,370 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:58,414 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:46:58,414 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -44dBm
+2026-04-03 17:47:00,458 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:47:00,458 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -42dBm
+2026-04-03 17:47:01,166 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-03 17:47:02,479 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:47:08,503 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:47:14,957 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: added 30s, total=35855s (9.96h)
+2026-04-03 17:47:14,958 DEBUG [backend.app.main] Updated runtime for 1 printer(s)
+2026-04-03 17:47:16,558 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:47:16,559 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -43dBm
+2026-04-03 17:47:20,606 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:47:20,606 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -42dBm
+2026-04-03 17:47:22,658 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:47:22,659 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -44dBm
+2026-04-03 17:47:24,681 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:47:26,708 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:47:28,763 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:47:30,800 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:47:30,800 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -43dBm
+2026-04-03 17:47:31,239 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-03 17:47:34,849 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:47:34,850 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -44dBm
+2026-04-03 17:47:36,876 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:47:38,905 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:47:38,905 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -43dBm
+2026-04-03 17:47:40,973 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:47:44,960 DEBUG [backend.app.main] [[PRINTER]] Runtime tracking: added 30s, total=35885s (9.97h)
+2026-04-03 17:47:44,961 DEBUG [backend.app.main] Updated runtime for 1 printer(s)
+2026-04-03 17:47:45,030 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:47:45,030 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -44dBm
+2026-04-03 17:47:47,084 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:47:49,123 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:47:51,151 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:47:55,200 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:47:57,240 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:47:59,283 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:48:01,322 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:48:01,326 DEBUG [backend.app.services.virtual_printer.ssdp_server] Sent SSDP NOTIFY for Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-04-03 17:48:03,366 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:48:05,402 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:48:07,420 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:48:11,487 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-03 17:48:13,512 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status

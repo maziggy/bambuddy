@@ -1,8 +1,9 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Check, AlertTriangle, RefreshCw } from 'lucide-react';
 import type { InventorySpool } from '../../api/client';
-import { spoolbuddyApi } from '../../api/client';
+import { spoolbuddyApi, api } from '../../api/client';
 import { SpoolIcon } from './SpoolIcon';
 
 const DEFAULT_CORE_WEIGHT_KEY = 'spoolbuddy-default-core-weight';
@@ -43,6 +44,18 @@ export function InventorySpoolInfoCard({
   const [syncing, setSyncing] = useState(false);
   const [synced, setSynced] = useState(false);
   const [syncedGrossWeight, setSyncedGrossWeight] = useState<number | null>(null);
+
+  // Fetch k_profiles if not already present in the spool object
+  const { data: fetchedKProfiles } = useQuery({
+    queryKey: ['spool-k-profiles', spool.id],
+    queryFn: () => api.getSpoolKProfiles(spool.id),
+    // Only fetch if k_profiles is not already in the spool object
+    enabled: !spool.k_profiles || spool.k_profiles.length === 0,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Use fetched k_profiles if available, otherwise use the ones from the spool object
+  const kProfiles = (spool.k_profiles && spool.k_profiles.length > 0) ? spool.k_profiles : fetchedKProfiles;
 
   const colorHex = spool.rgba ? `#${spool.rgba.slice(0, 6)}` : '#808080';
 
@@ -95,8 +108,8 @@ export function InventorySpoolInfoCard({
     : null;
   const slicerPreset = spool.slicer_filament_name || spool.slicer_filament || null;
   const note = spool.note?.trim() || null;
-  const kFactorSummary = (spool.k_profiles && spool.k_profiles.length > 0)
-    ? Array.from(new Set(spool.k_profiles.map(kp => kp.k_value.toFixed(3)))).join(', ')
+  const kFactorSummary = (kProfiles && kProfiles.length > 0)
+    ? Array.from(new Set(kProfiles.map(kp => kp.k_value.toFixed(3)))).join(', ')
     : null;
 
   const handleSyncWeight = async () => {

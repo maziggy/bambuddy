@@ -68,10 +68,9 @@ function IdleSpool() {
         {/* Spool icon with lightweight radial glow */}
         <div className="relative overflow-hidden rounded-full">
           <div
-            className="absolute inset-0 rounded-full opacity-30 transition-colors duration-1000 spoolbuddy-spool-glow"
+            className="absolute inset-0 rounded-full opacity-30 spoolbuddy-spool-glow"
             style={{
               background: `radial-gradient(circle, ${currentColor} 0%, transparent 70%)`,
-              transition: 'background-color 140ms linear, opacity 140ms linear',
             }}
           />
           <div className="relative" style={{ transition: 'opacity 140ms linear' }}>

@@ -46,16 +46,36 @@ function IdleSpool() {
 
   return (
     <div className="flex flex-col items-center text-center">
-      {/* Spool with single subtle NFC ring */}
+      {/* Animated spool with optimized NFC waves */}
       <div className="relative mb-6 flex items-center justify-center" style={{ width: 160, height: 160 }}>
-        {/* Static NFC wave rings */}
-        <div className="absolute w-24 h-24 rounded-full border-2 border-green-500/30" />
-        <div className="absolute w-32 h-32 rounded-full border border-green-500/20" />
-        <div className="absolute w-40 h-40 rounded-full border border-green-500/10" />
+        {/* NFC wave rings: transform + opacity only for Pi-friendly rendering */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          {[0, 1].map((i) => (
+            <div
+              key={i}
+              className="absolute rounded-full border spoolbuddy-optimized-ping"
+              style={{
+                width: 80,
+                height: 80,
+                borderColor: `${currentColor}4D`,
+                transition: 'border-color 140ms linear',
+                animationDelay: `${i * 0.8}s`,
+              }}
+            />
+          ))}
+        </div>
 
-        {/* Spool icon with slow color transition */}
-        <div className="relative transition-colors duration-[2000ms]">
-          <SpoolIcon color={currentColor} isEmpty={false} size={100} />
+        {/* Spool icon with lightweight radial glow */}
+        <div className="relative overflow-hidden rounded-full">
+          <div
+            className="absolute inset-0 rounded-full opacity-30 spoolbuddy-spool-glow"
+            style={{
+              background: `radial-gradient(circle, ${currentColor} 0%, transparent 70%)`,
+            }}
+          />
+          <div className="relative" style={{ transition: 'opacity 140ms linear' }}>
+            <SpoolIcon color={currentColor} isEmpty={false} size={100} />
+          </div>
         </div>
       </div>
 

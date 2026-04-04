@@ -409,6 +409,7 @@ body {
 .spoolbuddy-spool-glow {
   transform: scale(2.0);
   will-change: auto;
+  transition: background 140ms linear, opacity 140ms linear;
 }
 
 @media (prefers-reduced-motion: reduce) {

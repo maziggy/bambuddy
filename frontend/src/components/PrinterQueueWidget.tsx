@@ -13,11 +13,12 @@ interface PrinterQueueWidgetProps {
   printerModel?: string | null;
   printerState?: string | null;
   plateCleared?: boolean;
+  requirePlateClear?: boolean;
   loadedFilamentTypes?: Set<string>;
   loadedFilaments?: Set<string>;  // "TYPE:rrggbb" pairs for filament override color matching
 }
 
-export function PrinterQueueWidget({ printerId, printerModel, printerState, plateCleared, loadedFilamentTypes, loadedFilaments }: PrinterQueueWidgetProps) {
+export function PrinterQueueWidget({ printerId, printerModel, printerState, plateCleared, requirePlateClear = true, loadedFilamentTypes, loadedFilaments }: PrinterQueueWidgetProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -54,7 +55,7 @@ export function PrinterQueueWidget({ printerId, printerModel, printerState, plat
   const nextAutoItem = autoDispatchQueue[0];
   const nextItem = compatibleQueue?.[0];
   // Only prompt "Clear Plate & Start Next" when there are auto-dispatchable items
-  const needsClearPlate = (printerState === 'FINISH' || printerState === 'FAILED') && !plateCleared && autoDispatchQueue.length > 0;
+  const needsClearPlate = requirePlateClear && (printerState === 'FINISH' || printerState === 'FAILED') && !plateCleared && autoDispatchQueue.length > 0;
 
   if (needsClearPlate) {
     const displayItem = nextAutoItem || nextItem;

@@ -3471,6 +3471,7 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
+
           </div>
           {/* Right Column */}
           <div className="lg:w-1/2 space-y-6">

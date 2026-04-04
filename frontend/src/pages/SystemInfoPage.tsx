@@ -357,6 +357,18 @@ export function SystemInfoPage() {
 
       {/* Database Stats */}
       <Section title={t('system.database', 'Database')} icon={Database}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <StatCard
+            icon={Database}
+            label={t('system.dbEngine', 'Database Engine')}
+            value={systemInfo.database.engine || 'SQLite'}
+          />
+          <StatCard
+            icon={Database}
+            label={t('system.dbVersion', 'Version')}
+            value={systemInfo.database.version || 'unknown'}
+          />
+        </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
           <StatCard
             icon={Archive}

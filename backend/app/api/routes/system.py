@@ -80,6 +80,10 @@ def _is_under(path: Path, root: Path) -> bool:
 
 
 def _get_database_paths() -> list[Path]:
+    from backend.app.core.db_dialect import is_sqlite
+
+    if not is_sqlite():
+        return []  # PostgreSQL — no local DB files
     candidates = [settings.base_dir / "bambuddy.db", settings.base_dir / "bambutrack.db"]
     return [path for path in candidates if path.exists()]
 
@@ -449,9 +453,38 @@ async def get_system_info(
     archive_dir = settings.archive_dir
     archive_size = get_directory_size(archive_dir) if archive_dir.exists() else 0
 
-    # Database file size
-    db_path = settings.base_dir / "bambuddy.db"
-    db_size = db_path.stat().st_size if db_path.exists() else 0
+    # Database info (engine type, version, size)
+    from backend.app.core.db_dialect import is_postgres, is_sqlite
+
+    db_engine_info: dict = {"engine": "unknown", "version": "unknown"}
+    db_size = 0
+    try:
+        if is_postgres():
+            from sqlalchemy import text
+
+            result = await db.execute(text("SELECT version()"))
+            pg_version_full = result.scalar() or "unknown"
+            # e.g. "PostgreSQL 16.2 on x86_64..." → "PostgreSQL 16.2"
+            pg_version = " ".join(pg_version_full.split()[:2])
+            result = await db.execute(text("SELECT pg_database_size(current_database())"))
+            db_size = result.scalar() or 0
+            db_engine_info = {
+                "engine": "PostgreSQL",
+                "version": pg_version,
+            }
+        elif is_sqlite():
+            from sqlalchemy import text
+
+            result = await db.execute(text("SELECT sqlite_version()"))
+            sqlite_ver = result.scalar() or "unknown"
+            db_path = settings.base_dir / "bambuddy.db"
+            db_size = db_path.stat().st_size if db_path.exists() else 0
+            db_engine_info = {
+                "engine": "SQLite",
+                "version": f"SQLite {sqlite_ver}",
+            }
+    except Exception:
+        pass
 
     # Disk usage
     disk = psutil.disk_usage(str(settings.base_dir))
@@ -471,6 +504,8 @@ async def get_system_info(
             "archive_dir": str(archive_dir),
         },
         "database": {
+            "engine": db_engine_info["engine"],
+            "version": db_engine_info["version"],
             "archives": archive_count,
             "archives_completed": completed_count,
             "archives_failed": failed_count,

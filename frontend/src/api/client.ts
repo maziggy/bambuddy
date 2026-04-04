@@ -898,6 +898,8 @@ export interface AppSettings {
   stagger_interval_minutes: number;
   // Plate-clear confirmation
   require_plate_clear: boolean;
+  // Shortest job first scheduling
+  queue_shortest_first: boolean;
   // Default sidebar order (admin-set for all users)
   default_sidebar_order: string;
 }
@@ -1111,8 +1113,12 @@ export interface SmartPlug {
   rest_status_url: string | null;
   rest_status_path: string | null;
   rest_status_on_value: string | null;
+  rest_power_url: string | null;
   rest_power_path: string | null;
+  rest_power_multiplier: number;
+  rest_energy_url: string | null;
   rest_energy_path: string | null;
+  rest_energy_multiplier: number;
   printer_id: number | null;
   enabled: boolean;
   auto_on: boolean;
@@ -1178,8 +1184,12 @@ export interface SmartPlugCreate {
   rest_status_url?: string | null;
   rest_status_path?: string | null;
   rest_status_on_value?: string | null;
+  rest_power_url?: string | null;
   rest_power_path?: string | null;
+  rest_power_multiplier?: number;
+  rest_energy_url?: string | null;
   rest_energy_path?: string | null;
+  rest_energy_multiplier?: number;
   printer_id?: number | null;
   enabled?: boolean;
   auto_on?: boolean;
@@ -1237,8 +1247,12 @@ export interface SmartPlugUpdate {
   rest_status_url?: string | null;
   rest_status_path?: string | null;
   rest_status_on_value?: string | null;
+  rest_power_url?: string | null;
   rest_power_path?: string | null;
+  rest_power_multiplier?: number;
+  rest_energy_url?: string | null;
   rest_energy_path?: string | null;
+  rest_energy_multiplier?: number;
   printer_id?: number | null;
   enabled?: boolean;
   auto_on?: boolean;
@@ -1368,6 +1382,8 @@ export interface PrintQueueItem {
   // Batch grouping
   batch_id?: number | null;
   batch_name?: string | null;
+  // Shortest-job-first scheduling
+  been_jumped?: boolean;
 }
 
 export interface PrintBatch {
@@ -4461,6 +4477,8 @@ export interface SystemInfo {
     archive_dir: string;
   };
   database: {
+    engine: string;
+    version: string;
     archives: number;
     archives_completed: number;
     archives_failed: number;

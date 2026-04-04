@@ -356,19 +356,37 @@ async def search_archives(
     from sqlalchemy import text
     from sqlalchemy.orm import selectinload
 
-    # Prepare search query - add wildcard for partial matches
-    search_term = q.strip()
-    if not search_term.endswith("*"):
-        search_term = f"{search_term}*"
+    from backend.app.core.db_dialect import is_sqlite
 
-    # Build the FTS query
-    # Using MATCH for FTS5 full-text search
-    fts_query = text("""
-        SELECT rowid FROM archive_fts
-        WHERE archive_fts MATCH :search_term
-        ORDER BY rank
-        LIMIT :limit OFFSET :offset
-    """)
+    search_term = q.strip()
+
+    # Build dialect-specific full-text search query
+    if is_sqlite():
+        # SQLite FTS5: wildcard suffix for partial matches
+        if not search_term.endswith("*"):
+            search_term = f"{search_term}*"
+        fts_query = text("""
+            SELECT rowid FROM archive_fts
+            WHERE archive_fts MATCH :search_term
+            ORDER BY rank
+            LIMIT :limit OFFSET :offset
+        """)
+    else:
+        # PostgreSQL: tsvector + plainto_tsquery with prefix matching
+        fts_query = text("""
+            SELECT id FROM print_archives
+            WHERE to_tsvector('simple',
+                COALESCE(print_name, '') || ' ' ||
+                COALESCE(filename, '') || ' ' ||
+                COALESCE(tags, '') || ' ' ||
+                COALESCE(notes, '') || ' ' ||
+                COALESCE(designer, '') || ' ' ||
+                COALESCE(filament_type, '')
+            ) @@ to_tsquery('simple', :search_term)
+            LIMIT :limit OFFSET :offset
+        """)
+        # Convert "benchy" to "benchy:*" for prefix matching in tsquery
+        search_term = " & ".join(f"{word}:*" for word in search_term.split() if word)
 
     try:
         result = await db.execute(fts_query, {"search_term": search_term, "limit": limit + 100, "offset": 0})
@@ -438,24 +456,30 @@ async def rebuild_search_index(
     """
     from sqlalchemy import text
 
+    from backend.app.core.db_dialect import is_sqlite
+
     try:
-        # Clear and rebuild the FTS index
-        await db.execute(text("DELETE FROM archive_fts"))
+        if is_sqlite():
+            # SQLite: rebuild FTS5 virtual table
+            await db.execute(text("DELETE FROM archive_fts"))
+            await db.execute(
+                text("""
+                INSERT INTO archive_fts(rowid, print_name, filename, tags, notes, designer, filament_type)
+                SELECT id, print_name, filename, tags, notes, designer, filament_type
+                FROM print_archives
+            """)
+            )
+            await db.commit()
 
-        # Repopulate from print_archives
-        await db.execute(
-            text("""
-            INSERT INTO archive_fts(rowid, print_name, filename, tags, notes, designer, filament_type)
-            SELECT id, print_name, filename, tags, notes, designer, filament_type
-            FROM print_archives
-        """)
-        )
+            result = await db.execute(text("SELECT COUNT(*) FROM archive_fts"))
+            count = result.scalar() or 0
+        else:
+            # PostgreSQL: GIN index is auto-maintained, just reindex
+            await db.execute(text("REINDEX INDEX idx_archives_fulltext"))
+            await db.commit()
 
-        await db.commit()
-
-        # Count entries
-        result = await db.execute(text("SELECT COUNT(*) FROM archive_fts"))
-        count = result.scalar() or 0
+            result = await db.execute(text("SELECT COUNT(*) FROM print_archives"))
+            count = result.scalar() or 0
 
         return {"message": f"Search index rebuilt with {count} entries"}
     except Exception as e:

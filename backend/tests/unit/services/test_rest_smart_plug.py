@@ -28,8 +28,12 @@ def mock_plug():
     plug.rest_status_url = "http://192.168.1.50:8080/api/plug/status"
     plug.rest_status_path = "state"
     plug.rest_status_on_value = "ON"
+    plug.rest_power_url = None
     plug.rest_power_path = "power"
+    plug.rest_power_multiplier = 1.0
+    plug.rest_energy_url = None
     plug.rest_energy_path = "energy.today"
+    plug.rest_energy_multiplier = 1.0
     return plug
 
 
@@ -181,8 +185,11 @@ class TestGetEnergy:
         assert result["today"] == 1.23
 
     @pytest.mark.asyncio
-    async def test_energy_no_status_url(self, service, mock_plug):
+    async def test_energy_no_status_url_no_separate_urls(self, service, mock_plug):
+        """No URLs at all (status=None, power_url=None, energy_url=None) → None."""
         mock_plug.rest_status_url = None
+        mock_plug.rest_power_url = None
+        mock_plug.rest_energy_url = None
         result = await service.get_energy(mock_plug)
         assert result is None
 
@@ -192,6 +199,88 @@ class TestGetEnergy:
         mock_plug.rest_energy_path = None
         result = await service.get_energy(mock_plug)
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_energy_with_separate_urls(self, service, mock_plug):
+        """Power and energy fetched from different URLs."""
+        mock_plug.rest_power_url = "http://192.168.1.50:8087/power"
+        mock_plug.rest_energy_url = "http://192.168.1.50:8087/energy"
+
+        power_response = MagicMock()
+        power_response.json.return_value = {"power": 9.5}
+        energy_response = MagicMock()
+        energy_response.json.return_value = {"energy": {"today": 30947.07}}
+
+        call_count = 0
+
+        async def mock_send(url, method="GET", headers=None, body=None):
+            nonlocal call_count
+            call_count += 1
+            if "power" in url:
+                return power_response
+            return energy_response
+
+        with patch.object(service, "_send_request", side_effect=mock_send):
+            result = await service.get_energy(mock_plug)
+
+        assert call_count == 2
+        assert result["power"] == 9.5
+        assert result["today"] == 30947.07
+
+    @pytest.mark.asyncio
+    async def test_energy_with_multipliers(self, service, mock_plug):
+        """Multipliers convert units (e.g., Wh → kWh)."""
+        mock_plug.rest_energy_multiplier = 0.001  # Wh → kWh
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"power": 9.5, "energy": {"today": 30947.07}}
+
+        with patch.object(service, "_send_request", new_callable=AsyncMock, return_value=mock_response):
+            result = await service.get_energy(mock_plug)
+
+        assert result["power"] == 9.5  # No multiplier (default 1.0)
+        assert result["today"] == pytest.approx(30.94707)  # 30947.07 * 0.001
+
+    @pytest.mark.asyncio
+    async def test_energy_separate_url_falls_back_to_status(self, service, mock_plug):
+        """When no separate URL is set, falls back to status URL."""
+        mock_plug.rest_power_url = None
+        mock_plug.rest_energy_url = None
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"power": 42.5, "energy": {"today": 1.23}}
+
+        with patch.object(service, "_send_request", new_callable=AsyncMock, return_value=mock_response):
+            result = await service.get_energy(mock_plug)
+
+        assert result["power"] == 42.5
+        assert result["today"] == 1.23
+
+    @pytest.mark.asyncio
+    async def test_energy_no_urls_at_all(self, service, mock_plug):
+        """No status URL and no separate URLs → None."""
+        mock_plug.rest_status_url = None
+        mock_plug.rest_power_url = None
+        mock_plug.rest_energy_url = None
+
+        result = await service.get_energy(mock_plug)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_energy_deduplicates_same_url(self, service, mock_plug):
+        """When power and energy both fall back to status URL, only one HTTP request is made."""
+        mock_plug.rest_power_url = None
+        mock_plug.rest_energy_url = None
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"power": 42.5, "energy": {"today": 1.23}}
+
+        with patch.object(service, "_send_request", new_callable=AsyncMock, return_value=mock_response) as mock_send:
+            result = await service.get_energy(mock_plug)
+
+        assert mock_send.call_count == 1
+        assert result["power"] == 42.5
+        assert result["today"] == 1.23
 
 
 class TestTestConnection:

@@ -62,9 +62,15 @@ class SmartPlug(Base):
     rest_status_url: Mapped[str | None] = mapped_column(String(500), nullable=True)  # GET endpoint for state
     rest_status_path: Mapped[str | None] = mapped_column(String(200), nullable=True)  # JSON path to state value
     rest_status_on_value: Mapped[str | None] = mapped_column(String(50), nullable=True)  # What value means ON
-    # Energy monitoring (optional, extracted from status response)
+    # Energy monitoring (optional — can use separate URLs or extract from status response)
+    rest_power_url: Mapped[str | None] = mapped_column(String(500), nullable=True)  # Separate URL for power data
     rest_power_path: Mapped[str | None] = mapped_column(String(200), nullable=True)  # JSON path for power (watts)
+    rest_power_multiplier: Mapped[float] = mapped_column(Float, server_default="1.0")  # Unit conversion for power
+    rest_energy_url: Mapped[str | None] = mapped_column(String(500), nullable=True)  # Separate URL for energy data
     rest_energy_path: Mapped[str | None] = mapped_column(String(200), nullable=True)  # JSON path for energy (kWh)
+    rest_energy_multiplier: Mapped[float] = mapped_column(
+        Float, server_default="1.0"
+    )  # Unit conversion (e.g., 0.001 for Wh→kWh)
 
     # Link to printer (multiple plugs/scripts can be linked to one printer)
     printer_id: Mapped[int | None] = mapped_column(ForeignKey("printers.id", ondelete="SET NULL"), nullable=True)

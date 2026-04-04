@@ -3852,13 +3852,16 @@ async def lifespan(app: FastAPI):
 
     await mqtt_relay.disconnect(timeout=2)
 
-    # Checkpoint WAL and close all database connections
-    try:
-        async with engine.begin() as conn:
-            await conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
-        logging.info("WAL checkpoint completed")
-    except Exception as e:
-        logging.warning("WAL checkpoint failed: %s", e)
+    # Checkpoint WAL (SQLite only) and close all database connections
+    from backend.app.core.db_dialect import is_sqlite
+
+    if is_sqlite():
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+            logging.info("WAL checkpoint completed")
+        except Exception as e:
+            logging.warning("WAL checkpoint failed: %s", e)
     await engine.dispose()
 
 

@@ -47,8 +47,28 @@ services:
       # Required for FTP passive mode to work behind NAT.
       # Example: VIRTUAL_PRINTER_PASV_ADDRESS=192.168.1.100
       #- VIRTUAL_PRINTER_PASV_ADDRESS=
+      #
+      # External PostgreSQL (optional — uses SQLite by default)
+      # Example: DATABASE_URL=postgresql+asyncpg://bambuddy:password@db-host:5432/bambuddy
+      #- DATABASE_URL=
     restart: unless-stopped
+
+  # Optional: External PostgreSQL database
+  # Uncomment to run Postgres alongside Bambuddy (or use an external Postgres host)
+  #postgres:
+  #  image: postgres:16-alpine
+  #  container_name: bambuddy-db
+  #  restart: unless-stopped
+  #  environment:
+  #    POSTGRES_USER: bambuddy
+  #    POSTGRES_PASSWORD: changeme
+  #    POSTGRES_DB: bambuddy
+  #  volumes:
+  #    - bambuddy_pgdata:/var/lib/postgresql/data
+  #  ports:
+  #    - "5432:5432"
 
 volumes:
   bambuddy_data:
   bambuddy_logs:
+  #bambuddy_pgdata:

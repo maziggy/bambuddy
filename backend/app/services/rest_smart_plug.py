@@ -191,43 +191,57 @@ class RESTSmartPlugService:
         return {"state": state, "reachable": True, "device_name": None}
 
     async def get_energy(self, plug: "SmartPlug") -> dict | None:
-        """Get energy monitoring data from the status endpoint.
+        """Get energy monitoring data.
+
+        Each value (power, energy) can come from its own URL or fall back to the shared status URL.
+        Multipliers are applied to convert units (e.g., Wh → kWh with multiplier 0.001).
 
         Returns dict with energy data or None if not available.
         """
-        if not plug.rest_status_url or (not plug.rest_power_path and not plug.rest_energy_path):
+        if not plug.rest_power_path and not plug.rest_energy_path:
             return None
 
         headers = self._parse_headers(plug.rest_headers)
-        response = await self._send_request(plug.rest_status_url, "GET", headers)
-
-        if response is None:
-            return None
-
-        try:
-            data = response.json()
-        except Exception:
-            return None
-
         energy: dict[str, float | None] = {}
 
-        if plug.rest_power_path:
-            raw = self._extract_json_path(data, plug.rest_power_path)
+        power_url = plug.rest_power_url or plug.rest_status_url if plug.rest_power_path else None
+        energy_url = plug.rest_energy_url or plug.rest_status_url if plug.rest_energy_path else None
+
+        # Fetch data — deduplicate when both resolve to the same URL
+        fetched: dict[str, Any] = {}
+
+        for url in {power_url, energy_url} - {None}:
+            fetched[url] = await self._fetch_json(url, headers)
+
+        # Extract power value
+        if plug.rest_power_path and power_url and fetched.get(power_url) is not None:
+            raw = self._extract_json_path(fetched[power_url], plug.rest_power_path)
             if raw is not None:
                 try:
-                    energy["power"] = float(raw)
+                    energy["power"] = float(raw) * (plug.rest_power_multiplier or 1.0)
                 except (ValueError, TypeError):
                     pass
 
-        if plug.rest_energy_path:
-            raw = self._extract_json_path(data, plug.rest_energy_path)
+        # Extract energy value
+        if plug.rest_energy_path and energy_url and fetched.get(energy_url) is not None:
+            raw = self._extract_json_path(fetched[energy_url], plug.rest_energy_path)
             if raw is not None:
                 try:
-                    energy["today"] = float(raw)
+                    energy["today"] = float(raw) * (plug.rest_energy_multiplier or 1.0)
                 except (ValueError, TypeError):
                     pass
 
         return energy if energy else None
+
+    async def _fetch_json(self, url: str, headers: dict[str, str]) -> Any:
+        """Fetch a URL and parse JSON response. Returns parsed data or None."""
+        response = await self._send_request(url, "GET", headers)
+        if response is None:
+            return None
+        try:
+            return response.json()
+        except Exception:
+            return None
 
     async def test_connection(self, url: str, method: str = "GET", headers: str | None = None) -> dict:
         """Test connection to a REST endpoint.

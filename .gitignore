@@ -16,6 +16,7 @@ venv/
 .venv/
 env/
 .env
+docker-compose.override.yml
 *.egg-info/
 dist/
 build/
@@ -71,3 +72,4 @@ spoolbuddy/ssh/
 *.sarif
 
 debug_logs/
+db_backup/

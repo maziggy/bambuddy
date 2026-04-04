@@ -106,26 +106,16 @@ async def is_advanced_auth_enabled(db: AsyncSession) -> bool:
 
 async def set_advanced_auth_enabled(db: AsyncSession, enabled: bool) -> None:
     """Set advanced authentication enabled status."""
-    from sqlalchemy import func
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+    from backend.app.core.db_dialect import upsert_setting
 
-    stmt = sqlite_insert(Settings).values(key="advanced_auth_enabled", value="true" if enabled else "false")
-    stmt = stmt.on_conflict_do_update(
-        index_elements=["key"], set_={"value": "true" if enabled else "false", "updated_at": func.now()}
-    )
-    await db.execute(stmt)
+    await upsert_setting(db, Settings, "advanced_auth_enabled", "true" if enabled else "false")
 
 
 async def set_auth_enabled(db: AsyncSession, enabled: bool) -> None:
     """Set authentication enabled status."""
-    from sqlalchemy import func
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+    from backend.app.core.db_dialect import upsert_setting
 
-    stmt = sqlite_insert(Settings).values(key="auth_enabled", value="true" if enabled else "false")
-    stmt = stmt.on_conflict_do_update(
-        index_elements=["key"], set_={"value": "true" if enabled else "false", "updated_at": func.now()}
-    )
-    await db.execute(stmt)
+    await upsert_setting(db, Settings, "auth_enabled", "true" if enabled else "false")
     # Note: Don't commit here - let get_db handle it or commit explicitly in the route
 
 
@@ -138,14 +128,9 @@ async def is_setup_completed(db: AsyncSession) -> bool:
 
 async def set_setup_completed(db: AsyncSession, completed: bool) -> None:
     """Set setup completed status."""
-    from sqlalchemy import func
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+    from backend.app.core.db_dialect import upsert_setting
 
-    stmt = sqlite_insert(Settings).values(key="setup_completed", value="true" if completed else "false")
-    stmt = stmt.on_conflict_do_update(
-        index_elements=["key"], set_={"value": "true" if completed else "false", "updated_at": func.now()}
-    )
-    await db.execute(stmt)
+    await upsert_setting(db, Settings, "setup_completed", "true" if completed else "false")
     # Note: Don't commit here - let get_db handle it or commit explicitly in the route
 
 

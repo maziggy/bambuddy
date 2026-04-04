@@ -52,8 +52,12 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
   const [restStatusUrl, setRestStatusUrl] = useState(plug?.rest_status_url || '');
   const [restStatusPath, setRestStatusPath] = useState(plug?.rest_status_path || '');
   const [restStatusOnValue, setRestStatusOnValue] = useState(plug?.rest_status_on_value || '');
+  const [restPowerUrl, setRestPowerUrl] = useState(plug?.rest_power_url || '');
   const [restPowerPath, setRestPowerPath] = useState(plug?.rest_power_path || '');
+  const [restPowerMultiplier, setRestPowerMultiplier] = useState<string>((plug?.rest_power_multiplier ?? 1).toString());
+  const [restEnergyUrl, setRestEnergyUrl] = useState(plug?.rest_energy_url || '');
   const [restEnergyPath, setRestEnergyPath] = useState(plug?.rest_energy_path || '');
+  const [restEnergyMultiplier, setRestEnergyMultiplier] = useState<string>((plug?.rest_energy_multiplier ?? 1).toString());
   // HA energy sensor entities (optional)
   const [haPowerEntity, setHaPowerEntity] = useState(plug?.ha_power_entity || '');
   const [haEnergyTodayEntity, setHaEnergyTodayEntity] = useState(plug?.ha_energy_today_entity || '');
@@ -371,8 +375,12 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
       rest_status_url: plugType === 'rest' ? (restStatusUrl.trim() || null) : null,
       rest_status_path: plugType === 'rest' ? (restStatusPath.trim() || null) : null,
       rest_status_on_value: plugType === 'rest' ? (restStatusOnValue.trim() || null) : null,
+      rest_power_url: plugType === 'rest' ? (restPowerUrl.trim() || null) : null,
       rest_power_path: plugType === 'rest' ? (restPowerPath.trim() || null) : null,
+      rest_power_multiplier: plugType === 'rest' ? (parseFloat(restPowerMultiplier) || 1) : 1,
+      rest_energy_url: plugType === 'rest' ? (restEnergyUrl.trim() || null) : null,
       rest_energy_path: plugType === 'rest' ? (restEnergyPath.trim() || null) : null,
+      rest_energy_multiplier: plugType === 'rest' ? (parseFloat(restEnergyMultiplier) || 1) : 1,
       username: plugType === 'tasmota' ? (username.trim() || null) : null,
       password: plugType === 'tasmota' ? (password.trim() || null) : null,
       printer_id: printerId,
@@ -1236,6 +1244,18 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
               {/* Energy Monitoring (optional) */}
               <div className="space-y-3 p-3 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
                 <p className="text-white font-medium text-sm">{t('smartPlugs.energyMonitoring')} <span className="text-bambu-gray font-normal">({t('smartPlugs.optional')})</span></p>
+
+                {/* Power */}
+                <div>
+                  <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.restPowerUrl')} <span className="text-bambu-gray font-normal">({t('smartPlugs.optional')})</span></label>
+                  <input
+                    type="text"
+                    value={restPowerUrl}
+                    onChange={(e) => setRestPowerUrl(e.target.value)}
+                    placeholder={t('smartPlugs.restPowerUrlHint')}
+                    className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                  />
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.restPowerPath')}</label>
@@ -1248,6 +1268,30 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                     />
                   </div>
                   <div>
+                    <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.restPowerMultiplier')}</label>
+                    <input
+                      type="text"
+                      value={restPowerMultiplier}
+                      onChange={(e) => setRestPowerMultiplier(e.target.value)}
+                      placeholder="1"
+                      className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Energy */}
+                <div>
+                  <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.restEnergyUrl')} <span className="text-bambu-gray font-normal">({t('smartPlugs.optional')})</span></label>
+                  <input
+                    type="text"
+                    value={restEnergyUrl}
+                    onChange={(e) => setRestEnergyUrl(e.target.value)}
+                    placeholder={t('smartPlugs.restEnergyUrlHint')}
+                    className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
                     <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.restEnergyPath')}</label>
                     <input
                       type="text"
@@ -1257,7 +1301,18 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                       className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.restEnergyMultiplier')}</label>
+                    <input
+                      type="text"
+                      value={restEnergyMultiplier}
+                      onChange={(e) => setRestEnergyMultiplier(e.target.value)}
+                      placeholder="1"
+                      className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                    />
+                  </div>
                 </div>
+
                 <p className="text-xs text-bambu-gray">
                   {t('smartPlugs.restEnergyHint')}
                 </p>

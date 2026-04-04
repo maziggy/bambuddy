@@ -23,6 +23,16 @@ interface OverlayConfig {
   showPrinter: boolean;
 }
 
+function formatPrintName(name: string | null, gcodeFile: string | null | undefined, t: (key: string, fallback: string, opts?: Record<string, unknown>) => string): string {
+  if (!name) return '';
+  if (!gcodeFile) return name;
+  const match = gcodeFile.match(/plate_(\d+)\.gcode/);
+  if (match && parseInt(match[1], 10) > 1) {
+    return `${name} — ${t('printers.plateNumber', 'Plate {{number}}', { number: match[1] })}`;
+  }
+  return name;
+}
+
 function parseConfig(params: URLSearchParams): OverlayConfig {
   const show = params.get('show')?.split(',') || ['progress', 'layers', 'eta', 'filename', 'status'];
 
@@ -235,7 +245,7 @@ export function StreamOverlayPage() {
           {/* Filename */}
           {config.showFilename && status.current_print && (
             <div className={`${sizes.textLarge} text-white font-semibold mb-2 truncate drop-shadow-md`}>
-              {status.current_print.replace(/\.gcode\.3mf$|\.3mf$|\.gcode$/i, '')}
+              {formatPrintName(status.current_print.replace(/\.gcode\.3mf$|\.3mf$|\.gcode$/i, ''), status.gcode_file, t)}
             </div>
           )}
 

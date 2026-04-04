@@ -8,7 +8,7 @@ from datetime import date, datetime, time, timezone
 from pathlib import Path
 
 from defusedxml import ElementTree as ET
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings
@@ -811,13 +811,21 @@ class ArchiveService:
                     # Fallback for archives without hash data: match by print name only.
                     name_conditions.append(PrintArchive.print_name.ilike(print_name))
             if makerworld_model_id:
-                # Match by MakerWorld model ID stored in extra_data (same design from MakerWorld)
-                # Use json_extract for SQLite compatibility (astext is PostgreSQL-only)
-                from sqlalchemy import func
+                # Match by MakerWorld model ID stored in extra_data
+                from backend.app.core.db_dialect import is_sqlite
 
-                name_conditions.append(
-                    func.json_extract(PrintArchive.extra_data, "$.makerworld_model_id") == str(makerworld_model_id)
-                )
+                if is_sqlite():
+                    from sqlalchemy import func
+
+                    name_conditions.append(
+                        func.json_extract(PrintArchive.extra_data, "$.makerworld_model_id") == str(makerworld_model_id)
+                    )
+                else:
+                    name_conditions.append(
+                        text("(extra_data::jsonb->>'makerworld_model_id') = :mw_id").bindparams(
+                            mw_id=str(makerworld_model_id)
+                        )
+                    )
 
             if name_conditions:
                 conditions.append(or_(*name_conditions))

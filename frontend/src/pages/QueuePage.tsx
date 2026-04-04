@@ -488,10 +488,10 @@ function SortableQueueItem({
           </div>
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm text-bambu-gray">
-            <span className={`flex items-center gap-1 sm:gap-1.5 ${item.printer_id === null && !item.target_model ? 'text-orange-400' : ''} ${item.target_model ? 'text-blue-400' : ''}`}>
+            <span className={`flex items-center gap-1 sm:gap-1.5 ${item.printer_id === null && !item.target_model ? 'text-orange-400' : ''} ${item.target_model && !item.printer_id ? 'text-blue-400' : ''}`}>
               <Printer className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               <span className="truncate max-w-[120px] sm:max-w-none">
-              {item.target_model
+              {item.target_model && !item.printer_id
                 ? `${t('queue.filter.any')} ${item.target_model}${item.target_location ? ` @ ${item.target_location}` : ''}${item.required_filament_types?.length ? ` (${item.required_filament_types.join(', ')})` : ''}`
                 : item.printer_id === null
                   ? t('queue.filter.unassigned')
@@ -772,6 +772,13 @@ export function QueuePage() {
     queryFn: () => api.getPrinters(),
   });
 
+  const sjfMutation = useMutation({
+    mutationFn: (enabled: boolean) => api.updateSettings({ queue_shortest_first: enabled }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+    },
+  });
+
   const cancelMutation = useMutation({
     mutationFn: (id: number) => api.cancelQueueItem(id),
     onSuccess: () => {
@@ -908,6 +915,26 @@ export function QueuePage() {
       return time > sixMonthsFromNow ? 0 : time;
     };
 
+    // When SJF is enabled, override sort to match scheduler order
+    if (settings?.queue_shortest_first) {
+      return [...items].sort((a, b) => {
+        // Group by printer first (nulls = model-based, grouped by target_model)
+        const aPrinter = a.printer_id ?? -(a.target_model?.charCodeAt(0) ?? 0);
+        const bPrinter = b.printer_id ?? -(b.target_model?.charCodeAt(0) ?? 0);
+        if (aPrinter !== bPrinter) return aPrinter - bPrinter;
+        // Within same printer/model: jumped items first (starvation guard)
+        const aJumped = a.been_jumped ? 1 : 0;
+        const bJumped = b.been_jumped ? 1 : 0;
+        if (aJumped !== bJumped) return bJumped - aJumped;
+        // Shortest print time next (nulls last)
+        const aTime = a.print_time_seconds ?? Infinity;
+        const bTime = b.print_time_seconds ?? Infinity;
+        if (aTime !== bTime) return aTime - bTime;
+        // Position as tiebreaker
+        return a.position - b.position;
+      });
+    }
+
     return [...items].sort((a, b) => {
       let cmp: number;
       if (pendingSortBy === 'name') {
@@ -924,7 +951,7 @@ export function QueuePage() {
       }
       return pendingSortAsc ? cmp : -cmp;
     });
-  }, [queue, pendingSortBy, pendingSortAsc, matchesLocationFilter, filterLocation]);
+  }, [queue, pendingSortBy, pendingSortAsc, matchesLocationFilter, filterLocation, settings?.queue_shortest_first]);
 
   const handleSelectAll = () => {
     const allPendingIds = pendingItems.map(i => i.id);
@@ -1214,6 +1241,22 @@ export function QueuePage() {
                   </span>
                 </h2>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const newValue = !(settings?.queue_shortest_first ?? false);
+                      sjfMutation.mutate(newValue);
+                    }}
+                    className={`flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg border transition-colors ${
+                      settings?.queue_shortest_first
+                        ? 'bg-bambu-green/20 border-bambu-green text-bambu-green'
+                        : 'bg-bambu-dark-secondary border-bambu-dark-tertiary text-bambu-gray hover:text-white hover:border-bambu-gray'
+                    }`}
+                    title={t('queue.sjf.tooltip', 'Shortest Job First — scheduler prioritizes shorter prints')}
+                  >
+                    <Timer className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">{t('queue.sjf.label', 'SJF')}</span>
+                    <span className={`w-1.5 h-1.5 rounded-full ${settings?.queue_shortest_first ? 'bg-bambu-green' : 'bg-bambu-gray'}`} />
+                  </button>
                   <select
                     className="px-2 sm:px-3 py-1.5 text-xs sm:text-sm bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                     value={pendingSortBy}

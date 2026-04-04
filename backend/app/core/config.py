@@ -47,8 +47,11 @@ def _migrate_database() -> Path:
     return new_db if new_db.exists() or not old_db.exists() else old_db
 
 
-# Determine database path (handles migration)
-_db_path = _migrate_database()
+# External DATABASE_URL takes priority (PostgreSQL support)
+_external_db_url = os.environ.get("DATABASE_URL")
+
+# Determine database path (handles migration) — only used for SQLite
+_db_path = _migrate_database() if not _external_db_url else None
 
 
 class Settings(BaseSettings):
@@ -61,7 +64,7 @@ class Settings(BaseSettings):
     plate_calibration_dir: Path = _plate_cal_dir  # Plate detection references
     static_dir: Path = _app_dir / "static"  # Static files are part of app, not data
     log_dir: Path = _log_dir
-    database_url: str = f"sqlite+aiosqlite:///{_db_path}"
+    database_url: str = _external_db_url or f"sqlite+aiosqlite:///{_db_path}"
 
     # Logging
     log_level: str = "INFO"  # Override with LOG_LEVEL env var or DEBUG=true

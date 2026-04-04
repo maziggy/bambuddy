@@ -486,11 +486,16 @@ async def _enrich_from_local_presets(
 
     try:
         # Query filament presets that have a setting_id matching any of our IDs
-        # json_extract is supported in SQLite >= 3.9 and all modern Python builds
+        from backend.app.core.db_dialect import is_sqlite
+
+        if is_sqlite():
+            json_filter = text("json_extract(setting, '$.setting_id') IS NOT NULL")
+        else:
+            json_filter = text("(setting::jsonb->>'setting_id') IS NOT NULL")
         candidates = await db.execute(
             select(LocalPreset).where(
                 LocalPreset.preset_type == "filament",
-                text("json_extract(setting, '$.setting_id') IS NOT NULL"),
+                json_filter,
             )
         )
         for preset in candidates.scalars().all():

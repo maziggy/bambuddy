@@ -325,6 +325,17 @@ const BAMBU_COLOR_CODE_FALLBACK: Record<string, string> = {
   'T1': 'Gilded Rose', 'T2': 'Midnight Blaze', 'T3': 'Neon City', 'T4': 'Blue Hawaii', 'T5': 'Velvet Eclipse',
 };
 
+// Extract plate number from gcode_file path and append to print name
+function formatPrintName(name: string | null, gcodeFile: string | null | undefined, t: (key: string, fallback: string, opts?: Record<string, unknown>) => string): string {
+  if (!name) return '';
+  if (!gcodeFile) return name;
+  const match = gcodeFile.match(/plate_(\d+)\.gcode/);
+  if (match && parseInt(match[1], 10) > 1) {
+    return `${name} — ${t('printers.plateNumber', 'Plate {{number}}', { number: match[1] })}`;
+  }
+  return name;
+}
+
 // Get color name from Bambu Lab tray_id_name (e.g., "A00-Y2" -> "Sunflower Yellow")
 function getBambuColorName(trayIdName: string | null | undefined): string | null {
   if (!trayIdName) return null;
@@ -1520,6 +1531,7 @@ function PrinterCard({
   onOpenEmbeddedCamera,
   checkPrinterFirmware = true,
   dryingPresets = DRYING_PRESETS,
+  requirePlateClear = true,
   selectionMode = false,
   isSelected = false,
   onToggleSelect,
@@ -1548,6 +1560,7 @@ function PrinterCard({
   onOpenEmbeddedCamera?: (printerId: number, printerName: string) => void;
   checkPrinterFirmware?: boolean;
   dryingPresets?: Record<string, { n3f: number; n3s: number; n3f_hours: number; n3s_hours: number }>;
+  requirePlateClear?: boolean;
   selectionMode?: boolean;
   isSelected?: boolean;
   onToggleSelect?: (id: number) => void;
@@ -2781,7 +2794,7 @@ function PrinterCard({
                     {/* Cover Image */}
                     <CoverImage
                       url={(status.state === 'RUNNING' || status.state === 'PAUSE') ? status.cover_url : null}
-                      printName={(status.state === 'RUNNING' || status.state === 'PAUSE') ? (status.subtask_name || status.current_print || undefined) : undefined}
+                      printName={(status.state === 'RUNNING' || status.state === 'PAUSE') ? (formatPrintName(status.subtask_name || status.current_print || null, status.gcode_file, t) || undefined) : undefined}
                     />
                     {/* Print Info */}
                     <div className="flex-1 min-w-0">
@@ -2789,7 +2802,7 @@ function PrinterCard({
                         <>
                           <p className="text-sm text-bambu-gray mb-1">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
                           <p className="text-white text-sm mb-2 truncate">
-                            {status.subtask_name || status.current_print}
+                            {formatPrintName(status.subtask_name || status.current_print || null, status.gcode_file, t)}
                           </p>
                           <div className="flex items-center justify-between text-sm">
                             <div className="flex-1 bg-bambu-dark-tertiary rounded-full h-2 mr-3">
@@ -2857,7 +2870,7 @@ function PrinterCard({
                 </div>
 
                 {/* Queue Widget - always visible when there are pending items */}
-                <PrinterQueueWidget printerId={printer.id} printerModel={printer.model} printerState={status.state} plateCleared={status.plate_cleared} loadedFilamentTypes={loadedFilamentTypes} loadedFilaments={loadedFilaments} />
+                <PrinterQueueWidget printerId={printer.id} printerModel={printer.model} printerState={status.state} plateCleared={status.plate_cleared} requirePlateClear={requirePlateClear} loadedFilamentTypes={loadedFilamentTypes} loadedFilaments={loadedFilaments} />
               </>
             )}
 
@@ -6353,6 +6366,7 @@ export function PrintersPage() {
                     onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
                     checkPrinterFirmware={settings?.check_printer_firmware !== false}
                     dryingPresets={effectiveDryingPresets}
+                    requirePlateClear={settings?.require_plate_clear !== false}
                     selectionMode={selectionMode}
                     isSelected={selectedPrinterIds.has(printer.id)}
                     onToggleSelect={toggleSelect}
@@ -6391,6 +6405,7 @@ export function PrintersPage() {
               onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
               checkPrinterFirmware={settings?.check_printer_firmware !== false}
               dryingPresets={effectiveDryingPresets}
+              requirePlateClear={settings?.require_plate_clear !== false}
               selectionMode={selectionMode}
               isSelected={selectedPrinterIds.has(printer.id)}
               onToggleSelect={toggleSelect}

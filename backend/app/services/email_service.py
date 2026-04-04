@@ -152,8 +152,7 @@ async def save_smtp_settings(db: AsyncSession, smtp_settings: SMTPSettings) -> N
         db: Database session
         smtp_settings: SMTP settings to save
     """
-    from sqlalchemy import func
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+    from backend.app.core.db_dialect import upsert_setting
 
     settings_data = {
         "smtp_host": smtp_settings.smtp_host,
@@ -173,12 +172,7 @@ async def save_smtp_settings(db: AsyncSession, smtp_settings: SMTPSettings) -> N
         settings_data["smtp_password"] = smtp_settings.smtp_password
 
     for key, value in settings_data.items():
-        stmt = sqlite_insert(Settings).values(key=key, value=value)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["key"],
-            set_={"value": value, "updated_at": func.now()},
-        )
-        await db.execute(stmt)
+        await upsert_setting(db, Settings, key, value)
 
 
 def send_email(

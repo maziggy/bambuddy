@@ -30,6 +30,8 @@ const mockSystemInfo = {
     archive_dir: '/opt/bambuddy/archives',
   },
   database: {
+    engine: 'SQLite',
+    version: 'SQLite 3.45.1',
     archives: 150,
     archives_completed: 140,
     archives_failed: 8,

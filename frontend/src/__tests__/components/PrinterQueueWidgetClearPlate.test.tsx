@@ -529,6 +529,54 @@ describe('PrinterQueueWidget - Clear Plate', () => {
     });
   });
 
+  describe('requirePlateClear setting', () => {
+    it('shows passive link when requirePlateClear is false even in FINISH state', async () => {
+      render(<PrinterQueueWidget printerId={1} printerState="FINISH" requirePlateClear={false} />);
+
+      await waitFor(() => {
+        const link = screen.getByRole('link');
+        expect(link).toHaveAttribute('href', '/queue');
+      });
+
+      expect(screen.queryByText('Clear Plate & Start Next')).not.toBeInTheDocument();
+    });
+
+    it('shows passive link when requirePlateClear is false even in FAILED state', async () => {
+      render(<PrinterQueueWidget printerId={1} printerState="FAILED" requirePlateClear={false} />);
+
+      await waitFor(() => {
+        const link = screen.getByRole('link');
+        expect(link).toHaveAttribute('href', '/queue');
+      });
+
+      expect(screen.queryByText('Clear Plate & Start Next')).not.toBeInTheDocument();
+    });
+
+    it('shows clear plate button when requirePlateClear is true (explicit)', async () => {
+      render(<PrinterQueueWidget printerId={1} printerState="FINISH" requirePlateClear={true} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Clear Plate & Start Next')).toBeInTheDocument();
+      });
+    });
+
+    it('shows clear plate button when requirePlateClear is not provided (defaults to true)', async () => {
+      render(<PrinterQueueWidget printerId={1} printerState="FINISH" />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Clear Plate & Start Next')).toBeInTheDocument();
+      });
+    });
+
+    it('still shows next item info in passive link when requirePlateClear is false', async () => {
+      render(<PrinterQueueWidget printerId={1} printerState="FINISH" requirePlateClear={false} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('First Print')).toBeInTheDocument();
+      });
+    });
+  });
+
   describe('staged (manual_start) items', () => {
     const stagedItems = [
       { id: 10, printer_id: 1, archive_id: 1, position: 1, status: 'pending', archive_name: 'Staged Print 1', manual_start: true, scheduled_time: null },

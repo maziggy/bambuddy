@@ -606,22 +606,37 @@ async def _collect_support_info() -> dict:
 
         # Database health
         try:
-            result = await db.execute(text("PRAGMA journal_mode"))
-            journal_mode = result.scalar()
-            result = await db.execute(text("PRAGMA quick_check"))
-            quick_check = result.scalar()
+            from backend.app.core.db_dialect import is_sqlite
 
-            db_path = settings.base_dir / "bambuddy.db"
-            db_size = db_path.stat().st_size if db_path.exists() else 0
-            wal_path = settings.base_dir / "bambuddy.db-wal"
-            wal_size = wal_path.stat().st_size if wal_path.exists() else 0
+            if is_sqlite():
+                result = await db.execute(text("PRAGMA journal_mode"))
+                journal_mode = result.scalar()
+                result = await db.execute(text("PRAGMA quick_check"))
+                quick_check = result.scalar()
 
-            info["database_health"] = {
-                "journal_mode": journal_mode,
-                "quick_check": quick_check,
-                "db_size_bytes": db_size,
-                "wal_size_bytes": wal_size,
-            }
+                db_path = settings.base_dir / "bambuddy.db"
+                db_size = db_path.stat().st_size if db_path.exists() else 0
+                wal_path = settings.base_dir / "bambuddy.db-wal"
+                wal_size = wal_path.stat().st_size if wal_path.exists() else 0
+
+                info["database_health"] = {
+                    "backend": "sqlite",
+                    "journal_mode": journal_mode,
+                    "quick_check": quick_check,
+                    "db_size_bytes": db_size,
+                    "wal_size_bytes": wal_size,
+                }
+            else:
+                result = await db.execute(text("SELECT version()"))
+                pg_version = result.scalar()
+                result = await db.execute(text("SELECT pg_database_size(current_database())"))
+                db_size = result.scalar() or 0
+
+                info["database_health"] = {
+                    "backend": "postgresql",
+                    "version": pg_version,
+                    "db_size_bytes": db_size,
+                }
         except Exception:
             logger.debug("Failed to collect database health info", exc_info=True)
 

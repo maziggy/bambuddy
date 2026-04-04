@@ -93,12 +93,31 @@ class PrintScheduler:
     async def check_queue(self):
         """Check for prints ready to start."""
         async with async_session() as db:
-            # Get all pending items, ordered by printer and position
-            result = await db.execute(
-                select(PrintQueueItem)
-                .where(PrintQueueItem.status == "pending")
-                .order_by(PrintQueueItem.printer_id, PrintQueueItem.position)
-            )
+            # Check if shortest-job-first scheduling is enabled
+            sjf_enabled = await self._get_bool_setting(db, "queue_shortest_first")
+
+            # Get all pending items, ordered by printer and position (or SJF order)
+            if sjf_enabled:
+                # SJF: group by printer (and target_model for model-based jobs),
+                # then items already jumped get top priority (starvation guard),
+                # then sort by print_time ascending. Items with no print time go last.
+                result = await db.execute(
+                    select(PrintQueueItem)
+                    .where(PrintQueueItem.status == "pending")
+                    .order_by(
+                        PrintQueueItem.printer_id,
+                        PrintQueueItem.target_model,
+                        PrintQueueItem.been_jumped.desc(),
+                        PrintQueueItem.print_time_seconds.asc().nullslast(),
+                        PrintQueueItem.position,
+                    )
+                )
+            else:
+                result = await db.execute(
+                    select(PrintQueueItem)
+                    .where(PrintQueueItem.status == "pending")
+                    .order_by(PrintQueueItem.printer_id, PrintQueueItem.position)
+                )
             items = list(result.scalars().all())
 
             # Read plate-clear setting once per queue check
@@ -219,6 +238,23 @@ class PrintScheduler:
                     await self._start_print(db, item)
                     busy_printers.add(item.printer_id)
 
+                    # SJF starvation guard: mark items that were jumped
+                    if sjf_enabled and item.print_time_seconds is not None:
+                        for other in items:
+                            if (
+                                other.id != item.id
+                                and other.status == "pending"
+                                and other.printer_id == item.printer_id
+                                and not other.been_jumped
+                                and other.position < item.position
+                                and (
+                                    other.print_time_seconds is None
+                                    or other.print_time_seconds > item.print_time_seconds
+                                )
+                            ):
+                                other.been_jumped = True
+                        await db.commit()
+
                 elif item.target_model:
                     # Model-based assignment - find any idle printer of matching model
                     # Parse required filament types if present
@@ -323,6 +359,25 @@ class PrintScheduler:
 
                         await self._start_print(db, item)
                         busy_printers.add(printer_id)
+
+                        # SJF starvation guard: mark model-based items that were jumped
+                        if sjf_enabled and item.print_time_seconds is not None:
+                            for other in items:
+                                if (
+                                    other.id != item.id
+                                    and other.status == "pending"
+                                    and other.printer_id is None
+                                    and other.target_model
+                                    and other.target_model.upper() == item.target_model.upper()
+                                    and not other.been_jumped
+                                    and other.position < item.position
+                                    and (
+                                        other.print_time_seconds is None
+                                        or other.print_time_seconds > item.print_time_seconds
+                                    )
+                                ):
+                                    other.been_jumped = True
+                            await db.commit()
 
             # Log summary of skip reasons (helps diagnose why queue items aren't starting)
             if skip_reasons:

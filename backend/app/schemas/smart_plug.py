@@ -54,8 +54,12 @@ class SmartPlugBase(BaseModel):
     rest_status_url: str | None = Field(default=None, max_length=500)
     rest_status_path: str | None = Field(default=None, max_length=200)
     rest_status_on_value: str | None = Field(default=None, max_length=50)
+    rest_power_url: str | None = Field(default=None, max_length=500)
     rest_power_path: str | None = Field(default=None, max_length=200)
+    rest_power_multiplier: float = Field(default=1.0, ge=0.0001, le=10000)
+    rest_energy_url: str | None = Field(default=None, max_length=500)
     rest_energy_path: str | None = Field(default=None, max_length=200)
+    rest_energy_multiplier: float = Field(default=1.0, ge=0.0001, le=10000)
 
     printer_id: int | None = None
     enabled: bool = True
@@ -138,8 +142,12 @@ class SmartPlugUpdate(BaseModel):
     rest_status_url: str | None = None
     rest_status_path: str | None = None
     rest_status_on_value: str | None = None
+    rest_power_url: str | None = None
     rest_power_path: str | None = None
+    rest_power_multiplier: float | None = Field(default=None, ge=0.0001, le=10000)
+    rest_energy_url: str | None = None
     rest_energy_path: str | None = None
+    rest_energy_multiplier: float | None = Field(default=None, ge=0.0001, le=10000)
     printer_id: int | None = None
     enabled: bool | None = None
     auto_on: bool | None = None

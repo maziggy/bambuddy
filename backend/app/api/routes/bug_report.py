@@ -12,7 +12,10 @@ from backend.app.api.routes.support import (
     _get_recent_sanitized_logs,
     _set_debug_setting,
 )
+from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import async_session
+from backend.app.core.permissions import Permission
+from backend.app.models.user import User
 from backend.app.services.bug_report import submit_report
 from backend.app.services.printer_manager import printer_manager
 
@@ -45,7 +48,9 @@ class StopLoggingResponse(BaseModel):
 
 
 @router.post("/start-logging", response_model=StartLoggingResponse)
-async def start_logging():
+async def start_logging(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+):
     """Enable debug logging and push all printers for fresh data."""
     async with async_session() as db:
         was_debug, _ = await _get_debug_setting(db)
@@ -66,7 +71,10 @@ async def start_logging():
 
 
 @router.post("/stop-logging", response_model=StopLoggingResponse)
-async def stop_logging(was_debug: bool = Query(default=False)):
+async def stop_logging(
+    was_debug: bool = Query(default=False),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+):
     """Collect logs and restore previous log level."""
     logs = await _get_recent_sanitized_logs()
 
@@ -80,8 +88,11 @@ async def stop_logging(was_debug: bool = Query(default=False)):
 
 
 @router.post("/submit", response_model=BugReportResponse)
-async def submit_bug_report(report: BugReportRequest):
-    """Submit a bug report. No auth required — anyone should be able to report bugs."""
+async def submit_bug_report(
+    report: BugReportRequest,
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+):
+    """Submit a bug report. Requires auth when authentication is enabled."""
     support_info = None
     if report.include_support_info:
         try:

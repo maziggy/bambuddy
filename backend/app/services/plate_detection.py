@@ -8,6 +8,7 @@ a reference image of the empty plate.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -632,8 +633,10 @@ async def capture_camera_image(
 
             from backend.app.services.camera import capture_camera_frame
 
-            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-                tmp_path = Path(tmp.name)
+            fd, tmp_name = tempfile.mkstemp(suffix=".jpg")
+            os.close(fd)
+            tmp_path = Path(tmp_name)
+            tmp_path.chmod(0o600)
 
             try:
                 success = await capture_camera_frame(ip_address, access_code, model, tmp_path, timeout=10)

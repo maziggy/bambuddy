@@ -643,6 +643,12 @@ async def on_ams_change(printer_id: int, ams_data: list):
     """Handle AMS data changes - sync to Spoolman if enabled and auto mode."""
     logger = logging.getLogger(__name__)
 
+    # Snapshot BEFORE any await: if a print is active, skip weight sync later.
+    # on_print_complete may pop _active_sessions during our awaits (#880).
+    from backend.app.services.usage_tracker import _active_sessions
+
+    _print_active = printer_id in _active_sessions
+
     # MQTT relay - publish AMS change
     try:
         printer_info = printer_manager.get_printer(printer_id)
@@ -828,6 +834,12 @@ async def on_ams_change(printer_id: int, ams_data: list):
                             # Sync spool weight_used from AMS remain — only INCREASE, never decrease.
                             # The AMS remain% is low-resolution (integer %, i.e. 10g steps for 1kg spool)
                             # and must not overwrite precise values from the usage tracker (3MF/G-code).
+                            # Skip during active prints: the usage tracker handles deduction
+                            # precisely via 3MF data on print completion. Without this guard the
+                            # AMS remain% SET and the usage tracker ADD both fire from the same
+                            # MQTT message, doubling the deduction (#880).
+                            if _print_active:
+                                continue
                             remain_raw = tray.get("remain")
                             if (
                                 remain_raw is not None

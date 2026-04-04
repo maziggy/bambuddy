@@ -354,6 +354,8 @@ class BambuMQTTClient:
         # "mqtt message verify failed" → dev mode OFF, success → dev mode ON.
         self._dev_mode_probed: bool = False
         self._dev_mode_probe_seq: str | None = None
+        self._dev_mode_probe_time: float = 0.0  # monotonic timestamp when probe was sent
+        self._dev_mode_probe_failures: int = 0  # consecutive unanswered probes
 
         # Set when check_staleness() force-closes the socket to trigger reconnect.
         # Prevents _on_disconnect from redundantly broadcasting state (already done).
@@ -427,6 +429,8 @@ class BambuMQTTClient:
             self.state.developer_mode = None
             self._dev_mode_probed = False
             self._dev_mode_probe_seq = None
+            self._dev_mode_probe_time = 0.0
+            self._dev_mode_probe_failures = 0
             client.subscribe(self.topic_subscribe)
             # Subscribe to request topic for ams_mapping capture (if supported by broker)
             if self._request_topic_supported:
@@ -2441,6 +2445,42 @@ class BambuMQTTClient:
             # Only probe after a full pushall response (30+ keys) to avoid firing on
             # partial incremental updates that arrive before the pushall with "fun".
             self._probe_developer_mode()
+        elif self._dev_mode_probed and self._dev_mode_probe_seq is not None:
+            # Probe was sent but no response yet — check for timeout.
+            # A half-broken MQTT session (e.g. after keep-alive timeout reconnect)
+            # may deliver status pushes but silently drop commands (#887).
+            elapsed = time.monotonic() - self._dev_mode_probe_time
+            if elapsed > 10.0:
+                self._dev_mode_probe_failures += 1
+                logger.warning(
+                    "[%s] Developer mode probe timed out after %.0fs (attempt %d)",
+                    self.serial_number,
+                    elapsed,
+                    self._dev_mode_probe_failures,
+                )
+                self._dev_mode_probe_seq = None
+                if self._dev_mode_probe_failures >= 2:
+                    # Two consecutive unanswered probes — the MQTT session is likely
+                    # half-broken (printer sends status but ignores commands).
+                    # Force-close the socket so paho reconnects with a fresh session.
+                    logger.warning(
+                        "[%s] MQTT session appears broken (commands not reaching printer), forcing reconnect",
+                        self.serial_number,
+                    )
+                    self._stale_reconnecting = True
+                    self.state.connected = False
+                    if self.on_state_change:
+                        self.on_state_change(self.state)
+                    if self._client:
+                        try:
+                            sock = self._client.socket()
+                            if sock:
+                                sock.close()
+                        except Exception:
+                            pass
+                else:
+                    # Allow retry on next full status message
+                    self._dev_mode_probed = False
 
         # Log mapping data when received (for usage tracking debugging)
         if "mapping" in data:
@@ -2630,6 +2670,7 @@ class BambuMQTTClient:
         if not self._client or not self.state.connected:
             return
         self._dev_mode_probed = True
+        self._dev_mode_probe_time = time.monotonic()
         self._sequence_id += 1
         seq = str(self._sequence_id)
         self._dev_mode_probe_seq = seq
@@ -2666,6 +2707,7 @@ class BambuMQTTClient:
         Sets developer_mode based on whether the printer accepted or rejected the command.
         """
         self._dev_mode_probe_seq = None  # One-shot: don't match future responses
+        self._dev_mode_probe_failures = 0  # Reset on any response
         result = data.get("result", "")
         reason = data.get("reason", "")
 

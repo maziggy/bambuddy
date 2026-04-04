@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import subprocess
 import sys
 from collections.abc import AsyncGenerator
@@ -769,9 +770,11 @@ async def camera_snapshot(
             },
         )
 
-    # Create temporary file for the snapshot
-    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-        temp_path = Path(f.name)
+    # Create temporary file for the snapshot (0600 so only the app user can read it)
+    fd, tmp_name = tempfile.mkstemp(suffix=".jpg")
+    os.close(fd)
+    temp_path = Path(tmp_name)
+    temp_path.chmod(0o600)
 
     try:
         success = await capture_camera_frame(

@@ -547,11 +547,11 @@ def check_printer_access(api_key: APIKey, printer_id: int) -> None:
     Raises:
         HTTPException: If access is denied
     """
-    # If printer_ids is None or empty, access to all printers
-    if api_key.printer_ids is None or len(api_key.printer_ids) == 0:
+    # None = global key, access to all printers
+    if api_key.printer_ids is None:
         return
 
-    # Check if printer_id is in allowed list
+    # Empty list or printer not in allowed list = no access
     if printer_id not in api_key.printer_ids:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

@@ -33,6 +33,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/archives", tags=["archives"])
 
 
+def _safe_filename(filename: str) -> str:
+    """Extract basename from a client-supplied filename, preventing path traversal.
+
+    Normalizes backslashes (Windows paths) before extracting so that
+    '..\\\\..\\\\evil.3mf' is correctly stripped to 'evil.3mf' on Linux.
+    """
+    return Path(filename.replace("\\", "/")).name
+
+
 def _validate_user_filter_permission(current_user: User | None, created_by_id: int | None):
     """Raise 403 if created_by_id filter is used without stats:filter_by_user permission."""
     if created_by_id is None or current_user is None:
@@ -1879,12 +1888,13 @@ async def upload_timelapse(
         raise HTTPException(400, "File must be a video file (.mp4, .avi, .mkv)")
 
     content = await file.read()
-    success = await service.attach_timelapse(archive_id, content, file.filename)
+    safe_filename = _safe_filename(file.filename)
+    success = await service.attach_timelapse(archive_id, content, safe_filename)
 
     if not success:
         raise HTTPException(500, "Failed to attach timelapse")
 
-    return {"status": "attached", "filename": file.filename}
+    return {"status": "attached", "filename": safe_filename}
 
 
 @router.get("/{archive_id}/timelapse/info")
@@ -2575,8 +2585,9 @@ async def upload_archive(
     if not file.filename or not file.filename.endswith(".3mf"):
         raise HTTPException(400, "File must be a .3mf file")
 
-    # Save uploaded file temporarily
-    temp_path = settings.archive_dir / "temp" / file.filename
+    # Save uploaded file temporarily — strip directory components to prevent path traversal
+    safe_filename = _safe_filename(file.filename)
+    temp_path = settings.archive_dir / "temp" / safe_filename
     temp_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -2615,7 +2626,8 @@ async def upload_archives_bulk(
             errors.append({"filename": file.filename or "unknown", "error": "Not a .3mf file"})
             continue
 
-        temp_path = settings.archive_dir / "temp" / file.filename
+        safe_filename = _safe_filename(file.filename)
+        temp_path = settings.archive_dir / "temp" / safe_filename
         temp_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
@@ -3311,8 +3323,8 @@ async def upload_source_3mf(
         if old_source_path.exists():
             old_source_path.unlink()
 
-    # Save the source 3MF file - preserve original filename
-    source_filename = file.filename
+    # Save the source 3MF file - preserve original filename, strip directory components
+    source_filename = _safe_filename(file.filename)
     source_path = source_dir / source_filename
 
     content = await file.read()
@@ -3458,10 +3470,12 @@ async def upload_source_3mf_by_name(
     if not file.filename or not file.filename.endswith(".3mf"):
         raise HTTPException(400, "File must be a .3mf file")
 
+    safe_filename = _safe_filename(file.filename)
+
     # Derive print name from filename if not provided
     if not print_name:
         # Remove .3mf extension and common suffixes
-        print_name = file.filename.rsplit(".3mf", 1)[0]
+        print_name = safe_filename.rsplit(".3mf", 1)[0]
         # Remove _source suffix if present
         if print_name.endswith("_source"):
             print_name = print_name[:-7]
@@ -3510,8 +3524,8 @@ async def upload_source_3mf_by_name(
         if old_source_path.exists():
             old_source_path.unlink()
 
-    # Save the source 3MF file - preserve original filename
-    source_filename = file.filename
+    # Save the source 3MF file - preserve original filename, strip directory components
+    source_filename = safe_filename
     source_path = source_dir / source_filename
 
     content = await file.read()
@@ -3591,8 +3605,8 @@ async def upload_f3d(
         if old_f3d_path.exists():
             old_f3d_path.unlink()
 
-    # Save the F3D file - preserve original filename
-    f3d_filename = file.filename
+    # Save the F3D file - preserve original filename, strip directory components
+    f3d_filename = _safe_filename(file.filename)
     f3d_path = f3d_dir / f3d_filename
 
     content = await file.read()

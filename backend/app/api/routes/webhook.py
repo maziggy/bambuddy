@@ -294,7 +294,7 @@ async def webhook_get_queue_status(
         result = await db.execute(select(Printer))
         printers = result.scalars().all()
         # Filter by allowed printers if limited
-        if api_key.printer_ids:
+        if api_key.printer_ids is not None:
             printers = [p for p in printers if p.id in api_key.printer_ids]
 
     response = []

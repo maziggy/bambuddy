@@ -1319,6 +1319,10 @@ async def run_migrations(conn):
         except (OperationalError, ProgrammingError):
             pass  # Already applied
 
+    # Migration: Normalize empty printer_ids [] to NULL (global access) on API keys
+    # Previously both None and [] meant "all printers"; now [] means "no printers"
+    await _safe_execute(conn, "UPDATE api_keys SET printer_ids = NULL WHERE printer_ids = '[]'")
+
     # Seed default settings keys that must exist on fresh install
     default_settings = [
         ("advanced_auth_enabled", "false"),

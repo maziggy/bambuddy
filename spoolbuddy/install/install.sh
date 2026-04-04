@@ -1003,6 +1003,9 @@ setup_kiosk() {
         # Remove serial console (Plymouth needs tty-only console)
         sed -i 's/console=serial0,[0-9]* //' "$cmdline"
 
+        # Disable console blanking (kernel default is 600s, can blank during boot transition)
+        grep -q "consoleblank=" "$cmdline" || sed -i 's/$/ consoleblank=0/' "$cmdline"
+
         # Add splash quiet loglevel=3 logo.nologo if missing
         grep -q "splash" "$cmdline" || sed -i 's/$/ splash quiet loglevel=3 logo.nologo/' "$cmdline"
 
@@ -1178,8 +1181,8 @@ EOF
 # Force 1024x600 (panel doesn't advertise this natively)
 wlr-randr --output HDMI-A-1 --custom-mode 1024x600@60 &
 
-# Prevent display blanking (labwc 0.9.x has no config option for this)
-(while true; do sleep 60; wlr-randr --output HDMI-A-1 --on 2>/dev/null; done) &
+# Prevent display blanking (labwc <0.8 lacks screenBlankTimeout config support)
+(while true; do wlr-randr --output HDMI-A-1 --on 2>/dev/null; sleep 60; done) &
 
 # Launch Chromium via helper that resolves URL from spoolbuddy/.env
 $kiosk_launcher &

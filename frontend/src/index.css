@@ -402,7 +402,7 @@ body {
 
 .spoolbuddy-optimized-ping {
   will-change: auto;
-  contain: layout paint;
+  contain: layout;
   animation: spoolbuddy-optimized-ping 3.5s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
 

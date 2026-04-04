@@ -49,7 +49,7 @@ export function InventorySpoolInfoCard({
   const { data: fetchedKProfiles } = useQuery({
     queryKey: ['spool-k-profiles', spool.id],
     queryFn: () => api.getSpoolKProfiles(spool.id),
-    // Only fetch if k_profiles is not already in the spool object
+    // Inventory list payloads may omit k_profiles, so lazily fetch when missing.
     enabled: !spool.k_profiles || spool.k_profiles.length === 0,
     staleTime: 5 * 60 * 1000,
   });
@@ -114,7 +114,7 @@ export function InventorySpoolInfoCard({
 
   const handleSyncWeight = async () => {
     if (liveScaleWeight === null) return;
-    const roundedLiveWeight = Math.round(liveScaleWeight);
+    const roundedLiveWeight = Math.round(Math.max(0, liveScaleWeight));
     setSyncing(true);
     try {
       await spoolbuddyApi.updateSpoolWeight(spool.id, roundedLiveWeight);

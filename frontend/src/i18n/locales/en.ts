@@ -851,6 +851,10 @@ export default {
     itemCount_plural: '{{count}} items',
     dragToReorder: 'Drag to reorder (ASAP only)',
     reorderHint: 'Position only affects ASAP items. Scheduled items run at their set time.',
+    sjf: {
+      label: 'SJF',
+      tooltip: 'Shortest Job First — scheduler prioritizes shorter prints',
+    },
     addedBy: 'Added by {{name}}',
     nextInQueue: 'Next in queue',
     clearPlate: 'Clear Plate & Start Next',

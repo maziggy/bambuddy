@@ -214,6 +214,8 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         # Batch grouping
         "batch_id": item.batch_id,
         "batch_name": item.batch.name if item.batch else None,
+        # SJF scheduling
+        "been_jumped": item.been_jumped,
     }
     response = PrintQueueItemResponse(**item_dict)
     if item.archive:
@@ -459,6 +461,27 @@ async def add_to_queue(
         )
     max_pos = result.scalar() or 0
 
+    # Resolve print_time_seconds for SJF scheduling (cache on item at creation)
+    cached_print_time = None
+    if archive:
+        cached_print_time = archive.print_time_seconds
+        if data.plate_id:
+            archive_path = settings.base_dir / archive.file_path
+            if archive_path.exists():
+                plate_time = _extract_print_time_from_3mf(archive_path, data.plate_id)
+                if plate_time is not None:
+                    cached_print_time = plate_time
+    elif library_file:
+        if library_file.file_metadata:
+            cached_print_time = library_file.file_metadata.get("print_time_seconds")
+        if data.plate_id:
+            lib_path = Path(library_file.file_path)
+            library_file_path = lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
+            if library_file_path.exists():
+                plate_time = _extract_print_time_from_3mf(library_file_path, data.plate_id)
+                if plate_time is not None:
+                    cached_print_time = plate_time
+
     ams_mapping_json = json.dumps(data.ams_mapping) if data.ams_mapping else None
     items = []
     for i in range(quantity):
@@ -486,6 +509,7 @@ async def add_to_queue(
             status="pending",
             created_by_id=current_user.id if current_user else None,
             batch_id=batch_id,
+            print_time_seconds=cached_print_time,
         )
         db.add(item)
         items.append(item)

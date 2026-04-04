@@ -851,6 +851,10 @@ export default {
     itemCount_plural: '{{count}} elementi',
     dragToReorder: 'Trascina per riordinare (solo ASAP)',
     reorderHint: 'La posizione influisce solo sugli elementi ASAP. Quelli programmati partono all\'orario.',
+    sjf: {
+      label: 'SJF',
+      tooltip: 'Lavoro più breve prima — lo scheduler dà priorità alle stampe più brevi',
+    },
     addedBy: 'Aggiunto da {{name}}',
     nextInQueue: 'Prossimo in coda',
     clearPlate: 'Libera piatto e avvia il prossimo',

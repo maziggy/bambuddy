@@ -898,6 +898,8 @@ export interface AppSettings {
   stagger_interval_minutes: number;
   // Plate-clear confirmation
   require_plate_clear: boolean;
+  // Shortest job first scheduling
+  queue_shortest_first: boolean;
   // Default sidebar order (admin-set for all users)
   default_sidebar_order: string;
 }
@@ -1380,6 +1382,8 @@ export interface PrintQueueItem {
   // Batch grouping
   batch_id?: number | null;
   batch_name?: string | null;
+  // Shortest-job-first scheduling
+  been_jumped?: boolean;
 }
 
 export interface PrintBatch {

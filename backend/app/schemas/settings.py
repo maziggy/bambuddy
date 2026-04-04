@@ -214,6 +214,10 @@ class AppSettings(BaseModel):
         default=True,
         description="Require per-printer plate-clear confirmation before starting queued prints on finished printers",
     )
+    queue_shortest_first: bool = Field(
+        default=False,
+        description="Shortest Job First — scheduler prioritizes shorter print jobs over longer ones",
+    )
 
     # Default sidebar order (admin-set for all users)
     default_sidebar_order: str = Field(
@@ -298,6 +302,7 @@ class AppSettingsUpdate(BaseModel):
     stagger_group_size: int | None = Field(default=None, ge=1, le=50)
     stagger_interval_minutes: int | None = Field(default=None, ge=1, le=60)
     require_plate_clear: bool | None = None
+    queue_shortest_first: bool | None = None
     default_sidebar_order: str | None = None
 
     @field_validator("default_sidebar_order")

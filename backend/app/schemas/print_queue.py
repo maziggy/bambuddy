@@ -117,6 +117,9 @@ class PrintQueueItemResponse(BaseModel):
     batch_id: int | None = None
     batch_name: str | None = None
 
+    # Shortest-job-first scheduling
+    been_jumped: bool = False
+
     class Config:
         from_attributes = True
 

@@ -850,6 +850,10 @@ export default {
     itemCount_plural: '{{count}}件のアイテム',
     dragToReorder: 'ドラッグして並べ替え（ASAPのみ）',
     reorderHint: '順番はASAPアイテムのみに影響します。スケジュール済みアイテムは設定時刻に実行されます。',
+    sjf: {
+      label: 'SJF',
+      tooltip: '短いジョブ優先 — スケジューラーが短い印刷を優先します',
+    },
     addedBy: '{{username}}が追加',
     nextInQueue: '次のキュー',
     clearPlate: 'プレートをクリアして次を開始',

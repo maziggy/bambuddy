@@ -6,6 +6,7 @@ All notable changes to Bambuddy will be documented in this file.
 
 ### New Features
 - **Optional PostgreSQL Database Support** — Bambuddy can now use an external PostgreSQL database instead of the built-in SQLite. Set the `DATABASE_URL` environment variable (e.g., `postgresql+asyncpg://user:pass@host:5432/bambuddy`) to connect to Postgres. SQLite remains the default when no `DATABASE_URL` is set. All features work with both backends including full-text archive search (FTS5 on SQLite, tsvector+GIN on PostgreSQL), backup/restore (file copy vs pg_dump/pg_restore), health diagnostics, and cross-database restore (import a SQLite backup into PostgreSQL with automatic type conversion and FK handling).
+- **Shortest Job First Queue Scheduling** ([#879](https://github.com/maziggy/bambuddy/issues/879)) — New SJF toggle badge on the queue page header. When enabled, the scheduler starts shorter print jobs before longer ones instead of FIFO order. A starvation guard ensures long jobs that get skipped once are protected from being skipped again — they move to the front of the queue on the next cycle. The queue display automatically reorders to show the scheduler's actual execution order. Print duration is cached on queue items at creation time from the 3MF metadata.
 
 ### Improved
 - **Database Engine Info on System Page** — The System Information page now shows the active database engine (SQLite or PostgreSQL) and its version in the Database section, making it easy to verify which backend is in use.

@@ -117,6 +117,7 @@ Perfect for remote print farms, traveling makers, or accessing your home printer
 - Prefer lowest remaining filament (consume partial spools first when multiple match)
 - Per-printer AMS mapping (individual slot configuration for print farms)
 - Scheduled prints (date/time)
+- Shortest Job First scheduling (SJF toggle on queue page — scheduler picks shorter prints first, with starvation guard)
 - Queue Only mode (stage without auto-start)
 - Clear plate confirmation between queued prints (can be disabled in settings for farm workflows)
 - Smart plug integration (Tasmota, Home Assistant, MQTT, REST/Webhook)

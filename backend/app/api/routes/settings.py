@@ -100,6 +100,7 @@ async def get_settings(
                 "queue_drying_block",
                 "ambient_drying_enabled",
                 "require_plate_clear",
+                "queue_shortest_first",
                 "default_bed_levelling",
                 "default_flow_cali",
                 "default_vibration_cali",

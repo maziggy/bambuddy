@@ -1,0 +1,200 @@
+2026-04-05 16:00:09,604 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-05 16:00:09,604 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper raw value: 5.0
+2026-04-05 16:00:09,604 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-04-05 16:00:09,604 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-04-05 16:00:09,605 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-04-05 16:00:09,605 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] HMS data received: []
+2026-04-05 16:00:09,605 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-04-05 16:00:09,605 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -48dBm
+2026-04-05 16:00:09,605 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-04-05 16:00:09,606 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] gcode_state: FAILED -> FAILED, file: , subtask: Rodfather_(8-12mm)_–_360°_Steel_Rod_Cleaning_Tool
+2026-04-05 16:00:11,627 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-05 16:00:11,628 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -46dBm
+2026-04-05 16:00:13,422 DEBUG [backend.app.api.routes.printers] API returning ams_mapping: [], ams_extruder_map: {'0': 0, '128': 0}
+2026-04-05 16:00:13,423 DEBUG [backend.app.api.routes.printers] Using tray_now directly as global ID: 1
+2026-04-05 16:00:13,538 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=8123 local_address=None timeout=10.0 socket_options=None
+2026-04-05 16:00:13,552 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x774613ef4eb0>
+2026-04-05 16:00:13,553 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:13,554 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-05 16:00:13,554 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-05 16:00:13,554 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-05 16:00:13,554 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:13,556 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'334'), (b'Date', b'Sun, 05 Apr 2026 22:00:13 GMT')])
+2026-04-05 16:00:13,556 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/switch.0x70b3d52b600a9288 "HTTP/1.1 200 OK"
+2026-04-05 16:00:13,557 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-05 16:00:13,557 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-05 16:00:13,557 DEBUG [httpcore.http11] response_closed.started
+2026-04-05 16:00:13,558 DEBUG [httpcore.http11] response_closed.complete
+2026-04-05 16:00:13,558 DEBUG [httpcore.connection] close.started
+2026-04-05 16:00:13,559 DEBUG [httpcore.connection] close.complete
+2026-04-05 16:00:13,584 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=8123 local_address=None timeout=10.0 socket_options=None
+2026-04-05 16:00:13,587 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x774613f131d0>
+2026-04-05 16:00:13,588 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:13,588 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-05 16:00:13,589 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-05 16:00:13,589 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-05 16:00:13,589 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:13,591 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'423'), (b'Date', b'Sun, 05 Apr 2026 22:00:13 GMT')])
+2026-04-05 16:00:13,591 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/sensor.0x70b3d52b600a9288_power "HTTP/1.1 200 OK"
+2026-04-05 16:00:13,591 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-05 16:00:13,592 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-05 16:00:13,592 DEBUG [httpcore.http11] response_closed.started
+2026-04-05 16:00:13,592 DEBUG [httpcore.http11] response_closed.complete
+2026-04-05 16:00:13,593 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:13,594 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-05 16:00:13,594 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-05 16:00:13,594 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-05 16:00:13,594 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:13,596 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'619'), (b'Date', b'Sun, 05 Apr 2026 22:00:13 GMT')])
+2026-04-05 16:00:13,597 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/sensor.bambulab_p1s_energy_daily "HTTP/1.1 200 OK"
+2026-04-05 16:00:13,598 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-05 16:00:13,598 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-05 16:00:13,599 DEBUG [httpcore.http11] response_closed.started
+2026-04-05 16:00:13,599 DEBUG [httpcore.http11] response_closed.complete
+2026-04-05 16:00:13,602 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:13,602 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-05 16:00:13,603 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-05 16:00:13,603 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-05 16:00:13,603 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:13,606 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'498'), (b'Date', b'Sun, 05 Apr 2026 22:00:13 GMT')])
+2026-04-05 16:00:13,607 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/sensor.bambulab_p1s_energy_lifetime "HTTP/1.1 200 OK"
+2026-04-05 16:00:13,607 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-05 16:00:13,608 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-05 16:00:13,608 DEBUG [httpcore.http11] response_closed.started
+2026-04-05 16:00:13,609 DEBUG [httpcore.http11] response_closed.complete
+2026-04-05 16:00:13,609 DEBUG [httpcore.connection] close.started
+2026-04-05 16:00:13,610 DEBUG [httpcore.connection] close.complete
+2026-04-05 16:00:13,685 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-05 16:00:13,686 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -47dBm
+2026-04-05 16:00:15,450 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30s, model=P1S, prot_c=False)
+2026-04-05 16:00:16,309 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-04-05 16:00:16,325 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-04-05 16:00:16,341 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-04-05 16:00:16,342 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-05 16:00:16,349 DEBUG [backend.app.services.bambu_ftp] AVBL command not supported: 502 
+2026-04-05 16:00:18,195 DEBUG [backend.app.services.bambu_ftp] FTP connecting to [IP]:990 (timeout=30s, model=P1S, prot_c=False)
+2026-04-05 16:00:19,010 DEBUG [backend.app.services.bambu_ftp] FTP connected, logging in as bblp
+2026-04-05 16:00:20,866 DEBUG [backend.app.services.bambu_ftp] FTP logged in, setting prot_p (protected) and passive mode
+2026-04-05 16:00:23,127 DEBUG [backend.app.services.bambu_ftp] FTP server welcome: 220 BBL-P003 FTP Server
+2026-04-05 16:00:23,127 INFO [backend.app.services.bambu_ftp] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-04-05 16:00:23,137 DEBUG [backend.app.services.bambu_ftp] AVBL command not supported: 502 
+2026-04-05 16:00:23,271 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-05 16:00:23,271 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -48dBm
+2026-04-05 16:00:23,736 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=8123 local_address=None timeout=10.0 socket_options=None
+2026-04-05 16:00:23,738 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x774610500fd0>
+2026-04-05 16:00:23,738 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:23,738 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-05 16:00:23,738 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-05 16:00:23,739 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-05 16:00:23,739 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:23,740 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'334'), (b'Date', b'Sun, 05 Apr 2026 22:00:23 GMT')])
+2026-04-05 16:00:23,741 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/switch.0x70b3d52b600a9288 "HTTP/1.1 200 OK"
+2026-04-05 16:00:23,742 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-05 16:00:23,742 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-05 16:00:23,743 DEBUG [httpcore.http11] response_closed.started
+2026-04-05 16:00:23,743 DEBUG [httpcore.http11] response_closed.complete
+2026-04-05 16:00:23,744 DEBUG [httpcore.connection] close.started
+2026-04-05 16:00:23,745 DEBUG [httpcore.connection] close.complete
+2026-04-05 16:00:23,769 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=8123 local_address=None timeout=10.0 socket_options=None
+2026-04-05 16:00:23,771 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x774610577ad0>
+2026-04-05 16:00:23,771 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:23,771 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-05 16:00:23,771 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-05 16:00:23,772 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-05 16:00:23,772 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:23,773 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'423'), (b'Date', b'Sun, 05 Apr 2026 22:00:23 GMT')])
+2026-04-05 16:00:23,773 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/sensor.0x70b3d52b600a9288_power "HTTP/1.1 200 OK"
+2026-04-05 16:00:23,774 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-05 16:00:23,774 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-05 16:00:23,775 DEBUG [httpcore.http11] response_closed.started
+2026-04-05 16:00:23,776 DEBUG [httpcore.http11] response_closed.complete
+2026-04-05 16:00:23,778 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:23,779 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-05 16:00:23,780 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-05 16:00:23,780 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-05 16:00:23,780 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:23,781 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'619'), (b'Date', b'Sun, 05 Apr 2026 22:00:23 GMT')])
+2026-04-05 16:00:23,781 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/sensor.bambulab_p1s_energy_daily "HTTP/1.1 200 OK"
+2026-04-05 16:00:23,782 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-05 16:00:23,782 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-05 16:00:23,782 DEBUG [httpcore.http11] response_closed.started
+2026-04-05 16:00:23,783 DEBUG [httpcore.http11] response_closed.complete
+2026-04-05 16:00:23,784 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:23,785 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-05 16:00:23,785 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-05 16:00:23,785 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-05 16:00:23,785 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:23,786 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'498'), (b'Date', b'Sun, 05 Apr 2026 22:00:23 GMT')])
+2026-04-05 16:00:23,787 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/sensor.bambulab_p1s_energy_lifetime "HTTP/1.1 200 OK"
+2026-04-05 16:00:23,787 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-05 16:00:23,787 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-05 16:00:23,788 DEBUG [httpcore.http11] response_closed.started
+2026-04-05 16:00:23,788 DEBUG [httpcore.http11] response_closed.complete
+2026-04-05 16:00:23,789 DEBUG [httpcore.connection] close.started
+2026-04-05 16:00:23,789 DEBUG [httpcore.connection] close.complete
+2026-04-05 16:00:32,137 WARNING [backend.app.services.firmware_check] No firmware download URL available for model: P1S
+2026-04-05 16:00:32,138 ERROR [backend.app.services.firmware_update] Firmware upload failed for printer 2: Failed to download firmware
+2026-04-05 16:00:33,908 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=8123 local_address=None timeout=10.0 socket_options=None
+2026-04-05 16:00:33,909 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x774613ea52b0>
+2026-04-05 16:00:33,910 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:33,910 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-05 16:00:33,910 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-05 16:00:33,910 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-05 16:00:33,910 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:33,912 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'334'), (b'Date', b'Sun, 05 Apr 2026 22:00:33 GMT')])
+2026-04-05 16:00:33,912 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/switch.0x70b3d52b600a9288 "HTTP/1.1 200 OK"
+2026-04-05 16:00:33,912 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-05 16:00:33,912 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-05 16:00:33,913 DEBUG [httpcore.http11] response_closed.started
+2026-04-05 16:00:33,913 DEBUG [httpcore.http11] response_closed.complete
+2026-04-05 16:00:33,913 DEBUG [httpcore.connection] close.started
+2026-04-05 16:00:33,913 DEBUG [httpcore.connection] close.complete
+2026-04-05 16:00:33,929 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-05 16:00:33,930 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] wifi_signal received: -46dBm
+2026-04-05 16:00:33,934 DEBUG [httpcore.connection] connect_tcp.started host='[IP]' port=8123 local_address=None timeout=10.0 socket_options=None
+2026-04-05 16:00:33,935 DEBUG [httpcore.connection] connect_tcp.complete return_value=<httpcore._backends.anyio.AnyIOStream object at 0x774613ea57f0>
+2026-04-05 16:00:33,936 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:33,936 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-05 16:00:33,936 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-05 16:00:33,937 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-05 16:00:33,937 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:33,943 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'423'), (b'Date', b'Sun, 05 Apr 2026 22:00:33 GMT')])
+2026-04-05 16:00:33,944 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/sensor.0x70b3d52b600a9288_power "HTTP/1.1 200 OK"
+2026-04-05 16:00:33,944 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-05 16:00:33,945 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-05 16:00:33,946 DEBUG [httpcore.http11] response_closed.started
+2026-04-05 16:00:33,946 DEBUG [httpcore.http11] response_closed.complete
+2026-04-05 16:00:33,949 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:33,950 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-05 16:00:33,950 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-05 16:00:33,950 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-05 16:00:33,950 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:33,951 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'619'), (b'Date', b'Sun, 05 Apr 2026 22:00:33 GMT')])
+2026-04-05 16:00:33,952 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/sensor.bambulab_p1s_energy_daily "HTTP/1.1 200 OK"
+2026-04-05 16:00:33,952 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-05 16:00:33,952 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-05 16:00:33,953 DEBUG [httpcore.http11] response_closed.started
+2026-04-05 16:00:33,953 DEBUG [httpcore.http11] response_closed.complete
+2026-04-05 16:00:33,955 DEBUG [httpcore.http11] send_request_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:33,956 DEBUG [httpcore.http11] send_request_headers.complete
+2026-04-05 16:00:33,956 DEBUG [httpcore.http11] send_request_body.started request=<Request [b'GET']>
+2026-04-05 16:00:33,956 DEBUG [httpcore.http11] send_request_body.complete
+2026-04-05 16:00:33,956 DEBUG [httpcore.http11] receive_response_headers.started request=<Request [b'GET']>
+2026-04-05 16:00:33,957 DEBUG [httpcore.http11] receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json'), (b'Referrer-Policy', b'no-referrer'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b''), (b'X-Frame-Options', b'SAMEORIGIN'), (b'Content-Length', b'498'), (b'Date', b'Sun, 05 Apr 2026 22:00:33 GMT')])
+2026-04-05 16:00:33,957 INFO [httpx] HTTP Request: GET http://[IP]:8123/api/states/sensor.bambulab_p1s_energy_lifetime "HTTP/1.1 200 OK"
+2026-04-05 16:00:33,958 DEBUG [httpcore.http11] receive_response_body.started request=<Request [b'GET']>
+2026-04-05 16:00:33,958 DEBUG [httpcore.http11] receive_response_body.complete
+2026-04-05 16:00:33,958 DEBUG [httpcore.http11] response_closed.started
+2026-04-05 16:00:33,959 DEBUG [httpcore.http11] response_closed.complete
+2026-04-05 16:00:33,959 DEBUG [httpcore.connection] close.started
+2026-04-05 16:00:33,959 DEBUG [httpcore.connection] close.complete
+2026-04-05 16:00:36,097 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-04-05 16:00:36,098 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1003 -> extruder 0
+2026-04-05 16:00:36,098 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 128 info=0x2004 -> extruder 0
+2026-04-05 16:00:36,098 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0, '128': 0}
+2026-04-05 16:00:36,098 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status
+2026-04-05 16:00:38,081 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-04-05 16:00:38,082 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 0 info=0x1003 -> extruder 0
+2026-04-05 16:00:38,082 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] AMS 128 info=0x2004 -> extruder 0
+2026-04-05 16:00:38,082 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] ams_extruder_map: {'0': 0, '128': 0}
+2026-04-05 16:00:38,083 DEBUG [backend.app.services.bambu_mqtt] [[SERIAL]] Received command response: push_status

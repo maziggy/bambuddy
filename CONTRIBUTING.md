@@ -322,7 +322,7 @@ All checks must pass before merging. Run `./test_all.sh` locally before pushing 
    - Use a clear, descriptive title
    - Fill out the PR template completely
    - Link any related issues
-   - Include screenshots for UI changes
+   - Include before/after screenshots for any visual changes
 
 3. **Wait for review** - maintainers will review your PR and may request changes
 
@@ -334,6 +334,7 @@ All checks must pass before merging. Run `./test_all.sh` locally before pushing 
 - Add tests for new functionality
 - Ensure all tests pass
 - Follow the existing code style
+- **Visual changes require screenshots** — if your PR changes any frontend UI, include before/after screenshots showing the old and new appearance
 
 ## Reporting Bugs
 

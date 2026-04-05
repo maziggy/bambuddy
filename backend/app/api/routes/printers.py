@@ -2303,52 +2303,6 @@ async def resume_print(
     return {"success": True, "message": "Print resume command sent"}
 
 
-@router.post("/{printer_id}/filament/load-external")
-async def load_external_filament(
-    printer_id: int,
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
-    db: AsyncSession = Depends(get_db),
-):
-    """Load filament from the external spool holder (no AMS required)."""
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
-
-    client = printer_manager.get_client(printer_id)
-    if not client:
-        raise HTTPException(400, "Printer not connected")
-
-    success, message = client.load_external_filament()
-    if not success:
-        raise HTTPException(400, message)
-
-    return {"success": True, "message": message}
-
-
-@router.post("/{printer_id}/filament/unload-external")
-async def unload_external_filament(
-    printer_id: int,
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
-    db: AsyncSession = Depends(get_db),
-):
-    """Unload filament from the external spool holder (no AMS required)."""
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
-
-    client = printer_manager.get_client(printer_id)
-    if not client:
-        raise HTTPException(400, "Printer not connected")
-
-    success, message = client.unload_external_filament()
-    if not success:
-        raise HTTPException(400, message)
-
-    return {"success": True, "message": message}
-
-
 @router.post("/{printer_id}/print-speed")
 async def set_print_speed(
     printer_id: int,

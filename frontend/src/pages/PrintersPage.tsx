@@ -48,8 +48,6 @@ import {
   Cable,
   Flame,
   Gauge,
-  ArrowDownToLine,
-  ArrowUpFromLine,
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
@@ -1970,24 +1968,6 @@ function PrinterCard({
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToResumePrint'), 'error'),
   });
 
-  const loadExternalMutation = useMutation({
-    mutationFn: () => api.loadExternalFilament(printer.id),
-    onSuccess: () => {
-      showToast(t('printers.toast.filamentLoadExternalSent'));
-      queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
-    },
-    onError: (error: Error) => showToast(error.message || t('printers.toast.failedToLoadExternalFilament'), 'error'),
-  });
-
-  const unloadExternalMutation = useMutation({
-    mutationFn: () => api.unloadExternalFilament(printer.id),
-    onSuccess: () => {
-      showToast(t('printers.toast.filamentUnloadExternalSent'));
-      queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
-    },
-    onError: (error: Error) => showToast(error.message || t('printers.toast.failedToUnloadExternalFilament'), 'error'),
-  });
-
   // Chamber light mutation with optimistic update
   const chamberLightMutation = useMutation({
     mutationFn: (on: boolean) => api.setChamberLight(printer.id, on),
@@ -2992,7 +2972,7 @@ function PrinterCard({
               const isRunning = status.state === 'RUNNING';
               const isPaused = status.state === 'PAUSE';
               const isPrinting = isRunning || isPaused;
-              const isControlBusy = stopPrintMutation.isPending || pausePrintMutation.isPending || resumePrintMutation.isPending || loadExternalMutation.isPending || unloadExternalMutation.isPending;
+              const isControlBusy = stopPrintMutation.isPending || pausePrintMutation.isPending || resumePrintMutation.isPending;
 
               // Fan data
               const partFan = status.cooling_fan_speed;
@@ -3147,43 +3127,6 @@ function PrinterCard({
                         {isPaused ? t('printers.resume') : t('printers.pause')}
                       </button>
                     </div>
-                  </div>
-
-                  {/* External Filament Buttons - below controls, left-aligned */}
-                  <div className="flex items-center gap-2 mt-2">
-                    <button
-                      onClick={() => { if (!loadExternalMutation.isPending) loadExternalMutation.mutate(); }}
-                      disabled={isPrinting || !status.connected || isControlBusy || !hasPermission('printers:control')}
-                      className={`
-                        flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium
-                        transition-colors
-                        ${!isPrinting && status.connected && hasPermission('printers:control')
-                          ? 'bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30'
-                          : 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
-                        }
-                      `}
-                      title={!hasPermission('printers:control') ? t('printers.permission.noControl') : t('printers.loadExternal')}
-                    >
-                      {loadExternalMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ArrowDownToLine className="w-3 h-3" />}
-                      {t('printers.loadExternal')}
-                    </button>
-
-                    <button
-                      onClick={() => { if (!unloadExternalMutation.isPending) unloadExternalMutation.mutate(); }}
-                      disabled={isPrinting || !status.connected || isControlBusy || !hasPermission('printers:control')}
-                      className={`
-                        flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium
-                        transition-colors
-                        ${!isPrinting && status.connected && hasPermission('printers:control')
-                          ? 'bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30'
-                          : 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
-                        }
-                      `}
-                      title={!hasPermission('printers:control') ? t('printers.permission.noControl') : t('printers.unloadExternal')}
-                    >
-                      {unloadExternalMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ArrowUpFromLine className="w-3 h-3" />}
-                      {t('printers.unloadExternal')}
-                    </button>
                   </div>
                 </div>
               );

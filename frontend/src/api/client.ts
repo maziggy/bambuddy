@@ -2520,14 +2520,6 @@ export const api = {
     request<{ success: boolean; message: string }>(`/printers/${printerId}/print/resume`, {
       method: 'POST',
     }),
-  loadExternalFilament: (printerId: number) =>
-    request<{ success: boolean; message: string }>(`/printers/${printerId}/filament/load-external`, {
-      method: 'POST',
-    }),
-  unloadExternalFilament: (printerId: number) =>
-    request<{ success: boolean; message: string }>(`/printers/${printerId}/filament/unload-external`, {
-      method: 'POST',
-    }),
   clearPlate: (printerId: number) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/clear-plate`, {
       method: 'POST',
